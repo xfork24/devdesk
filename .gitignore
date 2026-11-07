@@ -2,7 +2,6 @@
 /web/node_modules/
 /web/dist/
 /data/
-/plans/
 /test-results/
 /playwright-report/
 *.log
@@ -11,6 +10,4 @@
 /web/playwright-report/
 /web/*.tsbuildinfo
 
-!/plans/
-/plans/*
-!/plans/domain-hardening-plan.md
+.DS_Store
