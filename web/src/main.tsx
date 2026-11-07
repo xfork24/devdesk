@@ -1792,7 +1792,7 @@ function App() {
                 ))}
               </section>
               <div className="notice">
-                Linux：本轮实际验证。macOS Apple Silicon：待实机验证。真实 Git /
+                Linux x86_64 / macOS Apple Silicon：已完成实机验证。真实 Git /
                 Codex / 项目测试执行器：延期。
               </div>
             </>

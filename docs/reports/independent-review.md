@@ -24,4 +24,4 @@
 
 全部修复。最终结论：“F5 Web 最终独立评审：Linux 范围通过。”评审者检查新增E2E代码和passed结果记录；此轮为静态复审，计时与实际浏览器运行由实现者报告。
 
-所有结论均不替代macOS实机验证；macOS继续pending。
+以上为原 Linux 交付时的结论，当时 macOS 仍 pending。本轮实际 macOS 验证另存 [执行报告](macos-validation.md) 和 [独立评审](macos-independent-review.md)，不改写上述历史评语。

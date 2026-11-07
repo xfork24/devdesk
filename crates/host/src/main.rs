@@ -226,7 +226,7 @@ fn load_settings(app: &App, engine: &Engine) {
 }
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":app.engine.read().unwrap().is_none(),"execution_mode":"simulation","live":"unavailable","archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"pending"},"harness":{"id":"sim-harness-v1","capabilities":["structured-output","cancel","hold","fault-injection"]},"sandbox":{"id":"sim-sandbox-v1","capabilities":["logical-environment","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":app.engine.read().unwrap().is_none(),"execution_mode":"simulation","live":"unavailable","archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"id":"sim-harness-v1","capabilities":["structured-output","cancel","hold","fault-injection"]},"sandbox":{"id":"sim-sandbox-v1","capabilities":["logical-environment","resource-cleanup"]}}),
     )
 }
 async fn artifact(State(app): State<Arc<App>>, Path(id): Path<String>) -> Response {
@@ -374,7 +374,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    println!("DevDesk · simulation\nhttp://{authority}\nLinux runtime; macOS validation pending");
+    println!(
+        "DevDesk · simulation\nhttp://{authority}\nRuntime: {} / {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
     let exit = app.clone();
     axum::serve(listener, router)
         .with_graceful_shutdown(async move {

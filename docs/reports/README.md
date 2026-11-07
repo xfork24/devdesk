@@ -5,10 +5,10 @@
 | 阶段 | 设计/执行/验证报告 | 独立评审 | 状态 |
 |---|---|---|---|
 | F0 | [F0](F0.md) | review_f0：领域/协议/架构 | 通过 |
-| F1 | [F1](F1.md) | review_storage_host：存储/host | Linux 范围通过；macOS pending |
+| F1 | [F1](F1.md) | review_storage_host；[macOS 补充评审](macos-independent-review.md) | Linux / macOS 通过 |
 | F2 | [F2](F2.md) | review_f0：规划与版本交付 | 通过 |
-| F3 | [F3](F3.md) | review_f0：调度与完整闭环 | Linux 范围通过 |
+| F3 | [F3](F3.md) | review_f0：调度与完整闭环 | Linux / macOS 验证通过 |
 | F4 | [F4](F4.md) | review_f0、review_storage_host：异常/恢复 | 通过 |
-| F5 | [F5](F5.md) | review_web：完整 Web | Linux 范围通过；全平台 pending |
+| F5 | [F5](F5.md) | review_web；[macOS 补充评审](macos-independent-review.md) | Linux / macOS 通过 |
 
-保留 [初次 F0 退回记录](F0-review-initial.md) 与 [最终独立评审记录](independent-review.md)。原计划要求双平台实机，macOS 未执行，不能把 Linux 范围交付写成全平台已验收。
+保留 [初次 F0 退回记录](F0-review-initial.md) 与 [原 Linux 独立评审记录](independent-review.md)，不回写历史评语。本轮补齐 macOS 实机待办，详见 [macOS 设计/执行/验证报告](macos-validation.md)、[独立评审](macos-independent-review.md) 与 [测量原始数据](macos-measurements.json)。

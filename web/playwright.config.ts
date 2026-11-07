@@ -1,4 +1,8 @@
 import { defineConfig } from "@playwright/test";
+const profile = process.env.DEVDESK_E2E_PROFILE ?? "debug";
+if (profile !== "debug" && profile !== "release") {
+  throw new Error("DEVDESK_E2E_PROFILE must be debug or release");
+}
 export default defineConfig({
   testDir: "./tests",
   workers: 1,
@@ -12,7 +16,7 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "../target/debug/devdesk-host --port 4318",
+    command: `../target/${profile}/devdesk-host --port 4318`,
     url: "http://127.0.0.1:4318",
     reuseExistingServer: false,
     timeout: 30000,

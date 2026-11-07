@@ -19,7 +19,15 @@
 
 构建后的单个程序嵌入 Web 文件，运行时不需要 Node、开发服务器或源码目录。只监听 loopback。必须使用打印的 `127.0.0.1` 地址，Host 校验会拒绝其他主机名。
 
-Linux Ubuntu 24.04 x86_64 已实际运行。macOS Apple Silicon 使用同一构建命令，需先安装 Xcode Command Line Tools；**macOS 实机验证 pending**，尚未完成全平台 F5 验收。
+Linux Ubuntu 24.04 x86_64 与 macOS Apple Silicon（本轮 macOS 26.7.2）均已实际运行后端与完整 Web 主流程。macOS 构建前需安装 Xcode Command Line Tools（`xcode-select --install`）；两平台使用相同命令。平台证据与限制见[验收记录](docs/acceptance.md)。
+
+生成包含可执行程序、说明和验收文档的本机运行包：
+
+```bash
+./scripts/package.sh
+```
+
+macOS Apple Silicon 输出 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz` 及 SHA-256 校验文件。解压后执行 `./devdesk-host`，无需 Rust/Node 或源码；详见[运行包说明](docs/run-binary.md)。
 
 ## 使用与验证
 
@@ -31,7 +39,7 @@ npm --prefix web ci
 ./scripts/check.sh
 ```
 
-检查包括领域/存储/契约/集成测试、真实 host HTTP 安全和重启检查，以及 Chromium 驱动真实 Rust 后端的 Web E2E。浏览器安装只用于测试，运行产品不需要。
+检查先构建 Web，再运行 32 项领域/存储/契约/集成测试；分别验证 debug/release host 的 HTTP 安全、中文及空格路径、跨进程数据锁与重启，并各运行 3 项 Chromium Web E2E。release HTTP 检查将程序复制到临时空目录运行。浏览器安装只用于测试，运行产品不需要。
 
 开发时先 `npm --prefix web run build`，再 `cargo run -p devdesk-host -- --data ./data`。Web 更改后需重新构建并重启 host，保持同源鉴权；`vite` 独立开发服务不是成品运行依赖。
 

@@ -14,7 +14,7 @@ Web 是长期客户端，Rust 编译时嵌入 Vite 产物。Node 仅构建依赖
 
 ## ADR-002：跨平台单机
 
-Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入平台业务 API。Linux 实机验收；macOS 待实测，不用 Linux 编译结果替代。
+Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入平台业务 API。Linux x86_64 与 macOS Apple Silicon 均已执行后端及 Web 实机验收，分别保存平台证据，见 [验收记录](acceptance.md)。
 
 ## ADR-003：真实规则、模拟外部能力
 
@@ -32,4 +32,4 @@ Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入
 
 ## 阶段评审
 
-每阶段报告列出实现、测试、限制和评审。独立 Agent 只审查，不以作者自检代替独立意见。macOS 验证保持 pending。
+每阶段报告列出实现、测试、限制和评审。独立 Agent 审查与作者自检分别保存；本轮 macOS 补充验收及独立结论见 [阶段报告索引](reports/README.md)。
