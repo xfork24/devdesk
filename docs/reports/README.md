@@ -12,3 +12,5 @@
 | F5 | [F5](F5.md) | review_web；[macOS 补充评审](macos-independent-review.md) | Linux / macOS 通过 |
 
 保留 [初次 F0 退回记录](F0-review-initial.md) 与 [原 Linux 独立评审记录](independent-review.md)，不回写历史评语。本轮补齐 macOS 实机待办，详见 [macOS 设计/执行/验证报告](macos-validation.md)、[独立评审](macos-independent-review.md) 与 [测量原始数据](macos-measurements.json)。
+
+- [领域与工程接入基础补强](domain-hardening.md)：本轮模型、迁移、回归和真实适配器边界。

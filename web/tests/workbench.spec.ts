@@ -21,9 +21,10 @@ async function confirm(page: Page) {
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-async function createTask(page: Page, title: string) {
+async function createTask(page: Page, title: string, acceptance?: string) {
   await page.getByRole("button", { name: "创建 Task", exact: true }).click();
   await page.getByLabel("Task 名称").fill(title);
+  if (acceptance) await page.getByLabel(/实现的验收条目标识/).fill(acceptance);
   await confirm(page);
 }
 async function passDelivery(page: Page, kind: string) {
@@ -79,6 +80,7 @@ test("完整 Web 闭环、双 Task 并行、Review、mainline、文档及历史"
   await page
     .getByLabel("Markdown 内容")
     .fill("## 需求\n导出 CSV。\n## 验收条件\n支持空列表和错误路径。");
+  await page.getByLabel(/需求验收条目/).fill("CSV-EMPTY | 空列表返回表头\nCSV-ERROR | 错误路径可观察");
   await confirm(page);
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
   await page.getByRole("button", { name: "规划 Attempt", exact: true }).click();
@@ -98,8 +100,10 @@ test("完整 Web 闭环、双 Task 并行、Review、mainline、文档及历史"
     })
     .click();
   await passDelivery(page, "设计 / Task / Test 计划");
-  await createTask(page, "导出接口");
-  await createTask(page, "错误处理");
+  await createTask(page, "导出接口", "CSV-EMPTY");
+  await createTask(page, "错误处理", "CSV-ERROR");
+  await expect(page.locator(".task-card").filter({ hasText: "导出接口" })).toContainText("CSV-EMPTY");
+  await expect(page.locator(".task-card").filter({ hasText: "错误处理" })).toContainText("CSV-ERROR");
   const tasks = page.locator(".task-card");
   await tasks
     .filter({ hasText: "导出接口" })
@@ -359,6 +363,10 @@ test("详情分页与 revision 冲突保留输入", async ({ page }) => {
     })
     .toBe("waiting_review");
   for (const kind of ["requirement", "plan"]) {
+    await expect.poll(async () => {
+      state = await get();
+      return state.detail.attempts[0].status;
+    }).toBe("waiting_review");
     state = await get();
     const did = (
       await command(
@@ -417,4 +425,23 @@ test("详情分页与 revision 冲突保留输入", async ({ page }) => {
     .getByRole("dialog")
     .getByRole("button", { name: "关闭", exact: true })
     .click();
+});
+
+test("持久化清理回执和人工重试可从 Web 操作", async ({ page }) => {
+  await ensureSetup(page);
+  await page.getByRole("button", { name: "新项目", exact: true }).click();
+  await page.getByLabel("项目名称").fill("清理契约"); await confirm(page);
+  await page.getByRole("button", { name: "新 Feature", exact: true }).click();
+  await page.getByLabel("Feature 名称").fill("可核对的资源释放"); await confirm(page);
+  await page.getByRole("button", { name: "执行与交付", exact: true }).click();
+  await page.getByLabel("模拟场景", { exact: true }).selectOption("cleanup_failure");
+  await page.getByRole("button", { name: "规划 Attempt", exact: true }).click(); await confirm(page);
+  const recovery = page.getByRole("region", { name: "外部操作核对" });
+  await recovery.getByRole("button", { name: "重试资源清理" }).first().click();
+  const retry = recovery.locator(".document-row").filter({ hasText: "retry_of=" }).first();
+  await expect(retry).toContainText("applied");
+  await retry.getByRole("button", { name: "查看回执" }).click();
+  await expect(page.getByRole("dialog")).toContainText('"status": "released"');
+  await expect(page.getByRole("dialog")).toContainText('"adapter"');
+  await page.getByRole("button", { name: "关闭", exact: true }).click();
 });

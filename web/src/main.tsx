@@ -241,6 +241,7 @@ function App() {
       ...(detail?.attempts || []),
       ...(detail?.merges || []),
       ...(detail?.contexts || []),
+      ...(detail?.effects || []),
     ].find((x) => x?.id === target)?.revision;
   };
   const show = (spec: DialogSpec) =>
@@ -810,6 +811,7 @@ function App() {
                         target: f.id,
                         fields: [
                           { key: "title", label: "Task 名称" },
+                          { key: "acceptance_keys", label: "实现的验收条目标识（逗号分隔，留空继承全部）", optional: true },
                           {
                             key: "dependencies",
                             label: "依赖 Task ID（逗号分隔，可空）",
@@ -904,6 +906,7 @@ function App() {
                       target: f.id,
                       fields: [
                         { key: "title", label: "Task 名称" },
+                          { key: "acceptance_keys", label: "实现的验收条目标识（逗号分隔，留空继承全部）", optional: true },
                         {
                           key: "dependencies",
                           label: "依赖 Task ID（逗号分隔，可空）",
@@ -950,6 +953,7 @@ function App() {
                           继承快照 {short(t.inherited_snapshot)} ·{" "}
                           {t.dependencies.length} 个依赖
                         </p>
+                        <p className="muted">验收范围：{t.scope?.acceptance?.join("、") || "历史范围待补齐"} · 需求 {short(t.scope?.requirement)} · 设计 {short(t.scope?.design)}</p>
                         <div className="actions">
                           {act(
                             t.id,
@@ -963,6 +967,7 @@ function App() {
                               () => {},
                             ),
                           )}
+                          {act(t.id, "task.replan", "更新规划范围", () => show({ title: "采用当前已接受规划", method: "task.replan", target: t.id, fields: [{ key: "acceptance_keys", label: "验收条目标识（逗号分隔，留空继承全部）", optional: true }] }))}
                           {act(t.id, "binding.update", "绑定", () =>
                             editBinding(t),
                           )}
@@ -1246,7 +1251,9 @@ function App() {
                         <br />
                         candidate {m.candidate}
                       </p>
+                      {detail.advances?.find((intent: RecordData) => intent.id === m.id)?.status === "needs_reconciliation" && <p className="error">{detail.advances.find((intent: RecordData) => intent.id === m.id).reason}</p>}
                       <div className="actions">
+                        {act(m.id, "merge.reconcile", "核对合入结果", () => command("merge.reconcile", m.id).catch(() => {}))}
                         {act(
                           m.id,
                           "merge.apply",
@@ -1260,6 +1267,7 @@ function App() {
                               title: "Merge 固定源/目标与验证 Runs",
                               body: pretty({
                                 merge: m,
+                                advance: detail.advances?.find((intent: RecordData) => intent.id === m.id),
                                 runs: detail.runs.filter(
                                   (r: RecordData) => r.merge_id === m.id,
                                 ),
@@ -1278,6 +1286,19 @@ function App() {
                 )}
                 {pager("merges")}
               </section>
+              <section className="panel" aria-label="外部操作核对">
+                <h2>外部操作与资源核对</h2>
+                {(detail.effects || []).map((effect: RecordData) => (
+                  <div className="document-row" key={effect.id}>
+                    <div><strong>{effect.kind} · {short(effect.run_id)}</strong><p>{effect.status} · {effect.reason}</p></div>
+                    <button onClick={() => setView({title: "外部调用意图与回执", body: pretty(effect)})}>查看回执</button>
+                    {allowed(effect.id, "effect.reconcile") && <button onClick={() => command("effect.reconcile", effect.id).catch(() => {})}>核对外部结果</button>}
+                    {allowed(effect.id, "effect.retry_cleanup") && <button onClick={() => command("effect.retry_cleanup", effect.id).catch(() => {})}>重试资源清理</button>}
+                  </div>
+                ))}
+                {pager("effects")}
+              </section>
+
             </>
           )}
           {tab === "documents" && f && (
@@ -1300,6 +1321,8 @@ function App() {
                           ),
                         },
                         { key: "title", label: "标题" },
+                        { key: "acceptance", label: "需求验收条目（每行：标识 | 可验证条件）", type: "textarea", optional: true },
+                        { key: "verifies", label: "测试验证的验收条目标识（逗号分隔）", optional: true },
                         {
                           key: "task_id",
                           label: "Task ID（可空）",
@@ -1327,6 +1350,8 @@ function App() {
                           Requirement {short(d.requirement_id)} → Design{" "}
                           {short(d.design_id)}
                           {d.task_id && ` → Task ${short(d.task_id)}`}
+                          {d.verifies?.length > 0 && ` · 验证 ${d.verifies.join("、")}`}
+                          {d.acceptance?.length > 0 && ` · 验收条目 ${d.acceptance.map((c: RecordData) => c.key).join("、")}`}
                         </p>
                       </div>
                       <button
@@ -1350,6 +1375,8 @@ function App() {
                             title: d.title,
                           },
                           fields: [
+                            { key: "acceptance", label: "需求验收条目（每行：标识 | 可验证条件）", type: "textarea", optional: true, value: (d.acceptance || []).map((c: RecordData) => `${c.key} | ${c.description}`).join("\n") },
+                            { key: "verifies", label: "测试验证的验收条目标识（逗号分隔）", optional: true, value: (d.verifies || []).join(",") },
                             {
                               key: "body",
                               label: "Markdown 内容",
@@ -1610,7 +1637,7 @@ function App() {
                   <h2>Harness / Sandbox 能力</h2>
                 </div>
                 <pre>
-                  {pretty({ harness: caps?.harness, sandbox: caps?.sandbox })}
+                  {pretty({ harnesses: data?.harnesses, sandboxes: data?.sandboxes })}
                 </pre>
                 <p className="muted">
                   Agent 是身份，Harness 是运行时，Sandbox
@@ -1927,9 +1954,12 @@ function CommandDialog({
       const payload: RecordData = { ...spec.payload };
       for (const field of spec.fields) {
         const value = values[field.key];
-        if (field.key === "slots") payload[field.key] = JSON.parse(value);
+        if (field.optional && !value.trim()) continue;
+        if (field.key === "acceptance" && value.trim()) payload.acceptance = value.split("\n").filter((line) => line.trim()).map((line) => { const split = line.indexOf("|"); if (split < 1) throw new Error("验收条目格式：标识 | 可验证条件"); return { key: line.slice(0,split).trim(), description: line.slice(split+1).trim() }; });
+        else if (field.key === "acceptance" && !value.trim()) continue;
+        else if (field.key === "slots") payload[field.key] = JSON.parse(value);
         else if (
-          ["skills", "rules", "dependencies", "items"].includes(field.key)
+          ["skills", "rules", "dependencies", "items", "verifies", "acceptance_keys"].includes(field.key)
         )
           payload[field.key] = value
             .split(",")

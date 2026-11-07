@@ -1,4 +1,6 @@
-//! Pure domain model: no I/O or adapter dependencies.
+mod execution;
+pub use execution::*;
+// Pure domain model: no I/O or adapter dependencies.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -84,6 +86,7 @@ pub struct Project {
     pub id: Id,
     pub title: String,
     pub workspace: String,
+    pub workspace_definition: Option<Workspace>,
     pub execution_mode: String,
     pub binding: BindingLock,
     pub concurrency: u32,
@@ -111,6 +114,18 @@ pub struct Task {
     pub inherited_snapshot: Id,
     pub dependencies: Vec<Id>,
     pub worktree: String,
+    pub scope: TaskScope,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TaskScope {
+    pub requirement: Option<Id>,
+    pub design: Option<Id>,
+    pub acceptance: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptanceCriterion {
+    pub key: String,
+    pub description: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
@@ -125,6 +140,9 @@ pub struct Document {
     pub requirement_id: Option<Id>,
     pub design_id: Option<Id>,
     pub origin: Origin,
+    pub acceptance: Vec<AcceptanceCriterion>,
+    pub verifies: Vec<String>,
+    pub artifact_id: Option<Id>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpecSlot {
@@ -148,9 +166,13 @@ pub struct Attempt {
     pub feature_id: Id,
     pub task_id: Option<Id>,
     pub phase: String,
+    pub baseline: Option<String>,
+    pub git_context: Option<GitContext>,
     pub status: Status,
     pub input_version: u64,
     pub documents: Vec<Id>,
+    pub outputs: Vec<Id>,
+    pub scope: Option<TaskScope>,
     pub binding: BindingLock,
     pub context_content: String,
     pub context_revision: u64,
@@ -167,6 +189,8 @@ pub struct Run {
     pub status: Status,
     pub retry_of: Option<Id>,
     pub session_id: Id,
+    pub binding: BindingLock,
+    pub binding_verified: bool,
     pub writes: bool,
     pub worktree: String,
     pub outcome: String,
@@ -184,6 +208,7 @@ pub struct Session {
     pub harness: String,
     pub sandbox: String,
     pub snapshot_id: Option<Id>,
+    pub instance: Option<ExecutionInstance>,
     pub origin: Origin,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +229,7 @@ pub struct Snapshot {
     pub documents: Vec<Id>,
     pub delivery_id: Option<Id>,
     pub inherited_from: Option<Id>,
+    pub capture: SnapshotCapture,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Delivery {
@@ -230,6 +256,7 @@ pub struct Review {
     pub actor: String,
     pub run_id: Option<Id>,
     pub reason: String,
+    pub assignment: Option<ReviewAssignment>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Override {
@@ -253,6 +280,7 @@ pub struct Merge {
     pub expected_target: String,
     pub candidate: String,
     pub committed_revision: Option<String>,
+    pub change_request: Option<ChangeRequestRef>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitHead {
@@ -288,6 +316,10 @@ pub struct Event {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EngineeringState {
+    pub advances: Vec<MergeAdvance>,
+    pub effects: Vec<EffectRecord>,
+    pub harnesses: Vec<Harness>,
+    pub sandboxes: Vec<Sandbox>,
     pub projects: Vec<Project>,
     pub features: Vec<Feature>,
     pub tasks: Vec<Task>,
@@ -399,6 +431,37 @@ impl EngineeringState {
                 .execution_mode,
             d.origin,
         )?;
+        require(
+            d.attempt_id.is_some() != d.merge_id.is_some(),
+            "Delivery 必须且只能归属 Attempt 或 Merge",
+        )?;
+        if let Some(aid) = &d.attempt_id {
+            let a = self.attempt(aid)?;
+            require(
+                a.feature_id == d.feature_id
+                    && a.task_id == d.task_id
+                    && a.input_version == d.input_version,
+                "Delivery 与 Attempt 的归属或版本不一致",
+            )?;
+            require(
+                if a.phase == "planning" {
+                    ["requirement", "plan"].contains(&d.kind.as_str())
+                } else {
+                    d.kind == a.phase
+                },
+                "Delivery 阶段与 Attempt 不一致",
+            )?;
+        }
+        if let Some(mid) = &d.merge_id {
+            let m = self.merge(mid)?;
+            require(
+                m.feature_id == d.feature_id
+                    && m.task_id == d.task_id
+                    && m.input_version == d.input_version
+                    && d.kind == "merge_candidate",
+                "Delivery 与 Merge 的归属、阶段或版本不一致",
+            )?;
+        }
         require(!d.documents.is_empty(), "交付缺少文档")?;
         for did in &d.documents {
             require(
@@ -407,6 +470,111 @@ impl EngineeringState {
                     .any(|x| &x.id == did && x.feature_id == d.feature_id),
                 "交付文档引用不完整",
             )?;
+        }
+        for doc in self
+            .documents
+            .iter()
+            .filter(|doc| d.documents.contains(&doc.id))
+        {
+            require(
+                doc.task_id.is_none() || doc.task_id == d.task_id,
+                "交付不能引用其他 Task 的文档",
+            )?;
+            if ["design", "test"].contains(&doc.kind.as_str()) {
+                require(
+                    doc.requirement_id.as_ref().is_some_and(|id| {
+                        d.documents.contains(id)
+                            && self.documents.iter().any(|req| {
+                                &req.id == id
+                                    && req.kind == "requirement"
+                                    && req.feature_id == d.feature_id
+                            })
+                    }),
+                    "交付中的设计/测试必须引用同次冻结需求",
+                )?;
+            }
+            if doc.kind == "test" {
+                require(
+                    doc.design_id.as_ref().is_some_and(|id| {
+                        d.documents.contains(id)
+                            && self.documents.iter().any(|design| {
+                                &design.id == id
+                                    && design.kind == "design"
+                                    && design.feature_id == d.feature_id
+                            })
+                    }),
+                    "交付测试必须引用同次冻结设计",
+                )?;
+            }
+            if doc.kind == "requirement" {
+                self.acceptance_keys(&doc.id)?;
+            }
+            if doc.kind == "test" {
+                let req = doc
+                    .requirement_id
+                    .as_ref()
+                    .ok_or_else(|| err("blocked", "Test 缺少需求修订"))?;
+                let keys = self.acceptance_keys(req)?;
+                require(
+                    !doc.verifies.is_empty() && doc.verifies.iter().all(|k| keys.contains(k)),
+                    "Test 必须映射有效验收条目",
+                )?;
+            }
+        }
+        let has = |kind: &str| {
+            d.documents.iter().any(|id| {
+                self.documents
+                    .iter()
+                    .any(|doc| &doc.id == id && doc.kind == kind)
+            })
+        };
+        match d.kind.as_str() {
+            "requirement" => require(has("requirement"), "Requirement 交付缺少需求")?,
+            "plan" => {
+                require(
+                    has("requirement") && has("design") && has("test"),
+                    "计划交付必须包含 Requirement、Design、Test",
+                )?;
+                for doc in self
+                    .documents
+                    .iter()
+                    .filter(|doc| d.documents.contains(&doc.id))
+                {
+                    if ["design", "test"].contains(&doc.kind.as_str()) {
+                        require(
+                            doc.requirement_id.as_ref().is_some_and(|id| {
+                                d.documents.contains(id)
+                                    && self
+                                        .documents
+                                        .iter()
+                                        .any(|r| &r.id == id && r.kind == "requirement")
+                            }),
+                            "设计/测试必须引用本次冻结需求",
+                        )?;
+                    }
+                    if doc.kind == "test" {
+                        require(
+                            doc.design_id.as_ref().is_some_and(|id| {
+                                d.documents.contains(id)
+                                    && self
+                                        .documents
+                                        .iter()
+                                        .any(|r| &r.id == id && r.kind == "design")
+                            }),
+                            "测试必须引用本次冻结设计",
+                        )?;
+                    }
+                }
+            }
+            "implementation" | "closure" => require(
+                has("test") && has("doc"),
+                "实现/收尾交付必须包含测试定义与文档",
+            )?,
+            "merge_candidate" => require(
+                d.merge_id.is_some() && !d.evidence.is_empty(),
+                "候选交付缺少 Merge 与验证证据",
+            )?,
+            _ => return Err(err("blocked", "未知正式交付阶段")),
         }
         for rid in &d.evidence {
             let r = self
@@ -423,12 +591,101 @@ impl EngineeringState {
                     .execution_mode,
                 r.origin,
             )?;
+            if ["red", "green", "verify", "feature_tests", "merge_verify"]
+                .contains(&r.node.as_str())
+            {
+                let result: TestResult = serde_json::from_value(
+                    r.result
+                        .clone()
+                        .ok_or_else(|| err("blocked", "测试证据缺少结果"))?,
+                )
+                .map_err(|_| err("blocked", "测试证据结构不完整"))?;
+                require(
+                    result.operation_id == r.id
+                        && result.test_phase == r.node
+                        && result.origin == r.origin,
+                    "测试证据操作、阶段或来源不匹配",
+                )?;
+                let instance = self
+                    .sessions
+                    .iter()
+                    .find(|session| session.id == r.session_id)
+                    .and_then(|session| session.instance.as_ref())
+                    .ok_or_else(|| err("blocked", "测试证据缺少确定环境实例"))?;
+                require(result.environment == instance.id, "测试证据环境不匹配")?;
+                let expected = if r.node == "red" {
+                    d.attempt_id
+                        .as_deref()
+                        .and_then(|id| self.attempt(id).ok())
+                        .and_then(|a| a.baseline.as_ref())
+                } else {
+                    d.candidate.as_ref()
+                };
+                require(
+                    expected.is_some_and(|revision| revision == &result.candidate),
+                    "测试证据代码版本不匹配",
+                )?;
+                require(
+                    !result.test_definitions.is_empty()
+                        && result.test_definitions.iter().all(|id| {
+                            d.documents.contains(id)
+                                && self
+                                    .documents
+                                    .iter()
+                                    .any(|test| &test.id == id && test.kind == "test")
+                        }),
+                    "测试结果必须引用交付内的测试定义",
+                )?;
+            }
             require(
                 r.attempt_id == d.attempt_id && r.merge_id == d.merge_id,
                 "证据不属于本次交付",
             )?;
         }
+        if ["plan", "closure"].contains(&d.kind.as_str()) {
+            for req in self
+                .documents
+                .iter()
+                .filter(|doc| d.documents.contains(&doc.id) && doc.kind == "requirement")
+            {
+                let keys = self.acceptance_keys(&req.id)?;
+                require(
+                    keys.iter().all(|key| {
+                        self.documents.iter().any(|test| {
+                            d.documents.contains(&test.id)
+                                && test.kind == "test"
+                                && test.requirement_id.as_ref() == Some(&req.id)
+                                && test.verifies.contains(key)
+                        })
+                    }),
+                    "计划/收尾测试未覆盖全部验收条目",
+                )?;
+            }
+        }
         if d.kind == "implementation" {
+            let attempt = self.attempt(
+                d.attempt_id
+                    .as_deref()
+                    .ok_or_else(|| err("blocked", "实现交付缺少 Attempt"))?,
+            )?;
+            let scope = attempt
+                .scope
+                .as_ref()
+                .ok_or_else(|| err("blocked", "历史 Attempt 缺少冻结范围，需新建执行"))?;
+            self.validate_scope(&d.feature_id, scope)?;
+            require(
+                scope.acceptance.iter().all(|key| {
+                    self.documents.iter().any(|test| {
+                        d.documents.contains(&test.id)
+                            && test.kind == "test"
+                            && test.task_id == d.task_id
+                            && test.requirement_id == scope.requirement
+                            && test.design_id == scope.design
+                            && test.verifies.contains(key)
+                    })
+                }),
+                "Task 测试未覆盖冻结的实现范围",
+            )?;
             let run = |node: &str| {
                 self.runs
                     .iter()
@@ -481,11 +738,28 @@ impl EngineeringState {
                 "Red/Green 测试定义不一致",
             )?;
             require(
-                d.candidate
-                    .as_ref()
-                    .is_some_and(|c| gr["candidate"] == *c && rr["candidate"] == *c),
+                d.candidate.as_ref().is_some_and(|c| {
+                    gr["candidate"] == *c
+                        && d.attempt_id
+                            .as_deref()
+                            .and_then(|id| self.attempt(id).ok())
+                            .and_then(|a| a.baseline.as_ref())
+                            .is_some_and(|base| rr["candidate"] == *base)
+                }),
                 "TDD 候选版本不一致",
             )?;
+        }
+        if d.kind == "closure" {
+            for node in ["feature_tests", "docs", "verify"] {
+                require(
+                    d.evidence.iter().any(|id| {
+                        self.runs
+                            .iter()
+                            .any(|run| &run.id == id && run.node == node)
+                    }),
+                    "收尾缺少完整测试、文档或验证证据",
+                )?;
+            }
         }
         if let Some(mid) = &d.merge_id {
             let m = self.merge(mid)?;
@@ -539,9 +813,28 @@ impl EngineeringState {
                 }),
             "Standard 必须提供规划、实现、Merge 的 Spec 用途 slot",
         )?;
+        let harness = self
+            .harnesses
+            .iter()
+            .find(|h| h.id == b.harness)
+            .ok_or_else(|| err("blocked", "Harness 定义缺失"))?;
+        let sandbox = self
+            .sandboxes
+            .iter()
+            .find(|env| env.id == b.sandbox)
+            .ok_or_else(|| err("blocked", "Sandbox 定义缺失"))?;
         require(
-            b.harness == "sim-harness-v1" && b.sandbox == "sim-sandbox-v1",
-            "首版仅支持模拟 Harness/Sandbox",
+            ["structured-output", "cancel", "poll"]
+                .iter()
+                .all(|cap| harness.capabilities.iter().any(|value| value == cap)),
+            "Harness 缺少执行/取消/结构化结果能力",
+        )?;
+        require(
+            harness.provider == "simulation"
+                && sandbox.provider == "simulation"
+                && harness.origin == Origin::Simulated
+                && sandbox.origin == Origin::Simulated,
+            "当前项目仅允许模拟能力绑定",
         )
     }
 }
@@ -604,5 +897,86 @@ mod tests {
     fn simulated_never_live() {
         assert!(evidence_origin("live", Origin::Simulated).is_err());
         assert!(evidence_origin("simulation", Origin::Simulated).is_ok());
+    }
+}
+
+/// Capture provenance; legacy migration intentionally does not invent a Session.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SnapshotCapture {
+    pub attempt: Option<Id>,
+    pub runs: Vec<Id>,
+    pub sessions: Vec<Id>,
+    pub resources: Vec<Id>,
+    pub captured_at: Option<u64>,
+    pub reason: String,
+}
+impl EngineeringState {
+    pub fn acceptance_keys(&self, requirement: &str) -> Result<Vec<String>> {
+        let req = self
+            .documents
+            .iter()
+            .find(|d| d.id == requirement && d.kind == "requirement")
+            .ok_or_else(|| err("blocked", "需求修订不存在"))?;
+        require(!req.acceptance.is_empty(), "需求必须定义结构化验收条目")?;
+        let keys: Vec<_> = req.acceptance.iter().map(|c| c.key.clone()).collect();
+        require(
+            keys.iter().collect::<std::collections::HashSet<_>>().len() == keys.len()
+                && req
+                    .acceptance
+                    .iter()
+                    .all(|c| !c.key.trim().is_empty() && !c.description.trim().is_empty()),
+            "验收条目标识必须唯一且非空",
+        )?;
+        Ok(keys)
+    }
+    pub fn validate_scope(&self, fid: &str, scope: &TaskScope) -> Result<()> {
+        let req = scope
+            .requirement
+            .as_ref()
+            .ok_or_else(|| err("blocked", "Task 缺少需求范围"))?;
+        let design = scope
+            .design
+            .as_ref()
+            .ok_or_else(|| err("blocked", "Task 缺少设计范围"))?;
+        let keys = self.acceptance_keys(req)?;
+        require(
+            self.documents
+                .iter()
+                .any(|d| &d.id == req && d.feature_id == fid),
+            "Task 需求归属错误",
+        )?;
+        require(
+            self.documents.iter().any(|d| {
+                &d.id == design
+                    && d.feature_id == fid
+                    && d.kind == "design"
+                    && d.requirement_id.as_ref() == Some(req)
+            }),
+            "Task 设计与需求版本不匹配",
+        )?;
+        require(
+            !scope.acceptance.is_empty() && scope.acceptance.iter().all(|k| keys.contains(k)),
+            "Task 范围必须引用已定义验收条目",
+        )
+    }
+}
+
+impl EngineeringState {
+    /// Agent revisions share one identity; a new revision is not an independent reviewer.
+    pub fn agent_identity(&self, revision: &str) -> Result<Id> {
+        let mut current = revision;
+        let mut seen = std::collections::HashSet::new();
+        loop {
+            require(seen.insert(current.to_owned()), "Agent 修订链有环")?;
+            let definition = self
+                .definitions
+                .iter()
+                .find(|d| d.id == current && d.family == "agent")
+                .ok_or_else(|| err("blocked", "Agent 身份修订缺失"))?;
+            match definition.supersedes.as_deref() {
+                Some(previous) => current = previous,
+                None => return Ok(definition.id.clone()),
+            }
+        }
     }
 }

@@ -52,3 +52,37 @@
 ## 闭环例子
 
 创建 Project、Feature → 编辑 Requirement → planning Attempt → Requirement Delivery/Review → plan Delivery/Review → initial Snapshot → 两个独立 Tasks → 各自 implementation Attempt（Red/implement/Green/docs/verify）→ implementation Delivery/Review → final Snapshot → Task Merge 验证/Review/apply → closure Attempt → closure Delivery/Review → final Snapshot → Feature Merge 验证/Review/apply → 模拟流程已完成。
+
+## 本轮领域补强（schema v13）
+
+- Requirement/Design/Test/Doc 继续共享不可变文档修订的存储结构，业务校验按正式阶段区分。Requirement.acceptance 为唯一 key 与可验证 description 的列表；未单独录入时将用户完整正文登记为一个显式 AC-1，用户可在 Web 拆分。Test.verifies 引用这些 key，不通过正文关键词计算追踪。
+- Task.scope 固定 Requirement/Design 修订与实现的验收条目；默认继承规划全部条目，可在创建时选择子集。需求变化后，先重新规划，再通过 task.replan 采用新范围并生成新测试修订，旧 Attempt 与输入不回写。已合入 Task 仍冻结。
+- Run.binding 是独立 ExecutionBindingLock。评审 Run 的重试继承原评审绑定，接收评审时再次检查作者身份隔离。Review.assignment 固定 Delivery、Spec 与人类主体或 Agent/Run/Session。
+- Workspace 是仓库描述、路径与 mainline 的值对象。Harness 与 Sandbox 为独立、持久化的定义；Session.instance 为拥有稳定 ID 的运行实例，冻结两类定义和版本，并记录外部身份、起止和终态。模拟执行使用 sim-session / sim-environment 标识；来源始终为 simulated，不伪造真实供应商实例。
+- TestResult 是有结构校验的领域结果，绑定 operation_id、测试修订、阶段、候选、环境与来源；仍以 Run.result 保存其序列化形式。Attempt.baseline 固定 Red 执行的代码版本；Green/Delivery 固定实现候选，二者不要求相等。代码 revision 由 GitPort 提供。
+- Snapshot.capture 固定来源 Attempt、Runs、Sessions、Resources、原因与时间；文档集合来自已接受交付。历史无法确定的捕获来源保持 legacy/空值。
+- ChangeRequestRef 是 Merge 内嵌的变更请求引用，当前建立明确标记 simulation 的本地实例。ArchivePreview 是有范围和阻塞理由的只读预览，executable=false；它不是已经归档的 Archive。
+
+### 正式阶段契约
+
+Requirement 交付通过 Review 后，设计 Run 才可派发；plan 必须包含同一冻结需求的 Design/Test，并覆盖全部验收条目；Task 实现必须有 TDD、Test 和 Doc；closure 必须包含完整验收覆盖与 Doc；Merge 候选必须引用有效源交付和同候选验证。报告随所属交付冻结。
+
+需求/设计/Feature 测试定义变化使规划失效。Task 文档或测试变化只失效该 Task 交付及 Feature 收尾/主干候选，并终止旧输入的后续派发；兄弟 Task 保留。旧证据、Review、Override 不覆盖。
+
+历史 Run 的 binding_verified=false，保留可从 Session 确定的身份，但不把无法证明的完整绑定用于技术重试；需要新建执行。新 Run 的 binding_verified=true。
+
+TestRequest/TestResult.environment 使用 Session.instance.id，绑定具体环境实例；Sandbox 定义版本随该实例冻结，不能只用通用环境名称代替实例。
+
+## 补强计划完成时的执行与历史契约
+
+- Attempt.scope 冻结需求/设计与验收范围，outputs 只追加本尝试产生的修订；后续步骤使用 frozen_inputs 和 stage_outputs 的确定投影。重新采用规划会中断旧活动 Attempt、取消旧派发并保留旧 scope。
+- Delivery 必须且只能归属一个 Attempt 或 Merge，归属、阶段和输入版本一致。TestResult 的 operation、阶段、环境实例、代码和定义必须与证据一致；Task 自己的测试必须覆盖其冻结范围，不能借用兄弟 Task 文档。Feature 文档修订不使规划或兄弟 Task Merge 失效。
+- Context.revised 事件保存原内容、新内容和两个 revision。最终 Snapshot 的 Context 来自已接受 Attempt，独立于随后可变 Context；手动快照保存当前 Context。
+- EffectRecord 保存固定操作 ID、适配器版本身份、冻结请求、原始回执与状态。pending → observed → applied/discarded；中断结果未知为 needs_reconciliation；cleanup_failed 通过新操作显式重试，原失败不覆盖。
+- MergeAdvance 固定供应商、交付、候选、目标基线及回执。prepared → dispatched → observed → applied；结果未知 needs_reconciliation；供应商明确未推进则 not_applied，观察目标并重新验收。不得把旧操作交给不同供应商推定成功。
+- Harness/Sandbox 的定义与 Session.instance 分开保存；能力缺失在绑定时拒绝。Reviewer/候选验证沿用源交付的锁定标准。供应商核对必须匹配原 Run/Session 或完整 TestRequest，错误回执不能解除 Resource 所有权。
+- 数据库 v7—v13 增加操作记录、阶段输出、冻结范围和目标推进核对；旧信息保持空或 legacy，不从可变对象倒填执行事实。
+
+GitContext 是 Attempt 与 MergeAdvance 中的不可变值对象，固定 Project、Workspace 和源/目标 CodeLocation。供应商候选、推进及核对显式接收它，TestRequest/ Harness 输入也携带它。v13 迁移保留历史未知定位为 null；未记录代码路由的旧执行必须新建执行，不能推定一个当前工作目录。
+
+Run 首次调用的输入保存在 Harness EffectRecord 中；后续轮询及取消复用它。并行兄弟节点的新输出只进入后续新 Run 的输入，不能改变已在运行的请求。Agent 的身份由不可变修订链根确定，不把作者的另一修订当作独立 Reviewer。

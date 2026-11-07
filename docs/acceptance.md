@@ -57,3 +57,7 @@
 6. 当前 Delivery 列表的 Review 展示有界；多次不确定决定的大量历史可通过分页事件与报告读取，尚未提供独立全文检索。协议不支持 JSON-RPC batch/notification。
 
 按 v0.2 停止线交付并等待实际使用反馈，真实 Git/Test/Codex 和数据生命周期继续留待后续讨论。
+
+## 领域补强后续验收
+
+本文件上方保留原 v0.2 平台交付记录。领域补强的最终实现、v1→v13 数据迁移、操作核对及本轮 macOS 验证见 [补强验收报告](reports/domain-hardening.md)；不能将上方历史 Linux 验证视作补强代码的 Linux 复验。

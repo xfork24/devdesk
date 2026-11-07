@@ -17,6 +17,7 @@ fn storage(e: impl std::fmt::Display) -> Error {
 }
 pub struct SqliteStore {
     connection: Mutex<Connection>,
+    writer: Mutex<()>,
     root: PathBuf,
     _lock: File,
 }
@@ -68,22 +69,105 @@ impl SqliteStore {
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
-        require(version <= 1, "数据集版本比程序新")?;
+        require(version <= 13, "数据集版本比程序新")?;
         if version == 0 {
             let tx = connection.transaction().map_err(storage)?;
             tx.execute_batch(include_str!("../../../migrations/001_initial.sql"))
                 .map_err(storage)?;
             tx.commit().map_err(storage)?;
         }
+        if version < 2 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!(
+                "../../../migrations/002_execution_binding.sql"
+            ))
+            .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 3 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/003_traceability.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 4 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/004_instances.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 5 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/005_code_baseline.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 6 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!(
+                "../../../migrations/006_binding_provenance.sql"
+            ))
+            .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 7 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/007_effects.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 8 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/008_attempt_outputs.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 9 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/009_attempt_scope.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 10 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/010_merge_advances.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 11 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/011_advance_provider.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 12 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!(
+                "../../../migrations/012_advance_observation.sql"
+            ))
+            .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 13 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../migrations/013_git_context.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
         fs::create_dir_all(root.join("artifacts")).map_err(storage)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            writer: Mutex::new(()),
             root,
             _lock: lock,
         })
     }
     fn load(conn: &Connection) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
+        s.advances = load_table::<MergeAdvance>(conn, "advances")?;
+        s.effects = load_table::<EffectRecord>(conn, "effects")?;
+        s.harnesses = load_table::<Harness>(conn, "harnesses")?;
+        s.sandboxes = load_table::<Sandbox>(conn, "sandboxes")?;
         s.projects = load_table::<Project>(conn, "projects")?;
         s.features = load_table::<Feature>(conn, "features")?;
         s.tasks = load_table::<Task>(conn, "tasks")?;
@@ -104,25 +188,29 @@ impl SqliteStore {
         s.events = load_table::<Event>(conn, "events")?;
         Ok(s)
     }
-    fn save(conn: &Connection, s: &EngineeringState) -> Result<()> {
-        save_table(conn, "projects", &s.projects)?;
-        save_table(conn, "features", &s.features)?;
-        save_table(conn, "tasks", &s.tasks)?;
-        save_table(conn, "documents", &s.documents)?;
-        save_table(conn, "definitions", &s.definitions)?;
-        save_table(conn, "attempts", &s.attempts)?;
-        save_table(conn, "runs", &s.runs)?;
-        save_table(conn, "sessions", &s.sessions)?;
-        save_table(conn, "contexts", &s.contexts)?;
-        save_table(conn, "snapshots", &s.snapshots)?;
-        save_table(conn, "deliveries", &s.deliveries)?;
-        save_table(conn, "reviews", &s.reviews)?;
-        save_table(conn, "overrides", &s.overrides)?;
-        save_table(conn, "merges", &s.merges)?;
-        save_table(conn, "heads", &s.heads)?;
-        save_table(conn, "resources", &s.resources)?;
-        save_table(conn, "artifacts", &s.artifacts)?;
-        save_table(conn, "events", &s.events)?;
+    fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
+        save_table(conn, "advances", &s.advances, &before.advances)?;
+        save_table(conn, "effects", &s.effects, &before.effects)?;
+        save_table(conn, "harnesses", &s.harnesses, &before.harnesses)?;
+        save_table(conn, "sandboxes", &s.sandboxes, &before.sandboxes)?;
+        save_table(conn, "projects", &s.projects, &before.projects)?;
+        save_table(conn, "features", &s.features, &before.features)?;
+        save_table(conn, "tasks", &s.tasks, &before.tasks)?;
+        save_table(conn, "documents", &s.documents, &before.documents)?;
+        save_table(conn, "definitions", &s.definitions, &before.definitions)?;
+        save_table(conn, "attempts", &s.attempts, &before.attempts)?;
+        save_table(conn, "runs", &s.runs, &before.runs)?;
+        save_table(conn, "sessions", &s.sessions, &before.sessions)?;
+        save_table(conn, "contexts", &s.contexts, &before.contexts)?;
+        save_table(conn, "snapshots", &s.snapshots, &before.snapshots)?;
+        save_table(conn, "deliveries", &s.deliveries, &before.deliveries)?;
+        save_table(conn, "reviews", &s.reviews, &before.reviews)?;
+        save_table(conn, "overrides", &s.overrides, &before.overrides)?;
+        save_table(conn, "merges", &s.merges, &before.merges)?;
+        save_table(conn, "heads", &s.heads, &before.heads)?;
+        save_table(conn, "resources", &s.resources, &before.resources)?;
+        save_table(conn, "artifacts", &s.artifacts, &before.artifacts)?;
+        save_table(conn, "events", &s.events, &before.events)?;
         Ok(())
     }
 }
@@ -178,7 +266,19 @@ fn load_table<T: DeserializeOwned>(conn: &Connection, table: &str) -> Result<Vec
     rows.map(|v| serde_json::from_value(v.map_err(storage)?).map_err(storage))
         .collect()
 }
-fn save_table<T: Serialize>(conn: &Connection, table: &str, items: &[T]) -> Result<()> {
+fn save_table<T: Serialize>(
+    conn: &Connection,
+    table: &str,
+    items: &[T],
+    before: &[T],
+) -> Result<()> {
+    let previous: std::collections::HashMap<String, Value> = before
+        .iter()
+        .map(|item| {
+            let v = serde_json::to_value(item).map_err(storage)?;
+            Ok((v["id"].to_string(), v))
+        })
+        .collect::<Result<_>>()?;
     if items.is_empty() {
         return Ok(());
     }
@@ -204,6 +304,9 @@ fn save_table<T: Serialize>(conn: &Connection, table: &str, items: &[T]) -> Resu
     let mut statement = conn.prepare_cached(&sql).map_err(storage)?;
     for item in items {
         let v = serde_json::to_value(item).map_err(storage)?;
+        if previous.get(&v["id"].to_string()) == Some(&v) {
+            continue;
+        }
         let values = cols
             .iter()
             .map(|(n, typ)| {
@@ -240,12 +343,12 @@ impl EngineeringStore for SqliteStore {
         key: Option<(&str, &str)>,
         action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
     ) -> Result<Value> {
-        let mut conn = self.connection.lock().map_err(storage)?;
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(storage)?;
+        // Serialize writers, but release the DB connection and transaction during
+        // adapter calls. Read-only queries remain available while an adapter polls.
+        let _writer = self.writer.lock().map_err(storage)?;
+        let conn = self.connection.lock().map_err(storage)?;
         if let Some((id, fp)) = key {
-            let mut q = tx
+            let mut q = conn
                 .prepare("SELECT fingerprint,result FROM operations WHERE id=?1")
                 .map_err(storage)?;
             let mut rows = q.query([id]).map_err(storage)?;
@@ -256,11 +359,18 @@ impl EngineeringStore for SqliteStore {
                 return serde_json::from_str(&result).map_err(storage);
             }
         }
-        let mut state = Self::load(&tx)?;
-        let before = serde_json::to_vec(&state).map_err(storage)?;
+        let mut state = Self::load(&conn)?;
+        let before = state.clone();
+        drop(conn);
         let result = action(&mut state)?;
-        if before != serde_json::to_vec(&state).map_err(storage)? {
-            Self::save(&tx, &state)?;
+        let mut conn = self.connection.lock().map_err(storage)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if serde_json::to_vec(&before).map_err(storage)?
+            != serde_json::to_vec(&state).map_err(storage)?
+        {
+            Self::save(&tx, &state, &before)?;
         }
         if let Some((id, fp)) = key {
             tx.execute(
@@ -392,6 +502,11 @@ impl ArtifactStore for FileArtifacts {
 }
 pub struct SimHarness;
 impl HarnessPort for SimHarness {
+    fn reconcile(&self, run: &Run) -> Result<Option<Value>> {
+        Ok(Some(
+            json!({"status":"cancelled","cancellation_confirmed":true,"origin":"simulated","run_id":run.id,"session_id":run.session_id}),
+        ))
+    }
     fn configure(&self, node: &str, scenario: &str) -> String {
         match scenario {
             "technical_failure" if node == "implement" || node == "merge_verify" => {
@@ -415,7 +530,7 @@ impl HarnessPort for SimHarness {
         }
         if run.cancel_requested {
             return Ok(Some(
-                json!({"status":"cancelled","origin":"simulated","cancellation_confirmed":true}),
+                json!({"status":"cancelled","origin":"simulated","cancellation_confirmed":true,"run_id":run.id,"session_id":run.session_id}),
             ));
         }
         if run.node.starts_with("review:")
@@ -438,6 +553,10 @@ impl HarnessPort for SimHarness {
                 json!({"status":"succeeded","origin":"simulated","session_id":run.session_id,"message":format!("{} 模拟执行完成",run.node)})
             }
         };
+        result["run_id"] = json!(run.id);
+        result["session_id"] = json!(run.session_id);
+        result["external_session"] = json!(format!("sim-session-{}", run.session_id));
+        result["external_environment"] = json!(format!("sim-environment-{}", run.session_id));
         result["cleanup_failed"] = json!(run.outcome == "cleanup_failure");
         if run.node.starts_with("review:") {
             result["review_delivery"] = input["delivery"]["id"].clone();
@@ -469,14 +588,47 @@ impl HarnessPort for SimHarness {
 }
 pub struct SimGit;
 impl GitPort for SimGit {
-    fn candidate(&self, source: &str, target: &str, operation: &str) -> Result<String> {
+    fn reconcile_advance(
+        &self,
+        _context: &GitContext,
+        operation: &str,
+    ) -> Result<AdvanceObservation> {
+        Ok(AdvanceObservation::Applied {
+            revision: format!("sim-rev-candidate-{operation}"),
+        })
+    }
+    fn execution_revision(&self, attempt: &Attempt, _phase: &str) -> Result<String> {
+        Ok(format!("sim-rev-source-{}", attempt.id))
+    }
+    fn candidate(
+        &self,
+        context: &GitContext,
+        source: &str,
+        target: &str,
+        operation: &str,
+    ) -> Result<String> {
+        require(
+            context.origin == Origin::Simulated,
+            "模拟 Git 不接受真实仓库执行来源",
+        )?;
         require(
             source.starts_with("sim-rev-") && target.starts_with("sim-rev-"),
             "模拟 Git 仅接受模拟 revision",
         )?;
         Ok(format!("sim-rev-candidate-{operation}"))
     }
-    fn advance(&self, actual: &str, expected: &str, candidate: &str) -> Result<String> {
+    fn advance(
+        &self,
+        context: &GitContext,
+        actual: &str,
+        expected: &str,
+        candidate: &str,
+        _operation_id: &str,
+    ) -> Result<String> {
+        require(
+            context.origin == Origin::Simulated,
+            "模拟 Git 不接受真实仓库执行来源",
+        )?;
         require(actual == expected, "目标版本变化，拒绝推进")?;
         require(candidate.starts_with("sim-rev-candidate-"), "候选来源无效")?;
         Ok(candidate.into())
@@ -484,10 +636,16 @@ impl GitPort for SimGit {
 }
 pub struct SimTests;
 impl TestRunnerPort for SimTests {
+    fn reconcile(&self, request: &TestRequest) -> Result<Option<Value>> {
+        let mut value = self.validate(request, "success");
+        value["status"] = json!("failed");
+        value["failure_type"] = json!("interrupted");
+        Ok(Some(value))
+    }
     fn validate(&self, request: &TestRequest, outcome: &str) -> Value {
         let node = &request.phase;
         let candidate = &request.candidate;
-        json!({"status":if outcome=="assertion_failure"{"failed"}else{"succeeded"},"failure_type":if outcome=="assertion_failure"{json!("assertion")}else{Value::Null},"candidate":candidate,"test_phase":node,"environment":request.environment,"origin":request.origin,"test_definitions":request.test_definitions,"assertion_failed":node=="red","expected_failure":node=="red"})
+        json!({"operation_id":request.operation_id,"status":if outcome=="assertion_failure"{"failed"}else{"succeeded"},"failure_type":if outcome=="assertion_failure"{json!("assertion")}else{Value::Null},"candidate":candidate,"test_phase":node,"environment":request.environment,"origin":request.origin,"test_definitions":request.test_definitions,"assertion_failed":node=="red","expected_failure":node=="red"})
     }
 }
 pub struct SimSandbox;

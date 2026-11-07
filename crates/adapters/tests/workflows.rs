@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
 struct Immediate;
 impl HarnessPort for Immediate {
+    fn reconcile(&self, r: &Run) -> Result<Option<Value>> {
+        SimHarness.reconcile(r)
+    }
     fn configure(&self, node: &str, scenario: &str) -> String {
         SimHarness.configure(node, scenario)
     }
@@ -13,12 +16,15 @@ impl HarnessPort for Immediate {
     }
 }
 fn engine(path: &Path) -> Engine {
+    engine_with_harness(path, Arc::new(Immediate))
+}
+fn engine_with_harness(path: &Path, harness: Arc<dyn HarnessPort>) -> Engine {
     let store = Arc::new(SqliteStore::open(path).unwrap());
     let artifacts = Arc::new(FileArtifacts::new(path.to_path_buf()));
     let e = Engine {
         store,
         artifacts,
-        harness: Arc::new(Immediate),
+        harness,
         git: Arc::new(SimGit),
         tests: Arc::new(SimTests),
         sandbox: Arc::new(SimSandbox),
@@ -52,6 +58,12 @@ fn revision(e: &Engine, target: &str) -> Option<u64> {
                 .find(|x| x.id == target)
                 .map(|x| x.revision)
         })
+        .or_else(|| {
+            s.effects
+                .iter()
+                .find(|x| x.id == target)
+                .map(|x| x.revision)
+        })
 }
 fn cmd(e: &Engine, m: &str, t: Option<&str>, p: Value) -> Result<Value> {
     e.execute(
@@ -65,8 +77,12 @@ fn cmd(e: &Engine, m: &str, t: Option<&str>, p: Value) -> Result<Value> {
     )
 }
 fn call(e: &Engine, m: &str, t: &str, p: Value) -> Value {
-    cmd(e, m, if t.is_empty() { None } else { Some(t) }, p)
-        .unwrap_or_else(|err| panic!("{m} {t}: {err}"))
+    let result = cmd(e, m, if t.is_empty() { None } else { Some(t) }, p)
+        .unwrap_or_else(|err| panic!("{m} {t}: {err}"));
+    if m == "merge.apply" {
+        e.tick(4).unwrap();
+    }
+    result
 }
 fn result_id(v: Value) -> String {
     v["id"].as_str().unwrap().into()
@@ -99,6 +115,7 @@ fn planning(e: &Engine, fid: &str) -> String {
     for kind in ["requirement", "plan"] {
         let did = result_id(call(e, "delivery.submit", &aid, json!({"kind":kind})));
         review(e, &did);
+        tick(e);
     }
     assert_eq!(
         e.store.snapshot().unwrap().feature(fid).unwrap().status,
@@ -318,6 +335,8 @@ fn a5_input_change_blocks_development_until_replanning() {
         .is_err()
     );
     planning(&e, &f);
+    assert!(cmd(&e, "attempt.start", Some(&t), json!({})).is_err());
+    call(&e, "task.replan", &t, json!({}));
     assert!(cmd(&e, "attempt.start", Some(&t), json!({})).is_ok());
 }
 #[test]
@@ -742,6 +761,7 @@ fn merge_command_replay_after_restart_does_not_advance_twice() {
         payload: json!({}),
     };
     let first = e.execute("merge.apply", command.clone()).unwrap();
+    e.tick(4).unwrap();
     let original = e.store.snapshot().unwrap().heads;
     drop(e);
     let e = engine(d.path());
@@ -958,6 +978,7 @@ fn small_sample_pagination_and_event_query() {
             for pn in 0..10 {
                 let pid = id();
                 s.projects.push(Project {
+                    workspace_definition: None,
                     id: pid.clone(),
                     title: format!("Project {pn}"),
                     workspace: String::new(),
@@ -980,6 +1001,7 @@ fn small_sample_pagination_and_event_query() {
                         predecessor: None,
                     });
                     s.snapshots.push(Snapshot {
+                        capture: SnapshotCapture::default(),
                         id: sid.clone(),
                         feature_id: fid.clone(),
                         task_id: None,
@@ -993,6 +1015,7 @@ fn small_sample_pagination_and_event_query() {
                     for tn in 0..10 {
                         let tid = id();
                         s.tasks.push(Task {
+                            scope: TaskScope::default(),
                             id: tid.clone(),
                             feature_id: fid.clone(),
                             title: format!("Task {tn}"),
@@ -1128,5 +1151,1542 @@ fn logical_write_permit_is_enforced_independently_of_dag() {
             .as_str()
             .unwrap()
             .contains("写许可")
+    );
+}
+
+#[test]
+fn hardening_document_target_cannot_bypass_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let fid = new_feature(&e);
+    assert!(
+        cmd(
+            &e,
+            "document.revise",
+            None,
+            json!({"feature_id":fid,"kind":"requirement","body":"x"})
+        )
+        .is_err()
+    );
+    assert!(
+        e.execute(
+            "document.revise",
+            Command {
+                command_id: id(),
+                target: Some(fid),
+                expected_revision: None,
+                payload: json!({"kind":"requirement","body":"x"})
+            }
+        )
+        .is_err()
+    );
+}
+#[test]
+fn hardening_reviewer_retry_preserves_full_binding() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "review");
+    let (a, d) = implementation(&e, &t, "success");
+    let r = result_id(call(&e, "review.request", &d, json!({"scenario":"hold"})));
+    e.tick(4).unwrap();
+    call(&e, "run.cancel", &r, json!({}));
+    e.tick(4).unwrap();
+    let rr = result_id(call(&e, "run.retry", &r, json!({})));
+    let s = e.store.snapshot().unwrap();
+    let old = s.runs.iter().find(|x| x.id == r).unwrap();
+    let new = s.runs.iter().find(|x| x.id == rr).unwrap();
+    assert_eq!(json!(old.binding), json!(new.binding));
+    assert_ne!(new.binding.agent, s.attempt(&a).unwrap().binding.agent);
+    tick(&e);
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .accepted(e.store.snapshot().unwrap().delivery(&d).unwrap())
+    );
+}
+#[test]
+fn hardening_task_document_change_is_local() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let a = task(&e, &f, "A");
+    let b = task(&e, &f, "B");
+    let (_, da) = implementation(&e, &a, "success");
+    let (_, db) = implementation(&e, &b, "success");
+    call(
+        &e,
+        "document.revise",
+        &f,
+        json!({"kind":"doc","task_id":a,"body":"局部说明"}),
+    );
+    let s = e.store.snapshot().unwrap();
+    assert!(s.planning_accepted(&f));
+    assert!(s.delivery(&da).unwrap().stale);
+    assert!(!s.delivery(&db).unwrap().stale);
+    assert!(cmd(&e, "attempt.start", Some(&a), json!({})).is_ok());
+}
+struct EmptySuccessfulHarness;
+impl HarnessPort for EmptySuccessfulHarness {
+    fn configure(&self, _: &str, _: &str) -> String {
+        "success".into()
+    }
+    fn poll(&self, _: &Run, _: &Value, _: u64) -> Result<Option<Value>> {
+        Ok(Some(json!({"status":"succeeded","origin":"simulated"})))
+    }
+}
+#[test]
+fn hardening_empty_success_cannot_accept_plan() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    e.harness = Arc::new(EmptySuccessfulHarness);
+    let f = new_feature(&e);
+    call(
+        &e,
+        "document.revise",
+        &f,
+        json!({"kind":"requirement","body":"目标"}),
+    );
+    let a = result_id(call(&e, "attempt.start", &f, json!({"phase":"planning"})));
+    tick(&e);
+    let requirement = result_id(call(
+        &e,
+        "delivery.submit",
+        &a,
+        json!({"kind":"requirement"}),
+    ));
+    review(&e, &requirement);
+    tick(&e);
+    assert!(cmd(&e, "delivery.submit", Some(&a), json!({"kind":"plan"})).is_err());
+}
+#[test]
+fn hardening_trace_scope_and_snapshot_provenance() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let s = e.store.snapshot().unwrap();
+    let snapshot = s.snapshots.last().unwrap();
+    assert!(!snapshot.capture.sessions.is_empty());
+    assert!(!snapshot.capture.resources.is_empty());
+    assert!(cmd(&e,"task.create",Some(&f),json!({"title":"invalid","scope":{"requirement":null,"design":null,"acceptance":["missing"]}})).is_err());
+    let t = task(&e, &f, "mapped");
+    let s = e.store.snapshot().unwrap();
+    let scope = &s.task(&t).unwrap().scope;
+    s.validate_scope(&f, scope).unwrap();
+    assert!(!scope.acceptance.is_empty());
+}
+#[test]
+fn hardening_adapter_reads_committed_store_outside_transaction() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    // Previously this re-entrant read deadlocked on the SQLite connection mutex.
+    e.store
+        .transact(None, &mut |s| {
+            let committed = e.store.snapshot()?;
+            assert_eq!(committed.projects.len(), s.projects.len());
+            Ok(json!({}))
+        })
+        .unwrap();
+}
+
+#[test]
+fn hardening_requirement_review_blocks_design_dispatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    let a = result_id(call(&e, "attempt.start", &f, json!({"phase":"planning"})));
+    tick(&e);
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(
+        s.runs
+            .iter()
+            .find(|r| r.attempt_id.as_deref() == Some(&a) && r.node == "design")
+            .unwrap()
+            .status,
+        Status::Queued
+    );
+    assert!(cmd(&e, "delivery.submit", Some(&a), json!({"kind":"plan"})).is_err());
+    let d = result_id(call(
+        &e,
+        "delivery.submit",
+        &a,
+        json!({"kind":"requirement"}),
+    ));
+    review(&e, &d);
+    tick(&e);
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|r| r.attempt_id.as_deref() == Some(&a) && r.node == "design")
+            .unwrap()
+            .status,
+        Status::Succeeded
+    );
+}
+#[test]
+fn hardening_v1_migration_preserves_reviewer_binding_and_legacy_provenance() {
+    let dir = tempfile::tempdir().unwrap();
+    let f;
+    {
+        let e = engine(dir.path());
+        f = new_feature(&e);
+        planning(&e, &f);
+    }
+    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
+    // Reproduce an actual v1 schema using existing valid records.
+    for sql in [
+        "ALTER TABLE attempts DROP COLUMN git_context",
+        "DROP TABLE advances",
+        "ALTER TABLE attempts DROP COLUMN scope",
+        "ALTER TABLE attempts DROP COLUMN outputs",
+        "DROP TABLE effects",
+        "ALTER TABLE runs DROP COLUMN binding_verified",
+        "ALTER TABLE attempts DROP COLUMN baseline",
+        "DROP TABLE harnesses",
+        "DROP TABLE sandboxes",
+        "ALTER TABLE projects DROP COLUMN workspace_definition",
+        "ALTER TABLE sessions DROP COLUMN instance",
+        "ALTER TABLE reviews DROP COLUMN assignment",
+        "ALTER TABLE merges DROP COLUMN change_request",
+        "ALTER TABLE tasks DROP COLUMN scope",
+        "ALTER TABLE documents DROP COLUMN acceptance",
+        "ALTER TABLE documents DROP COLUMN verifies",
+        "ALTER TABLE documents DROP COLUMN artifact_id",
+        "ALTER TABLE snapshots DROP COLUMN capture",
+        "ALTER TABLE runs DROP COLUMN binding",
+        "PRAGMA user_version=1",
+    ] {
+        conn.execute_batch(sql).unwrap();
+    }
+    drop(conn);
+    let e = engine(dir.path());
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(s.feature(&f).unwrap().status, Status::Ready);
+    for r in &s.runs {
+        let session = s
+            .sessions
+            .iter()
+            .find(|session| session.id == r.session_id)
+            .unwrap();
+        assert_eq!(r.binding.agent, session.agent);
+    }
+    assert!(
+        s.snapshots
+            .iter()
+            .all(|snap| snap.capture.captured_at.is_none())
+    );
+    assert!(s.documents.iter().all(|doc| doc.acceptance.is_empty()));
+}
+#[test]
+fn hardening_runtime_instances_and_archive_contract_are_queryable() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let s = e.store.snapshot().unwrap();
+    assert!(s.sessions.iter().all(|session| {
+        session
+            .instance
+            .as_ref()
+            .is_some_and(|i| i.finished.is_some() && i.harness.provider == "simulation")
+    }));
+    let runtimes = e.query("query.runtimes", &json!({}), 4).unwrap();
+    assert_eq!(runtimes["harnesses"][0]["version"], "1");
+    let preview = e
+        .query("query.archive_preview", &json!({"feature_id":f}), 4)
+        .unwrap();
+    assert_eq!(preview["executable"], false);
+}
+
+struct CancelAckHarness(std::sync::atomic::AtomicBool);
+impl HarnessPort for CancelAckHarness {
+    fn configure(&self, _: &str, _: &str) -> String {
+        "hold".into()
+    }
+    fn poll(&self, r: &Run, _: &Value, _: u64) -> Result<Option<Value>> {
+        if !r.cancel_requested {
+            return Ok(None);
+        }
+        if self.0.load(std::sync::atomic::Ordering::SeqCst) {
+            Ok(Some(
+                json!({"status":"cancelled","cancellation_confirmed":true}),
+            ))
+        } else {
+            Ok(Some(json!({"status":"succeeded"})))
+        }
+    }
+}
+#[test]
+fn hardening_late_success_does_not_acknowledge_cancel() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(CancelAckHarness(std::sync::atomic::AtomicBool::new(false)));
+    e.harness = harness.clone();
+    let f = new_feature(&e);
+    call(&e, "attempt.start", &f, json!({"phase":"planning"}));
+    e.tick(4).unwrap();
+    let r = e
+        .store
+        .snapshot()
+        .unwrap()
+        .runs
+        .iter()
+        .find(|r| r.status == Status::Running)
+        .unwrap()
+        .id
+        .clone();
+    call(&e, "run.cancel", &r, json!({}));
+    e.tick(4).unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|run| run.id == r)
+            .unwrap()
+            .status,
+        Status::Running
+    );
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .resources
+            .iter()
+            .any(|res| res.run_id == r && res.status == Status::Active)
+    );
+    harness.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    e.tick(4).unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|run| run.id == r)
+            .unwrap()
+            .status,
+        Status::Cancelled
+    );
+}
+struct FailingRunExport(FileArtifacts);
+impl ArtifactStore for FailingRunExport {
+    fn seal(&self, f: &str, t: Option<&str>, category: &str, body: &str) -> Result<Artifact> {
+        if category == "runs" {
+            Err(err("storage", "export unavailable"))
+        } else {
+            self.0.seal(f, t, category, body)
+        }
+    }
+    fn read(&self, a: &Artifact) -> Result<Vec<u8>> {
+        self.0.read(a)
+    }
+}
+struct CountCleanup(Arc<std::sync::atomic::AtomicUsize>);
+impl SandboxPort for CountCleanup {
+    fn resource(&self, r: &str) -> Resource {
+        SimSandbox.resource(r)
+    }
+    fn cleanup(&self, r: &mut Resource, fail: bool) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        SimSandbox.cleanup(r, fail);
+    }
+}
+#[test]
+fn hardening_failed_export_keeps_environment_owned() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    e.sandbox = Arc::new(CountCleanup(count.clone()));
+    e.artifacts = Arc::new(FailingRunExport(FileArtifacts::new(
+        dir.path().to_path_buf(),
+    )));
+    let f = new_feature(&e);
+    call(&e, "attempt.start", &f, json!({"phase":"planning"}));
+    e.tick(4).unwrap();
+    assert!(e.tick(4).is_err());
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .resources
+            .iter()
+            .all(|r| r.status == Status::Active)
+    );
+}
+
+#[test]
+fn hardening_replanned_task_uses_current_criteria_without_rewriting_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "existing");
+    let (old, _) = implementation(&e, &t, "success");
+    let old_input = e
+        .store
+        .snapshot()
+        .unwrap()
+        .attempt(&old)
+        .unwrap()
+        .documents
+        .clone();
+    call(
+        &e,
+        "document.revise",
+        &f,
+        json!({"kind":"requirement","body":"新验收","acceptance":[{"key":"CSV-EMPTY","description":"空列表包含CSV表头"}]}),
+    );
+    planning(&e, &f);
+    call(&e, "task.replan", &t, json!({}));
+    let (_, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(s.task(&t).unwrap().scope.acceptance, vec!["CSV-EMPTY"]);
+    assert_eq!(s.attempt(&old).unwrap().documents, old_input);
+}
+
+struct DistinctCodeRevisions;
+impl GitPort for DistinctCodeRevisions {
+    fn execution_revision(&self, a: &Attempt, phase: &str) -> Result<String> {
+        Ok(format!(
+            "sim-rev-{}-{}",
+            if phase == "red" {
+                "base"
+            } else {
+                "implementation"
+            },
+            a.id
+        ))
+    }
+    fn candidate(&self, context: &GitContext, s: &str, t: &str, o: &str) -> Result<String> {
+        SimGit.candidate(context, s, t, o)
+    }
+    fn advance(&self, context: &GitContext, a: &str, e: &str, c: &str, o: &str) -> Result<String> {
+        SimGit.advance(context, a, e, c, o)
+    }
+}
+#[test]
+fn hardening_tdd_freezes_red_baseline_separately_from_green_candidate() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    e.git = Arc::new(DistinctCodeRevisions);
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "code revisions");
+    let (_, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let s = e.store.snapshot().unwrap();
+    let delivery = s.delivery(&d).unwrap();
+    s.validate_evidence(delivery).unwrap();
+    let red = s
+        .runs
+        .iter()
+        .find(|r| delivery.evidence.contains(&r.id) && r.node == "red")
+        .unwrap();
+    assert_ne!(
+        red.result.as_ref().unwrap()["candidate"],
+        json!(delivery.candidate)
+    );
+}
+
+// Completing H3: calls are gated by channels, never timing animations.
+struct GatedHarness {
+    entered: std::sync::mpsc::Sender<Run>,
+    resume: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    once: std::sync::atomic::AtomicBool,
+}
+impl HarnessPort for GatedHarness {
+    fn configure(&self, n: &str, s: &str) -> String {
+        SimHarness.configure(n, s)
+    }
+    fn poll(&self, r: &Run, input: &Value, now: u64) -> Result<Option<Value>> {
+        if !self.once.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            self.entered.send(r.clone()).unwrap();
+            self.resume
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .map_err(|_| err("timeout", "writer blocked cancellation"))?;
+        }
+        Immediate.poll(r, input, now)
+    }
+}
+fn gated_edit_invalidates_receipt(change_input: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let f = new_feature(&e);
+    call(&e, "attempt.start", &f, json!({"phase":"planning"}));
+    e.tick(4).unwrap();
+    if change_input {
+        e.tick(4).unwrap();
+    } // Gate the requirement output, not research.
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+    e.harness = Arc::new(GatedHarness {
+        entered: entered_tx,
+        resume: std::sync::Mutex::new(resume_rx),
+        once: std::sync::atomic::AtomicBool::new(false),
+    });
+    let e = Arc::new(e);
+    let worker_engine = e.clone();
+    let worker = std::thread::spawn(move || worker_engine.tick(4));
+    let run = entered_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    let before = e.store.snapshot().unwrap();
+    assert!(
+        before
+            .effects
+            .iter()
+            .any(|effect| effect.run_id == run.id && effect.status == EffectStatus::Pending)
+    );
+    if change_input {
+        call(
+            &e,
+            "document.revise",
+            &f,
+            json!({"kind":"requirement","body":"用户修订后的唯一事实"}),
+        );
+    } else {
+        call(&e, "run.cancel", &run.id, json!({}));
+    }
+    resume_tx.send(()).unwrap();
+    worker.join().unwrap().unwrap();
+    let s = e.store.snapshot().unwrap();
+    let current = s.runs.iter().find(|r| r.id == run.id).unwrap();
+    assert_eq!(current.status, Status::Running);
+    assert!(current.result.is_none());
+    assert!(current.cancel_requested);
+    assert!(s.effects.iter().any(|effect| effect.run_id == run.id
+        && effect.status == EffectStatus::Discarded
+        && effect.receipt.is_some()));
+    if change_input {
+        assert_eq!(
+            s.documents
+                .iter()
+                .filter(|d| d.kind == "requirement")
+                .map(|d| d.body.as_str())
+                .collect::<Vec<_>>(),
+            vec!["用户修订后的唯一事实"]
+        );
+    }
+    e.tick(4).unwrap();
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(
+        s.runs.iter().find(|r| r.id == run.id).unwrap().status,
+        Status::Cancelled
+    );
+    assert!(
+        s.resources
+            .iter()
+            .filter(|r| r.run_id == run.id)
+            .all(|r| r.status == Status::Released)
+    );
+}
+#[test]
+fn completion_cancel_during_poll_discards_late_success() {
+    gated_edit_invalidates_receipt(false);
+}
+#[test]
+fn completion_input_change_during_poll_discards_late_document() {
+    gated_edit_invalidates_receipt(true);
+}
+
+struct UnknownUntilConfirmed(Arc<std::sync::atomic::AtomicBool>);
+impl HarnessPort for UnknownUntilConfirmed {
+    fn configure(&self, _: &str, _: &str) -> String {
+        "hold".into()
+    }
+    fn poll(&self, _: &Run, _: &Value, _: u64) -> Result<Option<Value>> {
+        Ok(None)
+    }
+    fn reconcile(&self, r: &Run) -> Result<Option<Value>> {
+        Ok(if self.0.load(std::sync::atomic::Ordering::SeqCst) {
+            Some(
+                json!({"status":"cancelled","run_id":r.id,"session_id":r.session_id,"cancellation_confirmed":true}),
+            )
+        } else {
+            None
+        })
+    }
+}
+#[test]
+fn completion_restart_keeps_unknown_resources_until_explicit_reconciliation() {
+    let dir = tempfile::tempdir().unwrap();
+    let known = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let rid;
+    let fid;
+    {
+        let mut e = engine(dir.path());
+        e.harness = Arc::new(UnknownUntilConfirmed(known.clone()));
+        fid = new_feature(&e);
+        call(&e, "attempt.start", &fid, json!({"phase":"planning"}));
+        e.tick(4).unwrap();
+        e.tick(4).unwrap();
+        rid = e
+            .store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|r| r.status == Status::Running)
+            .unwrap()
+            .id
+            .clone();
+    }
+    let e = engine_with_harness(dir.path(), Arc::new(UnknownUntilConfirmed(known.clone())));
+    let snapshot = e.store.snapshot().unwrap();
+    assert_eq!(
+        snapshot.runs.iter().find(|r| r.id == rid).unwrap().status,
+        Status::Interrupted
+    );
+    assert!(
+        snapshot
+            .resources
+            .iter()
+            .any(|resource| resource.run_id == rid && resource.status == Status::Active)
+    );
+    assert!(cmd(&e, "run.retry", Some(&rid), json!({})).is_err());
+    let effect = snapshot
+        .effects
+        .iter()
+        .find(|effect| effect.run_id == rid && effect.status == EffectStatus::NeedsReconciliation)
+        .unwrap()
+        .id
+        .clone();
+    known.store(true, std::sync::atomic::Ordering::SeqCst);
+    call(&e, "effect.reconcile", &effect, json!({}));
+    e.tick(4).unwrap();
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(
+        s.runs.iter().find(|r| r.id == rid).unwrap().status,
+        Status::Interrupted
+    );
+    assert!(
+        s.resources
+            .iter()
+            .filter(|resource| resource.run_id == rid)
+            .all(|resource| resource.status == Status::Released)
+    );
+    assert!(cmd(&e, "run.retry", Some(&rid), json!({})).is_ok());
+    assert!(
+        e.query("query.workspace", &json!({"feature_id":fid}), 4)
+            .unwrap()["detail"]["effects"]
+            .is_array()
+    );
+}
+
+struct CountPolls(Arc<std::sync::atomic::AtomicUsize>);
+impl HarnessPort for CountPolls {
+    fn configure(&self, n: &str, s: &str) -> String {
+        Immediate.configure(n, s)
+    }
+    fn poll(&self, r: &Run, input: &Value, now: u64) -> Result<Option<Value>> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Immediate.poll(r, input, now)
+    }
+}
+#[test]
+fn completion_export_retry_reuses_persisted_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut e = engine_with_harness(dir.path(), Arc::new(CountPolls(calls.clone())));
+    let f = new_feature(&e);
+    call(&e, "attempt.start", &f, json!({"phase":"planning"}));
+    e.tick(4).unwrap();
+    e.artifacts = Arc::new(FailingRunExport(FileArtifacts::new(
+        dir.path().to_path_buf(),
+    )));
+    assert!(e.tick(4).is_err());
+    assert!(e.tick(4).is_err());
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .effects
+            .iter()
+            .any(|effect| effect.status == EffectStatus::Observed && effect.receipt.is_some())
+    );
+    e.artifacts = Arc::new(FileArtifacts::new(dir.path().to_path_buf()));
+    e.tick(4).unwrap();
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .effects
+            .iter()
+            .any(|effect| effect.kind == EffectKind::Cleanup
+                && effect.status == EffectStatus::Applied)
+    );
+}
+#[test]
+fn completion_cleanup_retry_preserves_failed_history_and_is_idempotent() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    call(
+        &e,
+        "attempt.start",
+        &f,
+        json!({"phase":"planning","scenario":"cleanup_failure"}),
+    );
+    e.tick(4).unwrap();
+    e.tick(4).unwrap();
+    let old = e
+        .store
+        .snapshot()
+        .unwrap()
+        .effects
+        .iter()
+        .find(|effect| effect.kind == EffectKind::Cleanup && effect.status == EffectStatus::Failed)
+        .unwrap()
+        .clone();
+    let c = Command {
+        command_id: id(),
+        target: Some(old.id.clone()),
+        expected_revision: Some(old.revision),
+        payload: json!({}),
+    };
+    let first = e.execute("effect.retry_cleanup", c.clone()).unwrap();
+    assert_eq!(first, e.execute("effect.retry_cleanup", c.clone()).unwrap());
+    e.tick(4).unwrap();
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(
+        s.effects
+            .iter()
+            .find(|effect| effect.id == old.id)
+            .unwrap()
+            .status,
+        EffectStatus::Failed
+    );
+    assert_eq!(
+        s.effects
+            .iter()
+            .find(|effect| effect.id == first["id"])
+            .unwrap()
+            .status,
+        EffectStatus::Applied
+    );
+}
+#[test]
+fn completion_stage_outputs_do_not_replace_frozen_inputs() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    let aid = planning(&e, &f);
+    let s = e.store.snapshot().unwrap();
+    let a = s.attempt(&aid).unwrap();
+    assert!(a.documents.is_empty());
+    assert_eq!(a.outputs.len(), 3);
+    let design = s
+        .documents
+        .iter()
+        .find(|d| a.outputs.contains(&d.id) && d.kind == "design")
+        .unwrap();
+    let test = s
+        .documents
+        .iter()
+        .find(|d| a.outputs.contains(&d.id) && d.kind == "test")
+        .unwrap();
+    assert_eq!(test.design_id.as_ref(), Some(&design.id));
+    let test_run = s
+        .runs
+        .iter()
+        .find(|r| r.attempt_id.as_deref() == Some(&aid) && r.node == "test_plan")
+        .unwrap();
+    let request = &s
+        .effects
+        .iter()
+        .find(|effect| effect.run_id == test_run.id && effect.kind == EffectKind::Harness)
+        .unwrap()
+        .request;
+    assert!(
+        request["input"]["frozen_inputs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        request["input"]["stage_outputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["id"] == design.id)
+    );
+}
+#[test]
+fn completion_final_snapshot_captures_executed_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "context");
+    let (a, d) = implementation(&e, &t, "success");
+    let frozen = e
+        .store
+        .snapshot()
+        .unwrap()
+        .attempt(&a)
+        .unwrap()
+        .context_content
+        .clone();
+    let context = e
+        .store
+        .snapshot()
+        .unwrap()
+        .contexts
+        .iter()
+        .find(|c| c.owner_id == t)
+        .unwrap()
+        .id
+        .clone();
+    call(
+        &e,
+        "context.update",
+        &context,
+        json!({"content":"未参与该交付的新上下文"}),
+    );
+    review(&e, &d);
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .snapshots
+            .iter()
+            .find(|s| s.delivery_id.as_deref() == Some(&d))
+            .unwrap()
+            .content,
+        frozen
+    );
+}
+struct AmbiguousGit {
+    calls: std::sync::atomic::AtomicUsize,
+    known: std::sync::atomic::AtomicBool,
+}
+impl GitPort for AmbiguousGit {
+    fn execution_revision(&self, a: &Attempt, p: &str) -> Result<String> {
+        SimGit.execution_revision(a, p)
+    }
+    fn candidate(&self, context: &GitContext, s: &str, t: &str, o: &str) -> Result<String> {
+        SimGit.candidate(context, s, t, o)
+    }
+    fn advance(&self, _context: &GitContext, _: &str, _: &str, _: &str, _: &str) -> Result<String> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err(err("timeout", "外部已接收请求，回执丢失"))
+    }
+    fn reconcile_advance(&self, _context: &GitContext, id: &str) -> Result<AdvanceObservation> {
+        Ok(if self.known.load(std::sync::atomic::Ordering::SeqCst) {
+            AdvanceObservation::Applied {
+                revision: format!("sim-rev-candidate-{id}"),
+            }
+        } else {
+            AdvanceObservation::Unknown
+        })
+    }
+}
+#[test]
+fn completion_git_unknown_outcome_is_reconciled_without_duplicate_advance() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Arc::new(AmbiguousGit {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        known: std::sync::atomic::AtomicBool::new(false),
+    });
+    let mut e = engine(dir.path());
+    e.git = provider.clone();
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "merge");
+    let (_, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let m = merge(&e, &t);
+    let c = Command {
+        command_id: id(),
+        target: Some(m.clone()),
+        expected_revision: revision(&e, &m),
+        payload: json!({}),
+    };
+    let first = e.execute("merge.apply", c.clone()).unwrap();
+    assert_eq!(first["operation_id"], m);
+    assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    e.tick(4).unwrap();
+    assert_eq!(
+        e.store.snapshot().unwrap().merge(&m).unwrap().status,
+        Status::Accepted
+    );
+    assert_eq!(
+        e.store.snapshot().unwrap().advances[0].status,
+        AdvanceStatus::NeedsReconciliation
+    );
+    assert_eq!(first, e.execute("merge.apply", c.clone()).unwrap());
+    assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    drop(e);
+    let mut e = engine(dir.path());
+    e.git = provider.clone();
+    provider
+        .known
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    call(&e, "merge.reconcile", &m, json!({}));
+    e.tick(4).unwrap();
+    assert_eq!(
+        e.store.snapshot().unwrap().merge(&m).unwrap().status,
+        Status::Completed
+    );
+    assert_eq!(
+        e.store.snapshot().unwrap().advances[0].status,
+        AdvanceStatus::Applied
+    );
+    assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(first, e.execute("merge.apply", c).unwrap());
+    assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+#[test]
+fn completion_binding_checks_capabilities_instead_of_provider_literal() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    let mut s = e.store.snapshot().unwrap();
+    let mut binding = s.feature(&f).unwrap().binding.clone();
+    s.harnesses[0].capabilities.retain(|cap| cap != "cancel");
+    assert!(s.validate_binding(&binding).is_err());
+    s.harnesses[0].capabilities.push("cancel".into());
+    let mut v2 = s.harnesses[0].clone();
+    v2.id = "simulation-compatible-v2".into();
+    v2.version = "2".into();
+    binding.harness = v2.id.clone();
+    s.harnesses.push(v2);
+    assert!(s.validate_binding(&binding).is_ok());
+}
+
+struct CrashAfterAdvance {
+    external: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    once: std::sync::atomic::AtomicBool,
+    writes: std::sync::atomic::AtomicUsize,
+}
+impl GitPort for CrashAfterAdvance {
+    fn execution_revision(&self, a: &Attempt, p: &str) -> Result<String> {
+        SimGit.execution_revision(a, p)
+    }
+    fn candidate(&self, context: &GitContext, s: &str, t: &str, o: &str) -> Result<String> {
+        SimGit.candidate(context, s, t, o)
+    }
+    fn advance(&self, _context: &GitContext, _: &str, _: &str, c: &str, o: &str) -> Result<String> {
+        {
+            let mut external = self.external.lock().unwrap();
+            if !external.contains_key(o) {
+                external.insert(o.into(), c.into());
+                self.writes
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        if self.once.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            panic!("fixture: process lost after external advance");
+        }
+        Ok(c.into())
+    }
+    fn reconcile_advance(&self, _context: &GitContext, o: &str) -> Result<AdvanceObservation> {
+        Ok(self
+            .external
+            .lock()
+            .unwrap()
+            .get(o)
+            .cloned()
+            .map(|revision| AdvanceObservation::Applied { revision })
+            .unwrap_or(AdvanceObservation::Unknown))
+    }
+}
+#[test]
+fn completion_git_crash_after_side_effect_recovers_from_original_provider_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Arc::new(CrashAfterAdvance {
+        external: std::sync::Mutex::new(std::collections::HashMap::new()),
+        once: std::sync::atomic::AtomicBool::new(true),
+        writes: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let mut e = engine(dir.path());
+    e.git = provider.clone();
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "crash");
+    let (_, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let m = merge(&e, &t);
+    let c = Command {
+        command_id: id(),
+        target: Some(m.clone()),
+        expected_revision: revision(&e, &m),
+        payload: json!({}),
+    };
+    e.execute("merge.apply", c.clone()).unwrap();
+    assert_eq!(provider.writes.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| e.tick(4))).is_err());
+    assert_eq!(
+        e.store.snapshot().unwrap().advances[0].status,
+        AdvanceStatus::Dispatched
+    );
+    drop(e);
+    let store = Arc::new(SqliteStore::open(dir.path()).unwrap());
+    let e = Engine {
+        store,
+        artifacts: Arc::new(FileArtifacts::new(dir.path().to_path_buf())),
+        harness: Arc::new(Immediate),
+        git: provider.clone(),
+        tests: Arc::new(SimTests),
+        sandbox: Arc::new(SimSandbox),
+    };
+    e.bootstrap().unwrap();
+    assert_eq!(
+        e.store.snapshot().unwrap().merge(&m).unwrap().status,
+        Status::Completed
+    );
+    assert_eq!(provider.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+    e.execute("merge.apply", c).unwrap();
+    assert_eq!(provider.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+struct CrashAfterCleanup {
+    attempts: std::sync::Mutex<Vec<String>>,
+    deleted: std::sync::Mutex<std::collections::HashSet<String>>,
+    once: std::sync::atomic::AtomicBool,
+}
+impl SandboxPort for CrashAfterCleanup {
+    fn resource(&self, r: &str) -> Resource {
+        SimSandbox.resource(r)
+    }
+    fn cleanup(&self, r: &mut Resource, _: bool) {
+        self.attempts.lock().unwrap().push(r.id.clone());
+        self.deleted.lock().unwrap().insert(r.id.clone());
+        if self.once.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            panic!("fixture: process lost after external delete");
+        }
+        r.status = Status::Released;
+    }
+}
+#[test]
+fn completion_cleanup_crash_replays_original_resource_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Arc::new(CrashAfterCleanup {
+        attempts: std::sync::Mutex::new(vec![]),
+        deleted: std::sync::Mutex::new(std::collections::HashSet::new()),
+        once: std::sync::atomic::AtomicBool::new(true),
+    });
+    let mut e = engine(dir.path());
+    e.sandbox = provider.clone();
+    let f = new_feature(&e);
+    call(&e, "attempt.start", &f, json!({"phase":"planning"}));
+    e.tick(4).unwrap();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| e.tick(4))).is_err());
+    let target = provider.attempts.lock().unwrap()[0].clone();
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .effects
+            .iter()
+            .any(|effect| effect.kind == EffectKind::Cleanup
+                && effect.status == EffectStatus::Pending)
+    );
+    drop(e);
+    let store = Arc::new(SqliteStore::open(dir.path()).unwrap());
+    let e = Engine {
+        store,
+        artifacts: Arc::new(FileArtifacts::new(dir.path().to_path_buf())),
+        harness: Arc::new(Immediate),
+        git: Arc::new(SimGit),
+        tests: Arc::new(SimTests),
+        sandbox: provider.clone(),
+    };
+    e.bootstrap().unwrap();
+    assert_eq!(
+        provider
+            .attempts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|id| *id == &target)
+            .count(),
+        2
+    );
+    assert!(provider.deleted.lock().unwrap().contains(&target));
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .resources
+            .iter()
+            .find(|r| r.id == target)
+            .unwrap()
+            .status,
+        Status::Released
+    );
+}
+#[test]
+fn completion_feature_doc_edit_keeps_planning_and_sibling_merge_valid() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    let p = planning(&e, &f);
+    let t = task(&e, &f, "isolated");
+    let (_, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let m = merge(&e, &t);
+    call(
+        &e,
+        "document.revise",
+        &f,
+        json!({"kind":"doc","body":"Feature 使用说明"}),
+    );
+    let s = e.store.snapshot().unwrap();
+    assert!(s.planning_accepted(&f));
+    assert!(
+        s.deliveries
+            .iter()
+            .filter(|d| d.attempt_id.as_deref() == Some(&p))
+            .all(|d| !d.stale)
+    );
+    assert_eq!(s.merge(&m).unwrap().status, Status::Accepted);
+    call(&e, "merge.apply", &m, json!({}));
+    assert_eq!(
+        e.store.snapshot().unwrap().task(&t).unwrap().status,
+        Status::Completed
+    );
+}
+
+#[test]
+fn completion_reviewer_and_merge_keep_source_standard_when_feature_defaults_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "locked");
+    let (aid, did) = implementation(&e, &t, "success");
+    let source = e
+        .store
+        .snapshot()
+        .unwrap()
+        .attempt(&aid)
+        .unwrap()
+        .binding
+        .clone();
+    let standard = result_id(call(
+        &e,
+        "definition.revise",
+        &source.standard,
+        json!({"body":"新默认标准"}),
+    ));
+    let mut next = source.clone();
+    next.standard = standard;
+    call(&e, "binding.update", &f, json!(next));
+    let rid = result_id(call(&e, "review.request", &did, json!({})));
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|r| r.id == rid)
+            .unwrap()
+            .binding
+            .standard,
+        source.standard
+    );
+    tick(&e);
+    let m = merge(&e, &t);
+    let s = e.store.snapshot().unwrap();
+    assert!(
+        s.runs
+            .iter()
+            .filter(|r| r.merge_id.as_deref() == Some(&m))
+            .all(|r| r.binding.standard == source.standard)
+    );
+    let request = &s
+        .effects
+        .iter()
+        .find(|effect| effect.run_id == rid && effect.kind == EffectKind::Harness)
+        .unwrap()
+        .request;
+    assert!(
+        request["input"]["definitions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|definition| definition["id"] == source.standard)
+    );
+}
+#[test]
+fn completion_context_history_and_delivery_scope_are_enforced() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "scope");
+    let (_, d) = implementation(&e, &t, "success");
+    let context = e
+        .store
+        .snapshot()
+        .unwrap()
+        .contexts
+        .iter()
+        .find(|context| context.owner_id == t)
+        .unwrap()
+        .clone();
+    call(
+        &e,
+        "context.update",
+        &context.id,
+        json!({"content":"新上下文修订"}),
+    );
+    let s = e.store.snapshot().unwrap();
+    let event = s
+        .events
+        .iter()
+        .find(|event| event.target == context.id && event.kind == "context.revised")
+        .unwrap();
+    let change: Value = serde_json::from_str(&event.detail).unwrap();
+    assert_eq!(change["previous"], context.content);
+    assert_eq!(change["content"], "新上下文修订");
+    let mut wrong = s.delivery(&d).unwrap().clone();
+    wrong.kind = "closure".into();
+    assert!(s.validate_evidence(&wrong).is_err());
+    let mut wrong = s.clone();
+    wrong
+        .documents
+        .iter_mut()
+        .find(|doc| doc.task_id.as_deref() == Some(&t) && doc.kind == "test")
+        .unwrap()
+        .task_id = Some("other-task".into());
+    assert!(
+        wrong
+            .validate_evidence(wrong.delivery(&d).unwrap())
+            .is_err()
+    );
+}
+
+struct TargetChangedBeforeAdvance;
+impl GitPort for TargetChangedBeforeAdvance {
+    fn execution_revision(&self, a: &Attempt, p: &str) -> Result<String> {
+        SimGit.execution_revision(a, p)
+    }
+    fn candidate(&self, context: &GitContext, s: &str, t: &str, o: &str) -> Result<String> {
+        SimGit.candidate(context, s, t, o)
+    }
+    fn advance(&self, context: &GitContext, a: &str, e: &str, c: &str, o: &str) -> Result<String> {
+        if e == "sim-rev-root" {
+            Err(err("target_changed", "外部目标已变化，尚未推进"))
+        } else {
+            SimGit.advance(context, a, e, c, o)
+        }
+    }
+    fn reconcile_advance(&self, _context: &GitContext, _: &str) -> Result<AdvanceObservation> {
+        Ok(AdvanceObservation::NotApplied {
+            actual_target: "sim-rev-external-target".into(),
+        })
+    }
+}
+#[test]
+fn completion_confirmed_not_applied_refreshes_target_and_requires_new_candidate() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    e.git = Arc::new(TargetChangedBeforeAdvance);
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "external target");
+    let (_, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let m = merge(&e, &t);
+    call(&e, "merge.apply", &m, json!({}));
+    call(&e, "merge.reconcile", &m, json!({}));
+    e.tick(4).unwrap();
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(s.advances[0].status, AdvanceStatus::NotApplied);
+    assert_eq!(s.merge(&m).unwrap().status, Status::Interrupted);
+    assert!(
+        s.deliveries
+            .iter()
+            .filter(|d| d.merge_id.as_deref() == Some(&m))
+            .all(|d| d.stale)
+    );
+    assert!(s.accepted(s.delivery(&d).unwrap()));
+    let next = merge(&e, &t);
+    assert_ne!(next, m);
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .merge(&next)
+            .unwrap()
+            .expected_target,
+        "sim-rev-external-target"
+    );
+    call(&e, "merge.apply", &next, json!({}));
+    assert_eq!(
+        e.store.snapshot().unwrap().task(&t).unwrap().status,
+        Status::Completed
+    );
+}
+struct WrongRecoveryIdentity;
+impl HarnessPort for WrongRecoveryIdentity {
+    fn configure(&self, _: &str, _: &str) -> String {
+        "hold".into()
+    }
+    fn poll(&self, _: &Run, _: &Value, _: u64) -> Result<Option<Value>> {
+        Ok(None)
+    }
+    fn reconcile(&self, r: &Run) -> Result<Option<Value>> {
+        Ok(Some(
+            json!({"status":"cancelled","run_id":"other-run","session_id":r.session_id,"cancellation_confirmed":true}),
+        ))
+    }
+}
+#[test]
+fn completion_wrong_reconciliation_receipt_does_not_release_owned_resources() {
+    let dir = tempfile::tempdir().unwrap();
+    let rid;
+    {
+        let e = engine_with_harness(dir.path(), Arc::new(WrongRecoveryIdentity));
+        let f = new_feature(&e);
+        call(&e, "attempt.start", &f, json!({"phase":"planning"}));
+        e.tick(4).unwrap();
+        e.tick(4).unwrap();
+        rid = e
+            .store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|r| r.status == Status::Running)
+            .unwrap()
+            .id
+            .clone();
+    }
+    let e = engine_with_harness(dir.path(), Arc::new(WrongRecoveryIdentity));
+    let s = e.store.snapshot().unwrap();
+    assert!(
+        s.effects.iter().any(
+            |effect| effect.run_id == rid && effect.status == EffectStatus::NeedsReconciliation
+        )
+    );
+    assert!(
+        s.resources
+            .iter()
+            .any(|resource| resource.run_id == rid && resource.status == Status::Active)
+    );
+    assert!(cmd(&e, "run.retry", Some(&rid), json!({})).is_err());
+}
+
+#[test]
+fn completion_git_and_test_requests_freeze_workspace_and_runtime_routing() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    let initial = e.store.snapshot().unwrap();
+    let project = initial.feature(&f).unwrap().project_id.clone();
+    call(
+        &e,
+        "project.update",
+        &project,
+        json!({"workspace_definition":{"repository":"logical-repository-A","path":"/logical/A","mainline":"trunk"}}),
+    );
+    planning(&e, &f);
+    let t = task(&e, &f, "routing");
+    let (aid, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    call(
+        &e,
+        "project.update",
+        &project,
+        json!({"workspace_definition":{"repository":"logical-repository-B","path":"/logical/B","mainline":"other"}}),
+    );
+    let m = merge(&e, &t);
+    e.execute(
+        "merge.apply",
+        Command {
+            command_id: id(),
+            target: Some(m.clone()),
+            expected_revision: revision(&e, &m),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    let s = e.store.snapshot().unwrap();
+    let context = s
+        .advances
+        .iter()
+        .find(|a| a.id == m)
+        .unwrap()
+        .context
+        .as_ref()
+        .unwrap();
+    assert_eq!(context.workspace.repository, "logical-repository-A");
+    assert_eq!(context.workspace.path, "/logical/A");
+    assert_eq!(context.source.owner, t);
+    assert_eq!(context.target.owner, f);
+    assert_eq!(context.source.branch, format!("task/{t}"));
+    let green = s
+        .runs
+        .iter()
+        .find(|r| r.attempt_id.as_deref() == Some(&aid) && r.node == "green")
+        .unwrap();
+    let request: &Value = &s
+        .effects
+        .iter()
+        .find(|effect| effect.run_id == green.id && effect.kind == EffectKind::Test)
+        .unwrap()
+        .request["test"];
+    assert_eq!(request["code"]["workspace"]["path"], "/logical/A");
+    assert!(!request["definitions"].as_array().unwrap().is_empty());
+    assert!(
+        request["runtime"]["external_environment"]
+            .as_str()
+            .unwrap()
+            .starts_with("sim-environment-")
+    );
+    e.tick(4).unwrap();
+    assert_eq!(
+        e.store.snapshot().unwrap().task(&t).unwrap().status,
+        Status::Completed
+    );
+}
+#[test]
+fn completion_invalidated_advance_intent_never_calls_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Arc::new(AmbiguousGit {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        known: std::sync::atomic::AtomicBool::new(false),
+    });
+    let mut e = engine(dir.path());
+    e.git = provider.clone();
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "invalidation");
+    let (_, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let m = merge(&e, &t);
+    e.execute(
+        "merge.apply",
+        Command {
+            command_id: id(),
+            target: Some(m.clone()),
+            expected_revision: revision(&e, &m),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    call(
+        &e,
+        "document.revise",
+        &f,
+        json!({"kind":"requirement","body":"推进前需求变化"}),
+    );
+    e.tick(4).unwrap();
+    assert_eq!(provider.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(
+        e.store.snapshot().unwrap().advances[0].status,
+        AdvanceStatus::NotApplied
+    );
+    assert_ne!(
+        e.store.snapshot().unwrap().merge(&m).unwrap().status,
+        Status::Completed
+    );
+}
+
+struct GreenWaitsForSibling(std::sync::atomic::AtomicUsize);
+impl HarnessPort for GreenWaitsForSibling {
+    fn configure(&self, n: &str, s: &str) -> String {
+        SimHarness.configure(n, s)
+    }
+    fn poll(&self, r: &Run, input: &Value, now: u64) -> Result<Option<Value>> {
+        if r.node == "green" && self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            return Ok(None);
+        }
+        Immediate.poll(r, input, now)
+    }
+}
+#[test]
+fn completion_parallel_output_does_not_change_existing_run_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine_with_harness(
+        dir.path(),
+        Arc::new(GreenWaitsForSibling(std::sync::atomic::AtomicUsize::new(0))),
+    );
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "parallel");
+    let (aid, d) = implementation(&e, &t, "success");
+    review(&e, &d);
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(s.attempt(&aid).unwrap().status, Status::Accepted);
+    let green = s
+        .runs
+        .iter()
+        .find(|r| r.attempt_id.as_deref() == Some(&aid) && r.node == "green")
+        .unwrap();
+    let request = &s
+        .effects
+        .iter()
+        .find(|effect| effect.run_id == green.id && effect.kind == EffectKind::Harness)
+        .unwrap()
+        .request;
+    assert!(
+        request["input"]["stage_outputs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!s.attempt(&aid).unwrap().outputs.is_empty());
+}
+#[test]
+fn completion_agent_revision_is_not_a_separate_reviewer_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let f = new_feature(&e);
+    planning(&e, &f);
+    let t = task(&e, &f, "agent revision");
+    let mut binding = e
+        .store
+        .snapshot()
+        .unwrap()
+        .task(&t)
+        .unwrap()
+        .binding
+        .clone();
+    let original = binding.agent.clone();
+    binding.agent = result_id(call(
+        &e,
+        "definition.revise",
+        &original,
+        json!({"body":"工程 Agent v2"}),
+    ));
+    call(&e, "binding.update", &t, json!(binding));
+    let (_, d) = implementation(&e, &t, "success");
+    let review = result_id(call(&e, "review.request", &d, json!({})));
+    let s = e.store.snapshot().unwrap();
+    let reviewer = &s
+        .runs
+        .iter()
+        .find(|r| r.id == review)
+        .unwrap()
+        .binding
+        .agent;
+    assert_ne!(
+        s.agent_identity(reviewer).unwrap(),
+        s.agent_identity(&original).unwrap()
+    );
+    tick(&e);
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .accepted(e.store.snapshot().unwrap().delivery(&d).unwrap())
     );
 }
