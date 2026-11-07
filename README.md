@@ -45,11 +45,11 @@ npm --prefix web ci
 
 ## 文档
 
-- [修订后的实施计划](plans/prototype-v0.2-plan.md)
+- [架构设计 v0.2](plans/devdesk-v0.2.md)、[修订后的实施计划](plans/devdesk-prototype.md)
 - [领域规范](docs/domain.md)、[协议](docs/protocol.md)、[架构与 ADR](docs/design.md)
 - [验收与限制](docs/acceptance.md)、[阶段报告](docs/reports/README.md)
 - [协议 JSON Schema](schemas/rpc.schema.json)、[文件清单 Schema](schemas/manifest.schema.json)
 
 数据集以 `.devdesk-dataset` 标记，使用独占写锁；非空非 DevDesk 目录不初始化。更换 data 路径需退出并重新启动，不隐式迁移。Archive 与迁移仅交互预览。所有 reset/删除均不作为正常升级或恢复手段，本原型不提供任意路径删除功能。
 
-本轮领域补强的计划见 [补强计划](plans/domain-hardening-plan.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/reports/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
+本轮领域补强的计划见 [补强计划](plans/domain-hardening.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/reports/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
