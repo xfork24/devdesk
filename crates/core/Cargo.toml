@@ -1,0 +1,8 @@
+[package]
+name = "devdesk-core"
+version.workspace = true
+edition.workspace = true
+[dependencies]
+devdesk-domain = { path = "../domain" }
+serde_json.workspace = true
+serde.workspace = true

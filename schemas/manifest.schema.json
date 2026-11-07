@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk immutable file manifest v1",
+  "type": "object",
+  "required": [
+    "schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "origin": {
+      "enum": [
+        "simulated",
+        "human"
+      ]
+    },
+    "delivery_id": {
+      "type": "string"
+    },
+    "input_version": {
+      "type": "integer"
+    },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "candidate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "snapshot": {
+      "type": "object"
+    }
+  }
+}

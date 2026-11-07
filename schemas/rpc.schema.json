@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk JSON-RPC 2.0 protocol v1",
+  "type": "object",
+  "required": [
+    "jsonrpc",
+    "id",
+    "method",
+    "params"
+  ],
+  "properties": {
+    "jsonrpc": {
+      "const": "2.0"
+    },
+    "id": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "method": {
+      "type": "string"
+    },
+    "params": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "Command": {
+      "type": "object",
+      "required": [
+        "command_id",
+        "payload"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_revision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    },
+    "BindingLock": {
+      "type": "object",
+      "required": [
+        "agent",
+        "skills",
+        "standard",
+        "harness",
+        "sandbox"
+      ],
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "standard": {
+          "type": "string"
+        },
+        "harness": {
+          "const": "sim-harness-v1"
+        },
+        "sandbox": {
+          "const": "sim-sandbox-v1"
+        }
+      }
+    },
+    "SpecSlot": {
+      "type": "object",
+      "required": [
+        "purpose",
+        "spec"
+      ],
+      "properties": {
+        "purpose": {
+          "enum": [
+            "planning",
+            "implementation",
+            "merge"
+          ]
+        },
+        "spec": {
+          "type": "string"
+        }
+      }
+    },
+    "TestRequest": {
+      "type": "object",
+      "required": [
+        "phase",
+        "candidate",
+        "test_definitions",
+        "environment",
+        "origin"
+      ],
+      "properties": {
+        "phase": {
+          "type": "string"
+        },
+        "candidate": {
+          "type": "string"
+        },
+        "test_definitions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "environment": {
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "simulated",
+            "human"
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "pattern": "^(project|feature|document|definition|binding|task|attempt|run|delivery|review|override|merge|context|snapshot)\\."
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/Command"
+          }
+        }
+      }
+    }
+  ]
+}
