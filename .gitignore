@@ -6,6 +6,7 @@
 /playwright-report/
 *.log
 /dist/
+/.idea/
 /web/test-results/
 /web/playwright-report/
 /web/*.tsbuildinfo

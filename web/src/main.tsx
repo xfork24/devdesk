@@ -128,6 +128,7 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 function App() {
   const requestGeneration = useRef(0);
+  const projectGeneration = useRef(0);
   const [detailPages, setDetailPages] = useState<Record<string, number>>({});
   const [dialogError, setDialogError] = useState("");
   const [data, setData] = useState<RecordData>();
@@ -157,6 +158,20 @@ function App() {
       if (generation !== requestGeneration.current) return;
       setCaps(c);
       if (!c.setup_required) {
+        const active = c.active_project_id || "";
+        if (projectId !== active) {
+          ++projectGeneration.current;
+          setProjectId(active);
+          setFeatureId("");
+          setFeaturePage(0);
+          setDetailPages({});
+          setHistory([]);
+          setHistoryPage(0);
+          setSnapshotA("");
+          setSnapshotB("");
+          setData(undefined);
+          return;
+        }
         const d = await rpc("query.workspace", {
           project_id: projectId || undefined,
           feature_id: featureId || undefined,
@@ -167,7 +182,6 @@ function App() {
         });
         if (generation !== requestGeneration.current) return;
         setData(d);
-        if (!projectId && d.projects[0]) setProjectId(d.projects[0].id);
       }
     } catch (e) {
       if (generation === requestGeneration.current) setError(String(e));
@@ -177,8 +191,11 @@ function App() {
     load();
   }, [load]);
   useEffect(() => {
+    if (caps?.setup_required !== false) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const stream = new EventSource("/events");
+    const stream = new EventSource(
+      `/events${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+    );
     stream.onopen = () => setConnection("已连接");
     stream.onmessage = () => {
       if (!timer)
@@ -192,13 +209,25 @@ function App() {
       stream.close();
       if (timer) clearTimeout(timer);
     };
-  }, [load]);
+  }, [load, projectId, caps?.setup_required]);
   useEffect(() => {
+    let current = true;
     if (tab === "history" && data)
-      rpc("query.history", { offset: historyPage * 50, limit: 50 })
-        .then((d) => setHistory(d.events))
-        .catch((e) => setError(String(e)));
-  }, [tab, historyPage, data]);
+      rpc("query.history", {
+        project_id: projectId || undefined,
+        offset: historyPage * 50,
+        limit: 50,
+      })
+        .then((d) => {
+          if (current) setHistory(d.events);
+        })
+        .catch((e) => {
+          if (current) setError(String(e));
+        });
+    return () => {
+      current = false;
+    };
+  }, [tab, historyPage, data, projectId]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 4000);
@@ -209,7 +238,43 @@ function App() {
   const projects: RecordData[] = data?.projects || [];
   const features: RecordData[] = data?.features || [];
   const definitions: RecordData[] = data?.definitions || [];
-  const project = projects.find((p) => p.id === projectId) || projects[0];
+  const project = data?.active_project;
+  const projectOptions =
+    project && !projects.some((p) => p.id === project.id)
+      ? [project, ...projects]
+      : projects;
+  const resetProjectView = (id: string) => {
+    ++requestGeneration.current;
+    ++projectGeneration.current;
+    setProjectId(id);
+    setFeatureId("");
+    setFeaturePage(0);
+    setDetailPages({});
+    setHistory([]);
+    setHistoryPage(0);
+    setSnapshotA("");
+    setSnapshotB("");
+    setTaskFilter("");
+    setView(undefined);
+    setData(undefined);
+  };
+  const openProject = async (id: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await rpc("project.open", {
+        command_id: crypto.randomUUID(),
+        target: id,
+        payload: {},
+      });
+      resetProjectView(id);
+      setDialog(undefined);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   const pager = (key: string) => {
     const page = detailPages[key] || 0;
     const size = key === "runs" ? 250 : 50;
@@ -236,6 +301,7 @@ function App() {
     if (!target) return undefined;
     return [
       f,
+      project,
       ...projects,
       ...(detail?.tasks || []),
       ...(detail?.attempts || []),
@@ -256,13 +322,15 @@ function App() {
     setError("");
     try {
       const result = await rpc(method, {
+        project_id: projectId || undefined,
         command_id: crypto.randomUUID(),
         target: target || null,
         expected_revision: revision ?? getRevision(target) ?? null,
         payload,
       });
       setToast("操作已保存");
-      await load();
+      if (method === "project.create") resetProjectView(result.id);
+      else await load();
       return result;
     } catch (e) {
       setError(String(e));
@@ -462,12 +530,17 @@ function App() {
     );
   };
   const openArtifact = async (id: string) => {
+    const generation = projectGeneration.current;
     try {
-      const r = await fetch(`/artifacts/${id}`);
+      const r = await fetch(
+        `/artifacts/${id}?project_id=${encodeURIComponent(projectId)}`,
+      );
       if (!r.ok) throw new Error("产物读取失败或哈希校验失败");
-      setView({ title: `Artifact · ${short(id)}`, body: await r.text() });
+      const body = await r.text();
+      if (generation === projectGeneration.current)
+        setView({ title: `Artifact · ${short(id)}`, body });
     } catch (e) {
-      setError(String(e));
+      if (generation === projectGeneration.current) setError(String(e));
     }
   };
   const nav = [
@@ -547,15 +620,11 @@ function App() {
           <select
             aria-label="当前项目"
             value={projectId || project?.id || ""}
-            onChange={(e) => {
-              setProjectId(e.target.value);
-              setDetailPages({});
-              setFeatureId("");
-              setFeaturePage(0);
-            }}
+            disabled={busy}
+            onChange={(e) => openProject(e.target.value)}
           >
             {projects.length === 0 && <option value="">尚无项目</option>}
-            {projects.map((p) => (
+            {projectOptions.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.title}
               </option>
@@ -570,9 +639,6 @@ function App() {
             page={projectPage}
             setPage={(page) => {
               setProjectPage(page);
-              setProjectId("");
-              setDetailPages({});
-              setFeatureId("");
             }}
             hasMore={(projectPage + 1) * 50 < (data?.total_projects || 0)}
           />
@@ -811,7 +877,12 @@ function App() {
                         target: f.id,
                         fields: [
                           { key: "title", label: "Task 名称" },
-                          { key: "acceptance_keys", label: "实现的验收条目标识（逗号分隔，留空继承全部）", optional: true },
+                          {
+                            key: "acceptance_keys",
+                            label:
+                              "实现的验收条目标识（逗号分隔，留空继承全部）",
+                            optional: true,
+                          },
                           {
                             key: "dependencies",
                             label: "依赖 Task ID（逗号分隔，可空）",
@@ -906,7 +977,11 @@ function App() {
                       target: f.id,
                       fields: [
                         { key: "title", label: "Task 名称" },
-                          { key: "acceptance_keys", label: "实现的验收条目标识（逗号分隔，留空继承全部）", optional: true },
+                        {
+                          key: "acceptance_keys",
+                          label: "实现的验收条目标识（逗号分隔，留空继承全部）",
+                          optional: true,
+                        },
                         {
                           key: "dependencies",
                           label: "依赖 Task ID（逗号分隔，可空）",
@@ -953,7 +1028,13 @@ function App() {
                           继承快照 {short(t.inherited_snapshot)} ·{" "}
                           {t.dependencies.length} 个依赖
                         </p>
-                        <p className="muted">验收范围：{t.scope?.acceptance?.join("、") || "历史范围待补齐"} · 需求 {short(t.scope?.requirement)} · 设计 {short(t.scope?.design)}</p>
+                        <p className="muted">
+                          验收范围：
+                          {t.scope?.acceptance?.join("、") ||
+                            "历史范围待补齐"}{" "}
+                          · 需求 {short(t.scope?.requirement)} · 设计{" "}
+                          {short(t.scope?.design)}
+                        </p>
                         <div className="actions">
                           {act(
                             t.id,
@@ -967,7 +1048,21 @@ function App() {
                               () => {},
                             ),
                           )}
-                          {act(t.id, "task.replan", "更新规划范围", () => show({ title: "采用当前已接受规划", method: "task.replan", target: t.id, fields: [{ key: "acceptance_keys", label: "验收条目标识（逗号分隔，留空继承全部）", optional: true }] }))}
+                          {act(t.id, "task.replan", "更新规划范围", () =>
+                            show({
+                              title: "采用当前已接受规划",
+                              method: "task.replan",
+                              target: t.id,
+                              fields: [
+                                {
+                                  key: "acceptance_keys",
+                                  label:
+                                    "验收条目标识（逗号分隔，留空继承全部）",
+                                  optional: true,
+                                },
+                              ],
+                            }),
+                          )}
                           {act(t.id, "binding.update", "绑定", () =>
                             editBinding(t),
                           )}
@@ -1251,9 +1346,21 @@ function App() {
                         <br />
                         candidate {m.candidate}
                       </p>
-                      {detail.advances?.find((intent: RecordData) => intent.id === m.id)?.status === "needs_reconciliation" && <p className="error">{detail.advances.find((intent: RecordData) => intent.id === m.id).reason}</p>}
+                      {detail.advances?.find(
+                        (intent: RecordData) => intent.id === m.id,
+                      )?.status === "needs_reconciliation" && (
+                        <p className="error">
+                          {
+                            detail.advances.find(
+                              (intent: RecordData) => intent.id === m.id,
+                            ).reason
+                          }
+                        </p>
+                      )}
                       <div className="actions">
-                        {act(m.id, "merge.reconcile", "核对合入结果", () => command("merge.reconcile", m.id).catch(() => {}))}
+                        {act(m.id, "merge.reconcile", "核对合入结果", () =>
+                          command("merge.reconcile", m.id).catch(() => {}),
+                        )}
                         {act(
                           m.id,
                           "merge.apply",
@@ -1267,7 +1374,9 @@ function App() {
                               title: "Merge 固定源/目标与验证 Runs",
                               body: pretty({
                                 merge: m,
-                                advance: detail.advances?.find((intent: RecordData) => intent.id === m.id),
+                                advance: detail.advances?.find(
+                                  (intent: RecordData) => intent.id === m.id,
+                                ),
                                 runs: detail.runs.filter(
                                   (r: RecordData) => r.merge_id === m.id,
                                 ),
@@ -1290,15 +1399,48 @@ function App() {
                 <h2>外部操作与资源核对</h2>
                 {(detail.effects || []).map((effect: RecordData) => (
                   <div className="document-row" key={effect.id}>
-                    <div><strong>{effect.kind} · {short(effect.run_id)}</strong><p>{effect.status} · {effect.reason}</p></div>
-                    <button onClick={() => setView({title: "外部调用意图与回执", body: pretty(effect)})}>查看回执</button>
-                    {allowed(effect.id, "effect.reconcile") && <button onClick={() => command("effect.reconcile", effect.id).catch(() => {})}>核对外部结果</button>}
-                    {allowed(effect.id, "effect.retry_cleanup") && <button onClick={() => command("effect.retry_cleanup", effect.id).catch(() => {})}>重试资源清理</button>}
+                    <div>
+                      <strong>
+                        {effect.kind} · {short(effect.run_id)}
+                      </strong>
+                      <p>
+                        {effect.status} · {effect.reason}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() =>
+                        setView({
+                          title: "外部调用意图与回执",
+                          body: pretty(effect),
+                        })
+                      }
+                    >
+                      查看回执
+                    </button>
+                    {allowed(effect.id, "effect.reconcile") && (
+                      <button
+                        onClick={() =>
+                          command("effect.reconcile", effect.id).catch(() => {})
+                        }
+                      >
+                        核对外部结果
+                      </button>
+                    )}
+                    {allowed(effect.id, "effect.retry_cleanup") && (
+                      <button
+                        onClick={() =>
+                          command("effect.retry_cleanup", effect.id).catch(
+                            () => {},
+                          )
+                        }
+                      >
+                        重试资源清理
+                      </button>
+                    )}
                   </div>
                 ))}
                 {pager("effects")}
               </section>
-
             </>
           )}
           {tab === "documents" && f && (
@@ -1321,8 +1463,17 @@ function App() {
                           ),
                         },
                         { key: "title", label: "标题" },
-                        { key: "acceptance", label: "需求验收条目（每行：标识 | 可验证条件）", type: "textarea", optional: true },
-                        { key: "verifies", label: "测试验证的验收条目标识（逗号分隔）", optional: true },
+                        {
+                          key: "acceptance",
+                          label: "需求验收条目（每行：标识 | 可验证条件）",
+                          type: "textarea",
+                          optional: true,
+                        },
+                        {
+                          key: "verifies",
+                          label: "测试验证的验收条目标识（逗号分隔）",
+                          optional: true,
+                        },
                         {
                           key: "task_id",
                           label: "Task ID（可空）",
@@ -1350,8 +1501,10 @@ function App() {
                           Requirement {short(d.requirement_id)} → Design{" "}
                           {short(d.design_id)}
                           {d.task_id && ` → Task ${short(d.task_id)}`}
-                          {d.verifies?.length > 0 && ` · 验证 ${d.verifies.join("、")}`}
-                          {d.acceptance?.length > 0 && ` · 验收条目 ${d.acceptance.map((c: RecordData) => c.key).join("、")}`}
+                          {d.verifies?.length > 0 &&
+                            ` · 验证 ${d.verifies.join("、")}`}
+                          {d.acceptance?.length > 0 &&
+                            ` · 验收条目 ${d.acceptance.map((c: RecordData) => c.key).join("、")}`}
                         </p>
                       </div>
                       <button
@@ -1375,8 +1528,24 @@ function App() {
                             title: d.title,
                           },
                           fields: [
-                            { key: "acceptance", label: "需求验收条目（每行：标识 | 可验证条件）", type: "textarea", optional: true, value: (d.acceptance || []).map((c: RecordData) => `${c.key} | ${c.description}`).join("\n") },
-                            { key: "verifies", label: "测试验证的验收条目标识（逗号分隔）", optional: true, value: (d.verifies || []).join(",") },
+                            {
+                              key: "acceptance",
+                              label: "需求验收条目（每行：标识 | 可验证条件）",
+                              type: "textarea",
+                              optional: true,
+                              value: (d.acceptance || [])
+                                .map(
+                                  (c: RecordData) =>
+                                    `${c.key} | ${c.description}`,
+                                )
+                                .join("\n"),
+                            },
+                            {
+                              key: "verifies",
+                              label: "测试验证的验收条目标识（逗号分隔）",
+                              optional: true,
+                              value: (d.verifies || []).join(","),
+                            },
                             {
                               key: "body",
                               label: "Markdown 内容",
@@ -1637,7 +1806,10 @@ function App() {
                   <h2>Harness / Sandbox 能力</h2>
                 </div>
                 <pre>
-                  {pretty({ harnesses: data?.harnesses, sandboxes: data?.sandboxes })}
+                  {pretty({
+                    harnesses: data?.harnesses,
+                    sandboxes: data?.sandboxes,
+                  })}
                 </pre>
                 <p className="muted">
                   Agent 是身份，Harness 是运行时，Sandbox
@@ -1686,8 +1858,8 @@ function App() {
                     <h3>本地 data 目录</h3>
                     <code>{data.data_root}</code>
                     <p className="muted">
-                      SQLite 与 Artifact 真实保存。更改路径需退出后以 --data
-                      新路径重启。
+                      全局配置与各项目分别保存；打开项目即可切换。更改 data
+                      路径需退出后以 --data 新路径重启。
                     </p>
                   </div>
                   <button
@@ -1701,6 +1873,24 @@ function App() {
                     更改路径说明
                   </button>
                 </div>
+                <div className="setting-row">
+                  <div>
+                    <h3>全局配置数据库</h3>
+                    <code>{data.global_database}</code>
+                    <p className="muted">并发配置、共享定义与项目索引。</p>
+                  </div>
+                </div>
+                {data.project_database && (
+                  <div className="setting-row">
+                    <div>
+                      <h3>当前项目数据库</h3>
+                      <code>{data.project_database}</code>
+                      <p className="muted">
+                        工程状态、执行历史和产物归属仅限当前项目。
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="setting-row">
                   <div>
                     <h3>全局并发额度</h3>
@@ -1955,11 +2145,29 @@ function CommandDialog({
       for (const field of spec.fields) {
         const value = values[field.key];
         if (field.optional && !value.trim()) continue;
-        if (field.key === "acceptance" && value.trim()) payload.acceptance = value.split("\n").filter((line) => line.trim()).map((line) => { const split = line.indexOf("|"); if (split < 1) throw new Error("验收条目格式：标识 | 可验证条件"); return { key: line.slice(0,split).trim(), description: line.slice(split+1).trim() }; });
+        if (field.key === "acceptance" && value.trim())
+          payload.acceptance = value
+            .split("\n")
+            .filter((line) => line.trim())
+            .map((line) => {
+              const split = line.indexOf("|");
+              if (split < 1) throw new Error("验收条目格式：标识 | 可验证条件");
+              return {
+                key: line.slice(0, split).trim(),
+                description: line.slice(split + 1).trim(),
+              };
+            });
         else if (field.key === "acceptance" && !value.trim()) continue;
         else if (field.key === "slots") payload[field.key] = JSON.parse(value);
         else if (
-          ["skills", "rules", "dependencies", "items", "verifies", "acceptance_keys"].includes(field.key)
+          [
+            "skills",
+            "rules",
+            "dependencies",
+            "items",
+            "verifies",
+            "acceptance_keys",
+          ].includes(field.key)
         )
           payload[field.key] = value
             .split(",")

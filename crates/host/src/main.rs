@@ -1,3 +1,4 @@
+mod workspace;
 use axum::{
     Json, Router,
     extract::{Path, Query, Request, State},
@@ -9,8 +10,6 @@ use axum::{
     },
     routing::{get, post},
 };
-use devdesk_adapters::*;
-use devdesk_core::*;
 use devdesk_domain::{Error, err};
 use futures_util::stream;
 use serde_json::{Value, json};
@@ -19,37 +18,23 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, RwLock,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
 };
+use workspace::Workspace;
 #[derive(rust_embed::RustEmbed)]
 #[folder = "../../web/dist/"]
 struct Web;
 struct App {
-    engine: RwLock<Option<Arc<Engine>>>,
+    workspace: RwLock<Option<Arc<Workspace>>>,
     cookie: String,
     authority: String,
-    global: AtomicUsize,
     stopping: AtomicBool,
     shutdown: tokio::sync::Notify,
 }
-fn open(path: &std::path::Path) -> devdesk_domain::Result<Arc<Engine>> {
-    let store = Arc::new(SqliteStore::open(path)?);
-    let artifacts = Arc::new(FileArtifacts::new(PathBuf::from(store.root())));
-    let engine = Arc::new(Engine {
-        store,
-        artifacts,
-        harness: Arc::new(SimHarness),
-        git: Arc::new(SimGit),
-        tests: Arc::new(SimTests),
-        sandbox: Arc::new(SimSandbox),
-    });
-    engine.bootstrap()?;
-    Ok(engine)
-}
 impl App {
-    fn engine(&self) -> devdesk_domain::Result<Arc<Engine>> {
-        self.engine
+    fn workspace(&self) -> devdesk_domain::Result<Arc<Workspace>> {
+        self.workspace
             .read()
             .unwrap()
             .clone()
@@ -162,28 +147,7 @@ async fn rpc(
     let params = request.get("params").cloned().unwrap_or(json!({}));
     let a = app.clone();
     let result = tokio::task::spawn_blocking(move || -> devdesk_domain::Result<Value> {
-        let engine = a.engine()?;
-        if method == "settings.update" {
-            let n = params["global_concurrency"]
-                .as_u64()
-                .ok_or_else(|| err("invalid_params", "需要并发额度"))?;
-            devdesk_domain::require((1..=32).contains(&n), "全局并发额度需为 1—32")?;
-            let runtime_root = PathBuf::from(engine.store.root());
-            let pending = runtime_root.join(format!("runtime-{}.pending", uuid::Uuid::new_v4()));
-            std::fs::write(&pending, json!({"global_concurrency":n}).to_string())
-                .map_err(|e| err("storage", e.to_string()))?;
-            std::fs::rename(&pending, runtime_root.join("runtime.json"))
-                .map_err(|e| err("storage", e.to_string()))?;
-            a.global.store(n as usize, Ordering::Relaxed);
-            return Ok(json!({"global_concurrency":n}));
-        }
-        if method.starts_with("query.") {
-            engine.query(&method, &params, a.global.load(Ordering::Relaxed))
-        } else {
-            let command: Command =
-                serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
-            engine.execute(&method, command)
-        }
+        a.workspace()?.dispatch(&method, params)
     })
     .await;
     let result = result.unwrap_or_else(|e| Err(err("internal", e.to_string())));
@@ -193,45 +157,37 @@ async fn rpc(
     })
 }
 async fn setup(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Json<Value> {
-    let mut current = app.engine.write().unwrap();
+    let mut current = app.workspace.write().unwrap();
     if current.is_some() {
         return Json(json!({"error":"已有数据集已打开；更改路径需退出后使用 --data 重启"}));
     }
     let Some(path) = p["path"].as_str().filter(|s| !s.trim().is_empty()) else {
         return Json(json!({"error":"请输入数据目录"}));
     };
-    match open(&PathBuf::from(path)) {
-        Ok(engine) => {
-            load_settings(&app, &engine);
-            let root = engine.store.root();
-            *current = Some(engine);
+    match Workspace::open(&PathBuf::from(path)) {
+        Ok(workspace) => {
+            let root = devdesk_core::EngineeringStore::root(&*workspace.global);
+            *current = Some(workspace);
             Json(json!({"root":root}))
         }
         Err(e) => Json(json!({"error":e.message})),
     }
 }
-fn load_settings(app: &App, engine: &Engine) {
-    if let Ok(body) =
-        std::fs::read_to_string(PathBuf::from(engine.store.root()).join("runtime.json"))
-    {
-        if let Ok(v) = serde_json::from_str::<Value>(&body) {
-            if let Some(n) = v["global_concurrency"]
-                .as_u64()
-                .filter(|n| (1..=32).contains(n))
-            {
-                app.global.store(n as usize, Ordering::Relaxed);
-            }
-        }
-    }
-}
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
+    let workspace = app.workspace.read().unwrap().clone();
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":app.engine.read().unwrap().is_none(),"execution_mode":"simulation","live":"unavailable","archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"id":"sim-harness-v1","capabilities":["structured-output","cancel","hold","fault-injection"]},"sandbox":{"id":"sim-sandbox-v1","capabilities":["logical-environment","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"simulation","live":"unavailable","archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"id":"sim-harness-v1","capabilities":["structured-output","cancel","hold","fault-injection"]},"sandbox":{"id":"sim-sandbox-v1","capabilities":["logical-environment","resource-cleanup"]}}),
     )
 }
-async fn artifact(State(app): State<Arc<App>>, Path(id): Path<String>) -> Response {
+async fn artifact(
+    State(app): State<Arc<App>>,
+    Path(id): Path<String>,
+    Query(p): Query<HashMap<String, String>>,
+) -> Response {
     let result = (|| {
-        let e = app.engine()?;
+        let e = app
+            .workspace()?
+            .active_engine(p.get("project_id").map(String::as_str))?;
         let v = e.query("query.artifact", &json!({"id":id}), 4)?;
         let a: devdesk_domain::Artifact =
             serde_json::from_value(v).map_err(|e| err("internal", e.to_string()))?;
@@ -253,46 +209,56 @@ async fn events(
     State(app): State<Arc<App>>,
     Query(p): Query<HashMap<String, String>>,
     headers: axum::http::HeaderMap,
-) -> impl IntoResponse {
+) -> Response {
+    let pinned = app
+        .workspace()
+        .and_then(|w| w.event_engine(p.get("project_id").map(String::as_str)));
+    let (scope, engine) = match pinned {
+        Ok(pinned) => pinned,
+        Err(e) => return (StatusCode::CONFLICT, Json(failure(e))).into_response(),
+    };
     let cursor = headers
         .get("last-event-id")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
+        .and_then(|v| v.split_once(':'))
+        .filter(|(id, _)| *id == scope)
+        .and_then(|(_, n)| n.parse::<u64>().ok())
         .or_else(|| p.get("cursor").and_then(|s| s.parse().ok()))
         .unwrap_or(0);
     let stream = stream::unfold(
-        (app, cursor, VecDeque::<Value>::new()),
-        |(app, mut cursor, mut queue)| async move {
+        (app, engine, scope, cursor, VecDeque::<Value>::new()),
+        |(app, engine, scope, mut cursor, mut queue)| async move {
             loop {
                 if app.stopping.load(Ordering::Relaxed) {
                     return None;
                 }
-                if let Some(value) = queue.pop_front() {
+                if let Some(mut value) = queue.pop_front() {
                     cursor = value["id"].as_u64().unwrap_or(cursor);
+                    value["project_id"] = json!(scope);
                     return Some((
                         Ok::<_, std::convert::Infallible>(
                             Event::default()
-                                .id(cursor.to_string())
+                                .id(format!("{scope}:{cursor}"))
                                 .data(value.to_string()),
                         ),
-                        (app, cursor, queue),
+                        (app, engine, scope, cursor, queue),
                     ));
                 }
-                if let Ok(e) = app.engine() {
-                    if let Ok(Value::Array(values)) =
-                        e.query("query.events", &json!({"cursor":cursor,"limit":100}), 4)
-                    {
-                        queue.extend(values);
-                        if !queue.is_empty() {
-                            continue;
-                        }
+                if let Ok(Value::Array(values)) =
+                    engine.query("query.events", &json!({"cursor":cursor,"limit":100}), 4)
+                {
+                    queue.extend(values);
+                    if !queue.is_empty() {
+                        continue;
                     }
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
         },
     );
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 async fn shutdown(State(app): State<Arc<App>>) -> Json<Value> {
     app.stopping.store(true, Ordering::Relaxed);
@@ -323,22 +289,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let port = option("--port")
         .unwrap_or_else(|| "4317".into())
         .parse::<u16>()?;
-    let engine = option("--data")
-        .map(|p| open(&PathBuf::from(p)))
+    let workspace = option("--data")
+        .map(|p| Workspace::open(&PathBuf::from(p)))
         .transpose()?;
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
     let authority = format!("127.0.0.1:{}", listener.local_addr()?.port());
     let app = Arc::new(App {
-        engine: RwLock::new(engine),
+        workspace: RwLock::new(workspace),
         cookie: format!("devdesk_session={}", uuid::Uuid::new_v4()),
         authority: authority.clone(),
-        global: AtomicUsize::new(4),
         stopping: AtomicBool::new(false),
         shutdown: tokio::sync::Notify::new(),
     });
-    if let Ok(e) = app.engine() {
-        load_settings(&app, &e);
-    }
     let router = Router::new()
         .route("/rpc", post(rpc))
         .route("/setup", post(setup))
@@ -362,8 +324,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 if a.stopping.load(Ordering::Relaxed) {
                     return Ok(());
                 }
-                if let Ok(e) = a.engine() {
-                    e.tick(a.global.load(Ordering::Relaxed))
+                if let Ok(w) = a.workspace() {
+                    w.tick()
                 } else {
                     Ok(())
                 }

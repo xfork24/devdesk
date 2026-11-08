@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,60 @@ def run():
             project = rpc('project.create', {'command_id':'same-id','payload':{'title':'HTTP 持久化'}})
             assert project == rpc('project.create', {'command_id':'same-id','payload':{'title':'HTTP 持久化'}})
             assert len(rpc('query.workspace', {})['projects'])==1
+            pid = project['id']
+            db_a = dataset / 'projects' / pid / 'engineering.sqlite3'
+            assert db_a.is_file()
+            assert (dataset / 'global.sqlite3').is_file()
+            assert not (dataset / 'engineering.sqlite3').exists()
+            feature_a = rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}})
+            rpc('document.revise', {'project_id':pid,'command_id':'a-doc','target':feature_a['id'],'expected_revision':1,'payload':{'kind':'requirement','title':'A 需求','body':'A 的独立产物'}})
+            view_a = rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})
+            artifact_a = view_a['detail']['artifacts'][0]['id']
+            project_b = rpc('project.create', {'command_id':'create-b','payload':{'title':'项目 B'}})['id']
+            feature_b = rpc('feature.create', {'project_id':project_b,'command_id':'same-feature-id','payload':{'project_id':project_b,'title':'仅属于 B'}})
+            assert feature_a != feature_b
+            view_b = rpc('query.workspace', {'project_id':project_b})
+            assert view_b['active_project_id'] == project_b
+            assert len(view_b['features']) == 1 and view_b['features'][0]['title'] == '仅属于 B'
+            assert req('/artifacts/' + artifact_a + '?project_id=' + project_b).status == 404
+            stale = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'feature.create','params':{'project_id':pid,'command_id':'stale-project','payload':{'project_id':pid,'title':'不能串写'}}}))
+            assert stale['error']['data']['code'] == 'project_changed', stale
+            rpc('settings.update', {'global_concurrency':7})
+            assert not (dataset / 'runtime.json').exists()
+            with sqlite3.connect(dataset / 'global.sqlite3') as global_db:
+                assert json.loads(global_db.execute("SELECT value FROM settings WHERE key='global_concurrency'").fetchone()[0]) == 7
+                assert not global_db.execute("SELECT name FROM sqlite_master WHERE name IN ('projects','features','runs','deliveries')").fetchall()
+            for project_id in [pid, project_b]:
+                with sqlite3.connect(dataset / 'projects' / project_id / 'engineering.sqlite3') as project_db:
+                    assert project_db.execute('SELECT id FROM projects').fetchall() == [(project_id,)]
+                    assert project_db.execute('SELECT count(*) FROM features').fetchone()[0] == 1
+                    assert not project_db.execute('PRAGMA foreign_key_check').fetchall()
+            rpc('project.open', {'command_id':'open-a','target':pid,'payload':{}})
+            assert rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}}) == feature_a
+            assert req('/artifacts/' + artifact_a + '?project_id=' + pid).read().decode() == 'A 的独立产物'
+            # SSE is pinned to the project selected when connecting; its cursor is namespaced.
+            cookie_header = '; '.join(f'{c.name}={c.value}' for c in cookies)
+            latest_a = max(e['id'] for e in rpc('query.events', {'project_id':pid}))
+            old_stream = http.client.HTTPConnection(authority, timeout=2)
+            old_stream.request('GET', '/events?project_id=' + pid + '&cursor=' + str(latest_a), headers={'Cookie':cookie_header})
+            old_response = old_stream.getresponse()
+            assert old_response.status == 200
+            rpc('project.open', {'command_id':'open-b','target':project_b,'payload':{}})
+            rpc('feature.create', {'project_id':project_b,'command_id':'b-event','payload':{'project_id':project_b,'title':'只通知 B'}})
+            old_stream.sock.settimeout(0.3)
+            try:
+                leaked = old_response.readline()
+                raise AssertionError(f'Inactive SSE leaked a different project event: {leaked!r}')
+            except TimeoutError:
+                pass
+            finally:
+                old_stream.close()
+            scoped_stream = http.client.HTTPConnection(authority, timeout=2)
+            scoped_stream.request('GET', '/events?project_id=' + project_b, headers={'Cookie':cookie_header,'Last-Event-ID':pid+':999999'})
+            scoped_response = scoped_stream.getresponse()
+            assert scoped_response.readline().decode().strip().startswith('id: ' + project_b + ':')
+            scoped_stream.close()
+            rpc('project.open', {'command_id':'restore-a','target':pid,'payload':{}})
             assert req('/artifacts/unknown').status==404
             # SSE stays connected while the host shuts down.
             stream = http.client.HTTPConnection(authority)
@@ -84,10 +139,14 @@ def run():
             child.stdout.readline()
             url=child.stdout.readline().strip()
             client.open(url).read()
-            assert rpc('query.workspace', {})['projects'][0]['title']=='HTTP 持久化'
+            restored = rpc('query.workspace', {})
+            assert restored['projects'][0]['title']=='HTTP 持久化'
+            assert restored['active_project_id'] == pid
+            assert restored['global_concurrency'] == 7
+            assert len(restored['features']) == 1
             req('/shutdown', {}).read()
             assert child.wait(timeout=4)==0
-            print('PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE shutdown, restart persistence' + ('; standalone copied binary' if '--standalone' in sys.argv else ''))
+            print('PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE shutdown, restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors' + ('; standalone copied binary' if '--standalone' in sys.argv else ''))
         finally:
             if child.poll() is None:
                 child.terminate()

@@ -5,8 +5,8 @@
 ## HTTP
 
 - POST /rpc：JSON-RPC 2.0，id 必填。查询 params 为过滤参数；命令 params 为 Command。
-- GET /events?cursor=N：SSE，事件 ID 为持久化单调 cursor；支持 Last-Event-ID。分批补读，断线后重连；事件只是事实通知，页面重新查询。
-- GET /artifacts/{id}：按数据库 ID 读取，路径不得由客户端提供；SHA256 校验后返回纯文本并禁止内容嗅探。
+- GET /events?project_id=ID&cursor=N：SSE，连接固定到该活动项目；事件 ID 为 `ID:cursor`，cursor 在项目内持久化单调递增。支持同项目 Last-Event-ID；其他项目的游标忽略。分批补读，断线后重连；事件只是事实通知，页面重新查询。
+- GET /artifacts/{id}?project_id=ID：按活动项目数据库中的 ID 读取，路径不得由客户端提供；SHA256 校验后返回纯文本并禁止内容嗅探。
 - GET /capabilities：协议、版本、simulation/live unavailable/Archive preview/migration preview/platform validation 状态。
 - POST /setup：未打开数据集时设置 path；非空非 DevDesk 目录拒绝。打开后不能热切换。
 - POST /shutdown：可信人类会话退出 host。
@@ -15,13 +15,17 @@
 {"jsonrpc":"2.0","id":1,"method":"attempt.start","params":{"command_id":"uuid","target":"feature-id","expected_revision":3,"payload":{"phase":"planning","scenario":"success"}}}
 ```
 
-命令：project.create/update、feature.create、document.revise、definition.revise、binding.update、task.create、attempt.start/pause/cancel、run.cancel/retry/continue、delivery.submit、review.submit/request、override.accept、merge.request/apply、context.update、snapshot.save。不存在 set_status。
+命令：project.create/open/update、feature.create、document.revise、definition.revise、binding.update、task.create、attempt.start/pause/cancel、run.cancel/retry/continue、delivery.submit、review.submit/request、override.accept、merge.request/apply、context.update、snapshot.save。不存在 set_status。
+
+`project.open` 使用 Command，target 为项目 ID，payload 可为空；成功后切换活动数据库并保存上次选择。`project.create` 创建独立数据库并自动打开。工程查询和 Command 可在 params 顶层携带 `project_id`，与当前活动项目不符时返回 `project_changed`；不通过查询隐式切换项目。省略作用域时使用请求开始时的活动数据库。没有活动项目时工程命令返回 `project_required`，仍可查询全局工作区和配置、修改并发配置或修订共享定义。
 
 target 为有 revision 对象时 expected_revision 必填；command_id 相同参数返回首次结果（先于修订检查），不同参数复用拒绝。长操作返回 operation_id。错误不写入幂等结果，可修正后重试。
 
-查询：query.workspace（project_id/feature_id/offset/limit）、query.history（target/offset/limit）、query.events（cursor/limit）、query.artifact（id）。limit 默认 50，上限 100；Feature detail 返回有界历史。allowed_actions、blocked_reasons 来自 Rust，界面不实现状态机。
+查询：query.workspace（project_id/feature_id/offset/limit）、query.history（project_id/target/offset/limit）、query.events（project_id/cursor/limit）、query.artifact（project_id/id）。limit 默认 50，上限 100；Feature detail 返回有界历史。allowed_actions、blocked_reasons 来自 Rust，界面不实现状态机。
 
-错误 result 包含 code/message：invalid_params、not_found、blocked、revision_conflict、method_not_found、storage、dataset_locked。JSON-RPC error.code 使用 -32600/-32601/-32602/-32000，domain code 在 data 中。
+query.workspace 返回全局项目目录，以及仅属于活动项目的 features/detail；query.history 只读取活动项目的历史。工作区附 `active_project_id`、`active_project`、`global_database`、`project_database` 和 `project_data_root`；`data_root` 仍为全局 data 根目录。`settings.update({global_concurrency:N})` 写入全局 SQLite（1–32），`definition.revise` 也作用于共享配置库。工程命令幂等记录按项目隔离；项目创建、打开及共享配置命令的幂等范围为全局配置库。
+
+错误 result 包含 code/message：invalid_params、not_found、blocked、revision_conflict、project_changed、project_required、method_not_found、storage、dataset_locked。JSON-RPC error.code 使用 -32600/-32601/-32602/-32000，domain code 在 data 中。
 
 SSE 和轮询使用同一个数据库事实源。所有命令在 SQLite 短事务内校验和提交；单写协调，状态与事件提交后才可见。模拟执行按受控同步点产生确定输出，不把适配器原始输出直接当业务终态。
 

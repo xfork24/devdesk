@@ -2690,3 +2690,347 @@ fn completion_agent_revision_is_not_a_separate_reviewer_identity() {
             .accepted(e.store.snapshot().unwrap().delivery(&d).unwrap())
     );
 }
+
+#[test]
+fn project_databases_migrate_full_history_and_keep_the_legacy_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = engine(dir.path());
+    let f1 = new_feature(&old);
+    planning(&old, &f1);
+    let tid = task(&old, &f1, "独立项目任务");
+    let (_, delivery) = implementation(&old, &tid, "success");
+    review(&old, &delivery);
+    let mid = merge(&old, &tid);
+    call(&old, "merge.apply", &mid, json!({}));
+    let f2 = new_feature(&old);
+    planning(&old, &f2);
+    let spec = old
+        .store
+        .snapshot()
+        .unwrap()
+        .definitions
+        .iter()
+        .find(|d| d.family == "spec")
+        .unwrap()
+        .id
+        .clone();
+    call(
+        &old,
+        "definition.revise",
+        &spec,
+        json!({"body":"共享规范的新修订"}),
+    );
+    let before = serde_json::to_value(old.store.snapshot().unwrap()).unwrap();
+    std::fs::write(
+        dir.path().join("runtime.json"),
+        r#"{"global_concurrency":7}"#,
+    )
+    .unwrap();
+    assert!(GlobalStore::open(dir.path()).is_err());
+    drop(old);
+    let original = std::fs::read(dir.path().join("engineering.sqlite3")).unwrap();
+    let global = GlobalStore::open(dir.path()).unwrap();
+    assert_eq!(global.concurrency().unwrap(), 7);
+    let (projects, count) = global.projects(0, 100).unwrap();
+    assert_eq!(count, 2);
+    let mut combined = std::collections::HashMap::<String, usize>::new();
+    let global_state = global.snapshot().unwrap();
+    let mut events = global_state.events.len();
+    for project in &projects {
+        let store = SqliteStore::open_project(dir.path(), &project.id).unwrap();
+        let state = store.snapshot().unwrap();
+        assert_eq!(state.projects.len(), 1);
+        assert_eq!(state.projects[0].id, project.id);
+        assert_eq!(state.features.len(), 1);
+        assert!(state.features.iter().all(|f| f.project_id == project.id));
+        let artifacts = FileArtifacts::new(store.root().into());
+        for artifact in &state.artifacts {
+            assert!(!artifacts.read(artifact).unwrap().is_empty());
+        }
+        events += state.events.len();
+        let json = serde_json::to_value(&state).unwrap();
+        for (table, rows) in json.as_object().unwrap() {
+            *combined.entry(table.clone()).or_default() += rows.as_array().unwrap().len();
+        }
+        let conn = rusqlite::Connection::open(
+            std::path::PathBuf::from(store.root()).join("engineering.sqlite3"),
+        )
+        .unwrap();
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| {
+                r.get::<_, usize>(0)
+            })
+            .unwrap(),
+            0
+        );
+        let fp:String=conn.query_row("SELECT fingerprint FROM operations WHERE json_extract(fingerprint,'$[0]')='project.create'",[],|r|r.get(0)).unwrap();
+        let command_id: String = conn
+            .query_row(
+                "SELECT id FROM operations WHERE fingerprint=?1",
+                [&fp],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let values: Value = serde_json::from_str(&fp).unwrap();
+        let command = Command {
+            command_id,
+            target: None,
+            expected_revision: None,
+            payload: values[3].clone(),
+        };
+        assert_eq!(global.reserve_project(&command).unwrap(), project.id);
+    }
+    for (table, rows) in before.as_object().unwrap() {
+        if !["definitions", "harnesses", "sandboxes", "events"].contains(&table.as_str()) {
+            assert_eq!(
+                combined[table],
+                rows.as_array().unwrap().len(),
+                "lost {table}"
+            );
+        }
+    }
+    assert_eq!(events, before["events"].as_array().unwrap().len());
+    assert_eq!(
+        serde_json::to_value(global_state.definitions).unwrap(),
+        before["definitions"]
+    );
+    let conn = rusqlite::Connection::open(dir.path().join("global.sqlite3")).unwrap();
+    assert_eq!(conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('features','runs','projects','deliveries')",[],|r|r.get::<_,usize>(0)).unwrap(),0);
+    assert_eq!(
+        original,
+        std::fs::read(dir.path().join("engineering.sqlite3")).unwrap()
+    );
+    drop(conn);
+    drop(global);
+    let reopened = GlobalStore::open(dir.path()).unwrap();
+    assert_eq!(reopened.projects(0, 100).unwrap().1, 2);
+    assert_eq!(reopened.concurrency().unwrap(), 7);
+}
+
+#[test]
+fn project_database_migration_retries_after_artifact_failure_without_publishing_partial_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = engine(dir.path());
+    let f1 = new_feature(&old);
+    planning(&old, &f1);
+    let f2 = new_feature(&old);
+    planning(&old, &f2);
+    let artifact = old
+        .store
+        .snapshot()
+        .unwrap()
+        .artifacts
+        .iter()
+        .find(|a| a.feature_id == f2)
+        .unwrap()
+        .clone();
+    let path = dir.path().join(&artifact.relative_path);
+    let bytes = std::fs::read(&path).unwrap();
+    drop(old);
+    std::fs::write(&path, b"corrupt").unwrap();
+    assert!(GlobalStore::open(dir.path()).is_err());
+    let conn = rusqlite::Connection::open(dir.path().join("global.sqlite3")).unwrap();
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM project_catalog", [], |r| r
+            .get::<_, usize>(0))
+            .unwrap(),
+        0
+    );
+    drop(conn);
+    std::fs::write(path, bytes).unwrap();
+    let global = GlobalStore::open(dir.path()).unwrap();
+    assert_eq!(global.projects(0, 100).unwrap().1, 2);
+}
+
+#[test]
+fn global_configuration_upgrades_a_copy_of_v1_and_rejects_project_data() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".devdesk-dataset"), "devdesk-schema-v1\n").unwrap();
+    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
+    conn.execute_batch(include_str!("../../../migrations/001_initial.sql"))
+        .unwrap();
+    drop(conn);
+    let global = GlobalStore::open(dir.path()).unwrap();
+    assert!(!global.snapshot().unwrap().definitions.is_empty());
+    let mut state = global.snapshot().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let old = engine(&other.path().join("legacy"));
+    new_feature(&old);
+    state.projects = old.store.snapshot().unwrap().projects;
+    assert!(
+        global
+            .transact(None, &mut |s| {
+                s.projects = state.projects.clone();
+                Ok(json!({}))
+            })
+            .is_err()
+    );
+    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
+            .unwrap(),
+        1
+    );
+    global.set_concurrency(9).unwrap();
+    assert_eq!(global.concurrency().unwrap(), 9);
+    assert!(global.set_concurrency(0).is_err());
+    assert!(global.set_concurrency(33).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn global_and_project_database_paths_reject_symlink_redirection() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".devdesk-dataset"), "devdesk-schema-v1\n").unwrap();
+    std::fs::write(outside.path().join("db"), b"do not modify").unwrap();
+    symlink(outside.path().join("db"), dir.path().join("global.sqlite3")).unwrap();
+    assert!(GlobalStore::open(dir.path()).is_err());
+    assert_eq!(
+        std::fs::read(outside.path().join("db")).unwrap(),
+        b"do not modify"
+    );
+    std::fs::remove_file(dir.path().join("global.sqlite3")).unwrap();
+    symlink(outside.path(), dir.path().join("projects")).unwrap();
+    assert!(GlobalStore::open(dir.path()).is_err());
+    assert!(SqliteStore::open_project(dir.path(), &id()).is_err());
+    std::fs::remove_file(dir.path().join("projects")).unwrap();
+    std::fs::create_dir(dir.path().join("projects")).unwrap();
+    let pid = id();
+    symlink(outside.path(), dir.path().join("projects").join(&pid)).unwrap();
+    assert!(SqliteStore::open_project(dir.path(), &pid).is_err());
+    assert!(SqliteStore::open_project(dir.path(), "../escape").is_err());
+}
+
+/// An independent provider implementing the four public base contracts.
+/// Simulation is used only for deterministic fixture responses.
+#[derive(Default)]
+struct RecordingProviders(std::sync::Mutex<std::collections::HashSet<&'static str>>);
+impl RecordingProviders {
+    fn record(&self, method: &'static str) {
+        self.0.lock().unwrap().insert(method);
+    }
+}
+impl devdesk_core::ports::Harness for RecordingProviders {
+    fn identity(&self) -> String {
+        "fixture:harness:1".into()
+    }
+    fn configure(&self, node: &str, scenario: &str) -> String {
+        self.record("harness.configure");
+        SimHarness.configure(node, scenario)
+    }
+    fn poll(&self, run: &Run, input: &Value, now: u64) -> Result<Option<Value>> {
+        self.record("harness.poll");
+        SimHarness.poll(run, input, now + 10_000)
+    }
+}
+impl devdesk_core::ports::Git for RecordingProviders {
+    fn identity(&self) -> String {
+        "fixture:git:1".into()
+    }
+    fn execution_revision(&self, attempt: &Attempt, phase: &str) -> Result<String> {
+        self.record("git.execution_revision");
+        SimGit.execution_revision(attempt, phase)
+    }
+    fn candidate(
+        &self,
+        context: &GitContext,
+        source: &str,
+        target: &str,
+        operation: &str,
+    ) -> Result<String> {
+        self.record("git.candidate");
+        SimGit.candidate(context, source, target, operation)
+    }
+    fn advance(
+        &self,
+        context: &GitContext,
+        actual: &str,
+        expected: &str,
+        candidate: &str,
+        operation: &str,
+    ) -> Result<String> {
+        self.record("git.advance");
+        SimGit.advance(context, actual, expected, candidate, operation)
+    }
+}
+impl devdesk_core::ports::Tests for RecordingProviders {
+    fn identity(&self) -> String {
+        "fixture:tests:1".into()
+    }
+    fn validate(&self, request: &TestRequest, outcome: &str) -> Value {
+        self.record("tests.validate");
+        SimTests.validate(request, outcome)
+    }
+}
+impl devdesk_core::ports::Sandbox for RecordingProviders {
+    fn identity(&self) -> String {
+        "fixture:sandbox:1".into()
+    }
+    fn resource(&self, run: &str) -> Resource {
+        self.record("sandbox.resource");
+        SimSandbox.resource(run)
+    }
+    fn cleanup(&self, resource: &mut Resource, fail: bool) {
+        self.record("sandbox.cleanup");
+        SimSandbox.cleanup(resource, fail)
+    }
+}
+#[test]
+fn execution_base_contracts_allow_independent_providers_through_a_complete_task_merge() {
+    let dir = tempfile::tempdir().unwrap();
+    let initial = engine(dir.path());
+    let provider = Arc::new(RecordingProviders::default());
+    let e = Engine::new(
+        initial.store,
+        initial.artifacts,
+        devdesk_core::ports::ExecutionAdapters {
+            harness: provider.clone(),
+            git: provider.clone(),
+            tests: provider.clone(),
+            sandbox: provider.clone(),
+        },
+    );
+    let fid = new_feature(&e);
+    planning(&e, &fid);
+    let tid = task(&e, &fid, "独立实现与模拟实现共用契约");
+    let (_, did) = implementation(&e, &tid, "success");
+    review(&e, &did);
+    let mid = merge(&e, &tid);
+    call(&e, "merge.apply", &mid, json!({}));
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(s.task(&tid).unwrap().status, Status::Completed);
+    assert!(s.resources.iter().all(|r| r.status == Status::Released));
+    let called = provider.0.lock().unwrap();
+    for method in [
+        "harness.configure",
+        "harness.poll",
+        "git.execution_revision",
+        "git.candidate",
+        "git.advance",
+        "tests.validate",
+        "sandbox.resource",
+        "sandbox.cleanup",
+    ] {
+        assert!(
+            called.contains(method),
+            "custom contract was bypassed: {method}"
+        );
+    }
+    assert!(s.effects.iter().all(|e| {
+        e.request["adapter"]
+            .as_str()
+            .unwrap()
+            .starts_with("fixture:")
+    }));
+    assert!(s.advances.iter().all(|a| a.provider == "fixture:git:1"));
+}
+#[test]
+fn simulation_provider_identities_match_existing_persisted_history() {
+    let adapters = devdesk_adapters::simulation::adapters();
+    assert_eq!(adapters.harness.identity(), "devdesk_adapters::SimHarness");
+    assert_eq!(adapters.git.identity(), "devdesk_adapters::SimGit");
+    assert_eq!(adapters.tests.identity(), "devdesk_adapters::SimTests");
+    assert_eq!(adapters.sandbox.identity(), "devdesk_adapters::SimSandbox");
+}

@@ -1,3 +1,6 @@
+mod catalog;
+pub mod simulation;
+pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 use rusqlite::{
@@ -7,6 +10,7 @@ use rusqlite::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+pub use simulation::{SimGit, SimHarness, SimSandbox, SimTests};
 use std::{
     fs::{self, File, OpenOptions},
     path::{Path, PathBuf},
@@ -20,147 +24,55 @@ pub struct SqliteStore {
     writer: Mutex<()>,
     root: PathBuf,
     _lock: File,
+    project_id: Option<String>,
 }
 impl SqliteStore {
     pub fn open(path: &Path) -> Result<Self> {
-        fs::create_dir_all(path).map_err(storage)?;
-        let root = path.canonicalize().map_err(storage)?;
-        for name in [
-            ".devdesk-dataset",
-            ".devdesk.lock",
-            "engineering.sqlite3",
-            "engineering.sqlite3-wal",
-            "engineering.sqlite3-shm",
-            "artifacts",
-        ] {
-            reject_symlink(&root.join(name))?;
-        }
-        let marker = root.join(".devdesk-dataset");
-        if !marker.exists() {
-            let entries = fs::read_dir(&root)
-                .map_err(storage)?
-                .filter_map(|x| x.ok())
-                .collect::<Vec<_>>();
-            require(
-                entries.is_empty(),
-                "目录非空且不是 DevDesk 数据集；请选择空目录",
-            )?;
-            fs::write(&marker, "devdesk-schema-v1\n").map_err(storage)?;
-        }
+        let (root, lock) = lock_dataset(path)?;
         require(
-            fs::read_to_string(&marker).map_err(storage)? == "devdesk-schema-v1\n",
-            "数据集标记不受支持",
+            !root.join("global.sqlite3").exists(),
+            "此目录是全局配置库；请打开其项目数据库",
         )?;
-        let lock = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(root.join(".devdesk.lock"))
-            .map_err(storage)?;
-        fs2::FileExt::try_lock_exclusive(&lock)
-            .map_err(|_| err("dataset_locked", "此 data 已由另一个 host 打开"))?;
-        let mut connection = Connection::open(root.join("engineering.sqlite3")).map_err(storage)?;
-        connection
-            .execute_batch(
-                "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;",
-            )
-            .map_err(storage)?;
-        let version: u32 = connection
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
-            .map_err(storage)?;
-        require(version <= 13, "数据集版本比程序新")?;
-        if version == 0 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/001_initial.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 2 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!(
-                "../../../migrations/002_execution_binding.sql"
-            ))
-            .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 3 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/003_traceability.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 4 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/004_instances.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 5 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/005_code_baseline.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 6 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!(
-                "../../../migrations/006_binding_provenance.sql"
-            ))
-            .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 7 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/007_effects.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 8 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/008_attempt_outputs.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 9 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/009_attempt_scope.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 10 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/010_merge_advances.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 11 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/011_advance_provider.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 12 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!(
-                "../../../migrations/012_advance_observation.sql"
-            ))
-            .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
-        if version < 13 {
-            let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/013_git_context.sql"))
-                .map_err(storage)?;
-            tx.commit().map_err(storage)?;
-        }
+        let connection = open_engineering_connection(&root.join("engineering.sqlite3"))?;
         fs::create_dir_all(root.join("artifacts")).map_err(storage)?;
         Ok(Self {
             connection: Mutex::new(connection),
             writer: Mutex::new(()),
             root,
             _lock: lock,
+            project_id: None,
         })
+    }
+    pub fn open_project(data_root: &Path, project_id: &str) -> Result<Self> {
+        let root = Self::project_path(data_root, project_id)?;
+        let parent = data_root.join("projects");
+        fs::create_dir_all(&parent).map_err(storage)?;
+        let mut store = Self::open(&root)?;
+        store.project_id = Some(project_id.into());
+        let state = store.snapshot()?;
+        require(
+            state.projects.iter().all(|p| p.id == project_id) && state.projects.len() <= 1,
+            "项目数据库身份不匹配",
+        )?;
+        Ok(store)
+    }
+    pub fn project_path(data_root: &Path, project_id: &str) -> Result<PathBuf> {
+        require(uuid::Uuid::parse_str(project_id).is_ok(), "无效项目 ID")?;
+        let parent = data_root.join("projects");
+        let root = parent.join(project_id);
+        reject_symlink(&parent)?;
+        reject_symlink(&root)?;
+        for name in [
+            "engineering.sqlite3",
+            "engineering.sqlite3-wal",
+            "engineering.sqlite3-shm",
+            ".devdesk-dataset",
+            ".devdesk.lock",
+            "artifacts",
+        ] {
+            reject_symlink(&root.join(name))?;
+        }
+        Ok(root)
     }
     fn load(conn: &Connection) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
@@ -214,6 +126,148 @@ impl SqliteStore {
         Ok(())
     }
 }
+fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
+    fs::create_dir_all(path).map_err(storage)?;
+    let root = path.canonicalize().map_err(storage)?;
+    for name in [
+        ".devdesk-dataset",
+        ".devdesk.lock",
+        "engineering.sqlite3",
+        "engineering.sqlite3-wal",
+        "engineering.sqlite3-shm",
+        "artifacts",
+        "global.sqlite3",
+        "global.sqlite3-wal",
+        "global.sqlite3-shm",
+        "projects",
+        "runtime.json",
+    ] {
+        reject_symlink(&root.join(name))?;
+    }
+    let marker = root.join(".devdesk-dataset");
+    if !marker.exists() {
+        let entries = fs::read_dir(&root)
+            .map_err(storage)?
+            .filter_map(|x| x.ok())
+            .collect::<Vec<_>>();
+        require(
+            entries.is_empty(),
+            "目录非空且不是 DevDesk 数据集；请选择空目录",
+        )?;
+        fs::write(&marker, "devdesk-schema-v1\n").map_err(storage)?;
+    }
+    require(
+        fs::read_to_string(&marker).map_err(storage)? == "devdesk-schema-v1\n",
+        "数据集标记不受支持",
+    )?;
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(root.join(".devdesk.lock"))
+        .map_err(storage)?;
+    fs2::FileExt::try_lock_exclusive(&lock)
+        .map_err(|_| err("dataset_locked", "此 data 已由另一个 host 打开"))?;
+    Ok((root, lock))
+}
+
+fn open_engineering_connection(path: &Path) -> Result<Connection> {
+    let mut connection = Connection::open(path).map_err(storage)?;
+    connection
+        .execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
+        .map_err(storage)?;
+    let version: u32 = connection
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(storage)?;
+    require(version <= 13, "数据集版本比程序新")?;
+    if version == 0 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/001_initial.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 2 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../migrations/002_execution_binding.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 3 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/003_traceability.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 4 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/004_instances.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 5 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/005_code_baseline.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 6 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../migrations/006_binding_provenance.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 7 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/007_effects.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 8 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/008_attempt_outputs.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 9 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/009_attempt_scope.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 10 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/010_merge_advances.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 11 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/011_advance_provider.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 12 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../migrations/012_advance_observation.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 13 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../migrations/013_git_context.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    Ok(connection)
+}
+
 fn columns(conn: &Connection, table: &str) -> Result<Vec<(String, String)>> {
     let mut q = conn
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -332,6 +386,9 @@ fn save_table<T: Serialize>(
     Ok(())
 }
 impl EngineeringStore for SqliteStore {
+    fn project_id(&self) -> Option<String> {
+        self.project_id.clone()
+    }
     fn root(&self) -> String {
         self.root.to_string_lossy().into_owned()
     }
@@ -363,6 +420,12 @@ impl EngineeringStore for SqliteStore {
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;
+        if let Some(id) = &self.project_id {
+            require(
+                state.projects.len() <= 1 && state.projects.iter().all(|p| &p.id == id),
+                "项目数据库不能写入其他项目",
+            )?;
+        }
         let mut conn = self.connection.lock().map_err(storage)?;
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
@@ -498,172 +561,5 @@ impl ArtifactStore for FileArtifacts {
             "Artifact 哈希不匹配",
         )?;
         Ok(bytes)
-    }
-}
-pub struct SimHarness;
-impl HarnessPort for SimHarness {
-    fn reconcile(&self, run: &Run) -> Result<Option<Value>> {
-        Ok(Some(
-            json!({"status":"cancelled","cancellation_confirmed":true,"origin":"simulated","run_id":run.id,"session_id":run.session_id}),
-        ))
-    }
-    fn configure(&self, node: &str, scenario: &str) -> String {
-        match scenario {
-            "technical_failure" if node == "implement" || node == "merge_verify" => {
-                "technical_failure"
-            }
-            "assertion_failure" if node == "green" || node == "merge_verify" => "assertion_failure",
-            "missing_fields" if node == "research" => "missing_fields",
-            "hold" => "hold",
-            "cleanup_failure" => "cleanup_failure",
-            "review_reject" if node.starts_with("review:") => "review_reject",
-            _ => "success",
-        }
-        .into()
-    }
-
-    fn poll(&self, run: &Run, input: &Value, now: u64) -> Result<Option<Value>> {
-        if !run.cancel_requested
-            && (run.outcome == "hold" || now < run.started.unwrap_or(now) + 180)
-        {
-            return Ok(None);
-        }
-        if run.cancel_requested {
-            return Ok(Some(
-                json!({"status":"cancelled","origin":"simulated","cancellation_confirmed":true,"run_id":run.id,"session_id":run.session_id}),
-            ));
-        }
-        if run.node.starts_with("review:")
-            && (input["delivery"]["id"] != run.node.trim_start_matches("review:")
-                || !input["documents"].is_array()
-                || !input["evidence"].is_array()
-                || !input["artifact_body"].is_string())
-        {
-            return Err(err(
-                "adapter_contract",
-                "Reviewer 未收到冻结 Delivery/文档/证据/报告",
-            ));
-        }
-        let mut result = match run.outcome.as_str() {
-            "technical_failure" => {
-                json!({"status":"failed","failure_type":"environment","message":"固定注入：模拟执行环境不可用","origin":"simulated"})
-            }
-            "missing_fields" => json!({"message":"固定注入：供应商缺少结果字段"}),
-            _ => {
-                json!({"status":"succeeded","origin":"simulated","session_id":run.session_id,"message":format!("{} 模拟执行完成",run.node)})
-            }
-        };
-        result["run_id"] = json!(run.id);
-        result["session_id"] = json!(run.session_id);
-        result["external_session"] = json!(format!("sim-session-{}", run.session_id));
-        result["external_environment"] = json!(format!("sim-environment-{}", run.session_id));
-        result["cleanup_failed"] = json!(run.outcome == "cleanup_failure");
-        if run.node.starts_with("review:") {
-            result["review_delivery"] = input["delivery"]["id"].clone();
-            result["review_decision"] = json!(if run.outcome == "review_reject" {
-                "changes_requested"
-            } else {
-                "pass"
-            });
-        }
-        let kind = match run.node.as_str() {
-            "requirement" => Some("requirement"),
-            "design" => Some("design"),
-            "test_plan" => Some("test"),
-            "docs" => Some("doc"),
-            _ => None,
-        };
-        if let Some(kind) = kind {
-            let requirement = input["documents"]
-                .as_array()
-                .and_then(|ds| ds.iter().rev().find(|d| d["kind"] == "requirement"))
-                .and_then(|d| d["body"].as_str())
-                .unwrap_or("建立可验证的软件变更");
-            let body=match kind {"requirement"=>"## 需求\n建立可验证的软件变更。\n\n## 验收条件\n- 主流程可完成\n- 错误路径可观察\n- 历史可追踪".to_string(),"design"=>format!("## 设计\n针对需求：{requirement}\n\n## 方案与任务计划\n1. 实现主要行为\n2. 完善错误处理与文档\n\n## 验证\n各 Task 执行 Red → 实现 → Green，正式交付需 Review。"),"test"=>"## Test 计划\n实现前断言失败 Red，候选实现后 Green；验证错误路径，合入前重验候选。".into(),_=>"## 交付说明\n记录实现、验证、错误处理与已知限制。外部执行为模拟。".into()};
-            result["document"] =
-                json!({"kind":kind,"title":format!("模拟建议 · {kind}"),"body":body});
-        }
-        Ok(Some(result))
-    }
-}
-pub struct SimGit;
-impl GitPort for SimGit {
-    fn reconcile_advance(
-        &self,
-        _context: &GitContext,
-        operation: &str,
-    ) -> Result<AdvanceObservation> {
-        Ok(AdvanceObservation::Applied {
-            revision: format!("sim-rev-candidate-{operation}"),
-        })
-    }
-    fn execution_revision(&self, attempt: &Attempt, _phase: &str) -> Result<String> {
-        Ok(format!("sim-rev-source-{}", attempt.id))
-    }
-    fn candidate(
-        &self,
-        context: &GitContext,
-        source: &str,
-        target: &str,
-        operation: &str,
-    ) -> Result<String> {
-        require(
-            context.origin == Origin::Simulated,
-            "模拟 Git 不接受真实仓库执行来源",
-        )?;
-        require(
-            source.starts_with("sim-rev-") && target.starts_with("sim-rev-"),
-            "模拟 Git 仅接受模拟 revision",
-        )?;
-        Ok(format!("sim-rev-candidate-{operation}"))
-    }
-    fn advance(
-        &self,
-        context: &GitContext,
-        actual: &str,
-        expected: &str,
-        candidate: &str,
-        _operation_id: &str,
-    ) -> Result<String> {
-        require(
-            context.origin == Origin::Simulated,
-            "模拟 Git 不接受真实仓库执行来源",
-        )?;
-        require(actual == expected, "目标版本变化，拒绝推进")?;
-        require(candidate.starts_with("sim-rev-candidate-"), "候选来源无效")?;
-        Ok(candidate.into())
-    }
-}
-pub struct SimTests;
-impl TestRunnerPort for SimTests {
-    fn reconcile(&self, request: &TestRequest) -> Result<Option<Value>> {
-        let mut value = self.validate(request, "success");
-        value["status"] = json!("failed");
-        value["failure_type"] = json!("interrupted");
-        Ok(Some(value))
-    }
-    fn validate(&self, request: &TestRequest, outcome: &str) -> Value {
-        let node = &request.phase;
-        let candidate = &request.candidate;
-        json!({"operation_id":request.operation_id,"status":if outcome=="assertion_failure"{"failed"}else{"succeeded"},"failure_type":if outcome=="assertion_failure"{json!("assertion")}else{Value::Null},"candidate":candidate,"test_phase":node,"environment":request.environment,"origin":request.origin,"test_definitions":request.test_definitions,"assertion_failed":node=="red","expected_failure":node=="red"})
-    }
-}
-pub struct SimSandbox;
-impl SandboxPort for SimSandbox {
-    fn resource(&self, run_id: &str) -> Resource {
-        Resource {
-            id: id(),
-            run_id: run_id.into(),
-            kind: "simulated-environment".into(),
-            status: Status::Active,
-            origin: Origin::Simulated,
-        }
-    }
-    fn cleanup(&self, r: &mut Resource, fail: bool) {
-        r.status = if fail {
-            Status::CleanupFailed
-        } else {
-            Status::Released
-        };
     }
 }

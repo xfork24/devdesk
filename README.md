@@ -39,7 +39,7 @@ npm --prefix web ci
 ./scripts/check.sh
 ```
 
-检查先构建 Web，再运行 32 项领域/存储/契约/集成测试；分别验证 debug/release host 的 HTTP 安全、中文及空格路径、跨进程数据锁与重启，并各运行 3 项 Chromium Web E2E。release HTTP 检查将程序复制到临时空目录运行。浏览器安装只用于测试，运行产品不需要。
+检查先构建 Web，再运行领域/存储/契约/集成测试；分别验证 debug/release host 的 HTTP 安全、中文及空格路径、跨进程数据锁、分库隔离与重启，并运行 Chromium Web E2E。release HTTP 检查将程序复制到临时空目录运行。浏览器安装只用于测试，运行产品不需要。
 
 开发时先 `npm --prefix web run build`，再 `cargo run -p devdesk-host -- --data ./data`。Web 更改后需重新构建并重启 host，保持同源鉴权；`vite` 独立开发服务不是成品运行依赖。
 
@@ -50,6 +50,16 @@ npm --prefix web ci
 - [验收与限制](docs/acceptance.md)、[阶段报告](docs/reports/README.md)
 - [协议 JSON Schema](schemas/rpc.schema.json)、[文件清单 Schema](schemas/manifest.schema.json)
 
-数据集以 `.devdesk-dataset` 标记，使用独占写锁；非空非 DevDesk 目录不初始化。更换 data 路径需退出并重新启动，不隐式迁移。Archive 与迁移仅交互预览。所有 reset/删除均不作为正常升级或恢复手段，本原型不提供任意路径删除功能。
+数据集以 `.devdesk-dataset` 标记，使用独占写锁；非空非 DevDesk 目录不初始化。更换 data 路径需退出并重新启动，不隐式搬迁。Archive 导出与 data 目录搬迁仅交互预览。所有 reset/删除均不作为正常升级或恢复手段，本原型不提供任意路径删除功能。
+
+全局配置与项目工程数据分别使用 SQLite 文件：
+
+```text
+<data>/global.sqlite3                            # 并发配置、共享定义、项目索引、上次打开的项目
+<data>/projects/<project-id>/engineering.sqlite3  # 当前项目的工程数据、事件与幂等记录
+<data>/projects/<project-id>/artifacts/           # 当前项目的文档、报告与其他产物
+```
+
+在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。旧版根目录 `engineering.sqlite3` 首次打开时自动拆分，校验产物并保留历史和幂等记录；旧库、旧产物及 `runtime.json` 保留不变，后续只使用新布局。迁移失败可修复原因后重试，不发布不完整的项目目录。详细语义见[架构说明](docs/design.md#adr-010每项目数据库与全局配置库)。
 
 本轮领域补强的计划见 [补强计划](plans/domain-hardening.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/reports/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。

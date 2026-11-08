@@ -2,6 +2,27 @@
 
 补强计划的内核部分已经实现并由当前模拟用例和故障供应商夹具验证。真实 Harness/GitHub/Docker 的 SDK、账号、凭据、进程和容器接入不在本轮执行范围；接入时实现下列契约，再以隔离仓库/账号/容器运行真实用例，最后开放 live。模拟历史不得作为真实工程证据。
 
+## 基接口、派生实现与装配
+
+Rust 使用 trait 表达抽象基类的契约，用 `impl` 提供派生实现。四个公共接口定义在 `devdesk_core::ports`，模拟类与未来的真实类实现相同接口：
+
+| 基接口 | 保留的模拟实现 | 后续真实实现示例（尚未实现） |
+|---|---|---|
+| `ports::Harness` | `SimHarness` | `CodexHarness`、`DshHarness` |
+| `ports::Git` | `SimGit` | `CliGit` |
+| `ports::Tests` | `SimTests` | `CommandTests` |
+| `ports::Sandbox` | `SimSandbox` | `DockerSandbox`、`LocalSandbox` |
+
+四个 Sim 实现分别位于 `crates/adapters/src/simulation/`，以 `impl Harness for SimHarness` 等形式实现公共接口；原有 `devdesk_adapters::SimHarness` 等导入仍然可用。旧接口名 `HarnessPort`、`GitPort`、`TestRunnerPort`、`SandboxPort` 保留为同一 trait 的别名，已有实现和故障夹具无需迁移。
+
+`devdesk_domain::Harness` 和 `devdesk_domain::Sandbox` 仍是持久化领域对象；`devdesk_core::ports::Harness` 和 `ports::Sandbox` 是执行接口，分别表达配置/历史与运行行为，使用模块路径区分。
+
+装配使用 `ports::ExecutionAdapters` 的四个 `Arc<dyn ...>` 字段。`Engine::new(store, artifacts, adapters)` 接收接口对象，既可选择全部 Sim，也可逐个注入其他实现。默认集合由 `devdesk_adapters::simulation::adapters()` 创建。host 的 `Workspace::open_with_adapters(root, adapters)` 将同一组实现传入全局配置 Engine 和各项目 Engine，项目切换时不会退回硬编码的 Sim 实现。
+
+真实类直接实现对应 trait，如 `impl devdesk_core::ports::Harness for CodexHarness`。凭据、连接与供应商状态归具体实现持有，工程状态推进仍由 Engine 决定。当前应用入口使用默认模拟集合；真实供应商接入沿用下文的配置与验收约束。
+
+Sim 的 `identity()` 明确固定为原有 `devdesk_adapters::SimHarness`、`SimGit`、`SimTests`、`SimSandbox` 标识，避免模块拆分改变持久化操作的供应商身份。真实实现使用独立、稳定且带版本的身份；历史操作继续由其原始适配器核对。
+
 ## 已落地的公共执行边界
 
 - 操作先登记，再调用，再保存回执，最后由 Rust 核对并接纳。调用供应商不持有 SQLite 事务或单写协调器。

@@ -52,6 +52,13 @@
         },
         "payload": {
           "type": "object"
+        },
+        "project_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Optional active-project scope; mismatches are rejected before dispatch."
         }
       }
     },

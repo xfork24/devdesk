@@ -1,7 +1,13 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
 mod advances;
 mod effects;
+pub mod ports;
+// Compatibility names for existing adapters and contract fixtures.
 use devdesk_domain::*;
+pub use ports::{
+    Git as GitPort, Harness as HarnessPort, Sandbox as SandboxPort, TestRequest,
+    Tests as TestRunnerPort,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -14,6 +20,9 @@ pub trait EngineeringStore: Send + Sync {
         action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
     ) -> Result<Value>;
     fn root(&self) -> String;
+    fn project_id(&self) -> Option<String> {
+        None
+    }
 }
 pub trait ArtifactStore: Send + Sync {
     fn seal(
@@ -24,81 +33,6 @@ pub trait ArtifactStore: Send + Sync {
         body: &str,
     ) -> Result<Artifact>;
     fn read(&self, artifact: &Artifact) -> Result<Vec<u8>>;
-}
-pub trait HarnessPort: Send + Sync {
-    /// Stable provider + adapter version; production adapters must override this identity.
-    fn identity(&self) -> String {
-        std::any::type_name::<Self>().into()
-    }
-    fn configure(&self, node: &str, scenario: &str) -> String;
-    fn poll(&self, run: &Run, input: &Value, now: u64) -> Result<Option<Value>>;
-    fn reconcile(&self, _run: &Run) -> Result<Option<Value>> {
-        Ok(None)
-    }
-}
-pub trait GitPort: Send + Sync {
-    /// Stable provider + adapter version; production adapters must override this identity.
-    fn identity(&self) -> String {
-        std::any::type_name::<Self>().into()
-    }
-    /// Read/freeze the code revision for an execution stage; simulation syntax belongs to the adapter.
-    fn execution_revision(&self, attempt: &Attempt, phase: &str) -> Result<String>;
-    fn reconcile_advance(
-        &self,
-        _context: &GitContext,
-        _operation_id: &str,
-    ) -> Result<AdvanceObservation> {
-        Ok(AdvanceObservation::Unknown)
-    }
-    fn candidate(
-        &self,
-        context: &GitContext,
-        source: &str,
-        target: &str,
-        operation: &str,
-    ) -> Result<String>;
-    fn advance(
-        &self,
-        context: &GitContext,
-        actual: &str,
-        expected: &str,
-        candidate: &str,
-        operation_id: &str,
-    ) -> Result<String>;
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TestRequest {
-    pub operation_id: Id,
-    pub phase: String,
-    pub candidate: String,
-    pub test_definitions: Vec<Id>,
-    pub environment: String,
-    pub origin: Origin,
-    #[serde(default)]
-    pub definitions: Vec<Document>,
-    #[serde(default)]
-    pub code: Option<GitContext>,
-    #[serde(default)]
-    pub runtime: Option<ExecutionInstance>,
-}
-pub trait TestRunnerPort: Send + Sync {
-    /// Stable provider + adapter version; production adapters must override this identity.
-    fn identity(&self) -> String {
-        std::any::type_name::<Self>().into()
-    }
-    fn validate(&self, request: &TestRequest, outcome: &str) -> Value;
-    fn reconcile(&self, _request: &TestRequest) -> Result<Option<Value>> {
-        Ok(None)
-    }
-}
-pub trait SandboxPort: Send + Sync {
-    /// Stable provider + adapter version; production adapters must override this identity.
-    fn identity(&self) -> String {
-        std::any::type_name::<Self>().into()
-    }
-    /// Pure resource intent; implementations must not create external resources here.
-    fn resource(&self, run_id: &str) -> Resource;
-    fn cleanup(&self, resource: &mut Resource, fail: bool);
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Command {
@@ -111,10 +45,10 @@ pub struct Command {
 pub struct Engine {
     pub store: Arc<dyn EngineeringStore>,
     pub artifacts: Arc<dyn ArtifactStore>,
-    pub harness: Arc<dyn HarnessPort>,
-    pub git: Arc<dyn GitPort>,
-    pub tests: Arc<dyn TestRunnerPort>,
-    pub sandbox: Arc<dyn SandboxPort>,
+    pub harness: Arc<dyn ports::Harness>,
+    pub git: Arc<dyn ports::Git>,
+    pub tests: Arc<dyn ports::Tests>,
+    pub sandbox: Arc<dyn ports::Sandbox>,
 }
 fn text(v: &Value, k: &str) -> Result<String> {
     v.get(k)
@@ -277,103 +211,131 @@ fn git_context(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Result<Git
         origin: Origin::Simulated,
     })
 }
+/// Seed shared configuration without creating project or execution facts.
+pub fn seed_configuration(s: &mut EngineeringState) {
+    if s.harnesses.is_empty() {
+        s.harnesses.push(Harness {
+            id: "sim-harness-v1".into(),
+            provider: "simulation".into(),
+            version: "1".into(),
+            capabilities: vec!["structured-output".into(), "cancel".into(), "poll".into()],
+            origin: Origin::Simulated,
+        });
+    }
+    if s.sandboxes.is_empty() {
+        s.sandboxes.push(Sandbox {
+            id: "sim-sandbox-v1".into(),
+            provider: "simulation".into(),
+            version: "1".into(),
+            platform: "logical".into(),
+            image: None,
+            network: false,
+            origin: Origin::Simulated,
+        });
+    }
+    if s.definitions.is_empty() {
+        for (family, name, version, body) in [
+            (
+                "spec",
+                "Internal Design Spec",
+                1,
+                "需求可追踪；设计说明边界；测试覆盖验收条件",
+            ),
+            (
+                "spec",
+                "Internal Design Spec",
+                2,
+                "需求可追踪；设计说明边界；测试覆盖验收条件；明确失败路径",
+            ),
+            (
+                "spec",
+                "Alternative Design Spec",
+                1,
+                "按问题、约束、方案、验证组织设计",
+            ),
+            (
+                "skill",
+                "TDD",
+                1,
+                "Red → 实现 → Green；证据绑定候选与测试定义",
+            ),
+            ("agent", "工程 Agent", 1, "模拟工程执行身份"),
+            ("agent", "评审 Agent", 1, "独立模拟评审身份"),
+            (
+                "standard",
+                "工程默认 Standard",
+                1,
+                "规划、实现、候选交付均需证据与 Review",
+            ),
+        ] {
+            let slots = if family == "standard" {
+                s.definitions
+                    .iter()
+                    .filter(|d| d.family == "spec" && d.version == 1)
+                    .take(1)
+                    .flat_map(|d| {
+                        ["planning", "implementation", "merge"].map(|purpose| SpecSlot {
+                            purpose: purpose.into(),
+                            spec: d.id.clone(),
+                        })
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            let rules = if family == "spec" {
+                if name == "Alternative Design Spec" {
+                    vec!["sections".into()]
+                } else if version == 2 {
+                    vec!["traceability".into(), "failure_paths".into()]
+                } else {
+                    vec!["traceability".into()]
+                }
+            } else {
+                vec![]
+            };
+            let predecessor = if family == "spec" && version > 1 {
+                s.definitions
+                    .iter()
+                    .rev()
+                    .find(|d| d.family == family && d.name == name)
+                    .map(|d| d.id.clone())
+            } else {
+                None
+            };
+            s.definitions.push(Definition {
+                id: id(),
+                family: family.into(),
+                name: name.into(),
+                version,
+                supersedes: predecessor,
+                body: body.into(),
+                slots,
+                rules,
+            });
+        }
+    }
+}
+
 impl Engine {
+    /// Assemble an engine through the same contracts for all provider implementations.
+    pub fn new(
+        store: Arc<dyn EngineeringStore>,
+        artifacts: Arc<dyn ArtifactStore>,
+        adapters: ports::ExecutionAdapters,
+    ) -> Self {
+        Self {
+            store,
+            artifacts,
+            harness: adapters.harness,
+            git: adapters.git,
+            tests: adapters.tests,
+            sandbox: adapters.sandbox,
+        }
+    }
     pub fn bootstrap(&self) -> Result<()> {
         self.store.transact(None, &mut |s| {
-            if s.harnesses.is_empty() {
-                s.harnesses.push(Harness {
-                    id: "sim-harness-v1".into(),
-                    provider: "simulation".into(),
-                    version: "1".into(),
-                    capabilities: vec!["structured-output".into(), "cancel".into(), "poll".into()],
-                    origin: Origin::Simulated,
-                });
-            }
-            if s.sandboxes.is_empty() {
-                s.sandboxes.push(Sandbox {
-                    id: "sim-sandbox-v1".into(),
-                    provider: "simulation".into(),
-                    version: "1".into(),
-                    platform: "logical".into(),
-                    image: None,
-                    network: false,
-                    origin: Origin::Simulated,
-                });
-            }
-            if s.definitions.is_empty() {
-                for (family, name, version, body) in [
-                    (
-                        "spec",
-                        "Internal Design Spec",
-                        1,
-                        "需求可追踪；设计说明边界；测试覆盖验收条件",
-                    ),
-                    (
-                        "spec",
-                        "Internal Design Spec",
-                        2,
-                        "需求可追踪；设计说明边界；测试覆盖验收条件；明确失败路径",
-                    ),
-                    (
-                        "spec",
-                        "Alternative Design Spec",
-                        1,
-                        "按问题、约束、方案、验证组织设计",
-                    ),
-                    (
-                        "skill",
-                        "TDD",
-                        1,
-                        "Red → 实现 → Green；证据绑定候选与测试定义",
-                    ),
-                    ("agent", "工程 Agent", 1, "模拟工程执行身份"),
-                    ("agent", "评审 Agent", 1, "独立模拟评审身份"),
-                    (
-                        "standard",
-                        "工程默认 Standard",
-                        1,
-                        "规划、实现、候选交付均需证据与 Review",
-                    ),
-                ] {
-                    let slots = if family == "standard" {
-                        s.definitions
-                            .iter()
-                            .filter(|d| d.family == "spec" && d.version == 1)
-                            .take(1)
-                            .flat_map(|d| {
-                                ["planning", "implementation", "merge"].map(|purpose| SpecSlot {
-                                    purpose: purpose.into(),
-                                    spec: d.id.clone(),
-                                })
-                            })
-                            .collect()
-                    } else {
-                        vec![]
-                    };
-                    let rules = if family == "spec" {
-                        if name == "Alternative Design Spec" {
-                            vec!["sections".into()]
-                        } else if version == 2 {
-                            vec!["traceability".into(), "failure_paths".into()]
-                        } else {
-                            vec!["traceability".into()]
-                        }
-                    } else {
-                        vec![]
-                    };
-                    let predecessor = if family=="spec"&&version>1 {s.definitions.iter().rev().find(|d|d.family==family&&d.name==name).map(|d|d.id.clone())}else{None};
-                    s.definitions.push(Definition {
-                        id: id(),
-                        family: family.into(),
-                        name: name.into(),
-                        version,
-                        supersedes: predecessor,
-                        body: body.into(),
-                        slots,
-                        rules,
-                    });
-                }
-            }
+            seed_configuration(s);
             for intent in s.advances.iter_mut().filter(|a|a.status==AdvanceStatus::Dispatched) {intent.status=AdvanceStatus::NeedsReconciliation;intent.reason="reconcile_requested".into();intent.revision+=1;}
             let interrupted = s
                 .runs
@@ -499,7 +461,12 @@ impl Engine {
                     json!({"id":key,"operation_id":key})
                 }
                 "project.create" => {
-                    let pid = id();
+                    let scoped = self.store.project_id();
+                    require(
+                        scoped.is_none() || s.projects.is_empty(),
+                        "项目数据库只能保存一个 Project",
+                    )?;
+                    let pid = scoped.unwrap_or_else(id);
                     let title = text(p, "title")?;
                     let b = binding(s);
                     s.projects.push(Project {
