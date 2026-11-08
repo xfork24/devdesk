@@ -25,7 +25,7 @@ for attempt in {1..200}; do
   sleep .1
 done
 trap 'rmdir "$helper_dir/.install-lock"' EXIT
-source_digest="$(python3 scripts/credential-helper-fingerprint.py "$certificate")"
+source_digest="$(python3 scripts/py/credential-helper-fingerprint.py "$certificate")"
 if [ -f "$helper_dir/manifest.json" ] && [ -f "$helper_dir/devdesk-credential-helper" ]; then
   existing="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["source_digest"])' "$helper_dir/manifest.json")"
   if [ "$existing" = "$source_digest" ]; then

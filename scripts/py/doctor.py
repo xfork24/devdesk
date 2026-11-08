@@ -16,7 +16,7 @@ try:
  apparmor=security.returncode==0 and any(value.startswith('name=apparmor') for value in json.loads(security.stdout))
 except (OSError,subprocess.TimeoutExpired,ValueError,TypeError):apparmor=False
 if apparmor:
- installed=Path('/etc/apparmor.d/devdesk-harness-v1');expected=Path(__file__).resolve().parents[1]/'containers/security/devdesk-harness-v1.apparmor'
+ installed=Path('/etc/apparmor.d/devdesk-harness-v1');expected=Path(__file__).resolve().parents[2]/'containers/security/devdesk-harness-v1.apparmor'
  try:
   metadata=installed.lstat();matches=not installed.is_symlink() and metadata.st_uid==0 and metadata.st_mode&0o022==0 and installed.read_bytes()==expected.read_bytes()
  except OSError:matches=False

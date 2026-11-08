@@ -97,7 +97,7 @@ crates/adapters/     SQLite、文件、模拟 Git/Test/Harness/Sandbox
 crates/host/         CLI、HTTP/SSE、会话鉴权、静态资源、装配
 schemas/             公共协议、Delivery/Report 结构
 sql/                 数据库初始化与结构升级脚本
-fixtures/scenarios/  可重复模拟场景和故障注入
+tests/fixtures/scenarios/  可重复模拟场景和故障注入
 tests/               领域、契约、集成、Web E2E
 docs/                领域规范、协议、ADR、演示
 docs/plans/          按计划归档；各子目录的 PLAN.md 为计划，所属报告与证据同目录保存

@@ -1180,7 +1180,7 @@ mod protocol_tests {
             "DSH SDK rejects null optional custom text"
         );
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../fixtures/protocols/dsh-fast-completion.json"
+            "../../../tests/fixtures/protocols/dsh-fast-completion.json"
         ))
         .unwrap();
         let frames: Vec<Value> = serde_json::from_value(fixture["frames"].clone()).unwrap();

@@ -29,6 +29,8 @@ Host 程序嵌入 Web 文件；macOS 的真实 DSH 凭据另使用运行包内�
 
 macOS Apple Silicon 输出 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz` 及 SHA-256 校验文件。解压后执行 `./devdesk-host`，无需 Rust/Node 或源码；详见[运行包说明](docs/run-binary.md)。
 
+跨平台传递当前工作区源码可执行 `./scripts/package-source.sh`，输出 `dist/devdesk-worktree-source.tar.gz`、源码清单和校验文件。操作入口统一位于 `scripts/*.sh`，Python 辅助实现位于 `scripts/py/`；测试夹具位于 `tests/fixtures/`。
+
 ## 使用与验证
 
 [演示步骤](docs/demo.md)说明从需求到模拟 mainline 的操作和异常场景。需要先完成规划的两个 Delivery/Review，再建立独立 Tasks；Task 完成后还有 Feature 自身收尾。

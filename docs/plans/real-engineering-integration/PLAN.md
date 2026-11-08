@@ -275,7 +275,7 @@ GitHub REST 的合入接口 `sha` 校验 PR head，不能作为 base 的 CAS。�
 - `crates/adapters/src/{lib,catalog}.rs`、`sql/`、`sql/global/`：双库结构、加载/保存、只追加修订与相应升级。
 - `crates/host/src/{main,workspace}.rs`：配置装配、注册表、API/事件、启动/退出核对；不能在活动项目切换时遗漏非活动项目的真实资源。
 - `web/src/`：抽出 RoleConversation、ProposalPanel、InteractionCard、RuntimeSettings、GitStatus/Diff 等组件；UI 不实现工程门禁。
-- `schemas/`、`fixtures/`、`tests/`、`docs/`：协议/报告、实际被测试加载的录制协议 fixture、验收与用户文档。
+- `schemas/`、`tests/fixtures/`、`tests/`、`docs/`：协议/报告、实际被测试加载的录制协议 fixture、验收与用户文档。
 
 ## 10. 可由 Codex 执行的阶段任务
 
@@ -398,7 +398,7 @@ GitHub REST 的合入接口 `sha` 校验 PR head，不能作为 base 的 CAS。�
 
 真实用例使用独立临时本地仓库、专用 GitHub 测试仓库和明确归属的容器，不使用 DevDesk 当前开发仓库作为被管理项目。测试输入可采用两个验收条目的小型导出功能；断言追踪、约束与实际行为，不比较模型自由文本逐字相同。
 
-自动化分层：纯领域测试；录制协议回放/模拟供应商故障；临时真实 Git；本机真实 Docker；双 Harness 最小真实会话；GitHub 远端集成；Web 全流程。`fixtures/` 中的样本必须被测试实际读取，记录来源协议版本和脱敏方式。
+自动化分层：纯领域测试；录制协议回放/模拟供应商故障；临时真实 Git；本机真实 Docker；双 Harness 最小真实会话；GitHub 远端集成；Web 全流程。`tests/fixtures/` 中的协议样本必须被测试实际读取，记录来源协议版本和脱敏方式。
 
 R8 提供统一 `scripts/check-live.sh` 入口，参数包含 `--providers codex,dsh`、显式的本地测试根目录和 `--github-repo <owner/test-repo>`；运行时/模型/凭据引用通过已登记的配置加载。入口先校验隔离资源范围，缺前置条件以非零退出并列出未验收项，不能跳过后返回“全部通过”。支持按 Git、Docker、Harness、GitHub、Web 分组执行，以便先定位故障，再运行完整闭环。输出带版本、步骤、结果和 Artifact 定位的机器可读报告。
 

@@ -2,7 +2,7 @@
 """Snapshot source changes for another platform without including runtime data/secrets."""
 import hashlib,io,json,subprocess,tarfile
 from pathlib import Path
-root=Path(__file__).resolve().parents[1]
+root=Path(__file__).resolve().parents[2]
 files=subprocess.check_output(['git','ls-files','-z','--cached','--others','--exclude-standard'],cwd=root).decode().split('\0')
 entries=[]
 for name in sorted(set(filter(None,files))):

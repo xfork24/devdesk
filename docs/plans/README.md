@@ -11,6 +11,7 @@
 | [真实工程接入](real-engineering-integration/PLAN.md) | [R0–R8 最终验收](real-engineering-integration/R8-acceptance.md)及同目录证据 | macOS Web 真实闭环通过 |
 | [Web 平台与系统凭据](web-platform-and-credentials/PLAN.md) | [补充验收](web-platform-and-credentials/web-platform-and-credentials.md)及同目录证据 | macOS/Linux 系统凭据、Ubuntu 双 Harness Web 闭环与发布包通过 |
 | [Ubuntu Web 验收](ubuntu-web-acceptance/PLAN.md) | [Ubuntu 本轮报告](ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)及独立运行证据 | U0–U6 通过；真实 PR、恢复、发布包与批准的命名策略均有实机证据 |
+| [Permission 领域模型与权限标准化](permission-standardization/PLAN.md) | 实施报告与验收证据归入同目录 | 待实施；覆盖 Harness/Sandbox 权限、原生配置、DSH/Docker 策略资产、迁移与 Web |
 
 ## 历史证据的路径
 
@@ -24,5 +25,8 @@
 | `docs/reports/domain-hardening*` | `docs/plans/domain-hardening/` 中的同名文件 |
 | `docs/reports/project-databases.md` | `docs/plans/project-databases/project-databases.md` |
 | 其余系统凭据、`credentials-*`、`macos-credentials*`、helper、preflight、runtime-base 与 Web package 文件 | `docs/plans/web-platform-and-credentials/` 中的同名文件 |
+| `fixtures/` | `tests/fixtures/` |
+| `scripts/doctor.py`、`scripts/credential-helper-fingerprint.py` | `scripts/py/` 中的同名文件，原 shell 入口继续使用 |
+| `scripts/package-source.py` | `scripts/py/package-source.py`，当前入口为 `scripts/package-source.sh` |
 
 `docs/` 下的领域/协议/适配器契约、运行说明等长期参考文档仍保留原位置；它们不是阶段执行计划或验收报告。
