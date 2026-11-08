@@ -2,7 +2,7 @@
 
 日期：2026-11-08。状态：待切换 Ubuntu 执行，本文不代表验收通过。
 
-执行者：Codex。依据：[真实工程接入计划](real-engineering-integration.md)、[平台与凭据补充计划](web-platform-and-credentials.md)、[macOS R0–R8 验收](../reports/real-integration/R8-acceptance.md)。操作入口见 [Ubuntu Web 验收说明](../ubuntu-web-acceptance.md)。
+执行者：Codex。依据：[真实工程接入计划](../real-engineering-integration/PLAN.md)、[平台与凭据补充计划](../web-platform-and-credentials/PLAN.md)、[macOS R0–R8 验收](../real-engineering-integration/R8-acceptance.md)。操作入口见 [Ubuntu Web 验收说明](../../ubuntu-web-acceptance.md)。
 
 ## 目标与边界
 
@@ -17,7 +17,7 @@
 - 使用独立的 Ubuntu 验收数据目录；不得启动旧 macOS 数据集或复制旧凭据引用、macOS 二进制、安装 ID、Docker image ID。
 - 使用专用测试仓库。可继续使用已授权的私有仓库 `xfork24/devdesk-integration-test`；先核实当前 GitHub 账户有权限。若不可用，按已有授权创建新的私有测试仓库并记录名称。禁止将 `xfork24/devdesk` 作为被管理项目。
 - 完整 live 会调用真实模型、创建提交/PR 并合入测试仓库；使用新报告目录和随机用例前缀，保留之前的验收历史。
-- 所有报告单独放到 `docs/reports/ubuntu-real-integration/<run-id>/`，不覆盖 macOS 的 R3–R8 文件。保存命令、退出码、版本、截图及经检查的日志；密钥、OAuth token、完整凭据库不得进入 Git、报告或聊天。
+- 所有报告单独放到 `docs/plans/ubuntu-web-acceptance/<run-id>/`，不覆盖 macOS 的 R3–R8 文件。保存命令、退出码、版本、截图及经检查的日志；密钥、OAuth token、完整凭据库不得进入 Git、报告或聊天。
 - 只停止/删除有验收归属回执的 Host、容器和 worktree；不清理用户其他镜像、卷或容器。崩溃测试只针对唯一匹配数据目录和端口的专用 Host，不能终止 Codex 桌面应用。
 - 任一必要前置条件缺失，记录阻塞并继续可独立执行的步骤。需要网页登录、解锁凭据库或系统安装授权时告知用户具体原因；未完成的步骤保持待验收，不能将 skip 计为通过。
 
@@ -53,7 +53,7 @@ gh auth login
 ```bash
 export DEVDESK_UBUNTU_RUN="ubuntu-$(date -u +%Y%m%dT%H%M%SZ)"
 export DEVDESK_UBUNTU_DATA="$PWD/data/$DEVDESK_UBUNTU_RUN"
-export DEVDESK_UBUNTU_REPORTS="$PWD/docs/reports/ubuntu-real-integration/$DEVDESK_UBUNTU_RUN"
+export DEVDESK_UBUNTU_REPORTS="$PWD/docs/plans/ubuntu-web-acceptance/$DEVDESK_UBUNTU_RUN"
 export DEVDESK_UBUNTU_REPO="xfork24/devdesk-integration-test"
 mkdir -p "$DEVDESK_UBUNTU_REPORTS"
 ./scripts/doctor.sh --output "$DEVDESK_UBUNTU_REPORTS/preflight.json"
@@ -122,7 +122,7 @@ python3 tests/live/probe_installations.py \
 - [ ] 执行 `./scripts/package.sh`，核对 `dist/devdesk-0.2.0-<actual-target>.tar.gz` 及 SHA256；记录 Linux target 和包内容。
 - [ ] 将包解压到源码目录外，从非源码工作目录启动包内 Host，使用专用数据目录、独立端口或先优雅停止原验收 Host；检查嵌入式 Web、HTTP/SSE、凭据读取、已有项目查询，以及两个 Harness 各一轮真实会话。之后确认执行者释放和重启可读。
 - [ ] 包中只有一份 Host/嵌入 Web 与容器配方；Linux 包没有 macOS helper，没有验收数据、OAuth/key、签名私钥、按项目/角色重复打包的运行时。运行所需 Docker/gh/Secret Service 等宿主依赖明确写入说明。
-- [ ] 完成独立 Ubuntu 报告 `docs/reports/ubuntu-real-integration/<run-id>/acceptance.md`：记录源码提交、实际系统/CPU/依赖、命令退出码、安装 ID/镜像摘要、Session/Run/Execution、资源释放、Artifact、PR/候选 SHA、浏览器截图、包 SHA256 和未覆盖边界。
+- [ ] 完成独立 Ubuntu 报告 `docs/plans/ubuntu-web-acceptance/<run-id>/acceptance.md`：记录源码提交、实际系统/CPU/依赖、命令退出码、安装 ID/镜像摘要、Session/Run/Execution、资源释放、Artifact、PR/候选 SHA、浏览器截图、包 SHA256 和未覆盖边界。
 - [ ] 按 macOS R8 的 A01–A22 逐项填写 Ubuntu 证据和结果，区分实际外部验证、契约注入与待验证；同时映射原设计 H01–H09/INV01–INV13，不扩大原计划范围。
 - [ ] 若进行了修复，重跑相关离线/真实场景，并在最终源码上完成必要回归；更新本计划、平台补充计划、README 和报告索引，只有全部必要步骤通过后才标记 Ubuntu 已验收。
 

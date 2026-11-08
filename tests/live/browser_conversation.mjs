@@ -1,7 +1,7 @@
 // Real browser -> DevDesk RPC -> managed DSH -> structured proposal -> formal Requirement.
 import { chromium } from '../../web/node_modules/playwright/index.mjs';
 import fs from 'node:fs';
-const reports=process.env.DEVDESK_LIVE_REPORTS||'docs/reports/real-integration';const url=process.env.DEVDESK_LIVE_URL||'http://127.0.0.1:51751';
+const reports=process.env.DEVDESK_LIVE_REPORTS||'docs/plans/real-engineering-integration';const url=process.env.DEVDESK_LIVE_URL||'http://127.0.0.1:51751';
 const source=JSON.parse(fs.readFileSync(reports+'/R3-dsh-application.json','utf8'));
 const output=reports+'/R5-browser-proposal.json';
 const report={passed:false,source:'real Chromium + DevDesk host + managed DSH',project_id:source.project_id,session_id:source.session_id};

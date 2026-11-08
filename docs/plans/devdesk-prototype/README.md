@@ -2,7 +2,7 @@
 
 日期：2026-11-08。自检由实现者完成；独立评审分别由 review_f0、review_storage_host、review_web 执行，未将自检冒充评审。
 
-设计与实施计划见 [架构设计](../plans/devdesk-v0.2.md)、[原型实施计划](../plans/devdesk-prototype.md) 和 [补强计划](../plans/domain-hardening.md)。
+设计与实施计划见 [架构设计](../devdesk-v0.2/PLAN.md)、[原型实施计划](PLAN.md) 和 [补强计划](../domain-hardening/PLAN.md)。
 
 | 阶段 | 设计/执行/验证报告 | 独立评审 | 状态 |
 |---|---|---|---|
@@ -15,9 +15,9 @@
 
 保留 [初次 F0 退回记录](F0-review-initial.md) 与 [原 Linux 独立评审记录](independent-review.md)，不回写历史评语。本轮补齐 macOS 实机待办，详见 [macOS 设计/执行/验证报告](macos-validation.md)、[独立评审](macos-independent-review.md) 与 [测量原始数据](macos-measurements.json)。
 
-- [领域与工程接入基础补强](domain-hardening.md)：本轮模型、迁移、回归和真实适配器边界。
-- [每项目数据库与全局配置库](project-databases.md)：活动数据库切换、全局配置、旧库拆分及隔离验收。
-- [真实工程接入验收](real-integration/R8-acceptance.md)：双 Harness、Docker TDD、真实 PR 合入、取消/崩溃恢复与运行包；macOS Web 通过，Ubuntu 宿主按后续要求继续。
+- [领域与工程接入基础补强](../domain-hardening/domain-hardening.md)：本轮模型、迁移、回归和真实适配器边界。
+- [每项目数据库与全局配置库](../project-databases/project-databases.md)：活动数据库切换、全局配置、旧库拆分及隔离验收。
+- [真实工程接入验收](../real-engineering-integration/R8-acceptance.md)：双 Harness、Docker TDD、真实 PR 合入、取消/崩溃恢复与运行包；macOS Web 通过，Ubuntu 宿主按后续要求继续。
 
-- [Web 平台与系统凭据补充](web-platform-and-credentials.md)：稳定签名、无后台 Keychain 提示、Linux Secret Service 与 Ubuntu 待验收入口。
-- [Ubuntu Web 待执行验收计划](../plans/ubuntu-web-acceptance.md)：切换宿主后的 U0–U6 步骤、A01–A22 证据及独立运行包验收，尚未标记通过。
+- [Web 平台与系统凭据补充](../web-platform-and-credentials/web-platform-and-credentials.md)：稳定签名、无后台 Keychain 提示、Linux Secret Service 与 Ubuntu 待验收入口。
+- [Ubuntu Web 待执行验收计划](../ubuntu-web-acceptance/PLAN.md)：切换宿主后的 U0–U6 步骤、A01–A22 证据及独立运行包验收，尚未标记通过。

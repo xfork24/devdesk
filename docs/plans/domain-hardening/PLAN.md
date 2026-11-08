@@ -1,6 +1,6 @@
 # DevDesk 领域与工程接入基础补强计划
 
-日期：2026-11-08。状态：H1–H4 已完成并验收。执行基线：[架构设计 v0.2](devdesk-v0.2.md) 的领域语义及 [原型实施计划](devdesk-prototype.md) 第14节的范围决策。
+日期：2026-11-08。状态：H1–H4 已完成并验收。执行基线：[架构设计 v0.2](../devdesk-v0.2/PLAN.md) 的领域语义及 [原型实施计划](../devdesk-prototype/PLAN.md) 第14节的范围决策。
 
 ## 目标与边界
 
@@ -43,7 +43,7 @@
 - H2 已完成：结构化验收/追踪、冻结 Task scope、Run 绑定、运行实例、Review 分配、最终 Snapshot 执行来源和 Context 修订历史均已实现；Reviewer/候选验证沿用源锁，Agent 不同修订不冒充独立身份。数据库 v1→v13 顺序迁移，不倒填未知事实。
 - H3 已完成：EffectRecord 与 MergeAdvance 保存意图/供应商身份/请求/回执；慢外部调用不占用单写协调器；接纳时重新验证；取消/输入变化的迟到结果不接纳；导出先于清理。重启核对、失败清理重试、外部已完成但回执丢失、确认未推进与未知结果均有可执行夹具。GitContext 显式路由仓库/分支/worktree，Harness/TestRunner 收到完整冻结输入。
 - H4 已完成：Web 支持追踪、绑定、阶段执行、回执、核对、清理重试、合入核对与历史。新阶段输出不覆盖冻结输入，已运行 Run 复用首次请求；领域/架构/协议/真实接入契约已同步。
-- 最终验收通过：65 项 Rust；Web 构建；debug/release HTTP；debug/release 各 4 项 Web E2E；格式与 diff 检查。实际平台为 macOS Apple Silicon。详细证据见 [补强验收报告](../reports/domain-hardening.md) 与随附原始日志。
+- 最终验收通过：65 项 Rust；Web 构建；debug/release HTTP；debug/release 各 4 项 Web E2E；格式与 diff 检查。实际平台为 macOS Apple Silicon。详细证据见 [补强验收报告](domain-hardening.md) 与随附原始日志。
 
 ## 完成判定与接入边界
 

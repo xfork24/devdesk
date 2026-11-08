@@ -12,7 +12,7 @@ project_root=Path(__file__).resolve().parents[2];os.chdir(project_root);a.root=a
 assert a.github_repo!='xfork24/devdesk','never use the DevDesk source repository'
 providers=a.providers.split(',');assert providers and set(providers)<=set(['codex','dsh'])
 groups=a.groups.split(',');assert groups and set(groups)<=set(['git','docker','harness','github','web','workflow','recovery'])
-reports=a.reports or (project_root/'docs/reports/real-integration' if a.mode=='verify-existing' else a.root/'acceptance'/('live-'+uuid.uuid4().hex[:10]));reports=reports.resolve();reports.mkdir(parents=True,exist_ok=True)
+reports=a.reports or (project_root/'docs/plans/real-engineering-integration' if a.mode=='verify-existing' else project_root/'docs/plans/real-engineering-integration'/('live-'+uuid.uuid4().hex[:10]));reports=reports.resolve();reports.mkdir(parents=True,exist_ok=True)
 r={'passed':False,'mode':a.mode,'platform':platform.platform(),'machine':platform.machine(),'providers':providers,'groups':groups,'root':str(a.root),'github_repository':a.github_repo,'steps':[],'started':time.time()};output=reports/('live-check-'+a.mode+'-'+'-'.join(groups)+'.json');c=Client(a.url)
 def save():output.write_text(json.dumps(r,indent=2)+'\n')
 def step(name,fn):

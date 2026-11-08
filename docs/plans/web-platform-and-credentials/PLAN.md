@@ -1,6 +1,6 @@
 # Web 平台与系统凭据补充计划
 
-日期：2026-11-08。状态：P1 macOS 实际验收通过；P2 Linux 后端/入口已实现，Ubuntu 宿主待切换验证。依据用户在 R0–R8 执行期间的追加要求；在 [真实工程接入验收](../reports/real-integration/R8-acceptance.md) 后执行。目标为 macOS/Linux Web UI，macOS native 客户端后续再做。
+日期：2026-11-08。状态：P1 macOS 实际验收通过；P2 Linux 后端/入口已实现，Ubuntu 宿主待切换验证。依据用户在 R0–R8 执行期间的追加要求；在 [真实工程接入验收](../real-engineering-integration/R8-acceptance.md) 后执行。目标为 macOS/Linux Web UI，macOS native 客户端后续再做。
 
 ## P1：macOS 稳定身份与无后台提示
 
@@ -12,7 +12,7 @@
 
 ## P2：Linux Web 运行
 
-具体执行步骤及验收清单见 [Ubuntu Web 真实工程验收计划](ubuntu-web-acceptance.md)，当前仍待实际 Ubuntu 宿主执行。
+具体执行步骤及验收清单见 [Ubuntu Web 真实工程验收计划](../ubuntu-web-acceptance/PLAN.md)，当前仍待实际 Ubuntu 宿主执行。
 
 - Linux Secret Service 后端与设置页输入，秘密经私有 stdin/系统凭据库传递，不进 SQLite、argv、报告或浏览器持久存储；缺依赖明确阻塞。
 - 去除真实资源测试中的单平台镜像 ID 假设，按显式登记或本机固定镜像解析不可变 ID；保持会话冻结的旧摘要不变。

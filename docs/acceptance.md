@@ -16,7 +16,7 @@
 
 本轮完整检查入口为 `./scripts/check.sh`，先构建 Web，再测试和构建 host，干净检出无需预先生成 `web/dist`。新增 HTTP 检查覆盖会话鉴权、Host/Origin、JS/CSS 实际读取、平台能力、中文及空格 data 路径、跨进程单写锁、幂等、Artifact 未知 ID/未鉴权访问、SSE 连接下退出与重启持久化。真实 Artifact 内容由 Web E2E 打开并断言来源标记，文件哈希与 symlink 边界由 Rust 测试验证。
 
-浏览器使用真实 Rust API、SQLite 和本地文件，没有假后端。主流程与异常回路均断言无 pageerror。Web 截图：[原 Linux](assets/workbench.png)、[本轮 macOS](assets/workbench-macos.png)。作者验证与独立运行的范围分别保存在 [macOS 执行报告](reports/macos-validation.md) 和 [独立评审](reports/macos-independent-review.md)。
+浏览器使用真实 Rust API、SQLite 和本地文件，没有假后端。主流程与异常回路均断言无 pageerror。Web 截图：[原 Linux](assets/workbench.png)、[本轮 macOS](assets/workbench-macos.png)。作者验证与独立运行的范围分别保存在 [macOS 执行报告](plans/devdesk-prototype/macos-validation.md) 和 [独立评审](plans/devdesk-prototype/macos-independent-review.md)。
 
 ## 原计划验收矩阵
 
@@ -41,7 +41,7 @@
 
 同一规模：10 Projects / 100 Features / 1,000 Tasks。分页列表、详情和事件三个查询：原 Linux debug 单次约 **28.82ms**；本轮 macOS debug 单次 **41.396083ms**。均非性能 SLA。
 
-原 Linux release 可执行文件 **6,604,784 bytes**（约 6.30MiB）；空目录首个 HTML 约 **6.17ms**。本轮 macOS release 为 **5,740,880 bytes**（约 5.48MiB）；空目录启动到首个 HTML 五次为 **20.996 / 6.128 / 5.360 / 5.558 / 5.647ms**，中位数 **5.647ms**。启动测量不含数据初始化和浏览器启动。Web JS 266.63kB（gzip83.35kB），CSS14.64kB（gzip4.09kB）。[macOS 测量数据](reports/macos-measurements.json) 含二进制 SHA-256。
+原 Linux release 可执行文件 **6,604,784 bytes**（约 6.30MiB）；空目录首个 HTML 约 **6.17ms**。本轮 macOS release 为 **5,740,880 bytes**（约 5.48MiB）；空目录启动到首个 HTML 五次为 **20.996 / 6.128 / 5.360 / 5.558 / 5.647ms**，中位数 **5.647ms**。启动测量不含数据初始化和浏览器启动。Web JS 266.63kB（gzip83.35kB），CSS14.64kB（gzip4.09kB）。[macOS 测量数据](plans/devdesk-prototype/macos-measurements.json) 含二进制 SHA-256。
 
 ## 运行包
 
@@ -60,4 +60,4 @@
 
 ## 领域补强后续验收
 
-本文件上方保留原 v0.2 平台交付记录。领域补强的最终实现、v1→v13 数据迁移、操作核对及本轮 macOS 验证见 [补强验收报告](reports/domain-hardening.md)；不能将上方历史 Linux 验证视作补强代码的 Linux 复验。
+本文件上方保留原 v0.2 平台交付记录。领域补强的最终实现、v1→v13 数据迁移、操作核对及本轮 macOS 验证见 [补强验收报告](plans/domain-hardening/domain-hardening.md)；不能将上方历史 Linux 验证视作补强代码的 Linux 复验。

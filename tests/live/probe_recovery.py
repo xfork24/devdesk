@@ -6,7 +6,7 @@ must restart only its dedicated acceptance host between those phases.
 from client import Client
 from pathlib import Path
 import argparse,json,time,uuid
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--reports',type=Path,default=Path('docs/reports/real-integration'));p.add_argument('--phase',choices=['exercise','crash-arm','crash-check'],default='exercise');a=p.parse_args();a.reports.mkdir(parents=True,exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--reports',type=Path,default=Path('docs/plans/real-engineering-integration'));p.add_argument('--phase',choices=['exercise','crash-arm','crash-check'],default='exercise');a=p.parse_args();a.reports.mkdir(parents=True,exist_ok=True)
 f=a.reports/'R8-recovery.json';r=json.loads(f.read_text()) if f.exists() else {'passed':False,'source':'actual HTTP, native Codex/DSH and owned Docker workers'};c=Client(a.url)
 def save():f.write_text(json.dumps(r,indent=2)+'\n')
 def state(sid):return c.rpc('query.session',{'id':sid,'limit':100})

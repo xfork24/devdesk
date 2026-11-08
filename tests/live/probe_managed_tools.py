@@ -3,7 +3,7 @@
 from client import Client
 from pathlib import Path
 import json,argparse
-p=argparse.ArgumentParser();p.add_argument('--provider',required=True,choices=['codex','dsh']);a=p.parse_args();r=json.loads(Path('docs/reports/real-integration/R5-planning.json').read_text());c=Client();c.open(r['project_id']);v=c.feature(r['feature_id'])
+p=argparse.ArgumentParser();p.add_argument('--provider',required=True,choices=['codex','dsh']);a=p.parse_args();r=json.loads(Path('docs/plans/real-engineering-integration/R5-planning.json').read_text());c=Client();c.open(r['project_id']);v=c.feature(r['feature_id'])
 report={'provider':a.provider,'passed':False,'project_id':r['project_id']}
 try:
  prompt='Use the confined shell tool once to run exactly: printf "DEVDESK_TOOL_EXECUTED\\n"; pwd . Do not request broader permissions or modify files. Return ONLY JSON {"tool_ran":boolean} based on actual tool execution, false if unavailable.'
@@ -15,4 +15,4 @@ try:
  report.update(passed=True,session=sid,turn=tid,tool_events=[e['id'] for e in tool],protocol_artifacts=[e['protocol_artifact'] for e in state['executions'] if e['protocol_artifact']])
 except Exception as e:report.update(failure_type=type(e).__name__,failure=str(e));raise
 finally:
- Path('docs/reports/real-integration/R3-'+a.provider+'-tools.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
+ Path('docs/plans/real-engineering-integration/R3-'+a.provider+'-tools.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))

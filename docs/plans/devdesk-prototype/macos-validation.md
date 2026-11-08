@@ -1,6 +1,6 @@
 # macOS 补充交付：设计、执行与验证
 
-日期：2026-11-08。基线：[原型实施计划](../plans/devdesk-prototype.md) F1/F5、A12 及第 14 节独立评审要求。本轮关闭原 Linux 交付遗留的 macOS Apple Silicon 实机待办，不扩展真实适配器或 Archive/迁移执行。
+日期：2026-11-08。基线：[原型实施计划](PLAN.md) F1/F5、A12 及第 14 节独立评审要求。本轮关闭原 Linux 交付遗留的 macOS Apple Silicon 实机待办，不扩展真实适配器或 Archive/迁移执行。
 
 ## 环境与构建
 
@@ -39,7 +39,7 @@
 
 两组 Web E2E 均包含：需求与规划的正式 Delivery/Review → 双 Task → Task Merge → Feature 收尾 → mainline → 刷新/Artifact/历史；技术失败/重试、Review退回/新Attempt、Merge重试与手动继续；51 Tasks 分页和 revision 冲突保留输入。主闭环与异常回路断言无 pageerror。Web 打开真实 Artifact；HTTP 的 Artifact 测试覆盖未鉴权与未知 ID，Rust 覆盖哈希和 symlink 边界。
 
-小样本通过现有 `small_sample_pagination_and_event_query` 测试的 `--nocapture` 单次运行测量：10 Projects / 100 Features / 1,000 Tasks，列表+详情+事件 **41.396083ms**。release **5,740,880 bytes**，空目录启动到 HTML 五次中位数 **5.647ms**，非 SLA；见 [原始测量](macos-measurements.json)。[实际 Web 截图](../assets/workbench-macos.png) 已检查。
+小样本通过现有 `small_sample_pagination_and_event_query` 测试的 `--nocapture` 单次运行测量：10 Projects / 100 Features / 1,000 Tasks，列表+详情+事件 **41.396083ms**。release **5,740,880 bytes**，空目录启动到 HTML 五次中位数 **5.647ms**，非 SLA；见 [原始测量](macos-measurements.json)。[实际 Web 截图](../../assets/workbench-macos.png) 已检查。
 
 `./scripts/package.sh` 实际生成运行包与校验文件后，核对 SHA-256、解压至含中文及空格的临时目录，确认程序与当前 release 构建一致、说明及演示/评审文档齐全；以空 `PATH` 环境运行解包程序，HTTP/JS/CSS、数据锁、退出与重启验证均通过。归档 **2,542,928 bytes**，详见 [最终归档验证记录](macos-package-validation.json)。该记录在归档生成后保存，不包含在被校验的归档内。启动测量数据的 SHA-256 对应测量时二进制；最终打包再次构建，使用归档验证记录中的哈希核对当前交付。
 

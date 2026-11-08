@@ -16,4 +16,4 @@
 __pycache__/
 *.py[cod]
 # Curated acceptance logs are part of the engineering evidence.
-!docs/reports/**/*.log
+!docs/plans/**/*.log

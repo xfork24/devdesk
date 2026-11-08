@@ -32,7 +32,7 @@ Project 明确选择 simulation 或 live，历史来源不可改写。Git/Harnes
 
 ## 阶段评审
 
-每阶段报告列出实现、测试、限制和评审。独立 Agent 审查与作者自检分别保存；本轮 macOS 补充验收及独立结论见 [阶段报告索引](reports/README.md)。
+每阶段报告列出实现、测试、限制和评审。独立 Agent 审查与作者自检分别保存；本轮 macOS 补充验收及独立结论见 [阶段报告索引](plans/devdesk-prototype/README.md)。
 
 ## ADR-006：持久化意图、回执与短事务
 

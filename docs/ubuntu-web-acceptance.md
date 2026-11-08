@@ -1,8 +1,8 @@
 # Ubuntu Web 验收入口
 
-本轮 macOS 的真实工程报告在 [R8](reports/real-integration/R8-acceptance.md)。此文是 Ubuntu 待执行步骤；当前不能据此宣称 Linux 宿主已通过。Web UI 是本轮客户端，macOS native 客户端延后。
+本轮 macOS 的真实工程报告在 [R8](plans/real-engineering-integration/R8-acceptance.md)。此文是 Ubuntu 待执行步骤；当前不能据此宣称 Linux 宿主已通过。Web UI 是本轮客户端，macOS native 客户端延后。
 
-完整执行顺序、独立报告目录、逐阶段通过条件和收尾要求见 [Ubuntu Web 真实工程验收计划](plans/ubuntu-web-acceptance.md)。切换 Ubuntu 后按该计划执行；下面保留简要命令入口。
+完整执行顺序、独立报告目录、逐阶段通过条件和收尾要求见 [Ubuntu Web 真实工程验收计划](plans/ubuntu-web-acceptance/PLAN.md)。切换 Ubuntu 后按该计划执行；下面保留简要命令入口。
 
 ## 准备
 
@@ -15,7 +15,7 @@ npm --prefix web ci
  docker build -t devdesk/codex:0.167.0 containers/codex
  docker build -t devdesk/dsh:0.2.2-rc.1 containers/dsh
  gh auth login
-./scripts/doctor.sh --output docs/reports/ubuntu-web-preflight.json
+./scripts/doctor.sh --output docs/plans/ubuntu-web-acceptance/preflight.json
 cargo build --locked -p devdesk-host
 ./target/debug/devdesk-host --data /absolute/path/to/dedicated-live-data --port 51751
 ```

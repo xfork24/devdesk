@@ -100,8 +100,7 @@ sql/                 数据库初始化与结构升级脚本
 fixtures/scenarios/  可重复模拟场景和故障注入
 tests/               领域、契约、集成、Web E2E
 docs/                领域规范、协议、ADR、演示
-docs/plans/          架构设计与实施计划
-docs/reports/        执行记录与验收报告
+docs/plans/          按计划归档；各子目录的 PLAN.md 为计划，所属报告与证据同目录保存
 ```
 
 domain 不依赖 I/O 或任何适配器；core 依赖 domain 并定义 ports；adapters 实现 ports；host 负责装配。可以适度合并 crate，但不能反转依赖。避免按每个对象拆服务、按每张表建策略接口或预先实现插件装载框架。
@@ -378,4 +377,4 @@ Run:     queued → running → succeeded / failed / cancelled / interrupted
 - 运行包、构建说明、演示步骤、规范、逐阶段设计/执行/测试/独立评审和已知限制均已保存。
 - macOS Apple Silicon 实机验证 pending，不宣称双平台 F1/F5 全部通过。
 - 本轮停止扩展；真实 Git/Test/Codex、Archive/迁移执行和后续平台实际验收仍按明确边界处理。
-- 详细证据以 `docs/acceptance.md` 和 `docs/reports/` 为准。
+- 详细证据以 `docs/acceptance.md` 和 `docs/plans/devdesk-prototype/` 为准。

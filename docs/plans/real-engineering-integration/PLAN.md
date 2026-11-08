@@ -1,8 +1,8 @@
 # DevDesk 真实交互与工程接入实施计划
 
-日期：2026-11-08。状态：R0–R8 在 macOS Web 上验收通过（2026-11-08）。Ubuntu 宿主与 Keychain 改善按用户后续要求继续。用户已授权实施及独立 GitHub 测试仓库；阶段证据见 [实施报告目录](../reports/real-integration/)。以下原调研基线保留为计划输入，实际通过项以阶段报告和验收产物为准。
+日期：2026-11-08。状态：R0–R8 在 macOS Web 上验收通过（2026-11-08）。Ubuntu 宿主与 Keychain 改善按用户后续要求继续。用户已授权实施及独立 GitHub 测试仓库；阶段证据见 [实施报告目录](./)。以下原调研基线保留为计划输入，实际通过项以阶段报告和验收产物为准。
 
-基线：[原始设计 v0.2](devdesk-v0.2.md)、[原型实施计划](devdesk-prototype.md)、[领域补强计划](domain-hardening.md)、[当前架构](../design.md)、[真实适配器契约](../real-adapter-contract.md)。本计划授权实施时，取代原型计划中“真实 Harness/Git/Docker 延期”的本轮停止线；原有领域不变量继续有效。存储采用已实现的全局配置库与每项目工程库，目录采用 `sql/`、`docs/plans/`、`docs/reports/`。
+基线：[原始设计 v0.2](../devdesk-v0.2/PLAN.md)、[原型实施计划](../devdesk-prototype/PLAN.md)、[领域补强计划](../domain-hardening/PLAN.md)、[当前架构](../../design.md)、[真实适配器契约](../../real-adapter-contract.md)。本计划授权实施时，取代原型计划中“真实 Harness/Git/Docker 延期”的本轮停止线；原有领域不变量继续有效。存储采用已实现的全局配置库与每项目工程库，SQL 位于 `sql/`，计划及所属报告统一位于 `docs/plans/<计划名>/`。
 
 ## 1. 用户已确认的目标
 
@@ -279,7 +279,7 @@ GitHub REST 的合入接口 `sha` 校验 PR head，不能作为 base 的 CAS。�
 
 ## 10. 可由 Codex 执行的阶段任务
 
-按以下顺序推进；每阶段完成代码、专项测试、文档和报告后进入下一阶段。不要在核心能力未成立时用 Sim 结果填补 live 路径。阶段报告放 `docs/reports/real-integration/`。
+按以下顺序推进；每阶段完成代码、专项测试、文档和报告后进入下一阶段。不要在核心能力未成立时用 Sim 结果填补 live 路径。阶段报告放 `docs/plans/real-engineering-integration/`。
 
 ### R0 — 固定接入与验收基线
 
@@ -420,8 +420,8 @@ R8 提供统一 `scripts/check-live.sh` 入口，参数包含 `--providers codex
 
 ### 本项目
 
-- [原设计](devdesk-v0.2.md)：第 3/5/6/7/9/12/13/14/15/16/21 章。
-- [原型范围](devdesk-prototype.md)、[领域补强](domain-hardening.md)、[分库验收](../reports/project-databases.md)。
+- [原设计](../devdesk-v0.2/PLAN.md)：第 3/5/6/7/9/12/13/14/15/16/21 章。
+- [原型范围](../devdesk-prototype/PLAN.md)、[领域补强](../domain-hardening/PLAN.md)、[分库验收](../project-databases/project-databases.md)。
 - 代码：`crates/core/src/ports.rs`、`crates/core/src/{lib,effects,advances}.rs`、`crates/domain/src/{lib,execution}.rs`、`crates/adapters/src/{lib,catalog}.rs`、`crates/host/src/workspace.rs`、`web/src/main.tsx`。
 
 ### 官方与供应商资料
@@ -433,4 +433,4 @@ R8 提供统一 `scripts/check-live.sh` 入口，参数包含 `--providers codex
 - [GitHub Pull Requests API](https://docs.github.com/en/rest/pulls/pulls)、[PR 间接合入](https://docs.github.com/en/pull-requests/reference/pull-request-merges)。
 - [Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)、[Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)。
 
-以上为原调研依据；实施与验收结果以 [R8 最终报告](../reports/real-integration/R8-acceptance.md) 和其中的实际证据为准。
+以上为原调研依据；实施与验收结果以 [R8 最终报告](R8-acceptance.md) 和其中的实际证据为准。

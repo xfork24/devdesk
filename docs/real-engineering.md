@@ -1,6 +1,6 @@
 # 真实工程接入
 
-本轮把真实讨论、规划、Docker 实施与测试、GitHub 候选接纳接入同一个 Rust 工程内核。Sim 保留为离线演示和故障夹具。项目在登记仓库后进入 `live`；模型讨论可以在创建 Feature 前开始。真实验收进度与原始结果见 [阶段报告](reports/real-integration/R1-progress.md) 和 [实施计划](plans/real-engineering-integration.md)。
+本轮把真实讨论、规划、Docker 实施与测试、GitHub 候选接纳接入同一个 Rust 工程内核。Sim 保留为离线演示和故障夹具。项目在登记仓库后进入 `live`；模型讨论可以在创建 Feature 前开始。真实验收进度与原始结果见 [阶段报告](plans/real-engineering-integration/R1-progress.md) 和 [实施计划](plans/real-engineering-integration/PLAN.md)。
 
 ## 配置与运行
 
@@ -64,7 +64,7 @@ flowchart LR
 
 ## 验证
 
-离线回归使用 `./scripts/check.sh`，包含 Rust、HTTP、debug/release Chromium 流程。真实测试使用专用数据集、仓库和带归属标签的容器；原始结果在 `docs/reports/real-integration/`。A01–A22 与分层证据见 [最终验收](reports/real-integration/R8-acceptance.md)。统一入口为 `scripts/check-live.sh --providers codex,dsh --root <独立数据集> --github-repo <owner/test-repo>`，默认 `--mode full`，可选 `--groups git,docker,harness,github,web,workflow,recovery`。恢复组需要 `--allow-host-restart`，只停止可证明归属该数据集和端口的 Host。`--mode verify-existing --reports <已有报告目录>` 只复核已有实际对象，不发新模型任务；报告明确区分两种模式。全新闭环使用独立报告目录与随机源码前缀，不能重跑已实现同名任务冒充 Red。
+离线回归使用 `./scripts/check.sh`，包含 Rust、HTTP、debug/release Chromium 流程。真实测试使用专用数据集、仓库和带归属标签的容器；原始结果在 `docs/plans/real-engineering-integration/`。A01–A22 与分层证据见 [最终验收](plans/real-engineering-integration/R8-acceptance.md)。统一入口为 `scripts/check-live.sh --providers codex,dsh --root <独立数据集> --github-repo <owner/test-repo>`，默认 `--mode full`，可选 `--groups git,docker,harness,github,web,workflow,recovery`。恢复组需要 `--allow-host-restart`，只停止可证明归属该数据集和端口的 Host。`--mode verify-existing --reports <已有报告目录>` 只复核已有实际对象，不发新模型任务；报告明确区分两种模式。全新闭环使用独立报告目录与随机源码前缀，不能重跑已实现同名任务冒充 Red。
 
 首批 Tests 仅支持无依赖的 Node `node:test` 固定文件配方。其他语言、依赖下载、网络测试和严格分支保护下的其他合入策略需要新的适配契约，不在现有执行路径中隐式放开。
 
