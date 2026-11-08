@@ -1,6 +1,6 @@
 # macOS 补充交付：设计、执行与验证
 
-日期：2026-11-08。基线：[原型实施计划](../../plans/devdesk-prototype.md) F1/F5、A12 及第 14 节独立评审要求。本轮关闭原 Linux 交付遗留的 macOS Apple Silicon 实机待办，不扩展真实适配器或 Archive/迁移执行。
+日期：2026-11-08。基线：[原型实施计划](../plans/devdesk-prototype.md) F1/F5、A12 及第 14 节独立评审要求。本轮关闭原 Linux 交付遗留的 macOS Apple Silicon 实机待办，不扩展真实适配器或 Archive/迁移执行。
 
 ## 环境与构建
 

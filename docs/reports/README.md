@@ -2,6 +2,8 @@
 
 日期：2026-11-08。自检由实现者完成；独立评审分别由 review_f0、review_storage_host、review_web 执行，未将自检冒充评审。
 
+设计与实施计划见 [架构设计](../plans/devdesk-v0.2.md)、[原型实施计划](../plans/devdesk-prototype.md) 和 [补强计划](../plans/domain-hardening.md)。
+
 | 阶段 | 设计/执行/验证报告 | 独立评审 | 状态 |
 |---|---|---|---|
 | F0 | [F0](F0.md) | review_f0：领域/协议/架构 | 通过 |

@@ -78,7 +78,7 @@ Project / Workspace 配置
 - Rust library 承载 domain 与 application；独立 host binary 负责生命周期、HTTP 与静态资源。
 - Web 使用 TypeScript + React + Vite，构建为 SPA；UI 不包含领域状态机或数据库写入逻辑。
 - Tokio + Axum；客户端使用 JSON-RPC 2.0 over loopback HTTP，事件使用 SSE。
-- rusqlite + 随程序构建的 SQLite；关系表、显式外键、SQL migrations、短事务和单写入协调。
+- rusqlite + 随程序构建的 SQLite；关系表、显式外键、SQL 初始化与结构升级脚本、短事务和单写入协调。
 - 普通本地目录存储 Artifact；JSON 清单、Markdown 文档、分段日志；哈希固定交付版本。
 - 构建后由 Rust 提供 Web 静态资源，不依赖 Node 开发服务器；Node 仅用于开发构建。
 - 只有一个本机程序，无数据库服务器、云服务部署、多租户或远程服务管理。
@@ -96,10 +96,12 @@ crates/core/         用例、ports、调度、交付/评审/Merge 协调
 crates/adapters/     SQLite、文件、模拟 Git/Test/Harness/Sandbox
 crates/host/         CLI、HTTP/SSE、会话鉴权、静态资源、装配
 schemas/             公共协议、Delivery/Report 结构
-migrations/          数据库版本迁移
+sql/                 数据库初始化与结构升级脚本
 fixtures/scenarios/  可重复模拟场景和故障注入
 tests/               领域、契约、集成、Web E2E
-docs/                领域规范、协议、ADR、演示、阶段报告
+docs/                领域规范、协议、ADR、演示
+docs/plans/          架构设计与实施计划
+docs/reports/        执行记录与验收报告
 ```
 
 domain 不依赖 I/O 或任何适配器；core 依赖 domain 并定义 ports；adapters 实现 ports；host 负责装配。可以适度合并 crate，但不能反转依赖。避免按每个对象拆服务、按每张表建策略接口或预先实现插件装载框架。
@@ -275,7 +277,7 @@ Run:     queued → running → succeeded / failed / cancelled / interrupted
 
 ### F1 — 前后端与持久化纵向基础
 
-实现：Rust host、SQLite migrations、文件存储、HTTP/SSE、data 选择/锁定、Project/Feature 创建查询、Web 基础导航。
+实现：Rust host、SQLite 初始化与结构升级脚本、文件存储、HTTP/SSE、data 选择/锁定、Project/Feature 创建查询、Web 基础导航。
 
 退出条件：用户通过 Web 创建 Project/Feature，刷新和重启后仍存在；Linux/macOS 都能运行；构建后的程序可直接提供 Web，无需开发服务器。
 
@@ -352,7 +354,7 @@ Run:     queued → running → succeeded / failed / cancelled / interrupted
 9. 阶段交付保存设计、执行、测试和评审报告。未完成的能力/平台验证必须如实记录。
 10. F5 通过后交付可运行程序与说明，停止扩展，等待基于原型的下一轮反馈。
 
-最终交付：源码、依赖锁、migrations、Linux/macOS 启动/构建方式、完整 Web、可运行模拟场景、领域/API/架构规范、阶段报告、演示说明和已知限制。不要求真实工具适配器，不以空接口数量作为架构完成度。
+最终交付：源码、依赖锁、SQL 脚本、Linux/macOS 启动/构建方式、完整 Web、可运行模拟场景、领域/API/架构规范、阶段报告、演示说明和已知限制。不要求真实工具适配器，不以空接口数量作为架构完成度。
 
 
 ## 14. 实施决策（2026-11-08 用户确认）

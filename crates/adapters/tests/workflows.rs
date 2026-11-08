@@ -2847,7 +2847,7 @@ fn global_configuration_upgrades_a_copy_of_v1_and_rejects_project_data() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join(".devdesk-dataset"), "devdesk-schema-v1\n").unwrap();
     let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
-    conn.execute_batch(include_str!("../../../migrations/001_initial.sql"))
+    conn.execute_batch(include_str!("../../../sql/001_initial.sql"))
         .unwrap();
     drop(conn);
     let global = GlobalStore::open(dir.path()).unwrap();

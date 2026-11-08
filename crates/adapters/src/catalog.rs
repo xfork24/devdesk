@@ -25,7 +25,7 @@ impl GlobalStore {
         require(version <= 1, "全局配置库版本比程序新")?;
         if version == 0 {
             let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../migrations/global/001_initial.sql"))
+            tx.execute_batch(include_str!("../../../sql/global/001_initial.sql"))
                 .map_err(storage)?;
             tx.commit().map_err(storage)?;
         }

@@ -45,7 +45,7 @@ npm --prefix web ci
 
 ## 文档
 
-- [架构设计 v0.2](plans/devdesk-v0.2.md)、[修订后的实施计划](plans/devdesk-prototype.md)
+- [架构设计 v0.2](docs/plans/devdesk-v0.2.md)、[修订后的实施计划](docs/plans/devdesk-prototype.md)
 - [领域规范](docs/domain.md)、[协议](docs/protocol.md)、[架构与 ADR](docs/design.md)
 - [验收与限制](docs/acceptance.md)、[阶段报告](docs/reports/README.md)
 - [协议 JSON Schema](schemas/rpc.schema.json)、[文件清单 Schema](schemas/manifest.schema.json)
@@ -60,6 +60,8 @@ npm --prefix web ci
 <data>/projects/<project-id>/artifacts/           # 当前项目的文档、报告与其他产物
 ```
 
+数据库初始化与结构升级脚本存放于 `sql/`，其中 `sql/global/` 对应全局配置库；脚本在编译时嵌入程序。
+
 在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。旧版根目录 `engineering.sqlite3` 首次打开时自动拆分，校验产物并保留历史和幂等记录；旧库、旧产物及 `runtime.json` 保留不变，后续只使用新布局。迁移失败可修复原因后重试，不发布不完整的项目目录。详细语义见[架构说明](docs/design.md#adr-010每项目数据库与全局配置库)。
 
-本轮领域补强的计划见 [补强计划](plans/domain-hardening.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/reports/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
+本轮领域补强的计划见 [补强计划](docs/plans/domain-hardening.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/reports/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
