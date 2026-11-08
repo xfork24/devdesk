@@ -1,0 +1,63 @@
+{
+  "project_id": "897f2c31-4693-412a-8e05-23380bf62436",
+  "feature_id": "01301ba9-b539-43ed-b7c5-fe654d947a5d",
+  "proposals": {
+    "requirement": {
+      "id": "71450dd6-0c1e-4995-a60e-415ce5727be4",
+      "document": "d8dce209-fee1-4030-aeb5-6ddbc28b4b7f",
+      "session": "5ed13ab8-91b5-47cb-b53e-9ec2e3f8606e",
+      "turn": "cfd6c763-8647-466b-bc8f-f1772dd63743"
+    },
+    "design": {
+      "id": "f4f24128-c809-4ce4-9744-f401f4b4b8ec",
+      "document": "154d3e0a-e9bc-4524-a562-5fcf5eaa2246",
+      "session": "ff30a159-deb2-4c0b-b837-e636f641f30d",
+      "turn": "64aaa84e-a8b2-4bc4-8f87-3088a447d28e"
+    },
+    "task_plan": {
+      "id": "22fbf9da-f485-47e5-ae2a-228bf8f9544d",
+      "document": "b9e5175f-3093-43c6-8d4b-08326beb7b6f",
+      "session": "ff30a159-deb2-4c0b-b837-e636f641f30d",
+      "turn": "165b9197-2cae-434c-8f75-5c96c8e6955b"
+    },
+    "test_plan": {
+      "id": "802329f6-a05c-4582-85a6-322ac2d04ea7",
+      "document": "5ee9637c-8803-43db-ace5-5f0a610b0522",
+      "session": "41d83156-a829-4836-a819-7dbf04c1b327",
+      "turn": "54ddbf4a-a45d-4d46-9270-b4cc0dd805e1"
+    }
+  },
+  "passed": true,
+  "case_prefix": "live-744a8bf0cb-",
+  "stage": "finished",
+  "attempt": "49d0a36d-f7ed-42ab-a4ea-523bc005cb64",
+  "requirement_delivery": "3c2098d8-d32e-44e2-b695-20ddf8c9c01b",
+  "plan_delivery": "72ed789c-4fde-42f5-a3fb-b315a0ababf0",
+  "tasks": {
+    "add": "b6375801-2c32-4b6e-9cf4-c1081e067458",
+    "multiply": "077484a6-253b-470f-9ead-b6170e0df760"
+  },
+  "worktrees": [
+    {
+      "base": "ee4785bd579f13c9479800a64ad53bfa83f04f5d",
+      "branch": "devdesk/tasks/077484a6-253b-470f-9ead-b6170e0df760",
+      "id": "077484a6-253b-470f-9ead-b6170e0df760",
+      "kind": "task",
+      "operation_id": "32ad0f6a-7a9c-4f39-bb5c-80e82bb7fcd6",
+      "owner_id": "077484a6-253b-470f-9ead-b6170e0df760",
+      "path": "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z/projects/897f2c31-4693-412a-8e05-23380bf62436/execution/worktrees/tasks/077484a6-253b-470f-9ead-b6170e0df760",
+      "project_id": "897f2c31-4693-412a-8e05-23380bf62436"
+    },
+    {
+      "base": "ee4785bd579f13c9479800a64ad53bfa83f04f5d",
+      "branch": "devdesk/tasks/b6375801-2c32-4b6e-9cf4-c1081e067458",
+      "id": "b6375801-2c32-4b6e-9cf4-c1081e067458",
+      "kind": "task",
+      "operation_id": "47be1c6b-f670-450f-82f3-54e67aba154e",
+      "owner_id": "b6375801-2c32-4b6e-9cf4-c1081e067458",
+      "path": "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z/projects/897f2c31-4693-412a-8e05-23380bf62436/execution/worktrees/tasks/b6375801-2c32-4b6e-9cf4-c1081e067458",
+      "project_id": "897f2c31-4693-412a-8e05-23380bf62436"
+    }
+  ],
+  "initial_snapshot": "b56a5b04-1d4e-4406-8e39-59b9a69e8747"
+}

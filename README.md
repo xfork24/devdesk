@@ -19,7 +19,7 @@
 
 Host 程序嵌入 Web 文件；macOS 的真实 DSH 凭据另使用运行包内的一份共享助手，运行时不需要 Node、开发服务器或源码目录。只监听 loopback。必须使用打印的 `127.0.0.1` 地址，Host 校验会拒绝其他主机名。
 
-原型曾在 Linux Ubuntu 24.04 x86_64 与 macOS Apple Silicon 上完成后端/Web 验收；本轮真实工程接入已在 macOS 通过，Ubuntu 宿主复验待执行。macOS 构建前需安装 Xcode Command Line Tools（`xcode-select --install`）；两平台使用相同命令。平台证据与限制见[验收记录](docs/acceptance.md)。
+原型曾在 Linux Ubuntu 24.04 x86_64 与 macOS Apple Silicon 上完成后端/Web 验收；本轮真实工程接入已在 macOS 通过，Ubuntu 24.04.5 / x86_64 也已通过双 Harness Web 工程闭环、Linux 系统凭据、安装复用、取消/崩溃恢复和独立运行包验收，AppArmor Docker 宿主使用经批准的专用策略；见 [Ubuntu 续验报告](docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)。macOS 构建前需安装 Xcode Command Line Tools（`xcode-select --install`）；两平台使用相同命令。平台证据与限制见[验收记录](docs/acceptance.md)。
 
 生成包含可执行程序、说明和验收文档的本机运行包：
 
@@ -67,6 +67,6 @@ npm --prefix web ci
 
 本轮领域补强的计划见 [补强计划](docs/plans/domain-hardening/PLAN.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/plans/domain-hardening/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
 
-系统凭据与 macOS 稳定签名见 [凭据说明](docs/system-credentials.md)；Linux Secret Service、平台预检与真实 Web 闭环见 [Ubuntu 验收入口](docs/ubuntu-web-acceptance.md) 和 [待执行验收计划](docs/plans/ubuntu-web-acceptance/PLAN.md)。本轮聚焦 Web，macOS native 客户端后续再做。
+系统凭据与 macOS 稳定签名见 [凭据说明](docs/system-credentials.md)；Linux Secret Service、平台预检与真实 Web 闭环见 [Ubuntu 验收入口](docs/ubuntu-web-acceptance.md) 和 [Ubuntu 验收计划](docs/plans/ubuntu-web-acceptance/PLAN.md)。本轮聚焦 Web，macOS native 客户端后续再做。
 
 开发 Web Host 可用 `./scripts/dev.sh --data /完整路径/数据集 --port 4317`；它会在 macOS 重建后应用已配置的稳定签名。

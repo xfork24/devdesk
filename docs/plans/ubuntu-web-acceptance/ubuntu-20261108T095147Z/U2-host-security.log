@@ -1,0 +1,20 @@
+$ cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+1
+
+exit=0
+$ cat /proc/sys/kernel/unprivileged_userns_clone
+1
+
+exit=0
+$ cat /sys/module/apparmor/parameters/enabled
+Y
+
+exit=0
+$ cat /proc/sys/user/max_user_namespaces
+99941
+
+exit=0
+$ docker info --format {{json .SecurityOptions}}
+["name=apparmor,profile=default","name=seccomp,profile=builtin","name=cgroupns"]
+
+exit=0

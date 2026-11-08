@@ -6,6 +6,9 @@ import argparse,json,subprocess
 p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--output',type=Path,default=Path('docs/plans/real-engineering-integration/R6-implementation.json'));p.add_argument('--reports',type=Path,default=Path('docs/plans/real-engineering-integration'));a=p.parse_args();a.output=a.reports/a.output.name if a.output.parent==Path('docs/plans/real-engineering-integration') else a.output
 source=json.loads((a.reports/'R5-planning.json').read_text());assert source['passed'];c=Client(a.url);c.open(source['project_id']);fid=source['feature_id']
 r=json.loads(a.output.read_text()) if a.output.exists() else {'project_id':source['project_id'],'feature_id':fid,'tasks':{},'passed':False}
+if 'failure' in r:
+ r.setdefault('previous_failures',[]).append({'stage':r.get('stage'),'failure_type':r.pop('failure_type',None),'failure':r.pop('failure')})
+r['passed']=False
 def save(stage):r['stage']=stage;a.output.write_text(json.dumps(r,indent=2,ensure_ascii=False)+'\n');print(stage,flush=True)
 def view():return c.feature(fid)
 try:
@@ -16,11 +19,11 @@ try:
  for key in ['add','multiply']:
   row=r['tasks'][key];aid=row['attempt'];save('waiting_'+key)
   def done(v):
-   runs=[x for x in v['runs'] if x.get('attempt_id')==aid and not x['node'].startswith('review:')]
+   runs=c.attempt_runs(v,aid)
    failures=[x for x in runs if x['status'] in ['failed','interrupted','cancelled']]
    if failures:raise AssertionError(json.dumps([{'id':x['id'],'node':x['node'],'result':x['result']} for x in failures],ensure_ascii=False))
    return bool(runs) and all(x['status']=='succeeded' for x in runs)
-  v=c.wait(view,done,900);runs=[x for x in v['runs'] if x.get('attempt_id')==aid and not x['node'].startswith('review:')]
+  v=c.wait(view,done,900);runs=c.attempt_runs(v,aid)
   red=next(x for x in runs if x['node']=='red')['result'];green=next(x for x in runs if x['node']=='green')['result'];verify=next(x for x in runs if x['node']=='verify')['result'];code=next(x for x in runs if x['node']=='implement')['result']['code_revision'];assert red['assertion_failed'] and red['expected_failure'] and red['exit_code']!=0
   assert green['candidate']==verify['candidate']==code and green['exit_code']==verify['exit_code']==0
   assert red['candidate']!=code and all(x['origin']=='external' for x in runs)

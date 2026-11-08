@@ -1,0 +1,4 @@
+$ python3 /tmp/devdesk-repack-verified-host.py
+{"passed": true, "reason": "documentation-only repack explicitly reuses already model-tested Host bytes; a rebuild produced a different binary digest, so equivalence was not assumed", "rebuilt_host_sha256": "09beee006fbbb3246bcf796e57058a8c6d650a873e0ae722d2c15e4fef61e9e5", "chosen_verified_host_sha256": "c8ab152149e55f9f3075f69fbc4a6eb1cd0c33f5aea15963e05e19f749ff0561", "verified_host_source": "/tmp/devdesk-ubuntu-accepted-package-xz92wnbj/devdesk-0.2.0-x86_64-unknown-linux-gnu/devdesk-host", "unverified_rebuild_preserved": "/home/hengliu/workspace/devdesk/dist/ubuntu-20261108T095147Z/rebuilt-before-verified-host-reuse/devdesk-0.2.0-x86_64-unknown-linux-gnu.tar.gz", "final_archive_sha256": "40d3c1c210102d409bd959e50dd1f72e23da47334b29467a9034f28b7cb6eff8"}
+
+exit=0

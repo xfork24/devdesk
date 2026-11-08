@@ -1,0 +1,33 @@
+{
+  "passed": false,
+  "mode": "verify-existing",
+  "platform": "Linux-7.0.0-42-generic-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "providers": [
+    "codex",
+    "dsh"
+  ],
+  "groups": [
+    "git",
+    "docker",
+    "harness",
+    "github",
+    "web",
+    "workflow",
+    "recovery"
+  ],
+  "root": "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z",
+  "github_repository": "xfork24/devdesk-integration-test",
+  "steps": [
+    {
+      "name": "persisted-native-facts",
+      "passed": false,
+      "started": 1794132088.5234315,
+      "error": "[Errno 2] No such file or directory: '/home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/R3-codex-application.json'",
+      "finished": 1794132088.5236955
+    }
+  ],
+  "started": 1794132088.5150354,
+  "error": "[Errno 2] No such file or directory: '/home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/R3-codex-application.json'",
+  "finished": 1794132088.5238001
+}

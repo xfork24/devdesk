@@ -61,3 +61,7 @@
 ## 领域补强后续验收
 
 本文件上方保留原 v0.2 平台交付记录。领域补强的最终实现、v1→v13 数据迁移、操作核对及本轮 macOS 验证见 [补强验收报告](plans/domain-hardening/domain-hardening.md)；不能将上方历史 Linux 验证视作补强代码的 Linux 复验。
+
+## Ubuntu Web 真实工程复验（2026-11-08）
+
+上方原型记录保留历史。本轮 Ubuntu 24.04.5 / x86_64 的 U0–U6 已通过：完整离线基线、Linux 系统凭据、双 Harness Web 工程闭环、真实 PR #6/#8/#9 merged、安装复用、取消/跨项目崩溃恢复和独立 Linux 发布包。Docker 嵌套沙箱使用用户明确批准的专用 AppArmor 策略；首次失败及显式续跑历史保留。full、verify-existing、完整安装探针均退出 0，证据与实际/契约边界见 [Ubuntu 完成报告](plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)。

@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "installations": [
+    {
+      "id": "a7f46fc9-4185-4749-a82c-f0f269f5956b",
+      "provider": "codex",
+      "platform": "linux/x86_64",
+      "image": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+      "concurrent_registrations": 4,
+      "references": [
+        {
+          "project": "e8836998-5bc7-465a-bfbc-39b35957c5ff",
+          "session": "12eaa8b9-d97b-4215-be86-0a57e094c5d8",
+          "agent": "builtin-agent-analyst-v1"
+        },
+        {
+          "project": "fc31209b-2f4d-447e-9878-58fdffeb27f5",
+          "session": "37cc0155-223b-4f71-ae91-3715c6cd2b00",
+          "agent": "builtin-agent-reviewer-v1"
+        }
+      ]
+    },
+    {
+      "id": "9a577bdd-db7e-46bd-adaf-bb9759a0c63a",
+      "provider": "dsh",
+      "platform": "linux/x86_64",
+      "image": "sha256:2fbf30a5c26a99742135d321bc30861f633c3aa8f77d6a4fa79b867f34380201",
+      "concurrent_registrations": 4,
+      "references": [
+        {
+          "project": "218e2e9d-fe19-42f4-87fa-9c107906ac7c",
+          "session": "2a4faff0-bf5a-4087-b6f3-cc39fae0c752",
+          "agent": "builtin-agent-analyst-v1"
+        },
+        {
+          "project": "e8836998-5bc7-465a-bfbc-39b35957c5ff",
+          "session": "6d731919-a2cd-49c0-820f-1195421363a7",
+          "agent": "builtin-agent-reviewer-v1"
+        },
+        {
+          "project": "fc31209b-2f4d-447e-9878-58fdffeb27f5",
+          "session": "42ffbca7-103e-414f-b0d4-b00cc12ac7b7",
+          "agent": "builtin-agent-analyst-v1"
+        }
+      ]
+    }
+  ],
+  "shared_layers": [
+    "sha256:1faf856ab7ebd1d0e73ffdd87226087297e442167786b9d9f261853098872383",
+    "sha256:882f18e587e4630ee9ac325e960393973c71b98679771522b83b1809bb421462",
+    "sha256:9269fc859ba17cab868b1ed433e109581448bba47241bf75df39177cc2fedbe1",
+    "sha256:d944ccebd6c7f3e0a2b92fa25344bb2ae2c94879bd4da2afe2136fbd3ddb3364",
+    "sha256:e48af84b2108a5d73effd9e16685b42ac33e7994e606398c46690918f5f3604a"
+  ]
+}

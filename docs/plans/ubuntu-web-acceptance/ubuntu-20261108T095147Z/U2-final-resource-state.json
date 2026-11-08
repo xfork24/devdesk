@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "dataset": "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z",
+  "owned_remaining_containers": [],
+  "preserved_host_pid": 2127809,
+  "host_purpose": "user OAuth and continued acceptance",
+  "worktrees_preserved": true,
+  "observed_at": 1794133058.9858549
+}

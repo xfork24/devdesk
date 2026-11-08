@@ -1,0 +1,67 @@
+$ env DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/devdesk-doctor-absent-bus ./scripts/doctor.sh --output docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/preflight-unavailable-before-fix.json
+{
+  "platform": "Linux",
+  "architecture": "x86_64",
+  "client": "web",
+  "checks": [
+    {
+      "name": "host_platform",
+      "passed": true,
+      "detail": "macOS/Linux Web Host"
+    },
+    {
+      "name": "git",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "gh",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "docker",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "codex",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "docker_daemon",
+      "passed": true,
+      "detail": "Docker Engine/Desktop must be running"
+    },
+    {
+      "name": "github_authentication",
+      "passed": true,
+      "detail": "gh account configured; no token is read or printed"
+    },
+    {
+      "name": "codex_linux_image",
+      "passed": true,
+      "detail": "build the fixed runtime image on this Docker platform"
+    },
+    {
+      "name": "dsh_linux_image",
+      "passed": true,
+      "detail": "build the fixed runtime image on this Docker platform"
+    },
+    {
+      "name": "secret_tool",
+      "passed": true,
+      "detail": "Ubuntu: install libsecret-tools"
+    },
+    {
+      "name": "desktop_session",
+      "passed": true,
+      "detail": "Secret Service requires a desktop/user D-Bus session; credential contents are not read"
+    }
+  ],
+  "passed": true
+}
+
+
+exit=0

@@ -1,0 +1,24 @@
+$ cargo fmt --all -- --check
+Diff in /home/hengliu/workspace/devdesk/crates/adapters/tests/command_tests.rs:1:
+ use devdesk_adapters::{CliGit, CommandTests};
+[31m-use devdesk_core::{ports::Tests, TestRequest};
+[m[32m+use devdesk_core::{TestRequest, ports::Tests};
+[m use devdesk_domain::*;
+ use serde_json::Value;
+ use std::{
+Diff in /home/hengliu/workspace/devdesk/crates/adapters/tests/command_tests.rs:150:
+     a.export_revision(&code, &candidate, &path).unwrap();
+     fs::write(path.join("tests/actual.test.mjs"), "changed").unwrap();
+     assert!(a.export_revision(&code, &candidate, &path).is_err());
+[31m-    assert!(a
+[m[31m-        .export_revision(&code, &candidate, &root.path().join("outside"))
+[m[31m-        .is_err());
+[m[32m+    assert!(
+[m[32m+        a.export_revision(&code, &candidate, &root.path().join("outside"))
+[m[32m+            .is_err()
+[m[32m+    );
+[m }
+ #[test]
+ #[ignore = "requires the pinned Linux Node image and actual Docker daemon"]
+
+exit=1

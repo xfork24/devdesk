@@ -1,0 +1,13 @@
+{
+  "pid": 2178432,
+  "argv": [
+    "/tmp/devdesk-ubuntu-final-package-jn_qduvr/devdesk-0.2.0-x86_64-unknown-linux-gnu/devdesk-host",
+    "--data",
+    "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z",
+    "--port",
+    "51751"
+  ],
+  "owned": true,
+  "data": "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z",
+  "url": "http://127.0.0.1:51751"
+}

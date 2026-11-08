@@ -1,0 +1,18 @@
+started_add
+started_multiply
+waiting_add
+delivery_add
+accepted_add
+waiting_multiply
+failed
+Traceback (most recent call last):
+  File "/home/hengliu/workspace/devdesk/tests/live/probe_implementation.py", line 23, in <module>
+    v=c.wait(view,done,900);runs=[x for x in v['runs'] if x.get('attempt_id')==aid and not x['node'].startswith('review:')]
+      ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/client.py", line 36, in wait
+    if predicate(value):return value
+       ^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/probe_implementation.py", line 21, in done
+    if failures:raise AssertionError(json.dumps([{'id':x['id'],'node':x['node'],'result':x['result']} for x in failures],ensure_ascii=False))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [{"id": "91d2c07a-bcde-444f-a936-a734ce0ceafa", "node": "red", "result": {"assertion_failed": false, "candidate": "c53fa726ee5e5288e9f7f4a0cea7a5108a66bb1d", "container_id": "1816b9a7f00c9b65ed93e39652b2f66b033950ac831cefb21a219bff1150610b", "counts": {"cancelled": 0, "failed": 1, "passed": 0, "skipped": 0, "suites": 0, "tests": 1, "todo": 0, "topLevel": 1}, "environment": "1fc6864d-76f2-4756-95ef-8ac0ded9d64c", "exit_code": 1, "expected_failure": false, "failure_type": "environment", "image_digest": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e", "operation_id": "91d2c07a-bcde-444f-a936-a734ce0ceafa", "origin": "external", "recipe": {"files": ["tests/live-744a8bf0cb-multiply/behavior.test.mjs"], "image": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e", "runner": "node_test", "timeout_seconds": 60}, "report": "{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"environment\",\"codes\":[\"ERR_TEST_FAILURE\",\"unknown\"]}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":1,\"failed\":1,\"passed\":0,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":1,\"suites\":0}}\n", "report_sha256": "3de9857dfba5c9a09a9350977967e95e82ccd9dae85d709e1c0971713b07e012", "status": "failed", "test_definitions": ["9db3f3e3-e0a4-43be-9f5d-2c80b2f3f0d7"], "test_phase": "red", "writer_revoked": true}}]

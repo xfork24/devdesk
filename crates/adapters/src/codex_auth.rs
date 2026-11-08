@@ -8,7 +8,39 @@ struct AuthWorker {
     installation: Id,
     process: JsonlProcess,
     pending: bool,
-    login: Option<String>,
+    login: Option<Value>,
+    restart_required: bool,
+}
+impl AuthWorker {
+    fn start_login(&mut self, device: bool, timeout: std::time::Duration) -> Result<Value> {
+        // A page reload or a lost HTTP response must recover the same login,
+        // rather than dispatch another request or leave the user blocked.
+        if self.pending {
+            return self
+                .login
+                .clone()
+                .ok_or_else(|| err("needs_reconciliation", "登录状态未知，请重新开始认证"));
+        }
+        match self.process.request_for(
+            "account/login/start",
+            json!({"type":if device {"chatgptDeviceCode"} else {"chatgpt"}}),
+            timeout,
+        ) {
+            Ok(value) => {
+                self.pending = true;
+                self.login = Some(value.clone());
+                Ok(value)
+            }
+            Err(error) => {
+                self.pending = false;
+                self.login = None;
+                // The native request may have been consumed before timing out.
+                // Stop this authentication process before a later explicit retry.
+                self.restart_required = true;
+                Err(error)
+            }
+        }
+    }
 }
 pub struct CodexAuthentication {
     home: PathBuf,
@@ -137,47 +169,40 @@ impl CodexAuthentication {
                 process,
                 pending: false,
                 login: None,
+                restart_required: false,
             });
         }
-        action(worker.as_mut().unwrap())
+        Self::auth_action(&mut worker, action)
+    }
+    fn auth_action(
+        worker: &mut Option<AuthWorker>,
+        action: impl FnOnce(&mut AuthWorker) -> Result<Value>,
+    ) -> Result<Value> {
+        let result = action(worker.as_mut().unwrap());
+        if worker.as_ref().is_some_and(|w| w.restart_required) {
+            // Drop reaps only the owned authentication subprocess. Engineering
+            // sessions and the user's desktop Codex processes are independent.
+            *worker = None;
+        }
+        result
     }
     pub fn status(&self, store: &GlobalStore, installation: &str) -> Result<Value> {
         self.with_worker(store,installation,|worker| {
             let response=worker.process.request("account/read",json!({"refreshToken":false}))?;
             let authenticated=response["account"].is_object();
-            if authenticated || worker.process.login_completed.as_ref().is_some_and(|(id,_)|worker.login.as_ref()==Some(id)) {worker.pending=false;}
+            if authenticated || worker.process.login_completed.as_ref().is_some_and(|(id,_)|worker.login.as_ref().and_then(|v|v["loginId"].as_str())==Some(id.as_str())) {worker.pending=false;worker.login=None;}
             Ok(json!({"authenticated":authenticated,"type":response["account"]["type"],"pending":worker.pending}))
         })
     }
     pub fn start(&self, store: &GlobalStore, installation: &str, device: bool) -> Result<Value> {
         self.with_worker(store, installation, |worker| {
-            require(
-                !worker.pending,
-                "登录流程已派发，请完成当前登录或取消后再试",
-            )?;
-            worker.pending = true;
-            let response = worker.process.request(
-                "account/login/start",
-                json!({"type":if device {"chatgptDeviceCode"} else {"chatgpt"}}),
-            );
-            match response {
-                Ok(value) => {
-                    worker.login = value["loginId"].as_str().map(str::to_owned);
-                    Ok(value)
-                }
-                Err(error) => {
-                    if error.code != "needs_reconciliation" {
-                        worker.pending = false;
-                    }
-                    Err(error)
-                }
-            }
+            worker.start_login(device, std::time::Duration::from_secs(20))
         })
     }
     pub fn cancel(&self, store: &GlobalStore, installation: &str, login: &str) -> Result<Value> {
         self.with_worker(store, installation, |worker| {
             require(
-                worker.login.as_deref() == Some(login),
+                worker.login.as_ref().and_then(|v| v["loginId"].as_str()) == Some(login),
                 "登录请求不属于当前认证流程",
             )?;
             let response = worker
@@ -187,5 +212,82 @@ impl CodexAuthentication {
             worker.login = None;
             Ok(response)
         })
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn fixture(mode: &str, receipt: &Path) -> AuthWorker {
+        let mut command = ProcessCommand::new("python3");
+        command.args(["-u", "-c", r#"
+import json,os,sys,time
+from pathlib import Path
+receipt=Path(sys.argv[2]);count=0
+for line in sys.stdin:
+    frame=json.loads(line);count+=1
+    receipt.write_text(json.dumps({'pid':os.getpid(),'requests':count}))
+    if sys.argv[1]=='exit':sys.exit(0)
+    if sys.argv[1]=='timeout':time.sleep(60)
+    print(json.dumps({'id':frame['id'],'result':{'type':'chatgpt','loginId':'fixture-login','authUrl':'https://auth.openai.com/fixture'}}),flush=True)
+"#, mode]);
+        command.arg(receipt);
+        AuthWorker {
+            installation: "synthetic-auth-transport".into(),
+            process: JsonlProcess::spawn(command).unwrap(),
+            pending: false,
+            login: None,
+            restart_required: false,
+        }
+    }
+
+    #[test]
+    fn failed_login_reaps_auth_worker_and_allows_a_fresh_explicit_attempt() {
+        let directory = tempfile::tempdir().unwrap();
+        for mode in ["timeout", "exit"] {
+            let receipt = directory.path().join(mode);
+            let mut worker = Some(fixture(mode, &receipt));
+            let result = CodexAuthentication::auth_action(&mut worker, |worker| {
+                worker.start_login(false, Duration::from_millis(200))
+            });
+            assert_eq!(result.unwrap_err().code, "needs_reconciliation");
+            assert!(worker.is_none(), "failed pending state must not survive");
+            let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+            let pid = value["pid"].as_i64().unwrap() as libc::pid_t;
+            assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ESRCH)
+            );
+
+            // This is a new explicit action, after the old listener was reaped.
+            worker = Some(fixture("reply", &directory.path().join("retry")));
+            let value = CodexAuthentication::auth_action(&mut worker, |worker| {
+                worker.start_login(false, Duration::from_secs(2))
+            })
+            .unwrap();
+            assert_eq!(value["loginId"], "fixture-login");
+            assert!(worker.as_ref().unwrap().pending);
+        }
+    }
+
+    #[test]
+    fn repeated_start_recovers_the_same_pending_login_without_native_redispatch() {
+        let directory = tempfile::tempdir().unwrap();
+        let receipt = directory.path().join("requests");
+        let mut worker = Some(fixture("reply", &receipt));
+        let first = CodexAuthentication::auth_action(&mut worker, |worker| {
+            worker.start_login(false, Duration::from_secs(2))
+        })
+        .unwrap();
+        let recovered = CodexAuthentication::auth_action(&mut worker, |worker| {
+            worker.start_login(false, Duration::from_secs(2))
+        })
+        .unwrap();
+        assert_eq!(first, recovered);
+        let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+        assert_eq!(value["requests"], 1);
     }
 }

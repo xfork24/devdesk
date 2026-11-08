@@ -1,0 +1,9 @@
+{
+  "new_reviewer_revision": "75a465d4-fcfe-4c3c-93bb-5893eb82b148",
+  "old_reviewer_revision": "builtin-agent-reviewer-v1",
+  "prior_failed_review_run": "65accaf0-5a4e-41fb-b290-dfa3d4b41cf0",
+  "new_review_run": "fbbac7c5-4364-4c9c-baa8-3ab6b609a7c4",
+  "delivery": "98a67e6b-adc3-4f70-8c36-8e1ca66860cc",
+  "reason": "preserve strict JSON-only contract; no parser relaxation or acceptance of prose-wrapped output",
+  "observed_at": 1794136186.8486867
+}

@@ -1,0 +1,25 @@
+$ ./scripts/check-live.sh --mode full --providers codex,dsh --root /home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z --github-repo xfork24/devdesk-integration-test --url http://127.0.0.1:51751 --reports /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/full-20261108T103202Z --allow-host-restart
+real-git
+real-docker
+native-codex
+native-dsh
+browser-requirement
+repository
+planning
+implementation
+Traceback (most recent call last):
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 45, in <module>
+    for name,args in [('planning',['--case-prefix',prefix]),('implementation',[]),('merges',['--browser-final'])]:step(name,lambda name=name,args=args:run(name,['python3','tests/live/probe_'+name+'.py','--url',a.url,'--reports',str(reports)]+args))
+                                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 20, in step
+    try:row['evidence']=fn();row['passed']=True
+                        ^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 45, in <lambda>
+    for name,args in [('planning',['--case-prefix',prefix]),('implementation',[]),('merges',['--browser-final'])]:step(name,lambda name=name,args=args:run(name,['python3','tests/live/probe_'+name+'.py','--url',a.url,'--reports',str(reports)]+args))
+                                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 27, in run
+    assert result.returncode==0,f'{name} failed, see {log}'
+           ^^^^^^^^^^^^^^^^^^^^
+AssertionError: implementation failed, see /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/full-20261108T103202Z/implementation.log
+
+exit=1

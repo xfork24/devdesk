@@ -1,0 +1,162 @@
+diff --git a/crates/adapters/src/docker.rs b/crates/adapters/src/docker.rs
+index 9f8778b..3f70c19 100644
+--- a/crates/adapters/src/docker.rs
++++ b/crates/adapters/src/docker.rs
+@@ -58,6 +58,48 @@ pub struct DockerSandbox {
+ }
+ 
+ impl DockerSandbox {
++    fn nested_apparmor(&self) -> Result<Option<String>> {
++        let output = self.call(vec![
++            "info".into(),
++            "--format".into(),
++            "{{json .SecurityOptions}}".into(),
++        ])?;
++        require(
++            output.code == 0 && !output.truncated,
++            "无法查询 Docker 安全策略",
++        )?;
++        let options: Vec<String> = serde_json::from_slice(&output.stdout).map_err(storage)?;
++        if !options
++            .iter()
++            .any(|option| option.starts_with("name=apparmor"))
++        {
++            return Ok(None);
++        }
++        // Only the coordinator's fixed, administrator-installed policy is accepted.
++        // A missing/drifted policy fails closed; never use an unconfined fallback.
++        let path = Path::new("/etc/apparmor.d/devdesk-harness-v1");
++        let expected = include_bytes!("../../../containers/security/devdesk-harness-v1.apparmor");
++        let message = "Ubuntu 嵌套沙箱需要已审阅的专用 AppArmor 策略；请在 Docker 宿主运行 sudo ./scripts/install-linux-sandbox-policy.sh --install";
++        let metadata =
++            fs::symlink_metadata(path).map_err(|_| err("sandbox_policy_required", message))?;
++        require(
++            metadata.is_file() && !metadata.file_type().is_symlink(),
++            message,
++        )?;
++        #[cfg(unix)]
++        {
++            use std::os::unix::fs::{MetadataExt, PermissionsExt};
++            require(
++                metadata.uid() == 0 && metadata.permissions().mode() & 0o022 == 0,
++                message,
++            )?;
++        }
++        require(
++            fs::read(path).map_err(storage)? == expected,
++            "专用 AppArmor 策略内容漂移；不能使用不同策略继续执行",
++        )?;
++        Ok(Some(format!("{:x}", Sha256::digest(expected))))
++    }
+     fn checked_file(
+         &self,
+         path: &Path,
+@@ -269,9 +311,18 @@ impl DockerSandbox {
+         canonical.credential_env_file = credential.clone();
+         canonical.profile_file = profile.clone();
+         canonical.runner_file = runner.clone();
++        let apparmor = if spec.nested_sandbox {
++            self.nested_apparmor()?
++        } else {
++            None
++        };
++        let mut identity = json!({"spec":canonical,"profile_digest":profile.as_ref().map(|p|fs::read(p).map(|data|format!("{:x}",Sha256::digest(data)))).transpose().map_err(storage)?,"nested_policy":if spec.nested_sandbox {Some(format!("{:x}",Sha256::digest(include_bytes!("../../../containers/security/nested-sandbox.json"))))} else {None}});
++        if let Some(digest) = &apparmor {
++            identity["apparmor_policy"] = json!({"name":"devdesk-harness-v1","sha256":digest});
++        }
+         let digest = format!(
+             "{:x}",
+-            Sha256::digest(serde_json::to_vec(&json!({"spec":canonical,"profile_digest":profile.as_ref().map(|p|fs::read(p).map(|data|format!("{:x}",Sha256::digest(data)))).transpose().map_err(storage)?,"nested_policy":if spec.nested_sandbox {Some(format!("{:x}",Sha256::digest(include_bytes!("../../../containers/security/nested-sandbox.json"))))} else {None}})).map_err(storage)?)
++            Sha256::digest(serde_json::to_vec(&identity).map_err(storage)?)
+         );
+         if let Some((receipt, _)) = self.inspect_owned(&name)? {
+             require(
+@@ -304,6 +355,12 @@ impl DockerSandbox {
+                 "--security-opt".into(),
+                 format!("seccomp={}", self.nested_policy()?.display()),
+             ]);
++            if apparmor.is_some() {
++                args.extend([
++                    "--security-opt".into(),
++                    "apparmor=devdesk-harness-v1".into(),
++                ]);
++            }
+         }
+         if let Some(file) = credential {
+             args.extend(["--env-file".into(), file.to_string_lossy().into_owned()]);
+diff --git a/tests/live/probe_nested_sandbox.py b/tests/live/probe_nested_sandbox.py
+index 78cf88a..40569d5 100644
+--- a/tests/live/probe_nested_sandbox.py
++++ b/tests/live/probe_nested_sandbox.py
+@@ -1,10 +1,22 @@
+ #!/usr/bin/env python3
+ """Exercise the real Codex child sandbox using harmless credential canaries, no model calls."""
+-import argparse,json,os,subprocess,tempfile
++import argparse,hashlib,json,os,subprocess,tempfile,uuid
+ from pathlib import Path
+ ROOT=Path(__file__).resolve().parents[2]
+-p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);args=p.parse_args()
++p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--apparmor-profile',choices=['devdesk-harness-v1']);args=p.parse_args()
+ report={'passed':False,'inference_tested':False,'credential_canary_only':True,'seccomp':'moby-default + nested namespace/mount syscalls'}
++reference=os.environ.get('DEVDESK_TEST_CODEX_IMAGE','devdesk/codex:0.167.0')
++args.output.parent.mkdir(parents=True,exist_ok=True)
++try:
++ inspected=subprocess.run(['docker','image','inspect',reference],capture_output=True,text=True,timeout=15)
++ assert inspected.returncode==0
++ image=json.loads(inspected.stdout)[0]
++ assert image['Os']=='linux' and image['Architecture'] in ['amd64','arm64']
++ identity=image['Id'];assert identity.startswith('sha256:') and len(identity)==71
++except (OSError,subprocess.TimeoutExpired,ValueError,KeyError,IndexError,AssertionError) as error:
++ report.update(stage='image_resolution',failure_type=type(error).__name__)
++ args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2));raise SystemExit(1)
++report.update(image=identity,image_reference=reference,os=image['Os'],architecture=image['Architecture'])
+ with tempfile.TemporaryDirectory(prefix='devdesk-native-sandbox-') as d:
+  root=Path(d);state=root/'state';home=state/'codex';home.mkdir(parents=True);work=root/'work';work.mkdir()
+  (home/'auth.json').write_text('HARMLESS_CANARY_NOT_A_CREDENTIAL')
+@@ -17,18 +29,42 @@ with tempfile.TemporaryDirectory(prefix='devdesk-native-sandbox-') as d:
+ [permissions.devdesk.network]
+ enabled=false
+ ''')
+- command=['docker','run','--rm','--network=none','--read-only','--user',f'{os.getuid()}:{os.getgid()}',
++ name='devdesk-nested-probe-'+uuid.uuid4().hex
++ command=['docker','create','--name',name,'--label','devdesk.probe=nested-sandbox','--network=none','--read-only','--user',f'{os.getuid()}:{os.getgid()}',
+           '--cap-drop=ALL','--security-opt=no-new-privileges','--security-opt',f'seccomp={ROOT}/containers/security/nested-sandbox.json',
+           '--pids-limit=128','--memory=512m','--tmpfs','/tmp:rw,noexec,nosuid,size=64m',
+           '--mount',f'type=bind,source={state},target=/state','--mount',f'type=bind,source={work},target=/work',
+-          '--entrypoint','codex','sha256:6d8a4432dd04977728fd94f8b77ffd6b3ee4d9e9f90128ba96250691d31246e1',
+-          'sandbox','--','/bin/sh','-c','(! cat /state/codex/auth.json 2>/dev/null) && printf native-sandbox-ok > /work/proof']
++          '--entrypoint','/bin/sh',identity,'-c',
++          'printf "outer_apparmor="; cat /proc/self/attr/current; exec codex sandbox -- /bin/sh -c "$1"','probe',
++          '(! cat /state/codex/auth.json 2>/dev/null) && printf native-sandbox-ok > /work/proof']
++ if args.apparmor_profile:
++  expected=(ROOT/'containers/security/devdesk-harness-v1.apparmor').read_bytes()
++  installed=Path('/etc/apparmor.d/devdesk-harness-v1')
++  assert installed.read_bytes()==expected,'installed AppArmor policy differs from reviewed source'
++  report['apparmor_policy_sha256']=hashlib.sha256(expected).hexdigest()
++  command[2:2]=['--security-opt','apparmor='+args.apparmor_profile]
+  try:
+-  result=subprocess.run(command,capture_output=True,text=True,timeout=30)
++  created=subprocess.run(command,capture_output=True,text=True,timeout=30)
++  assert created.returncode==0,'dedicated diagnostic container creation failed'
++  receipt=created.stdout.strip();assert len(receipt)==64 and all(c in '0123456789abcdef' for c in receipt)
++  report['container_id']=receipt;report['container_name']=name
++  container=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
++  assert container['Id']==receipt and container['Config']['Labels']['devdesk.probe']=='nested-sandbox'
++  report['security']={'user':container['Config']['User'],'cap_drop':container['HostConfig']['CapDrop'],'no_new_privileges':'no-new-privileges' in container['HostConfig']['SecurityOpt'],'seccomp_sha256':hashlib.sha256((ROOT/'containers/security/nested-sandbox.json').read_bytes()).hexdigest(),'read_only_root':container['HostConfig']['ReadonlyRootfs'],'privileged':container['HostConfig']['Privileged'],'network':container['HostConfig']['NetworkMode'],'mount_targets':[m['Destination'] for m in container['Mounts']]}
++  result=subprocess.run(['docker','start','-a',name],capture_output=True,text=True,timeout=30)
++  container=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
++  report['apparmor_profile']=container['AppArmorProfile']
++  report['process_policy']=result.stdout.strip()
+   report['exit_code']=result.returncode
+   # No real credentials exist in this diagnostic container.
+   if result.returncode:report['diagnostic']=result.stderr[-1800:]
+   report['passed']=result.returncode==0 and (work/'proof').read_text()=='native-sandbox-ok'
+   report['work_write_proven']=report['passed'];report['credential_read_denied']=report['passed']
+  except Exception as e:report['failure_type']=type(e).__name__
++ finally:
++  # Only this probe's receipt proves ownership; never select by an image/tag.
++  if report.get('container_id'):
++   removed=subprocess.run(['docker','rm','-f',report['container_id']],capture_output=True,timeout=30)
++   report['cleanup_verified']=removed.returncode==0 and subprocess.run(['docker','inspect',report['container_id']],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode!=0
++   report['passed']=report['passed'] and report['cleanup_verified']
+ args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2));raise SystemExit(0 if report['passed'] else 1)

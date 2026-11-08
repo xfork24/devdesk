@@ -20,6 +20,10 @@ class Client:
  def open(self,project):
   self.command('project.open',project);self.project=project
  def feature(self,feature):return self.rpc('query.workspace',{'feature_id':feature,'limit':100})['detail']
+ def attempt_runs(self,view,attempt):
+  rows=[row for row in view['runs'] if row.get('attempt_id')==attempt and not row['node'].startswith('review:')]
+  superseded={row['retry_of'] for row in rows if row.get('retry_of')}
+  return [row for row in rows if row['id'] not in superseded]
  def discuss(self,owner,revision,role,provider,prompt,timeout=240,work_type='discussion'):
   sid=self.command('session.open',owner,revision,{'agent':f'builtin-agent-{role}-v1','provider':provider,'work_type':work_type})['id']
   state=self.rpc('query.session',{'id':sid});tid=self.command('conversation.send',sid,state['session']['revision'],{'client_message_id':str(uuid.uuid4()),'input':prompt})['id'];end=time.monotonic()+timeout

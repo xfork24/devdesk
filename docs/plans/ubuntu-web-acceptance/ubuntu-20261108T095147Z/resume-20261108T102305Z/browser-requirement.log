@@ -1,0 +1,15 @@
+$ env DEVDESK_LIVE_REPORTS=/home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z DEVDESK_LIVE_URL=http://127.0.0.1:51751 node tests/live/browser_conversation.mjs
+{
+  "passed": true,
+  "source": "real Chromium + DevDesk host + managed DSH",
+  "project_id": "fc31209b-2f4d-447e-9878-58fdffeb27f5",
+  "session_id": "42ffbca7-103e-414f-b0d4-b00cc12ac7b7",
+  "requirement_id": "84dbeea7-a913-4167-a2fd-8ad8232c41dd",
+  "acceptance_keys": [
+    "AC-ADD",
+    "AC-MUL"
+  ],
+  "no_fabricated_feature": true
+}
+
+exit=0

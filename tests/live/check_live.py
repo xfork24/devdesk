@@ -6,22 +6,39 @@ from client import Client
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import argparse,hashlib,json,os,platform,re,subprocess,sys,time,uuid
-p=argparse.ArgumentParser();p.add_argument('--providers',default='codex,dsh');p.add_argument('--root',type=Path,required=True);p.add_argument('--github-repo',required=True);p.add_argument('--groups',default='git,docker,harness,github,web,workflow,recovery');p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--reports',type=Path);p.add_argument('--mode',choices=['full','verify-existing'],default='full');p.add_argument('--allow-host-restart',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--providers',default='codex,dsh');p.add_argument('--root',type=Path,required=True);p.add_argument('--github-repo',required=True);p.add_argument('--groups',default='git,docker,harness,github,web,workflow,recovery');p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--reports',type=Path);p.add_argument('--mode',choices=['full','verify-existing'],default='full');p.add_argument('--allow-host-restart',action='store_true');p.add_argument('--resume',action='store_true',help='explicitly resume a failed full report after correcting the failed stage; preserve original report and logs');a=p.parse_args()
 assert re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',a.github_repo),'explicit owner/test-repo required'
 project_root=Path(__file__).resolve().parents[2];os.chdir(project_root);a.root=a.root.resolve();assert a.root!=project_root and (a.root/'.devdesk-dataset').is_file(),'root must be a dedicated initialized dataset'
 assert a.github_repo!='xfork24/devdesk','never use the DevDesk source repository'
 providers=a.providers.split(',');assert providers and set(providers)<=set(['codex','dsh'])
 groups=a.groups.split(',');assert groups and set(groups)<=set(['git','docker','harness','github','web','workflow','recovery'])
 reports=a.reports or (project_root/'docs/plans/real-engineering-integration' if a.mode=='verify-existing' else project_root/'docs/plans/real-engineering-integration'/('live-'+uuid.uuid4().hex[:10]));reports=reports.resolve();reports.mkdir(parents=True,exist_ok=True)
-r={'passed':False,'mode':a.mode,'platform':platform.platform(),'machine':platform.machine(),'providers':providers,'groups':groups,'root':str(a.root),'github_repository':a.github_repo,'steps':[],'started':time.time()};output=reports/('live-check-'+a.mode+'-'+'-'.join(groups)+'.json');c=Client(a.url)
+r={'passed':False,'mode':a.mode,'platform':platform.platform(),'machine':platform.machine(),'providers':providers,'groups':groups,'root':str(a.root),'github_repository':a.github_repo,'steps':[],'started':time.time()};output=reports/('live-check-'+a.mode+'-'+'-'.join(groups)+'.json');previous={};resume_id=uuid.uuid4().hex[:10] if a.resume else None
+if a.resume:
+ assert a.mode=='full' and output.is_file(),'--resume requires an existing failed full report'
+ old=json.loads(output.read_text());assert not old['passed'],'use a fresh report directory after a completed full'
+ for key in ['mode','providers','groups','root','github_repository']:assert old[key]==r[key],'resume context mismatch: '+key
+ previous={row['name']:row for row in old['steps'] if row['passed']}
+ history=reports/'history';history.mkdir(exist_ok=True);archive=history/(output.stem+'-before-'+resume_id+'.json');archive.write_bytes(output.read_bytes());r['resumed_from']=str(archive);r['previous_failure']=old.get('error')
+ if 'restarted_host_pid' in old:r['restarted_host_pid']=old['restarted_host_pid']
+elif a.mode=='full':assert not output.exists(),'full report already exists; use --resume or a fresh report directory'
+elif output.exists():
+ history=reports/'history';history.mkdir(exist_ok=True);archive=history/(output.stem+'-'+uuid.uuid4().hex[:10]+'.json');archive.write_bytes(output.read_bytes());r['previous_verification']=str(archive)
+c=Client(a.url)
 def save():output.write_text(json.dumps(r,indent=2)+'\n')
 def step(name,fn):
+ # Reuse only successful side effects, never the final persisted/remote checks.
+ # The original bytes remain in history and every reused command log is hashed.
+ if name in previous and (name.startswith('real-') or name.startswith('native-') or name in ['browser-requirement','repository','planning','implementation','merges','lifecycle','crash-arm','owned-host-crash-and-restart','crash-check']):
+  row=json.loads(json.dumps(previous[name]));evidence=row.get('evidence',{})
+  if 'log' in evidence:assert hashlib.sha256(Path(evidence['log']).read_bytes()).hexdigest()==evidence['sha256'],'recorded log changed: '+name
+  row['reused_from']=r['resumed_from'];r['steps'].append(row);save();print(name+' (recorded successful execution; persisted facts are rechecked below)',flush=True);return
  row={'name':name,'passed':False,'started':time.time()};r['steps'].append(row);save();print(name,flush=True)
  try:row['evidence']=fn();row['passed']=True
  except Exception as e:row['error']=str(e);raise
  finally:row['finished']=time.time();save()
 def run(name,cmd,env=None):
- log=reports/(name+'.log')
+ log=reports/(name+('-resume-'+resume_id if resume_id else '')+'.log')
  with log.open('w') as stream:
   result=subprocess.run(cmd,stdout=stream,stderr=subprocess.STDOUT,env=env,timeout=3600)
  assert result.returncode==0,f'{name} failed, see {log}'
@@ -48,6 +65,7 @@ try:
    step('lifecycle',lambda:run('lifecycle',['python3','tests/live/probe_recovery.py','--url',a.url,'--reports',str(reports),'--phase','exercise']))
    step('crash-arm',lambda:run('crash-arm',['python3','tests/live/probe_recovery.py','--url',a.url,'--reports',str(reports),'--phase','crash-arm']))
    def crash():
+    global c
     port=a.url.rsplit(':',1)[1];lines=subprocess.check_output(['ps','-axo','pid=,args='],text=True).splitlines();matches=[]
     import shlex,signal
     for line in lines:
@@ -59,7 +77,8 @@ try:
     assert len(matches)==1,'cannot prove a unique dedicated host identity';pid,argv=matches[0];os.kill(pid,signal.SIGKILL)
     time.sleep(.5)
     with (reports/'restarted-host.log').open('w') as log:child=subprocess.Popen(argv,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-    Client(a.url);r['restarted_host_pid']=child.pid;return {'killed_owned_pid':pid,'new_pid':child.pid,'dataset':str(a.root)}
+    c=Client(a.url);assert Path(c.rpc('query.workspace')['data_root']).resolve()==a.root
+    r['restarted_host_pid']=child.pid;return {'killed_owned_pid':pid,'new_pid':child.pid,'dataset':str(a.root),'local_authentication_refreshed':True}
    step('owned-host-crash-and-restart',crash)
    step('crash-check',lambda:run('crash-check',['python3','tests/live/probe_recovery.py','--url',a.url,'--reports',str(reports),'--phase','crash-check']))
  # Verify persisted facts separately from generating new model work.

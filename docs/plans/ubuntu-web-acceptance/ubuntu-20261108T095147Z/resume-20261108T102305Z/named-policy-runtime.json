@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "inference_tested": false,
+  "credential_canary_only": true,
+  "seccomp": "moby-default + nested namespace/mount syscalls",
+  "image": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+  "image_reference": "devdesk/codex:0.167.0",
+  "os": "linux",
+  "architecture": "amd64",
+  "stage": "finished",
+  "apparmor_policy_sha256": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
+  "container_id": "3c7d9b7551c12724b2388b7ccb3570864c025fb41cfa840a3eb3cec6d76b8d98",
+  "container_name": "devdesk-nested-probe-1e5c7c0a24f14b6486a6320c95298f8f",
+  "security": {
+    "user": "1000:1000",
+    "cap_drop": [
+      "ALL"
+    ],
+    "no_new_privileges": true,
+    "seccomp_sha256": "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120",
+    "read_only_root": true,
+    "privileged": false,
+    "network": "none",
+    "mount_targets": [
+      "/state",
+      "/work"
+    ]
+  },
+  "apparmor_profile": "devdesk-harness-v1",
+  "process_policy": "outer_apparmor=devdesk-harness-v1 (enforce)",
+  "exit_code": 0,
+  "work_write_proven": true,
+  "credential_read_denied": true,
+  "cleanup_verified": true
+}

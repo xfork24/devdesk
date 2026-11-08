@@ -123,11 +123,13 @@ export function RuntimeSettings({
               onClick={async () => {
                 if (!nativeCodex) return;
                 // Open during the click so browsers permit navigation after the asynchronous RPC.
-                const authorizationWindow = window.open(
-                  "about:blank",
-                  "_blank",
-                );
-                if (authorizationWindow) authorizationWindow.opener = null;
+                let authorizationWindow: Window | null = null;
+                try {
+                  authorizationWindow = window.open("about:blank", "_blank");
+                  if (authorizationWindow) authorizationWindow.opener = null;
+                } catch {
+                  // The official link below also works when popups are blocked.
+                }
                 setBusy(true);
                 setMessage("正在请求官方授权地址…");
                 try {
@@ -143,12 +145,19 @@ export function RuntimeSettings({
                   )
                     throw new Error("Invalid login origin");
                   setLogin({ loginId: result.loginId, authUrl: url.href });
-                  if (authorizationWindow)
-                    authorizationWindow.location.href = url.href;
-                  setMessage("请在官方网页完成授权，然后检查登录状态");
-                } catch {
+                  try {
+                    if (authorizationWindow)
+                      authorizationWindow.location.href = url.href;
+                  } catch {
+                    authorizationWindow?.close();
+                    authorizationWindow = null;
+                  }
+                  setMessage(authorizationWindow
+                    ? "请在官方网页完成授权，然后检查登录状态"
+                    : "浏览器未打开新窗口；请点击下方官方授权链接，完成后检查登录状态");
+                } catch (error) {
                   authorizationWindow?.close();
-                  setMessage("无法开始登录，请检查安装或当前登录流程");
+                  setMessage(`无法开始登录，可再次点击重试：${String(error)}`);
                 } finally {
                   setBusy(false);
                 }

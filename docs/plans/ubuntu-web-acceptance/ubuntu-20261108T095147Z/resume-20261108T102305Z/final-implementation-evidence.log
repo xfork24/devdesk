@@ -1,0 +1,10 @@
+$ python3 tests/live/probe_implementation.py --url http://127.0.0.1:51751 --reports docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/full-20261108T103202Z
+waiting_add
+delivery_add
+accepted_add
+waiting_multiply
+delivery_multiply
+accepted_multiply
+finished
+
+exit=0

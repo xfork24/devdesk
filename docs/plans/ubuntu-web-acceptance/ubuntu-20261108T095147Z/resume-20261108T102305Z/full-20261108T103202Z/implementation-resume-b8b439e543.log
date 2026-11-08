@@ -1,0 +1,17 @@
+waiting_add
+delivery_add
+accepted_add
+waiting_multiply
+delivery_multiply
+failed
+Traceback (most recent call last):
+  File "/home/hengliu/workspace/devdesk/tests/live/probe_implementation.py", line 40, in <module>
+    v=c.wait(view,reviewed,400);assert d['id'] in v['accepted_deliveries'],'Independent Reviewer requested changes'
+      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/client.py", line 40, in wait
+    if predicate(value):return value
+       ^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/probe_implementation.py", line 38, in reviewed
+    if run['status'] in ['failed','interrupted','cancelled']:raise AssertionError(str(run['result']))
+                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'failure_type': 'adapter_contract', 'message': '原生轮次完成，但阶段结果不符合结构契约', 'origin': 'external', 'status': 'failed', 'turn_id': '7ba223fa-43ba-468d-a589-8c0ffe007a18'}

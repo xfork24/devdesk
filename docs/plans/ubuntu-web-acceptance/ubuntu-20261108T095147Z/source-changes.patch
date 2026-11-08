@@ -1,0 +1,448 @@
+diff --git a/crates/adapters/src/codex_auth.rs b/crates/adapters/src/codex_auth.rs
+index 6eec52c..996b248 100644
+--- a/crates/adapters/src/codex_auth.rs
++++ b/crates/adapters/src/codex_auth.rs
+@@ -8,7 +8,39 @@ struct AuthWorker {
+     installation: Id,
+     process: JsonlProcess,
+     pending: bool,
+-    login: Option<String>,
++    login: Option<Value>,
++    restart_required: bool,
++}
++impl AuthWorker {
++    fn start_login(&mut self, device: bool, timeout: std::time::Duration) -> Result<Value> {
++        // A page reload or a lost HTTP response must recover the same login,
++        // rather than dispatch another request or leave the user blocked.
++        if self.pending {
++            return self
++                .login
++                .clone()
++                .ok_or_else(|| err("needs_reconciliation", "登录状态未知，请重新开始认证"));
++        }
++        match self.process.request_for(
++            "account/login/start",
++            json!({"type":if device {"chatgptDeviceCode"} else {"chatgpt"}}),
++            timeout,
++        ) {
++            Ok(value) => {
++                self.pending = true;
++                self.login = Some(value.clone());
++                Ok(value)
++            }
++            Err(error) => {
++                self.pending = false;
++                self.login = None;
++                // The native request may have been consumed before timing out.
++                // Stop this authentication process before a later explicit retry.
++                self.restart_required = true;
++                Err(error)
++            }
++        }
++    }
+ }
+ pub struct CodexAuthentication {
+     home: PathBuf,
+@@ -137,47 +169,40 @@ impl CodexAuthentication {
+                 process,
+                 pending: false,
+                 login: None,
++                restart_required: false,
+             });
+         }
+-        action(worker.as_mut().unwrap())
++        Self::auth_action(&mut worker, action)
++    }
++    fn auth_action(
++        worker: &mut Option<AuthWorker>,
++        action: impl FnOnce(&mut AuthWorker) -> Result<Value>,
++    ) -> Result<Value> {
++        let result = action(worker.as_mut().unwrap());
++        if worker.as_ref().is_some_and(|w| w.restart_required) {
++            // Drop reaps only the owned authentication subprocess. Engineering
++            // sessions and the user's desktop Codex processes are independent.
++            *worker = None;
++        }
++        result
+     }
+     pub fn status(&self, store: &GlobalStore, installation: &str) -> Result<Value> {
+         self.with_worker(store,installation,|worker| {
+             let response=worker.process.request("account/read",json!({"refreshToken":false}))?;
+             let authenticated=response["account"].is_object();
+-            if authenticated || worker.process.login_completed.as_ref().is_some_and(|(id,_)|worker.login.as_ref()==Some(id)) {worker.pending=false;}
++            if authenticated || worker.process.login_completed.as_ref().is_some_and(|(id,_)|worker.login.as_ref().and_then(|v|v["loginId"].as_str())==Some(id.as_str())) {worker.pending=false;worker.login=None;}
+             Ok(json!({"authenticated":authenticated,"type":response["account"]["type"],"pending":worker.pending}))
+         })
+     }
+     pub fn start(&self, store: &GlobalStore, installation: &str, device: bool) -> Result<Value> {
+         self.with_worker(store, installation, |worker| {
+-            require(
+-                !worker.pending,
+-                "登录流程已派发，请完成当前登录或取消后再试",
+-            )?;
+-            worker.pending = true;
+-            let response = worker.process.request(
+-                "account/login/start",
+-                json!({"type":if device {"chatgptDeviceCode"} else {"chatgpt"}}),
+-            );
+-            match response {
+-                Ok(value) => {
+-                    worker.login = value["loginId"].as_str().map(str::to_owned);
+-                    Ok(value)
+-                }
+-                Err(error) => {
+-                    if error.code != "needs_reconciliation" {
+-                        worker.pending = false;
+-                    }
+-                    Err(error)
+-                }
+-            }
++            worker.start_login(device, std::time::Duration::from_secs(20))
+         })
+     }
+     pub fn cancel(&self, store: &GlobalStore, installation: &str, login: &str) -> Result<Value> {
+         self.with_worker(store, installation, |worker| {
+             require(
+-                worker.login.as_deref() == Some(login),
++                worker.login.as_ref().and_then(|v| v["loginId"].as_str()) == Some(login),
+                 "登录请求不属于当前认证流程",
+             )?;
+             let response = worker
+@@ -189,3 +214,80 @@ impl CodexAuthentication {
+         })
+     }
+ }
++
++#[cfg(all(test, unix))]
++mod tests {
++    use super::*;
++    use std::time::Duration;
++
++    fn fixture(mode: &str, receipt: &Path) -> AuthWorker {
++        let mut command = ProcessCommand::new("python3");
++        command.args(["-u", "-c", r#"
++import json,os,sys,time
++from pathlib import Path
++receipt=Path(sys.argv[2]);count=0
++for line in sys.stdin:
++    frame=json.loads(line);count+=1
++    receipt.write_text(json.dumps({'pid':os.getpid(),'requests':count}))
++    if sys.argv[1]=='exit':sys.exit(0)
++    if sys.argv[1]=='timeout':time.sleep(60)
++    print(json.dumps({'id':frame['id'],'result':{'type':'chatgpt','loginId':'fixture-login','authUrl':'https://auth.openai.com/fixture'}}),flush=True)
++"#, mode]);
++        command.arg(receipt);
++        AuthWorker {
++            installation: "synthetic-auth-transport".into(),
++            process: JsonlProcess::spawn(command).unwrap(),
++            pending: false,
++            login: None,
++            restart_required: false,
++        }
++    }
++
++    #[test]
++    fn failed_login_reaps_auth_worker_and_allows_a_fresh_explicit_attempt() {
++        let directory = tempfile::tempdir().unwrap();
++        for mode in ["timeout", "exit"] {
++            let receipt = directory.path().join(mode);
++            let mut worker = Some(fixture(mode, &receipt));
++            let result = CodexAuthentication::auth_action(&mut worker, |worker| {
++                worker.start_login(false, Duration::from_millis(200))
++            });
++            assert_eq!(result.unwrap_err().code, "needs_reconciliation");
++            assert!(worker.is_none(), "failed pending state must not survive");
++            let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
++            let pid = value["pid"].as_i64().unwrap() as libc::pid_t;
++            assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
++            assert_eq!(
++                std::io::Error::last_os_error().raw_os_error(),
++                Some(libc::ESRCH)
++            );
++
++            // This is a new explicit action, after the old listener was reaped.
++            worker = Some(fixture("reply", &directory.path().join("retry")));
++            let value = CodexAuthentication::auth_action(&mut worker, |worker| {
++                worker.start_login(false, Duration::from_secs(2))
++            })
++            .unwrap();
++            assert_eq!(value["loginId"], "fixture-login");
++            assert!(worker.as_ref().unwrap().pending);
++        }
++    }
++
++    #[test]
++    fn repeated_start_recovers_the_same_pending_login_without_native_redispatch() {
++        let directory = tempfile::tempdir().unwrap();
++        let receipt = directory.path().join("requests");
++        let mut worker = Some(fixture("reply", &receipt));
++        let first = CodexAuthentication::auth_action(&mut worker, |worker| {
++            worker.start_login(false, Duration::from_secs(2))
++        })
++        .unwrap();
++        let recovered = CodexAuthentication::auth_action(&mut worker, |worker| {
++            worker.start_login(false, Duration::from_secs(2))
++        })
++        .unwrap();
++        assert_eq!(first, recovered);
++        let value: Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
++        assert_eq!(value["requests"], 1);
++    }
++}
+diff --git a/crates/adapters/tests/command_tests.rs b/crates/adapters/tests/command_tests.rs
+index fae92d2..05f33ad 100644
+--- a/crates/adapters/tests/command_tests.rs
++++ b/crates/adapters/tests/command_tests.rs
+@@ -29,7 +29,7 @@ fn git(p: &Path, args: &[&str]) -> String {
+     assert!(r.status.success());
+     String::from_utf8(r.stdout).unwrap().trim().into()
+ }
+-fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
++fn git_fixture(root: &Path, body: &str) -> (GitContext, String) {
+     let project = id();
+     let repo = root.join("projects").join(&project).join("repository");
+     fs::create_dir_all(&repo).unwrap();
+@@ -58,6 +58,10 @@ fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
+         },
+         origin: Origin::External,
+     };
++    (code, candidate)
++}
++fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
++    let (code, candidate) = git_fixture(root, body);
+     let document = Document {
+         id: id(),
+         project_id: None,
+@@ -133,32 +137,23 @@ fn finish(tests: &CommandTests, r: &TestRequest) -> Value {
+ #[test]
+ fn export_rejects_content_drift_without_touching_host_files_outside_the_execution_root() {
+     let root = tempfile::tempdir().unwrap();
+-    let r = fixture(root.path(), "export const x=1;", "green");
++    let (code, candidate) = git_fixture(root.path(), "export const x=1;");
+     let path = root
+         .path()
+         .join("projects")
+-        .join(&r.code.as_ref().unwrap().project)
++        .join(&code.project)
+         .join("execution/tests/fixture");
+     fs::create_dir_all(&path).unwrap();
+     let a = CliGit::new(root.path()).unwrap();
+     let path = fs::canonicalize(path).unwrap().join("work");
+-    a.export_revision(r.code.as_ref().unwrap(), &r.candidate, &path)
+-        .unwrap();
+-    a.export_revision(r.code.as_ref().unwrap(), &r.candidate, &path)
+-        .unwrap();
++    a.export_revision(&code, &candidate, &path).unwrap();
++    a.export_revision(&code, &candidate, &path).unwrap();
+     fs::write(path.join("tests/actual.test.mjs"), "changed").unwrap();
++    assert!(a.export_revision(&code, &candidate, &path).is_err());
+     assert!(
+-        a.export_revision(r.code.as_ref().unwrap(), &r.candidate, &path)
++        a.export_revision(&code, &candidate, &root.path().join("outside"))
+             .is_err()
+     );
+-    assert!(
+-        a.export_revision(
+-            r.code.as_ref().unwrap(),
+-            &r.candidate,
+-            &root.path().join("outside")
+-        )
+-        .is_err()
+-    );
+ }
+ #[test]
+ #[ignore = "requires the pinned Linux Node image and actual Docker daemon"]
+diff --git a/scripts/doctor.py b/scripts/doctor.py
+index 042144f..5917d9e 100644
+--- a/scripts/doctor.py
++++ b/scripts/doctor.py
+@@ -16,6 +16,16 @@ for provider,version in [('codex','0.167.0'),('dsh','0.2.2-rc.1')]:check(provide
+ if platform.system()=='Linux':
+  check('secret_tool',shutil.which('secret-tool') is not None,'Ubuntu: install libsecret-tools')
+  check('desktop_session',bool(os.environ.get('DBUS_SESSION_BUS_ADDRESS')),'Secret Service requires a desktop/user D-Bus session; credential contents are not read')
++ # A nonempty D-Bus address (including one inherited over SSH) is not proof
++ # of a usable desktop vault. Read only collection metadata, never a secret
++ # or an Unlock method, and bound a stalled service independently of Docker.
++ try:
++  metadata=subprocess.run(['busctl','--user','get-property','org.freedesktop.secrets','/org/freedesktop/secrets/aliases/default','org.freedesktop.Secret.Collection','Locked'],capture_output=True,text=True,timeout=3)
++  available=metadata.returncode==0 and metadata.stdout.strip() in ['b false','b true']
++  unlocked=available and metadata.stdout.strip()=='b false'
++ except (OSError,subprocess.TimeoutExpired):available=unlocked=False
++ check('secret_service',available,'busctl must reach the default Secret Service collection; no secret is read')
++ check('default_collection_unlocked',unlocked,'unlock the desktop default collection; preflight never prompts or unlocks it')
+ elif platform.system()=='Darwin':
+  identity=Path.home()/'Library/Application Support/DevDesk/signing/identity.txt';check('stable_signing_identity',identity.is_file() or bool(os.environ.get('DEVDESK_CODESIGN_IDENTITY')),'configure a stable code signing identity once')
+  helper=Path.home()/'Library/Application Support/DevDesk/credential-helper/v1/devdesk-credential-helper'
+diff --git a/tests/live/probe_nested_sandbox.py b/tests/live/probe_nested_sandbox.py
+index 78cf88a..59a331a 100644
+--- a/tests/live/probe_nested_sandbox.py
++++ b/tests/live/probe_nested_sandbox.py
+@@ -1,10 +1,22 @@
+ #!/usr/bin/env python3
+ """Exercise the real Codex child sandbox using harmless credential canaries, no model calls."""
+-import argparse,json,os,subprocess,tempfile
++import argparse,hashlib,json,os,subprocess,tempfile,uuid
+ from pathlib import Path
+ ROOT=Path(__file__).resolve().parents[2]
+ p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);args=p.parse_args()
+ report={'passed':False,'inference_tested':False,'credential_canary_only':True,'seccomp':'moby-default + nested namespace/mount syscalls'}
++reference=os.environ.get('DEVDESK_TEST_CODEX_IMAGE','devdesk/codex:0.167.0')
++args.output.parent.mkdir(parents=True,exist_ok=True)
++try:
++ inspected=subprocess.run(['docker','image','inspect',reference],capture_output=True,text=True,timeout=15)
++ assert inspected.returncode==0
++ image=json.loads(inspected.stdout)[0]
++ assert image['Os']=='linux' and image['Architecture'] in ['amd64','arm64']
++ identity=image['Id'];assert identity.startswith('sha256:') and len(identity)==71
++except (OSError,subprocess.TimeoutExpired,ValueError,KeyError,IndexError,AssertionError) as error:
++ report.update(stage='image_resolution',failure_type=type(error).__name__)
++ args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2));raise SystemExit(1)
++report.update(image=identity,image_reference=reference,os=image['Os'],architecture=image['Architecture'])
+ with tempfile.TemporaryDirectory(prefix='devdesk-native-sandbox-') as d:
+  root=Path(d);state=root/'state';home=state/'codex';home.mkdir(parents=True);work=root/'work';work.mkdir()
+  (home/'auth.json').write_text('HARMLESS_CANARY_NOT_A_CREDENTIAL')
+@@ -17,18 +29,36 @@ with tempfile.TemporaryDirectory(prefix='devdesk-native-sandbox-') as d:
+ [permissions.devdesk.network]
+ enabled=false
+ ''')
+- command=['docker','run','--rm','--network=none','--read-only','--user',f'{os.getuid()}:{os.getgid()}',
++ name='devdesk-nested-probe-'+uuid.uuid4().hex
++ command=['docker','create','--name',name,'--label','devdesk.probe=nested-sandbox','--network=none','--read-only','--user',f'{os.getuid()}:{os.getgid()}',
+           '--cap-drop=ALL','--security-opt=no-new-privileges','--security-opt',f'seccomp={ROOT}/containers/security/nested-sandbox.json',
+           '--pids-limit=128','--memory=512m','--tmpfs','/tmp:rw,noexec,nosuid,size=64m',
+           '--mount',f'type=bind,source={state},target=/state','--mount',f'type=bind,source={work},target=/work',
+-          '--entrypoint','codex','sha256:6d8a4432dd04977728fd94f8b77ffd6b3ee4d9e9f90128ba96250691d31246e1',
+-          'sandbox','--','/bin/sh','-c','(! cat /state/codex/auth.json 2>/dev/null) && printf native-sandbox-ok > /work/proof']
++          '--entrypoint','/bin/sh',identity,'-c',
++          'printf "outer_apparmor="; cat /proc/self/attr/current; exec codex sandbox -- /bin/sh -c "$1"','probe',
++          '(! cat /state/codex/auth.json 2>/dev/null) && printf native-sandbox-ok > /work/proof']
+  try:
+-  result=subprocess.run(command,capture_output=True,text=True,timeout=30)
++  created=subprocess.run(command,capture_output=True,text=True,timeout=30)
++  assert created.returncode==0,'dedicated diagnostic container creation failed'
++  receipt=created.stdout.strip();assert len(receipt)==64 and all(c in '0123456789abcdef' for c in receipt)
++  report['container_id']=receipt;report['container_name']=name
++  container=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
++  assert container['Id']==receipt and container['Config']['Labels']['devdesk.probe']=='nested-sandbox'
++  report['security']={'user':container['Config']['User'],'cap_drop':container['HostConfig']['CapDrop'],'no_new_privileges':'no-new-privileges' in container['HostConfig']['SecurityOpt'],'seccomp_sha256':hashlib.sha256((ROOT/'containers/security/nested-sandbox.json').read_bytes()).hexdigest(),'read_only_root':container['HostConfig']['ReadonlyRootfs'],'privileged':container['HostConfig']['Privileged'],'network':container['HostConfig']['NetworkMode'],'mount_targets':[m['Destination'] for m in container['Mounts']]}
++  result=subprocess.run(['docker','start','-a',name],capture_output=True,text=True,timeout=30)
++  container=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
++  report['apparmor_profile']=container['AppArmorProfile']
++  report['process_policy']=result.stdout.strip()
+   report['exit_code']=result.returncode
+   # No real credentials exist in this diagnostic container.
+   if result.returncode:report['diagnostic']=result.stderr[-1800:]
+   report['passed']=result.returncode==0 and (work/'proof').read_text()=='native-sandbox-ok'
+   report['work_write_proven']=report['passed'];report['credential_read_denied']=report['passed']
+  except Exception as e:report['failure_type']=type(e).__name__
++ finally:
++  # Only this probe's receipt proves ownership; never select by an image/tag.
++  if report.get('container_id'):
++   removed=subprocess.run(['docker','rm','-f',report['container_id']],capture_output=True,timeout=30)
++   report['cleanup_verified']=removed.returncode==0 and subprocess.run(['docker','inspect',report['container_id']],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode!=0
++   report['passed']=report['passed'] and report['cleanup_verified']
+ args.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2));raise SystemExit(0 if report['passed'] else 1)
+diff --git a/web/src/components/RuntimeSettings.tsx b/web/src/components/RuntimeSettings.tsx
+index 909a70d..20cdaa2 100644
+--- a/web/src/components/RuntimeSettings.tsx
++++ b/web/src/components/RuntimeSettings.tsx
+@@ -123,11 +123,13 @@ export function RuntimeSettings({
+               onClick={async () => {
+                 if (!nativeCodex) return;
+                 // Open during the click so browsers permit navigation after the asynchronous RPC.
+-                const authorizationWindow = window.open(
+-                  "about:blank",
+-                  "_blank",
+-                );
+-                if (authorizationWindow) authorizationWindow.opener = null;
++                let authorizationWindow: Window | null = null;
++                try {
++                  authorizationWindow = window.open("about:blank", "_blank");
++                  if (authorizationWindow) authorizationWindow.opener = null;
++                } catch {
++                  // The official link below also works when popups are blocked.
++                }
+                 setBusy(true);
+                 setMessage("正在请求官方授权地址…");
+                 try {
+@@ -143,12 +145,19 @@ export function RuntimeSettings({
+                   )
+                     throw new Error("Invalid login origin");
+                   setLogin({ loginId: result.loginId, authUrl: url.href });
+-                  if (authorizationWindow)
+-                    authorizationWindow.location.href = url.href;
+-                  setMessage("请在官方网页完成授权，然后检查登录状态");
+-                } catch {
++                  try {
++                    if (authorizationWindow)
++                      authorizationWindow.location.href = url.href;
++                  } catch {
++                    authorizationWindow?.close();
++                    authorizationWindow = null;
++                  }
++                  setMessage(authorizationWindow
++                    ? "请在官方网页完成授权，然后检查登录状态"
++                    : "浏览器未打开新窗口；请点击下方官方授权链接，完成后检查登录状态");
++                } catch (error) {
+                   authorizationWindow?.close();
+-                  setMessage("无法开始登录，请检查安装或当前登录流程");
++                  setMessage(`无法开始登录，可再次点击重试：${String(error)}`);
+                 } finally {
+                   setBusy(false);
+                 }
+diff --git a/web/tests/workbench.spec.ts b/web/tests/workbench.spec.ts
+index 20c4547..dfe71cb 100644
+--- a/web/tests/workbench.spec.ts
++++ b/web/tests/workbench.spec.ts
+@@ -542,6 +542,7 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
+   context,
+ }) => {
+   await ensureSetup(page);
++  let loginStarts = 0;
+   await page.route("**/rpc", async (route) => {
+     const request = route.request().postDataJSON();
+     if (request.method === "query.workspace") {
+@@ -561,6 +562,15 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
+       ];
+       await route.fulfill({ json: body });
+     } else if (request.method === "codex.auth.start") {
++      if (++loginStarts === 1) {
++        await route.fulfill({
++          json: {
++            jsonrpc: "2.0", id: request.id,
++            error: { message: "认证请求超时", data: { code: "needs_reconciliation" } },
++          },
++        });
++        return;
++      }
+       await route.fulfill({
+         json: {
+           jsonrpc: "2.0",
+@@ -612,6 +622,9 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
+   await context.route("https://auth.openai.com/**", (route) =>
+     route.fulfill({ body: "Synthetic OAuth navigation fixture" }),
+   );
++  await page.getByRole("button", { name: "网页登录", exact: true }).click();
++  await expect(page.getByText(/无法开始登录，可再次点击重试.*needs_reconciliation/)).toBeVisible();
++  await expect(page.getByRole("button", { name: "网页登录", exact: true })).toBeEnabled();
+   const popupPromise = page.waitForEvent("popup");
+   await page.getByRole("button", { name: "网页登录", exact: true }).click();
+   const popup = await popupPromise;
+@@ -619,5 +632,17 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
+     "https://auth.openai.com/authorize?fixture=true",
+   );
+   await popup.close();
++  await page.reload();
++  await page.getByRole("button", { name: "设置", exact: true }).click();
++  await page.evaluate(() => { window.open = () => null; });
++  await page.getByRole("button", { name: "网页登录", exact: true }).click();
++  await expect(page.getByRole("link", { name: "打开官方授权网页", exact: true })).toHaveAttribute(
++    "href", "https://auth.openai.com/authorize?fixture=true",
++  );
++  await expect(page.getByText(/浏览器未打开新窗口/)).toBeVisible();
+   await page.getByLabel("默认 Agent Harness").selectOption("codex");
++  await expect(page.getByLabel("默认 Agent Harness")).toBeEnabled();
++  // SSE can refresh the workspace while the final settings request completes.
++  // Drain intercepted requests before Playwright disposes their API responses.
++  await page.unrouteAll({ behavior: "wait" });
+ });

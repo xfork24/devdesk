@@ -1,0 +1,50 @@
+$ ./scripts/check-live.sh --mode full --resume --providers codex,dsh --root /home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z --github-repo xfork24/devdesk-integration-test --url http://127.0.0.1:51751 --reports /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/full-20261108T103202Z --allow-host-restart
+real-git (recorded successful execution; persisted facts are rechecked below)
+real-docker (recorded successful execution; persisted facts are rechecked below)
+native-codex (recorded successful execution; persisted facts are rechecked below)
+native-dsh (recorded successful execution; persisted facts are rechecked below)
+browser-requirement (recorded successful execution; persisted facts are rechecked below)
+repository (recorded successful execution; persisted facts are rechecked below)
+planning (recorded successful execution; persisted facts are rechecked below)
+implementation
+merges
+lifecycle
+crash-arm
+owned-host-crash-and-restart
+crash-check
+persisted-native-facts
+Traceback (most recent call last):
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 92, in <module>
+    step('persisted-native-facts',harness)
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 37, in step
+    try:row['evidence']=fn();row['passed']=True
+                        ^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 87, in harness
+    report=read('R3-'+provider+'-application.json');c.open(report['project_id']);s=c.rpc('query.session',{'id':report['session_id'],'limit':100});assert s['session']['external_session']==report['native_session']
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/client.py", line 21, in open
+    self.command('project.open',project);self.project=project
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/client.py", line 19, in command
+    return self.rpc(method,{'command_id':command_id or str(uuid.uuid4()),'target':target,'expected_revision':revision,'payload':payload or {}})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/client.py", line 15, in rpc
+    value=json.load(self.http.open(req,timeout=40))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/home/hengliu/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized
+
+exit=1

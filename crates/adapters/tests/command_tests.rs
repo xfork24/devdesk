@@ -29,7 +29,7 @@ fn git(p: &Path, args: &[&str]) -> String {
     assert!(r.status.success());
     String::from_utf8(r.stdout).unwrap().trim().into()
 }
-fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
+fn git_fixture(root: &Path, body: &str) -> (GitContext, String) {
     let project = id();
     let repo = root.join("projects").join(&project).join("repository");
     fs::create_dir_all(&repo).unwrap();
@@ -58,6 +58,10 @@ fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
         },
         origin: Origin::External,
     };
+    (code, candidate)
+}
+fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
+    let (code, candidate) = git_fixture(root, body);
     let document = Document {
         id: id(),
         project_id: None,
@@ -133,31 +137,22 @@ fn finish(tests: &CommandTests, r: &TestRequest) -> Value {
 #[test]
 fn export_rejects_content_drift_without_touching_host_files_outside_the_execution_root() {
     let root = tempfile::tempdir().unwrap();
-    let r = fixture(root.path(), "export const x=1;", "green");
+    let (code, candidate) = git_fixture(root.path(), "export const x=1;");
     let path = root
         .path()
         .join("projects")
-        .join(&r.code.as_ref().unwrap().project)
+        .join(&code.project)
         .join("execution/tests/fixture");
     fs::create_dir_all(&path).unwrap();
     let a = CliGit::new(root.path()).unwrap();
     let path = fs::canonicalize(path).unwrap().join("work");
-    a.export_revision(r.code.as_ref().unwrap(), &r.candidate, &path)
-        .unwrap();
-    a.export_revision(r.code.as_ref().unwrap(), &r.candidate, &path)
-        .unwrap();
+    a.export_revision(&code, &candidate, &path).unwrap();
+    a.export_revision(&code, &candidate, &path).unwrap();
     fs::write(path.join("tests/actual.test.mjs"), "changed").unwrap();
+    assert!(a.export_revision(&code, &candidate, &path).is_err());
     assert!(
-        a.export_revision(r.code.as_ref().unwrap(), &r.candidate, &path)
+        a.export_revision(&code, &candidate, &root.path().join("outside"))
             .is_err()
-    );
-    assert!(
-        a.export_revision(
-            r.code.as_ref().unwrap(),
-            &r.candidate,
-            &root.path().join("outside")
-        )
-        .is_err()
     );
 }
 #[test]

@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "source": "actual browser → Host → native Codex OAuth",
+  "official_login_completed": false,
+  "official_navigation_intercepted": true,
+  "injected_fault": "abort first local HTTP response after native start succeeded",
+  "host": {
+    "pid": 2127502,
+    "argv": [
+      "/home/hengliu/workspace/devdesk/target/debug/devdesk-host",
+      "--data",
+      "/tmp/devdesk-oauth-recovery-r67FEg/data",
+      "--port",
+      "0"
+    ]
+  },
+  "checks": [
+    "lost_response_leaves_actual_native_login_pending",
+    "explicit_retry_recovers_same_login",
+    "actual_official_origin",
+    "reload_and_blocked_popup_keep_same_official_link",
+    "native_cancel_clears_pending",
+    "new_explicit_login_after_cancel_has_new_identity",
+    "second_native_login_cancelled"
+  ],
+  "installation_id": "175b4ba6-ca27-491b-af5c-18e335356c94",
+  "host_released": true
+}

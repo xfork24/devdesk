@@ -1,0 +1,4 @@
+$ python3 /tmp/devdesk-verify-final-archive.py
+{"passed": true, "sha256": "40d3c1c210102d409bd959e50dd1f72e23da47334b29467a9034f28b7cb6eff8", "host_sha256": "c8ab152149e55f9f3075f69fbc4a6eb1cd0c33f5aea15963e05e19f749ff0561", "identical_runtime_files": 13, "host": "/tmp/devdesk-ubuntu-final-docs-2nb0cyhd/devdesk-0.2.0-x86_64-unknown-linux-gnu/devdesk-host", "archive_files_scanned": 371}
+
+exit=0

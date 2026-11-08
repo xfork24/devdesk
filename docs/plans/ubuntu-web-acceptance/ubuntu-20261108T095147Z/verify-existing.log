@@ -1,0 +1,23 @@
+$ ./scripts/check-live.sh --mode verify-existing --providers codex,dsh --root /home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z --github-repo xfork24/devdesk-integration-test --url http://127.0.0.1:51751 --reports /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z
+persisted-native-facts
+Traceback (most recent call last):
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 75, in <module>
+    step('persisted-native-facts',harness)
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 20, in step
+    try:row['evidence']=fn();row['passed']=True
+                        ^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 70, in harness
+    report=read('R3-'+provider+'-application.json');c.open(report['project_id']);s=c.rpc('query.session',{'id':report['session_id'],'limit':100});assert s['session']['external_session']==report['native_session']
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 30, in read
+    v=json.loads((reports/name).read_text());assert v['passed'],name+' did not pass';return v
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py", line 1027, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/pathlib.py", line 1013, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/R3-codex-application.json'
+
+exit=1

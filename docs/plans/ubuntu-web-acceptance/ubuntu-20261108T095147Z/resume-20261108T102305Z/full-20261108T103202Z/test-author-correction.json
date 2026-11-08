@@ -1,0 +1,9 @@
+{
+  "new_tester_revision": "63be8004-95ab-477d-af42-61b001c7e1a0",
+  "prior_tester_revision": "builtin-agent-tester-v1",
+  "new_attempt": "7ec0a484-96f8-40a9-aeae-79d293b2c6a1",
+  "failed_attempt_preserved": "6735dab4-941d-49fc-a516-3211594c1297",
+  "task": "077484a6-253b-470f-9ead-b6170e0df760",
+  "reason": "correct Node test callback context and exact missing-target identity; no test classification change or gate relaxation",
+  "observed_at": 1794134457.7449527
+}

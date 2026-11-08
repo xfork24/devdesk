@@ -1,0 +1,25 @@
+$ ./scripts/check-live.sh --mode full --resume --providers codex,dsh --root /home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z --github-repo xfork24/devdesk-integration-test --url http://127.0.0.1:51751 --reports /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/full-20261108T103202Z --allow-host-restart
+real-git (recorded successful execution; persisted facts are rechecked below)
+real-docker (recorded successful execution; persisted facts are rechecked below)
+native-codex (recorded successful execution; persisted facts are rechecked below)
+native-dsh (recorded successful execution; persisted facts are rechecked below)
+browser-requirement (recorded successful execution; persisted facts are rechecked below)
+repository (recorded successful execution; persisted facts are rechecked below)
+planning (recorded successful execution; persisted facts are rechecked below)
+implementation
+Traceback (most recent call last):
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 62, in <module>
+    for name,args in [('planning',['--case-prefix',prefix]),('implementation',[]),('merges',['--browser-final'])]:step(name,lambda name=name,args=args:run(name,['python3','tests/live/probe_'+name+'.py','--url',a.url,'--reports',str(reports)]+args))
+                                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 37, in step
+    try:row['evidence']=fn();row['passed']=True
+                        ^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 62, in <lambda>
+    for name,args in [('planning',['--case-prefix',prefix]),('implementation',[]),('merges',['--browser-final'])]:step(name,lambda name=name,args=args:run(name,['python3','tests/live/probe_'+name+'.py','--url',a.url,'--reports',str(reports)]+args))
+                                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/hengliu/workspace/devdesk/tests/live/check_live.py", line 44, in run
+    assert result.returncode==0,f'{name} failed, see {log}'
+           ^^^^^^^^^^^^^^^^^^^^
+AssertionError: implementation failed, see /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/full-20261108T103202Z/implementation-resume-7e78697692.log
+
+exit=1

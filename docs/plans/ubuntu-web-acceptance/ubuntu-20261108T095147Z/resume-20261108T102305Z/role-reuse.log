@@ -1,0 +1,33 @@
+$ python3 /tmp/devdesk-role-reuse.py
+{
+  "passed": true,
+  "scope": "actual native reviewer discussions in a different project, independent sessions, shared installations",
+  "sessions": [
+    {
+      "provider": "codex",
+      "project": "fc31209b-2f4d-447e-9878-58fdffeb27f5",
+      "session": "37cc0155-223b-4f71-ae91-3715c6cd2b00",
+      "turn": "e963478b-dc69-4763-a780-8a7861e94235",
+      "native_session": "01a1bab3-7df0-7543-93ff-a79f1c981d18",
+      "installation": "a7f46fc9-4185-4749-a82c-f0f269f5956b",
+      "execution_ids": [
+        "617e18ab-ab10-438b-825c-6690887a6d01"
+      ],
+      "released": true
+    },
+    {
+      "provider": "dsh",
+      "project": "e8836998-5bc7-465a-bfbc-39b35957c5ff",
+      "session": "6d731919-a2cd-49c0-820f-1195421363a7",
+      "turn": "c742a959-5949-4f85-816e-146cd16df619",
+      "native_session": "6d731919-a2cd-49c0-820f-1195421363a7",
+      "installation": "9a577bdd-db7e-46bd-adaf-bb9759a0c63a",
+      "execution_ids": [
+        "c2f0ad1c-0f1d-4fd0-8d83-e2911293a76e"
+      ],
+      "released": true
+    }
+  ]
+}
+
+exit=0

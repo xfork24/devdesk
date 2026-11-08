@@ -1,0 +1,33 @@
+$ python3 tests/live/probe_application_conversations.py --url http://127.0.0.1:51751 --provider codex --output docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/final-package-native-codex.json
+{
+  "provider": "codex",
+  "passed": true,
+  "turns": [
+    {
+      "id": "93b57c1e-e057-4130-a377-c5e89611b9b8",
+      "native_message": null,
+      "native_turn": "01a1baec-0492-7282-b14c-6c7610a04931",
+      "consumed": true,
+      "context_retained": true,
+      "writer_revoked": true,
+      "protocol_artifact": "0100fb61-a815-48fd-a817-f97cf7720ae7"
+    },
+    {
+      "id": "9eca2f76-dad3-4fe4-b90b-8cccd4a61f25",
+      "native_message": null,
+      "native_turn": "01a1baec-1843-7901-8a54-be1636e6430f",
+      "consumed": true,
+      "context_retained": true,
+      "writer_revoked": true,
+      "protocol_artifact": "10d8770c-8374-4059-8960-e3a4e62dc24b"
+    }
+  ],
+  "source": "real DevDesk HTTP + managed Linux provider",
+  "stage": "finished",
+  "project_id": "84a18128-31b3-4b02-a559-15638b4a7c14",
+  "session_id": "cab3550d-b786-4bf5-9078-7c8195ce641e",
+  "native_session": "01a1baec-0042-79f0-bcce-d2f432679b0d",
+  "worker_lifetimes": 2
+}
+
+exit=0

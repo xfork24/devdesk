@@ -1,0 +1,106 @@
+{
+  "base_commit": "a620e92df36e536d66f74a67b31cd7e7c4670c48",
+  "uncommitted": true,
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "d3bc5f3910436ea6bce75e5e871f5038f4bd0131df8e72e55e5e25ded3a07aae"
+    },
+    {
+      "path": "containers/security/README.md",
+      "sha256": "7feef99548305b5f0d3471e8560134ff80f700784f86146f066fea9397c53104"
+    },
+    {
+      "path": "containers/security/devdesk-harness-v1.apparmor",
+      "sha256": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c"
+    },
+    {
+      "path": "crates/adapters/src/codex_auth.rs",
+      "sha256": "bbd9125b6d8b8d67d72a44b0851824b7096c13dc513974d4496f1291cda0bf44"
+    },
+    {
+      "path": "crates/adapters/src/docker.rs",
+      "sha256": "eee9f1bacd9c68744c5a147cd66b7e424c68e52c1b78270734066edf8cbcc5dd"
+    },
+    {
+      "path": "crates/adapters/src/harness.rs",
+      "sha256": "cda9fbb094b0b9043480e8011320f034710a49a395f09e6fc1130bf64592c458"
+    },
+    {
+      "path": "crates/adapters/tests/command_tests.rs",
+      "sha256": "9f9c02dd51802232c5c717e151214a386b432b78f02c6d07820f1b170bfabb1d"
+    },
+    {
+      "path": "docs/acceptance.md",
+      "sha256": "ccad3747d0b780a492dbc85d465d40c4167b483fa18aa6eb7e8ed955a889742e"
+    },
+    {
+      "path": "docs/plans/README.md",
+      "sha256": "1923d9e8784b4b82f88723bbce55637ef8b58874111547fb202ea90ee0dae591"
+    },
+    {
+      "path": "docs/plans/ubuntu-web-acceptance/PLAN.md",
+      "sha256": "11dc261b35ab8dcfeac8ae2bb8707694be4c2655af1b2f1d1a000e2ee675c346"
+    },
+    {
+      "path": "docs/plans/web-platform-and-credentials/PLAN.md",
+      "sha256": "659844d21cd612836b8a42ec33a84181ab7e01e0ca1115969cd7a293e2244961"
+    },
+    {
+      "path": "docs/plans/web-platform-and-credentials/web-platform-and-credentials.md",
+      "sha256": "6da6956602f1d370bcfde0dbd34efd37a9e9e626514dacbfb91c0507a2e040f0"
+    },
+    {
+      "path": "docs/run-binary.md",
+      "sha256": "a35a796c5877054bdfb3d243894332d293647f99857bc4faf53420b8bb2a396d"
+    },
+    {
+      "path": "docs/ubuntu-web-acceptance.md",
+      "sha256": "069cb4f6b4ae5980a1055be2301edeb449ad327f1a96d386ea9b531820aba794"
+    },
+    {
+      "path": "scripts/doctor.py",
+      "sha256": "49eabbb5e6e15c6eba784af249963177e074c00a97c552e682ca3b4ecff91d36"
+    },
+    {
+      "path": "scripts/install-linux-sandbox-policy.sh",
+      "sha256": "11b170547d15282fa7a0ffff55b8b54ebd16ab546170fc96d00ae0ae1522a1bb"
+    },
+    {
+      "path": "scripts/package.sh",
+      "sha256": "570583d22e9b522cc2c69ad2064a930da6fd088c4aa388a99d667590f56b990c"
+    },
+    {
+      "path": "tests/live/check_live.py",
+      "sha256": "8ccbf391f404b0cb45d07e285d2715fc2ac6e82e14c6d6ca3973fcdbf429f249"
+    },
+    {
+      "path": "tests/live/client.py",
+      "sha256": "b347978ac4e10b59fe84a15528e817a9cf141d885a68e8597810208331ff5c37"
+    },
+    {
+      "path": "tests/live/probe_implementation.py",
+      "sha256": "05f9bf7602fd6c174a29a758a2fe2ba27a91ce409ab2a4ea75654df740864b56"
+    },
+    {
+      "path": "tests/live/probe_linux_credentials.mjs",
+      "sha256": "f658fc74a9472111b4f841fc28101e03f53d620243ac524036fed5d78a6038d6"
+    },
+    {
+      "path": "tests/live/probe_nested_sandbox.py",
+      "sha256": "4cc53dd5ce21e940783314aafd7ca5a623bef65dd60d3ed3f5e7124ec272aad6"
+    },
+    {
+      "path": "tests/live/probe_oauth_recovery.mjs",
+      "sha256": "429597c08ec17fe1a8b1e5e6362b0bea4ecc9250e037b38fd2ddbbd14b88b727"
+    },
+    {
+      "path": "web/src/components/RuntimeSettings.tsx",
+      "sha256": "eef0a6a5601027f0d87d169548418410c467a8f8cbba8ff54d39ca363282ea75"
+    },
+    {
+      "path": "web/tests/workbench.spec.ts",
+      "sha256": "f66e229d44d9a13c1184787b6b152611779ac5977d93d50fed02b963ce501e70"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+$ python3 /tmp/devdesk-final-package-verify.py
+{"passed": true, "conversations": 2, "snapshots": 6}
+
+exit=0

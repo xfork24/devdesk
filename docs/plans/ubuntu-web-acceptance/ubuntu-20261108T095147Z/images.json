@@ -1,0 +1,82 @@
+[
+  {
+    "Id": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+    "RepoTags": [
+      "devdesk/codex:0.167.0"
+    ],
+    "RepoDigests": [
+      "devdesk/codex@sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e"
+    ],
+    "Os": "linux",
+    "Architecture": "amd64",
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:e48af84b2108a5d73effd9e16685b42ac33e7994e606398c46690918f5f3604a",
+        "sha256:9269fc859ba17cab868b1ed433e109581448bba47241bf75df39177cc2fedbe1",
+        "sha256:882f18e587e4630ee9ac325e960393973c71b98679771522b83b1809bb421462",
+        "sha256:d944ccebd6c7f3e0a2b92fa25344bb2ae2c94879bd4da2afe2136fbd3ddb3364",
+        "sha256:1faf856ab7ebd1d0e73ffdd87226087297e442167786b9d9f261853098872383",
+        "sha256:613a315b5570b1510e52e13d6d51d43023ce8519b5f73e101ed13fd140a66c32",
+        "sha256:234e18952303f79f17691ddb7168126104f65d5922857e81d0307a9908e9d1bc",
+        "sha256:c019ed0aeb7147d00e13735182b2737f692edc544c0e35467ce925312e479a15"
+      ]
+    },
+    "Config": {
+      "User": "1000:1000",
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NODE_VERSION=24.13.0",
+        "YARN_VERSION=1.22.22",
+        "CODEX_HOME=/state/codex"
+      ],
+      "Entrypoint": [
+        "codex",
+        "app-server"
+      ],
+      "WorkingDir": "/work"
+    }
+  },
+  {
+    "Id": "sha256:2fbf30a5c26a99742135d321bc30861f633c3aa8f77d6a4fa79b867f34380201",
+    "RepoTags": [
+      "devdesk/dsh:0.2.2-rc.1"
+    ],
+    "RepoDigests": [
+      "devdesk/dsh@sha256:2fbf30a5c26a99742135d321bc30861f633c3aa8f77d6a4fa79b867f34380201"
+    ],
+    "Os": "linux",
+    "Architecture": "amd64",
+    "RootFS": {
+      "Type": "layers",
+      "Layers": [
+        "sha256:e48af84b2108a5d73effd9e16685b42ac33e7994e606398c46690918f5f3604a",
+        "sha256:9269fc859ba17cab868b1ed433e109581448bba47241bf75df39177cc2fedbe1",
+        "sha256:882f18e587e4630ee9ac325e960393973c71b98679771522b83b1809bb421462",
+        "sha256:d944ccebd6c7f3e0a2b92fa25344bb2ae2c94879bd4da2afe2136fbd3ddb3364",
+        "sha256:1faf856ab7ebd1d0e73ffdd87226087297e442167786b9d9f261853098872383",
+        "sha256:f43def40eefa545812c62d51486f74576ed1a2f9690e7bd9679482f58112d6f4",
+        "sha256:ff521e20311af2cde96261e85a89bd88dde259b6aa6ec228f48d7d779404169c",
+        "sha256:8893b0216a3d3bc548c5eed0fae132b263ded359b54e77a7492d8b62674b5b77",
+        "sha256:c1fe29db8e6862c5f07eb115809bb7f1c080137ba410412a5df57bf8ca0f85f1"
+      ]
+    },
+    "Config": {
+      "User": "1000:1000",
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NODE_VERSION=24.13.0",
+        "YARN_VERSION=1.22.22",
+        "DSH_HOME=/state/dsh",
+        "DSH_MAX_TOKENS_AS_SUCCESS=false",
+        "NARB_DISABLE_NATIVE_CACHE=1"
+      ],
+      "Entrypoint": [
+        "dsh",
+        "--profile",
+        "sdk"
+      ],
+      "WorkingDir": "/work"
+    }
+  }
+]

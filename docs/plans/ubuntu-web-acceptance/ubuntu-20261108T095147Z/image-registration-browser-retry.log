@@ -1,0 +1,4 @@
+$ node /tmp/devdesk-register-images.mjs
+{"passed":true}
+
+exit=0

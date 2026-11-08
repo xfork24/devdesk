@@ -58,6 +58,48 @@ pub struct DockerSandbox {
 }
 
 impl DockerSandbox {
+    fn nested_apparmor(&self) -> Result<Option<String>> {
+        let output = self.call(vec![
+            "info".into(),
+            "--format".into(),
+            "{{json .SecurityOptions}}".into(),
+        ])?;
+        require(
+            output.code == 0 && !output.truncated,
+            "无法查询 Docker 安全策略",
+        )?;
+        let options: Vec<String> = serde_json::from_slice(&output.stdout).map_err(storage)?;
+        if !options
+            .iter()
+            .any(|option| option.starts_with("name=apparmor"))
+        {
+            return Ok(None);
+        }
+        // Only the coordinator's fixed, administrator-installed policy is accepted.
+        // A missing/drifted policy fails closed; never use an unconfined fallback.
+        let path = Path::new("/etc/apparmor.d/devdesk-harness-v1");
+        let expected = include_bytes!("../../../containers/security/devdesk-harness-v1.apparmor");
+        let message = "Ubuntu 嵌套沙箱需要已审阅的专用 AppArmor 策略；请在 Docker 宿主运行 sudo ./scripts/install-linux-sandbox-policy.sh --install";
+        let metadata =
+            fs::symlink_metadata(path).map_err(|_| err("sandbox_policy_required", message))?;
+        require(
+            metadata.is_file() && !metadata.file_type().is_symlink(),
+            message,
+        )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            require(
+                metadata.uid() == 0 && metadata.permissions().mode() & 0o022 == 0,
+                message,
+            )?;
+        }
+        require(
+            fs::read(path).map_err(storage)? == expected,
+            "专用 AppArmor 策略内容漂移；不能使用不同策略继续执行",
+        )?;
+        Ok(Some(format!("{:x}", Sha256::digest(expected))))
+    }
     fn checked_file(
         &self,
         path: &Path,
@@ -269,9 +311,18 @@ impl DockerSandbox {
         canonical.credential_env_file = credential.clone();
         canonical.profile_file = profile.clone();
         canonical.runner_file = runner.clone();
+        let apparmor = if spec.nested_sandbox {
+            self.nested_apparmor()?
+        } else {
+            None
+        };
+        let mut identity = json!({"spec":canonical,"profile_digest":profile.as_ref().map(|p|fs::read(p).map(|data|format!("{:x}",Sha256::digest(data)))).transpose().map_err(storage)?,"nested_policy":if spec.nested_sandbox {Some(format!("{:x}",Sha256::digest(include_bytes!("../../../containers/security/nested-sandbox.json"))))} else {None}});
+        if let Some(digest) = &apparmor {
+            identity["apparmor_policy"] = json!({"name":"devdesk-harness-v1","sha256":digest});
+        }
         let digest = format!(
             "{:x}",
-            Sha256::digest(serde_json::to_vec(&json!({"spec":canonical,"profile_digest":profile.as_ref().map(|p|fs::read(p).map(|data|format!("{:x}",Sha256::digest(data)))).transpose().map_err(storage)?,"nested_policy":if spec.nested_sandbox {Some(format!("{:x}",Sha256::digest(include_bytes!("../../../containers/security/nested-sandbox.json"))))} else {None}})).map_err(storage)?)
+            Sha256::digest(serde_json::to_vec(&identity).map_err(storage)?)
         );
         if let Some((receipt, _)) = self.inspect_owned(&name)? {
             require(
@@ -304,6 +355,12 @@ impl DockerSandbox {
                 "--security-opt".into(),
                 format!("seccomp={}", self.nested_policy()?.display()),
             ]);
+            if apparmor.is_some() {
+                args.extend([
+                    "--security-opt".into(),
+                    "apparmor=devdesk-harness-v1".into(),
+                ]);
+            }
         }
         if let Some(file) = credential {
             args.extend(["--env-file".into(), file.to_string_lossy().into_owned()]);

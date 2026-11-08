@@ -1,0 +1,30 @@
+{
+  "provider": "codex",
+  "passed": true,
+  "turns": [
+    {
+      "id": "fb76ac04-e996-4d36-8727-60a094411a9e",
+      "native_message": null,
+      "native_turn": "01a1baaf-53c5-7eb3-b532-957b62aebb58",
+      "consumed": true,
+      "context_retained": true,
+      "writer_revoked": true,
+      "protocol_artifact": "9106f05b-de66-47f4-b9c9-6faadcc9cc2c"
+    },
+    {
+      "id": "06fb7c7b-a9ce-446d-8f08-94c0c0fa4f86",
+      "native_message": null,
+      "native_turn": "01a1baaf-6621-7dc0-a9c5-86505c3241ef",
+      "consumed": true,
+      "context_retained": true,
+      "writer_revoked": true,
+      "protocol_artifact": "2c740a84-3b57-4877-b0c4-98662a0828eb"
+    }
+  ],
+  "source": "real DevDesk HTTP + managed Linux provider",
+  "stage": "finished",
+  "project_id": "e8836998-5bc7-465a-bfbc-39b35957c5ff",
+  "session_id": "12eaa8b9-d97b-4215-be86-0a57e094c5d8",
+  "native_session": "01a1baaf-504c-7ae3-84de-ecd2f44b3542",
+  "worker_lifetimes": 2
+}

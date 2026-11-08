@@ -1,0 +1,9 @@
+{
+  "source": "actual Host RPC",
+  "before": {
+    "authenticated": false,
+    "pending": true,
+    "type": null
+  },
+  "retry_error": "codex.auth.start: blocked: \u767b\u5f55\u6d41\u7a0b\u5df2\u6d3e\u53d1\uff0c\u8bf7\u5b8c\u6210\u5f53\u524d\u767b\u5f55\u6216\u53d6\u6d88\u540e\u518d\u8bd5"
+}

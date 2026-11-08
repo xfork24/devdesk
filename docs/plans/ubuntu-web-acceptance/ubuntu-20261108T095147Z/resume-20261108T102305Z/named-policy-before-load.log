@@ -1,0 +1,15 @@
+$ python3 tests/live/probe_nested_sandbox.py --apparmor-profile devdesk-harness-v1 --output docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/named-policy-before-load.json
+{
+  "passed": false,
+  "inference_tested": false,
+  "credential_canary_only": true,
+  "seccomp": "moby-default + nested namespace/mount syscalls",
+  "image": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+  "image_reference": "devdesk/codex:0.167.0",
+  "os": "linux",
+  "architecture": "amd64",
+  "stage": "apparmor_policy",
+  "failure_type": "FileNotFoundError"
+}
+
+exit=1

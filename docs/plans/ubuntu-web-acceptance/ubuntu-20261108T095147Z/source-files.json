@@ -1,0 +1,14 @@
+{
+  "base_commit": "a620e92df36e536d66f74a67b31cd7e7c4670c48",
+  "worktree_changes": {
+    "crates/adapters/src/codex_auth.rs": "bbd9125b6d8b8d67d72a44b0851824b7096c13dc513974d4496f1291cda0bf44",
+    "crates/adapters/tests/command_tests.rs": "9f9c02dd51802232c5c717e151214a386b432b78f02c6d07820f1b170bfabb1d",
+    "scripts/doctor.py": "d6bef4dc3e42abab0f759d80624fa9e9eaf313531b7685b3c753dd9c1095cff6",
+    "tests/live/probe_nested_sandbox.py": "891ee04877d9836e789aa74c92b909a24340efb65514b135a53d3deb0db3f85f",
+    "tests/live/probe_linux_credentials.mjs": "f658fc74a9472111b4f841fc28101e03f53d620243ac524036fed5d78a6038d6",
+    "tests/live/probe_oauth_recovery.mjs": "429597c08ec17fe1a8b1e5e6362b0bea4ecc9250e037b38fd2ddbbd14b88b727",
+    "web/src/components/RuntimeSettings.tsx": "eef0a6a5601027f0d87d169548418410c467a8f8cbba8ff54d39ca363282ea75",
+    "web/tests/workbench.spec.ts": "f66e229d44d9a13c1184787b6b152611779ac5977d93d50fed02b963ce501e70"
+  },
+  "uncommitted": true
+}

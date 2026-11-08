@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "plan": "docs/plans/ubuntu-web-acceptance/PLAN.md",
+  "scope": "U0\u2013U6 Ubuntu 24.04.5 x86_64 Web acceptance",
+  "full_passed_with_explicit_resume": true,
+  "verify_existing_passed": true,
+  "installation_reuse_passed": true,
+  "package_passed": true,
+  "package_sha256": "40d3c1c210102d409bd959e50dd1f72e23da47334b29467a9034f28b7cb6eff8",
+  "artifacts_and_resources": {
+    "verified_artifacts": 331,
+    "stopped_exported_released_executions": 79,
+    "failed_before_worker_receipt": []
+  },
+  "secret_scan_passed": true,
+  "approved_policy": "devdesk-harness-v1",
+  "host_retained_for_user": {
+    "pid": 2209343,
+    "argv": [
+      "/tmp/devdesk-ubuntu-accepted-package-xz92wnbj/devdesk-0.2.0-x86_64-unknown-linux-gnu/devdesk-host",
+      "--data",
+      "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z",
+      "--port",
+      "51751"
+    ],
+    "owned": true,
+    "data": "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z",
+    "url": "http://127.0.0.1:51751",
+    "cwd": "/tmp/devdesk-ubuntu-accepted-package-xz92wnbj/devdesk-0.2.0-x86_64-unknown-linux-gnu",
+    "previous_owned_pid": 2206119
+  },
+  "limitations": [
+    "actual Secret Service collection locking not exercised; isolated unreachable D-Bus tested",
+    "quality changes_requested, rate limits and external-success-before-database-crash branches covered by contract injection, not claimed as actual external faults",
+    "native client, Archive and data relocation remain deferred"
+  ],
+  "source_changes_uncommitted": true,
+  "completed_at": 1794138334.524183
+}

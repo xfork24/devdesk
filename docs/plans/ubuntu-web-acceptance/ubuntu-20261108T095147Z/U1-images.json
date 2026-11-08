@@ -1,0 +1,59 @@
+{
+  "passed": true,
+  "source": "actual Chromium settings UI",
+  "images": [
+    "Codex",
+    "DSH"
+  ],
+  "registry": {
+    "default_harness": "codex",
+    "installations": [
+      {
+        "artifact": {
+          "canonical_path": "/home/hengliu/.codex/packages/standalone/releases/0.167.0-x86_64-unknown-linux-musl/bin/codex",
+          "kind": "executable",
+          "sha256": "cdcb45aaa01d0f14e298985e09465aebccd47f64ecd298aea44814af7b62bbda"
+        },
+        "id": "45ef8767-7ed8-46fb-90e7-aa1d83eceb4a",
+        "key": {
+          "arch": "x86_64",
+          "os": "linux",
+          "provider": "codex",
+          "version": "0.167.0"
+        },
+        "license": "Apache-2.0",
+        "source": "https://github.com/openai/codex"
+      },
+      {
+        "artifact": {
+          "image_id": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+          "kind": "docker_image"
+        },
+        "id": "a7f46fc9-4185-4749-a82c-f0f269f5956b",
+        "key": {
+          "arch": "x86_64",
+          "os": "linux",
+          "provider": "codex",
+          "version": "0.167.0+docker.b03dc81902ff"
+        },
+        "license": "Apache-2.0",
+        "source": "local Docker build: devdesk/codex:0.167.0"
+      },
+      {
+        "artifact": {
+          "image_id": "sha256:2fbf30a5c26a99742135d321bc30861f633c3aa8f77d6a4fa79b867f34380201",
+          "kind": "docker_image"
+        },
+        "id": "9a577bdd-db7e-46bd-adaf-bb9759a0c63a",
+        "key": {
+          "arch": "x86_64",
+          "os": "linux",
+          "provider": "dsh",
+          "version": "0.2.2-rc.1+docker.2fbf30a5c26a"
+        },
+        "license": "MIT",
+        "source": "local Docker build: devdesk/dsh:0.2.2-rc.1"
+      }
+    ]
+  }
+}

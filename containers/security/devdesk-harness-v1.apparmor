@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+# Derived from Moby profiles/apparmor v0.3.0 (LICENSE.moby).
+# Only for non-root DevDesk Harness containers with cap-drop=ALL,
+# no-new-privileges, nested-sandbox.json and coordinator-owned mounts.
+# The outer container gets no CAP_SYS_ADMIN. These mount permissions support
+# bubblewrap's private user/mount namespace, never host filesystem mounts.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile devdesk-harness-v1 flags=(attach_disconnected,mediate_deleted) {
+  include <abstractions/base>
+
+  network,
+  deny network ax25,
+  deny network ipx,
+  deny network appletalk,
+  deny network netrom,
+  deny network rose,
+  deny network econet,
+  deny network atmsvc,
+  deny network irda,
+  deny network wanpipe,
+  deny network isdn,
+  deny network caif,
+  deny network alg,
+  deny network vsock,
+  capability,
+  file,
+  userns create,
+
+  signal (receive) peer=unconfined,
+  signal (receive) peer=runc,
+  signal (receive) peer=crun,
+  signal (send,receive) peer=devdesk-harness-v1,
+  ptrace (trace,tracedby,read,readby) peer=devdesk-harness-v1,
+
+  # Bubblewrap: make the inherited root a slave, create its temporary root
+  # over /tmp, then construct /newroot from already-visible container paths.
+  # Unlisted filesystems/flags/destinations remain denied (no blanket mount).
+  mount options in (rw,rslave,silent) -> /,
+  mount fstype=tmpfs options in (rw,nosuid,nodev,noexec,relatime,strictatime,silent) -> /tmp/,
+  mount options in (rw,bind,rbind,silent) -> /tmp/newroot/,
+  pivot_root oldroot=/tmp/oldroot/ /tmp/,
+  mount options in (rw,ro,bind,rbind,remount,nosuid,nodev,noexec,relatime,strictatime,silent) -> /newroot{,/**},
+  mount fstype in (tmpfs,proc,devpts) options in (rw,ro,nosuid,nodev,noexec,relatime,strictatime,silent) -> /newroot{,/**},
+  mount options in (rw,rprivate,silent) -> /oldroot/,
+  umount /oldroot/,
+  pivot_root oldroot=/newroot/ /newroot/,
+  umount /,
+
+  # Preserve Moby's proc/sys restrictions, including the setup-time aliases.
+  deny /{,oldroot/,newroot/}proc/* w,
+  deny /{,oldroot/,newroot/}proc/{[^1-9/],[^1-9/][^0-9/],[^1-9s/][^0-9y/][^0-9s/],[^1-9/][^0-9/][^0-9/][^0-9/]*}/** w,
+  deny /{,oldroot/,newroot/}proc/sys/[^k]** w,
+  deny /{,oldroot/,newroot/}proc/sys/kernel/{?,??,[^s][^h][^m]**} w,
+  deny /{,oldroot/,newroot/}proc/sysrq-trigger rwklx,
+  deny /{,oldroot/,newroot/}proc/kcore rwklx,
+  deny /{,oldroot/,newroot/}sys/[^f]*/** wklx,
+  deny /{,oldroot/,newroot/}sys/f[^s]*/** wklx,
+  deny /{,oldroot/,newroot/}sys/fs/[^c]*/** wklx,
+  deny /{,oldroot/,newroot/}sys/fs/c[^g]*/** wklx,
+  deny /{,oldroot/,newroot/}sys/fs/cg[^r]*/** wklx,
+  deny /{,oldroot/,newroot/}sys/firmware/** rwklx,
+  deny /{,oldroot/,newroot/}sys/devices/virtual/powercap/** rwklx,
+  deny /{,oldroot/,newroot/}sys/kernel/security/** rwklx,
+}

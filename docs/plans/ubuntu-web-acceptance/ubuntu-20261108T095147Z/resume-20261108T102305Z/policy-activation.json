@@ -1,0 +1,12 @@
+{
+  "source": "explicit user approval and administrator-installed named policy",
+  "approved_scope": "limited mount permissions for devdesk-harness-v1; no capabilities, privileged, unconfined or global policy changes",
+  "installed_file": "/etc/apparmor.d/devdesk-harness-v1",
+  "uid": 0,
+  "mode": "0o644",
+  "sha256": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
+  "kernel_load_audit": "apparmor-audit.log",
+  "runtime_evidence": "named-policy-runtime.json",
+  "negative_evidence": "apparmor-negative.json",
+  "observed_at": 1794134159.8559182
+}

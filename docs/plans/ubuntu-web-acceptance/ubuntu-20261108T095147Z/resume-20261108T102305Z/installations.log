@@ -1,0 +1,4 @@
+$ python3 tests/live/probe_installations.py --url http://127.0.0.1:51751 --root /home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z --reports /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z
+{"passed": true, "installations": 2, "report": "/home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/R8-installations.json"}
+
+exit=0

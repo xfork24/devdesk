@@ -24,6 +24,9 @@ pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
         "../../../containers/security/nested-sandbox.json"
     ));
     hash.update(include_bytes!(
+        "../../../containers/security/devdesk-harness-v1.apparmor"
+    ));
+    hash.update(include_bytes!(
         "../../../containers/dsh/devdesk-policy/index.mjs"
     ));
     let digest = format!("{:x}", hash.finalize());
@@ -407,7 +410,21 @@ impl RuntimeWorkers {
                 }
                 HarnessProvider::Dsh => {
                     wire.rpc2();
-                    wire.request("initialize",json!({"cwd":cwd,"provider":"deepseek-official","model":binding.model,"maxTokens":8192,"approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
+                    // The thinking model's reasoning and tool output share this
+                    // budget. 8K repeatedly exhausted real test-author turns.
+                    // Keep ordinary discussions bounded; formal engineering and
+                    // review envelopes also need room for reasoning. This file
+                    // and the LSM policy participate in the frozen
+                    // adapter build identity, so old executions cannot be retried
+                    // under the changed budget.
+                    let max_tokens = if r.execution.run_id.is_some()
+                        || binding.tool_policy != ToolPolicy::ReadOnly
+                    {
+                        32768
+                    } else {
+                        8192
+                    };
+                    wire.request("initialize",json!({"cwd":cwd,"provider":"deepseek-official","model":binding.model,"maxTokens":max_tokens,"approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
                     let sid = r
                         .session
                         .external_session

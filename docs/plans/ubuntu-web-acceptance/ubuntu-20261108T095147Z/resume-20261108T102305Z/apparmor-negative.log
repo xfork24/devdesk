@@ -1,0 +1,17 @@
+$ python3 /tmp/devdesk-apparmor-negative.py
+{
+  "passed": false,
+  "name": "devdesk-aa-negative-9b091ac2fe45401cb80a74a41a1cd67a",
+  "scope": "non-root outer capabilities and rejection of unlisted mounts in a child user namespace",
+  "container": "551a9e3b335eacbe945f2b5063899bdc4a65db0e673cb1f272efe692bbbac5ce",
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "unshare: cannot change root filesystem propagation: Permission denied\n",
+  "profile": "devdesk-harness-v1",
+  "cap_drop": [
+    "ALL"
+  ],
+  "removed": true
+}
+
+exit=1

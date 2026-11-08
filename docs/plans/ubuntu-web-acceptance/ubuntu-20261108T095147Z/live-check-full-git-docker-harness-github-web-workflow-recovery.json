@@ -1,0 +1,52 @@
+{
+  "passed": false,
+  "mode": "full",
+  "platform": "Linux-7.0.0-42-generic-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "providers": [
+    "codex",
+    "dsh"
+  ],
+  "groups": [
+    "git",
+    "docker",
+    "harness",
+    "github",
+    "web",
+    "workflow",
+    "recovery"
+  ],
+  "root": "/home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z",
+  "github_repository": "xfork24/devdesk-integration-test",
+  "steps": [
+    {
+      "name": "real-git",
+      "passed": true,
+      "started": 1794131924.3789535,
+      "evidence": {
+        "log": "/home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/real-git.log",
+        "sha256": "b23f0b7ac8c445f6658b5f4936f772c07852ba0b24f880bbad07e530e2bbe38d",
+        "command": [
+          "cargo",
+          "test",
+          "--locked",
+          "-p",
+          "devdesk-adapters",
+          "--test",
+          "git_resources"
+        ]
+      },
+      "finished": 1794131925.4448614
+    },
+    {
+      "name": "real-docker",
+      "passed": false,
+      "started": 1794131925.445094,
+      "error": "real-docker failed, see /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/real-docker.log",
+      "finished": 1794131935.7875946
+    }
+  ],
+  "started": 1794131924.3705907,
+  "error": "real-docker failed, see /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/real-docker.log",
+  "finished": 1794131935.787975
+}

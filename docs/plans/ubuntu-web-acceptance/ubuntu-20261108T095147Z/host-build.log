@@ -1,0 +1,6 @@
+$ cargo build --locked -p devdesk-host
+   Compiling devdesk-adapters v0.2.0 (/home/hengliu/workspace/devdesk/crates/adapters)
+   Compiling devdesk-host v0.2.0 (/home/hengliu/workspace/devdesk/crates/host)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.68s
+
+exit=0

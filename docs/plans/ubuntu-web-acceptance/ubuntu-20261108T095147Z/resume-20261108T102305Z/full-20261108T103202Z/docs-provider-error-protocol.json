@@ -1,0 +1,16 @@
+{
+  "data": {
+    "reason": {
+      "error": {
+        "code": "QUOTA",
+        "message": "[redacted]",
+        "status": 402
+      },
+      "kind": "error"
+    },
+    "turn": 1
+  },
+  "seq": 48,
+  "time": 1794135587749,
+  "type": "turn/end"
+}

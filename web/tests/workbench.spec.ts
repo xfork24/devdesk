@@ -542,6 +542,7 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
   context,
 }) => {
   await ensureSetup(page);
+  let loginStarts = 0;
   await page.route("**/rpc", async (route) => {
     const request = route.request().postDataJSON();
     if (request.method === "query.workspace") {
@@ -561,6 +562,15 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
       ];
       await route.fulfill({ json: body });
     } else if (request.method === "codex.auth.start") {
+      if (++loginStarts === 1) {
+        await route.fulfill({
+          json: {
+            jsonrpc: "2.0", id: request.id,
+            error: { message: "认证请求超时", data: { code: "needs_reconciliation" } },
+          },
+        });
+        return;
+      }
       await route.fulfill({
         json: {
           jsonrpc: "2.0",
@@ -612,6 +622,9 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
   await context.route("https://auth.openai.com/**", (route) =>
     route.fulfill({ body: "Synthetic OAuth navigation fixture" }),
   );
+  await page.getByRole("button", { name: "网页登录", exact: true }).click();
+  await expect(page.getByText(/无法开始登录，可再次点击重试.*needs_reconciliation/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "网页登录", exact: true })).toBeEnabled();
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "网页登录", exact: true }).click();
   const popup = await popupPromise;
@@ -619,5 +632,17 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
     "https://auth.openai.com/authorize?fixture=true",
   );
   await popup.close();
+  await page.reload();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.evaluate(() => { window.open = () => null; });
+  await page.getByRole("button", { name: "网页登录", exact: true }).click();
+  await expect(page.getByRole("link", { name: "打开官方授权网页", exact: true })).toHaveAttribute(
+    "href", "https://auth.openai.com/authorize?fixture=true",
+  );
+  await expect(page.getByText(/浏览器未打开新窗口/)).toBeVisible();
   await page.getByLabel("默认 Agent Harness").selectOption("codex");
+  await expect(page.getByLabel("默认 Agent Harness")).toBeEnabled();
+  // SSE can refresh the workspace while the final settings request completes.
+  // Drain intercepted requests before Playwright disposes their API responses.
+  await page.unrouteAll({ behavior: "wait" });
 });

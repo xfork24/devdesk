@@ -1,0 +1,196 @@
+{
+  "project_id": "897f2c31-4693-412a-8e05-23380bf62436",
+  "feature_id": "01301ba9-b539-43ed-b7c5-fe654d947a5d",
+  "tasks": {
+    "add": {
+      "id": "b6375801-2c32-4b6e-9cf4-c1081e067458",
+      "attempt": "472fb073-aec9-4513-b909-4069f42c5e7e",
+      "provider": "codex",
+      "evidence": [
+        {
+          "id": "b97a9d4f-faf5-47ac-bb53-05c38908aeb1",
+          "node": "verify",
+          "result_artifact": "f02752c4-1072-4e10-93e9-74239f7acf20",
+          "result": {
+            "assertion_failed": false,
+            "candidate": "6ad249a3dbc1d1b526ce6a9bb08857abe2548054",
+            "container_id": "99ae0b8919db274326c912a61bf418b29847650aea24684d3fe0343f76940ef1",
+            "counts": {
+              "cancelled": 0,
+              "failed": 0,
+              "passed": 21,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 21,
+              "todo": 0,
+              "topLevel": 1
+            },
+            "environment": "40c6cb8b-a4ad-444f-9580-296de13ca8f6",
+            "exit_code": 0,
+            "expected_failure": false,
+            "failure_type": null,
+            "image_digest": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+            "operation_id": "b97a9d4f-faf5-47ac-bb53-05c38908aeb1",
+            "origin": "external",
+            "recipe": {
+              "files": [
+                "tests/live-744a8bf0cb-add/behavior.test.mjs"
+              ],
+              "image": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":21,\"failed\":0,\"passed\":21,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":1,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":21,\"failed\":0,\"passed\":21,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":1,\"suites\":0}}\n",
+            "report_sha256": "6e78ef8d7606fa247529b0be4120b05ed5d807a42bf1d6c8dac41e21b8b915de",
+            "status": "succeeded",
+            "test_definitions": [
+              "18141065-f739-44ca-9562-92f28314b5fb"
+            ],
+            "test_phase": "verify",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "2f0d7266-3693-4e74-a3a7-5777a8fa3bf3",
+          "node": "docs",
+          "result_artifact": "d139a3ef-e067-42be-8aa9-0321cb234f72",
+          "result": {
+            "code_revision": "6ad249a3dbc1d1b526ce6a9bb08857abe2548054",
+            "document": {
+              "body": "范围：本说明仅对应任务 add、验收条件 AC-ADD，依据冻结版本 6ad249a3dbc1d1b526ce6a9bb08857abe2548054 及 /work 中实际读取的代码与测试。\n\n接口与使用：src/live-744a8bf0cb-add.mjs 提供 named export add(a, b)。在项目根目录的 ESM 调用方中使用 import { add } from './src/live-744a8bf0cb-add.mjs'; add(2, 3) 返回 5。模块无外部依赖、无模块间依赖和副作用，不需要修改 package.json。\n\n实现与验收映射：add 使用 Number.isSafeInteger 校验输入，校验通过后计算 a + b，再校验结果。支持零、负数及安全整数边界，不进行隐式类型转换，对应 AC-ADD。\n\n失败情况：任一参数不是安全整数时抛出 TypeError，包括字符串、NaN、正负 Infinity、小数、非安全整数及缺失参数。合法输入相加后结果超出安全整数范围时抛出 RangeError，例如 add(Number.MAX_SAFE_INTEGER, 1) 和 add(Number.MIN_SAFE_INTEGER, -1)。\n\n实际测试：tests/live-744a8bf0cb-add/behavior.test.mjs 使用 node:test、node:assert/strict，通过相对路径动态导入模块，检查 named export、基本加法、零、负数、抵消、安全整数边界、两个参数位置的非法输入、缺失参数及正负溢出，并断言错误类型。测试还覆盖 bigint、symbol、数组、包装数字和可转换对象。仅确认目标模块缺失时使用 assert.fail；其他导入或环境错误单独报告。\n\n执行证据：提供的 Red 记录针对 d2b2a3918d8ff8c2a53643fe59eed6798d55b958，退出码 1，1 项断言失败。Green 记录针对 6ad249a3dbc1d1b526ce6a9bb08857abe2548054，退出码 0，21 项通过、0 项失败。配方命令为 node --test tests/live-744a8bf0cb-add/behavior.test.mjs，锁定镜像 sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e，超时 60 秒。\n\n验证限制：本次仅只读检查，未重新执行测试；以上运行结果来自提供的阶段证据。未提供 verify 阶段结果。现有测试为列举用例，并非穷举全部安全整数输入；此证据仅涉及 AC-ADD，不证明 multiply 或 Feature 全量验证结果，也不代表 Delivery 或 Review 已获接受。",
+              "kind": "doc",
+              "title": "add 安全整数加法实现与使用说明"
+            },
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "已只读检查 add 实现及独立测试，完成 AC-ADD 使用与证据说明；未修改文件或执行测试。",
+            "turn_id": "f7c823d0-29ba-4c2f-8e42-f755d4e89125"
+          }
+        },
+        {
+          "id": "64b47a97-0eab-466f-bb65-1c165dfee892",
+          "node": "green",
+          "result_artifact": "01ddf3c8-ec5e-489a-bc66-4584d9259b53",
+          "result": {
+            "assertion_failed": false,
+            "candidate": "6ad249a3dbc1d1b526ce6a9bb08857abe2548054",
+            "container_id": "440100d15ad866f448ada220faf51131a992fb39fd8515f63349264bc3fed7be",
+            "counts": {
+              "cancelled": 0,
+              "failed": 0,
+              "passed": 21,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 21,
+              "todo": 0,
+              "topLevel": 1
+            },
+            "environment": "ff7d0b91-f4e1-41a8-aab7-0a53da26080f",
+            "exit_code": 0,
+            "expected_failure": false,
+            "failure_type": null,
+            "image_digest": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+            "operation_id": "64b47a97-0eab-466f-bb65-1c165dfee892",
+            "origin": "external",
+            "recipe": {
+              "files": [
+                "tests/live-744a8bf0cb-add/behavior.test.mjs"
+              ],
+              "image": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":21,\"failed\":0,\"passed\":21,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":1,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":21,\"failed\":0,\"passed\":21,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":1,\"suites\":0}}\n",
+            "report_sha256": "6e78ef8d7606fa247529b0be4120b05ed5d807a42bf1d6c8dac41e21b8b915de",
+            "status": "succeeded",
+            "test_definitions": [
+              "18141065-f739-44ca-9562-92f28314b5fb"
+            ],
+            "test_phase": "green",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "f55b7983-8d1b-4ef7-ad93-84782829a590",
+          "node": "implement",
+          "result_artifact": "377f5556-8cc0-4268-b49c-b575b4f3f04a",
+          "result": {
+            "code_revision": "6ad249a3dbc1d1b526ce6a9bb08857abe2548054",
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "已新增 src/live-744a8bf0cb-add.mjs，导出独立纯函数 add(a,b)：校验安全整数输入，非法输入抛出 TypeError，结果溢出抛出 RangeError。未修改测试或其他模块；Green 测试与 Git 封存由 coordinator 执行。",
+            "turn_id": "caa61219-034e-496a-b1e5-82e11787e116"
+          }
+        },
+        {
+          "id": "6d3d0019-0f39-4a62-9494-16f83a2eb374",
+          "node": "red",
+          "result_artifact": "2d6b7025-4570-41da-be8f-8c8d092117eb",
+          "result": {
+            "assertion_failed": true,
+            "candidate": "d2b2a3918d8ff8c2a53643fe59eed6798d55b958",
+            "container_id": "553d06121de9932e6b85c8b17c9cf4234bcbb761007b5112a0358070ffc213ba",
+            "counts": {
+              "cancelled": 0,
+              "failed": 1,
+              "passed": 0,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 1,
+              "todo": 0,
+              "topLevel": 1
+            },
+            "environment": "d7a26332-053c-45ae-8cf4-a58986befccf",
+            "exit_code": 1,
+            "expected_failure": true,
+            "failure_type": null,
+            "image_digest": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+            "operation_id": "6d3d0019-0f39-4a62-9494-16f83a2eb374",
+            "origin": "external",
+            "recipe": {
+              "files": [
+                "tests/live-744a8bf0cb-add/behavior.test.mjs"
+              ],
+              "image": "sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":1,\"failed\":1,\"passed\":0,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":1,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":1,\"failed\":1,\"passed\":0,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":1,\"suites\":0}}\n",
+            "report_sha256": "db8591255cfc599e79df9899dbf52565946c9e720440de0cc65b78f6f2ba71f2",
+            "status": "succeeded",
+            "test_definitions": [
+              "18141065-f739-44ca-9562-92f28314b5fb"
+            ],
+            "test_phase": "red",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "60bb9257-5fc5-4c08-88e4-87e734ac4e34",
+          "node": "test_author",
+          "result_artifact": "be37bd2f-af68-4927-ba8d-d4981436083a",
+          "result": {
+            "code_revision": "d2b2a3918d8ff8c2a53643fe59eed6798d55b958",
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "Authored tests/live-744a8bf0cb-add/behavior.test.mjs covering AC-ADD: named export, valid sums, negatives, zero, safe-integer boundaries, invalid inputs in both positions, and overflow error types. Missing implementation fails an assertion; other import/environment errors are distinguished. Tests were not run; coordinator performs Red.",
+            "turn_id": "236a1471-b113-422c-ae09-84b66203446b"
+          }
+        }
+      ],
+      "baseline": "d2b2a3918d8ff8c2a53643fe59eed6798d55b958",
+      "candidate": "6ad249a3dbc1d1b526ce6a9bb08857abe2548054",
+      "delivery": "558e1048-0c24-4858-92c3-44471daab442",
+      "review": "38f6f253-24a7-4050-bf41-5375a0638ec6"
+    },
+    "multiply": {
+      "id": "077484a6-253b-470f-9ead-b6170e0df760",
+      "attempt": "6735dab4-941d-49fc-a516-3211594c1297",
+      "provider": "dsh"
+    }
+  },
+  "passed": false,
+  "stage": "failed",
+  "failure_type": "AssertionError",
+  "failure": "[{\"id\": \"91d2c07a-bcde-444f-a936-a734ce0ceafa\", \"node\": \"red\", \"result\": {\"assertion_failed\": false, \"candidate\": \"c53fa726ee5e5288e9f7f4a0cea7a5108a66bb1d\", \"container_id\": \"1816b9a7f00c9b65ed93e39652b2f66b033950ac831cefb21a219bff1150610b\", \"counts\": {\"cancelled\": 0, \"failed\": 1, \"passed\": 0, \"skipped\": 0, \"suites\": 0, \"tests\": 1, \"todo\": 0, \"topLevel\": 1}, \"environment\": \"1fc6864d-76f2-4756-95ef-8ac0ded9d64c\", \"exit_code\": 1, \"expected_failure\": false, \"failure_type\": \"environment\", \"image_digest\": \"sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e\", \"operation_id\": \"91d2c07a-bcde-444f-a936-a734ce0ceafa\", \"origin\": \"external\", \"recipe\": {\"files\": [\"tests/live-744a8bf0cb-multiply/behavior.test.mjs\"], \"image\": \"sha256:b03dc81902ff96bb95978d92648a4953bc16028d089873e3a530377eb67d592e\", \"runner\": \"node_test\", \"timeout_seconds\": 60}, \"report\": \"{\\\"devdesk_test_report\\\":1,\\\"event\\\":\\\"fail\\\",\\\"classification\\\":\\\"environment\\\",\\\"codes\\\":[\\\"ERR_TEST_FAILURE\\\",\\\"unknown\\\"]}\\n{\\\"devdesk_test_report\\\":1,\\\"event\\\":\\\"summary\\\",\\\"counts\\\":{\\\"tests\\\":1,\\\"failed\\\":1,\\\"passed\\\":0,\\\"cancelled\\\":0,\\\"skipped\\\":0,\\\"todo\\\":0,\\\"topLevel\\\":1,\\\"suites\\\":0}}\\n\", \"report_sha256\": \"3de9857dfba5c9a09a9350977967e95e82ccd9dae85d709e1c0971713b07e012\", \"status\": \"failed\", \"test_definitions\": [\"9db3f3e3-e0a4-43be-9f5d-2c80b2f3f0d7\"], \"test_phase\": \"red\", \"writer_revoked\": true}}]"
+}

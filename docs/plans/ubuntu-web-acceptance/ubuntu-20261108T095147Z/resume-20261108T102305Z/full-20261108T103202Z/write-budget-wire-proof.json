@@ -1,0 +1,10 @@
+{
+  "run": "3aa962d2-eef6-4401-8ac1-2321a576628d",
+  "attempt": "98c6dd1b-5733-4cb1-b13e-084433c35810",
+  "session": "1136fe51-4ff3-4a01-a020-c9d6ff77c9e6",
+  "execution": "e4abb94d-e873-4a5e-a7b1-fdf20f56aae9",
+  "operation": "f1aa6fc2-ec03-4ffd-9406-6d40a21e793f",
+  "model": "deepseek-v4-pro",
+  "max_tokens": 32768,
+  "source": "actual outbound native initialize frame; raw protocol not copied"
+}

@@ -1,6 +1,6 @@
 # Web 平台与系统凭据补充记录
 
-依据 [补充计划](PLAN.md)。当前阶段：macOS 固定共享凭据助手已通过真实凭据、跨构建及重启验收。Linux Secret Service 代码及可移植测试已实现，Ubuntu 宿主未执行，不记为通过。
+依据 [补充计划](PLAN.md)。当前阶段：macOS 固定共享凭据助手已通过真实凭据、跨构建及重启验收。Ubuntu 24.04.5 / x86_64 的 U0–U6 已通过：Linux 凭据、双供应商工程闭环、真实 PR merged、安装复用、取消/崩溃恢复与源码外运行包；专用 AppArmor 策略经用户批准并实测允许/拒绝边界。详见 [Ubuntu 本轮报告](../ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)。
 
 ## 已实现和验证
 
@@ -20,11 +20,11 @@
 ## 平台接续
 
 1. macOS 已通过。原来直接读取的第一次签名 Host 已获授权（约 0.01 秒成功），但同证书的新构建和新建条目均复现拒绝。新方案已用无真实密钥的测试条目验证：不同 Host 构建、不同路径读取成功，助手摘要不变，非对应签名调用者在访问前被拒绝。用户已授权固定助手；两个不同 Host 构建、同一旧凭据引用、助手摘要不变的实际读取均通过，重启后读取仍通过。真实 DSH 两轮会话通过，重启后第三轮续用同一原生 Session，随机 marker 保留，执行者停止/封存/释放均确认。
-2. Ubuntu 桌面环境实际编译、Secret Service 保存/读取、双 Harness、Web 工程闭环/恢复与运行包检查。当前 Linux worker 或旧原型报告不能替代该宿主验收。
+2. Ubuntu 桌面宿主已实际完成编译、Secret Service 保存/读取、双 Harness Web 工程闭环/恢复与运行包检查；使用独立数据集和报告，未以 Linux worker 或旧原型报告替代。
 
 共享助手的跨构建实际证明见 [macos-helper-identity.json](macos-helper-identity.json)。macOS 自签名分区行为依据 Apple 的 [clientid.cpp](https://github.com/apple-oss-distributions/Security/blob/main/securityd/src/clientid.cpp)，没有修改整个钥匙串的 partition list 或授予通用 CLI 读取权。
 
-完整 macOS 凭据证据见 [macos-credentials.json](macos-credentials.json)、[真实 DSH](macos-credentials-dsh.json)。保留首次直接读取失败和旧 DSH 启动失败，不将其覆盖为成功。后续仅剩 Ubuntu 宿主实机验收。
+完整 macOS 凭据证据见 [macos-credentials.json](macos-credentials.json)、[真实 DSH](macos-credentials-dsh.json)。保留首次直接读取失败和旧 DSH 启动失败，不将其覆盖为成功。Ubuntu 工程闭环、正式模型凭据与恢复的最终结果见上述独立报告，保留全部首次失败与续跑历史。
 
 最终 `./scripts/check.sh` 退出 0：完整 Rust 工作区、debug/release HTTP 与各 6 个 Chromium 用例通过，见 [完整回归](credentials-full-regression.log)。共享助手未重建。回归重建覆盖在运行的 Host 后，旧进程会被调用方签名校验阻塞；该情况要求重启新构建，不要求重新授权。
 

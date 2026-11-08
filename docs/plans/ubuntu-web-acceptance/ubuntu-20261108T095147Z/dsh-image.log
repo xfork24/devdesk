@@ -1,0 +1,152 @@
+$ docker build -t devdesk/dsh:0.2.2-rc.1 containers/dsh
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 827B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
+#2 DONE 2.5s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 2.05kB done
+#4 DONE 0.0s
+
+#5 [1/5] FROM docker.io/library/node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
+#5 resolve docker.io/library/node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f 0.0s done
+#5 sha256:d90d46d619398a297e98644390dda53d92954af45066f87aea04e2da844a6754 0B / 449B 0.2s
+#5 sha256:1a5fa97547841412bf8527a6d445748d9acfd51ee2e73ad7e76d4ede9efe6e9f 0B / 1.71MB 0.2s
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 0B / 49.11MB 0.2s
+#5 sha256:e48f83d0e30eecff4260e3620f371c7f05122e743f4fe3f4168cd7f091948996 0B / 3.31kB 0.2s
+#5 sha256:d90d46d619398a297e98644390dda53d92954af45066f87aea04e2da844a6754 449B / 449B 0.5s done
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 0B / 28.23MB 0.2s
+#5 sha256:1a5fa97547841412bf8527a6d445748d9acfd51ee2e73ad7e76d4ede9efe6e9f 1.05MB / 1.71MB 1.4s
+#5 sha256:1a5fa97547841412bf8527a6d445748d9acfd51ee2e73ad7e76d4ede9efe6e9f 1.71MB / 1.71MB 1.4s done
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 8.39MB / 49.11MB 1.8s
+#5 sha256:e48f83d0e30eecff4260e3620f371c7f05122e743f4fe3f4168cd7f091948996 3.31kB / 3.31kB 1.7s done
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 15.73MB / 49.11MB 2.0s
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 20.97MB / 49.11MB 2.1s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 4.19MB / 28.23MB 1.5s
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 31.46MB / 49.11MB 2.3s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 6.29MB / 28.23MB 1.7s
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 36.70MB / 49.11MB 2.4s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 9.44MB / 28.23MB 2.0s
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 45.09MB / 49.11MB 2.7s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 11.53MB / 28.23MB 2.1s
+#5 sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 49.11MB / 49.11MB 2.9s done
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 13.63MB / 28.23MB 2.6s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 15.73MB / 28.23MB 2.7s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 17.83MB / 28.23MB 3.0s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 20.97MB / 28.23MB 3.3s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 23.07MB / 28.23MB 3.8s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 25.17MB / 28.23MB 4.1s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 27.26MB / 28.23MB 4.4s
+#5 sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 28.23MB / 28.23MB 4.5s done
+#5 extracting sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9
+#5 extracting sha256:4831516dd0cb86845f5f902cb9b9d25b5c853152c337eb57e4737a9b7e2a2eb9 0.4s done
+#5 DONE 5.6s
+
+#5 [1/5] FROM docker.io/library/node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
+#5 extracting sha256:e48f83d0e30eecff4260e3620f371c7f05122e743f4fe3f4168cd7f091948996 0.0s done
+#5 extracting sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671
+#5 extracting sha256:8db14bf7760b9640d38dc96c1b21823eaa6dcb81316334b592ab21417c36f671 0.5s done
+#5 DONE 6.1s
+
+#5 [1/5] FROM docker.io/library/node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f
+#5 extracting sha256:1a5fa97547841412bf8527a6d445748d9acfd51ee2e73ad7e76d4ede9efe6e9f 0.0s done
+#5 extracting sha256:d90d46d619398a297e98644390dda53d92954af45066f87aea04e2da844a6754 0.0s done
+#5 DONE 6.2s
+
+#6 [2/5] RUN npm install --global --omit=dev @deepseek-ai/dsh@0.2.2-rc.1     && dsh --version     && npm cache clean --force
+#6 45.40 npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+#6 56.94 
+#6 56.94 added 656 packages in 57s
+#6 56.94 
+#6 56.94 72 packages are looking for funding
+#6 56.94   run `npm fund` for details
+#6 56.94 npm notice
+#6 56.94 npm notice New minor version of npm available! 11.6.2 -> 11.21.2
+#6 56.94 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.2
+#6 56.94 npm notice To update run: npm install -g npm@11.21.2
+#6 56.94 npm notice
+#6 57.06 0.2.2-rc.1
+#6 57.11 npm warn using --force Recommended protections disabled.
+#6 DONE 57.9s
+
+#7 [3/5] RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates bubblewrap     && rm -rf /var/lib/apt/lists/*
+#7 0.456 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#7 0.661 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#7 0.776 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#7 0.889 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#7 1.691 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#7 1.802 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [361 kB]
+#7 2.766 Fetched 9400 kB in 2s (3885 kB/s)
+#7 2.766 Reading package lists...
+#7 3.312 Reading package lists...
+#7 3.901 Building dependency tree...
+#7 4.034 Reading state information...
+#7 4.170 The following additional packages will be installed:
+#7 4.171   libssl3 openssl
+#7 4.171 Recommended packages:
+#7 4.171   procps
+#7 4.195 The following NEW packages will be installed:
+#7 4.197   bubblewrap ca-certificates libssl3 openssl
+#7 4.374 0 upgraded, 4 newly installed, 0 to remove and 17 not upgraded.
+#7 4.374 Need to get 3690 kB of archives.
+#7 4.374 After this operation, 9085 kB of additional disk space will be used.
+#7 4.374 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u2 [2040 kB]
+#7 7.703 Get:2 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.22-1~deb12u2 [1442 kB]
+#7 8.561 Get:3 http://deb.debian.org/debian-security bookworm-security/main amd64 ca-certificates all 20250419~deb12u2 [161 kB]
+#7 8.622 Get:4 http://deb.debian.org/debian bookworm/main amd64 bubblewrap amd64 0.8.0-2+deb12u1 [47.3 kB]
+#7 8.760 debconf: delaying package configuration, since apt-utils is not installed
+#7 8.795 Fetched 3690 kB in 4s (834 kB/s)
+#7 8.815 Selecting previously unselected package libssl3:amd64.
+#7 8.815 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6096 files and directories currently installed.)
+#7 8.818 Preparing to unpack .../libssl3_3.0.22-1~deb12u2_amd64.deb ...
+#7 8.825 Unpacking libssl3:amd64 (3.0.22-1~deb12u2) ...
+#7 8.945 Selecting previously unselected package openssl.
+#7 8.945 Preparing to unpack .../openssl_3.0.22-1~deb12u2_amd64.deb ...
+#7 8.946 Unpacking openssl (3.0.22-1~deb12u2) ...
+#7 9.060 Selecting previously unselected package ca-certificates.
+#7 9.062 Preparing to unpack .../ca-certificates_20250419~deb12u2_all.deb ...
+#7 9.065 Unpacking ca-certificates (20250419~deb12u2) ...
+#7 9.099 Selecting previously unselected package bubblewrap.
+#7 9.101 Preparing to unpack .../bubblewrap_0.8.0-2+deb12u1_amd64.deb ...
+#7 9.104 Unpacking bubblewrap (0.8.0-2+deb12u1) ...
+#7 9.137 Setting up bubblewrap (0.8.0-2+deb12u1) ...
+#7 9.146 Setting up libssl3:amd64 (3.0.22-1~deb12u2) ...
+#7 9.152 Setting up openssl (3.0.22-1~deb12u2) ...
+#7 9.166 Setting up ca-certificates (20250419~deb12u2) ...
+#7 9.672 Updating certificates in /etc/ssl/certs...
+#7 10.32 148 added, 0 removed; done.
+#7 10.34 Processing triggers for libc-bin (2.36-9+deb12u13) ...
+#7 10.35 Processing triggers for ca-certificates (20250419~deb12u2) ...
+#7 10.36 Updating certificates in /etc/ssl/certs...
+#7 10.84 0 added, 0 removed; done.
+#7 10.84 Running hooks in /etc/ca-certificates/update.d...
+#7 10.84 done.
+#7 DONE 11.0s
+
+#8 [4/5] COPY devdesk-policy /opt/devdesk/dsh-policy
+#8 DONE 0.0s
+
+#9 [5/5] WORKDIR /work
+#9 DONE 0.0s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 22.4s done
+#10 exporting manifest sha256:d811d2c94488b90c126c77dddca623fda590dc22a9a576272a9dc49575ff92f5 done
+#10 exporting config sha256:1ebe0e2f5a369b09da59255e718e0a5ffbce945839d40674f50ff8461414e101 done
+#10 exporting attestation manifest sha256:784af146fb99c2466b5f133fa124c9dc3fe61a5d919bce083474b37816b3e949 done
+#10 exporting manifest list sha256:2fbf30a5c26a99742135d321bc30861f633c3aa8f77d6a4fa79b867f34380201 done
+#10 naming to docker.io/devdesk/dsh:0.2.2-rc.1 done
+#10 unpacking to docker.io/devdesk/dsh:0.2.2-rc.1
+#10 unpacking to docker.io/devdesk/dsh:0.2.2-rc.1 5.4s done
+#10 DONE 27.8s
+
+exit=0

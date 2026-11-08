@@ -1,0 +1,13 @@
+$ cargo test --locked -p devdesk-adapters --lib codex_auth::tests
+   Compiling devdesk-adapters v0.2.0 (/home/hengliu/workspace/devdesk/crates/adapters)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.02s
+     Running unittests src/lib.rs (target/debug/deps/devdesk_adapters-b865aaef7290c414)
+
+running 2 tests
+test codex_auth::tests::repeated_start_recovers_the_same_pending_login_without_native_redispatch ... ok
+test codex_auth::tests::failed_login_reaps_auth_worker_and_allows_a_fresh_explicit_attempt ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 3.29s
+
+
+exit=0

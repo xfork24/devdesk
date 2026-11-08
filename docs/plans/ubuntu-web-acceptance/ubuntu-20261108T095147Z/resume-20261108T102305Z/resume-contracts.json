@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "source": "controlled report faults; fail before reusing evidence or running side effects",
+  "cases": [
+    {
+      "case": "context-mismatch",
+      "exit_code": 1,
+      "expected_rejection": "resume context mismatch",
+      "passed": true,
+      "model_or_git_work_executed": false
+    },
+    {
+      "case": "changed-evidence",
+      "exit_code": 1,
+      "expected_rejection": "recorded log changed",
+      "passed": true,
+      "model_or_git_work_executed": false
+    }
+  ]
+}

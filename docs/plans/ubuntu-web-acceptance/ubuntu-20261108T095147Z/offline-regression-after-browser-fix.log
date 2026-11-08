@@ -1,0 +1,252 @@
+$ ./scripts/check.sh
+
+> devdesk-web@0.2.0 build
+> tsc -b && vite build
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 1582 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.37 kB │ gzip:  0.30 kB
+dist/assets/index-CNpYpBGC.css   15.41 kB │ gzip:  4.30 kB
+dist/assets/index-DdKEphPT.js   296.27 kB │ gzip: 91.77 kB
+✓ built in 944ms
+warning: unused import: `Read`
+ --> crates/credential-helper/src/main.rs:4:15
+  |
+4 | use std::io::{Read, Write};
+  |               ^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `devdesk-credential-helper` (bin "devdesk-credential-helper" test) generated 1 warning
+   Compiling devdesk-host v0.2.0 (/home/hengliu/workspace/devdesk/crates/host)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src/lib.rs (target/debug/deps/devdesk_adapters-8127ff416758b03b)
+
+running 5 tests
+test github::tests::never_treat_admin_or_incomplete_rules_as_permission_to_bypass ... ok
+test credentials::tests::opaque_vault_references_are_dataset_scoped_and_never_accept_a_path ... ok
+test jsonl::tests::split_secret_deltas_never_become_reconstructable_logs_or_ui_events ... ok
+test process::tests::timeout_reaps_owned_descendants_instead_of_blocking_on_stdout ... ok
+test harness::protocol_tests::dsh_fast_completion_replays_pre_admission_consumption_before_output ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+
+     Running tests/command_tests.rs (target/debug/deps/command_tests-13ad6227bca560cd)
+
+running 2 tests
+test actual_node_red_green_environment_failure_and_stopped_receipts ... ignored, requires the pinned Linux Node image and actual Docker daemon
+test export_rejects_content_drift_without_touching_host_files_outside_the_execution_root ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/conversations.rs (target/debug/deps/conversations-5a1154d362f68535)
+
+running 9 tests
+test discussion_before_feature_survives_restart_without_fabricating_runs ... ok
+test enforce_busy_cross_project_immutable_binding_and_append_only_messages ... ok
+test completion_needs_external_session_consumption_and_writer_release_proof ... ok
+test proposal_schema_failures_and_task_dependency_cycles_never_create_formal_objects ... ok
+test project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revision ... ok
+test structured_proposals_adopt_atomically_then_reject_stale_and_cross_project_inputs ... ok
+test task_plan_validates_dependency_graph_and_cannot_skip_planning_review ... ok
+test conversation_commands_are_idempotent_and_switching_creates_a_snapshot_successor ... ok
+test coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+
+     Running tests/docker_resources.rs (target/debug/deps/docker_resources-faedeb6c275f7322)
+
+running 4 tests
+test dsh_runner_masks_private_state_and_proc_without_expanding_docker_privileges ... ignored, requires actual Docker and pinned DSH image
+test nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant ... ignored, requires actual Docker and pinned Codex Linux image
+test real_container_ownership_idempotence_stop_and_cleanup ... ignored, requires the real Docker daemon and the pinned acceptance image
+test reject_outside_mounts_before_touching_docker ... ok
+
+test result: ok. 1 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/git_resources.rs (target/debug/deps/git_resources-cc5cb5a1bc1f7744)
+
+running 2 tests
+test dirty_targets_and_foreign_contexts_are_rejected_without_modifying_refs ... ok
+test actual_worktrees_single_parent_candidate_cas_and_recovery ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+
+     Running tests/github_resources.rs (target/debug/deps/github_resources-23f89f357671b1ec)
+
+running 1 test
+test lost_pr_receipt_is_recovered_by_the_original_marker_without_creating_a_second_pr ... ignored, requires an explicit existing dedicated acceptance PR request and real gh credentials
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/runtime_registry.rs (target/debug/deps/runtime_registry-c8e7449b4e95171a)
+
+running 3 tests
+test reject_wrong_platform_hash_scripts_and_mutable_images ... ok
+test registration_deduplicates_across_paths_and_threads_then_detects_drift ... ok
+test v1_upgrade_retains_settings_and_preference_updates_are_atomic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/workflows.rs (target/debug/deps/workflows-5fd41d97f6748d45)
+
+running 68 tests
+test artifact_symlinks_cannot_escape_dataset ... ok
+test completion_binding_checks_capabilities_instead_of_provider_literal ... ok
+test artifact_read_rejects_symlink_replacement ... ok
+test a9_restart_idempotence_lock_and_artifact_integrity ... ok
+test completion_cancel_during_poll_discards_late_success ... ok
+test completion_export_retry_reuses_persisted_receipt ... ok
+test completion_cleanup_crash_replays_original_resource_identity ... ok
+test completion_cleanup_retry_preserves_failed_history_and_is_idempotent ... ok
+test completion_input_change_during_poll_discards_late_document ... ok
+test completion_restart_keeps_unknown_resources_until_explicit_reconciliation ... ok
+test a10_context_updates_do_not_mutate_snapshot ... ok
+test a2_parallel_runs_and_quotas_are_real ... ok
+test completion_wrong_reconciliation_receipt_does_not_release_owned_resources ... ok
+test cancelled_attempt_cannot_be_revived_by_review_or_override ... ok
+test a11_hard_tdd_constraints_cannot_be_overridden ... ok
+test completion_context_history_and_delivery_scope_are_enforced ... ok
+test global_and_project_database_paths_reject_symlink_redirection ... ok
+test a8_quality_override_keeps_test_failure_and_reason ... ok
+test alternative_spec_is_an_actual_replacement ... ok
+test a7_spec_upgrade_changes_checks_without_rewriting_locks ... ok
+test completion_stage_outputs_do_not_replace_frozen_inputs ... ok
+test completion_final_snapshot_captures_executed_context ... ok
+test completion_parallel_output_does_not_change_existing_run_request ... ok
+test a3_technical_retry_retains_failure ... ok
+test hardening_adapter_reads_committed_store_outside_transaction ... ok
+test hardening_document_target_cannot_bypass_revision ... ok
+test hardening_failed_export_keeps_environment_owned ... ok
+test completion_agent_revision_is_not_a_separate_reviewer_identity ... ok
+test hardening_late_success_does_not_acknowledge_cancel ... ok
+test global_configuration_upgrades_a_copy_of_v1_and_rejects_project_data ... ok
+test completed_delivery_override_does_not_reopen_task ... ok
+test completion_feature_doc_edit_keeps_planning_and_sibling_merge_valid ... ok
+test completion_git_and_test_requests_freeze_workspace_and_runtime_routing ... ok
+test hardening_empty_success_cannot_accept_plan ... ok
+test completion_invalidated_advance_intent_never_calls_provider ... ok
+test completion_git_crash_after_side_effect_recovers_from_original_provider_receipt ... ok
+test completion_git_unknown_outcome_is_reconciled_without_duplicate_advance ... ok
+test a4_rejection_requires_new_attempt_and_new_source ... ok
+test hardening_requirement_review_blocks_design_dispatch ... ok
+test malformed_adapter_result_is_a_failure_not_success ... ok
+test hardening_runtime_instances_and_archive_contract_are_queryable ... ok
+test completion_confirmed_not_applied_refreshes_target_and_requires_new_candidate ... ok
+test pause_stops_dispatch_and_cleanup_failure_is_retained ... ok
+test simulation_provider_identities_match_existing_persisted_history ... ok
+test detail_pages_are_reachable_and_do_not_page_projects ... ok
+test hardening_trace_scope_and_snapshot_provenance ... ok
+test revision_conflicts_and_pagination_are_enforced ... ok
+test small_sample_pagination_and_event_query ... ok
+test hardening_v1_migration_preserves_reviewer_binding_and_legacy_provenance ... ok
+test completion_reviewer_and_merge_keep_source_standard_when_feature_defaults_change ... ok
+test a5_input_change_blocks_development_until_replanning ... ok
+test logical_write_permit_is_enforced_independently_of_dag ... ok
+test hardening_tdd_freezes_red_baseline_separately_from_green_candidate ... ok
+test execution_base_contracts_allow_independent_providers_through_a_complete_task_merge ... ok
+test hardening_reviewer_retry_preserves_full_binding ... ok
+test duplicate_polls_do_not_duplicate_deliveries_or_reviews ... ok
+test reviewer_restart_does_not_change_accepted_attempt ... ok
+test hardening_task_document_change_is_local ... ok
+test merge_command_replay_after_restart_does_not_advance_twice ... ok
+test project_database_migration_retries_after_artifact_failure_without_publishing_partial_state ... ok
+test retrying_quality_failure_before_delivery_reexecutes_downstream ... ok
+test a6_target_change_invalidates_candidate_and_review ... ok
+test independent_agent_review_receives_frozen_delivery_for_attempt_and_merge ... ok
+test a1_full_loop_two_tasks_closure_and_reports ... ok
+test hardening_replanned_task_uses_current_criteria_without_rewriting_attempt ... ok
+test project_databases_migrate_full_history_and_keep_the_legacy_source ... ok
+test revised_source_and_rejected_merge_allow_new_candidates ... ok
+test invalidating_inflight_merge_does_not_poison_scheduler ... ok
+
+test result: ok. 68 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 37.85s
+
+     Running unittests src/lib.rs (target/debug/deps/devdesk_core-ff0a8d9ae072704b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/devdesk_credential_helper-954d2e4457b1646b)
+
+running 1 test
+test tests::rejects_foreign_services_invalid_accounts_and_extra_secret_inputs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/devdesk_domain-795dd881f7bf14c2)
+
+running 3 tests
+test tests::allows_parallel_dag ... ok
+test tests::simulated_never_live ... ok
+test tests::rejects_cycles_and_missing_dependencies ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/devdesk_host-5b527bb3e3a357c7)
+
+running 5 tests
+test workspace::tests::failed_open_preserves_active_project_and_creation_resumes_reserved_identity ... ok
+test workspace::tests::global_settings_definitions_and_active_project_survive_restart ... ok
+test workspace::tests::switching_projects_isolates_state_artifacts_and_idempotency ... ok
+test workspace::tests::switching_keeps_inactive_execution_and_shared_quota ... ok
+test workspace::adapter_injection_tests::injected_providers_are_used_after_opening_another_project ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+   Doc-tests devdesk_adapters
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests devdesk_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests devdesk_domain
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling devdesk-host v0.2.0 (/home/hengliu/workspace/devdesk/crates/host)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.38s
+PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE shutdown, restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors
+
+Running 6 tests using 1 worker
+
+(node:2111485) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/workbench.spec.ts:57:1 › 完整 Web 闭环、双 Task 并行、Review、mainline、文档及历史 (16.2s)
+  ✓  2 tests/workbench.spec.ts:195:1 › Web 异常回路：技术重试、Review退回、新Attempt、Merge重试与手动继续 (14.0s)
+  ✓  3 tests/workbench.spec.ts:322:1 › 详情分页与 revision 冲突保留输入 (6.7s)
+  ✓  4 tests/workbench.spec.ts:436:1 › 持久化清理回执和人工重试可从 Web 操作 (1.3s)
+  ✓  5 tests/workbench.spec.ts:463:1 › 打开项目切换独立数据库，重载保持选择和共享配置 (1.7s)
+  ✓  6 tests/workbench.spec.ts:540:1 › 真实接入设置偏好、密钥表单与浏览器 OAuth 链接 (698ms)
+
+  6 passed (41.3s)
+   Compiling devdesk-host v0.2.0 (/home/hengliu/workspace/devdesk/crates/host)
+    Finished `release` profile [optimized] target(s) in 2.03s
+PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE shutdown, restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors; standalone copied binary
+
+Running 6 tests using 1 worker
+
+(node:2112727) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/workbench.spec.ts:57:1 › 完整 Web 闭环、双 Task 并行、Review、mainline、文档及历史 (11.8s)
+  ✓  2 tests/workbench.spec.ts:195:1 › Web 异常回路：技术重试、Review退回、新Attempt、Merge重试与手动继续 (11.3s)
+  ✓  3 tests/workbench.spec.ts:322:1 › 详情分页与 revision 冲突保留输入 (4.1s)
+  ✓  4 tests/workbench.spec.ts:436:1 › 持久化清理回执和人工重试可从 Web 操作 (1.4s)
+  ✓  5 tests/workbench.spec.ts:463:1 › 打开项目切换独立数据库，重载保持选择和共享配置 (1.3s)
+  ✓  6 tests/workbench.spec.ts:540:1 › 真实接入设置偏好、密钥表单与浏览器 OAuth 链接 (608ms)
+
+  6 passed (31.2s)
+
+exit=0

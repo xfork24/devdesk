@@ -1,0 +1,8 @@
+$ python3 tests/live/probe_installations.py --url http://127.0.0.1:51751 --root /home/hengliu/workspace/devdesk/data/ubuntu-20261108T095147Z --reports /home/hengliu/workspace/devdesk/docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z
+Traceback (most recent call last):
+  File "/home/hengliu/workspace/devdesk/tests/live/probe_installations.py", line 23, in <module>
+    assert len({x['project']for x in references})>1 and len({x['agent']for x in references})>1
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+
+exit=1

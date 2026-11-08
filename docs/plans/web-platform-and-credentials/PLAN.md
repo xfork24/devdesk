@@ -1,6 +1,6 @@
 # Web 平台与系统凭据补充计划
 
-日期：2026-11-08。状态：P1 macOS 实际验收通过；P2 Linux 后端/入口已实现，Ubuntu 宿主待切换验证。依据用户在 R0–R8 执行期间的追加要求；在 [真实工程接入验收](../real-engineering-integration/R8-acceptance.md) 后执行。目标为 macOS/Linux Web UI，macOS native 客户端后续再做。
+日期：2026-11-08。状态：P1 macOS 实际验收通过；P2 Ubuntu 24.04.5 / x86_64 的 U0–U6 通过，涵盖 Linux 凭据、双 Harness Web 工程闭环、真实 PR merged、复用/恢复与独立发布包，AppArmor 使用用户批准的专用策略。依据用户在 R0–R8 执行期间的追加要求；在 [真实工程接入验收](../real-engineering-integration/R8-acceptance.md) 后执行。目标为 macOS/Linux Web UI，macOS native 客户端后续再做。
 
 ## P1：macOS 稳定身份与无后台提示
 
@@ -12,12 +12,12 @@
 
 ## P2：Linux Web 运行
 
-具体执行步骤及验收清单见 [Ubuntu Web 真实工程验收计划](../ubuntu-web-acceptance/PLAN.md)，当前仍待实际 Ubuntu 宿主执行。
+具体执行步骤及验收清单见 [Ubuntu Web 真实工程验收计划](../ubuntu-web-acceptance/PLAN.md)，本轮实际结果见 [Ubuntu 报告](../ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)，全部必要项已完成，首次失败及续跑历史保留。
 
 - Linux Secret Service 后端与设置页输入，秘密经私有 stdin/系统凭据库传递，不进 SQLite、argv、报告或浏览器持久存储；缺依赖明确阻塞。
 - 去除真实资源测试中的单平台镜像 ID 假设，按显式登记或本机固定镜像解析不可变 ID；保持会话冻结的旧摘要不变。
 - macOS/Linux 统一 Web 构建、Host、容器配方、Git/GitHub 与验收入口；预检列出宿主平台、依赖和凭据能力，不把 Linux 容器当作 Linux 宿主验收。
-- 准备 Ubuntu 操作说明及验收报告模板。macOS 回归与包验证后，请用户切换 Ubuntu；在 Ubuntu 实际执行离线检查、镜像构建、双 Harness、Web 闭环/恢复及运行包验证。
+- 准备 Ubuntu 操作说明及验收报告模板。Ubuntu 已实际完成离线检查、镜像构建、Linux 凭据、双 Harness Web 闭环/恢复与独立运行包；full（显式续跑）、verify-existing 和完整安装探针均退出 0。
 
 ## 完成条件
 
