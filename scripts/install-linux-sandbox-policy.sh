@@ -3,7 +3,7 @@
 # daemon settings, sysctls, capabilities or AppArmor's enforcement mode.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-policy=containers/security/devdesk-harness-v1.apparmor
+policy=permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor
 destination=/etc/apparmor.d/devdesk-harness-v1
 if [[ "$(uname -s)" != Linux ]]; then
   echo "This profile is for an AppArmor-enabled Linux Docker host." >&2

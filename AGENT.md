@@ -6,7 +6,7 @@
 - `crates/core`：命令、查询、调度与执行接口；`crates/adapters`：SQLite、文件、Git、Docker、供应商及模拟实现。
 - `crates/host`：本地 HTTP/SSE 服务并嵌入 Web；`crates/credential-helper`：macOS 共享凭据助手。
 - `web/src`：React/TypeScript 界面，样式在 `style.css`；`web/tests`：浏览器测试。
-- `sql/`：项目库迁移，`sql/global/`：全局库迁移；`schemas/`：协议；`tests/fixtures/`：夹具；`docs/`：设计、操作说明及验收记录。
+- `sql/`：项目库迁移，`sql/global/`：全局库迁移；`schemas/`：协议；`permissions/`：权限预设和执行后端；`tests/fixtures/`：夹具；`docs/`：设计、操作说明及验收记录。
 - `scripts/`：shell 操作入口；`scripts/py/`：由入口调用的 Python 辅助实现。
 
 ## 构建、测试与本地开发

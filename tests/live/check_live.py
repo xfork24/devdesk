@@ -51,7 +51,7 @@ try:
   if 'git' in groups:step('real-git',lambda:run('real-git',['cargo','test','--locked','-p','devdesk-adapters','--test','git_resources']))
   if 'docker' in groups:step('real-docker',lambda:run('real-docker',['cargo','test','--locked','-p','devdesk-adapters','--test','command_tests','--test','docker_resources','--','--include-ignored']))
   if 'harness' in groups:
-   for provider in providers:step('native-'+provider,lambda provider=provider:run('native-'+provider,['python3','tests/live/probe_application_conversations.py','--url',a.url,'--provider',provider,'--output',str(reports/('R3-'+provider+'-application.json'))]))
+   for provider in providers:step('native-'+provider,lambda provider=provider:run('native-'+provider,['python3','tests/live/probe_application_conversations.py','--url',a.url,'--provider',provider,'--github-repo',a.github_repo,'--output',str(reports/('R3-'+provider+'-application.json'))]))
   if any(g in groups for g in ['web','workflow']):
    assert set(providers)==set(['codex','dsh']) and 'harness' in groups,'full workflow requires fresh both-provider discussion inputs'
    env=dict(os.environ,DEVDESK_LIVE_REPORTS=str(reports),DEVDESK_LIVE_URL=a.url)
@@ -66,12 +66,13 @@ try:
    step('crash-arm',lambda:run('crash-arm',['python3','tests/live/probe_recovery.py','--url',a.url,'--reports',str(reports),'--phase','crash-arm']))
    def crash():
     global c
-    port=a.url.rsplit(':',1)[1];lines=subprocess.check_output(['ps','-axo','pid=,args='],text=True).splitlines();matches=[]
+    port=a.url.rsplit(':',1)[1];lines=subprocess.check_output(['ps','-axo','pid=,args='],text=True,errors='replace').splitlines();matches=[]
     import shlex,signal
     for line in lines:
      parts=line.strip().split(None,1)
      if len(parts)!=2:continue
-     argv=shlex.split(parts[1])
+     try:argv=shlex.split(parts[1])
+     except ValueError:continue
      if not argv or Path(argv[0]).name!='devdesk-host' or '--data' not in argv or '--port' not in argv:continue
      if Path(argv[argv.index('--data')+1]).resolve()==a.root and argv[argv.index('--port')+1]==port:matches.append((int(parts[0]),argv))
     assert len(matches)==1,'cannot prove a unique dedicated host identity';pid,argv=matches[0];os.kill(pid,signal.SIGKILL)
@@ -119,6 +120,12 @@ try:
      relative=Path(row['relative_path']);assert not relative.is_absolute() and '..' not in relative.parts;path=(db.parent/relative).resolve();assert path.is_relative_to(db.parent.resolve());assert hashlib.sha256(path.read_bytes()).hexdigest()==row['sha256'];total+=1
     for row in conn.execute('select * from executions'):
      if row['container_id'] is None and row['writer_revoked'] and row['status']=='interrupted':
+      never_started.append(row['id']);continue
+     if row['container_id'] is None and row['writer_revoked'] and row['status']=='released' and row['protocol_artifact'] is None:
+      # A failed create can have a proved stop/absence without ever opening a
+      # native journal. Preserve that missing evidence, never invent a transcript.
+      turns=conn.execute('select consumed,external_message,external_turn,status from turns where session_id=?',(row['session_id'],)).fetchall()
+      assert turns and all(not t['consumed'] and t['external_message'] is None and t['external_turn'] is None and t['status']=='cancelled' for t in turns)
       never_started.append(row['id']);continue
      assert row['writer_revoked'] and row['protocol_artifact'] and row['status']=='released',('unreleased execution',row['id']);executions+=1
     conn.close()

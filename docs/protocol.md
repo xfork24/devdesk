@@ -12,7 +12,7 @@
 - POST /shutdown：可信人类会话退出 host。
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"attempt.start","params":{"command_id":"uuid","target":"feature-id","expected_revision":3,"payload":{"phase":"planning","scenario":"success"}}}
+{"jsonrpc":"2.0","id":1,"method":"attempt.start","params":{"command_id":"uuid","target":"feature-id","expected_revision":3,"payload":{"phase":"planning","provider":"codex"}}}
 ```
 
 命令：project.create/open/update、feature.create、document.revise、definition.revise、binding.update、task.create、attempt.start/pause/cancel、run.cancel/retry/continue、delivery.submit、review.submit/request、override.accept、merge.request/apply、context.update、snapshot.save。不存在 set_status。
@@ -49,7 +49,7 @@ Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执�
 - task.create 可附 scope={requirement,design,acceptance} 或 acceptance_keys。默认从已接受的初始 Snapshot 解析。task.replan(target=Task, expected_revision) 采用当前已接受规划及选定条目，新测试修订保留 supersedes。
 - query.runtimes 返回 Harness/Sandbox 定义；query.archive_preview(feature_id) 返回产物/快照范围与不可执行理由。注册表同时提供 Sim 定义和已登记的真实运行时。
 - Run 返回不可变 binding；Session 返回 instance；Review 返回 assignment；Snapshot 返回 capture；Attempt 返回 baseline。
-- 数据库支持从 v1 顺序升级至 v31（全局库 v3）。旧文档缺少结构化验收映射时保持空值，旧交付历史可读；重新参与增强门禁须明确修订和验收，不能将迁移当成人类复核。
+- 数据库支持从 v1 顺序升级至 v33（全局库 v4）。旧文档缺少结构化验收映射时保持空值，旧交付历史可读；重新参与增强门禁须明确修订和验收，不能将迁移当成人类复核。
 
 历史 Run 的 binding_verified=false，保留可从 Session 确定的身份，但不把无法证明的完整绑定用于技术重试；需要新建执行。新 Run 的 binding_verified=true。
 
@@ -91,7 +91,7 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 
 `proposal.extract` reads the last complete assistant JSON from a completed `turn_id`. `proposal.create` accepts human-edited `content` conforming to `ProposalContent`; both require an explicit source Turn and resolve a `target` and `expected_revision`. `proposal.revise` creates a new immutable draft revision. `proposal.adopt`/`proposal.reject` target the Proposal revision. Adoption is atomic, validates current target and immutable input documents, and invokes the existing formal object commands. `proposal.instantiate` materializes an accepted TaskPlan's stable keys and dependencies after the existing planning Review/Snapshot gate; the key-to-Task mapping is persisted and cannot be replaced. Proposal acceptance does not accept a Delivery or a Merge.
 
-Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations and role definitions live in global schema v3; engineering records and conversation projections currently use project schema v31. Sequential SQL upgrades preserve original simulation history and never fabricate native IDs.
+Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations, role definitions and Permission revisions live in global schema v4; engineering records and conversation projections currently use project schema v33. Sequential SQL upgrades preserve original simulation history and never fabricate native IDs.
 
 ## 真实工程操作与证据
 
@@ -108,3 +108,28 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 ## 系统凭据与 Web 平台
 
 `credentials.status` 返回配置元数据、storage、available 与不透明引用，不返回秘密。`credentials.check` 在当前 Host 验证引用可读，只返回 authorized/storage；macOS 后台访问禁止交互 UI。`credentials.authorize` 是显式系统授权入口，由固定共享凭据助手执行（校验对应签名 Host），最长 30 秒；授权拒绝/超时返回错误，不要求通过 RPC 提交系统密码。Linux 通过 Secret Service/secret-tool 私有 stdin 保存，状态页不解锁读取。
+
+
+## GitHub 项目入口与按需运行时
+
+正常 Web 使用 `project.open_github`（`Command` 参数）：首次传 `payload.repository`、可选 `payload.mainline`（默认 `main`）及可选 `payload.title`；再次打开可传 `target`。仓库支持 `owner/repo`、GitHub HTTPS 和 SSH URL。相同仓库/分支复用项目；接入意图、回执与核对沿用 `repository.connect` / `query.repository` / `repository.reconcile`。该接口返回项目 ID 后，克隆在调度器执行；只有真实仓库回执被接受后才可执行工程工作。
+
+`query.workspace` 的 `github_only=true` 在分页前过滤后端历史项目。旧 `project.create` / `project.open` 和模拟场景参数保留给后端兼容与离线测试，Web 不再调用这些入口。
+
+`session.open`、真实 `attempt.start` / `review.request` / `merge.request` 在解析实际供应商后自动准备所需运行时；无显式固定安装时使用内嵌配方构建并复用共享镜像。`runtime.preparation_status` 返回 `{preparations:[{provider,status,message,code?}]}`，状态为 `preparing` / `ready` / `failed`。`runtime.prepare`（`{provider}`）可显式预热/重试，正常 Web 不要求此步骤。准备期间不持有工程数据库事务，准备失败不生成成功安装。
+
+`codex.auth.start` / `status` / `models` / `cancel` 的 `installation_id` 改为可选；省略时自动准备版本固定的本机登录组件。首次准备可能需要下载与构建，相关 Web 请求允许较长超时并轮询进度。运行中和技术重试仍使用原冻结绑定，不自动更换安装。
+
+## Permission 配置与预检
+
+`query.permissions` 返回不可变权限修订、带 revision 的全局绑定、当前角色修订和后端能力。`permission.create`、`permission.revise`、`permission.bind` 使用 Command；修订和绑定要求 expected_revision，相同 command_id/参数重放原结果。权限修订不能原地修改，绑定更新只影响后续会话。
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"permission.preflight","params":{"provider":"codex","overrides":{"harness":{"overrides":{"filesystem":{"mode":"read_only"}}}}}}
+```
+
+预检返回 `resolved` 和 `configuration_digest`，不调用模型、不启动容器。可携带明确的项目作用域及拟用 configuration；结果包含标准权限、覆盖来源、原生选项和执行后端。错误 `permission_unsupported` 表示规则缺少执行器，`permission_conflict` 表示配置与必要运行条件冲突，`permission_denied` 表示实际访问被拒绝；保留后端原始错误分类。
+
+`project.update` 的 payload 可包含 `permission_overrides`；Agent profile 同名字段通过 `agent.revise` 创建新角色修订。`session.open` payload 支持本次 `permission_overrides`，客户端不能提供解析后的 binding。字段含义见 `schemas/permission.schema.json` 和 `schemas/rpc.schema.json`。
+
+`query.session` 的 RuntimeBinding 与各 RuntimeExecution 返回冻结权限；旧历史的缺失值保持 null，不伪造既有执行保证。独立测试的策略明确标记无模型连接，Sandbox 禁网与 Harness 工具禁网不会混为一谈。

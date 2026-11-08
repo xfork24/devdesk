@@ -247,9 +247,9 @@ export function RoleConversation({
             <option value="dsh">DeepSeek Harness</option>
           </select>
         </label>
-        <label>共享安装<select aria-label="讨论安装" value={installation} onChange={e=>setInstallation(e.target.value)}><option value="">继承安装偏好</option>{installations.filter(r=>r.key.os==="linux"&&r.artifact.image_id&&(!provider||r.key.provider===provider)).map(r=><option key={r.id} value={r.id}>{r.key.provider} · {r.key.version} · {r.key.arch}</option>)}</select></label>
+        <label>共享安装<select aria-label="讨论安装" value={installation} onChange={e=>setInstallation(e.target.value)}><option value="">自动准备 / 继承固定安装偏好</option>{installations.filter(r=>r.key.os==="linux"&&r.artifact.image_id&&(!provider||r.key.provider===provider)).map(r=><option key={r.id} value={r.id}>{r.key.provider} · {r.key.version} · {r.key.arch}</option>)}</select></label>
         <label>模型<input aria-label="讨论模型" value={model} maxLength={160} onChange={e=>setModel(e.target.value)} list="discussion-models" placeholder="继承模型偏好"/><datalist id="discussion-models">{models.map(m=><option key={m.model} value={m.model}>{m.displayName||m.model}</option>)}</datalist></label>
-        <button disabled={busy} onClick={()=>action(async()=>{const native=installations.find(r=>r.key.provider==="codex"&&r.artifact.canonical_path);if(!native)throw new Error("请先登记本机 Codex");const value=await scopedRequest("codex.auth.models",{installation_id:native.id});setModels(value.models);})}>读取 Codex 模型目录</button>
+        <button disabled={busy} onClick={()=>action(async()=>{const value=await scopedRequest("codex.auth.models");setModels(value.models);})}>读取 Codex 模型目录</button>
         <button disabled={busy || !selectedOwner} onClick={open}>
           开始 / 续用讨论
         </button>
@@ -282,6 +282,7 @@ export function RoleConversation({
             {detail.session.runtime_binding.model} · {detail.session.lifecycle}{" "}
             · 原生会话 {detail.session.external_session || "尚未启动"}
           </p>
+          <details><summary>本次会话的冻结权限</summary>{detail.session.runtime_binding.permissions ? <pre>{JSON.stringify(detail.session.runtime_binding.permissions, null, 2)}</pre> : <p>旧版执行未保存标准 Permission 快照；继续使用原运行锁，执行保证以历史回执为准。</p>}</details>
           {detail.executions.filter((e:Row)=>e.status==="cleanup_failed").map((e:Row)=><p key={e.id} className="notice">执行实例 {e.id} 已停止，清理失败。<button disabled={busy} onClick={()=>action(async()=>{await command("execution.retry_cleanup",e.id,undefined);})}>重试清理</button></p>)}
           {detail.session.predecessor && (
             <p>

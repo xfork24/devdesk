@@ -1,0 +1,19 @@
+{
+  "id": "permission-read-only-v1",
+  "identity": "read-only",
+  "name": "只读",
+  "version": 1,
+  "supersedes": null,
+  "schema_version": 1,
+  "policy": {
+    "filesystem": {
+      "mode": "read_only"
+    },
+    "network": {
+      "mode": "enabled"
+    },
+    "tools": {
+      "mode": "all_available"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+**
+!containers/
+!containers/dsh/
+!containers/dsh/Dockerfile
+!permissions/
+!permissions/backends/
+!permissions/backends/dsh/
+!permissions/backends/dsh/**

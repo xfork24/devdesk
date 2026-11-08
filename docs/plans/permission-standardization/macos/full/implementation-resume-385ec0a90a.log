@@ -1,0 +1,15 @@
+waiting_add
+delivery_add
+accepted_add
+waiting_multiply
+failed
+Traceback (most recent call last):
+  File "/Users/hengliu/workspace/devdesk/tests/live/probe_implementation.py", line 26, in <module>
+    v=c.wait(view,done,900);runs=c.attempt_runs(v,aid)
+  File "/Users/hengliu/workspace/devdesk/tests/live/client.py", line 40, in wait
+    if predicate(value):return value
+       ~~~~~~~~~^^^^^^^
+  File "/Users/hengliu/workspace/devdesk/tests/live/probe_implementation.py", line 24, in done
+    if failures:raise AssertionError(json.dumps([{'id':x['id'],'node':x['node'],'result':x['result']} for x in failures],ensure_ascii=False))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [{"id": "7c125ea8-657b-4d5f-8db3-9dfa3611273a", "node": "implement", "result": {"failure_type": "adapter_contract", "message": "阶段输出不是 JSON", "origin": "external", "status": "failed"}}]

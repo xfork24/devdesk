@@ -13,7 +13,7 @@ npm --prefix web ci
 ./scripts/check.sh
 # 在本机 Docker 平台构建；同版本各角色共用镜像，不复制 macOS 二进制
  docker build -t devdesk/codex:0.167.0 containers/codex
- docker build -t devdesk/dsh:0.2.2-rc.1 containers/dsh
+ docker build -f containers/dsh/Dockerfile -t devdesk/dsh:0.2.2-rc.1-permissions-v1 .
  gh auth login
 ./scripts/doctor.sh --output docs/plans/ubuntu-web-acceptance/preflight.json
 cargo build --locked -p devdesk-host
@@ -55,6 +55,6 @@ node tests/live/probe_oauth_recovery.mjs --output /tmp/devdesk-oauth-recovery.js
 
 Secret Service 预检使用 Ubuntu 的 `busctl` 只读查询默认集合元数据，不读取或解锁秘密。嵌套沙箱失败时保存实际 AppArmor 策略和原始诊断；不要通过 privileged、unconfined 或关闭宿主策略来取得通过。
 
-AppArmor 启用的 Ubuntu Docker 宿主需先审阅 `containers/security/devdesk-harness-v1.apparmor`，再以管理员权限执行 `sudo ./scripts/install-linux-sandbox-policy.sh --install`；它只安装/加载 DevDesk 专用策略。安装后可用 `probe_nested_sandbox.py --apparmor-profile devdesk-harness-v1` 验证，不使用默认策略下的失败结果代替该实测。
+AppArmor 启用的 Ubuntu Docker 宿主需先审阅 `permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor`，再以管理员权限执行 `sudo ./scripts/install-linux-sandbox-policy.sh --install`；它只安装/加载 DevDesk 专用策略。安装后可用 `probe_nested_sandbox.py --apparmor-profile devdesk-harness-v1` 验证，不使用默认策略下的失败结果代替该实测。
 
 同一轮 full 因真实阶段失败退出后，先用领域命令显式新建修正 Attempt 或执行合法技术重试，再以原参数加 `--resume` 续跑。入口会将此前报告原字节存入 `history/`，为新执行使用独立日志，校验复用成功步骤的日志哈希，并重新执行最终事实检查。`--resume` 不能改变数据集、仓库、providers/groups，也不能把失败阶段自动计为通过；新的独立验收轮次仍使用新报告目录。

@@ -26,7 +26,7 @@ def review(mid,provider):
  v=ready(mid);m=next(x for x in v['merges'] if x['id']==mid)
  if m['status'] in ['accepted','completed']:return v
  d=next(x for x in v['deliveries'] if x.get('merge_id')==mid)
- existing=next((x for x in v['runs'] if x['node']=='review:'+d['id']),None);rid=existing['id'] if existing else c.command('review.request',d['id'],payload={'provider':provider})['id']
+ existing=next((x for x in c.latest_runs(v['runs']) if x['node']=='review:'+d['id']),None);rid=existing['id'] if existing else c.command('review.request',d['id'],payload={'provider':provider})['id']
  def done(v):
   x=next(x for x in v['runs'] if x['id']==rid)
   if x['status'] in ['failed','interrupted','cancelled']:raise AssertionError('review failed '+str(x['result']))
@@ -70,6 +70,6 @@ try:
  if not d:
   did=c.command('delivery.submit',aid,attempt['revision'])['id'];v=view();d=next(x for x in v['deliveries'] if x['id']==did)
  if d['id'] not in v['accepted_deliveries']:
-  existing=next((x for x in v['runs'] if x['node']=='review:'+d['id']),None);rid=existing['id'] if existing else c.command('review.request',d['id'],payload={'provider':'codex'})['id'];v=c.wait(view,lambda v:next(x for x in v['runs'] if x['id']==rid)['status'] in ['succeeded','failed','cancelled','interrupted'],400);assert d['id'] in v['accepted_deliveries'],'closure Reviewer requested changes'
+  existing=next((x for x in c.latest_runs(v['runs']) if x['node']=='review:'+d['id']),None);rid=existing['id'] if existing else c.command('review.request',d['id'],payload={'provider':'codex'})['id'];v=c.wait(view,lambda v:next(x for x in v['runs'] if x['id']==rid)['status'] in ['succeeded','failed','cancelled','interrupted'],400);assert d['id'] in v['accepted_deliveries'],'closure Reviewer requested changes'
  r['closure_delivery']=d['id'];request('mainline',fid,'codex');apply('mainline');v=view();assert v['feature']['status']=='completed';r['final_snapshots']=[s['id'] for s in v['snapshots'] if s['kind'] in ['final','merged']];assert r['final_snapshots'];r['passed']=True;r.pop('failure',None);r.pop('failure_type',None);save('finished')
 except Exception as e:r['failure_type']=type(e).__name__;r['failure']=str(e);save('failed');raise

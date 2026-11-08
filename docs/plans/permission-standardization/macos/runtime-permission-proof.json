@@ -1,0 +1,197 @@
+{
+  "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "full_host_binary_sha256": "cd74e9d368ecb88938a1ff8b676ca271b0c3c47fadd87bd2f5f50798b68992b9",
+  "release_binary_sha256": "28f12a21ca5717b10a232798b1c468e63ba8866a65d75973467fc6e12fa8b934",
+  "isolated_test_requests_checked": [
+    {
+      "operation": "550cceb5-c411-41ea-a698-c5f2e27be5da",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "red"
+    },
+    {
+      "operation": "0c4f791a-624b-4035-980c-098ea5cb5806",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "green"
+    },
+    {
+      "operation": "6cd18ce9-f231-4853-90be-7fa235e392fb",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "verify"
+    },
+    {
+      "operation": "dcf2290c-c397-4177-b044-82c7af915ab9",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "red"
+    },
+    {
+      "operation": "c767cfcb-c5e0-49fa-b293-23ab2273c3ec",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "green"
+    },
+    {
+      "operation": "c78b986b-56f0-4faa-a1c8-6a81202acbd9",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "verify"
+    },
+    {
+      "operation": "f284fe31-0183-4950-bd40-b7a91adc34d1",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "merge_verify"
+    },
+    {
+      "operation": "52980160-47d1-4a4f-b392-b1e18aa48661",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "merge_verify"
+    },
+    {
+      "operation": "9d56d309-e758-4676-87b2-3fb08dd2f2fd",
+      "harness": "node-test",
+      "sandbox_permission": {
+        "overrides": {
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "disabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "permission": {
+          "revision_id": "permission-isolated-tests-v1"
+        }
+      },
+      "phase": "merge_verify"
+    }
+  ],
+  "passed": true
+}

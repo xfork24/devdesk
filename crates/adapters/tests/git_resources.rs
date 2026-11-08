@@ -199,3 +199,40 @@ fn dirty_targets_and_foreign_contexts_are_rejected_without_modifying_refs() {
     wrong.workspace.path = "/tmp/foreign".into();
     assert!(a.candidate(&wrong, &base, &base, &id()).is_err());
 }
+
+#[test]
+fn interrupted_clone_rejects_foreign_origin_without_changing_repository() {
+    let root = tempfile::tempdir().unwrap();
+    let project = id();
+    let repo = root
+        .path()
+        .join("projects")
+        .join(&project)
+        .join("repository");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "--bare"]);
+    git(
+        &repo,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/foreign/repository.git",
+        ],
+    );
+    fs::write(repo.join("preserved.txt"), "existing repository").unwrap();
+    let adapter = CliGit::new(root.path()).unwrap();
+    let error = adapter
+        .clone_repository(&project, "owner/repository", "main", &id())
+        .unwrap_err();
+    assert!(error.message.contains("origin"));
+    assert_eq!(
+        git(&repo, &["remote", "get-url", "origin"]),
+        "https://github.com/foreign/repository.git"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join("preserved.txt")).unwrap(),
+        "existing repository"
+    );
+    assert!(git(&repo, &["for-each-ref"]).is_empty());
+}

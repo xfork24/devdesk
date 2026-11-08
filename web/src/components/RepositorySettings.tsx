@@ -1,177 +1,125 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 type Row = Record<string, any>;
+const operationLabels: Record<string, string> = {
+  prepared: "等待接入",
+  dispatched: "处理中",
+  observed: "正在确认结果",
+  completed: "已完成",
+  needs_reconciliation: "需要核对",
+};
 type Props = {
   project: Row;
   request: (method: string, params?: Row) => Promise<any>;
   refresh: () => Promise<void>;
 };
 export function RepositorySettings({ project, request, refresh }: Props) {
-  const [repository, setRepository] = useState(
-    project.workspace_definition?.repository || "",
-  );
-  const [branch, setBranch] = useState(
-    project.workspace_definition?.mainline || "main",
-  );
-  const [diagnosis, setDiagnosis] = useState<Row>();
   const [state, setState] = useState<Row>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const load = useCallback(async () => {
-    const value = await request("query.repository", { project_id: project.id });
-    setState(value);
-  }, [project.id, request]);
+  const repository = project.workspace_definition?.repository;
+  const connection = state?.operations.find((op: Row) => op.action.kind === "connect");
+  const connectionBlocked = connection?.status === "needs_reconciliation" && connection.reason !== "reconcile_requested";
   useEffect(() => {
     let active = true;
-    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout>;
     async function poll() {
-      if (inFlight) return;
-      inFlight = true;
       try {
         const value = await request("query.repository", {
           project_id: project.id,
         });
-        if (active) setState(value);
+        if (!active) return;
+        setState(value);
+        setError("");
+        if (
+          project.execution_mode !== "live" &&
+          value.operations.some(
+            (op: Row) =>
+              op.action.kind === "connect" && op.status === "completed",
+          )
+        )
+          await refresh();
       } catch (e) {
         if (active) setError(String(e));
       } finally {
-        inFlight = false;
+        if (active) timer = setTimeout(poll, 1500);
       }
     }
     void poll();
-    const timer = setInterval(poll, 1500);
     return () => {
       active = false;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
-  }, [project.id, request]);
-  async function action(work: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
-      await work();
-      await load();
-      await refresh();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  }, [project.id, project.execution_mode, request, refresh]);
   return (
-    <section className="panel">
+    <section className="panel" aria-label="GitHub 仓库状态">
       <div className="panel-heading">
         <div>
-          <h2>GitHub 仓库接入</h2>
-          <p className="muted">
-            使用独立项目登记仓库。宿主负责 Git/PR，Agent 容器仅访问所属
-            worktree。当前接入进度按操作回执显示。
-          </p>
+          <h2>GitHub 仓库</h2>
+          <p className="muted">打开项目时自动检查权限、登记并克隆仓库。</p>
         </div>
       </div>
       <div style={{ padding: 20 }}>
-        <label>
-          GitHub owner/repo
-          <input
-            aria-label="GitHub owner/repo"
-            value={repository}
-            onChange={(e) => {
-              setRepository(e.target.value);
-              setDiagnosis(undefined);
-            }}
-            disabled={project.execution_mode === "live"}
-          />
-        </label>
-        <label>
-          Mainline
-          <input
-            aria-label="GitHub Mainline"
-            value={branch}
-            onChange={(e) => {
-              setBranch(e.target.value);
-              setDiagnosis(undefined);
-            }}
-            disabled={project.execution_mode === "live"}
-          />
-        </label>
-        <div className="actions">
-          <button
-            disabled={busy || !repository}
-            onClick={() =>
-              action(async () => {
-                setDiagnosis(
-                  await request("github.diagnose", { repository, branch }),
-                );
-              })
-            }
+        <p>
+          <a
+            href={`https://github.com/${repository}`}
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            检查 GitHub 规则与权限
-          </button>
-          <button
-            disabled={
-              busy ||
-              !diagnosis?.compatible ||
-              project.execution_mode === "live" ||
-              state?.operations.some((op: Row) => op.action.kind === "connect")
-            }
-            onClick={() =>
-              action(async () => {
-                await request("repository.connect", {
-                  project_id: project.id,
-                  command_id: crypto.randomUUID(),
-                  target: project.id,
-                  expected_revision: project.revision,
-                  payload: { repository, mainline: branch },
-                });
-              })
-            }
-          >
-            登记并克隆仓库
-          </button>
-        </div>
-        {diagnosis && (
-          <div className={diagnosis.compatible ? "notice" : "error"}>
-            {diagnosis.compatible ? "本轮本地 CAS 策略可用" : "本轮策略不兼容"}{" "}
-            · {diagnosis.viewer_permission}
-            {diagnosis.blocked_reasons.map((reason: string) => (
-              <p key={reason}>{reason}</p>
-            ))}
-          </div>
-        )}
+            {repository}
+          </a>{" "}
+          · {project.workspace_definition?.mainline}
+        </p>
+        <p role="status">
+          {project.execution_mode === "live"
+            ? "仓库已接入"
+            : connectionBlocked ? "仓库接入未完成，请根据下方原因核对后重试" : "正在准备仓库，完成后即可开始工作"}
+        </p>
         {error && (
           <div className="error" role="alert">
             {error}
           </div>
         )}
-        {state?.operations.map((op: Row) => (
-          <div className="setting-row" key={op.id}>
-            <div>
-              <strong>
-                {op.action.kind} · {op.status}
-              </strong>
-              <p className="muted">
-                {op.id} · {op.reason}
-              </p>
+        {state?.operations
+          .filter(
+            (op: Row) =>
+              op.action.kind === "connect" || op.status !== "completed",
+          )
+          .map((op: Row) => (
+            <div className="setting-row" key={op.id}>
+              <div>
+                <strong>
+                  {op.action.kind === "connect" ? "仓库接入" : op.action.kind} ·{" "}
+                  {op.reason === "reconcile_requested" ? "等待后台核对" : operationLabels[op.status] || op.status}
+                </strong>
+                <p className="muted">{op.reason === "reconcile_requested" ? "已收到重试请求，后台将继续核对原仓库操作。" : op.reason}</p>
+              </div>
+              {op.status === "needs_reconciliation" && (
+                <button
+                  disabled={busy || op.reason === "reconcile_requested"}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      await request("repository.reconcile", {
+                        project_id: project.id,
+                        command_id: crypto.randomUUID(),
+                        target: op.id,
+                        expected_revision: op.revision,
+                        payload: {},
+                      });
+                      await refresh();
+                    } catch (e) {
+                      setError(String(e));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  核对并重试原操作
+                </button>
+              )}
             </div>
-            {op.status === "needs_reconciliation" && (
-              <button
-                disabled={busy}
-                onClick={() =>
-                  action(async () => {
-                    await request("repository.reconcile", {
-                      project_id: project.id,
-                      command_id: crypto.randomUUID(),
-                      target: op.id,
-                      expected_revision: op.revision,
-                      payload: {},
-                    });
-                  })
-                }
-              >
-                核对原操作
-              </button>
-            )}
-          </div>
-        ))}
+          ))}
         {state?.worktrees.map((w: Row) => (
           <div key={w.id}>
             <strong>

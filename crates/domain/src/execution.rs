@@ -8,6 +8,8 @@ pub struct Workspace {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Harness {
+    #[serde(default)]
+    pub permission: Option<PermissionBinding>,
     pub id: Id,
     pub provider: String,
     pub version: String,
@@ -16,6 +18,8 @@ pub struct Harness {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sandbox {
+    #[serde(default)]
+    pub permission: Option<PermissionBinding>,
     pub id: Id,
     pub provider: String,
     pub version: String,

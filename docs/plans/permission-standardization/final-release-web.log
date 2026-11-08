@@ -1,0 +1,13 @@
+
+Running 6 tests using 1 worker
+
+(node:79526) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/workbench.spec.ts:78:1 › 打开 GitHub 项目自动接入，完成前阻止工程操作，重载保留仓库 (3.2s)
+  ✓  2 tests/workbench.spec.ts:96:1 › 仓库输入错误保留表单，失败接入可核对重试 (2.4s)
+  ✓  3 tests/workbench.spec.ts:118:1 › 未登记安装也可分配 Harness，显示自动准备及失败原因 (3.7s)
+  ✓  4 tests/workbench.spec.ts:142:1 › 后端保留的模拟项目不进入 Web 项目列表和工程内容 (452ms)
+  ✓  5 tests/workbench.spec.ts:155:1 › 真实接入设置偏好、密钥表单与浏览器 OAuth 链接 (939ms)
+  ✓  6 tests/workbench.spec.ts:264:1 › Permission 原生配置预检、修订与重载保持绑定 (894ms)
+
+  6 passed (13.2s)

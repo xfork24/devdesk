@@ -242,6 +242,10 @@ impl Engine {
                 _ => return Err(err("unsupported", "讨论执行缺少固定镜像")),
             };
             let execution = RuntimeExecution {
+                permissions: session
+                    .runtime_binding
+                    .as_ref()
+                    .and_then(|b| b.permissions.clone()),
                 kind: RuntimeExecutionKind::Harness,
                 id: id(),
                 session_id: session.id.clone(),

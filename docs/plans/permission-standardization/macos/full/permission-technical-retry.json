@@ -1,0 +1,21 @@
+{
+  "failed_run": "7c125ea8-657b-4d5f-8db3-9dfa3611273a",
+  "new_run": "d2902148-c03c-48f0-ba97-11fb61416b6d",
+  "reason": "Actual DSH answer contained prose before JSON. Strict output contract rejected it; unsealed output prevented an immediate retry. Preserved the sole owned untracked module in a path-scoped Git stash before explicit retry.",
+  "preserved_file": "src/live-22459b4106-multiply.mjs",
+  "sha256": "933693d08772049fe2b63a62dfc662d75128cb8c242fa25e77ebd49d9795a868",
+  "stash_commit": "b424663fa6e0b6d2500e4293b49712350ed24ced",
+  "original_binding_retained": true,
+  "review_retry": {
+    "failed_run": "cccac285-afd5-4fd8-9bf4-627235a79ae1",
+    "new_run": "51d5f5b2-c7ed-4962-a118-46774ffc7098",
+    "original_binding_retained": true
+  },
+  "independent_review_fallback": {
+    "new_run": "409a9f0d-78e3-48a7-99cf-7e877c2dfb54",
+    "provider": "codex",
+    "reason": "Both actual DSH review attempts produced prose-prefixed JSON and were rejected; a fresh independent Codex reviewer evaluates the same frozen delivery. No failed review is relabeled."
+  },
+  "binding_digest": "92215d61fce34dd5d31b91e18fb4d2b1bcf22246aae64146085536ec24d91d25",
+  "failed_history_preserved": true
+}

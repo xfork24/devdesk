@@ -2,6 +2,10 @@
 
 macOS 与 Linux 使用相同 Web/Rust 工程接口；没有依赖 macOS 原生客户端。秘密不写入 SQLite、命令参数、报告或浏览器持久存储；工程库只保存数据集范围的不透明引用。
 
+## Permission 与凭据信任范围
+
+默认 `container-full-access` 将整个 Harness 容器视为信任范围，同容器工具可以访问该执行的模型凭据和运行状态。宿主系统凭据库、其他项目和未挂载路径仍在容器外。Permission 审批与操作系统凭据授权分开：选择 `never` 不会授予 Keychain 或 Secret Service 权限。受限后端的状态隔离必须由实际执行器落实，能力和假凭据验证见 [权限后端](../permissions/README.md) 与 [执行报告](plans/permission-standardization/EXECUTION.md)。
+
 ## macOS：固定凭据助手
 
 macOS 对本地自签名程序的 Keychain 分区使用构建的 cdhash。实际试验表明：固定证书和 designated requirement 后，重新构建 Host 仍可能失去访问权；新建测试条目也会复现。原因见 Apple 的 [client identity 实现](https://github.com/apple-oss-distributions/Security/blob/main/securityd/src/clientid.cpp)。因此仅固定 Host 签名不能作为完成修复的证据。

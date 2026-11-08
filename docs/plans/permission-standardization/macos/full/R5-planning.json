@@ -1,0 +1,68 @@
+{
+  "project_id": "3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb",
+  "feature_id": "b8da10f4-777f-46cc-8188-8cd7d76cfe50",
+  "proposals": {
+    "requirement": {
+      "id": "5a3d6f23-134f-40e3-b8b9-e7d8993e5895",
+      "document": "406cf026-cfad-4f87-a2d2-46b8e5cb2a47",
+      "session": "a76486c3-4938-4a5f-9a37-27290a7d2af7",
+      "turn": "72b86c97-5c55-4692-9958-f9693093e79a"
+    },
+    "design": {
+      "id": "cb4ab2ac-ace5-479a-9190-b9141ca83e26",
+      "document": "37af5c93-c233-4354-be61-475cd5794da9",
+      "session": "f7ea3a18-2387-4699-b1f0-696e5d835202",
+      "turn": "44b099c6-708d-45db-b7b8-1084973117ba"
+    },
+    "task_plan": {
+      "id": "fb071fe5-e41b-49a5-a249-61a447191233",
+      "document": "8712d702-1173-4d17-86d6-92484e57e137",
+      "session": "f7ea3a18-2387-4699-b1f0-696e5d835202",
+      "turn": "e6b4c2da-6168-441d-b47c-a1034d1e511b"
+    },
+    "test_plan": {
+      "id": "8aaa2f3f-111c-412a-84aa-0ebe373d58af",
+      "document": "45c41731-e4dd-4a6e-8d0c-5ca4c88dedee",
+      "session": "c75f3da2-9055-4fff-9417-f6eeff16a212",
+      "turn": "2d907459-bec4-4a1f-ab08-c7e3fa1883fe"
+    }
+  },
+  "passed": true,
+  "case_prefix": "live-22459b4106-",
+  "stage": "finished",
+  "test_image": {
+    "installation_id": "56e655a7-13df-4dfd-8ef0-7f04eca47ead",
+    "image": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+    "source": "frozen design Session"
+  },
+  "attempt": "f14b50a4-ddaa-4274-ba10-030b13c95048",
+  "requirement_delivery": "92353b7d-63e4-47dd-a0ca-0f2796352893",
+  "plan_delivery": "34fe36c6-dd90-4b02-8ff4-7ab891d2e9ef",
+  "tasks": {
+    "add": "c5143334-ff9b-490a-bd13-15523c20550d",
+    "multiply": "3e2443b1-9ff7-4903-bb52-98c83626178c"
+  },
+  "worktrees": [
+    {
+      "base": "fb6ab2925db3669bf75b2d56ce0696ca0a97da76",
+      "branch": "devdesk/tasks/3e2443b1-9ff7-4903-bb52-98c83626178c",
+      "id": "3e2443b1-9ff7-4903-bb52-98c83626178c",
+      "kind": "task",
+      "operation_id": "405b85ca-e43b-4bc2-a4f7-44ff1c4753d3",
+      "owner_id": "3e2443b1-9ff7-4903-bb52-98c83626178c",
+      "path": "/Users/hengliu/workspace/devdesk/data/real-integration/projects/3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb/execution/worktrees/tasks/3e2443b1-9ff7-4903-bb52-98c83626178c",
+      "project_id": "3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb"
+    },
+    {
+      "base": "fb6ab2925db3669bf75b2d56ce0696ca0a97da76",
+      "branch": "devdesk/tasks/c5143334-ff9b-490a-bd13-15523c20550d",
+      "id": "c5143334-ff9b-490a-bd13-15523c20550d",
+      "kind": "task",
+      "operation_id": "4bd91a16-c44f-45fe-84d9-b063ad637acb",
+      "owner_id": "c5143334-ff9b-490a-bd13-15523c20550d",
+      "path": "/Users/hengliu/workspace/devdesk/data/real-integration/projects/3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb/execution/worktrees/tasks/c5143334-ff9b-490a-bd13-15523c20550d",
+      "project_id": "3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb"
+    }
+  ],
+  "initial_snapshot": "621dbd9e-72a6-4402-a7fa-1bc13905139d"
+}

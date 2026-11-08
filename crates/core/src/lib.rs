@@ -5,6 +5,7 @@ mod conversations;
 mod effects;
 mod live_merges;
 mod live_runs;
+mod permissions;
 pub mod ports;
 mod proposals;
 mod repositories;
@@ -267,8 +268,22 @@ fn git_context(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Result<Git
 }
 /// Seed shared configuration without creating project or execution facts.
 pub fn seed_configuration(s: &mut EngineeringState) {
+    for body in [
+        include_str!("../../../permissions/presets/container-full-access.json"),
+        include_str!("../../../permissions/presets/read-only.json"),
+        include_str!("../../../permissions/presets/task-implementation.json"),
+        include_str!("../../../permissions/presets/test-author.json"),
+        include_str!("../../../permissions/presets/isolated-tests.json"),
+        include_str!("../../../permissions/presets/legacy-restricted-v1.json"),
+    ] {
+        let p: Permission = serde_json::from_str(body).expect("embedded Permission preset");
+        if !s.permissions.iter().any(|old| old.id == p.id) {
+            s.permissions.push(p);
+        }
+    }
     if s.harnesses.is_empty() {
         s.harnesses.push(Harness {
+            permission: None,
             id: "sim-harness-v1".into(),
             provider: "simulation".into(),
             version: "1".into(),
@@ -278,6 +293,7 @@ pub fn seed_configuration(s: &mut EngineeringState) {
     }
     if s.sandboxes.is_empty() {
         s.sandboxes.push(Sandbox {
+            permission: None,
             id: "sim-sandbox-v1".into(),
             provider: "simulation".into(),
             version: "1".into(),
@@ -429,6 +445,7 @@ pub fn seed_configuration(s: &mut EngineeringState) {
                 slots: vec![],
                 rules: vec![],
                 agent_profile: Some(AgentProfile {
+                    permission_overrides: None,
                     role,
                     skill_revisions: vec![],
                     tool_policy,
@@ -709,6 +726,9 @@ impl Engine {
         }
         let target = c.target.as_deref().unwrap_or("");
         let p = &c.payload;
+        if let Some(result) = self.permission_command(method, c, s) {
+            return result;
+        }
         if let Some(result) = self.repository_command(method, c, s)? {
             event(s, target, method, &format!("command_id={}", c.command_id));
             return Ok(result);
@@ -871,6 +891,7 @@ impl Engine {
                 let title = text(p, "title")?;
                 let b = binding(s);
                 s.projects.push(Project {
+                    permission_overrides: None,
                     runtime_preferences: None,
                     id: pid.clone(),
                     title,
@@ -906,6 +927,10 @@ impl Engine {
                     .ok_or_else(|| err("not_found", "Project 不存在"))?;
                 if let Some(title) = opt(p, "title") {
                     project.title = title;
+                }
+                if let Some(value) = p.get("permission_overrides") {
+                    project.permission_overrides = serde_json::from_value(value.clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?;
                 }
                 if let Some(value) = p.get("runtime_preferences") {
                     let preferences: Option<ProjectRuntimePreferences> =

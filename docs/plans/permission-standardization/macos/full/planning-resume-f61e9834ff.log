@@ -1,0 +1,10 @@
+discussion_requirement
+adopted_requirement
+discussion_design
+adopted_design
+failed
+Traceback (most recent call last):
+  File "/Users/hengliu/workspace/devdesk/tests/live/probe_planning.py", line 27, in <module>
+    installs=c.rpc('query.runtime_installations')['installations'];images=[i['artifact']['image_id'] for i in installs if i['key']['provider']=='codex' and i['key']['os']=='linux' and 'image_id' in i['artifact']];assert len(images)==1,'test image must be explicit and unique';image=images[0]
+                                                                                                                                                                                                                            ^^^^^^^^^^^^^^
+AssertionError: test image must be explicit and unique

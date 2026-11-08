@@ -1,0 +1,16 @@
+   Compiling devdesk-adapters v0.2.0 (/Users/hengliu/workspace/devdesk/crates/adapters)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.56s
+     Running tests/permissions.rs (target/debug/deps/permissions-7a8e82d5d942477f)
+
+running 8 tests
+test codex_compiled_profile_allows_scoped_writes_and_denies_other_worktree_writes ... ok
+test dsh_rejects_scoped_writes_that_its_native_workspace_grant_would_broaden ... ok
+test dsh_restricted_native_executor_hides_state_environment_and_tool_network ... ok
+test fresh_and_upgraded_global_defaults_are_distinct_and_bindings_are_cas_idempotent ... ok
+test full_access_container_writes_and_exposes_only_its_declared_trust_scope ... ok
+test legacy_codex_keeps_the_original_root_and_state_read_denials ... ok
+test native_defaults_and_explicit_network_restrictions_have_real_enforcement_owners ... ok
+test permission_revisions_round_trip_and_reject_storage_rewrites ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.84s
+

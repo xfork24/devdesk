@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "source": "real Chromium + DevDesk host + managed DSH",
+  "project_id": "3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb",
+  "session_id": "2693f694-0d6c-46b1-8ae3-70a43cab0bc1",
+  "requirement_id": "b639804a-c3d9-4b46-85e3-0985a15660b9",
+  "acceptance_keys": [
+    "AC-ADD",
+    "AC-MUL"
+  ],
+  "no_fabricated_feature": true
+}

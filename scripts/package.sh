@@ -11,6 +11,8 @@ cp target/release/devdesk-host "$staging/$package_name/"
 cp docs/run-binary.md "$staging/$package_name/README.md"
 cp -R docs "$staging/$package_name/"
 cp -R containers "$staging/$package_name/"
+cp -R permissions "$staging/$package_name/"
+cp -R schemas "$staging/$package_name/"
 if [ "$(uname -s)" = Linux ]; then
   mkdir -p "$staging/$package_name/scripts"
   cp scripts/install-linux-sandbox-policy.sh "$staging/$package_name/scripts/"

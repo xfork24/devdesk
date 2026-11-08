@@ -1,3 +1,5 @@
+mod permission;
+pub use permission::*;
 mod testing;
 pub use testing::*;
 mod repository;
@@ -119,6 +121,8 @@ pub struct Check {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
+    #[serde(default)]
+    pub permission_overrides: Option<PermissionOverrides>,
     pub id: Id,
     pub title: String,
     pub workspace: String,
@@ -396,6 +400,8 @@ pub struct Event {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EngineeringState {
+    #[serde(default)]
+    pub permissions: Vec<Permission>,
     #[serde(default)]
     pub turns: Vec<ConversationTurn>,
     #[serde(default)]

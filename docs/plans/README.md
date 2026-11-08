@@ -11,7 +11,8 @@
 | [真实工程接入](real-engineering-integration/PLAN.md) | [R0–R8 最终验收](real-engineering-integration/R8-acceptance.md)及同目录证据 | macOS Web 真实闭环通过 |
 | [Web 平台与系统凭据](web-platform-and-credentials/PLAN.md) | [补充验收](web-platform-and-credentials/web-platform-and-credentials.md)及同目录证据 | macOS/Linux 系统凭据、Ubuntu 双 Harness Web 闭环与发布包通过 |
 | [Ubuntu Web 验收](ubuntu-web-acceptance/PLAN.md) | [Ubuntu 本轮报告](ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)及独立运行证据 | U0–U6 通过；真实 PR、恢复、发布包与批准的命名策略均有实机证据 |
-| [Permission 领域模型与权限标准化](permission-standardization/PLAN.md) | 实施报告与验收证据归入同目录 | 待实施；覆盖 Harness/Sandbox 权限、原生配置、DSH/Docker 策略资产、迁移与 Web |
+| [Permission 领域模型与权限标准化](permission-standardization/PLAN.md) | [执行报告](permission-standardization/EXECUTION.md)及同目录证据 | macOS 开发、真实闭环、权限覆盖/恢复及发布包验收通过；Ubuntu 按用户要求顺延 |
+| [Workflow 领域与工程工作台调整](workflow-and-workbench/PLAN.md) | 实施后记录在同目录 | 待实施；Scope 与配置版本、Project 动态绑定及 Feature 冻结、工作流驱动、Agent 经验和前端工作台 |
 
 ## 历史证据的路径
 

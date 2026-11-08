@@ -1,0 +1,476 @@
+{
+  "passed": true,
+  "platform": "macOS",
+  "original_project": "3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb",
+  "providers": [
+    {
+      "provider": "codex",
+      "session_id": "d72b4c93-0967-463d-8d37-6ad01f24a209",
+      "turn_id": "ac2e6ef4-a200-4984-9f20-83d865279d31",
+      "configuration_digest": "e5aabd060319f0fd55e1fdbd4c4b863d6972e2ed39b6e105bc6670c3b611f650",
+      "permissions": {
+        "approval": "never",
+        "enforcement": {
+          "asset_digests": {
+            "docker/apparmor/devdesk-harness-v1.apparmor": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
+            "docker/seccomp/nested-v1.json": "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120",
+            "dsh/bwrap-runner.sh": "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766",
+            "dsh/tool-policy.mjs": "4c48542d79d40af4c7716110c7f3384c0daef675d68a4d38510ebea6fe0b8515"
+          },
+          "compiler_version": "permission-compiler/v1",
+          "harness_backend": "codex-native-v1",
+          "native_options": {
+            "approval_policy": "never",
+            "profile": "devdesk",
+            "provider": "codex",
+            "sandbox_mode": "externalSandbox",
+            "version": "0.167.0"
+          },
+          "rules": {
+            "execution_scope": "coordinator-and-docker-mounts",
+            "harness.filesystem": "provider-native",
+            "harness.network": "provider-native-or-confined-runner",
+            "sandbox.filesystem": "docker-mounts-and-user",
+            "sandbox.network": "docker-network"
+          },
+          "sandbox_backend": "docker-default-v1"
+        },
+        "harness": {
+          "policy": {
+            "filesystem": {
+              "mode": "full_access"
+            },
+            "network": {
+              "mode": "enabled"
+            },
+            "tools": {
+              "mode": "all_available"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1"
+          ]
+        },
+        "isolation": {
+          "backend": "docker-default-v1",
+          "credential_boundary": "container-trust",
+          "executable_tmp": true,
+          "nested_sandbox": false,
+          "protected_metadata": [
+            ".git",
+            ".codex",
+            ".agents"
+          ],
+          "read_only_root": false
+        },
+        "limits": {
+          "cpus": 2,
+          "memory_mb": 1024,
+          "pids": 256,
+          "tmp_mb": 128
+        },
+        "sandbox": {
+          "policy": {
+            "filesystem": {
+              "mode": "full_access"
+            },
+            "network": {
+              "mode": "enabled"
+            },
+            "tools": {
+              "mode": "all_available"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1"
+          ]
+        },
+        "scope": {
+          "read_only_paths": [],
+          "work_type": "discussion",
+          "writable_paths": []
+        }
+      },
+      "canary_received": true,
+      "executions": [
+        {
+          "id": "59b0d0be-b0a8-41fd-acf2-b6a3a19f839c",
+          "container_id": "a1f73ac2999dbb920ad113ecc57c88cff4a96bd20f3f61e22134d3c1148c69ae",
+          "image_digest": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+          "status": "released"
+        }
+      ]
+    },
+    {
+      "provider": "dsh",
+      "session_id": "56a2cc29-9a4e-4ab2-a319-668acdad333e",
+      "turn_id": "a5b8c393-35fe-4889-a837-1177ed9a4fae",
+      "configuration_digest": "af0d07cadc94752671ffc306a17830c576708b8ef764a219bffd784e39aa6f58",
+      "permissions": {
+        "approval": "never",
+        "enforcement": {
+          "asset_digests": {
+            "docker/apparmor/devdesk-harness-v1.apparmor": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
+            "docker/seccomp/nested-v1.json": "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120",
+            "dsh/bwrap-runner.sh": "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766",
+            "dsh/tool-policy.mjs": "4c48542d79d40af4c7716110c7f3384c0daef675d68a4d38510ebea6fe0b8515"
+          },
+          "compiler_version": "permission-compiler/v1",
+          "harness_backend": "dsh-native-v1",
+          "native_options": {
+            "approval_policy": "never",
+            "profile": "devdesk",
+            "provider": "dsh",
+            "sandbox_mode": "danger-full-access",
+            "version": "0.2.2-rc.1"
+          },
+          "rules": {
+            "execution_scope": "coordinator-and-docker-mounts",
+            "harness.filesystem": "provider-native",
+            "harness.network": "provider-native-or-confined-runner",
+            "sandbox.filesystem": "docker-mounts-and-user",
+            "sandbox.network": "docker-network"
+          },
+          "sandbox_backend": "docker-default-v1"
+        },
+        "harness": {
+          "policy": {
+            "filesystem": {
+              "mode": "full_access"
+            },
+            "network": {
+              "mode": "enabled"
+            },
+            "tools": {
+              "mode": "all_available"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1"
+          ]
+        },
+        "isolation": {
+          "backend": "docker-default-v1",
+          "credential_boundary": "container-trust",
+          "executable_tmp": true,
+          "nested_sandbox": false,
+          "protected_metadata": [
+            ".git",
+            ".codex",
+            ".agents"
+          ],
+          "read_only_root": false
+        },
+        "limits": {
+          "cpus": 2,
+          "memory_mb": 1024,
+          "pids": 256,
+          "tmp_mb": 128
+        },
+        "sandbox": {
+          "policy": {
+            "filesystem": {
+              "mode": "full_access"
+            },
+            "network": {
+              "mode": "enabled"
+            },
+            "tools": {
+              "mode": "all_available"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1"
+          ]
+        },
+        "scope": {
+          "read_only_paths": [],
+          "work_type": "discussion",
+          "writable_paths": []
+        }
+      },
+      "canary_received": true,
+      "executions": [
+        {
+          "id": "4d182fb6-0b2e-4f2f-b308-094b94dbecab",
+          "container_id": "6240087ec8a51af952242246526133774f1502b8d927cf0a6975052ad368623f",
+          "image_digest": "sha256:0f15dc59cc94788fea2bb4b529b2aff97bf42e2e17b7b3bb97c00fa7ff80633f",
+          "status": "released"
+        }
+      ]
+    }
+  ],
+  "started": 1794155054.048415,
+  "previous_configuration": {
+    "approval": "never",
+    "harnesses": {
+      "codex": {
+        "permission": {
+          "revision_id": "permission-container-full-access-v1"
+        },
+        "overrides": {}
+      },
+      "dsh": {
+        "permission": {
+          "revision_id": "permission-container-full-access-v1"
+        },
+        "overrides": {}
+      }
+    },
+    "revision": 4,
+    "sandbox": {
+      "permission": {
+        "revision_id": "permission-container-full-access-v1"
+      },
+      "overrides": {}
+    }
+  },
+  "configuration": {
+    "approval": "never",
+    "harnesses": {
+      "codex": {
+        "overrides": {},
+        "permission": {
+          "revision_id": "permission-container-full-access-v1"
+        }
+      },
+      "dsh": {
+        "overrides": {},
+        "permission": {
+          "revision_id": "permission-container-full-access-v1"
+        }
+      }
+    },
+    "revision": 5,
+    "sandbox": {
+      "overrides": {},
+      "permission": {
+        "revision_id": "permission-container-full-access-v1"
+      }
+    }
+  },
+  "project_id": "be013da9-bed6-4b4a-b0e0-1eb9b1000e97",
+  "current_session_id": "56a2cc29-9a4e-4ab2-a319-668acdad333e",
+  "current_turn_id": "a5b8c393-35fe-4889-a837-1177ed9a4fae",
+  "restricted_providers": [
+    {
+      "provider": "codex",
+      "session_id": "3bee1f07-f99c-43f7-8306-5699ad99f33c",
+      "turn_id": "a75cbef3-04c9-4cd7-ae75-3790933e7767",
+      "write_denied": true,
+      "tool_network_denied": true,
+      "model_transport_succeeded": true,
+      "permissions": {
+        "approval": "never",
+        "enforcement": {
+          "asset_digests": {
+            "docker/apparmor/devdesk-harness-v1.apparmor": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
+            "docker/seccomp/nested-v1.json": "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120",
+            "dsh/bwrap-runner.sh": "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766",
+            "dsh/tool-policy.mjs": "4c48542d79d40af4c7716110c7f3384c0daef675d68a4d38510ebea6fe0b8515"
+          },
+          "compiler_version": "permission-compiler/v1",
+          "harness_backend": "codex-native-v1",
+          "native_options": {
+            "approval_policy": "never",
+            "profile": "devdesk",
+            "provider": "codex",
+            "sandbox_mode": "namedProfile",
+            "version": "0.167.0"
+          },
+          "rules": {
+            "execution_scope": "coordinator-and-docker-mounts",
+            "harness.filesystem": "provider-native",
+            "harness.network": "provider-native-or-confined-runner",
+            "sandbox.filesystem": "docker-mounts-and-user",
+            "sandbox.network": "docker-network"
+          },
+          "sandbox_backend": "docker-nested-v1"
+        },
+        "harness": {
+          "policy": {
+            "filesystem": {
+              "mode": "read_only"
+            },
+            "network": {
+              "mode": "disabled"
+            },
+            "tools": {
+              "mode": "all_available"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1",
+            "execution:filesystem",
+            "execution:network"
+          ]
+        },
+        "isolation": {
+          "backend": "docker-nested-v1",
+          "credential_boundary": "container-trust",
+          "executable_tmp": true,
+          "nested_sandbox": true,
+          "protected_metadata": [
+            ".git",
+            ".codex",
+            ".agents"
+          ],
+          "read_only_root": false
+        },
+        "limits": {
+          "cpus": 2,
+          "memory_mb": 1024,
+          "pids": 256,
+          "tmp_mb": 128
+        },
+        "sandbox": {
+          "policy": {
+            "filesystem": {
+              "mode": "full_access"
+            },
+            "network": {
+              "mode": "enabled"
+            },
+            "tools": {
+              "mode": "all_available"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1"
+          ]
+        },
+        "scope": {
+          "read_only_paths": [],
+          "work_type": "discussion",
+          "writable_paths": []
+        }
+      }
+    },
+    {
+      "provider": "dsh",
+      "session_id": "1a375dc5-c11b-48e0-befd-10f2cdaf5194",
+      "turn_id": "5f772344-82e9-4728-a627-3c5f68e0afd1",
+      "write_denied": true,
+      "tool_network_denied": true,
+      "model_transport_succeeded": true,
+      "permissions": {
+        "approval": "never",
+        "enforcement": {
+          "asset_digests": {
+            "docker/apparmor/devdesk-harness-v1.apparmor": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c",
+            "docker/seccomp/nested-v1.json": "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120",
+            "dsh/bwrap-runner.sh": "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766",
+            "dsh/tool-policy.mjs": "4c48542d79d40af4c7716110c7f3384c0daef675d68a4d38510ebea6fe0b8515"
+          },
+          "compiler_version": "permission-compiler/v1",
+          "harness_backend": "dsh-native-v1",
+          "native_options": {
+            "approval_policy": "never",
+            "profile": "devdesk",
+            "provider": "dsh",
+            "sandbox_mode": "read-only",
+            "version": "0.2.2-rc.1"
+          },
+          "rules": {
+            "execution_scope": "coordinator-and-docker-mounts",
+            "harness.filesystem": "provider-native",
+            "harness.network": "provider-native-or-confined-runner",
+            "sandbox.filesystem": "docker-mounts-and-user",
+            "sandbox.network": "docker-network"
+          },
+          "sandbox_backend": "docker-nested-v1"
+        },
+        "harness": {
+          "policy": {
+            "filesystem": {
+              "mode": "read_only"
+            },
+            "network": {
+              "mode": "disabled"
+            },
+            "tools": {
+              "allow": [
+                "ask_user_question",
+                "bash"
+              ],
+              "deny": [],
+              "mode": "restricted"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1",
+            "execution:filesystem",
+            "execution:network",
+            "execution:tools"
+          ]
+        },
+        "isolation": {
+          "backend": "docker-nested-v1",
+          "credential_boundary": "container-trust",
+          "executable_tmp": true,
+          "nested_sandbox": true,
+          "protected_metadata": [
+            ".git",
+            ".codex",
+            ".agents"
+          ],
+          "read_only_root": false
+        },
+        "limits": {
+          "cpus": 2,
+          "memory_mb": 1024,
+          "pids": 256,
+          "tmp_mb": 128
+        },
+        "sandbox": {
+          "policy": {
+            "filesystem": {
+              "mode": "full_access"
+            },
+            "network": {
+              "mode": "enabled"
+            },
+            "tools": {
+              "mode": "all_available"
+            }
+          },
+          "reference": {
+            "revision_id": "permission-container-full-access-v1"
+          },
+          "sources": [
+            "binding:permission-container-full-access-v1"
+          ]
+        },
+        "scope": {
+          "read_only_paths": [],
+          "work_type": "discussion",
+          "writable_paths": []
+        }
+      }
+    }
+  ],
+  "finished": 1794155134.305291,
+  "host_binary": "target/release/devdesk-host",
+  "host_binary_sha256": "28f12a21ca5717b10a232798b1c468e63ba8866a65d75973467fc6e12fa8b934"
+}

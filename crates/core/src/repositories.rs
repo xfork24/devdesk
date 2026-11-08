@@ -353,7 +353,12 @@ impl Engine {
                             .find(|op| op.id == operation.id)
                             .unwrap();
                         op.status = RepositoryOperationStatus::NeedsReconciliation;
-                        op.reason = error.code.clone();
+                        op.reason = if matches!(operation.action, RepositoryAction::Connect { .. })
+                        {
+                            format!("{} · {}", error.code, error.message)
+                        } else {
+                            error.code.clone()
+                        };
                         op.revision += 1;
                         event(
                             s,

@@ -25,10 +25,6 @@ export function RuntimeSettings({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [login, setLogin] = useState<{ loginId: string; authUrl: string }>();
-  const nativeCodex = installations.find(
-    (runtime) =>
-      runtime.key.provider === "codex" && runtime.artifact.canonical_path,
-  );
   useEffect(() => {
     let active = true;
     request("credentials.status")
@@ -67,7 +63,7 @@ export function RuntimeSettings({
         <div>
           <h3>默认 Agent Harness</h3>
           <p className="muted">
-            后续真实会话的偏好；已有执行继续使用冻结绑定。安装登记与真实调用验收分别记录。
+            分配任务或开始讨论时自动准备所选 Harness。已有执行继续使用冻结绑定。
           </p>
         </div>
         <select
@@ -97,31 +93,12 @@ export function RuntimeSettings({
         <div>
           <h3>Codex · ChatGPT OAuth</h3>
           <p className="muted">
-            通过官方网页授权；本机认证使用独立凭据目录。容器会话的登录能力单独核验。
+            登录组件由 DevDesk 自动准备，通过官方网页授权；登录信息保存在此数据集的独立目录。
           </p>
           <div className="actions">
             <button
               disabled={busy}
               onClick={async () => {
-                setBusy(true);
-                setMessage("正在校验本机 Codex 安装…");
-                try {
-                  await request("runtime.discover_codex");
-                  await refresh();
-                  setMessage("已登记本机 Codex 安装");
-                } catch {
-                  setMessage("未找到可校验的本机 Codex 安装");
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              登记本机 Codex
-            </button>
-            <button
-              disabled={busy || !nativeCodex}
-              onClick={async () => {
-                if (!nativeCodex) return;
                 // Open during the click so browsers permit navigation after the asynchronous RPC.
                 let authorizationWindow: Window | null = null;
                 try {
@@ -131,11 +108,10 @@ export function RuntimeSettings({
                   // The official link below also works when popups are blocked.
                 }
                 setBusy(true);
-                setMessage("正在请求官方授权地址…");
+                setMessage("正在准备登录组件并请求官方授权地址…");
                 try {
-                  const result = await request("codex.auth.start", {
-                    installation_id: nativeCodex.id,
-                  });
+                  const result = await request("codex.auth.start");
+                  await refresh();
                   const url = new URL(result.authUrl);
                   if (
                     url.protocol !== "https:" ||
@@ -166,14 +142,12 @@ export function RuntimeSettings({
               网页登录
             </button>
             <button
-              disabled={busy || !nativeCodex}
+              disabled={busy}
               onClick={async () => {
-                if (!nativeCodex) return;
                 setBusy(true);
                 try {
-                  const result = await request("codex.auth.status", {
-                    installation_id: nativeCodex.id,
-                  });
+                  const result = await request("codex.auth.status");
+                  await refresh();
                   setMessage(
                     result.authenticated
                       ? "Codex OAuth 已登录"
@@ -181,7 +155,7 @@ export function RuntimeSettings({
                   );
                   if (result.authenticated) setLogin(undefined);
                 } catch {
-                  setMessage("无法核对 Codex 登录状态");
+                  setMessage("无法核对登录状态，请检查运行环境或稍后重试");
                 } finally {
                   setBusy(false);
                 }
@@ -191,13 +165,11 @@ export function RuntimeSettings({
             </button>
             {login && (
               <button
-                disabled={busy || !nativeCodex}
+                disabled={busy}
                 onClick={async () => {
-                  if (!nativeCodex) return;
-                  setBusy(true);
+                    setBusy(true);
                   try {
                     await request("codex.auth.cancel", {
-                      installation_id: nativeCodex.id,
                       login_id: login.loginId,
                     });
                     setLogin(undefined);
@@ -262,9 +234,9 @@ export function RuntimeSettings({
       <div className="setting-row">
         <div>
           <h3>共享运行时安装</h3>
-          <div className="actions">{(["codex","dsh"] as const).map(provider=><button key={provider} disabled={busy} onClick={async()=>{setBusy(true);try{await request("runtime.discover_docker",{provider});await refresh();setMessage("已登记固定 Linux 镜像");}catch{setMessage("未找到兼容镜像；请先按接入文档构建运行时");}finally{setBusy(false);}}}>登记 {provider=== "codex"?"Codex":"DSH"} Linux 镜像</button>)}</div>
+          <p className="muted">运行时由 DevDesk 按需下载、构建并复用，无需手动登记。</p>
           {installations.length === 0 ? (
-            <p className="muted">尚未登记安装</p>
+            <p className="muted">尚未使用 Harness；首次执行时自动准备</p>
           ) : (
             installations.map((runtime) => (
               <p key={runtime.id}>

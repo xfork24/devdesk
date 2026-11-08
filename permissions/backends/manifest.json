@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "backends": [
+    {
+      "id": "docker-default-v1",
+      "provider": "docker",
+      "platforms": [
+        "linux/aarch64",
+        "linux/x86_64"
+      ],
+      "nested_sandbox": false,
+      "assets": []
+    },
+    {
+      "id": "docker-nested-v1",
+      "provider": "docker",
+      "platforms": [
+        "linux/aarch64",
+        "linux/x86_64"
+      ],
+      "nested_sandbox": true,
+      "assets": [
+        "docker/seccomp/nested-v1.json",
+        "docker/apparmor/devdesk-harness-v1.apparmor"
+      ],
+      "apparmor_profile": "devdesk-harness-v1"
+    },
+    {
+      "id": "dsh-native-v1",
+      "provider": "dsh",
+      "version": "0.2.2-rc.1",
+      "assets": [
+        "dsh/tool-policy.mjs",
+        "dsh/bwrap-runner.sh",
+        "dsh/package.json"
+      ]
+    },
+    {
+      "id": "codex-native-v1",
+      "provider": "codex",
+      "version": "0.167.0",
+      "assets": []
+    }
+  ],
+  "upstream": {
+    "moby_seccomp_commit": "4b8214fc4971e06172938a1f1554ccff6647ee80",
+    "apparmor_source": "Moby profiles/apparmor v0.3.0"
+  },
+  "assets": {
+    "docker/apparmor/devdesk-harness-v1.apparmor": {
+      "sha256": "3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c"
+    },
+    "docker/seccomp/nested-v1.json": {
+      "sha256": "59f1355dfae05a77e70c47612c5ff348e73eace00985ade538d87969290f3120"
+    },
+    "docker/upstream/LICENSE.moby": {
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "docker/upstream/moby-default.json": {
+      "sha256": "6416b47770785a41ac59073cdc77d9fe98517df2799dc83ef207e622de3053f6"
+    },
+    "dsh/bwrap-runner.sh": {
+      "sha256": "e91f503cd7dd11241ce676b8b0ce7d4c2e6e8b31d6a6182e62701dbf7be49766"
+    },
+    "dsh/package.json": {
+      "sha256": "cb94ce76ba3ac61277cafd18663342914b75d85693f6888cef7c467cb11a43c3"
+    },
+    "dsh/tool-policy.mjs": {
+      "sha256": "4c48542d79d40af4c7716110c7f3384c0daef675d68a4d38510ebea6fe0b8515"
+    }
+  }
+}

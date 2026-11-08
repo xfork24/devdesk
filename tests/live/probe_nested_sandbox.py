@@ -31,7 +31,7 @@ enabled=false
 ''')
  name='devdesk-nested-probe-'+uuid.uuid4().hex
  command=['docker','create','--name',name,'--label','devdesk.probe=nested-sandbox','--network=none','--read-only','--user',f'{os.getuid()}:{os.getgid()}',
-          '--cap-drop=ALL','--security-opt=no-new-privileges','--security-opt',f'seccomp={ROOT}/containers/security/nested-sandbox.json',
+          '--cap-drop=ALL','--security-opt=no-new-privileges','--security-opt',f'seccomp={ROOT}/permissions/backends/docker/seccomp/nested-v1.json',
           '--pids-limit=128','--memory=512m','--tmpfs','/tmp:rw,noexec,nosuid,size=64m',
           '--mount',f'type=bind,source={state},target=/state','--mount',f'type=bind,source={work},target=/work',
           '--entrypoint','/bin/sh',identity,'-c',
@@ -40,7 +40,7 @@ enabled=false
  try:
   if args.apparmor_profile:
    report['stage']='apparmor_policy'
-   expected=(ROOT/'containers/security/devdesk-harness-v1.apparmor').read_bytes()
+   expected=(ROOT/'permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor').read_bytes()
    installed=Path('/etc/apparmor.d/devdesk-harness-v1')
    assert installed.read_bytes()==expected,'installed AppArmor policy differs from reviewed source'
    report['apparmor_policy_sha256']=hashlib.sha256(expected).hexdigest()
@@ -52,7 +52,7 @@ enabled=false
   report['container_id']=receipt;report['container_name']=name
   container=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
   assert container['Id']==receipt and container['Config']['Labels']['devdesk.probe']=='nested-sandbox'
-  report['security']={'user':container['Config']['User'],'cap_drop':container['HostConfig']['CapDrop'],'no_new_privileges':'no-new-privileges' in container['HostConfig']['SecurityOpt'],'seccomp_sha256':hashlib.sha256((ROOT/'containers/security/nested-sandbox.json').read_bytes()).hexdigest(),'read_only_root':container['HostConfig']['ReadonlyRootfs'],'privileged':container['HostConfig']['Privileged'],'network':container['HostConfig']['NetworkMode'],'mount_targets':[m['Destination'] for m in container['Mounts']]}
+  report['security']={'user':container['Config']['User'],'cap_drop':container['HostConfig']['CapDrop'],'no_new_privileges':'no-new-privileges' in container['HostConfig']['SecurityOpt'],'seccomp_sha256':hashlib.sha256((ROOT/'permissions/backends/docker/seccomp/nested-v1.json').read_bytes()).hexdigest(),'read_only_root':container['HostConfig']['ReadonlyRootfs'],'privileged':container['HostConfig']['Privileged'],'network':container['HostConfig']['NetworkMode'],'mount_targets':[m['Destination'] for m in container['Mounts']]}
   result=subprocess.run(['docker','start','-a',name],capture_output=True,text=True,timeout=30)
   container=json.loads(subprocess.check_output(['docker','inspect',name],text=True))[0]
   report['apparmor_profile']=container['AppArmorProfile']

@@ -1,0 +1,19 @@
+{
+  "id": "permission-isolated-tests-v1",
+  "identity": "isolated-tests",
+  "name": "隔离测试",
+  "version": 1,
+  "supersedes": null,
+  "schema_version": 1,
+  "policy": {
+    "filesystem": {
+      "mode": "full_access"
+    },
+    "network": {
+      "mode": "disabled"
+    },
+    "tools": {
+      "mode": "all_available"
+    }
+  }
+}

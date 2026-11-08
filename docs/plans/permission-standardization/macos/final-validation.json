@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "runtime_bindings_validated": 41,
+  "execution_permissions_validated": 68,
+  "artifact_hashes_verified": 285,
+  "released_with_protocol": 67,
+  "cancelled_before_worker_receipt_missing_protocol": [
+    "a890e9e4-e29d-4e17-9bb8-e518cf1e518f"
+  ],
+  "model_tested_binary_sha256": "28f12a21ca5717b10a232798b1c468e63ba8866a65d75973467fc6e12fa8b934",
+  "package_binary_sha256": "28f12a21ca5717b10a232798b1c468e63ba8866a65d75973467fc6e12fa8b934",
+  "full_acceptance": "full/live-check-full-git-docker-harness-github-web-workflow-recovery.json",
+  "independent_reverification": "full/live-check-verify-existing-git-docker-harness-github-web-workflow-recovery.json"
+}

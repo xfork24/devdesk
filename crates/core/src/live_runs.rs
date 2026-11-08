@@ -19,7 +19,14 @@ impl Engine {
             .as_ref()
             .ok_or_else(|| err("blocked", "正式阶段缺少冻结运行时"))?;
         let installation = &runtime.installation;
-        let harness = installation.id.clone();
+        let harness = if runtime.permissions.is_some() {
+            format!(
+                "{}:permission:{}",
+                installation.id, runtime.configuration_digest
+            )
+        } else {
+            installation.id.clone()
+        };
         let sandbox = format!("docker-image:{harness}");
         let image = match &installation.artifact {
             RuntimeArtifact::DockerImage { image_id } => image_id.clone(),
@@ -28,6 +35,10 @@ impl Engine {
         };
         if !s.harnesses.iter().any(|h| h.id == harness) {
             s.harnesses.push(devdesk_domain::Harness {
+                permission: runtime
+                    .permissions
+                    .as_ref()
+                    .map(|p| PermissionBinding::frozen(&p.harness)),
                 id: harness.clone(),
                 provider: installation.key.provider.as_str().into(),
                 version: installation.key.version.clone(),
@@ -42,6 +53,10 @@ impl Engine {
         }
         if !s.sandboxes.iter().any(|b| b.id == sandbox) {
             s.sandboxes.push(devdesk_domain::Sandbox {
+                permission: runtime
+                    .permissions
+                    .as_ref()
+                    .map(|p| PermissionBinding::frozen(&p.sandbox)),
                 id: sandbox.clone(),
                 provider: "docker".into(),
                 version: "managed-worker/v1".into(),
@@ -827,7 +842,11 @@ impl Engine {
             sandbox.version = "node-test/v1".into();
             sandbox.image = Some(recipe.image.clone());
             sandbox.network = false;
+            sandbox.permission = Some(PermissionBinding::frozen(
+                &isolated_test_permissions().sandbox,
+            ));
             let execution = RuntimeExecution {
+                permissions: Some(isolated_test_permissions()),
                 kind: RuntimeExecutionKind::Tests,
                 id: id(),
                 session_id: r.session_id.clone(),
@@ -844,12 +863,16 @@ impl Engine {
             let runtime = ExecutionInstance {
                 id: execution.id.clone(),
                 run_id: r.id.clone(),
-                harness: s
-                    .harnesses
-                    .iter()
-                    .find(|h| h.id == r.binding.harness)
-                    .unwrap()
-                    .clone(),
+                harness: devdesk_domain::Harness {
+                    id: format!("node-test:{}", recipe.image),
+                    provider: "node-test".into(),
+                    version: "node-test/v1".into(),
+                    capabilities: vec!["tests".into()],
+                    origin: Origin::External,
+                    permission: Some(PermissionBinding::frozen(
+                        &isolated_test_permissions().harness,
+                    )),
+                },
                 sandbox,
                 external_session: None,
                 external_environment: None,

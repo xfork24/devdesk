@@ -58,6 +58,15 @@ impl CliGit {
         Ok(path)
     }
     fn git(&self, path: &Path, args: &[&str], input: Option<Vec<u8>>) -> Result<Output> {
+        self.git_with_timeout(path, args, input, Duration::from_secs(30))
+    }
+    fn git_with_timeout(
+        &self,
+        path: &Path,
+        args: &[&str],
+        input: Option<Vec<u8>>,
+        timeout: Duration,
+    ) -> Result<Output> {
         let mut command = Command::new("git");
         // Do not inherit user-configured hooks, filters, aliases, fsmonitor, shell transports, or ambient Git routing.
         for (key, _) in std::env::vars_os() {
@@ -77,6 +86,9 @@ impl CliGit {
                 "core.fsmonitor=false",
                 "-c",
                 "commit.gpgSign=false",
+                // GitHub smart HTTP transfers can stall on HTTP/2 in some host networks.
+                "-c",
+                "http.version=HTTP/1.1",
                 "-c",
                 "user.name=DevDesk",
                 "-c",
@@ -93,7 +105,7 @@ impl CliGit {
             ])
             .arg(path)
             .args(args);
-        capture_command(command, Duration::from_secs(30), input)
+        capture_command(command, timeout, input)
     }
     fn output(&self, path: &Path, args: &[&str]) -> Result<String> {
         let result = self.git(path, args, None)?;
@@ -196,7 +208,7 @@ impl CliGit {
         reject_symlink(&path)?;
         if !path.exists() {
             let url = format!("https://github.com/{repository}.git");
-            let result = self.git(
+            let result = self.git_with_timeout(
                 &parent,
                 &[
                     "clone",
@@ -207,8 +219,56 @@ impl CliGit {
                     "repository",
                 ],
                 None,
+                Duration::from_secs(180),
             )?;
             require(result.code == 0, "仓库 clone 结果需核对，不能更换身份重试")?;
+        } else {
+            // A killed clone can leave a valid bare repository with no requested branch.
+            // Resume into the same owned repository after checking identity; never delete it.
+            let path = self.repository(project)?;
+            require(
+                self.output(&path, &["rev-parse", "--is-bare-repository"])? == "true",
+                "仓库接入只接受所属 bare 仓库",
+            )?;
+            require(
+                self.output(&path, &["remote", "get-url", "origin"])?
+                    == format!("https://github.com/{repository}.git"),
+                "仓库 origin 与冻结 GitHub 身份不符",
+            )?;
+            let reference = format!("refs/heads/{mainline}");
+            let existing = self.git(
+                &path,
+                &["show-ref", "--verify", "--quiet", &reference],
+                None,
+            )?;
+            if existing.code == 1 {
+                let refspec = format!("{reference}:{reference}");
+                let fetched = self.git_with_timeout(
+                    &path,
+                    &[
+                        "fetch",
+                        "--no-tags",
+                        "--no-recurse-submodules",
+                        "origin",
+                        &refspec,
+                    ],
+                    None,
+                    Duration::from_secs(180),
+                )?;
+                require(
+                    fetched.code == 0,
+                    "未完成的仓库下载暂无法续传，请检查 GitHub 登录和网络后核对重试",
+                )?;
+            } else {
+                require(existing.code == 0, "仓库分支状态无法核对，保留原目录")?;
+            }
+            if self
+                .git(&path, &["rev-parse", "--verify", "HEAD"], None)?
+                .code
+                != 0
+            {
+                self.output(&path, &["symbolic-ref", "HEAD", &reference])?;
+            }
         }
         self.inspect_unlocked(project, repository, mainline)
     }
@@ -897,7 +957,10 @@ impl ports::Git for CliGit {
                 let policy = crate::github::GitHubPullRequests.diagnose(repository, mainline)?;
                 require(
                     policy.compatible,
-                    "GitHub 保护/规则或账号权限不兼容本轮本地 CAS 策略，请查看诊断",
+                    &format!(
+                        "GitHub 仓库暂不可接入：{}",
+                        policy.blocked_reasons.join("；")
+                    ),
                 )?;
                 let facts = self.clone_repository(&op.project_id, repository, mainline, &op.id)?;
                 let phase = uuid::Uuid::from_u128(

@@ -22,6 +22,8 @@ pub enum SessionLifecycle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeBinding {
+    #[serde(default)]
+    pub permissions: Option<ExecutionPermissions>,
     pub installation: RuntimeInstallation,
     pub adapter_version: String,
     pub model: String,
@@ -270,6 +272,8 @@ pub enum RuntimeExecutionKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeExecution {
     #[serde(default)]
+    pub permissions: Option<ExecutionPermissions>,
+    #[serde(default)]
     pub kind: RuntimeExecutionKind,
     pub id: Id,
     pub session_id: Id,
@@ -409,6 +413,22 @@ impl EngineeringState {
                 .as_ref()
                 .ok_or_else(|| err("blocked", "Session 缺少冻结运行时绑定"))?;
             binding.installation.key.validate()?;
+            if let Some(p) = &binding.permissions {
+                require(
+                    p.scope.work_type == binding.work_type
+                        && p.scope.writable_paths == binding.writable_paths
+                        && p.scope.read_only_paths == binding.read_only_paths,
+                    "Permission 执行范围与运行锁不一致",
+                )?;
+                p.harness.policy.validate()?;
+                p.sandbox.policy.validate()?;
+                for r in [&p.harness.reference, &p.sandbox.reference] {
+                    require(
+                        self.permissions.iter().any(|d| d.id == r.revision_id),
+                        "冻结 Permission 修订缺失",
+                    )?;
+                }
+            }
             match binding.tool_policy {
                 ToolPolicy::ReadOnly => {
                     require(binding.writable_paths.is_empty(), "只读角色不能有写路径")?
@@ -827,7 +847,8 @@ impl EngineeringState {
             )?;
             if let Some(old) = before.executions.iter().find(|e| e.id == execution.id) {
                 require(
-                    old.kind == execution.kind
+                    old.permissions == execution.permissions
+                        && old.kind == execution.kind
                         && old.session_id == execution.session_id
                         && old.operation_id == execution.operation_id
                         && old.image_digest == execution.image_digest

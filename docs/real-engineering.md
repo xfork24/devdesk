@@ -1,26 +1,20 @@
 # 真实工程接入
 
-本轮把真实讨论、规划、Docker 实施与测试、GitHub 候选接纳接入同一个 Rust 工程内核。Sim 保留为离线演示和故障夹具。项目在登记仓库后进入 `live`；模型讨论可以在创建 Feature 前开始。真实验收进度与原始结果见 [阶段报告](plans/real-engineering-integration/R1-progress.md) 和 [实施计划](plans/real-engineering-integration/PLAN.md)。
+Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检查、克隆；讨论与工程任务根据实际选中的 Harness 按需准备运行环境。后端继续保留模拟适配器、历史数据和离线夹具，Web 不再提供模拟项目或模拟场景入口。历史来源不会改写。
 
 ## 配置与运行
 
-当前实际验收平台是 macOS Apple Silicon、Docker Desktop，容器内为 Linux/aarch64。需要 `docker`、已登录的 `gh`、同版本本机 Codex CLI；完整构建还需要仓库声明的 Rust、Node/npm。Linux 容器已实际运行两套 Harness；Linux 宿主已接入 Secret Service（需 libsecret-tools 与桌面 D-Bus），实际 Ubuntu 验收待执行，不将 macOS 的结果外推为 Linux 宿主验收。
+宿主需要可用的 Git、已登录的 GitHub CLI，以及运行中的 Linux Docker Engine / Docker Desktop。macOS / Linux 的 DSH 凭据仍使用系统凭据库；Linux 需 `libsecret-tools` 与可用的桌面 Secret Service。系统软件安装与账号授权仍由用户完成，DevDesk 管理版本固定的 Harness 安装和镜像。
 
-首次构建共享运行时：
+1. 点击 **打开 GitHub 项目**，填写 `owner/repo`（也接受 GitHub HTTPS / SSH URL）、主分支和可选名称。DevDesk 自动保存仓库接入意图，后台检查权限与规则、克隆并建立 mainline worktree。同一仓库和分支再次打开时复用项目。接入成功前不能创建 Feature 或启动工程执行；失败原因及原操作核对入口显示在仓库状态中。
+2. 在设置中为所用供应商授权：Codex 点击 **网页登录**，DevDesk 自动发现可复用的同版本原生组件，或从固定的官方发行版下载并校验 SHA256，使用数据集独立的 `CODEX_HOME` 完成 OAuth；DSH 输入 DeepSeek 官方 API key，保存到系统凭据库。无需手动登记本机 Codex 或两套 Linux 镜像。
+3. 设置全局、项目或角色 Harness 偏好，然后开始讨论或工程执行。首次选中某 Harness 时才准备其 Docker 镜像；未使用的 Harness 不下载、不构建。准备进度和失败原因显示在 Web，失败后再次执行可重试。相同配方使用共享镜像，不按项目、角色复制。
 
-```sh
-docker build -t devdesk/codex:0.167.0 containers/codex
-docker build -t devdesk/dsh:0.2.2-rc.1 containers/dsh
-```
+运行时构建配方与 DSH 权限后端随 Host 编译嵌入，发布程序无需源码目录、宿主 Node/npm 或 Rust 工具链即可准备运行时。构建上下文仅包含嵌入的固定文件，完成后清理。镜像 tag 包含配方摘要，登记时保存不可变镜像 ID、版本和平台；有显式固定安装偏好时必须核验原安装，不会静默替换。已有 Session、Attempt、Run 的安装与来源不变。
 
-基础 Node 镜像和 npm 版本写在 Dockerfile；登记时把本机镜像的不可变 ID、平台和版本写入全局库。不同构建可并存，需要明确选择安装；不能用可变 tag 替换已经冻结的 Session。相同版本/摘要只登记一次，各角色使用同一安装和镜像层，不按角色复制二进制。
+仓库核对请求在没有其他 Run/Turn 时也会唤醒后台调度，重启后仍处理已保存的请求。首次克隆中断后，核对会先验证所属 bare 仓库和 origin，再下载缺失的主分支；GitHub 的 Git 协调调用固定使用 HTTP/1.1，以避免部分网络下默认 HTTP 传输停滞；网络克隆/续传允许最多 180 秒，保留原目录、对象和操作 ID。
 
-构建并启动 host 后进入设置页：
-
-1. 登记本机 Codex，通过官方网页完成 OAuth，再检查登录状态。认证服务使用数据集专属 CODEX_HOME；不会读取桌面 Codex HOME。
-2. 输入 DeepSeek 官方 API key，保存到 macOS Keychain。普通配置、查询、SQLite、报告只保留不透明引用。后台由固定共享凭据助手通过 Security.framework 读取，并禁止自动弹窗；设置页可显式一次授权，开发/发行构建使用稳定签名身份。Linux 使用 Secret Service；详见 [系统凭据](system-credentials.md)。
-3. 登记两套 Linux 镜像。初始默认 Harness 为 Codex；可切换全局默认，并设置项目、角色偏好。讨论入口也可明确选择安装和模型。
-4. 使用专用 GitHub 仓库创建独立项目，在设置中诊断并登记仓库。存在保护规则、不完整策略或缺少权限时阻塞；不会更改规则或尝试管理员绕过。
+Docker 未安装或未启动时显示环境阻塞，仓库权限或策略不兼容时保留原接入操作，供核对后重试。不会回退模拟执行，也不会修改 GitHub 规则。旧模拟项目不进入正常 Web 项目列表，仍可由后端离线回归读取。
 
 优先级为显式选择 → 角色偏好 → 项目偏好 → 全局默认。配置变化影响后续会话；运行中的 Session、Attempt、Run 保留原角色修订、安装、模型、权限、凭据引用和适配器构建。技术重试沿用原锁，构建不兼容时明确阻塞，不能静默换配置。
 
@@ -56,7 +50,7 @@ flowchart LR
 
 数据库事务先保存输入/操作意图；Docker、Git、供应商和 GitHub 调用在事务外执行，回执先保存再投影领域状态。Git 操作 ID 按用途分开，候选与推进可以共享同一个 Merge ID。PR 创建前按冻结分支和 marker 查询，丢失回执后核对原 PR；不调用 GitHub 平台 merge 接口。
 
-所有工程工具在所属容器内运行，无法访问 Docker socket、宿主 HOME 或其他 worktree。`.git`、项目本地 Harness 配置和插件入口被屏蔽。Codex 使用受控权限 profile；DSH 使用公开 SDK/profile 扩展、工具白名单与 bwrap 包装，保留私有 PID/网络空间并隐藏 `/state`、协调配置和 `/proc`。不通过放开 Docker 特权解决嵌套沙箱问题。
+所有工程工具在所属容器内运行，无法访问 Docker socket、宿主 HOME 或其他 worktree。新配置采用容器全权限，旧受限配置及其状态隔离通过独立 Permission 后端保留；具体选择见 [权限说明](../permissions/README.md)。`.git`、项目本地 Harness 配置和插件入口被屏蔽。受限 Permission 使用 Codex 原生命名 profile 或 DSH 原生 profile、受控工具规则与 bwrap 包装；默认全权限使用供应商原生外部隔离/全权限模式。只有受限后端声明并验证工具状态隔离，全权限以整个容器为信任范围。不通过放开 Docker 特权解决嵌套沙箱问题。
 
 正常终态先停止 worker、封存脱敏协议和运行报告，再清理容器。停止回执区分 Codex interrupt ACK、DSH forced stop、正常静止和恢复停止。清理失败保留归属，可显式重试；共享镜像和安装不删除。应用退出处理所有已打开项目的所属执行者，切换项目或关闭浏览器不会取消后台工作。
 

@@ -2,7 +2,7 @@
 """Read-only Web/live host preflight. Never reads credential contents."""
 import argparse,json,os,platform,shutil,subprocess,sys
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--output',type=Path);p.add_argument('--binary',type=Path);a=p.parse_args();r={'platform':platform.system(),'architecture':platform.machine(),'client':'web','checks':[]}
+p=argparse.ArgumentParser();p.add_argument('--permission-backend',choices=['docker-default-v1','docker-nested-v1'],default='docker-default-v1');p.add_argument('--output',type=Path);p.add_argument('--binary',type=Path);a=p.parse_args();r={'platform':platform.system(),'architecture':platform.machine(),'client':'web','checks':[]}
 def check(name,passed,detail):r['checks'].append({'name':name,'passed':bool(passed),'detail':detail})
 def executes(argv):
  try:return subprocess.run(argv,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=12).returncode==0
@@ -15,8 +15,8 @@ try:
  security=subprocess.run(['docker','info','--format','{{json .SecurityOptions}}'],capture_output=True,text=True,timeout=12)
  apparmor=security.returncode==0 and any(value.startswith('name=apparmor') for value in json.loads(security.stdout))
 except (OSError,subprocess.TimeoutExpired,ValueError,TypeError):apparmor=False
-if apparmor:
- installed=Path('/etc/apparmor.d/devdesk-harness-v1');expected=Path(__file__).resolve().parents[2]/'containers/security/devdesk-harness-v1.apparmor'
+if apparmor and a.permission_backend=='docker-nested-v1':
+ installed=Path('/etc/apparmor.d/devdesk-harness-v1');expected=Path(__file__).resolve().parents[2]/'permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor'
  try:
   metadata=installed.lstat();matches=not installed.is_symlink() and metadata.st_uid==0 and metadata.st_mode&0o022==0 and installed.read_bytes()==expected.read_bytes()
  except OSError:matches=False

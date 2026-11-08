@@ -1,6 +1,6 @@
 # DevDesk v0.2 领域规范
 
-当前工程库 schema v31，全局库 v3。原始设计与真实接入计划共同约束本轮领域模型。Project 明确使用 simulation 或 live；旧模拟记录保留原身份。应用代码中的对象是类型化结构，下面的 ID 均为稳定 UUID；逻辑分支名除外。
+当前工程库 schema v33，全局库 v4。原始设计、真实接入与 Permission 计划共同约束领域模型。Project 明确使用 simulation 或 live；旧模拟记录保留原身份。应用代码中的对象是类型化结构，下面的 ID 均为稳定 UUID；逻辑分支名除外。
 
 ## 归属与对象契约
 
@@ -108,3 +108,13 @@ live Task DAG 为 test_author → Red → implement → Green → docs → verif
 Feature closure 为 test_author → feature_tests → docs → verify；Delivery.source_deliveries 固定两个已完成 Task 的实现交付，Merge Delivery 固定其源交付。原生 Reviewer 接收递归来源、历史 Red/Green/Review/远端回执和固定 SHA diff。最终 Snapshot 收录实际 Sessions、RuntimeBindings、RuntimeExecutions、文档与报告，不以当前默认配置替代历史。
 
 live 合入分别记录本地 CAS、远端精确 lease、PR merged 核对；只有三者一致才完成 Task/Feature。重启先遍历全局项目索引停止和核对原执行者，已消费结果未知的输入不重发。详见 [真实工程接入](real-engineering.md)。
+
+## Permission 与执行范围
+
+Permission 是具有稳定身份及不可变修订的独立策略实体，描述文件、工具网络和工具调用权限。Harness 与 Sandbox 持有 PermissionBinding；项目、角色和本次执行的覆盖按顺序解析，省略字段继承、列表整体替换。定义修订、绑定版本和最终策略分别记录，旧运行不读取当前 latest 配置。
+
+RuntimeBinding 与 RuntimeExecution 保存冻结的 ExecutionPermissions，包含两层解析结果、来源、ExecutionScope、审批、隔离参数、资源额度及后端摘要。正式 Harness/Sandbox 定义按配置摘要区分，并附完整的解析绑定；共享 RuntimeInstallation 和镜像不因权限不同复制。独立 Node 测试有自己的只读、禁网、无模型凭据策略。
+
+Permission 不替代业务门禁。正式工程的所属 worktree、测试写范围、受保护测试目录和只读 Review 代码视图继续由 ExecutionScope 约束；运行时审批不能接受交付或 Review。Never 表示不询问，不把拒绝的请求变为允许。
+
+新配置默认采用容器内全权限；旧数据迁移保留 legacy 策略，未保存标准快照的旧执行保持 unknown。全权限以整个容器为信任范围，受限配置声明的状态/凭据不可见保证必须有对应执行器和验证。具体支持范围见 [Permission 说明](../permissions/README.md)。

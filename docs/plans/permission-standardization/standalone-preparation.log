@@ -1,0 +1,1 @@
+PASS: interrupted clone reconciliation/resume/worktree/reopen, lazy per-Harness preparation, concurrent reuse, failure/retry, daemon failure, standalone embedded recipes

@@ -36,7 +36,7 @@ impl GlobalStore {
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
-        require(version <= 3, "全局配置库版本比程序新")?;
+        require(version <= 4, "全局配置库版本比程序新")?;
         if version == 0 {
             let tx = connection.transaction().map_err(storage)?;
             tx.execute_batch(include_str!("../../../sql/global/001_initial.sql"))
@@ -55,6 +55,21 @@ impl GlobalStore {
             let tx = connection.transaction().map_err(storage)?;
             tx.execute_batch(include_str!("../../../sql/global/003_agent_profiles.sql"))
                 .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 4 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../sql/global/004_permissions.sql"))
+                .map_err(storage)?;
+            let legacy = version != 0 || root.join("engineering.sqlite3").exists();
+            tx.execute(
+                "INSERT INTO settings(key,value) VALUES('permission_configuration',?1)",
+                [
+                    serde_json::to_string(&PermissionConfiguration::defaults(legacy))
+                        .map_err(storage)?,
+                ],
+            )
+            .map_err(storage)?;
             tx.commit().map_err(storage)?;
         }
         let store = Self {
@@ -228,15 +243,31 @@ impl GlobalStore {
     }
 
     pub fn projects(&self, offset: usize, limit: usize) -> Result<(Vec<Project>, usize)> {
+        self.projects_filtered(offset, limit, false)
+    }
+    pub fn github_projects(&self, offset: usize, limit: usize) -> Result<(Vec<Project>, usize)> {
+        self.projects_filtered(offset, limit, true)
+    }
+    fn projects_filtered(
+        &self,
+        offset: usize,
+        limit: usize,
+        github_only: bool,
+    ) -> Result<(Vec<Project>, usize)> {
         let conn = self.connection.lock().map_err(storage)?;
+        let filter = if github_only {
+            "project IS NOT NULL AND coalesce(json_extract(project,'$.workspace_definition.repository'),'') <> ''"
+        } else {
+            "project IS NOT NULL"
+        };
         let count = conn
             .query_row(
-                "SELECT count(*) FROM project_catalog WHERE project IS NOT NULL",
+                &format!("SELECT count(*) FROM project_catalog WHERE {filter}"),
                 [],
                 |r| r.get(0),
             )
             .map_err(storage)?;
-        let mut q = conn.prepare("SELECT project FROM project_catalog WHERE project IS NOT NULL ORDER BY rowid LIMIT ?1 OFFSET ?2").map_err(storage)?;
+        let mut q = conn.prepare(&format!("SELECT project FROM project_catalog WHERE {filter} ORDER BY rowid LIMIT ?1 OFFSET ?2")).map_err(storage)?;
         let bodies = q
             .query_map(params![limit.min(100) as i64, offset as i64], |r| {
                 r.get::<_, String>(0)
@@ -326,6 +357,7 @@ impl GlobalStore {
 
     fn configuration(conn: &Connection) -> Result<EngineeringState> {
         Ok(EngineeringState {
+            permissions: load_table(conn, "permissions")?,
             definitions: load_table(conn, "definitions")?,
             harnesses: load_table(conn, "harnesses")?,
             sandboxes: load_table(conn, "sandboxes")?,
@@ -339,6 +371,7 @@ impl GlobalStore {
         s: &EngineeringState,
         before: &EngineeringState,
     ) -> Result<()> {
+        save_table(conn, "permissions", &s.permissions, &before.permissions)?;
         save_table(conn, "definitions", &s.definitions, &before.definitions)?;
         save_table(conn, "harnesses", &s.harnesses, &before.harnesses)?;
         save_table(conn, "sandboxes", &s.sandboxes, &before.sandboxes)?;
@@ -485,7 +518,15 @@ impl GlobalStore {
             .as_object()
             .unwrap()
         {
-            if !["definitions", "harnesses", "sandboxes", "events"].contains(&table.as_str()) {
+            if ![
+                "permissions",
+                "definitions",
+                "harnesses",
+                "sandboxes",
+                "events",
+            ]
+            .contains(&table.as_str())
+            {
                 require(
                     assigned_rows.get(table).copied().unwrap_or(0)
                         == rows.as_array().unwrap().len(),
@@ -579,10 +620,18 @@ impl EngineeringStore for GlobalStore {
         drop(conn);
         let result = action(&mut state)?;
         state.validate_conversations(&before)?;
+        validate_permission_revisions(&state.permissions, &before.permissions)?;
         let value = serde_json::to_value(&state).map_err(storage)?;
         require(
             value.as_object().unwrap().iter().all(|(key, items)| {
-                ["definitions", "harnesses", "sandboxes", "events"].contains(&key.as_str())
+                [
+                    "permissions",
+                    "definitions",
+                    "harnesses",
+                    "sandboxes",
+                    "events",
+                ]
+                .contains(&key.as_str())
                     || items.as_array().is_some_and(Vec::is_empty)
             }),
             "全局配置库不能写入工程数据",
@@ -657,7 +706,16 @@ fn state_ids(state: &EngineeringState) -> Result<HashSet<String>> {
         .as_object()
         .unwrap()
         .iter()
-        .filter(|(k, _)| !["definitions", "harnesses", "sandboxes", "events"].contains(&k.as_str()))
+        .filter(|(k, _)| {
+            ![
+                "permissions",
+                "definitions",
+                "harnesses",
+                "sandboxes",
+                "events",
+            ]
+            .contains(&k.as_str())
+        })
         .flat_map(|(_, v)| v.as_array().unwrap())
         .filter_map(|item| item["id"].as_str().map(str::to_owned))
         .collect())

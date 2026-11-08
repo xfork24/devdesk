@@ -1,0 +1,7 @@
+persisted-native-facts
+persisted-complete-feature
+remote-github-facts
+artifact-hashes-and-execution-release
+browser-evidence
+recovery-evidence
+{"passed": true, "mode": "verify-existing", "report": "/Users/hengliu/workspace/devdesk/docs/plans/permission-standardization/macos/full/live-check-verify-existing-git-docker-harness-github-web-workflow-recovery.json"}

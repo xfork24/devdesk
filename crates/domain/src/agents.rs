@@ -34,6 +34,8 @@ pub enum ToolPolicy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentProfile {
+    #[serde(default)]
+    pub permission_overrides: Option<PermissionOverrides>,
     pub role: AgentRole,
     pub skill_revisions: Vec<Id>,
     pub tool_policy: ToolPolicy,

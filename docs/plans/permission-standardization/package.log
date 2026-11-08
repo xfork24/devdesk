@@ -1,0 +1,28 @@
+JSON Schema validation skipped: optional Python jsonschema package is not installed
+PASS Permission assets: 6 presets, 4 backends, 7 immutable files
+
+added 26 packages in 2s
+
+6 packages are looking for funding
+  run `npm fund` for details
+Reused the installed macOS credential helper.
+
+> devdesk-web@0.2.0 build
+> tsc -b && vite build
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 1585 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.37 kB │ gzip:  0.30 kB
+dist/assets/index-DJ9eenGf.css   15.42 kB │ gzip:  4.30 kB
+dist/assets/index-BtL5Qn3c.js   302.59 kB │ gzip: 93.53 kB
+✓ built in 1.26s
+   Compiling devdesk-host v0.2.0 (/Users/hengliu/workspace/devdesk/crates/host)
+    Finished `release` profile [optimized] target(s) in 7.86s
+target/release/devdesk-host: replacing existing signature
+
+Run: ./target/release/devdesk-host
+
+Package: dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz

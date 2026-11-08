@@ -6,6 +6,8 @@ mod credentials_macos;
 pub mod docker;
 pub mod git;
 pub mod github;
+mod permission_catalog;
+pub mod permissions;
 pub mod tests;
 pub use tests::CommandTests;
 pub mod harness;
@@ -13,6 +15,7 @@ pub use git::CliGit;
 mod jsonl;
 pub use harness::{CodexHarness, DshHarness, RoutingHarness, RuntimeWorkers};
 mod process;
+pub mod runtime_preparation;
 mod runtime_registry;
 pub use runtime_registry::configuration_digest;
 pub mod simulation;
@@ -92,6 +95,7 @@ impl SqliteStore {
     }
     fn load(conn: &Connection) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
+        s.permissions = load_table(conn, "permissions")?;
         s.turns = load_table(conn, "turns")?;
         s.conversation_events = load_table(conn, "conversation_events")?;
         s.interactions = load_table(conn, "interactions")?;
@@ -124,6 +128,7 @@ impl SqliteStore {
         Ok(s)
     }
     fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
+        save_table(conn, "permissions", &s.permissions, &before.permissions)?;
         save_table(conn, "turns", &s.turns, &before.turns)?;
         save_table(
             conn,
@@ -225,7 +230,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 31, "数据集版本比程序新")?;
+    require(version <= 33, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!("../../../sql/001_initial.sql"))
@@ -437,6 +442,18 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
+    if version < 32 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/032_permission_bindings.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 33 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/033_execution_permissions.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
     Ok(connection)
 }
 
@@ -565,7 +582,7 @@ impl EngineeringStore for SqliteStore {
           EXISTS(SELECT 1 FROM runs WHERE status IN ('queued','running')) OR
           EXISTS(SELECT 1 FROM effects WHERE status IN ('pending','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM advances WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
-          EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed')) OR
+          EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM turns WHERE status IN ('queued','dispatching','running','waiting_interaction') OR (status='needs_reconciliation' AND cancel_requested=1)) OR
           EXISTS(SELECT 1 FROM executions WHERE writer_revoked=0 OR status='succeeded')",
           [], |row| row.get(0)).map_err(storage)
@@ -605,6 +622,7 @@ impl EngineeringStore for SqliteStore {
         drop(conn);
         let result = action(&mut state)?;
         state.validate_conversations(&before)?;
+        validate_permission_revisions(&state.permissions, &before.permissions)?;
         if let Some(id) = &self.project_id {
             require(
                 state.projects.len() <= 1 && state.projects.iter().all(|p| &p.id == id),

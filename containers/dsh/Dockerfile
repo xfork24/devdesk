@@ -6,8 +6,8 @@ RUN npm install --global --omit=dev @deepseek-ai/dsh@${DSH_VERSION} \
     && npm cache clean --force
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates bubblewrap \
     && rm -rf /var/lib/apt/lists/*
-COPY devdesk-policy /opt/devdesk/dsh-policy
-# Load immutable native addons from the image; the generic writable /tmp stays noexec.
+COPY permissions/backends/dsh /opt/devdesk/dsh-policy
+# Load immutable native addons from the image; restricted profiles may keep /tmp noexec.
 ENV DSH_HOME=/state/dsh DSH_MAX_TOKENS_AS_SUCCESS=false NARB_DISABLE_NATIVE_CACHE=1
 USER 1000:1000
 WORKDIR /work

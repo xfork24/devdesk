@@ -36,7 +36,7 @@ impl GitHubPullRequests {
         let output = capture("gh", &args, Duration::from_secs(20))?;
         require(
             output.code == 0 && !output.truncated,
-            "GitHub 账号、仓库或规则不可核对，禁止远端写入",
+            "无法核对 GitHub 仓库；请检查 GitHub CLI 登录（gh auth login）、仓库访问权限及网络连接",
         )?;
         let value: Value = serde_json::from_slice(&output.stdout).map_err(storage)?;
         require(value.get("errors").is_none(), "GitHub 规则查询不完整")?;

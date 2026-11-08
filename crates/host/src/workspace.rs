@@ -1,4 +1,10 @@
-//! Project selection pins every request to one Engine and therefore one database.
+#[path = "github_projects.rs"]
+mod github_projects;
+#[path = "permission_api.rs"]
+mod permission_api;
+#[path = "runtime_setup.rs"]
+mod runtime_setup;
+// Project selection pins every request to one Engine and therefore one database.
 use devdesk_adapters::*;
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -18,6 +24,7 @@ pub struct Workspace {
     active: RwLock<Active>,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
     switching: Mutex<()>,
+    runtime_setup: runtime_setup::RuntimeSetup,
 }
 fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters) -> Arc<Engine> {
     let artifacts = Arc::new(FileArtifacts::new(PathBuf::from(store.root())));
@@ -95,21 +102,8 @@ impl Workspace {
                     .filter(|p| p.provider == provider)
                     .and_then(|p| p.installation_id.as_deref())
             });
-        let installations = self.global.runtime_installations()?;
-        let candidates: Vec<_> = installations
-            .iter()
-            .filter(|r| {
-                r.key.provider == provider
-                    && r.key.os == "linux"
-                    && matches!(r.artifact, RuntimeArtifact::DockerImage { .. })
-                    && preferred_installation.is_none_or(|id| r.id == id)
-            })
-            .collect();
-        require(
-            candidates.len() == 1,
-            "需要明确且唯一的 Linux Docker 运行时安装，请先登记或选择安装",
-        )?;
-        let installation = candidates[0];
+        let installation = self.ensure_runtime(provider, preferred_installation)?;
+        permissions::validate_runtime_version(&installation)?;
         require(
             self.global.runtime_integrity(&installation.id)?.verified,
             "运行时镜像内容或平台未通过核验",
@@ -132,16 +126,11 @@ impl Workspace {
             "deepseek-v4-pro".into()
         } else {
             let base_version = installation.key.version.split('+').next().unwrap_or("");
-            let native = installations
-                .iter()
-                .find(|r| {
-                    r.key.provider == provider
-                        && r.key.os == std::env::consts::OS
-                        && r.key.arch == std::env::consts::ARCH
-                        && r.key.version == base_version
-                        && matches!(r.artifact, RuntimeArtifact::Executable { .. })
-                })
-                .ok_or_else(|| err("blocked", "解析默认模型需要同版本本机 Codex 安装及官方登录"))?;
+            let native = self.ensure_codex_auth()?;
+            require(
+                native.key.version == base_version,
+                "所选 Codex 运行时与登录组件版本不兼容，请明确选择模型",
+            )?;
             let directory = self.codex_auth.models(&self.global, &native.id)?;
             directory["models"]
                 .as_array()
@@ -175,6 +164,29 @@ impl Workspace {
         } else {
             vec![]
         };
+        let explicit_permissions: Option<PermissionOverrides> = command
+            .payload
+            .get("permission_overrides")
+            .map(|v| {
+                serde_json::from_value(v.clone()).map_err(|e| err("invalid_params", e.to_string()))
+            })
+            .transpose()?;
+        let resolved_permissions = permissions::resolve_execution_permissions(
+            &self.global.snapshot()?.permissions,
+            &self.global.permission_configuration()?,
+            provider,
+            ExecutionScope {
+                work_type,
+                writable_paths: writable_paths.clone(),
+                read_only_paths: read_only_paths.clone(),
+            },
+            state
+                .projects
+                .first()
+                .and_then(|p| p.permission_overrides.as_ref()),
+            profile.permission_overrides.as_ref(),
+            explicit_permissions.as_ref(),
+        )?;
         let adapter = harness::managed_adapter_identity(provider);
         let credential_ref = match provider {
             HarnessProvider::Codex => self.codex_auth.credential_reference()?,
@@ -196,9 +208,10 @@ impl Workspace {
             }
         };
         let digest = configuration_digest(
-            &json!({"installation":installation,"adapter":adapter,"agent":definition,"model":model,"policy":policy,"writable_paths":writable_paths,"read_only_paths":read_only_paths,"work_type":work_type,"sandbox":"docker-worker/v1","credential_ref":credential_ref}),
+            &json!({"installation":installation,"adapter":adapter,"agent":definition,"model":model,"policy":policy,"writable_paths":writable_paths,"read_only_paths":read_only_paths,"work_type":work_type,"sandbox":"docker-worker/v1","credential_ref":credential_ref,"permissions":resolved_permissions}),
         )?;
         command.payload["binding"] = json!(RuntimeBinding {
+            permissions: Some(resolved_permissions),
             installation: installation.clone(),
             adapter_version: adapter,
             model,
@@ -443,6 +456,7 @@ impl Workspace {
             active: RwLock::new(None),
             opened: Mutex::new(BTreeMap::new()),
             switching: Mutex::new(()),
+            runtime_setup: runtime_setup::RuntimeSetup::default(),
         });
         let mut offset = 0;
         loop {
@@ -483,14 +497,20 @@ impl Workspace {
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
         let shared = self.global.snapshot()?;
         let existing = e.store.snapshot()?;
-        if shared.definitions.iter().all(|d| {
-            existing.definitions.iter().any(|v| {
-                v.id == d.id && serde_json::to_value(v).unwrap() == serde_json::to_value(d).unwrap()
-            })
-        }) && shared
-            .harnesses
+        if shared
+            .permissions
             .iter()
-            .all(|h| existing.harnesses.iter().any(|v| v.id == h.id))
+            .all(|p| existing.permissions.iter().any(|old| old == p))
+            && shared.definitions.iter().all(|d| {
+                existing.definitions.iter().any(|v| {
+                    v.id == d.id
+                        && serde_json::to_value(v).unwrap() == serde_json::to_value(d).unwrap()
+                })
+            })
+            && shared
+                .harnesses
+                .iter()
+                .all(|h| existing.harnesses.iter().any(|v| v.id == h.id))
             && shared
                 .sandboxes
                 .iter()
@@ -500,6 +520,13 @@ impl Workspace {
         }
         e.store.transact(None, &mut |s| {
             // Revisions are immutable. Copies keep historical foreign keys self-contained.
+            for p in &shared.permissions {
+                if let Some(old) = s.permissions.iter().find(|old| old.id == p.id) {
+                    require(old == p, "共享权限修订冲突")?;
+                } else {
+                    s.permissions.push(p.clone());
+                }
+            }
             for d in &shared.definitions {
                 if let Some(old) = s.definitions.iter().find(|old| old.id == d.id) {
                     require(
@@ -563,6 +590,20 @@ impl Workspace {
         Ok(())
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        if method == "project.open_github" {
+            return self.open_github_project(params);
+        }
+        if method == "runtime.preparation_status" {
+            return Ok(self.runtime_setup.status());
+        }
+        if method == "runtime.prepare" {
+            let provider = serde_json::from_value(params["provider"].clone())
+                .map_err(|_| err("invalid_params", "需要 Harness provider"))?;
+            return Ok(json!(self.ensure_runtime(provider, None)?));
+        }
+        if let Some(result) = self.permission_api(method, &params) {
+            return result;
+        }
         if method == "github.diagnose" {
             let repo = params["repository"]
                 .as_str()
@@ -579,9 +620,13 @@ impl Workspace {
             return Ok(json!(self.global.discover_docker_runtime(provider)?));
         }
         if method.starts_with("codex.auth.") {
-            let installation = params["installation_id"]
-                .as_str()
-                .ok_or_else(|| err("invalid_params", "需要 installation_id"))?;
+            let prepared;
+            let installation = if let Some(id) = params["installation_id"].as_str() {
+                id
+            } else {
+                prepared = self.ensure_codex_auth()?;
+                &prepared.id
+            };
             return match method {
                 "codex.auth.status" => self.codex_auth.status(&self.global, installation),
                 "codex.auth.models" => self.codex_auth.models(&self.global, installation),
@@ -847,7 +892,11 @@ impl Workspace {
             if method == "query.workspace" {
                 let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;
                 let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
-                let (mut projects, total) = self.global.projects(offset, limit)?;
+                let (mut projects, total) = if params["github_only"] == true {
+                    self.global.github_projects(offset, limit)?
+                } else {
+                    self.global.projects(offset, limit)?
+                };
                 let current = e.store.snapshot()?.projects.first().cloned();
                 if let Some(project) = &current {
                     self.global.publish_project(project)?;
@@ -881,6 +930,7 @@ impl Workspace {
                 result["global_concurrency"] = json!(global_limit);
                 result["default_harness"] = json!(self.global.default_harness()?);
                 result["runtime_installations"] = json!(self.global.runtime_installations()?);
+                result["permission_configuration"] = json!(self.global.permission_configuration()?);
                 let state = e.store.snapshot()?;
                 let project = e.store.project_id();
                 let material_offset =

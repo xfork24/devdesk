@@ -351,6 +351,16 @@
           "items": {
             "type": "string"
           }
+        },
+        "permission_overrides": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionOverrides"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -678,6 +688,16 @@
             "type": "string"
           },
           "uniqueItems": true
+        },
+        "permissions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionPermissions"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -952,6 +972,16 @@
             "integer",
             "null"
           ]
+        },
+        "permissions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionPermissions"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -1049,6 +1079,1517 @@
     },
     "NativeInputLimits": {
       "description": "Ordinary conversation input is at most 65536 UTF-8 bytes; a host-created formal Run evidence envelope is at most 524288 bytes. A native execution budget is fifteen minutes, excluding pending human decisions. Errors never implicitly select Sim."
+    },
+    "Permission": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "supersedes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "filesystem": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "full_access"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "read_only"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "scoped"
+                    },
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^/"
+                          },
+                          "access": {
+                            "enum": [
+                              "deny",
+                              "read",
+                              "read_write"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "access"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "rules"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "network": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "enabled"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "disabled"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "allowlist"
+                    },
+                    "destinations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "destinations"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "tools": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "all_available"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "restricted"
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "deny": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "allow",
+                    "deny"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "filesystem",
+            "network",
+            "tools"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "identity",
+        "name",
+        "version",
+        "supersedes",
+        "schema_version",
+        "policy"
+      ],
+      "additionalProperties": false
+    },
+    "PermissionPolicy": {
+      "type": "object",
+      "properties": {
+        "filesystem": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "full_access"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "read_only"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "scoped"
+                },
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^/"
+                      },
+                      "access": {
+                        "enum": [
+                          "deny",
+                          "read",
+                          "read_write"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "access"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "mode",
+                "rules"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "network": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "enabled"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "disabled"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "allowlist"
+                },
+                "destinations": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "mode",
+                "destinations"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "tools": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "all_available"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "restricted"
+                },
+                "allow": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "deny": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": [
+                "mode",
+                "allow",
+                "deny"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "filesystem",
+        "network",
+        "tools"
+      ],
+      "additionalProperties": false
+    },
+    "PermissionRef": {
+      "type": "object",
+      "properties": {
+        "revision_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "revision_id"
+      ],
+      "additionalProperties": false
+    },
+    "PermissionPatch": {
+      "type": "object",
+      "properties": {
+        "filesystem": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "full_access"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "read_only"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "scoped"
+                },
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^/"
+                      },
+                      "access": {
+                        "enum": [
+                          "deny",
+                          "read",
+                          "read_write"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "access"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "mode",
+                "rules"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "network": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "enabled"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "disabled"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "allowlist"
+                },
+                "destinations": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "mode",
+                "destinations"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "tools": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "all_available"
+                }
+              },
+              "required": [
+                "mode"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "restricted"
+                },
+                "allow": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "deny": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": [
+                "mode",
+                "allow",
+                "deny"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "PermissionBinding": {
+      "type": "object",
+      "properties": {
+        "permission": {
+          "type": "object",
+          "properties": {
+            "revision_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "revision_id"
+          ],
+          "additionalProperties": false
+        },
+        "overrides": {
+          "type": "object",
+          "properties": {
+            "filesystem": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "full_access"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "read_only"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "scoped"
+                    },
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "^/"
+                          },
+                          "access": {
+                            "enum": [
+                              "deny",
+                              "read",
+                              "read_write"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "access"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "rules"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "network": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "enabled"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "disabled"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "allowlist"
+                    },
+                    "destinations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "destinations"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "tools": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "all_available"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "const": "restricted"
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "deny": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "allow",
+                    "deny"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "PermissionOverrides": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "type": "object",
+          "properties": {
+            "permission": {
+              "type": "object",
+              "properties": {
+                "revision_id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "revision_id"
+              ],
+              "additionalProperties": false
+            },
+            "overrides": {
+              "type": "object",
+              "properties": {
+                "filesystem": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "full_access"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "read_only"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "scoped"
+                        },
+                        "rules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "pattern": "^/"
+                              },
+                              "access": {
+                                "enum": [
+                                  "deny",
+                                  "read",
+                                  "read_write"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "access"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "rules"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "network": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "enabled"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "disabled"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "allowlist"
+                        },
+                        "destinations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "minItems": 1
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "destinations"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "tools": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "all_available"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "restricted"
+                        },
+                        "allow": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "deny": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "allow",
+                        "deny"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "sandbox": {
+          "type": "object",
+          "properties": {
+            "permission": {
+              "type": "object",
+              "properties": {
+                "revision_id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "revision_id"
+              ],
+              "additionalProperties": false
+            },
+            "overrides": {
+              "type": "object",
+              "properties": {
+                "filesystem": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "full_access"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "read_only"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "scoped"
+                        },
+                        "rules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "pattern": "^/"
+                              },
+                              "access": {
+                                "enum": [
+                                  "deny",
+                                  "read",
+                                  "read_write"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "access"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "rules"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "network": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "enabled"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "disabled"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "allowlist"
+                        },
+                        "destinations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "minItems": 1
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "destinations"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "tools": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "all_available"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "const": "restricted"
+                        },
+                        "allow": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "deny": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "allow",
+                        "deny"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ResolvedPermission": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/PermissionRef"
+        },
+        "policy": {
+          "$ref": "#/$defs/PermissionPolicy"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "reference",
+        "policy",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionScope": {
+      "type": "object",
+      "properties": {
+        "work_type": {
+          "enum": [
+            "discussion",
+            "design",
+            "implementation",
+            "testing",
+            "review"
+          ]
+        },
+        "writable_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "read_only_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "work_type",
+        "writable_paths",
+        "read_only_paths"
+      ],
+      "additionalProperties": false
+    },
+    "SandboxIsolation": {
+      "type": "object",
+      "properties": {
+        "protected_metadata": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "read_only_root": {
+          "type": "boolean"
+        },
+        "executable_tmp": {
+          "type": "boolean"
+        },
+        "nested_sandbox": {
+          "type": "boolean"
+        },
+        "backend": {
+          "type": "string"
+        },
+        "credential_boundary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protected_metadata",
+        "read_only_root",
+        "executable_tmp",
+        "nested_sandbox",
+        "backend",
+        "credential_boundary"
+      ],
+      "additionalProperties": false
+    },
+    "ResourceLimits": {
+      "type": "object",
+      "properties": {
+        "memory_mb": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpus": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pids": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tmp_mb": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "memory_mb",
+        "cpus",
+        "pids",
+        "tmp_mb"
+      ],
+      "additionalProperties": false
+    },
+    "PermissionEnforcementPlan": {
+      "type": "object",
+      "properties": {
+        "compiler_version": {
+          "type": "string"
+        },
+        "harness_backend": {
+          "type": "string"
+        },
+        "sandbox_backend": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "asset_digests": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "native_options": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NativePermissionOptions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "compiler_version",
+        "harness_backend",
+        "sandbox_backend",
+        "rules",
+        "asset_digests"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionPermissions": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/ResolvedPermission"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/ResolvedPermission"
+        },
+        "approval": {
+          "enum": [
+            "never",
+            "on_request"
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/ExecutionScope"
+        },
+        "isolation": {
+          "$ref": "#/$defs/SandboxIsolation"
+        },
+        "limits": {
+          "$ref": "#/$defs/ResourceLimits"
+        },
+        "enforcement": {
+          "$ref": "#/$defs/PermissionEnforcementPlan"
+        }
+      },
+      "required": [
+        "harness",
+        "sandbox",
+        "approval",
+        "scope",
+        "isolation",
+        "limits",
+        "enforcement"
+      ],
+      "additionalProperties": false
+    },
+    "PermissionConfiguration": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "harnesses": {
+          "type": "object",
+          "properties": {
+            "codex": {
+              "$ref": "#/$defs/PermissionBinding"
+            },
+            "dsh": {
+              "$ref": "#/$defs/PermissionBinding"
+            }
+          },
+          "required": [
+            "codex",
+            "dsh"
+          ],
+          "additionalProperties": false
+        },
+        "sandbox": {
+          "$ref": "#/$defs/PermissionBinding"
+        },
+        "approval": {
+          "enum": [
+            "never",
+            "on_request"
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "harnesses",
+        "sandbox",
+        "approval"
+      ],
+      "additionalProperties": false
+    },
+    "GitHubProjectOpen": {
+      "type": "object",
+      "required": [
+        "command_id",
+        "payload"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mainline": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "target"
+          ]
+        },
+        {
+          "properties": {
+            "payload": {
+              "required": [
+                "repository"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "RuntimePreparationStatus": {
+      "type": "object",
+      "required": [
+        "preparations"
+      ],
+      "properties": {
+        "preparations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "provider",
+              "status",
+              "message"
+            ],
+            "properties": {
+              "provider": {
+                "enum": [
+                  "codex",
+                  "dsh",
+                  "codex-auth"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "preparing",
+                  "ready",
+                  "failed"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "RuntimePrepare": {
+      "type": "object",
+      "required": [
+        "provider"
+      ],
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "dsh"
+          ]
+        }
+      }
+    },
+    "NativePermissionOptions": {
+      "type": "object",
+      "required": [
+        "provider",
+        "version",
+        "sandbox_mode",
+        "profile",
+        "approval_policy"
+      ],
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "dsh"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "sandbox_mode": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "approval_policy": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -1131,6 +2672,26 @@
               "proposal.adopt",
               "proposal.reject",
               "proposal.instantiate"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/Command"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "enum": [
+              "permission.create",
+              "permission.revise",
+              "permission.bind"
             ]
           }
         }

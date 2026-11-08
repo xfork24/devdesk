@@ -981,6 +981,7 @@ fn small_sample_pagination_and_event_query() {
             for pn in 0..10 {
                 let pid = id();
                 s.projects.push(Project {
+                    permission_overrides: None,
                     runtime_preferences: None,
                     workspace_definition: None,
                     id: pid.clone(),
@@ -2811,7 +2812,15 @@ fn project_databases_migrate_full_history_and_keep_the_legacy_source() {
         assert_eq!(global.reserve_project(&command).unwrap(), project.id);
     }
     for (table, rows) in before.as_object().unwrap() {
-        if !["definitions", "harnesses", "sandboxes", "events"].contains(&table.as_str()) {
+        if ![
+            "permissions",
+            "definitions",
+            "harnesses",
+            "sandboxes",
+            "events",
+        ]
+        .contains(&table.as_str())
+        {
             assert_eq!(
                 combined[table],
                 rows.as_array().unwrap().len(),

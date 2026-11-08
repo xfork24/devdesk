@@ -1,0 +1,868 @@
+{
+  "project_id": "3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb",
+  "feature_id": "b8da10f4-777f-46cc-8188-8cd7d76cfe50",
+  "tasks": {
+    "add": {
+      "id": "c5143334-ff9b-490a-bd13-15523c20550d",
+      "attempt": "76e3fddf-c5ab-4085-842c-df7fa8248de7",
+      "provider": "codex",
+      "evidence": [
+        {
+          "id": "6cd18ce9-f231-4853-90be-7fa235e392fb",
+          "node": "verify",
+          "result_artifact": "f05e2f60-a0b9-4368-aea7-0840364d8336",
+          "result": {
+            "assertion_failed": false,
+            "candidate": "fa3b95591207d623ddaaded7a1c792a67ac4a8d1",
+            "container_id": "7526ac161e5f04ac8713d783900dc6fa99e86cb598167b0014895f3ae80ac7b5",
+            "counts": {
+              "cancelled": 0,
+              "failed": 0,
+              "passed": 3,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 3,
+              "todo": 0,
+              "topLevel": 3
+            },
+            "environment": "53ee3307-3c20-4961-ae59-83511c622173",
+            "exit_code": 0,
+            "expected_failure": false,
+            "failure_type": null,
+            "image_digest": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+            "operation_id": "6cd18ce9-f231-4853-90be-7fa235e392fb",
+            "origin": "external",
+            "permissions": {
+              "approval": "never",
+              "enforcement": {
+                "asset_digests": {},
+                "compiler_version": "isolated-tests/v1",
+                "harness_backend": "node-test",
+                "native_options": null,
+                "rules": {
+                  "filesystem": "docker-read-only-export",
+                  "network": "docker-none"
+                },
+                "sandbox_backend": "docker-default-v1"
+              },
+              "harness": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "isolation": {
+                "backend": "docker-default-v1",
+                "credential_boundary": "credential-free",
+                "executable_tmp": false,
+                "nested_sandbox": false,
+                "protected_metadata": [
+                  ".git",
+                  ".codex",
+                  ".agents"
+                ],
+                "read_only_root": true
+              },
+              "limits": {
+                "cpus": 2,
+                "memory_mb": 1024,
+                "pids": 256,
+                "tmp_mb": 128
+              },
+              "sandbox": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "scope": {
+                "read_only_paths": [
+                  "."
+                ],
+                "work_type": "testing",
+                "writable_paths": []
+              }
+            },
+            "recipe": {
+              "files": [
+                "tests/live-22459b4106-add/behavior.test.mjs"
+              ],
+              "image": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":3,\"failed\":0,\"passed\":3,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":3,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":3,\"failed\":0,\"passed\":3,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":3,\"suites\":0}}\n",
+            "report_sha256": "5907f90756b4400e48cd2bd5d99c3f92b03b39d572a64b1c9ecad66c30bd94ff",
+            "status": "succeeded",
+            "test_definitions": [
+              "46f1a6f4-91d8-405a-899e-4e52909d12c2"
+            ],
+            "test_phase": "verify",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "d3e53862-df26-41c6-a4ae-25a82ccb53d6",
+          "node": "docs",
+          "result_artifact": "983efd71-16ed-43db-b0ed-99101e0cf764",
+          "result": {
+            "code_revision": "fa3b95591207d623ddaaded7a1c792a67ac4a8d1",
+            "document": {
+              "body": "范围与追踪：本说明仅覆盖 Task c5143334-ff9b-490a-bd13-15523c20550d 的 AC-ADD，对应需求 406cf026-cfad-4f87-a2d2-46b8e5cb2a47、设计 37af5c93-c233-4354-be61-475cd5794da9。核对版本为 fa3b95591207d623ddaaded7a1c792a67ac4a8d1；multiply 不属于本次范围。\n\n接口与使用：src/live-22459b4106-add.mjs 提供 named export add(a, b)。从项目根目录的 ESM 文件可使用 import { add } from './src/live-22459b4106-add.mjs'; add(2, 3) 返回 5。该纯函数无依赖，支持零、负数及安全整数边界，返回 number。\n\n失败路径：实现先通过 Number.isSafeInteger 检查两个参数；任一无效即抛出 TypeError，不进行隐式类型转换。有效输入相加后再次检查结果，超出安全整数范围时抛出 RangeError。错误消息文本不属于接口契约。\n\n验收映射：tests/live-22459b4106-add/behavior.test.mjs 使用 node:test、node:assert/strict，通过相对路径动态导入模块。三个独立顶层测试分别覆盖普通求和、零、负数与边界；两个参数位置的无效输入；正负方向溢出。无效输入包含字符串、NaN、正负 Infinity、小数、不安全整数、undefined、null、布尔值、BigInt、对象、数组和 Symbol。仅目标模块缺失会转换为明确断言失败，其他导入错误继续抛出。\n\n已有执行证据：提供的 Red 记录对应 13263a99f49f28145976ed0dc8f1d5b69c96b645，3 项测试均为断言失败，退出码 1。Green 对应 fa3b95591207d623ddaaded7a1c792a67ac4a8d1，3 项通过、0 项失败，退出码 0。两次均引用配方镜像 sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc，测试文件为 tests/live-22459b4106-add/behavior.test.mjs，超时 60 秒。\n\n测试限制：本次仅静态读取代码与测试，未重新执行测试。现有测试采用有限样例，未穷举所有安全整数输入；提供的证据未包含 verify 复验或 Feature 全量验证结果。因此本文记录实现与已有执行结果，不表示验收、Review 或 Delivery 已获接受。",
+              "kind": "doc",
+              "title": "AC-ADD 安全整数加法实现与使用说明"
+            },
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "已只读核对 add 实现和独立测试，完成接口、验收映射、失败路径及测试限制说明；未修改文件或运行测试。",
+            "turn_id": "a3692883-98e7-4949-aaf5-f9cf943a8e29"
+          }
+        },
+        {
+          "id": "0c4f791a-624b-4035-980c-098ea5cb5806",
+          "node": "green",
+          "result_artifact": "b3f6f92f-e160-46ab-bd5c-0f59d406281b",
+          "result": {
+            "assertion_failed": false,
+            "candidate": "fa3b95591207d623ddaaded7a1c792a67ac4a8d1",
+            "container_id": "a02aa4a22e01f3d4c41c4c5b39e7df901b1a9d873378e110cb66d23292522f50",
+            "counts": {
+              "cancelled": 0,
+              "failed": 0,
+              "passed": 3,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 3,
+              "todo": 0,
+              "topLevel": 3
+            },
+            "environment": "7a683495-efe7-4271-9766-06247568b7ac",
+            "exit_code": 0,
+            "expected_failure": false,
+            "failure_type": null,
+            "image_digest": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+            "operation_id": "0c4f791a-624b-4035-980c-098ea5cb5806",
+            "origin": "external",
+            "permissions": {
+              "approval": "never",
+              "enforcement": {
+                "asset_digests": {},
+                "compiler_version": "isolated-tests/v1",
+                "harness_backend": "node-test",
+                "native_options": null,
+                "rules": {
+                  "filesystem": "docker-read-only-export",
+                  "network": "docker-none"
+                },
+                "sandbox_backend": "docker-default-v1"
+              },
+              "harness": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "isolation": {
+                "backend": "docker-default-v1",
+                "credential_boundary": "credential-free",
+                "executable_tmp": false,
+                "nested_sandbox": false,
+                "protected_metadata": [
+                  ".git",
+                  ".codex",
+                  ".agents"
+                ],
+                "read_only_root": true
+              },
+              "limits": {
+                "cpus": 2,
+                "memory_mb": 1024,
+                "pids": 256,
+                "tmp_mb": 128
+              },
+              "sandbox": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "scope": {
+                "read_only_paths": [
+                  "."
+                ],
+                "work_type": "testing",
+                "writable_paths": []
+              }
+            },
+            "recipe": {
+              "files": [
+                "tests/live-22459b4106-add/behavior.test.mjs"
+              ],
+              "image": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":3,\"failed\":0,\"passed\":3,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":3,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":3,\"failed\":0,\"passed\":3,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":3,\"suites\":0}}\n",
+            "report_sha256": "5907f90756b4400e48cd2bd5d99c3f92b03b39d572a64b1c9ecad66c30bd94ff",
+            "status": "succeeded",
+            "test_definitions": [
+              "46f1a6f4-91d8-405a-899e-4e52909d12c2"
+            ],
+            "test_phase": "green",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "e89184ce-4793-4ee6-ae1e-c1ea477f069d",
+          "node": "implement",
+          "result_artifact": "e216436a-0ac4-41df-b675-984123581377",
+          "result": {
+            "code_revision": "fa3b95591207d623ddaaded7a1c792a67ac4a8d1",
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "已新增 src/live-22459b4106-add.mjs，导出 add(a,b)：校验安全整数输入，无效输入抛出 TypeError，求和溢出抛出 RangeError。未修改测试或其他模块；未运行测试，等待 coordinator 执行 Green 并封存 Git。",
+            "turn_id": "a4367ffe-070a-480c-9e45-41fa8c716140"
+          }
+        },
+        {
+          "id": "550cceb5-c411-41ea-a698-c5f2e27be5da",
+          "node": "red",
+          "result_artifact": "a65aa267-8dcc-4aec-96fe-74ad0f2bd768",
+          "result": {
+            "assertion_failed": true,
+            "candidate": "13263a99f49f28145976ed0dc8f1d5b69c96b645",
+            "container_id": "3a9a677ad11369ac0f251baa76b77fd65e5e9d346f29b16003ef7de7f55eefc4",
+            "counts": {
+              "cancelled": 0,
+              "failed": 3,
+              "passed": 0,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 3,
+              "todo": 0,
+              "topLevel": 3
+            },
+            "environment": "32be9703-820d-4c29-80b3-50c9be7a7a4e",
+            "exit_code": 1,
+            "expected_failure": true,
+            "failure_type": null,
+            "image_digest": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+            "operation_id": "550cceb5-c411-41ea-a698-c5f2e27be5da",
+            "origin": "external",
+            "permissions": {
+              "approval": "never",
+              "enforcement": {
+                "asset_digests": {},
+                "compiler_version": "isolated-tests/v1",
+                "harness_backend": "node-test",
+                "native_options": null,
+                "rules": {
+                  "filesystem": "docker-read-only-export",
+                  "network": "docker-none"
+                },
+                "sandbox_backend": "docker-default-v1"
+              },
+              "harness": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "isolation": {
+                "backend": "docker-default-v1",
+                "credential_boundary": "credential-free",
+                "executable_tmp": false,
+                "nested_sandbox": false,
+                "protected_metadata": [
+                  ".git",
+                  ".codex",
+                  ".agents"
+                ],
+                "read_only_root": true
+              },
+              "limits": {
+                "cpus": 2,
+                "memory_mb": 1024,
+                "pids": 256,
+                "tmp_mb": 128
+              },
+              "sandbox": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "scope": {
+                "read_only_paths": [
+                  "."
+                ],
+                "work_type": "testing",
+                "writable_paths": []
+              }
+            },
+            "recipe": {
+              "files": [
+                "tests/live-22459b4106-add/behavior.test.mjs"
+              ],
+              "image": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":3,\"failed\":3,\"passed\":0,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":3,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":3,\"failed\":3,\"passed\":0,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":3,\"suites\":0}}\n",
+            "report_sha256": "55b084131b2b819d5de76cba04a00b8cb1a20e6c03d827dbf8dcaa57d06aefc6",
+            "status": "succeeded",
+            "test_definitions": [
+              "46f1a6f4-91d8-405a-899e-4e52909d12c2"
+            ],
+            "test_phase": "red",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "322f8b72-f89e-4023-b7c9-f3449ab26318",
+          "node": "test_author",
+          "result_artifact": "58be6ec3-9106-49ff-9cbf-9e48075c52ed",
+          "result": {
+            "code_revision": "13263a99f49f28145976ed0dc8f1d5b69c96b645",
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "Authored tests/live-22459b4106-add/behavior.test.mjs covering AC-ADD valid sums, zero, negatives, safe boundaries, invalid inputs in either position, and overflow. Missing target module produces an assertion failure; other import errors propagate separately. Tests were not run; coordinator execution is required.",
+            "turn_id": "b6d4354c-664c-44ba-8e98-a8f428c9c094"
+          }
+        }
+      ],
+      "baseline": "13263a99f49f28145976ed0dc8f1d5b69c96b645",
+      "candidate": "fa3b95591207d623ddaaded7a1c792a67ac4a8d1",
+      "delivery": "cdc74983-b713-4f9d-81d8-1be48d35f47f",
+      "review": "bed27a64-deef-4062-ad10-defa117ce58d"
+    },
+    "multiply": {
+      "id": "3e2443b1-9ff7-4903-bb52-98c83626178c",
+      "attempt": "73359f89-70f7-4720-9a32-27c497cc1736",
+      "provider": "dsh",
+      "evidence": [
+        {
+          "id": "d2902148-c03c-48f0-ba97-11fb61416b6d",
+          "node": "implement",
+          "result_artifact": "4a71030e-56ff-433b-8c9c-ab5fecf41488",
+          "result": {
+            "code_revision": "263fec45fefdb0cfa46ddccd3b28a558772e184e",
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "Implemented src/live-22459b4106-multiply.mjs exporting multiply(a,b): validates both inputs with Number.isSafeInteger (TypeError otherwise), multiplies, validates result with Number.isSafeInteger (RangeError otherwise), returns the product. All 11 behavior tests in tests/live-22459b4106-multiply/behavior.test.mjs pass; node --check confirms syntax. No other files touched.",
+            "turn_id": "4c4f97bf-75ba-4afe-a55a-de68ff7eb07b"
+          }
+        },
+        {
+          "id": "c78b986b-56f0-4faa-a1c8-6a81202acbd9",
+          "node": "verify",
+          "result_artifact": "5725a3eb-6410-4e14-ae0d-e52ffc9c8147",
+          "result": {
+            "assertion_failed": false,
+            "candidate": "263fec45fefdb0cfa46ddccd3b28a558772e184e",
+            "container_id": "6f4d5d34074083425082973616df1944e46dc66353a8f333fa3a8de3e6d33ef3",
+            "counts": {
+              "cancelled": 0,
+              "failed": 0,
+              "passed": 11,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 11,
+              "todo": 0,
+              "topLevel": 11
+            },
+            "environment": "2666ae80-6684-4b5c-b791-baf6a46450af",
+            "exit_code": 0,
+            "expected_failure": false,
+            "failure_type": null,
+            "image_digest": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+            "operation_id": "c78b986b-56f0-4faa-a1c8-6a81202acbd9",
+            "origin": "external",
+            "permissions": {
+              "approval": "never",
+              "enforcement": {
+                "asset_digests": {},
+                "compiler_version": "isolated-tests/v1",
+                "harness_backend": "node-test",
+                "native_options": null,
+                "rules": {
+                  "filesystem": "docker-read-only-export",
+                  "network": "docker-none"
+                },
+                "sandbox_backend": "docker-default-v1"
+              },
+              "harness": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "isolation": {
+                "backend": "docker-default-v1",
+                "credential_boundary": "credential-free",
+                "executable_tmp": false,
+                "nested_sandbox": false,
+                "protected_metadata": [
+                  ".git",
+                  ".codex",
+                  ".agents"
+                ],
+                "read_only_root": true
+              },
+              "limits": {
+                "cpus": 2,
+                "memory_mb": 1024,
+                "pids": 256,
+                "tmp_mb": 128
+              },
+              "sandbox": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "scope": {
+                "read_only_paths": [
+                  "."
+                ],
+                "work_type": "testing",
+                "writable_paths": []
+              }
+            },
+            "recipe": {
+              "files": [
+                "tests/live-22459b4106-multiply/behavior.test.mjs"
+              ],
+              "image": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":11,\"failed\":0,\"passed\":11,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":11,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":11,\"failed\":0,\"passed\":11,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":11,\"suites\":0}}\n",
+            "report_sha256": "c5a29af1cabe13106a2d4a992d6197a17231ca1d644345b2d1fee2f219f846e8",
+            "status": "succeeded",
+            "test_definitions": [
+              "05de2f34-64f3-4cc1-a7fd-c7325f13a8f6"
+            ],
+            "test_phase": "verify",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "ad0720d1-0c8f-4132-a345-687ca91bd5e6",
+          "node": "docs",
+          "result_artifact": "572d03f8-23e4-4d29-8ae9-706f7c69fe15",
+          "result": {
+            "code_revision": "263fec45fefdb0cfa46ddccd3b28a558772e184e",
+            "document": {
+              "body": "## 目标与范围\n本模块是任务 `multiply`（任务 id `3e2443b1-9ff7-4903-bb52-98c83626178c`）的交付实现，对应验收准则 **AC-MUL**：`multiply` 返回安全整数之积，`multiply(2,3)` 返回 `6`，支持零和负数；任一输入不满足 `Number.isSafeInteger` 时抛出 `TypeError`；输入均为安全整数但数学乘积超出安全整数范围时抛出 `RangeError`。实现为单个 Node ESM 纯函数文件 `src/live-22459b4106-multiply.mjs`，不引入依赖，不修改现有资源。\n\n## 导出接口\n`src/live-22459b4106-multiply.mjs` 通过 **named export** 提供：\n\n```js\nexport function multiply(a, b) { ... }\n```\n\n- 签名：`multiply(a, b)`，返回安全整数乘积（`number`）。\n- 模块使用 `.mjs` 扩展名声明 Node ESM，与其他模块互不依赖，不要求或新增 `package.json`。\n\n## 行为与验收映射\n实现逻辑（依据设计 `37af5c93-c233-4354-be61-475cd5794da9`）：\n1. 先分别使用 `Number.isSafeInteger` 校验两个入参；任一不满足即抛出 `TypeError`（无隐式类型转换）。\n2. 校验通过后执行 `a * b`。\n3. 对乘积再次使用 `Number.isSafeInteger` 校验；不满足即抛出 `RangeError`，否则返回乘积。\n\n- **AC-MUL 正向用例**：`multiply(2,3)` 返回 `6`。\n- **零与负数**：`multiply(0, 5)`、`multiply(5, 0)`、`multiply(0, 0)` 返回 `0`；`multiply(-2, 3)` / `multiply(2, -3)` 返回 `-6`，`multiply(-2, -3)` 返回 `6`。\n- **安全整数边界**：`multiply(MAX_SAFE_INTEGER, 1)`、`multiply(MIN_SAFE_INTEGER, 1)`、`multiply(MAX_SAFE_INTEGER, -1)`、`multiply(MIN_SAFE_INTEGER, -1)` 等均返回安全结果。\n\n## 失败与错误路径\n- **`TypeError`**：任一参数位置传入非安全整数（字符串、`NaN`、`±Infinity`、小数、非安全整数、`undefined`、`null`、布尔、`bigint`、`symbol`、装箱数字、对象、数组、可强制转换对象等）时抛出，且 **不进行隐式类型转换**。校验在算术运算之前完成，即使另一参数为 `0` 或参数缺失（`multiply()`、`multiply(1)`）也抛出 `TypeError`，不存在「零短路」。\n- **`RangeError`**：输入均为安全整数但乘积超出安全整数范围时抛出，覆盖正溢出（如 `MAX_SAFE_INTEGER * 2`）与负溢出（如 `MIN_SAFE_INTEGER * 2`）。\n- 错误消息文本 **不作为接口契约**，测试仅断言错误类型。\n\n## 使用示例\n```js\nimport { multiply } from './src/live-22459b4106-multiply.mjs';\nmultiply(2, 3);            // 6\nmultiply(-2, 3);           // -6\nmultiply(0, 5);            // 0\nmultiply(Number.MAX_SAFE_INTEGER, 2); // 抛出 RangeError\nmultiply('2', 3);          // 抛出 TypeError\n```\n\n## 测试与目录\n独立测试文件 `tests/live-22459b4106-multiply/behavior.test.mjs` 使用 `node:test` 与 `node:assert/strict`，通过相对路径 `../../src/live-22459b4106-multiply.mjs` 动态导入 named export `multiply`，共 11 个顶层用例，覆盖：导出为函数、`multiply(2,3)===6`、零操作数、负数操作数、乘法恒等元 `1`、安全整数边界、正向与负向 `RangeError` 溢出、非安全整数输入的 `TypeError`（两个参数位置各校验一次）、以及「先校验后运算」的无零短路。测试配方锁定镜像 `sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc`，runner 为 `node_test`，超时 60 秒，由独立无凭据容器执行。\n\n## 测试局限性（依据提供的证据，不臆造）\n- 测试仅断言错误 **类型**（`TypeError` / `RangeError`），不校验错误消息文本。\n- 零结果用例以 `=== 0` 接受 `+0` 与 `-0`，因此不区分零的符号（`MIN_SAFE_INTEGER * 0` 可得到 `-0`）。\n- 动态导入加载器仅在 **精确的缺失目标**（`ERR_MODULE_NOT_FOUND` 且 `url === MODULE_URL`）时转为 `assert.fail` 作为有效 Red；其他导入/环境错误（依赖缺失、语法错误、模块求值错误等）单独诊断并重新抛出，不算作行为性 Red。\n- 本文档基于冻结的代码与测试证据撰写，未运行测试，也不声称接受（acceptance）；实际通过状态以独立测试容器在对应封存 SHA 上的执行结果为准。\n",
+              "kind": "doc",
+              "title": "安全整数乘法模块实现与使用说明（AC-MUL）"
+            },
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "Inspected the frozen implementation src/live-22459b4106-multiply.mjs and its paired test tests/live-22459b4106-multiply/behavior.test.mjs read-only. The module exports a named function multiply(a,b) that validates both inputs with Number.isSafeInteger (TypeError on failure), multiplies, validates the product with Number.isSafeInteger (RangeError on failure), and returns the product. It maps directly to AC-MUL and matches the frozen design. This document records the exported interface, acceptance mapping, failure/error paths, and the test limitations visible in the provided evidence; it does not claim acceptance.",
+            "turn_id": "ecd68aa3-d9fc-4d36-9d08-fa1ec71ed490"
+          }
+        },
+        {
+          "id": "c767cfcb-c5e0-49fa-b293-23ab2273c3ec",
+          "node": "green",
+          "result_artifact": "2dbb3e5b-ec68-44bf-a6ef-51623ab7f0dc",
+          "result": {
+            "assertion_failed": false,
+            "candidate": "263fec45fefdb0cfa46ddccd3b28a558772e184e",
+            "container_id": "cfa830955c54c838ff5364c97687f21bac08e86dd44657296bc6335371c3185d",
+            "counts": {
+              "cancelled": 0,
+              "failed": 0,
+              "passed": 11,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 11,
+              "todo": 0,
+              "topLevel": 11
+            },
+            "environment": "8d57c72c-f723-4c2f-be92-787dde707c60",
+            "exit_code": 0,
+            "expected_failure": false,
+            "failure_type": null,
+            "image_digest": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+            "operation_id": "c767cfcb-c5e0-49fa-b293-23ab2273c3ec",
+            "origin": "external",
+            "permissions": {
+              "approval": "never",
+              "enforcement": {
+                "asset_digests": {},
+                "compiler_version": "isolated-tests/v1",
+                "harness_backend": "node-test",
+                "native_options": null,
+                "rules": {
+                  "filesystem": "docker-read-only-export",
+                  "network": "docker-none"
+                },
+                "sandbox_backend": "docker-default-v1"
+              },
+              "harness": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "isolation": {
+                "backend": "docker-default-v1",
+                "credential_boundary": "credential-free",
+                "executable_tmp": false,
+                "nested_sandbox": false,
+                "protected_metadata": [
+                  ".git",
+                  ".codex",
+                  ".agents"
+                ],
+                "read_only_root": true
+              },
+              "limits": {
+                "cpus": 2,
+                "memory_mb": 1024,
+                "pids": 256,
+                "tmp_mb": 128
+              },
+              "sandbox": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "scope": {
+                "read_only_paths": [
+                  "."
+                ],
+                "work_type": "testing",
+                "writable_paths": []
+              }
+            },
+            "recipe": {
+              "files": [
+                "tests/live-22459b4106-multiply/behavior.test.mjs"
+              ],
+              "image": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":11,\"failed\":0,\"passed\":11,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":11,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":11,\"failed\":0,\"passed\":11,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":11,\"suites\":0}}\n",
+            "report_sha256": "c5a29af1cabe13106a2d4a992d6197a17231ca1d644345b2d1fee2f219f846e8",
+            "status": "succeeded",
+            "test_definitions": [
+              "05de2f34-64f3-4cc1-a7fd-c7325f13a8f6"
+            ],
+            "test_phase": "green",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "dcf2290c-c397-4177-b044-82c7af915ab9",
+          "node": "red",
+          "result_artifact": "aaad316a-0ca2-46cb-bb67-a77e5017ae53",
+          "result": {
+            "assertion_failed": true,
+            "candidate": "f1f7098b3706839433b66cc9b057b14c4376ecd4",
+            "container_id": "87b0732d1051ea6f8ba7522482b2238772630fc912ecbb98ce04ee64d99afa73",
+            "counts": {
+              "cancelled": 0,
+              "failed": 10,
+              "passed": 1,
+              "skipped": 0,
+              "suites": 0,
+              "tests": 11,
+              "todo": 0,
+              "topLevel": 11
+            },
+            "environment": "0204bf26-1354-47d8-bffb-ff2b1e2f50ad",
+            "exit_code": 1,
+            "expected_failure": true,
+            "failure_type": null,
+            "image_digest": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+            "operation_id": "dcf2290c-c397-4177-b044-82c7af915ab9",
+            "origin": "external",
+            "permissions": {
+              "approval": "never",
+              "enforcement": {
+                "asset_digests": {},
+                "compiler_version": "isolated-tests/v1",
+                "harness_backend": "node-test",
+                "native_options": null,
+                "rules": {
+                  "filesystem": "docker-read-only-export",
+                  "network": "docker-none"
+                },
+                "sandbox_backend": "docker-default-v1"
+              },
+              "harness": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "isolation": {
+                "backend": "docker-default-v1",
+                "credential_boundary": "credential-free",
+                "executable_tmp": false,
+                "nested_sandbox": false,
+                "protected_metadata": [
+                  ".git",
+                  ".codex",
+                  ".agents"
+                ],
+                "read_only_root": true
+              },
+              "limits": {
+                "cpus": 2,
+                "memory_mb": 1024,
+                "pids": 256,
+                "tmp_mb": 128
+              },
+              "sandbox": {
+                "policy": {
+                  "filesystem": {
+                    "mode": "read_only"
+                  },
+                  "network": {
+                    "mode": "disabled"
+                  },
+                  "tools": {
+                    "mode": "all_available"
+                  }
+                },
+                "reference": {
+                  "revision_id": "permission-isolated-tests-v1"
+                },
+                "sources": [
+                  "isolated-tests:v1",
+                  "execution_scope:fixed-read-only-export"
+                ]
+              },
+              "scope": {
+                "read_only_paths": [
+                  "."
+                ],
+                "work_type": "testing",
+                "writable_paths": []
+              }
+            },
+            "recipe": {
+              "files": [
+                "tests/live-22459b4106-multiply/behavior.test.mjs"
+              ],
+              "image": "sha256:5f8731ec42de5c5d542d5398147c3348c200ad7a66c6cfc99a5f52e0b9776ffc",
+              "runner": "node_test",
+              "timeout_seconds": 60
+            },
+            "report": "{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"fail\",\"classification\":\"assertion\",\"codes\":[\"ERR_TEST_FAILURE\",\"ERR_ASSERTION\"]}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":11,\"failed\":10,\"passed\":1,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":11,\"suites\":0}}\n{\"devdesk_test_report\":1,\"event\":\"summary\",\"counts\":{\"tests\":11,\"failed\":10,\"passed\":1,\"cancelled\":0,\"skipped\":0,\"todo\":0,\"topLevel\":11,\"suites\":0}}\n",
+            "report_sha256": "f37e81ab0d49e314ed958da8097076ece32c6d48a006c4a5a832c8335b5cdbcf",
+            "status": "succeeded",
+            "test_definitions": [
+              "05de2f34-64f3-4cc1-a7fd-c7325f13a8f6"
+            ],
+            "test_phase": "red",
+            "writer_revoked": true
+          }
+        },
+        {
+          "id": "eefbfed9-2536-41ba-897b-b3444c538ed7",
+          "node": "test_author",
+          "result_artifact": "2c2b58ca-9642-46b9-becc-800136f18cf4",
+          "result": {
+            "code_revision": "f1f7098b3706839433b66cc9b057b14c4376ecd4",
+            "origin": "external",
+            "status": "succeeded",
+            "summary": "Authored node:test behavior tests for AC-MUL at /work/tests/live-22459b4106-multiply/behavior.test.mjs. The file dynamically imports the named export multiply from ../../src/live-22459b4106-multiply.mjs via new URL(...) and uses a loader that converts only the exact missing-target (ERR_MODULE_NOT_FOUND with matching url) into assert.fail, while rethrowing unrelated import/environment errors after a diagnostic. Coverage includes: multiply is a function; multiply(2,3)===6; zero operands (accepting +0/-0); negative operands; multiplicative identity; safe-integer boundaries (MAX/MIN by ±1 and zero); RangeError for positive and negative overflow; TypeError for non-safe-integer inputs in either position (strings, NaN, ±Infinity, fractions, unsafe integers, undefined, null, boolean, bigint, symbol, boxed number, object, array, coercible object); and validation-before-arithmetic (invalid inputs with zero operand, plus missing/partial arguments). No implementation stubs or dependencies were created, and no tests were run. Syntax verified with node --check.",
+            "turn_id": "fb1d8928-1694-45bb-bbe4-8babb8a40e45"
+          }
+        }
+      ],
+      "baseline": "f1f7098b3706839433b66cc9b057b14c4376ecd4",
+      "candidate": "263fec45fefdb0cfa46ddccd3b28a558772e184e",
+      "delivery": "c04a8233-082f-497e-8c1f-dd791ff1d395",
+      "review_provider": "codex",
+      "review_run": "409a9f0d-78e3-48a7-99cf-7e877c2dfb54",
+      "review": "57ca6374-03b0-4cf5-b71a-3b533c5995ec"
+    }
+  },
+  "passed": true,
+  "stage": "finished",
+  "previous_failures": [
+    {
+      "stage": "failed",
+      "failure_type": "AssertionError",
+      "failure": "[{\"id\": \"7c125ea8-657b-4d5f-8db3-9dfa3611273a\", \"node\": \"implement\", \"result\": {\"failure_type\": \"adapter_contract\", \"message\": \"阶段输出不是 JSON\", \"origin\": \"external\", \"status\": \"failed\"}}]"
+    },
+    {
+      "stage": "failed",
+      "failure_type": "AssertionError",
+      "failure": "[{\"id\": \"7c125ea8-657b-4d5f-8db3-9dfa3611273a\", \"node\": \"implement\", \"result\": {\"failure_type\": \"adapter_contract\", \"message\": \"阶段输出不是 JSON\", \"origin\": \"external\", \"status\": \"failed\"}}]"
+    },
+    {
+      "stage": "failed",
+      "failure_type": "AssertionError",
+      "failure": "{'failure_type': 'adapter_contract', 'message': '原生轮次完成，但阶段结果不符合结构契约', 'origin': 'external', 'status': 'failed', 'turn_id': '03fdd80f-9618-4717-83f9-945ddb61d615'}"
+    },
+    {
+      "stage": "failed",
+      "failure_type": "AssertionError",
+      "failure": "{'failure_type': 'adapter_contract', 'message': '原生轮次完成，但阶段结果不符合结构契约', 'origin': 'external', 'status': 'failed', 'turn_id': 'd71cb70e-aba2-4d0a-ba8e-0c2d3b5b05e1'}"
+    }
+  ]
+}

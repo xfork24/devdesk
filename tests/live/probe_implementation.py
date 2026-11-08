@@ -34,13 +34,13 @@ try:
    did=c.command('delivery.submit',aid,attempt['revision'])['id'];v=view();d=next(x for x in v['deliveries'] if x['id']==did)
   row['delivery']=d['id'];save('delivery_'+key)
   if d['id'] not in v['accepted_deliveries']:
-   review=next((x for x in v['runs'] if x['node']=='review:'+d['id']),None)
-   rid=review['id'] if review else c.command('review.request',d['id'],payload={'provider':row['provider']})['id']
+   review=next((x for x in c.latest_runs(v['runs']) if x['id']==row['review_run']),None) if row.get('review_run') else next((x for x in c.latest_runs(v['runs']) if x['node']=='review:'+d['id']),None)
+   rid=review['id'] if review else c.command('review.request',d['id'],payload={'provider':row.get('review_provider',row['provider'])})['id']
    def reviewed(v):
     run=next(x for x in v['runs'] if x['id']==rid)
     if run['status'] in ['failed','interrupted','cancelled']:raise AssertionError(str(run['result']))
     return run['status']=='succeeded'
    v=c.wait(view,reviewed,400);assert d['id'] in v['accepted_deliveries'],'Independent Reviewer requested changes'
-  row['review']=next(x for x in v['reviews'] if x['delivery_id']==d['id'])['id'];save('accepted_'+key)
+  row['review']=next(x for x in reversed(v['reviews']) if x['delivery_id']==d['id'] and x['decision']=='pass')['id'];save('accepted_'+key)
  r['passed']=True;save('finished')
 except Exception as e:r['failure_type']=type(e).__name__;r['failure']=str(e);save('failed');raise

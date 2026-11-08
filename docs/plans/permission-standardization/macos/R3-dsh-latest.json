@@ -1,0 +1,13 @@
+{
+  "provider": "dsh",
+  "passed": false,
+  "turns": [],
+  "source": "real DevDesk HTTP + managed Linux provider",
+  "stage": "turn_1",
+  "project_id": "a8e76164-5c41-4817-b575-e8eba1206b21",
+  "repository_connected_before_web": true,
+  "repository_operation": "fcd9087c-dd0c-440e-850e-ffee0e7e12a5",
+  "session_id": "5de031cc-ba24-4e33-88ae-c76ccb9937e5",
+  "failure_type": "AssertionError",
+  "failure_code": "needs_reconciliation"
+}

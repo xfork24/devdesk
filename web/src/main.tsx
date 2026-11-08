@@ -37,7 +37,9 @@ import "./style.css";
 import { RepositorySettings } from "./components/RepositorySettings";
 import { RoleConversation } from "./components/RoleConversation";
 import { RuntimePreferences } from "./components/RuntimePreferences";
+import { PermissionSettings } from "./components/PermissionSettings";
 import { RuntimeSettings } from "./components/RuntimeSettings";
+import { RuntimePreparationStatus } from "./components/RuntimePreparationStatus";
 
 type RecordData = { [key: string]: any };
 type Field = {
@@ -64,7 +66,7 @@ const labels: Record<string, string> = {
   validating: "验收中",
   accepted: "已接受",
   merging: "合入中",
-  completed: "模拟流程已完成",
+  completed: "已完成",
   running: "运行中",
   waiting_review: "等待评审",
   failed: "失败",
@@ -110,7 +112,7 @@ async function rpc(method: string, params: RecordData = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++sequence, method, params }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(["session.open", "attempt.start", "review.request", "merge.request", "runtime.prepare", "codex.auth.start", "codex.auth.status", "codex.auth.models"].includes(method) ? 25 * 60 * 1000 : 30000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} · 本地服务连接失败`);
   const data = await res.json();
@@ -153,7 +155,6 @@ function App() {
   const [projectPage, setProjectPage] = useState(0);
   const [view, setView] = useState<{ title: string; body: string }>();
   const [setupPath, setSetupPath] = useState("./data");
-  const [scenario, setScenario] = useState("success");
   const [liveProvider,setLiveProvider]=useState("");
   const [focusedSession,setFocusedSession]=useState<RecordData>();
   const [taskFilter, setTaskFilter] = useState("");
@@ -188,6 +189,7 @@ function App() {
           feature_id: featureId || undefined,
           offset: featurePage * 50,
           project_offset: projectPage * 50,
+          github_only: true,
           limit: 50,
           detail_pages: detailPages,
         });
@@ -246,10 +248,11 @@ function App() {
   }, [toast]);
   const detail = data?.detail;
   const f = detail?.feature;
-  const projects: RecordData[] = data?.projects || [];
+  const projects: RecordData[] = (data?.projects || []).filter((p: RecordData) => p.workspace_definition?.repository);
   const features: RecordData[] = data?.features || [];
-  const definitions: RecordData[] = data?.definitions || [];
-  const project = data?.active_project;
+  const definitions: RecordData[] = (data?.definitions || []).filter((d: RecordData) => d.family !== "agent" || d.agent_profile);
+  const project = data?.active_project?.workspace_definition?.repository ? data.active_project : undefined;
+  const repositoryReady = project?.execution_mode === "live";
   const projectOptions =
     project && !projects.some((p) => p.id === project.id)
       ? [project, ...projects]
@@ -273,7 +276,7 @@ function App() {
     setBusy(true);
     setError("");
     try {
-      await rpc("project.open", {
+      await rpc("project.open_github", {
         command_id: crypto.randomUUID(),
         target: id,
         payload: {},
@@ -341,7 +344,7 @@ function App() {
         payload,
       });
       setToast("操作已保存");
-      if (method === "project.create") resetProjectView(result.id);
+      if (method === "project.open_github") resetProjectView(result.id);
       else await load(true);
       return result;
     } catch (e) {
@@ -352,7 +355,7 @@ function App() {
       setBusy(false);
     }
   };
-  const executionSelection = project?.execution_mode==="live" ? (liveProvider?{provider:liveProvider}:{}) : {scenario};
+  const executionSelection = liveProvider ? {provider: liveProvider} : {};
   const begin = (target: string, phase?: string) => {
     show({
       title:
@@ -369,15 +372,12 @@ function App() {
   };
   const createProject = () =>
     show({
-      title: "创建 Project",
-      method: "project.create",
+      title: "打开 GitHub 项目",
+      method: "project.open_github",
       fields: [
-        { key: "title", label: "项目名称" },
-        {
-          key: "workspace",
-          label: "Workspace 路径 / 仓库描述（仅记录，不执行）",
-          optional: true,
-        },
+        { key: "repository", label: "GitHub 仓库（owner/repo 或 URL）" },
+        { key: "mainline", label: "主分支", value: "main" },
+        { key: "title", label: "项目名称", optional: true },
       ],
     });
   const createFeature = () =>
@@ -408,38 +408,14 @@ function App() {
         },
       ],
     });
-  const editBinding = (object: RecordData) =>
-    project?.execution_mode==="live"?show({title:"工程 Standard · 新 Attempt 使用新版本",method:"binding.update",target:object.id,fields:[{key:"standard",label:"Standard 固定版本",type:"select",value:object.binding.standard,options:definitions.filter(d=>d.family==="standard").map(d=>({value:d.id,label:`${d.name} v${d.version}`}))}]}):show({
-      title: "配置绑定 · 新 Attempt 使用新版本",
-      method: "binding.update",
-      target: object.id,
-      payload: { harness: "sim-harness-v1", sandbox: "sim-sandbox-v1" },
-      fields: [
-        {
-          key: "agent",
-          label: "Agent 身份版本",
-          type: "select",
-          value: object.binding.agent,
-          options: definitions
-            .filter((d) => d.family === "agent")
-            .map((d) => ({ value: d.id, label: `${d.name} v${d.version}` })),
-        },
-        {
-          key: "standard",
-          label: "Standard 固定版本",
-          type: "select",
-          value: object.binding.standard,
-          options: definitions
-            .filter((d) => d.family === "standard")
-            .map((d) => ({ value: d.id, label: `${d.name} v${d.version}` })),
-        },
-        {
-          key: "skills",
-          label: "Skills 版本 ID（逗号分隔）",
-          value: object.binding.skills.join(","),
-        },
-      ],
-    });
+  const editBinding = (object: RecordData) => show({
+    title: "工程 Standard · 新 Attempt 使用新版本",
+    method: "binding.update",
+    target: object.id,
+    fields: [{key: "standard", label: "Standard 固定版本", type: "select",
+      value: object.binding.standard,
+      options: definitions.filter(d => d.family === "standard").map(d => ({value: d.id, label: `${d.name} v${d.version}`}))}],
+  });
   const act = (
     id: string,
     method: string,
@@ -483,7 +459,7 @@ function App() {
             冻结引用
           </button>
           {act(d.id, "review.request", "Agent 评审", () =>
-            command("review.request",d.id,project?.execution_mode==="live"?executionSelection:{scenario:scenario==="review_reject"?scenario:"success"}).catch(() => {}),
+            command("review.request",d.id,executionSelection).catch(() => {}),
           )}
           {act(d.id, "review.submit", "通过", () => review(d, "pass"))}
           {act(d.id, "review.submit", "退回", () =>
@@ -576,7 +552,7 @@ function App() {
           <h1>为工程建立一个工作空间</h1>
           <p>选择本地 data 目录。工程状态、文档和执行历史将真实保存在这里。</p>
           <div className="notice">
-            工程流程支持模拟验收；配置运行时后可进行真实角色讨论
+            打开 GitHub 仓库开始工作，所需 Harness 运行环境由 DevDesk 按需准备
           </div>
           <form
             onSubmit={async (e) => {
@@ -645,7 +621,7 @@ function App() {
               </option>
             ))}
           </select>
-          <button aria-label="创建项目" onClick={createProject}>
+          <button aria-label="打开 GitHub 项目" onClick={createProject}>
             <Plus size={16} />
           </button>
         </div>
@@ -682,12 +658,10 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sim-dot" />
+          <div className="runtime-dot" />
           <div>
             <strong>
-              {project?.execution_mode === "live"
-                ? "真实仓库项目"
-                : "Simulation mode"}
+              {project ? "GitHub 项目" : "打开 GitHub 仓库"}
             </strong>
             <p>工程流程与角色讨论</p>
           </div>
@@ -708,8 +682,8 @@ function App() {
               <CircleDot size={12} />
               {connection}
             </span>
-            <span className="simulation">
-              {project?.execution_mode === "live" ? "真实仓库" : "模拟项目"}
+            <span className="repository-status">
+              {project ? (repositoryReady ? "GitHub 已接入" : "仓库接入中") : "尚未打开仓库"}
             </span>
           </div>
         </header>
@@ -723,6 +697,9 @@ function App() {
               </button>
             </div>
           )}
+          <RuntimePreparationStatus request={rpc} />
+          {!project && data && <div className="notice">打开 GitHub 仓库开始工作。<button onClick={createProject}>打开 GitHub 项目</button></div>}
+          {project && !repositoryReady && tab !== "settings" && <RepositorySettings key={project.id} project={project} request={rpc} refresh={load} />}
           <div className="page-heading">
             <div>
               <span className="eyebrow">ENGINEERING WORKSPACE</span>
@@ -745,11 +722,11 @@ function App() {
               {tab === "overview" && (
                 <>
                   <button onClick={createProject}>
-                    <Plus size={16} /> 新项目
+                    <Plus size={16} /> 打开 GitHub 项目
                   </button>
                   <button
                     className="primary"
-                    disabled={!project}
+                    disabled={!repositoryReady || busy}
                     onClick={createFeature}
                   >
                     <Plus size={16} /> 新 Feature
@@ -759,7 +736,7 @@ function App() {
             </div>
           </div>
           {!data && <Empty>正在连接本地内核…</Empty>}
-          {data && tab === "overview" && (
+          {data && repositoryReady && tab === "overview" && (
             <>
               <div className="metrics">
                 <Metric
@@ -866,7 +843,7 @@ function App() {
                     </div>
                   ))}
                   <div className="notice">
-                    项目按设置使用真实或模拟执行；运行、测试和交付展示各自来源。
+                    项目连接 GitHub，运行、测试和交付使用实际执行证据。
                   </div>
                 </section>
               </div>
@@ -927,7 +904,7 @@ function App() {
               )}
             </>
           )}
-          {data && ["workflow", "documents"].includes(tab) && (
+          {data && repositoryReady && ["workflow", "documents"].includes(tab) && (
             <div className="feature-picker">
               <label>
                 当前 Feature
@@ -958,7 +935,7 @@ function App() {
               )}
             </div>
           )}
-          {data && project && tab === "discussion" && (
+          {data && project && repositoryReady && tab === "discussion" && (
             <RoleConversation
               key={project.id+ (focusedSession && focusedSession.project_id===project.id?focusedSession.id:"")}
               initialOwner={focusedSession && focusedSession.project_id===project.id?focusedSession.owner_id:undefined}
@@ -972,32 +949,11 @@ function App() {
               refresh={load}
             />
           )}
-          {tab === "workflow" && f && (
+          {tab === "workflow" && f && repositoryReady && (
             <>
               {detail.pending_interactions?.length>0&&<section className="notice"><h3>工程执行等待输入</h3>{detail.pending_interactions.map((i:RecordData)=><button key={i.id} onClick={()=>{const session=detail.sessions.find((s:RecordData)=>s.id===i.session_id);if(session){setFocusedSession(session);setTab("discussion");}}}>{i.kind==="tool_approval"?"处理工具审批":"回答 Agent 问题"} · {i.reason}</button>)}</section>}
               <div className="panel toolbar">
-                {project?.execution_mode==="live"?<label>下一次工程执行的 Harness<select aria-label="工程 Harness" value={liveProvider} onChange={e=>setLiveProvider(e.target.value)}><option value="">继承角色 / 项目 / 全局偏好</option><option value="codex">Codex</option><option value="dsh">DeepSeek Harness</option></select></label>:<label>
-                  模拟场景
-                  <select
-                    aria-label="模拟场景"
-                    value={scenario}
-                    onChange={(e) => setScenario(e.target.value)}
-                  >
-                    {[
-                      ["success", "正常执行"],
-                      ["technical_failure", "技术失败"],
-                      ["assertion_failure", "断言质量失败"],
-                      ["missing_fields", "供应商缺字段"],
-                      ["hold", "受控等待 / 手动继续"],
-                      ["cleanup_failure", "资源清理失败"],
-                      ["review_reject", "Agent Review 退回"],
-                    ].map(([value, label]) => (
-                      <option value={value} key={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>}
+                <label>下一次工程执行的 Harness<select aria-label="工程 Harness" value={liveProvider} onChange={e=>setLiveProvider(e.target.value)}><option value="">继承角色 / 项目 / 全局偏好</option><option value="codex">Codex</option><option value="dsh">DeepSeek Harness</option></select></label>
                 <div className="actions">
                   {detail.allowed_actions[f.id]?.attempt_phases?.includes(
                     "planning",
@@ -1045,7 +1001,7 @@ function App() {
                 <div className="panel-heading">
                   <h2>独立 Tasks</h2>
                   <span className="muted">
-                    {project?.execution_mode==="live"?"真实 worktree · 独立角色会话与 Docker 实例":"逻辑 worktree · 独立 Context / Agent / Skills"}
+                    {"Git worktree · 独立角色会话与 Docker 实例"}
                   </span>
                 </div>
                 {detail.tasks.length === 0 ? (
@@ -1401,7 +1357,7 @@ function App() {
                         {act(
                           m.id,
                           "merge.apply",
-                          project?.execution_mode==="live"?"接纳候选并同步 GitHub":"接纳模拟候选",
+                          "接纳候选并同步 GitHub",
                           () => command("merge.apply", m.id).catch(() => {}),
                           true,
                         )}
@@ -1480,7 +1436,7 @@ function App() {
               </section>
             </>
           )}
-          {tab === "documents" && f && (
+          {tab === "documents" && f && repositoryReady && (
             <>
               <section className="panel">
                 <div className="panel-heading">
@@ -1840,22 +1796,21 @@ function App() {
               ))}
               <section className="panel">
                 <div className="panel-heading">
-                  <h2>Harness / Sandbox 能力</h2>
+                  <h2>共享运行环境</h2>
                 </div>
                 <pre>
                   {pretty({
-                    harnesses: data?.harnesses,
-                    sandboxes: data?.sandboxes,
+                    installations: data?.runtime_installations || [],
                   })}
                 </pre>
                 <p className="muted">
                   Agent 是身份，Harness 是运行时，Sandbox
-                  是执行环境。未来真实适配器替换能力实现。
+                  是执行环境。运行时在分配任务后自动准备并固定版本。
                 </p>
               </section>
             </>
           )}
-          {data && tab === "history" && (
+          {data && repositoryReady && tab === "history" && (
             <section className="panel">
               <div className="panel-heading">
                 <h2>持久化事件</h2>
@@ -1888,7 +1843,7 @@ function App() {
               <section className="panel">
                 <div className="panel-heading">
                   <h2>数据与运行</h2>
-                  <Badge value="simulation" />
+                  <span className="muted">按需准备运行环境</span>
                 </div>
                 <div className="setting-row">
                   <div>
@@ -1937,6 +1892,7 @@ function App() {
                   />
                 )}
                 {project&&<RuntimePreferences key={project.id} project={project} installations={data.runtime_installations||[]} request={rpc} refresh={load}/>}
+                <PermissionSettings request={rpc} project={project ?? undefined} refresh={load} />
                 <RuntimeSettings
                   provider={data.default_harness || "codex"}
                   installations={data.runtime_installations || []}
@@ -2067,7 +2023,7 @@ function App() {
           )}
           <footer>
             DevDesk 0.2{" "}
-            <span>本地工程内核 · 持久化历史 · {project?.execution_mode==="live"?"真实工程接入":"origin=simulated"}</span>
+            <span>本地工程内核 · 持久化历史 · GitHub 工程接入</span>
           </footer>
         </main>
       </div>
@@ -2105,10 +2061,6 @@ function App() {
               if (dialog.method === "feature.create" && result?.id) {
                 setFeatureId(result.id);
                 setTab("overview");
-              }
-              if (dialog.method === "project.create" && result?.id) {
-                setProjectId(result.id);
-                setFeatureId("");
               }
               setDialog(undefined);
             } catch (e) {

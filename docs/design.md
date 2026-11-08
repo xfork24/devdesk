@@ -18,7 +18,7 @@ Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入
 
 ## ADR-003：明确区分真实与模拟来源
 
-Project 明确选择 simulation 或 live，历史来源不可改写。Git/Harness/Tests/Sandbox 只产生有来源的能力结果；核心决定状态。适配器结果先校验结构，支持固定故障、取消和 hold/continue。真实 Codex/DSH、CliGit、CommandTests、DockerSandbox 与 Sim 共用 ports 和 Review/Attempt 规则。
+Web 项目固定使用真实 GitHub 仓库，打开时自动登记并接入，Harness 按需准备；simulation 仅为后端历史与测试夹具保留，历史来源不可改写。Git/Harness/Tests/Sandbox 只产生有来源的能力结果；核心决定状态。适配器结果先校验结构，支持固定故障、取消和 hold/continue。真实 Codex/DSH、CliGit、CommandTests、DockerSandbox 与 Sim 共用 ports 和 Review/Attempt 规则。
 
 ## ADR-004：持久化与幂等
 
@@ -91,3 +91,13 @@ RuntimeInstallation 独立于 Agent、Session 和 RuntimeExecution。同平台�
 CliGit 负责工作树、固定版本导出、候选、CAS 和发布；GitHubPullRequests 负责策略检查、幂等 PR 创建与状态观察。单父候选在 Docker 重验并正式 Review 后，先本地 CAS，再远端精确 lease，最后核对同一候选 PR merged；不能把本地完成作为远端完成。严格规则不兼容时阻塞，不修改规则。
 
 Feature 收尾递归固定已经接纳的 Task 交付，再执行完整测试、文档、复验和独立 Review。失败 Review 保留，修订使用新 Attempt。所有副作用先保存意图，外部 I/O 在事务外；未知输入与结果不盲目重发，停止、封存、清理分开确认。详细流程、限制与运行依赖见 [真实工程接入](real-engineering.md)。
+
+## ADR-013 Permission 策略与执行后端
+
+Permission 修订作为共享配置保存于全局库，被使用的修订追加复制到项目库。项目库 v32 接入权限定义和绑定，v33 将权限快照保存到每次 RuntimeExecution；全局库升级为 v4。SQL 升级保留既有运行锁和原始数据，既有默认映射为 legacy，新数据集采用容器全权限。
+
+Host 在创建 Session/Run 时解析目标绑定、项目、角色与本次覆盖；适配器校验固定供应商版本和支持能力，再生成原生配置及 Docker 执行计划。两层权限取交集，Scope 和操作系统权限继续限制实际访问。未知字段、null 覆盖、无法执行的 allowlist 和冲突返回明确错误，不降级为更宽权限或模拟执行。
+
+策略资产位于 `permissions/`，manifest 固定后端、平台及文件摘要，构建和运行预检校验所用资产。默认外层 Docker 隔离不要求嵌套 AppArmor 策略；只有选择内层受限执行器时才使用对应 seccomp/AppArmor。DSH 工具过滤器读取同一只读策略，原生 FullAccess 不继续挂载禁网 wrapper。容器临时空间的 exec/noexec 必须显式设置。
+
+审批、隔离和资源额度与访问规则分别建模。模型连接与工具网络属于不同主体；Sandbox 禁网会影响整个运行时，不能用它实现仅工具禁网。当前不提供强制域名代理，网络 allowlist 明确不支持。全权限不提供同容器凭据隔离；凭据代理不属于本轮。实现与平台证据见 [执行报告](plans/permission-standardization/EXECUTION.md)。

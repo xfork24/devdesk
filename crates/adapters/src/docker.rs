@@ -14,6 +14,8 @@ pub enum ContainerPurpose {
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ContainerSpec {
     #[serde(default)]
+    pub permissions: Option<ExecutionPermissions>,
+    #[serde(default)]
     pub purpose: ContainerPurpose,
     pub project_id: Id,
     pub session_id: Id,
@@ -78,7 +80,9 @@ impl DockerSandbox {
         // Only the coordinator's fixed, administrator-installed policy is accepted.
         // A missing/drifted policy fails closed; never use an unconfined fallback.
         let path = Path::new("/etc/apparmor.d/devdesk-harness-v1");
-        let expected = include_bytes!("../../../containers/security/devdesk-harness-v1.apparmor");
+        let expected = include_bytes!(
+            "../../../permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor"
+        );
         let message = "Ubuntu 嵌套沙箱需要已审阅的专用 AppArmor 策略；请在 Docker 宿主运行 sudo ./scripts/install-linux-sandbox-policy.sh --install";
         let metadata =
             fs::symlink_metadata(path).map_err(|_| err("sandbox_policy_required", message))?;
@@ -131,7 +135,7 @@ impl DockerSandbox {
         Ok(path)
     }
     fn nested_policy(&self) -> Result<PathBuf> {
-        let policy = include_bytes!("../../../containers/security/nested-sandbox.json");
+        let policy = include_bytes!("../../../permissions/backends/docker/seccomp/nested-v1.json");
         let digest = format!("{:x}", Sha256::digest(policy));
         let path = self.root.join(format!(".seccomp-{digest}.json"));
         reject_symlink(&path)?;
@@ -251,6 +255,28 @@ impl DockerSandbox {
     /// Deterministic names allow reconciliation if creation succeeded before its receipt was persisted.
     pub fn create(&self, spec: &ContainerSpec) -> Result<ContainerReceipt> {
         let name = Self::name(&spec.operation_id)?;
+        if let Some(p) = &spec.permissions {
+            require(
+                spec.purpose == ContainerPurpose::Harness
+                    || (p.sandbox.policy.network == NetworkPermission::Disabled
+                        && p.isolation.credential_boundary == "credential-free"),
+                "测试容器 Permission 必须无网络和模型凭据",
+            )?;
+            require(
+                p.isolation.nested_sandbox == spec.nested_sandbox,
+                "冻结沙箱策略与容器规格不一致",
+            )?;
+            require(
+                spec.network == (p.sandbox.policy.network == NetworkPermission::Enabled),
+                "冻结网络与容器规格不一致",
+            )?;
+            require(
+                !(spec.writable
+                    && (p.sandbox.policy.filesystem == FilesystemPermission::ReadOnly
+                        || p.harness.policy.filesystem == FilesystemPermission::ReadOnly)),
+                "只读 Permission 不能创建可写 worktree",
+            )?;
+        }
         for id in [&spec.project_id, &spec.session_id] {
             require(uuid::Uuid::parse_str(id).is_ok(), "无效容器归属 ID")?;
         }
@@ -280,7 +306,7 @@ impl DockerSandbox {
                 spec.purpose == ContainerPurpose::Harness
                     && spec.nested_sandbox
                     && fs::read(path).map_err(storage)?
-                        == include_bytes!("../../../containers/dsh/devdesk-policy/bwrap.sh"),
+                        == include_bytes!("../../../permissions/backends/dsh/bwrap-runner.sh"),
                 "执行包装器不符合固定沙箱策略",
             )?;
         }
@@ -316,7 +342,7 @@ impl DockerSandbox {
         } else {
             None
         };
-        let mut identity = json!({"spec":canonical,"profile_digest":profile.as_ref().map(|p|fs::read(p).map(|data|format!("{:x}",Sha256::digest(data)))).transpose().map_err(storage)?,"nested_policy":if spec.nested_sandbox {Some(format!("{:x}",Sha256::digest(include_bytes!("../../../containers/security/nested-sandbox.json"))))} else {None}});
+        let mut identity = json!({"spec":canonical,"profile_digest":profile.as_ref().map(|p|fs::read(p).map(|data|format!("{:x}",Sha256::digest(data)))).transpose().map_err(storage)?,"nested_policy":if spec.nested_sandbox {Some(format!("{:x}",Sha256::digest(include_bytes!("../../../permissions/backends/docker/seccomp/nested-v1.json"))))} else {None}});
         if let Some(digest) = &apparmor {
             identity["apparmor_policy"] = json!({"name":"devdesk-harness-v1","sha256":digest});
         }
@@ -331,6 +357,34 @@ impl DockerSandbox {
             )?;
             return Ok(receipt);
         }
+        let policy_files = if let Some(p) = &spec.permissions {
+            let body = serde_json::to_vec(p).map_err(storage)?;
+            let digest = format!("{:x}", Sha256::digest(&body));
+            let policy = self.root.join(format!(".permission-{digest}.json"));
+            reject_symlink(&policy)?;
+            if !policy.exists() {
+                fs::write(&policy, &body).map_err(storage)?;
+            }
+            require(
+                fs::read(&policy).map_err(storage)? == body,
+                "冻结权限文件发生漂移",
+            )?;
+            let tool = include_bytes!("../../../permissions/backends/dsh/tool-policy.mjs");
+            let tool_path = self
+                .root
+                .join(format!(".tool-policy-{:x}.mjs", Sha256::digest(tool)));
+            reject_symlink(&tool_path)?;
+            if !tool_path.exists() {
+                fs::write(&tool_path, tool).map_err(storage)?;
+            }
+            require(
+                fs::read(&tool_path).map_err(storage)? == tool,
+                "工具后端发生漂移",
+            )?;
+            Some((policy, tool_path))
+        } else {
+            None
+        };
         let mut args: Vec<String> = vec![
             "create",
             "--interactive",
@@ -350,6 +404,52 @@ impl DockerSandbox {
         .into_iter()
         .map(str::to_owned)
         .collect();
+        if let Some(p) = &spec.permissions {
+            require(
+                p.limits.memory_mb > 0
+                    && p.limits.cpus > 0
+                    && p.limits.pids > 0
+                    && p.limits.tmp_mb > 0,
+                "资源配额必须大于零",
+            )?;
+            for arg in &mut args {
+                if arg.starts_with("--memory=") {
+                    *arg = format!("--memory={}m", p.limits.memory_mb);
+                } else if arg.starts_with("--cpus=") {
+                    *arg = format!("--cpus={}", p.limits.cpus);
+                } else if arg.starts_with("--pids-limit=") {
+                    *arg = format!("--pids-limit={}", p.limits.pids);
+                } else if arg.starts_with("/tmp:rw,") {
+                    *arg = arg.replace("size=128m", &format!("size={}m", p.limits.tmp_mb));
+                }
+            }
+            if !p.isolation.read_only_root
+                && p.sandbox.policy.filesystem != FilesystemPermission::ReadOnly
+            {
+                args.retain(|a| a != "--read-only");
+            }
+            if p.isolation.executable_tmp {
+                for a in &mut args {
+                    if a.starts_with("/tmp:rw,noexec,") {
+                        *a = a.replace("noexec", "exec");
+                    }
+                }
+            }
+        }
+        if let Some((policy, tool)) = policy_files {
+            for (path, target) in [
+                (policy, "/run/devdesk/permission"),
+                (tool, "/run/devdesk/tool-policy.mjs".into()),
+            ] {
+                args.extend([
+                    "--mount".into(),
+                    format!(
+                        "type=bind,source={},target={target},readonly",
+                        path.display()
+                    ),
+                ]);
+            }
+        }
         if spec.nested_sandbox {
             args.extend([
                 "--security-opt".into(),
@@ -481,7 +581,16 @@ impl DockerSandbox {
         }
         // Git metadata and repository-local runtime config never enter the managed agent view.
         // Existing targets also let the inner sandbox mount its protected paths under a read-only work root.
-        for leaf in [".git", ".codex", ".agents"] {
+        let protected = spec
+            .permissions
+            .as_ref()
+            .map(|p| p.isolation.protected_metadata.clone())
+            .unwrap_or_else(|| vec![".git".into(), ".codex".into(), ".agents".into()]);
+        for leaf in protected.iter().map(String::as_str) {
+            require(
+                [".git", ".codex", ".agents"].contains(&leaf),
+                "受保护元数据路径不合法",
+            )?;
             let target = work.join(leaf);
             reject_symlink(&target)?;
             if !target.exists() && spec.purpose == ContainerPurpose::Harness {

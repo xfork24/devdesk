@@ -1,0 +1,19 @@
+{
+  "id": "permission-task-implementation-v1",
+  "identity": "task-implementation",
+  "name": "Task 实施",
+  "version": 1,
+  "supersedes": null,
+  "schema_version": 1,
+  "policy": {
+    "filesystem": {
+      "mode": "full_access"
+    },
+    "network": {
+      "mode": "enabled"
+    },
+    "tools": {
+      "mode": "all_available"
+    }
+  }
+}

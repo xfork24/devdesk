@@ -173,6 +173,7 @@ impl CommandTests {
                 "测试执行实例身份不符",
             )?;
             let created = sandbox.create(&ContainerSpec {
+                permissions: Some(isolated_test_permissions()),
                 purpose: ContainerPurpose::Tests,
                 project_id: r.code.as_ref().unwrap().project.clone(),
                 session_id: r
@@ -292,6 +293,7 @@ impl CommandTests {
         result["container_id"] = json!(receipt.id);
         result["image_digest"] = json!(receipt.image);
         result["recipe"] = json!(recipe);
+        result["permissions"] = json!(isolated_test_permissions());
         result["counts"] = counts;
         result["report"] = json!(log);
         result["report_sha256"] = json!(format!("{:x}", Sha256::digest(log.as_bytes())));

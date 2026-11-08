@@ -1,0 +1,23 @@
+{
+  "project_id": "3b8670dd-b2c9-4a3c-9050-85b9f4e35bdb",
+  "feature_id": "b8da10f4-777f-46cc-8188-8cd7d76cfe50",
+  "proposals": {
+    "requirement": {
+      "id": "5a3d6f23-134f-40e3-b8b9-e7d8993e5895",
+      "document": "406cf026-cfad-4f87-a2d2-46b8e5cb2a47",
+      "session": "a76486c3-4938-4a5f-9a37-27290a7d2af7",
+      "turn": "72b86c97-5c55-4692-9958-f9693093e79a"
+    },
+    "design": {
+      "id": "cb4ab2ac-ace5-479a-9190-b9141ca83e26",
+      "document": "37af5c93-c233-4354-be61-475cd5794da9",
+      "session": "f7ea3a18-2387-4699-b1f0-696e5d835202",
+      "turn": "44b099c6-708d-45db-b7b8-1084973117ba"
+    }
+  },
+  "passed": false,
+  "case_prefix": "live-22459b4106-",
+  "stage": "failed",
+  "failure_type": "AssertionError",
+  "failure": "test image must be explicit and unique"
+}

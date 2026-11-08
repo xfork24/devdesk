@@ -22,6 +22,8 @@ class Client:
  def feature(self,feature):return self.rpc('query.workspace',{'feature_id':feature,'limit':100})['detail']
  def attempt_runs(self,view,attempt):
   rows=[row for row in view['runs'] if row.get('attempt_id')==attempt and not row['node'].startswith('review:')]
+  return self.latest_runs(rows)
+ def latest_runs(self,rows):
   superseded={row['retry_of'] for row in rows if row.get('retry_of')}
   return [row for row in rows if row['id'] not in superseded]
  def discuss(self,owner,revision,role,provider,prompt,timeout=240,work_type='discussion'):

@@ -101,6 +101,7 @@ fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
             id: environment,
             run_id: operation,
             harness: Harness {
+                permission: None,
                 id: "node-test-fixture".into(),
                 provider: "node-test".into(),
                 version: "24.13.0".into(),
@@ -108,6 +109,7 @@ fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
                 origin: Origin::External,
             },
             sandbox: Sandbox {
+                permission: None,
                 id: "docker-fixture".into(),
                 provider: "docker".into(),
                 version: "fixture".into(),

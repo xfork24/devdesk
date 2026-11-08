@@ -40,6 +40,27 @@ try:
    save()
   assert state(sessions['dsh'])['session']['runtime_binding']['installation']['key']['provider']=='dsh'
   r['default_switch']={'passed':True,'old_binding_preserved':True}
+  if not r.get('permission_freeze'):
+   original=c.rpc('query.permissions')['configuration']
+   frozen={provider:state(sid)['session']['runtime_binding']['permissions'] for provider,sid in sessions.items()}
+   policy={'filesystem':{'mode':'read_only'},'network':{'mode':'enabled'},'tools':{'mode':'all_available'}}
+   created=c.command('permission.create',payload={'identity':'lifecycle-'+uuid.uuid4().hex,'name':'Lifecycle frozen permissions','policy':policy})
+   revised=c.command('permission.revise',created['id'],created['version'],{'name':'Lifecycle immutable revision','policy':policy})
+   rows=c.rpc('query.permissions')['permissions'];assert next(p for p in rows if p['id']==created['id'])==created
+   changed=json.loads(json.dumps(original))
+   for provider in sessions:changed['harnesses'][provider]={'permission':{'revision_id':revised['id']},'overrides':{}}
+   saved=c.command('permission.bind','permission-configuration',original['revision'],changed)
+   successors={}
+   try:
+    for provider,sid in sessions.items():
+     assert state(sid)['session']['runtime_binding']['permissions']==frozen[provider]
+     successors[provider]=opened(owner,provider=provider)
+     actual=state(successors[provider])['session']['runtime_binding']['permissions']
+     assert actual['harness']['reference']['revision_id']==revised['id'] and actual['harness']['policy']['filesystem']['mode']=='read_only'
+   finally:c.command('permission.bind','permission-configuration',saved['revision'],original)
+   for provider,sid in sessions.items():assert state(sid)['session']['runtime_binding']['permissions']==frozen[provider]
+   for sid in successors.values():assert state(sid)['session']['runtime_binding']['permissions']['harness']['reference']['revision_id']==revised['id']
+   r['permission_freeze']={'passed':True,'original_revision':created['id'],'new_revision':revised['id'],'old_sessions':sessions.copy(),'new_sessions':successors,'bindings_restored':True};save()
   # Three actual rounds per provider, resuming the same external native identity.
   r.setdefault('continuity',{})
   for provider,sid in sessions.items():
@@ -47,7 +68,9 @@ try:
    ids=[];native=[]
    for index in range(3):
     prompt='Do not use tools. Reply only LIFECYCLE_OK. This is continuity round '+str(index+1);prior=next((t for t in state(sid)['turns'] if t['input']==prompt),None);tid=prior['id'] if prior else send(sid,prompt);s=completed(sid,tid);assert_stopped(s,tid,'completed');ids.append(tid);native.append(s['session']['external_session'])
-   assert len(set(native))==1 and native[0];r['continuity'][provider]={'session':sid,'native_session':native[0],'turns':ids,'passed':True};save()
+   assert len(set(native))==1 and native[0]
+   assert all(e['permissions']==s['session']['runtime_binding']['permissions'] for e in s['executions'])
+   r['continuity'][provider]={'session':sid,'native_session':native[0],'turns':ids,'frozen_permissions_preserved':True,'passed':True};save()
   if not r.get('role_isolation'):
    other=opened(owner,'architect','codex');tid=send(other,'Do not use tools. Reply only ARCHITECT_OK.');s=completed(other,tid);assert_stopped(s,tid,'completed');assert s['session']['external_session']!=r['continuity']['codex']['native_session'];r['role_isolation']={'session':other,'native_session':s['session']['external_session'],'passed':True};save()
   # A deliberately invalid model exercises a real provider failure, never a Sim fallback.
@@ -72,7 +95,7 @@ try:
   if r.get('crash'):r.setdefault('crash_history',[]).append(r['crash'])
   r.pop('restart_observed_active_project',None);r['crash']=[]
   for provider,role in [('codex','developer'),('dsh','architect')]:
-   sid=opened(r['project'],role,provider);tid=send(sid,'Use the confined shell tool to run exactly: sleep 120 . Wait for completion. Do not modify files.');s=wait(sid,tid,lambda s,t:t['consumed'] and t['status']=='running');r['crash'].append({'provider':provider,'project':r['project'],'session':sid,'turn':tid,'message':turn(s,tid)['external_message'],'native_turn':turn(s,tid)['external_turn'],'event_count':len(s['events'])});save()
+   sid=opened(r['project'],role,provider);tid=send(sid,'Use the confined shell tool to run exactly: sleep 120 . Wait for completion. Do not modify files.');s=wait(sid,tid,lambda s,t:t['consumed'] and t['status']=='running');r['crash'].append({'provider':provider,'project':r['project'],'session':sid,'turn':tid,'message':turn(s,tid)['external_message'],'native_turn':turn(s,tid)['external_turn'],'event_count':len(s['events']),'permissions':s['session']['runtime_binding']['permissions']});save()
   # Leave another project active, so startup must recover a background project too.
   other=c.command('project.create',payload={'title':'Active project while another owns native workers'})['id'];r['crash_active_project']=other;r['crash_armed']=True;save()
  else:
@@ -80,6 +103,8 @@ try:
   for record in r['crash']:
    sid=record['session'];tid=record['turn'];s=c.wait(lambda:state(sid),lambda s:bool(s['executions']) and all(e['writer_revoked'] and e['protocol_artifact'] and e['status']=='released' for e in s['executions']),30);t=turn(s,tid);assert t['status'] in ['needs_reconciliation','cancelled'],t
    assert t['external_message']==record['message'] and t['external_turn']==record['native_turn'];assert len([x for x in s['turns'] if x['id']==tid])==1
+   assert s['session']['runtime_binding']['permissions']==record['permissions']
+   assert all(e['permissions']==record['permissions'] for e in s['executions'])
    # Stop proof is required, but an unknown consumed result stays unknown until explicit cancellation.
    ex=s['executions'];assert ex and all(e['writer_revoked'] and e['protocol_artifact'] for e in ex)
    if t['status']!='cancelled':c.command('conversation.cancel',tid,t['revision'])

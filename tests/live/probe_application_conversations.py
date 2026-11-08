@@ -4,7 +4,7 @@ Requires an already running acceptance host with dedicated OAuth/Keychain creden
 """
 import argparse,http.cookiejar,json,time,urllib.request,uuid
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--provider',choices=['codex','dsh'],required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--provider',choices=['codex','dsh'],required=True);p.add_argument('--github-repo');p.add_argument('--output',type=Path,required=True);a=p.parse_args()
 c=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));c.open(a.url+'/').close()
 def rpc(method,params=None):
  request=urllib.request.Request(a.url+'/rpc',data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params or {}}).encode(),headers={'Content-Type':'application/json'})
@@ -16,6 +16,16 @@ report={'provider':a.provider,'passed':False,'turns':[],'source':'real DevDesk H
 try:
  rpc('runtime.discover_docker',{'provider':a.provider})
  project=cmd('project.create',payload={'title':f'Real {a.provider} conversation acceptance'})['id'];report['project_id']=project
+ if a.github_repo:
+  revision=rpc('query.workspace',{'project_id':project})['active_project']['revision']
+  connected=cmd('repository.connect',project,revision,{'repository':a.github_repo,'mainline':'main'},project)
+  deadline=time.monotonic()+120
+  while time.monotonic()<deadline:
+   repository=rpc('query.repository',{'project_id':project});operation=next(v for v in repository['operations'] if v['id']==connected['id'])
+   if operation['status'] in ['completed','needs_reconciliation']:break
+   time.sleep(.5)
+  assert operation['status']=='completed',operation.get('reason')
+  report['repository_connected_before_web']=True;report['repository_operation']=operation['id']
  revision=rpc('query.workspace',{'project_id':project})['active_project']['revision']
  opened=cmd('session.open',project,revision,payload={'agent':'builtin-agent-analyst-v1','provider':a.provider},project=project);sid=opened['id'];report['session_id']=sid
  marker=uuid.uuid4().hex

@@ -1,6 +1,6 @@
 # DevDesk 0.2
 
-本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。保留 **simulation** 离线演示，并接入 Codex / DeepSeek Harness、真实 Git worktree、Docker 测试和 GitHub PR。真实模式按项目显式登记仓库，并需完成运行时与凭据配置；见 [真实工程接入](docs/real-engineering.md)。
+本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 测试和 GitHub PR。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；后端保留模拟数据和离线夹具。账号授权在设置中完成；见 [真实工程接入](docs/real-engineering.md)。
 
 ## 运行
 
@@ -33,7 +33,7 @@ macOS Apple Silicon 输出 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz` 及 
 
 ## 使用与验证
 
-[演示步骤](docs/demo.md)说明从需求到模拟 mainline 的操作和异常场景。需要先完成规划的两个 Delivery/Review，再建立独立 Tasks；Task 完成后还有 Feature 自身收尾。
+[真实工程接入](docs/real-engineering.md)说明正常 Web 操作；[历史演示步骤](docs/demo.md)仅记录后端模拟夹具，不再对应当前 Web 入口。需要先完成规划的两个 Delivery/Review，再建立独立 Tasks；Task 完成后还有 Feature 自身收尾。
 
 ```bash
 npm --prefix web ci
@@ -72,3 +72,5 @@ npm --prefix web ci
 系统凭据与 macOS 稳定签名见 [凭据说明](docs/system-credentials.md)；Linux Secret Service、平台预检与真实 Web 闭环见 [Ubuntu 验收入口](docs/ubuntu-web-acceptance.md) 和 [Ubuntu 验收计划](docs/plans/ubuntu-web-acceptance/PLAN.md)。本轮聚焦 Web，macOS native 客户端后续再做。
 
 开发 Web Host 可用 `./scripts/dev.sh --data /完整路径/数据集 --port 4317`；它会在 macOS 重建后应用已配置的稳定签名。
+
+运行权限采用独立的 Permission 修订，支持 Harness/Sandbox 绑定、覆盖和执行前预览。新配置默认容器内全权限，旧数据保留原绑定；见 [权限说明](permissions/README.md) 和 [实施报告](docs/plans/permission-standardization/EXECUTION.md)。

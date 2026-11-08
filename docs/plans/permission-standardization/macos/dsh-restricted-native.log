@@ -1,0 +1,11 @@
+   Compiling devdesk-domain v0.2.0 (/Users/hengliu/workspace/devdesk/crates/domain)
+   Compiling devdesk-core v0.2.0 (/Users/hengliu/workspace/devdesk/crates/core)
+   Compiling devdesk-adapters v0.2.0 (/Users/hengliu/workspace/devdesk/crates/adapters)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.98s
+     Running tests/permissions.rs (target/debug/deps/permissions-7a8e82d5d942477f)
+
+running 1 test
+test dsh_restricted_native_executor_hides_state_environment_and_tool_network ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 3.87s
+

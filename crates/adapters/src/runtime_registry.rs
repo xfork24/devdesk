@@ -10,7 +10,7 @@ pub fn configuration_digest(value: &Value) -> Result<String> {
     ))
 }
 
-fn file_digest(path: &Path) -> Result<String> {
+pub(crate) fn file_digest(path: &Path) -> Result<String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
     let mut file = File::open(path).map_err(storage)?;
     require(
@@ -150,10 +150,27 @@ impl GlobalStore {
             HarnessProvider::Codex => ("devdesk/codex:0.167.0", "0.167.0", "Apache-2.0"),
             HarnessProvider::Dsh => ("devdesk/dsh:0.2.2-rc.1", "0.2.2-rc.1", "MIT"),
         };
+        self.register_docker_runtime(provider, tag, version, license)
+    }
+    pub(crate) fn register_docker_runtime(
+        &self,
+        provider: HarnessProvider,
+        tag: &str,
+        version: &str,
+        license: &str,
+    ) -> Result<RuntimeInstallation> {
         let value = docker_image_info(tag)?;
         let image = value["id"]
             .as_str()
             .ok_or_else(|| err("provider_io", "镜像未提供内容身份"))?;
+        require(
+            image.len() == 71
+                && image.starts_with("sha256:")
+                && image[7..]
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "Docker 镜像内容身份无效",
+        )?;
         let arch = normalized_arch(value["arch"].as_str().unwrap_or(""));
         self.register_runtime(RuntimeRegistration {
             key: RuntimeKey {
@@ -326,7 +343,7 @@ fn normalized_arch(arch: &str) -> &str {
         other => other,
     }
 }
-fn docker_image_info(reference: &str) -> Result<Value> {
+pub(crate) fn docker_image_info(reference: &str) -> Result<Value> {
     let output = crate::process::capture(
         "docker",
         &[

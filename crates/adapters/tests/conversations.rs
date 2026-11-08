@@ -47,6 +47,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
                 scope: Some(SessionScope::Project),
                 lifecycle: Some(SessionLifecycle::Prepared),
                 runtime_binding: Some(RuntimeBinding {
+                    permissions: None,
                     installation: RuntimeInstallation {
                         id: "fixture-runtime".into(),
                         key: RuntimeKey {
@@ -235,6 +236,7 @@ fn completion_needs_external_session_consumption_and_writer_release_proof() {
             s.turns[0].started = Some(1);
             s.turns[0].finished = Some(2);
             s.executions.push(RuntimeExecution {
+                permissions: None,
                 kind: RuntimeExecutionKind::Harness,
                 protocol_artifact: None,
                 id: id(),
