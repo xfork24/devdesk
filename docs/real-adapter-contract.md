@@ -17,7 +17,7 @@ Rust 使用 trait 表达抽象基类的契约，用 `impl` 提供派生实现。
 
 `devdesk_domain::Harness` 和 `devdesk_domain::Sandbox` 仍是持久化领域对象；`devdesk_core::ports::Harness` 和 `ports::Sandbox` 是执行接口，分别表达配置/历史与运行行为，使用模块路径区分。
 
-装配使用 `ports::ExecutionAdapters` 的四个 `Arc<dyn ...>` 字段。`Engine::new(store, artifacts, adapters)` 接收接口对象，既可选择全部 Sim，也可逐个注入其他实现。默认集合由 `devdesk_adapters::simulation::adapters()` 创建。host 的 `Workspace::open_with_adapters(root, adapters)` 将同一组实现传入全局配置 Engine 和各项目 Engine，项目切换时不会退回硬编码的 Sim 实现。
+装配使用 `ports::ExecutionAdapters` 的 Harness、Git、Tests、Sandbox 接口，以及可选的独立 PullRequests 服务和仅供 Sim 使用的 SimulationControls。`Engine::new(store, artifacts, adapters)` 接收接口对象，既可选择全部 Sim，也可逐个注入其他实现。默认集合由 `devdesk_adapters::simulation::adapters()` 创建。host 的 `Workspace::open_with_adapters(root, adapters)` 将同一组实现传入全局配置 Engine 和各项目 Engine，项目切换时不会退回硬编码的 Sim 实现。
 
 真实类直接实现对应 trait，如 `impl devdesk_core::ports::Harness for CodexHarness`。凭据、连接与供应商状态归具体实现持有，工程状态推进仍由 Engine 决定。当前应用入口使用默认模拟集合；真实供应商接入沿用下文的配置与验收约束。
 
@@ -59,3 +59,6 @@ merge.apply 只提交意图并返回 operation_id。调度器先重新校验意�
 5. 在真实来源证据和实例历史完整、上述用例通过后开放 live。真实环境重建、Archive 和 data 迁移执行仍需要各自专项实现与验收。
 
 本轮已完成公共领域模型、请求路由、操作账本、回执接纳和恢复框架；以上供应商映射是明确的后续接入工作，不是未完成的内核 H3 工作，也不能用模拟夹具替代真实用例验收。
+
+
+本轮真实实现、阶段交付来源关系、冻结权限、GitHub 间接合入和恢复语义见 [真实工程接入](real-engineering.md)。Tests 公共执行方法不接收模拟 outcome；故障配置只通过 Sim 的可选 SimulationControls 注入，真实请求不进入该路径。

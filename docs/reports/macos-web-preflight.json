@@ -1,0 +1,68 @@
+{
+  "platform": "Darwin",
+  "architecture": "arm64",
+  "client": "web",
+  "checks": [
+    {
+      "name": "host_platform",
+      "passed": true,
+      "detail": "macOS/Linux Web Host"
+    },
+    {
+      "name": "git",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "gh",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "docker",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "codex",
+      "passed": true,
+      "detail": "found"
+    },
+    {
+      "name": "docker_daemon",
+      "passed": true,
+      "detail": "Docker Engine/Desktop must be running"
+    },
+    {
+      "name": "github_authentication",
+      "passed": true,
+      "detail": "gh account configured; no token is read or printed"
+    },
+    {
+      "name": "codex_linux_image",
+      "passed": true,
+      "detail": "build the fixed runtime image on this Docker platform"
+    },
+    {
+      "name": "dsh_linux_image",
+      "passed": true,
+      "detail": "build the fixed runtime image on this Docker platform"
+    },
+    {
+      "name": "stable_signing_identity",
+      "passed": true,
+      "detail": "configure a stable code signing identity once"
+    },
+    {
+      "name": "shared_credential_helper",
+      "passed": true,
+      "detail": "one fixed signed helper per user; Host builds reuse it"
+    },
+    {
+      "name": "binary_signature",
+      "passed": true,
+      "detail": "signature integrity only; repeated-build Keychain access needs the actual credential acceptance test"
+    }
+  ],
+  "passed": true
+}

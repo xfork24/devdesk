@@ -1,0 +1,40 @@
+# Web Host 的系统凭据
+
+macOS 与 Linux 使用相同 Web/Rust 工程接口；没有依赖 macOS 原生客户端。秘密不写入 SQLite、命令参数、报告或浏览器持久存储；工程库只保存数据集范围的不透明引用。
+
+## macOS：固定凭据助手
+
+macOS 对本地自签名程序的 Keychain 分区使用构建的 cdhash。实际试验表明：固定证书和 designated requirement 后，重新构建 Host 仍可能失去访问权；新建测试条目也会复现。原因见 Apple 的 [client identity 实现](https://github.com/apple-oss-distributions/Security/blob/main/securityd/src/clientid.cpp)。因此仅固定 Host 签名不能作为完成修复的证据。
+
+当前由独立的 `devdesk-credential-helper` 通过 Security.framework 访问 Keychain。它在用户私有目录 `~/Library/Application Support/DevDesk/credential-helper/v1/` 安装一次，所有 Host 构建、项目和角色共用；Host/Web/Core 变化不会重建它。安装清单保存源/依赖身份与实际二进制摘要，内容或签名不匹配时阻塞。运行包只包含一份助手，首次启动可将其安装到该共享目录，不按项目或角色复制。
+
+Host 在调用前检查助手归属、权限、内容和同证书签名；助手反向检查直接调用者为对应证书签名的 `dev.devdesk.host`。普通脚本或其他应用直接调用助手会在访问 Keychain 前被拒绝。服务名、账号、操作类型与输入长度均受限。秘密只通过私有 stdin/stdout 管道传递，Host 消费后不返回给 HTTP，也不进入协议日志。没有给通用 security CLI 或所有应用授予读取权限。
+
+普通操作禁止 Keychain 自动显示授权 UI。未授权/锁定返回可读错误；只有设置页“授权已保存的钥匙串凭据”允许固定助手弹出系统授权，最长等待 30 秒。系统密码只在系统窗口输入。旧条目需要对固定助手选择一次“始终允许”；之后更换 Host 构建不改变访问 Keychain 的助手二进制。锁定、撤销权限或显式升级助手仍需相应系统处理。
+
+一次性开发设置：
+
+```bash
+./scripts/setup-macos-signing.sh --prepare
+./scripts/setup-macos-signing.sh --import
+./scripts/install-macos-credential-helper.sh
+./scripts/dev.sh --data /absolute/path/to/data --port 51751
+```
+
+开发和发行 Host 使用稳定 identifier `dev.devdesk.host`；助手使用 `dev.devdesk.credentials`，并验证调用者证书。脚本仅生成/导入 `DevDesk Local Development` 开发证书，信任限定为用户域 code signing，私钥只授权 codesign。证书材料在 `~/Library/Application Support/DevDesk/signing/`（目录 0700、私钥 0600），不在源码或发行包中。这不是 Developer ID 发行签名或公证。
+
+也可通过 `DEVDESK_CODESIGN_IDENTITY` 指定已有身份；必要时用 `DEVDESK_CODESIGN_CERTIFICATE_SHA1` 指定对应证书指纹。`scripts/dev.sh` 与 `scripts/build.sh` 自动检查/复用助手，并为 Host 签名。助手自身实现或依赖变化时，安装器要求显式 `--update`；该变化与普通 Host 重编译分开，可能需要一次新的助手授权，不静默覆盖已授权安装。
+
+## Ubuntu / Linux
+
+Linux 使用 Secret Service/secret-tool，不需要 macOS 凭据助手。安装 `libsecret-tools`，并确保当前桌面会话提供已解锁的 Secret Service（例如 GNOME Keyring）。设置页通过 secret-tool 的私有 stdin 保存 API key；实际使用或显式检查时才读取，状态页只使用配置引用。
+
+```bash
+sudo apt-get install libsecret-tools gnome-keyring
+```
+
+缺少 secret-tool、D-Bus/桌面会话或锁定凭据库时明确阻塞，不降级为明文文件或 Sim。Headless/SSH 不自动具有桌面凭据库。行为依据 [libsecret](https://gnome.pages.gitlab.gnome.org/libsecret/) 与 [Ubuntu secret-tool 手册](https://manpages.ubuntu.com/manpages/noble/man1/secret-tool.1.html)。
+
+Codex 仍使用数据集专属官方 OAuth 文件和受控 Session 凭据。平台和绝对数据目录变化会改变系统凭据命名空间；换机器后重新配置本机凭据，不能把 macOS 引用当作 Linux 上的秘密。
+
+如果在 Host 运行期间覆盖了它的二进制文件，调用方签名校验会阻塞旧进程；重启新构建即可，不需要重新授权助手。开发时按正常流程停止、重建并启动 Host。

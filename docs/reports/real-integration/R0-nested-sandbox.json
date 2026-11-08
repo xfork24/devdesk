@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "inference_tested": false,
+  "credential_canary_only": true,
+  "seccomp": "moby-default + nested namespace/mount syscalls",
+  "exit_code": 0,
+  "work_write_proven": true,
+  "credential_read_denied": true
+}

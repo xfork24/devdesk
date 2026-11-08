@@ -12,10 +12,13 @@ pub use tests::SimTests;
 
 /// The default provider set; callers may replace any or all four trait objects.
 pub fn adapters() -> ExecutionAdapters {
+    let tests = Arc::new(SimTests::default());
     ExecutionAdapters {
         harness: Arc::new(SimHarness),
         git: Arc::new(SimGit),
-        tests: Arc::new(SimTests),
+        tests: tests.clone(),
         sandbox: Arc::new(SimSandbox),
+        pull_requests: None,
+        simulation: Some(tests),
     }
 }

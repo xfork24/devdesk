@@ -85,10 +85,12 @@
           "type": "string"
         },
         "harness": {
-          "const": "sim-harness-v1"
+          "type": "string",
+          "minLength": 1
         },
         "sandbox": {
-          "const": "sim-sandbox-v1"
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -139,10 +141,914 @@
         "origin": {
           "enum": [
             "simulated",
-            "human"
+            "human",
+            "external"
           ]
         }
       }
+    },
+    "HarnessProvider": {
+      "enum": [
+        "codex",
+        "dsh"
+      ]
+    },
+    "SettingsUpdate": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "default_harness": {
+          "$ref": "#/$defs/HarnessProvider"
+        },
+        "global_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        }
+      },
+      "additionalProperties": false
+    },
+    "RuntimeKey": {
+      "type": "object",
+      "required": [
+        "provider",
+        "version",
+        "os",
+        "arch"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/HarnessProvider"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "os": {
+          "enum": [
+            "macos",
+            "linux",
+            "windows"
+          ]
+        },
+        "arch": {
+          "enum": [
+            "aarch64",
+            "x86_64"
+          ]
+        }
+      }
+    },
+    "RuntimeArtifact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "canonical_path",
+            "sha256"
+          ],
+          "properties": {
+            "kind": {
+              "const": "executable"
+            },
+            "canonical_path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "reference"
+          ],
+          "properties": {
+            "kind": {
+              "const": "oci_image"
+            },
+            "reference": {
+              "type": "string",
+              "pattern": ".+@sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "image_id"
+          ],
+          "properties": {
+            "kind": {
+              "const": "docker_image"
+            },
+            "image_id": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "RuntimeRegistration": {
+      "type": "object",
+      "required": [
+        "key",
+        "artifact",
+        "source",
+        "license"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/RuntimeKey"
+        },
+        "artifact": {
+          "$ref": "#/$defs/RuntimeArtifact"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "CredentialConfiguration": {
+      "type": "object",
+      "required": [
+        "provider",
+        "api_key"
+      ],
+      "properties": {
+        "provider": {
+          "const": "dsh"
+        },
+        "api_key": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 4096,
+          "writeOnly": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "AgentProfile": {
+      "type": "object",
+      "required": [
+        "role",
+        "skill_revisions",
+        "tool_policy",
+        "allowed_work",
+        "output_schemas"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "analyst",
+            "architect",
+            "developer",
+            "tester",
+            "reviewer"
+          ]
+        },
+        "skill_revisions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tool_policy": {
+          "enum": [
+            "read_only",
+            "task_write",
+            "test_write"
+          ]
+        },
+        "allowed_work": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "discussion",
+              "design",
+              "implementation",
+              "testing",
+              "review"
+            ]
+          }
+        },
+        "output_schemas": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "AcceptanceCriterion": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "key",
+        "description"
+      ],
+      "additionalProperties": false
+    },
+    "ProposalContent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "requirement"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1
+            },
+            "acceptance": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/AcceptanceCriterion"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "title",
+            "body",
+            "acceptance"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "feature"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requirement": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "title",
+            "requirement"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "design"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requirement": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "title",
+            "body",
+            "requirement"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "task_plan"
+            },
+            "requirement": {
+              "type": "string",
+              "minLength": 1
+            },
+            "design": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tasks": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "acceptance": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "dependencies": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "test_recipe": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/TestRecipe"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "key",
+                  "title",
+                  "acceptance",
+                  "dependencies"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "requirement",
+            "design",
+            "tasks"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "test_plan"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "body": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requirement": {
+              "type": "string",
+              "minLength": 1
+            },
+            "design": {
+              "type": "string",
+              "minLength": 1
+            },
+            "verifies": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "test_recipe": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/TestRecipe"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "title",
+            "body",
+            "requirement",
+            "design",
+            "verifies"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SessionScope": {
+      "enum": [
+        "project",
+        "feature",
+        "task"
+      ]
+    },
+    "TurnStatus": {
+      "enum": [
+        "queued",
+        "dispatching",
+        "running",
+        "waiting_interaction",
+        "completed",
+        "failed",
+        "cancelled",
+        "needs_reconciliation"
+      ]
+    },
+    "RuntimeBinding": {
+      "type": "object",
+      "properties": {
+        "installation": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "key": {
+              "$ref": "#/$defs/RuntimeKey"
+            },
+            "artifact": {
+              "$ref": "#/$defs/RuntimeArtifact"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "id",
+            "key",
+            "artifact",
+            "source",
+            "license"
+          ],
+          "additionalProperties": false
+        },
+        "adapter_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_policy": {
+          "enum": [
+            "read_only",
+            "task_write",
+            "test_write"
+          ]
+        },
+        "work_type": {
+          "enum": [
+            "discussion",
+            "design",
+            "implementation",
+            "testing",
+            "review"
+          ]
+        },
+        "configuration_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "credential_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "writable_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "read_only_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "installation",
+        "adapter_version",
+        "model",
+        "tool_policy",
+        "work_type",
+        "configuration_digest",
+        "credential_ref"
+      ],
+      "additionalProperties": false
+    },
+    "InteractionAnswer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "tool_approval"
+            },
+            "outcome": {
+              "enum": [
+                "allowed_once",
+                "rejected",
+                "cancelled"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "outcome"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "user_questions"
+            },
+            "answers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "selected": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "custom": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "selected",
+                  "custom"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "cancelled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "answers",
+            "cancelled"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "MaterialOwner": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "project"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "feature"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "task"
+            },
+            "feature": {
+              "type": "string",
+              "minLength": 1
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "feature",
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TestRecipe": {
+      "type": "object",
+      "required": [
+        "runner",
+        "files",
+        "image",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "runner": {
+          "const": "node_test"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        }
+      },
+      "additionalProperties": false
+    },
+    "InteractionQuestion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "multi_select": {
+          "type": "boolean",
+          "default": false
+        },
+        "intent": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "options"
+      ],
+      "additionalProperties": false
+    },
+    "RuntimeExecution": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "harness",
+            "tests"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "container_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_digest": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "writer_revoked": {
+          "type": "boolean"
+        },
+        "protocol_artifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "finished": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "operation_id",
+        "image_digest",
+        "status",
+        "writer_revoked"
+      ],
+      "additionalProperties": false
+    },
+    "FrozenCode": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "object"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "context",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "PullRequestRequest": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "merge": {
+          "type": "string"
+        },
+        "head_branch": {
+          "type": "string"
+        },
+        "base_branch": {
+          "type": "string"
+        },
+        "candidate": {
+          "type": "string"
+        },
+        "expected_target": {
+          "type": "string"
+        },
+        "number": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "repository",
+        "project",
+        "merge",
+        "head_branch",
+        "base_branch",
+        "candidate",
+        "expected_target"
+      ],
+      "additionalProperties": false
+    },
+    "DeliverySources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Immutable direct source Delivery IDs. Live closure requires completed Task implementation deliveries; a merge candidate requires its original source Delivery. Recursive evidence is frozen before review dispatch."
+    },
+    "ExecutionRetryCleanup": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Command"
+        }
+      ],
+      "description": "execution.retry_cleanup: target is a stopped and sealed RuntimeExecution with cleanup_failed status; never deletes a shared installation."
+    },
+    "MergeCaptureSnapshot": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Command"
+        }
+      ],
+      "description": "merge.capture_snapshot: append an audit snapshot for a completed merge; original snapshots remain immutable."
+    },
+    "NativeInputLimits": {
+      "description": "Ordinary conversation input is at most 65536 UTF-8 bytes; a host-created formal Run evidence envelope is at most 524288 bytes. A native execution budget is fifteen minutes, excluding pending human decisions. Errors never implicitly select Sim."
     }
   },
   "allOf": [
@@ -150,7 +1056,82 @@
       "if": {
         "properties": {
           "method": {
-            "pattern": "^(project|feature|document|definition|binding|task|attempt|run|delivery|review|override|merge|context|snapshot)\\."
+            "pattern": "^(agent|project|feature|document|definition|binding|task|attempt|run|delivery|review|override|merge|context|snapshot)\\."
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/Command"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "settings.update"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/SettingsUpdate"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "runtime.register"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/RuntimeRegistration"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "credentials.configure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/CredentialConfiguration"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "enum": [
+              "session.open",
+              "conversation.send",
+              "conversation.cancel",
+              "interaction.answer",
+              "proposal.create",
+              "proposal.extract",
+              "proposal.revise",
+              "proposal.adopt",
+              "proposal.reject",
+              "proposal.instantiate"
+            ]
           }
         }
       },

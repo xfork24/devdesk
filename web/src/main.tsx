@@ -34,6 +34,10 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import "./style.css";
+import { RepositorySettings } from "./components/RepositorySettings";
+import { RoleConversation } from "./components/RoleConversation";
+import { RuntimePreferences } from "./components/RuntimePreferences";
+import { RuntimeSettings } from "./components/RuntimeSettings";
 
 type RecordData = { [key: string]: any };
 type Field = {
@@ -106,6 +110,7 @@ async function rpc(method: string, params: RecordData = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++sequence, method, params }),
+    signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} · 本地服务连接失败`);
   const data = await res.json();
@@ -141,6 +146,7 @@ function App() {
   const [connection, setConnection] = useState("连接中");
   const [dialog, setDialog] = useState<DialogSpec>();
   const [busy, setBusy] = useState(false);
+  const mutationInFlight = useRef(false);
   const [history, setHistory] = useState<RecordData[]>([]);
   const [historyPage, setHistoryPage] = useState(0);
   const [featurePage, setFeaturePage] = useState(0);
@@ -148,10 +154,15 @@ function App() {
   const [view, setView] = useState<{ title: string; body: string }>();
   const [setupPath, setSetupPath] = useState("./data");
   const [scenario, setScenario] = useState("success");
+  const [liveProvider,setLiveProvider]=useState("");
+  const [focusedSession,setFocusedSession]=useState<RecordData>();
   const [taskFilter, setTaskFilter] = useState("");
   const [snapshotA, setSnapshotA] = useState("");
   const [snapshotB, setSnapshotB] = useState("");
-  const load = useCallback(async () => {
+  const load = useCallback(async (afterCommand = false) => {
+    // A command refresh must settle before another form captures its revision.
+    // SSE refreshes during the mutation are covered by that final read.
+    if (mutationInFlight.current && !afterCommand) return;
     const generation = ++requestGeneration.current;
     try {
       const c = await fetch("/capabilities").then((r) => r.json());
@@ -318,6 +329,7 @@ function App() {
     payload: RecordData = {},
     revision?: number,
   ) => {
+    mutationInFlight.current = true;
     setBusy(true);
     setError("");
     try {
@@ -330,15 +342,17 @@ function App() {
       });
       setToast("操作已保存");
       if (method === "project.create") resetProjectView(result.id);
-      else await load();
+      else await load(true);
       return result;
     } catch (e) {
       setError(String(e));
       throw e;
     } finally {
+      mutationInFlight.current = false;
       setBusy(false);
     }
   };
+  const executionSelection = project?.execution_mode==="live" ? (liveProvider?{provider:liveProvider}:{}) : {scenario};
   const begin = (target: string, phase?: string) => {
     show({
       title:
@@ -349,7 +363,7 @@ function App() {
             : "启动 Task Attempt",
       method: "attempt.start",
       target,
-      payload: { phase, scenario },
+      payload: { phase, ...executionSelection },
       fields: [],
     });
   };
@@ -395,7 +409,7 @@ function App() {
       ],
     });
   const editBinding = (object: RecordData) =>
-    show({
+    project?.execution_mode==="live"?show({title:"工程 Standard · 新 Attempt 使用新版本",method:"binding.update",target:object.id,fields:[{key:"standard",label:"Standard 固定版本",type:"select",value:object.binding.standard,options:definitions.filter(d=>d.family==="standard").map(d=>({value:d.id,label:`${d.name} v${d.version}`}))}]}):show({
       title: "配置绑定 · 新 Attempt 使用新版本",
       method: "binding.update",
       target: object.id,
@@ -456,7 +470,7 @@ function App() {
         </div>
         <p className="muted">
           输入 v{d.input_version} · {d.documents.length} 文档 ·{" "}
-          {d.evidence.length} 证据 · origin=simulated
+          {d.evidence.length} 证据 · {d.source_deliveries?.length||0} 个来源交付 · origin={d.origin}
         </p>
         {d.candidate && <code>{d.candidate}</code>}
         <div className="actions">
@@ -469,9 +483,7 @@ function App() {
             冻结引用
           </button>
           {act(d.id, "review.request", "Agent 评审", () =>
-            command("review.request", d.id, {
-              scenario: scenario === "review_reject" ? scenario : "success",
-            }).catch(() => {}),
+            command("review.request",d.id,project?.execution_mode==="live"?executionSelection:{scenario:scenario==="review_reject"?scenario:"success"}).catch(() => {}),
           )}
           {act(d.id, "review.submit", "通过", () => review(d, "pass"))}
           {act(d.id, "review.submit", "退回", () =>
@@ -545,6 +557,7 @@ function App() {
   };
   const nav = [
     ["overview", "工作总览", LayoutDashboard],
+    ["discussion", "角色讨论", FileText],
     ["workflow", "执行与交付", Workflow],
     ["documents", "文档与上下文", FileText],
     ["definitions", "规范与身份", Library],
@@ -562,7 +575,9 @@ function App() {
           </div>
           <h1>为工程建立一个工作空间</h1>
           <p>选择本地 data 目录。工程状态、文档和执行历史将真实保存在这里。</p>
-          <div className="notice">外部能力为模拟模式 · 不修改你的 Git 仓库</div>
+          <div className="notice">
+            工程流程支持模拟验收；配置运行时后可进行真实角色讨论
+          </div>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -669,8 +684,12 @@ function App() {
         <div className="sidebar-bottom">
           <div className="sim-dot" />
           <div>
-            <strong>Simulation mode</strong>
-            <p>真实规则 · 模拟外部执行</p>
+            <strong>
+              {project?.execution_mode === "live"
+                ? "真实仓库项目"
+                : "Simulation mode"}
+            </strong>
+            <p>工程流程与角色讨论</p>
           </div>
         </div>
       </aside>
@@ -689,7 +708,9 @@ function App() {
               <CircleDot size={12} />
               {connection}
             </span>
-            <span className="simulation">模拟项目</span>
+            <span className="simulation">
+              {project?.execution_mode === "live" ? "真实仓库" : "模拟项目"}
+            </span>
           </div>
         </header>
         <main>
@@ -845,8 +866,7 @@ function App() {
                     </div>
                   ))}
                   <div className="notice">
-                    所有 Git / Agent /
-                    项目测试结果均为模拟来源。工程规则、数据与人类决定真实保存。
+                    项目按设置使用真实或模拟执行；运行、测试和交付展示各自来源。
                   </div>
                 </section>
               </div>
@@ -938,10 +958,25 @@ function App() {
               )}
             </div>
           )}
+          {data && project && tab === "discussion" && (
+            <RoleConversation
+              key={project.id+ (focusedSession && focusedSession.project_id===project.id?focusedSession.id:"")}
+              initialOwner={focusedSession && focusedSession.project_id===project.id?focusedSession.owner_id:undefined}
+              initialSession={focusedSession && focusedSession.project_id===project.id?focusedSession.id:undefined}
+              project={project}
+              feature={f}
+              tasks={detail?.tasks || []}
+              agents={definitions}
+              installations={data.runtime_installations || []}
+              request={rpc}
+              refresh={load}
+            />
+          )}
           {tab === "workflow" && f && (
             <>
+              {detail.pending_interactions?.length>0&&<section className="notice"><h3>工程执行等待输入</h3>{detail.pending_interactions.map((i:RecordData)=><button key={i.id} onClick={()=>{const session=detail.sessions.find((s:RecordData)=>s.id===i.session_id);if(session){setFocusedSession(session);setTab("discussion");}}}>{i.kind==="tool_approval"?"处理工具审批":"回答 Agent 问题"} · {i.reason}</button>)}</section>}
               <div className="panel toolbar">
-                <label>
+                {project?.execution_mode==="live"?<label>下一次工程执行的 Harness<select aria-label="工程 Harness" value={liveProvider} onChange={e=>setLiveProvider(e.target.value)}><option value="">继承角色 / 项目 / 全局偏好</option><option value="codex">Codex</option><option value="dsh">DeepSeek Harness</option></select></label>:<label>
                   模拟场景
                   <select
                     aria-label="模拟场景"
@@ -962,7 +997,7 @@ function App() {
                       </option>
                     ))}
                   </select>
-                </label>
+                </label>}
                 <div className="actions">
                   {detail.allowed_actions[f.id]?.attempt_phases?.includes(
                     "planning",
@@ -997,7 +1032,7 @@ function App() {
                       begin(f.id, "closure"),
                     )}
                   {act(f.id, "merge.request", "Feature → mainline", () =>
-                    command("merge.request", f.id, { scenario }).catch(
+                    command("merge.request", f.id, executionSelection).catch(
                       () => {},
                     ),
                   )}
@@ -1010,7 +1045,7 @@ function App() {
                 <div className="panel-heading">
                   <h2>独立 Tasks</h2>
                   <span className="muted">
-                    逻辑 worktree · 独立 Context / Agent / Skills
+                    {project?.execution_mode==="live"?"真实 worktree · 独立角色会话与 Docker 实例":"逻辑 worktree · 独立 Context / Agent / Skills"}
                   </span>
                 </div>
                 {detail.tasks.length === 0 ? (
@@ -1044,7 +1079,7 @@ function App() {
                             true,
                           )}
                           {act(t.id, "merge.request", "申请 Merge", () =>
-                            command("merge.request", t.id, { scenario }).catch(
+                            command("merge.request", t.id, executionSelection).catch(
                               () => {},
                             ),
                           )}
@@ -1346,6 +1381,8 @@ function App() {
                         <br />
                         candidate {m.candidate}
                       </p>
+                      {m.change_request?.provider==="github"&&<p><a href={`https://github.com/${m.change_request.repository}/pull/${m.change_request.external_id}`} target="_blank" rel="noopener noreferrer">GitHub PR #{m.change_request.external_id}</a> · 本地 {m.committed_revision?"已接纳":"尚未接纳"} · 远端 {m.status==="completed"?"已核验 merged":m.committed_revision?"同步 / merged 核对中":"等待接纳"}</p>}
+                      {detail.merge_progress?.find((p:RecordData)=>p.merge===m.id)?.remote_operations?.filter((op:RecordData)=>op.status!=="completed").map((op:RecordData)=><p key={op.id} className="notice">{op.action.kind} · {op.status} · {op.reason}{op.status==="needs_reconciliation"&&<button onClick={()=>command("repository.reconcile",op.id,{},op.revision).catch(()=>{})}>核对远端操作</button>}</p>)}
                       {detail.advances?.find(
                         (intent: RecordData) => intent.id === m.id,
                       )?.status === "needs_reconciliation" && (
@@ -1364,7 +1401,7 @@ function App() {
                         {act(
                           m.id,
                           "merge.apply",
-                          "接纳模拟候选",
+                          project?.execution_mode==="live"?"接纳候选并同步 GitHub":"接纳模拟候选",
                           () => command("merge.apply", m.id).catch(() => {}),
                           true,
                         )}
@@ -1891,6 +1928,21 @@ function App() {
                     </div>
                   </div>
                 )}
+                {project && (
+                  <RepositorySettings
+                    key={project.id}
+                    project={project}
+                    request={rpc}
+                    refresh={load}
+                  />
+                )}
+                {project&&<RuntimePreferences key={project.id} project={project} installations={data.runtime_installations||[]} request={rpc} refresh={load}/>}
+                <RuntimeSettings
+                  provider={data.default_harness || "codex"}
+                  installations={data.runtime_installations || []}
+                  request={rpc}
+                  refresh={load}
+                />
                 <div className="setting-row">
                   <div>
                     <h3>全局并发额度</h3>
@@ -2009,14 +2061,13 @@ function App() {
                 ))}
               </section>
               <div className="notice">
-                Linux x86_64 / macOS Apple Silicon：已完成实机验证。真实 Git /
-                Codex / 项目测试执行器：延期。
+                Web UI 通过本地 Rust Host 运行。真实工程需配置 Harness、Docker 和 GitHub；平台验收记录见文档。
               </div>
             </>
           )}
           <footer>
             DevDesk 0.2{" "}
-            <span>本地工程内核 · 持久化历史 · origin=simulated</span>
+            <span>本地工程内核 · 持久化历史 · {project?.execution_mode==="live"?"真实工程接入":"origin=simulated"}</span>
           </footer>
         </main>
       </div>

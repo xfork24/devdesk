@@ -21,13 +21,16 @@ fn engine(path: &Path) -> Engine {
 fn engine_with_harness(path: &Path, harness: Arc<dyn HarnessPort>) -> Engine {
     let store = Arc::new(SqliteStore::open(path).unwrap());
     let artifacts = Arc::new(FileArtifacts::new(path.to_path_buf()));
+    let simulated = devdesk_adapters::simulation::adapters();
     let e = Engine {
         store,
         artifacts,
         harness,
         git: Arc::new(SimGit),
-        tests: Arc::new(SimTests),
+        tests: simulated.tests,
         sandbox: Arc::new(SimSandbox),
+        pull_requests: None,
+        simulation: simulated.simulation,
     };
     e.bootstrap().unwrap();
     e
@@ -978,6 +981,7 @@ fn small_sample_pagination_and_event_query() {
             for pn in 0..10 {
                 let pid = id();
                 s.projects.push(Project {
+                    runtime_preferences: None,
                     workspace_definition: None,
                     id: pid.clone(),
                     title: format!("Project {pn}"),
@@ -991,6 +995,7 @@ fn small_sample_pagination_and_event_query() {
                     let fid = id();
                     let sid = id();
                     s.features.push(Feature {
+                        source_requirement: None,
                         id: fid.clone(),
                         project_id: pid.clone(),
                         title: format!("Feature {fn_}"),
@@ -1001,9 +1006,12 @@ fn small_sample_pagination_and_event_query() {
                         predecessor: None,
                     });
                     s.snapshots.push(Snapshot {
+                        execution_instances: vec![],
+                        runtime_bindings: vec![],
+                        project_id: None,
                         capture: SnapshotCapture::default(),
                         id: sid.clone(),
-                        feature_id: fid.clone(),
+                        feature_id: Some(fid.clone()),
                         task_id: None,
                         kind: "initial".into(),
                         content: String::new(),
@@ -1339,33 +1347,49 @@ fn hardening_v1_migration_preserves_reviewer_binding_and_legacy_provenance() {
         f = new_feature(&e);
         planning(&e, &f);
     }
-    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
-    // Reproduce an actual v1 schema using existing valid records.
-    for sql in [
-        "ALTER TABLE attempts DROP COLUMN git_context",
-        "DROP TABLE advances",
-        "ALTER TABLE attempts DROP COLUMN scope",
-        "ALTER TABLE attempts DROP COLUMN outputs",
-        "DROP TABLE effects",
-        "ALTER TABLE runs DROP COLUMN binding_verified",
-        "ALTER TABLE attempts DROP COLUMN baseline",
-        "DROP TABLE harnesses",
-        "DROP TABLE sandboxes",
-        "ALTER TABLE projects DROP COLUMN workspace_definition",
-        "ALTER TABLE sessions DROP COLUMN instance",
-        "ALTER TABLE reviews DROP COLUMN assignment",
-        "ALTER TABLE merges DROP COLUMN change_request",
-        "ALTER TABLE tasks DROP COLUMN scope",
-        "ALTER TABLE documents DROP COLUMN acceptance",
-        "ALTER TABLE documents DROP COLUMN verifies",
-        "ALTER TABLE documents DROP COLUMN artifact_id",
-        "ALTER TABLE snapshots DROP COLUMN capture",
-        "ALTER TABLE runs DROP COLUMN binding",
-        "PRAGMA user_version=1",
-    ] {
-        conn.execute_batch(sql).unwrap();
+    // Build a genuine v1 database from its committed schema, copying only v1 columns.
+    // Future schema additions must not leak into this historical migration fixture.
+    let original = dir.path().join("engineering.sqlite3");
+    let legacy = dir.path().join("legacy-v1.sqlite3");
+    let mut conn = rusqlite::Connection::open(&legacy).unwrap();
+    conn.execute_batch(include_str!("../../../sql/001_initial.sql"))
+        .unwrap();
+    conn.execute(
+        "ATTACH DATABASE ?1 AS original",
+        [original.to_string_lossy().as_ref()],
+    )
+    .unwrap();
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    let tx = conn.transaction().unwrap();
+    tx.execute_batch("PRAGMA defer_foreign_keys=ON").unwrap();
+    for table in tables {
+        let columns: Vec<String> = tx
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        let columns = columns
+            .iter()
+            .map(|c| format!("\"{c}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        tx.execute_batch(&format!(
+            "INSERT INTO {table}({columns}) SELECT {columns} FROM original.{table}"
+        ))
+        .unwrap();
     }
+    tx.commit().unwrap();
+    conn.execute_batch("DETACH DATABASE original").unwrap();
     drop(conn);
+    std::fs::rename(&legacy, &original).unwrap();
     let e = engine(dir.path());
     let s = e.store.snapshot().unwrap();
     assert_eq!(s.feature(&f).unwrap().status, Status::Ready);
@@ -2137,13 +2161,16 @@ fn completion_git_crash_after_side_effect_recovers_from_original_provider_receip
     );
     drop(e);
     let store = Arc::new(SqliteStore::open(dir.path()).unwrap());
+    let simulated = devdesk_adapters::simulation::adapters();
     let e = Engine {
         store,
         artifacts: Arc::new(FileArtifacts::new(dir.path().to_path_buf())),
         harness: Arc::new(Immediate),
         git: provider.clone(),
-        tests: Arc::new(SimTests),
+        tests: simulated.tests,
         sandbox: Arc::new(SimSandbox),
+        pull_requests: None,
+        simulation: simulated.simulation,
     };
     e.bootstrap().unwrap();
     assert_eq!(
@@ -2198,13 +2225,16 @@ fn completion_cleanup_crash_replays_original_resource_identity() {
     );
     drop(e);
     let store = Arc::new(SqliteStore::open(dir.path()).unwrap());
+    let simulated = devdesk_adapters::simulation::adapters();
     let e = Engine {
         store,
         artifacts: Arc::new(FileArtifacts::new(dir.path().to_path_buf())),
         harness: Arc::new(Immediate),
         git: Arc::new(SimGit),
-        tests: Arc::new(SimTests),
+        tests: simulated.tests,
         sandbox: provider.clone(),
+        pull_requests: None,
+        simulation: simulated.simulation,
     };
     e.bootstrap().unwrap();
     assert_eq!(
@@ -2821,7 +2851,7 @@ fn project_database_migration_retries_after_artifact_failure_without_publishing_
         .unwrap()
         .artifacts
         .iter()
-        .find(|a| a.feature_id == f2)
+        .find(|a| a.feature_id.as_deref() == Some(f2.as_str()))
         .unwrap()
         .clone();
     let path = dir.path().join(&artifact.relative_path);
@@ -2959,9 +2989,9 @@ impl devdesk_core::ports::Tests for RecordingProviders {
     fn identity(&self) -> String {
         "fixture:tests:1".into()
     }
-    fn validate(&self, request: &TestRequest, outcome: &str) -> Value {
+    fn validate(&self, request: &TestRequest) -> Value {
         self.record("tests.validate");
-        SimTests.validate(request, outcome)
+        SimTests::default().validate(request)
     }
 }
 impl devdesk_core::ports::Sandbox for RecordingProviders {
@@ -2990,6 +3020,8 @@ fn execution_base_contracts_allow_independent_providers_through_a_complete_task_
             git: provider.clone(),
             tests: provider.clone(),
             sandbox: provider.clone(),
+            pull_requests: None,
+            simulation: None,
         },
     );
     let fid = new_feature(&e);

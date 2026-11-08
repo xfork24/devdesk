@@ -1,6 +1,6 @@
 # DevDesk 真实交互与工程接入实施计划
 
-日期：2026-11-08。状态：需求已讨论确认，待实施。本次仅完成调研和计划，不开始功能开发、安装运行时、调用模型、创建远端资源或运行容器。
+日期：2026-11-08。状态：R0–R8 在 macOS Web 上验收通过（2026-11-08）。Ubuntu 宿主与 Keychain 改善按用户后续要求继续。用户已授权实施及独立 GitHub 测试仓库；阶段证据见 [实施报告目录](../reports/real-integration/)。以下原调研基线保留为计划输入，实际通过项以阶段报告和验收产物为准。
 
 基线：[原始设计 v0.2](devdesk-v0.2.md)、[原型实施计划](devdesk-prototype.md)、[领域补强计划](domain-hardening.md)、[当前架构](../design.md)、[真实适配器契约](../real-adapter-contract.md)。本计划授权实施时，取代原型计划中“真实 Harness/Git/Docker 延期”的本轮停止线；原有领域不变量继续有效。存储采用已实现的全局配置库与每项目工程库，目录采用 `sql/`、`docs/plans/`、`docs/reports/`。
 
@@ -283,89 +283,89 @@ GitHub REST 的合入接口 `sha` 校验 PR head，不能作为 base 的 CAS。�
 
 ### R0 — 固定接入与验收基线
 
-- [ ] 盘点当前工作树、76 项既有 Rust 测试和 Web/HTTP 检查；保护已有 `sql/`、`docs/plans/` 等未提交调整，不从旧 HEAD 覆盖工作成果。
-- [ ] 固定 Codex Linux 产物/协议与 DSH source/build identity、Node/本机依赖、Docker 镜像/CPU；确认两套运行时的许可和分发方式。
-- [ ] 在隔离目录验证双供应商 handshake、真实两轮讨论、角色 persona、结构化输出/工具输出、权限、凭据、恢复和停止。保存脱敏 transcript 与能力矩阵，不启动真实目标仓库实施。
-- [ ] 验证 DSH 输入归属/终态区间，worker forced stop 和 Session 恢复/后继策略；不把 enqueue 或 idle 单独判为请求成功。
-- [ ] 验证 Docker 内两种运行时、认证、UID/目录、linked worktree Git 视图和公共 runtime 层去重。
-- [ ] 在专用 GitHub 测试仓库证明候选分支 PR 的真实间接合入、精确 lease 拒绝目标变化、保护规则不兼容时阻塞；该试验不操作 DevDesk 当前仓库。
-- [ ] 输出 `R0-compatibility.md`：固定版本、来源、命令、观测、兼容能力、已知限制及实际凭据前置条件。协议或隔离能力不可满足时阻塞其依赖项；仅缺真实凭据时，可先推进已确认契约下的 R1/R2 和无凭据实现，但保留 R0 的真实验证未完成状态，不宣称依赖该验证的阶段已通过。不能擅自删减 DSH 或真实闭环目标。
+- [x] 盘点当前工作树、76 项既有 Rust 测试和 Web/HTTP 检查；保护已有 `sql/`、`docs/plans/` 等未提交调整，不从旧 HEAD 覆盖工作成果。
+- [x] 固定 Codex Linux 产物/协议与 DSH source/build identity、Node/本机依赖、Docker 镜像/CPU；确认两套运行时的许可和分发方式。
+- [x] 在隔离目录验证双供应商 handshake、真实两轮讨论、角色 persona、结构化输出/工具输出、权限、凭据、恢复和停止。保存脱敏 transcript 与能力矩阵，不启动真实目标仓库实施。
+- [x] 验证 DSH 输入归属/终态区间，worker forced stop 和 Session 恢复/后继策略；不把 enqueue 或 idle 单独判为请求成功。
+- [x] 验证 Docker 内两种运行时、认证、UID/目录、linked worktree Git 视图和公共 runtime 层去重。
+- [x] 在专用 GitHub 测试仓库证明候选分支 PR 的真实间接合入、精确 lease 拒绝目标变化、保护规则不兼容时阻塞；该试验不操作 DevDesk 当前仓库。
+- [x] 输出 `R0-compatibility.md`：固定版本、来源、命令、观测、兼容能力、已知限制及实际凭据前置条件。协议或隔离能力不可满足时阻塞其依赖项；仅缺真实凭据时，可先推进已确认契约下的 R1/R2 和无凭据实现，但保留 R0 的真实验证未完成状态，不宣称依赖该验证的阶段已通过。不能擅自删减 DSH 或真实闭环目标。
 
 退出条件：两种供应商与 Docker、GitHub 策略都具备有证据的实现路径；具体协议字段和停止策略不再依赖猜测。
 
 ### R1 — 领域模型、接口与双库升级
 
-- [ ] 落实第 5、9 节类型、owner/关联、状态与来源；区分讨论轮次和工程 Run，扩展 Session/Artifact/Snapshot 的 Project 归属。
-- [ ] 实现配置/角色/绑定解析、live 证据检查及 Harness 路由器；Sim 保留并采用同一公共契约。
-- [ ] 为双库追加版本升级、加载/保存、分页和命令/事件；增加 atomic proposal adoption、旧 revision/stale 和跨项目拒绝测试。
-- [ ] 验证空库初始化、已有全局 v1/项目 v13 升级、旧模拟数据/identity/恢复历史保留，以及失败后重试。
+- [x] 落实第 5、9 节类型、owner/关联、状态与来源；区分讨论轮次和工程 Run，扩展 Session/Artifact/Snapshot 的 Project 归属。
+- [x] 实现配置/角色/绑定解析、live 证据检查及 Harness 路由器；Sim 保留并采用同一公共契约。
+- [x] 为双库追加版本升级、加载/保存、分页和命令/事件；增加 atomic proposal adoption、旧 revision/stale 和跨项目拒绝测试。
+- [x] 验证空库初始化、已有全局 v1/项目 v13 升级、旧模拟数据/identity/恢复历史保留，以及失败后重试。
 
 退出条件：公共模型可表达完整流程，模拟回归继续通过，live 路径拒绝 simulated 测试/合入证据。
 
 ### R2 — 共享安装与 Docker 资源服务
 
-- [ ] 实现安装登记、摘要校验、缓存锁、同版本去重、不同版本并存和引用保留；发行打包按安装引用/公共层组织。
-- [ ] 实现 DockerSandbox 的创建、exec、事件/日志、导出和停止/清理；不允许 Agent 获得 daemon 管理权限。
-- [ ] 提供统一 RuntimeWorker 启停/stdio/超时/退出证明；一 Session worker 默认策略和受控 per-session profile/config。
-- [ ] 增加重复安装并发、平台/摘要不匹配、Docker 不可用、越界挂载、进程失联、导出失败和幂等清理用例。
+- [x] 实现安装登记、摘要校验、缓存锁、同版本去重、不同版本并存和引用保留；发行打包按安装引用/公共层组织。
+- [x] 实现 DockerSandbox 的创建、exec、事件/日志、导出和停止/清理；不允许 Agent 获得 daemon 管理权限。
+- [x] 提供统一 RuntimeWorker 启停/stdio/超时/退出证明；一 Session worker 默认策略和受控 per-session profile/config。
+- [x] 增加重复安装并发、平台/摘要不匹配、Docker 不可用、越界挂载、进程失联、导出失败和幂等清理用例。
 
 退出条件：两个角色/项目可引用同一安装而会话/进程/可写目录隔离；实际修改与命令发生在容器内。
 
 ### R3 — 双 Harness、角色与设置页
 
-- [ ] 实现 CodexHarness 和 DshHarness 的已验证协议、会话持久化、事件归属、双向交互、停止和恢复。
-- [ ] 提供五个角色修订及 provider-specific 指令映射；DSH 使用受控 persona profile patch，Codex 使用支持的原生字段，验证实际生效。
-- [ ] 设置页登记/诊断安装与认证、选择模型、选择默认 Harness（初始 Codex）、项目/角色继承与显式覆盖；显示能力与不可用原因。
-- [ ] 运行中的 Session 保持原绑定；新建 Session 采用当前默认。同一角色连续讨论确实使用同一供应商 Session，角色/项目/Task 切换创建不同 Session。
-- [ ] 同时通过原设计 H01–H09 的适用项；原生恢复与 forced-stop 等能力差异有明示，不用统一的虚假“支持取消”掩盖。
+- [x] 实现 CodexHarness 和 DshHarness 的已验证协议、会话持久化、事件归属、双向交互、停止和恢复。
+- [x] 提供五个角色修订及 provider-specific 指令映射；DSH 使用受控 persona profile patch，Codex 使用支持的原生字段，验证实际生效。
+- [x] 设置页登记/诊断安装与认证、选择模型、选择默认 Harness（初始 Codex）、项目/角色继承与显式覆盖；显示能力与不可用原因。
+- [x] 运行中的 Session 保持原绑定；新建 Session 采用当前默认。同一角色连续讨论确实使用同一供应商 Session，角色/项目/Task 切换创建不同 Session。
+- [x] 同时通过原设计 H01–H09 的适用项；原生恢复与 forced-stop 等能力差异有明示，不用统一的虚假“支持取消”掩盖。
 
 退出条件：前端可用两种真实 Harness 连续讨论、回答问题/审批、查看历史，并经过重启验证。
 
 ### R4 — 真实仓库、worktree 与 GitHub 基础
 
-- [ ] 实现 CliGit 仓库检查和 Feature/Task worktree 创建/检查/处置；持久化真实位置和外部标识。
-- [ ] 实现 GitHubPullRequests 的凭据、remote/策略检查、稳定 marker、PR 发布/读取及状态映射，接入操作账本。
-- [ ] 验证 Git 操作不执行非预期宿主 hook，linked worktree 的容器视图不能改其他 refs 或定位到其他仓库。
-- [ ] 覆盖重复创建、目录/分支冲突、脏文件、源目标变化、API 成功后超时和跨项目误路由。
+- [x] 实现 CliGit 仓库检查和 Feature/Task worktree 创建/检查/处置；持久化真实位置和外部标识。
+- [x] 实现 GitHubPullRequests 的凭据、remote/策略检查、稳定 marker、PR 发布/读取及状态映射，接入操作账本。
+- [x] 验证 Git 操作不执行非预期宿主 hook，linked worktree 的容器视图不能改其他 refs 或定位到其他仓库。
+- [x] 覆盖重复创建、目录/分支冲突、脏文件、源目标变化、API 成功后超时和跨项目误路由。
 
 退出条件：两个 Tasks 的真实 worktree 可并行存在，PR 操作可核对且不会因重试重复创建。
 
 ### R5 — 讨论到 Requirement/Feature/Design/Task/Test
 
-- [ ] 增加角色讨论工作台：项目/Feature/Task 范围、角色/Harness/Session 指示、流式内容、工具/审批状态和历史分页。
-- [ ] 实现 Requirement/Feature、Design、Task/Test 结构化提案和采纳差异；未有 Feature 的项目讨论可保存需求。
-- [ ] 采纳提案通过 Rust 命令创建/修订对象并按 R4 创建真实 worktree，外部操作未完成时显示 pending/blocked，不能伪装就绪。
-- [ ] 将规划交付、独立 Review、初始 Snapshot 和 TaskPlan 实例化接成前端完整流程；保留手动编辑和显式新修订。
-- [ ] 验证 SSE 重连不重复发消息、跨项目/角色隔离、重复采纳幂等、需求变化使相关提案和证据 stale。
+- [x] 增加角色讨论工作台：项目/Feature/Task 范围、角色/Harness/Session 指示、流式内容、工具/审批状态和历史分页。
+- [x] 实现 Requirement/Feature、Design、Task/Test 结构化提案和采纳差异；未有 Feature 的项目讨论可保存需求。
+- [x] 采纳提案通过 Rust 命令创建/修订对象并按 R4 创建真实 worktree，外部操作未完成时显示 pending/blocked，不能伪装就绪。
+- [x] 将规划交付、独立 Review、初始 Snapshot 和 TaskPlan 实例化接成前端完整流程；保留手动编辑和显式新修订。
+- [x] 验证 SSE 重连不重复发消息、跨项目/角色隔离、重复采纳幂等、需求变化使相关提案和证据 stale。
 
 退出条件：用户通过真实对话建立可追踪对象，两个 Tasks 有确定 scope、Tests、独立 Session 与 worktree。
 
 ### R6 — Docker 内真实 TDD、交付与评审
 
-- [ ] 实现 CommandTests/TestRecipe、结构化报告解析和完整来源绑定，取消公共接口的模拟 outcome 输入。
-- [ ] 接通 Task Red → 开发实现 → Green → docs/verify DAG；测试角色与开发角色分工，写许可按真实目录协调。
-- [ ] 封存 diff、实际测试/日志、运行实例、Session Snapshot 和报告，形成真实 Delivery；独立角色 Reviewer 按冻结版本进行正式 Review。
-- [ ] 覆盖真正断言失败、环境/语法失败、错误代码或容器证据、取消、导出故障、失败清理与人工重试。
+- [x] 实现 CommandTests/TestRecipe、结构化报告解析和完整来源绑定，取消公共接口的模拟 outcome 输入。
+- [x] 接通 Task Red → 开发实现 → Green → docs/verify DAG；测试角色与开发角色分工，写许可按真实目录协调。
+- [x] 封存 diff、实际测试/日志、运行实例、Session Snapshot 和报告，形成真实 Delivery；独立角色 Reviewer 按冻结版本进行正式 Review。
+- [x] 覆盖真正断言失败、环境/语法失败、错误代码或容器证据、取消、导出故障、失败清理与人工重试。
 
 退出条件：两个 Task 能分别用 Codex/DSH 在 Docker 内完成实际修改和测试，并获得有真实证据的交付决定。
 
 ### R7 — 候选、GitHub PR 与完整合入
 
-- [ ] 完整实现第 8 节候选、发布分支、PR、同候选 Docker 验证/Review、本地 CAS 与精确 lease 远端同步。
-- [ ] 分别跑通 Task → Feature 与 Feature → Mainline；后者包括 Feature 自身完整测试与文档收尾，不从 Tasks 完成直接跳过。
-- [ ] 扩展 Merge 的 local/remote 状态及分阶段操作记录，支持推送成功但回执丢失、本地完成远端失败、目标竞态和间接合入等待。
-- [ ] 在目标变化时重建候选/交付，不复用失效证据；保持每次成功接纳单提交、旧源对象和快照可追溯。
-- [ ] 在 GitHub PR merged 与实际目标一致前保持远端交付门禁未满足；严格策略不兼容则无副作用阻塞。
+- [x] 完整实现第 8 节候选、发布分支、PR、同候选 Docker 验证/Review、本地 CAS 与精确 lease 远端同步。
+- [x] 分别跑通 Task → Feature 与 Feature → Mainline；后者包括 Feature 自身完整测试与文档收尾，不从 Tasks 完成直接跳过。
+- [x] 扩展 Merge 的 local/remote 状态及分阶段操作记录，支持推送成功但回执丢失、本地完成远端失败、目标竞态和间接合入等待。
+- [x] 在目标变化时重建候选/交付，不复用失效证据；保持每次成功接纳单提交、旧源对象和快照可追溯。
+- [x] 在 GitHub PR merged 与实际目标一致前保持远端交付门禁未满足；严格策略不兼容则无副作用阻塞。
 
 退出条件：真实 Feature 在前端完成最终交付，真实 PR 状态和本地/远端代码可独立核验。
 
 ### R8 — 故障恢复、真实验收与运行包
 
-- [ ] 启动时按全局索引检查所有项目的待核对操作和带标签资源；不能只恢复上次活动项目而遗留其他项目的真实执行者。无活动项目授权时只核对/展示，不自动重发工作。
-- [ ] 应用退出停止接纳新工作，保存事件/快照并确认拥有进程/容器停止；浏览器关闭和切换项目采用现有持续执行语义。
-- [ ] 执行第 11 节矩阵、H01–H09 和 INV01–INV13 在本轮范围内的映射；延期 Archive/原生环境项明确标记。
-- [ ] 更新领域、架构、协议、接入、演示、设置和运行包文档；记录安装依赖、真实测试材料、兼容报告、限制和原始日志位置。
-- [ ] 默认离线回归与需要真实凭据/网络的 live 套件分别运行。真实套件未执行时只能报告未验收，不能用 skip 代替本轮完成。
+- [x] 启动时按全局索引检查所有项目的待核对操作和带标签资源；不能只恢复上次活动项目而遗留其他项目的真实执行者。无活动项目授权时只核对/展示，不自动重发工作。
+- [x] 应用退出停止接纳新工作，保存事件/快照并确认拥有进程/容器停止；浏览器关闭和切换项目采用现有持续执行语义。
+- [x] 执行第 11 节矩阵、H01–H09 和 INV01–INV13 在本轮范围内的映射；延期 Archive/原生环境项明确标记。
+- [x] 更新领域、架构、协议、接入、演示、设置和运行包文档；记录安装依赖、真实测试材料、兼容报告、限制和原始日志位置。
+- [x] 默认离线回归与需要真实凭据/网络的 live 套件分别运行。真实套件未执行时只能报告未验收，不能用 skip 代替本轮完成。
 
 退出条件：全部必需真实用例有实际结果与 Artifact 引用，发行包引用同版本共享运行时，没有按角色捆绑重复载荷。
 
@@ -433,4 +433,4 @@ R8 提供统一 `scripts/check-live.sh` 入口，参数包含 `--providers codex
 - [GitHub Pull Requests API](https://docs.github.com/en/rest/pulls/pulls)、[PR 间接合入](https://docs.github.com/en/pull-requests/reference/pull-request-merges)。
 - [Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)、[Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)。
 
-以上为只读调研与方案依据，不是兼容测试、模型调用、容器运行或远端合入已经成功的证据。本轮未修改应用实现。
+以上为原调研依据；实施与验收结果以 [R8 最终报告](../reports/real-integration/R8-acceptance.md) 和其中的实际证据为准。

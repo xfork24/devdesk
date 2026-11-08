@@ -1,7 +1,13 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
 mod advances;
+mod conversation_runtime;
+mod conversations;
 mod effects;
+mod live_merges;
+mod live_runs;
 pub mod ports;
+mod proposals;
+mod repositories;
 // Compatibility names for existing adapters and contract fixtures.
 use devdesk_domain::*;
 pub use ports::{
@@ -13,6 +19,19 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 pub trait EngineeringStore: Send + Sync {
+    /// Lookup through the same idempotency contract without creating a missing operation.
+    fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
+        let mut missing = false;
+        let result = self.transact(Some((id, fingerprint)), &mut |_| {
+            missing = true;
+            Err(err("operation_absent", "操作尚未登记"))
+        });
+        if missing { Ok(None) } else { result.map(Some) }
+    }
+    /// Conservative scheduling hint; providers without an indexed query remain always eligible.
+    fn has_pending_work(&self) -> Result<bool> {
+        Ok(true)
+    }
     fn snapshot(&self) -> Result<EngineeringState>;
     fn transact(
         &self,
@@ -25,6 +44,15 @@ pub trait EngineeringStore: Send + Sync {
     }
 }
 pub trait ArtifactStore: Send + Sync {
+    fn seal_scoped(&self, owner: &MaterialOwner, category: &str, body: &str) -> Result<Artifact> {
+        match owner {
+            MaterialOwner::Feature { id } => self.seal(id, None, category, body),
+            MaterialOwner::Task { feature, id } => self.seal(feature, Some(id), category, body),
+            MaterialOwner::Project { .. } => {
+                Err(err("unsupported", "ArtifactStore 未提供 Project 产物封存"))
+            }
+        }
+    }
     fn seal(
         &self,
         feature: &str,
@@ -42,6 +70,9 @@ pub struct Command {
     #[serde(default)]
     pub payload: Value,
 }
+pub fn command_fingerprint(method: &str, c: &Command) -> String {
+    serde_json::to_string(&(method, &c.target, &c.expected_revision, &c.payload)).unwrap()
+}
 pub struct Engine {
     pub store: Arc<dyn EngineeringStore>,
     pub artifacts: Arc<dyn ArtifactStore>,
@@ -49,6 +80,8 @@ pub struct Engine {
     pub git: Arc<dyn ports::Git>,
     pub tests: Arc<dyn ports::Tests>,
     pub sandbox: Arc<dyn ports::Sandbox>,
+    pub pull_requests: Option<Arc<dyn ports::PullRequests>>,
+    pub simulation: Option<Arc<dyn ports::SimulationControls>>,
 }
 fn text(v: &Value, k: &str) -> Result<String> {
     v.get(k)
@@ -154,7 +187,7 @@ fn document_ids(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Vec<Id> {
     s.documents
         .iter()
         .filter(|d| {
-            d.feature_id == fid
+            s.document_in_feature(d, &fid)
                 && (d.task_id.is_none() || d.task_id.as_deref() == tid)
                 && !s
                     .documents
@@ -176,6 +209,27 @@ fn git_context(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Result<Git
         path: project.workspace.clone(),
         mainline: "main".into(),
     });
+    if project.execution_mode == "live" {
+        let location = |owner: &str| -> Result<CodeLocation> {
+            let w = s
+                .repository_worktrees
+                .iter()
+                .find(|w| w.project_id == project.id && w.owner_id == owner)
+                .ok_or_else(|| err("blocked", "受管理 worktree 尚未就绪，请核对仓库操作"))?;
+            Ok(CodeLocation {
+                owner: owner.into(),
+                branch: w.branch.clone(),
+                worktree: w.path.clone(),
+            })
+        };
+        return Ok(GitContext {
+            project: project.id.clone(),
+            workspace,
+            source: location(tid.unwrap_or(fid))?,
+            target: location(if tid.is_some() { fid } else { &project.id })?,
+            origin: Origin::External,
+        });
+    }
     let source = if let Some(tid) = tid {
         let t = s.task(tid)?;
         CodeLocation {
@@ -312,12 +366,218 @@ pub fn seed_configuration(s: &mut EngineeringState) {
                 body: body.into(),
                 slots,
                 rules,
+                agent_profile: None,
+            });
+        }
+    }
+    for (key, name, role, instructions, tool_policy, allowed_work, output_schemas) in [
+        (
+            "analyst",
+            "需求分析师",
+            AgentRole::Analyst,
+            "Clarify requirements, constraints and acceptance criteria. Produce proposals; do not mutate engineering state or code.",
+            ToolPolicy::ReadOnly,
+            vec![WorkType::Discussion],
+            vec!["requirement/v1", "feature/v1"],
+        ),
+        (
+            "architect",
+            "架构师",
+            AgentRole::Architect,
+            "Explain architecture, interfaces and tradeoffs. Derive design and task/test plans from frozen requirement revisions.",
+            ToolPolicy::ReadOnly,
+            vec![WorkType::Discussion, WorkType::Design],
+            vec!["design/v1", "task_plan/v1", "test_plan/v1"],
+        ),
+        (
+            "developer",
+            "开发",
+            AgentRole::Developer,
+            "Implement only the frozen Task scope inside its sandbox. Preserve evidence and report changes; never approve your own delivery.",
+            ToolPolicy::TaskWrite,
+            vec![WorkType::Discussion, WorkType::Implementation],
+            vec!["implementation/v1"],
+        ),
+        (
+            "tester",
+            "测试",
+            AgentRole::Tester,
+            "Derive tests from explicit acceptance criteria. Distinguish assertion failure from environment failure and retain command/revision evidence.",
+            ToolPolicy::TestWrite,
+            vec![WorkType::Discussion, WorkType::Testing],
+            vec!["test_plan/v1", "test_result/v1"],
+        ),
+        (
+            "reviewer",
+            "评审",
+            AgentRole::Reviewer,
+            "Independently review frozen delivery and candidate evidence. Return per-check decisions and reasons; do not modify code or approve on behalf of a human.",
+            ToolPolicy::ReadOnly,
+            vec![WorkType::Discussion, WorkType::Review],
+            vec!["review/v1"],
+        ),
+    ] {
+        let identity = format!("builtin-agent-{key}-v1");
+        if !s.definitions.iter().any(|d| d.id == identity) {
+            s.definitions.push(Definition {
+                id: identity,
+                family: "agent".into(),
+                name: name.into(),
+                version: 1,
+                supersedes: None,
+                body: instructions.into(),
+                slots: vec![],
+                rules: vec![],
+                agent_profile: Some(AgentProfile {
+                    role,
+                    skill_revisions: vec![],
+                    tool_policy,
+                    allowed_work,
+                    output_schemas: output_schemas.into_iter().map(str::to_owned).collect(),
+                }),
             });
         }
     }
 }
 
 impl Engine {
+    fn revise_project_requirement(
+        &self,
+        s: &mut EngineeringState,
+        project: &str,
+        p: &Value,
+    ) -> Result<Value> {
+        require(
+            opt(p, "kind").is_none_or(|kind| kind == "requirement"),
+            "Project 讨论成果目前仅接受 Requirement 修订",
+        )?;
+        require(
+            p.get("feature_id").is_none() && p.get("task_id").is_none(),
+            "Project Requirement 不得携带 Feature/Task 归属",
+        )?;
+        let body = text(p, "body")?;
+        let acceptance = criteria(p, &body)?;
+        let previous = opt(p, "supersedes");
+        let version = if let Some(id) = &previous {
+            let old = s
+                .documents
+                .iter()
+                .find(|d| {
+                    &d.id == id
+                        && d.project_id.as_deref() == Some(project)
+                        && d.kind == "requirement"
+                })
+                .ok_or_else(|| err("not_found", "Project Requirement 前版不存在"))?;
+            require(
+                !s.documents
+                    .iter()
+                    .any(|d| d.supersedes.as_ref() == Some(id)),
+                "Requirement 已有后继，请采用当前修订",
+            )?;
+            old.version + 1
+        } else {
+            1
+        };
+        let mut artifact = self.artifacts.seal_scoped(
+            &MaterialOwner::Project { id: project.into() },
+            "documents",
+            &body,
+        )?;
+        artifact.origin = Origin::Human;
+        let artifact_id = artifact.id.clone();
+        s.artifacts.push(artifact);
+        let did = id();
+        s.documents.push(Document {
+            test_recipe: None,
+            id: did.clone(),
+            feature_id: None,
+            project_id: Some(project.into()),
+            task_id: None,
+            kind: "requirement".into(),
+            title: text(p, "title")?,
+            body,
+            version,
+            supersedes: previous,
+            requirement_id: None,
+            design_id: None,
+            origin: Origin::Human,
+            acceptance,
+            verifies: vec![],
+            artifact_id: Some(artifact_id),
+        });
+        s.projects
+            .iter_mut()
+            .find(|p| p.id == project)
+            .unwrap()
+            .revision += 1;
+        Ok(json!({"id":did}))
+    }
+    fn snapshot_project(
+        &self,
+        s: &mut EngineeringState,
+        project: &str,
+        p: &Value,
+    ) -> Result<Value> {
+        let owner = s.projects.iter().find(|p| p.id == project).unwrap();
+        let binding = owner.binding.clone();
+        let documents: Vec<Id> = if let Some(list) = p.get("documents") {
+            serde_json::from_value(list.clone())
+                .map_err(|_| err("invalid_params", "documents 必须为 ID 数组"))?
+        } else {
+            s.documents
+                .iter()
+                .filter(|d| d.project_id.as_deref() == Some(project))
+                .map(|d| d.id.clone())
+                .collect()
+        };
+        require(
+            documents.iter().all(|id| {
+                s.documents
+                    .iter()
+                    .any(|d| &d.id == id && d.project_id.as_deref() == Some(project))
+            }),
+            "Project Snapshot 不得引用其他范围的材料",
+        )?;
+        let content = s
+            .contexts
+            .iter()
+            .find(|c| c.owner_id == project)
+            .map(|c| c.content.clone())
+            .unwrap_or_default();
+        let sid = id();
+        let snapshot = Snapshot {
+            execution_instances: vec![],
+            runtime_bindings: vec![],
+            id: sid.clone(),
+            feature_id: None,
+            project_id: Some(project.into()),
+            task_id: None,
+            kind: "project_context".into(),
+            content,
+            binding,
+            documents,
+            delivery_id: None,
+            inherited_from: None,
+            capture: SnapshotCapture {
+                attempt: None,
+                runs: vec![],
+                sessions: vec![],
+                resources: vec![],
+                captured_at: Some(now()),
+                reason: opt(p, "reason").unwrap_or_else(|| "Project discussion context".into()),
+            },
+        };
+        let mut artifact = self.artifacts.seal_scoped(
+            &MaterialOwner::Project { id: project.into() },
+            "snapshots",
+            &serde_json::to_string_pretty(&snapshot)
+                .map_err(|e| err("serialization", e.to_string()))?,
+        )?;
+        artifact.origin = Origin::Human;
+        s.artifacts.push(artifact);
+        s.snapshots.push(snapshot);
+        Ok(json!({"id":sid}))
+    }
     /// Assemble an engine through the same contracts for all provider implementations.
     pub fn new(
         store: Arc<dyn EngineeringStore>,
@@ -331,11 +591,24 @@ impl Engine {
             git: adapters.git,
             tests: adapters.tests,
             sandbox: adapters.sandbox,
+            pull_requests: adapters.pull_requests,
+            simulation: adapters.simulation,
         }
     }
     pub fn bootstrap(&self) -> Result<()> {
         self.store.transact(None, &mut |s| {
             seed_configuration(s);
+            for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Dispatched){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="restart_after_dispatch".into();op.revision+=1;}
+            for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Prepared){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="startup_pending_intent_requires_reconcile".into();op.revision+=1;}
+            for session in s.sessions.iter_mut().filter(|v|v.scope.is_some() && v.external_session.is_some() && !matches!(v.lifecycle,Some(SessionLifecycle::Closed|SessionLifecycle::RequiresSuccessor))){
+                let uncertain=s.turns.iter().any(|t|t.session_id==session.id&&t.status.active()&&t.status!=TurnStatus::Queued)||s.executions.iter().any(|e|e.session_id==session.id&&!e.writer_revoked);
+                if uncertain {session.lifecycle=Some(SessionLifecycle::NeedsReconciliation);session.revision+=1;}
+                else if session.lifecycle==Some(SessionLifecycle::NeedsReconciliation){session.lifecycle=Some(SessionLifecycle::Idle);session.revision+=1;}
+            }
+            for turn in s.turns.iter_mut().filter(|t|[TurnStatus::Dispatching,TurnStatus::Running,TurnStatus::WaitingInteraction].contains(&t.status)) {
+                turn.status=TurnStatus::NeedsReconciliation;turn.revision+=1;
+                if let Some(session)=s.sessions.iter_mut().find(|v|v.id==turn.session_id) {session.lifecycle=Some(SessionLifecycle::NeedsReconciliation);session.revision+=1;}
+            }
             for intent in s.advances.iter_mut().filter(|a|a.status==AdvanceStatus::Dispatched) {intent.status=AdvanceStatus::NeedsReconciliation;intent.reason="reconcile_requested".into();intent.revision+=1;}
             let interrupted = s
                 .runs
@@ -366,9 +639,9 @@ impl Engine {
                 }
                 let interrupted_run = s.runs.iter().find(|r|r.id==rid).unwrap().clone();
                 let (fid,tid)=if let Some(aid)=&interrupted_run.attempt_id {let a=s.attempt(aid)?;(a.feature_id.clone(),a.task_id.clone())}else{let m=s.merge(interrupted_run.merge_id.as_deref().unwrap())?;(m.feature_id.clone(),m.task_id.clone())};
-                let report=self.artifacts.seal(&fid,tid.as_deref(),"runs",&format!("# Interrupted Run {rid}\norigin=simulated\n结果未确认；恢复仅核对外部事实，不自动接纳。"))?;s.artifacts.push(report);
+                let mut report=self.artifacts.seal(&fid,tid.as_deref(),"runs",&format!("# Interrupted Run {rid}\norigin={:?}\n结果未确认；恢复仅核对外部事实，不自动接纳。",interrupted_run.origin))?;report.origin=interrupted_run.origin;s.runs.iter_mut().find(|r|r.id==rid).unwrap().result_artifact=Some(report.id.clone());s.artifacts.push(report);
                 let mut unresolved=false;
-                for effect in s.effects.iter_mut().filter(|e|e.run_id==rid&&[EffectStatus::Pending,EffectStatus::Observed].contains(&e.status)&&e.kind!=EffectKind::Cleanup) {effect.status=EffectStatus::NeedsReconciliation;effect.reason="reconcile_requested".into();effect.revision+=1;unresolved=true;}
+                for effect in s.effects.iter_mut().filter(|e|e.run_id==rid&&[EffectStatus::Pending,EffectStatus::Observed].contains(&e.status)&&e.kind!=EffectKind::Cleanup) {effect.status=EffectStatus::NeedsReconciliation;effect.reason=if interrupted_run.origin==Origin::External{"restart_native_observation_only"}else{"reconcile_requested"}.into();effect.revision+=1;unresolved=true;}
                 if !unresolved {self.enqueue_cleanup(s,&rid,false);}
                 event(
                     s,
@@ -384,181 +657,358 @@ impl Engine {
         Ok(())
     }
     pub fn execute(&self, method: &str, c: Command) -> Result<Value> {
+        self.execute_internal(method, c, None)
+    }
+    /// Trusted coordinator resolves configuration after checking the original request's replay key.
+    /// RPC callers cannot provide this override.
+    pub fn execute_resolved(
+        &self,
+        method: &str,
+        c: Command,
+        original_fingerprint: &str,
+    ) -> Result<Value> {
+        require(
+            [
+                "session.open",
+                "attempt.start",
+                "review.request",
+                "merge.request",
+            ]
+            .contains(&method),
+            "该命令不支持绑定解析",
+        )?;
+        self.execute_internal(method, c, Some(original_fingerprint))
+    }
+    fn execute_internal(
+        &self,
+        method: &str,
+        c: Command,
+        original_fingerprint: Option<&str>,
+    ) -> Result<Value> {
         require(!c.command_id.is_empty(), "command_id 不能为空")?;
-        let fingerprint =
-            serde_json::to_string(&(method, &c.target, &c.expected_revision, &c.payload)).unwrap();
-        let mut action = |s: &mut EngineeringState| {
-            if let Some(target) = &c.target {
-                if let Some(actual) = revision(s, target) {
-                    if c.expected_revision != Some(actual) {
-                        return Err(err(
-                            "revision_conflict",
-                            format!("当前 revision={actual}，请刷新后重试"),
-                        ));
-                    }
+        let fingerprint = original_fingerprint
+            .map(str::to_owned)
+            .unwrap_or_else(|| command_fingerprint(method, &c));
+        let mut action = |s: &mut EngineeringState| self.apply_command(method, &c, s);
+        let result = self
+            .store
+            .transact(Some((&c.command_id, &fingerprint)), &mut action)?;
+        // Long operations return their durable ID; the scheduler owns supplier dispatch.
+        Ok(result)
+    }
+    fn apply_command(&self, method: &str, c: &Command, s: &mut EngineeringState) -> Result<Value> {
+        if let Some(target) = &c.target {
+            if let Some(actual) = revision(s, target) {
+                if c.expected_revision != Some(actual) {
+                    return Err(err(
+                        "revision_conflict",
+                        format!("当前 revision={actual}，请刷新后重试"),
+                    ));
                 }
             }
-            let target = c.target.as_deref().unwrap_or("");
-            let p = &c.payload;
-            let result = match method {
-                "effect.reconcile" => {
-                    let effect = s
-                        .effects
-                        .iter_mut()
-                        .find(|e| e.id == target)
-                        .ok_or_else(|| err("not_found", "外部操作不存在"))?;
-                    require(
-                        effect.status == EffectStatus::NeedsReconciliation,
-                        "该操作无需核对",
-                    )?;
-                    effect.reason = "reconcile_requested".into();
-                    effect.revision += 1;
-                    effect.updated = now();
-                    json!({"id":target,"operation_id":target})
-                }
-                "effect.retry_cleanup" => {
+        }
+        let target = c.target.as_deref().unwrap_or("");
+        let p = &c.payload;
+        if let Some(result) = self.repository_command(method, c, s)? {
+            event(s, target, method, &format!("command_id={}", c.command_id));
+            return Ok(result);
+        }
+        if let Some(result) = self.proposal_command(method, c, s)? {
+            event(s, target, method, &format!("command_id={}", c.command_id));
+            return Ok(result);
+        }
+        if let Some(result) = self.conversation_command(method, &c, s)? {
+            event(s, target, method, &format!("command_id={}", c.command_id));
+            return Ok(result);
+        }
+        if [
+            "attempt.start",
+            "feature.plan",
+            "task.start",
+            "feature.close",
+            "merge.request",
+        ]
+        .contains(&method)
+        {
+            let project = if let Some(task) = s.tasks.iter().find(|t| t.id == target) {
+                Some(s.feature(&task.feature_id)?.project_id.as_str())
+            } else {
+                s.features
+                    .iter()
+                    .find(|f| f.id == target)
+                    .map(|f| f.project_id.as_str())
+            };
+            require(
+                !s.projects
+                    .iter()
+                    .any(|p| Some(p.id.as_str()) == project && p.execution_mode == "live")
+                    || (method == "attempt.start" && p.get("live_sessions").is_some())
+                    || (method == "merge.request" && p.get("merge_session").is_some()),
+                "真实 Run 阶段执行契约正在接入，当前不能回退模拟实现",
+            )?;
+        }
+        let result = match method {
+            "agent.create" | "agent.revise" => {
+                let old = if method == "agent.revise" {
                     let old = s
-                        .effects
+                        .definitions
                         .iter()
-                        .find(|e| e.id == target)
-                        .ok_or_else(|| err("not_found", "清理操作不存在"))?
-                        .clone();
+                        .find(|d| d.id == target && d.family == "agent")
+                        .cloned()
+                        .ok_or_else(|| err("not_found", "Agent 修订不存在"))?;
                     require(
-                        old.kind == EffectKind::Cleanup && old.status == EffectStatus::Failed,
-                        "仅失败清理可重试",
+                        c.expected_revision == Some(old.version),
+                        "需要明确 Agent expected_revision",
                     )?;
-                    let resource = old.request["resource"]["id"]
-                        .as_str()
-                        .ok_or_else(|| err("blocked", "清理资源引用缺失"))?;
                     require(
-                        s.resources
+                        !s.definitions
                             .iter()
-                            .any(|r| r.id == resource && r.status == Status::CleanupFailed),
-                        "资源已释放或当前不可重试",
+                            .any(|d| d.supersedes.as_deref() == Some(target)),
+                        "Agent 已有后继修订，请使用当前修订",
                     )?;
+                    Some(old)
+                } else {
+                    None
+                };
+                let profile: AgentProfile = serde_json::from_value(p["profile"].clone())
+                    .map_err(|_| err("invalid_params", "需要完整的 Agent profile"))?;
+                profile.validate()?;
+                if let Some(old) = &old {
                     require(
-                        !s.effects.iter().any(|e| {
-                            e.kind == EffectKind::Cleanup
-                                && e.request["resource"]["id"] == resource
-                                && [EffectStatus::Pending, EffectStatus::Observed]
-                                    .contains(&e.status)
-                        }),
-                        "清理重试已在进行",
+                        old.agent_profile
+                            .as_ref()
+                            .is_some_and(|p| p.role == profile.role),
+                        "不可通过修订改变角色身份，请创建新的 Agent",
                     )?;
-                    let key = format!("{}:retry:{}", old.id, c.command_id);
-                    let mut request = old.request.clone();
-                    request["fault_injection"] = json!(false);
-                    let mut next = old.clone();
-                    next.id = key.clone();
-                    next.request = request;
-                    next.receipt = None;
-                    next.status = EffectStatus::Pending;
-                    next.revision = 1;
-                    next.created = now();
-                    next.updated = now();
-                    next.reason = format!("retry_of={}", old.id);
-                    s.effects.push(next);
-                    json!({"id":key,"operation_id":key})
                 }
-                "project.create" => {
-                    let scoped = self.store.project_id();
-                    require(
-                        scoped.is_none() || s.projects.is_empty(),
-                        "项目数据库只能保存一个 Project",
-                    )?;
-                    let pid = scoped.unwrap_or_else(id);
-                    let title = text(p, "title")?;
-                    let b = binding(s);
-                    s.projects.push(Project {
-                        id: pid.clone(),
-                        title,
-                        workspace: opt(p, "workspace").unwrap_or_default(),
-                        workspace_definition: Some(Workspace {
-                            repository: opt(p, "repository").unwrap_or_default(),
-                            path: opt(p, "workspace").unwrap_or_default(),
-                            mainline: opt(p, "mainline").unwrap_or_else(|| "main".into()),
-                        }),
-                        execution_mode: "simulation".into(),
-                        binding: b,
-                        concurrency: 2,
-                        revision: 1,
-                    });
-                    s.heads.push(GitHead {
-                        id: format!("main:{pid}"),
-                        project_id: pid.clone(),
-                        revision: "sim-rev-root".into(),
-                    });
-                    json!({"id":pid})
-                }
-                "project.update" => {
-                    let project = s
-                        .projects
-                        .iter_mut()
-                        .find(|x| x.id == target)
-                        .ok_or_else(|| err("not_found", "Project 不存在"))?;
-                    if let Some(title) = opt(p, "title") {
-                        project.title = title;
-                    }
-                    if let Some(workspace) = opt(p, "workspace") {
-                        project.workspace = workspace.clone();
-                        if let Some(definition) = project.workspace_definition.as_mut() {
-                            definition.path = workspace;
-                        }
-                    }
-                    if let Some(n) = p.get("concurrency").and_then(Value::as_u64) {
-                        require((1..=32).contains(&n), "并发额度需为 1—32")?;
-                        project.concurrency = n as u32;
-                    }
-                    if let Some(value) = p.get("workspace_definition") {
-                        let workspace: Workspace = serde_json::from_value(value.clone())
-                            .map_err(|_| err("invalid_params", "无效 Workspace 定义"))?;
-                        require(!workspace.mainline.trim().is_empty(), "mainline 不可为空")?;
-                        project.workspace = workspace.path.clone();
-                        project.workspace_definition = Some(workspace);
-                    }
-                    project.revision += 1;
-                    json!({"id":target})
-                }
-                "feature.create" => {
-                    let pid = text(p, "project_id")?;
-                    let project = s
-                        .projects
+                require(
+                    profile.skill_revisions.iter().all(|id| {
+                        s.definitions
+                            .iter()
+                            .any(|d| &d.id == id && d.family == "skill")
+                    }),
+                    "角色 Skill 必须引用明确修订",
+                )?;
+                let did = id();
+                s.definitions.push(Definition {
+                    id: did.clone(),
+                    family: "agent".into(),
+                    name: text(p, "name")?,
+                    version: old.as_ref().map_or(1, |d| d.version + 1),
+                    supersedes: old.map(|d| d.id),
+                    body: text(p, "instructions")?,
+                    slots: vec![],
+                    rules: vec![],
+                    agent_profile: Some(profile),
+                });
+                json!({"id":did})
+            }
+            "effect.reconcile" => {
+                let effect = s
+                    .effects
+                    .iter_mut()
+                    .find(|e| e.id == target)
+                    .ok_or_else(|| err("not_found", "外部操作不存在"))?;
+                require(
+                    effect.status == EffectStatus::NeedsReconciliation,
+                    "该操作无需核对",
+                )?;
+                effect.reason = "reconcile_requested".into();
+                effect.revision += 1;
+                effect.updated = now();
+                json!({"id":target,"operation_id":target})
+            }
+            "effect.retry_cleanup" => {
+                let old = s
+                    .effects
+                    .iter()
+                    .find(|e| e.id == target)
+                    .ok_or_else(|| err("not_found", "清理操作不存在"))?
+                    .clone();
+                require(
+                    old.kind == EffectKind::Cleanup && old.status == EffectStatus::Failed,
+                    "仅失败清理可重试",
+                )?;
+                let resource = old.request["resource"]["id"]
+                    .as_str()
+                    .ok_or_else(|| err("blocked", "清理资源引用缺失"))?;
+                require(
+                    s.resources
                         .iter()
-                        .find(|x| x.id == pid)
-                        .ok_or_else(|| err("not_found", "Project 不存在"))?;
-                    let fid = id();
-                    let b = project.binding.clone();
-                    let predecessor = opt(p, "predecessor");
-                    if let Some(prev) = &predecessor {
-                        require(
-                            s.feature(prev)?.project_id == pid,
-                            "前序 Feature 必须属于相同 Project",
-                        )?;
-                    }
-                    s.features.push(Feature {
-                        id: fid.clone(),
-                        project_id: pid.clone(),
-                        title: text(p, "title")?,
-                        status: Status::Draft,
-                        revision: 1,
-                        input_version: 1,
-                        binding: b,
-                        predecessor,
-                    });
-                    s.heads.push(GitHead {
-                        id: fid.clone(),
-                        project_id: pid,
-                        revision: "sim-rev-root".into(),
-                    });
-                    s.contexts.push(Context {
-                        id: id(),
-                        owner_id: fid.clone(),
-                        content: "Feature 初始上下文".into(),
-                        revision: 1,
-                    });
-                    json!({"id":fid})
+                        .any(|r| r.id == resource && r.status == Status::CleanupFailed),
+                    "资源已释放或当前不可重试",
+                )?;
+                require(
+                    !s.effects.iter().any(|e| {
+                        e.kind == EffectKind::Cleanup
+                            && e.request["resource"]["id"] == resource
+                            && [EffectStatus::Pending, EffectStatus::Observed].contains(&e.status)
+                    }),
+                    "清理重试已在进行",
+                )?;
+                let key = format!("{}:retry:{}", old.id, c.command_id);
+                let mut request = old.request.clone();
+                request["fault_injection"] = json!(false);
+                let mut next = old.clone();
+                next.id = key.clone();
+                next.request = request;
+                next.receipt = None;
+                next.status = EffectStatus::Pending;
+                next.revision = 1;
+                next.created = now();
+                next.updated = now();
+                next.reason = format!("retry_of={}", old.id);
+                s.effects.push(next);
+                json!({"id":key,"operation_id":key})
+            }
+            "project.create" => {
+                let scoped = self.store.project_id();
+                require(
+                    scoped.is_none() || s.projects.is_empty(),
+                    "项目数据库只能保存一个 Project",
+                )?;
+                let pid = scoped.unwrap_or_else(id);
+                let title = text(p, "title")?;
+                let b = binding(s);
+                s.projects.push(Project {
+                    runtime_preferences: None,
+                    id: pid.clone(),
+                    title,
+                    workspace: opt(p, "workspace").unwrap_or_default(),
+                    workspace_definition: Some(Workspace {
+                        repository: opt(p, "repository").unwrap_or_default(),
+                        path: opt(p, "workspace").unwrap_or_default(),
+                        mainline: opt(p, "mainline").unwrap_or_else(|| "main".into()),
+                    }),
+                    execution_mode: "simulation".into(),
+                    binding: b,
+                    concurrency: 2,
+                    revision: 1,
+                });
+                s.contexts.push(Context {
+                    id: id(),
+                    owner_id: pid.clone(),
+                    content: String::new(),
+                    revision: 1,
+                });
+                s.heads.push(GitHead {
+                    id: format!("main:{pid}"),
+                    project_id: pid.clone(),
+                    revision: "sim-rev-root".into(),
+                });
+                json!({"id":pid})
+            }
+            "project.update" => {
+                let project = s
+                    .projects
+                    .iter_mut()
+                    .find(|x| x.id == target)
+                    .ok_or_else(|| err("not_found", "Project 不存在"))?;
+                if let Some(title) = opt(p, "title") {
+                    project.title = title;
                 }
-                "document.revise" => {
+                if let Some(value) = p.get("runtime_preferences") {
+                    let preferences: Option<ProjectRuntimePreferences> =
+                        serde_json::from_value(value.clone())
+                            .map_err(|_| err("invalid_params", "无效项目运行时偏好"))?;
+                    if let Some(p) = &preferences {
+                        p.validate()?;
+                    }
+                    project.runtime_preferences = preferences;
+                }
+                if let Some(workspace) = opt(p, "workspace") {
+                    project.workspace = workspace.clone();
+                    if let Some(definition) = project.workspace_definition.as_mut() {
+                        definition.path = workspace;
+                    }
+                }
+                if let Some(n) = p.get("concurrency").and_then(Value::as_u64) {
+                    require((1..=32).contains(&n), "并发额度需为 1—32")?;
+                    project.concurrency = n as u32;
+                }
+                if let Some(value) = p.get("workspace_definition") {
+                    let workspace: Workspace = serde_json::from_value(value.clone())
+                        .map_err(|_| err("invalid_params", "无效 Workspace 定义"))?;
+                    require(!workspace.mainline.trim().is_empty(), "mainline 不可为空")?;
+                    project.workspace = workspace.path.clone();
+                    project.workspace_definition = Some(workspace);
+                }
+                project.revision += 1;
+                json!({"id":target})
+            }
+            "feature.create" => {
+                let pid = text(p, "project_id")?;
+                let project = s
+                    .projects
+                    .iter()
+                    .find(|x| x.id == pid)
+                    .ok_or_else(|| err("not_found", "Project 不存在"))?;
+                require(
+                    !s.repository_operations.iter().any(|op| {
+                        op.project_id == pid
+                            && matches!(op.action, RepositoryAction::Connect { .. })
+                            && op.status != RepositoryOperationStatus::Completed
+                    }),
+                    "仓库登记尚未完成或需核对，不能创建 Feature",
+                )?;
+                let fid = id();
+                let b = project.binding.clone();
+                let live = project.execution_mode == "live";
+                let base = s
+                    .heads
+                    .iter()
+                    .find(|h| h.id == format!("main:{pid}"))
+                    .map(|h| h.revision.clone())
+                    .unwrap_or_else(|| "sim-rev-root".into());
+                let predecessor = opt(p, "predecessor");
+                if let Some(prev) = &predecessor {
+                    require(
+                        s.feature(prev)?.project_id == pid,
+                        "前序 Feature 必须属于相同 Project",
+                    )?;
+                }
+                let source_requirement = opt(p, "source_requirement");
+                if let Some(id) = &source_requirement {
+                    require(
+                        s.documents.iter().any(|d| {
+                            &d.id == id
+                                && d.project_id.as_ref() == Some(&pid)
+                                && d.kind == "requirement"
+                        }),
+                        "Feature 必须引用同项目的 Requirement 修订",
+                    )?;
+                }
+                s.features.push(Feature {
+                    source_requirement,
+                    id: fid.clone(),
+                    project_id: pid.clone(),
+                    title: text(p, "title")?,
+                    status: Status::Draft,
+                    revision: 1,
+                    input_version: 1,
+                    binding: b,
+                    predecessor,
+                });
+                s.heads.push(GitHead {
+                    id: fid.clone(),
+                    project_id: pid.clone(),
+                    revision: base.clone(),
+                });
+                s.contexts.push(Context {
+                    id: id(),
+                    owner_id: fid.clone(),
+                    content: "Feature 初始上下文".into(),
+                    revision: 1,
+                });
+                if live {
+                    self.enqueue_worktree(s, &pid, &fid, WorktreeKind::Feature, &base);
+                }
+                json!({"id":fid})
+            }
+            "document.revise" => {
+                if s.projects.iter().any(|project| project.id == target) {
+                    self.revise_project_requirement(s, target, p)?
+                } else {
                     require(
                         !target.is_empty(),
                         "document.revise 必须指定 Feature target 和 expected_revision",
@@ -590,7 +1040,9 @@ impl Engine {
                         .documents
                         .iter()
                         .rev()
-                        .find(|d| d.feature_id == fid && d.task_id == task_id && d.kind == kind)
+                        .find(|d| {
+                            s.document_in_feature(d, &fid) && d.task_id == task_id && d.kind == kind
+                        })
                         .cloned();
                     let did = id();
                     let mut artifact = self.artifacts.seal(
@@ -606,17 +1058,28 @@ impl Engine {
                         .documents
                         .iter()
                         .rev()
-                        .find(|d| d.feature_id == fid && d.kind == "requirement")
+                        .find(|d| s.document_in_feature(d, &fid) && d.kind == "requirement")
                         .map(|d| d.id.clone());
                     let design = s
                         .documents
                         .iter()
                         .rev()
-                        .find(|d| d.feature_id == fid && d.kind == "design")
+                        .find(|d| s.document_in_feature(d, &fid) && d.kind == "design")
                         .map(|d| d.id.clone());
                     s.documents.push(Document {
+                        test_recipe: if kind == "test" {
+                            p.get("test_recipe")
+                                .map(|v| {
+                                    serde_json::from_value::<TestRecipe>(v.clone())
+                                        .map_err(|_| err("invalid_params", "无效测试配方"))
+                                })
+                                .transpose()?
+                        } else {
+                            None
+                        },
+                        project_id: None,
                         id: did.clone(),
-                        feature_id: fid.clone(),
+                        feature_id: Some(fid.clone()),
                         task_id: task_id.clone(),
                         kind: kind.clone(),
                         title: opt(p, "title").unwrap_or_else(|| "修订文档".into()),
@@ -738,382 +1201,455 @@ impl Engine {
                     );
                     json!({"id":did})
                 }
-                "definition.revise" => {
-                    let old = s
-                        .definitions
-                        .iter()
-                        .find(|d| d.id == target)
-                        .cloned()
-                        .ok_or_else(|| err("not_found", "定义不存在"))?;
-                    let mut d = old.clone();
-                    d.id = id();
-                    d.supersedes = Some(old.id);
-                    d.version = s
-                        .definitions
-                        .iter()
-                        .filter(|x| x.name == old.name && x.family == old.family)
-                        .map(|x| x.version)
-                        .max()
-                        .unwrap_or(0)
-                        + 1;
-                    d.name = opt(p, "name").unwrap_or(old.name);
-                    d.body = text(p, "body")?;
-                    if let Some(slots) = p.get("slots") {
-                        d.slots = serde_json::from_value(slots.clone())
-                            .map_err(|_| err("invalid_params", "slots 应为版本 ID 列表"))?;
-                        for slot in &d.slots {
-                            require(
-                                ["planning", "implementation", "merge"]
-                                    .contains(&slot.purpose.as_str())
-                                    && s.definitions
-                                        .iter()
-                                        .any(|x| x.id == slot.spec && x.family == "spec"),
-                                "Standard slot 必须包含用途并引用 Spec 版本",
-                            )?;
-                        }
+            }
+            "definition.revise" => {
+                let old = s
+                    .definitions
+                    .iter()
+                    .find(|d| d.id == target)
+                    .cloned()
+                    .ok_or_else(|| err("not_found", "定义不存在"))?;
+                let mut d = old.clone();
+                d.id = id();
+                d.supersedes = Some(old.id);
+                d.version = s
+                    .definitions
+                    .iter()
+                    .filter(|x| x.name == old.name && x.family == old.family)
+                    .map(|x| x.version)
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
+                d.name = opt(p, "name").unwrap_or(old.name);
+                d.body = text(p, "body")?;
+                if let Some(slots) = p.get("slots") {
+                    d.slots = serde_json::from_value(slots.clone())
+                        .map_err(|_| err("invalid_params", "slots 应为版本 ID 列表"))?;
+                    for slot in &d.slots {
                         require(
-                            d.slots
-                                .iter()
-                                .map(|x| &x.purpose)
-                                .collect::<std::collections::HashSet<_>>()
-                                .len()
-                                == d.slots.len(),
-                            "Standard 用途 slot 不可重复",
+                            ["planning", "implementation", "merge"]
+                                .contains(&slot.purpose.as_str())
+                                && s.definitions
+                                    .iter()
+                                    .any(|x| x.id == slot.spec && x.family == "spec"),
+                            "Standard slot 必须包含用途并引用 Spec 版本",
                         )?;
                     }
-                    if let Some(rules) = p.get("rules") {
-                        d.rules = serde_json::from_value(rules.clone())
-                            .map_err(|_| err("invalid_params", "rules 应为内置规则名列表"))?;
-                        require(
-                            d.rules.iter().all(|r| {
-                                ["traceability", "failure_paths", "sections"].contains(&r.as_str())
-                            }),
-                            "不支持任意规范脚本",
-                        )?;
-                    }
-                    let did = d.id.clone();
-                    s.definitions.push(d);
-                    json!({"id":did})
-                }
-                "binding.update" => {
-                    let b: BindingLock = serde_json::from_value(p.clone())
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                    s.validate_binding(&b)?;
-                    if let Some(t) = s.tasks.iter().find(|x| x.id == target).cloned() {
-                        mutable_feature(s, &t.feature_id)?;
-                        require(t.status != Status::Completed, "Task 已冻结")?;
-                        let t = s.tasks.iter_mut().find(|x| x.id == target).unwrap();
-                        t.binding = b;
-                        t.revision += 1;
-                    } else if let Some(f) = s.features.iter_mut().find(|x| x.id == target) {
-                        require(f.status != Status::Completed, "Feature 已冻结")?;
-                        f.binding = b;
-                        f.revision += 1;
-                    } else {
-                        let x = s
-                            .projects
-                            .iter_mut()
-                            .find(|x| x.id == target)
-                            .ok_or_else(|| err("not_found", "绑定 owner 不存在"))?;
-                        x.binding = b;
-                        x.revision += 1;
-                    }
-                    json!({"id":target})
-                }
-                "task.create" => {
-                    let f = s.feature(target)?.clone();
                     require(
-                        [Status::Ready, Status::Developing].contains(&f.status),
-                        "规划必须通过 Review",
-                    )?;
-                    require(s.planning_accepted(&f.id), "当前输入版本规划尚未接受")?;
-                    let snap = s
-                        .snapshots
-                        .iter()
-                        .rev()
-                        .find(|x| x.feature_id == f.id && x.kind == "initial")
-                        .cloned()
-                        .ok_or_else(|| err("blocked", "缺少初始 Snapshot"))?;
-                    let deps: Vec<String> =
-                        serde_json::from_value(p.get("dependencies").cloned().unwrap_or(json!([])))
-                            .map_err(|_| err("invalid_params", "dependencies 应为 Task ID 列表"))?;
-                    for dep in &deps {
-                        require(s.task(dep)?.feature_id == f.id, "依赖必须属于同 Feature")?;
-                    }
-                    let tid = id();
-                    let requirement = snap
-                        .documents
-                        .iter()
-                        .rev()
-                        .find(|id| {
-                            s.documents
-                                .iter()
-                                .any(|d| &d.id == *id && d.kind == "requirement")
-                        })
-                        .cloned();
-                    let design_ref = snap
-                        .documents
-                        .iter()
-                        .rev()
-                        .find(|id| {
-                            s.documents
-                                .iter()
-                                .any(|d| &d.id == *id && d.kind == "design")
-                        })
-                        .cloned();
-                    let mut scope = if let Some(scope) = p.get("scope") {
-                        serde_json::from_value(scope.clone())
-                            .map_err(|_| err("invalid_params", "无效 Task scope"))?
-                    } else {
-                        TaskScope {
-                            acceptance: requirement
-                                .as_deref()
-                                .map(|r| s.acceptance_keys(r))
-                                .transpose()?
-                                .unwrap_or_default(),
-                            requirement,
-                            design: design_ref,
-                        }
-                    };
-                    if let Some(keys) = p.get("acceptance_keys") {
-                        scope.acceptance = serde_json::from_value(keys.clone()).map_err(|_| {
-                            err("invalid_params", "acceptance_keys 应为条目标识列表")
-                        })?;
-                    }
-                    s.validate_scope(&f.id, &scope)?;
-                    require(
-                        scope
-                            .requirement
-                            .as_ref()
-                            .is_some_and(|id| snap.documents.contains(id))
-                            && scope
-                                .design
-                                .as_ref()
-                                .is_some_and(|id| snap.documents.contains(id)),
-                        "Task 范围必须来自当前已接受 Snapshot",
-                    )?;
-                    s.tasks.push(Task {
-                        id: tid.clone(),
-                        feature_id: f.id.clone(),
-                        title: text(p, "title")?,
-                        status: Status::Ready,
-                        revision: 1,
-                        binding: f.binding,
-                        inherited_snapshot: snap.id.clone(),
-                        dependencies: deps,
-                        worktree: format!("logical-worktree/{tid}"),
-                        scope: scope.clone(),
-                    });
-                    s.contexts.push(Context {
-                        id: id(),
-                        owner_id: tid.clone(),
-                        content: snap.content,
-                        revision: 1,
-                    });
-                    let req = s
-                        .documents
-                        .iter()
-                        .rev()
-                        .find(|d| d.feature_id == f.id && d.kind == "requirement")
-                        .map(|d| d.id.clone());
-                    let design = s
-                        .documents
-                        .iter()
-                        .rev()
-                        .find(|d| d.feature_id == f.id && d.kind == "design")
-                        .map(|d| d.id.clone());
-                    let test_body = s
-                        .documents
-                        .iter()
-                        .rev()
-                        .find(|d| d.feature_id == f.id && d.kind == "test" && d.task_id.is_none())
-                        .ok_or_else(|| err("blocked", "规划缺少测试定义"))?
-                        .body
-                        .clone();
-                    let test_artifact =
-                        self.artifacts
-                            .seal(&f.id, Some(&tid), "documents", &test_body)?;
-                    let test_artifact_id = Some(test_artifact.id.clone());
-                    s.artifacts.push(test_artifact);
-                    s.documents.push(Document {
-                        id: id(),
-                        feature_id: f.id.clone(),
-                        task_id: Some(tid.clone()),
-                        kind: "test".into(),
-                        title: "Task 验收测试定义".into(),
-                        body: s
-                            .documents
+                        d.slots
                             .iter()
-                            .rev()
-                            .find(|d| {
-                                d.feature_id == f.id && d.kind == "test" && d.task_id.is_none()
-                            })
-                            .ok_or_else(|| err("blocked", "规划缺少测试定义"))?
-                            .body
-                            .clone(),
-                        version: 1,
-                        supersedes: None,
-                        requirement_id: req,
-                        design_id: design,
-                        origin: Origin::Simulated,
-                        acceptance: vec![],
-                        verifies: scope.acceptance.clone(),
-                        artifact_id: test_artifact_id,
-                    });
-                    let fm = s.features.iter_mut().find(|x| x.id == f.id).unwrap();
-                    fm.status = Status::Developing;
-                    fm.revision += 1;
-                    json!({"id":tid})
+                            .map(|x| &x.purpose)
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            == d.slots.len(),
+                        "Standard 用途 slot 不可重复",
+                    )?;
                 }
-                "task.replan" => {
-                    let task = s.task(target)?.clone();
-                    mutable_feature(s, &task.feature_id)?;
+                if let Some(rules) = p.get("rules") {
+                    d.rules = serde_json::from_value(rules.clone())
+                        .map_err(|_| err("invalid_params", "rules 应为内置规则名列表"))?;
                     require(
-                        task.status != Status::Completed,
-                        "已完成 Task 应通过后续 Task 承接变化",
-                    )?;
-                    require(s.planning_accepted(&task.feature_id), "当前规划尚未接受")?;
-                    require(
-                        !s.attempts.iter().any(|a| {
-                            a.task_id.as_deref() == Some(target)
-                                && a.status == Status::Running
-                                && !a.paused
+                        d.rules.iter().all(|r| {
+                            ["traceability", "failure_paths", "sections"].contains(&r.as_str())
                         }),
-                        "请先暂停或取消活动 Attempt",
+                        "不支持任意规范脚本",
                     )?;
-                    let snapshot = s
-                        .snapshots
-                        .iter()
-                        .rev()
-                        .find(|snap| {
-                            snap.feature_id == task.feature_id
-                                && snap.task_id.is_none()
-                                && snap.kind == "initial"
-                        })
-                        .unwrap()
-                        .clone();
-                    let requirement = snapshot
-                        .documents
-                        .iter()
-                        .find(|id| {
-                            s.documents
-                                .iter()
-                                .any(|d| &d.id == *id && d.kind == "requirement")
-                        })
-                        .cloned();
-                    let design = snapshot
-                        .documents
-                        .iter()
-                        .find(|id| {
-                            s.documents
-                                .iter()
-                                .any(|d| &d.id == *id && d.kind == "design")
-                        })
-                        .cloned();
-                    let acceptance = if let Some(v) = p.get("acceptance_keys") {
-                        serde_json::from_value(v.clone())
-                            .map_err(|_| err("invalid_params", "验收范围格式错误"))?
-                    } else {
-                        requirement
+                }
+                let did = d.id.clone();
+                s.definitions.push(d);
+                json!({"id":did})
+            }
+            "binding.update" => {
+                let b: BindingLock = serde_json::from_value(p.clone())
+                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                s.validate_binding(&b)?;
+                if let Some(t) = s.tasks.iter().find(|x| x.id == target).cloned() {
+                    mutable_feature(s, &t.feature_id)?;
+                    require(t.status != Status::Completed, "Task 已冻结")?;
+                    let t = s.tasks.iter_mut().find(|x| x.id == target).unwrap();
+                    t.binding = b;
+                    t.revision += 1;
+                } else if let Some(f) = s.features.iter_mut().find(|x| x.id == target) {
+                    require(f.status != Status::Completed, "Feature 已冻结")?;
+                    f.binding = b;
+                    f.revision += 1;
+                } else {
+                    let x = s
+                        .projects
+                        .iter_mut()
+                        .find(|x| x.id == target)
+                        .ok_or_else(|| err("not_found", "绑定 owner 不存在"))?;
+                    x.binding = b;
+                    x.revision += 1;
+                }
+                json!({"id":target})
+            }
+            "task.create" => {
+                let f = s.feature(target)?.clone();
+                require(
+                    [Status::Ready, Status::Developing].contains(&f.status),
+                    "规划必须通过 Review",
+                )?;
+                require(s.planning_accepted(&f.id), "当前输入版本规划尚未接受")?;
+                let snap = s
+                    .snapshots
+                    .iter()
+                    .rev()
+                    .find(|x| x.feature_id.as_deref() == Some(f.id.as_str()) && x.kind == "initial")
+                    .cloned()
+                    .ok_or_else(|| err("blocked", "缺少初始 Snapshot"))?;
+                let deps: Vec<String> =
+                    serde_json::from_value(p.get("dependencies").cloned().unwrap_or(json!([])))
+                        .map_err(|_| err("invalid_params", "dependencies 应为 Task ID 列表"))?;
+                for dep in &deps {
+                    require(s.task(dep)?.feature_id == f.id, "依赖必须属于同 Feature")?;
+                }
+                let live = s
+                    .projects
+                    .iter()
+                    .any(|p| p.id == f.project_id && p.execution_mode == "live");
+                let tid = id();
+                let requirement = snap
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|id| {
+                        s.documents
+                            .iter()
+                            .any(|d| &d.id == *id && d.kind == "requirement")
+                    })
+                    .cloned();
+                let design_ref = snap
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|id| {
+                        s.documents
+                            .iter()
+                            .any(|d| &d.id == *id && d.kind == "design")
+                    })
+                    .cloned();
+                let mut scope = if let Some(scope) = p.get("scope") {
+                    serde_json::from_value(scope.clone())
+                        .map_err(|_| err("invalid_params", "无效 Task scope"))?
+                } else {
+                    TaskScope {
+                        acceptance: requirement
                             .as_deref()
                             .map(|r| s.acceptance_keys(r))
                             .transpose()?
-                            .unwrap_or_default()
-                    };
-                    let scope = TaskScope {
+                            .unwrap_or_default(),
                         requirement,
-                        design,
-                        acceptance,
-                    };
-                    s.validate_scope(&task.feature_id, &scope)?;
-                    let old = s
+                        design: design_ref,
+                    }
+                };
+                if let Some(keys) = p.get("acceptance_keys") {
+                    scope.acceptance = serde_json::from_value(keys.clone())
+                        .map_err(|_| err("invalid_params", "acceptance_keys 应为条目标识列表"))?;
+                }
+                s.validate_scope(&f.id, &scope)?;
+                require(
+                    scope
+                        .requirement
+                        .as_ref()
+                        .is_some_and(|id| snap.documents.contains(id))
+                        && scope
+                            .design
+                            .as_ref()
+                            .is_some_and(|id| snap.documents.contains(id)),
+                    "Task 范围必须来自当前已接受 Snapshot",
+                )?;
+                s.tasks.push(Task {
+                    id: tid.clone(),
+                    feature_id: f.id.clone(),
+                    title: text(p, "title")?,
+                    status: if live {
+                        Status::Prepared
+                    } else {
+                        Status::Ready
+                    },
+                    revision: 1,
+                    binding: f.binding,
+                    inherited_snapshot: snap.id.clone(),
+                    dependencies: deps,
+                    worktree: format!(
+                        "{}/{tid}",
+                        if live {
+                            "pending-worktree"
+                        } else {
+                            "logical-worktree"
+                        }
+                    ),
+                    scope: scope.clone(),
+                });
+                if s.projects
+                    .iter()
+                    .any(|p| p.id == f.project_id && p.execution_mode == "live")
+                {
+                    let base = s
+                        .heads
+                        .iter()
+                        .find(|h| h.id == f.id)
+                        .ok_or_else(|| err("blocked", "Feature 缺少代码头"))?
+                        .revision
+                        .clone();
+                    self.enqueue_worktree(s, &f.project_id, &tid, WorktreeKind::Task, &base);
+                }
+                s.contexts.push(Context {
+                    id: id(),
+                    owner_id: tid.clone(),
+                    content: snap.content,
+                    revision: 1,
+                });
+                let req = s
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|d| s.document_in_feature(d, &f.id) && d.kind == "requirement")
+                    .map(|d| d.id.clone());
+                let design = s
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|d| s.document_in_feature(d, &f.id) && d.kind == "design")
+                    .map(|d| d.id.clone());
+                let test_body = s
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|d| {
+                        s.document_in_feature(d, &f.id) && d.kind == "test" && d.task_id.is_none()
+                    })
+                    .ok_or_else(|| err("blocked", "规划缺少测试定义"))?
+                    .body
+                    .clone();
+                let source_origin = s
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|d| {
+                        s.document_in_feature(d, &f.id) && d.kind == "test" && d.task_id.is_none()
+                    })
+                    .map(|d| d.origin)
+                    .unwrap_or(Origin::Human);
+                let mut test_artifact =
+                    self.artifacts
+                        .seal(&f.id, Some(&tid), "documents", &test_body)?;
+                if live {
+                    test_artifact.origin = source_origin;
+                }
+                let test_artifact_id = Some(test_artifact.id.clone());
+                s.artifacts.push(test_artifact);
+                s.documents.push(Document {
+                    test_recipe: p
+                        .get("test_recipe")
+                        .filter(|v| !v.is_null())
+                        .map(|v| {
+                            serde_json::from_value::<TestRecipe>(v.clone())
+                                .map_err(|_| err("invalid_params", "无效 Task 测试配方"))
+                        })
+                        .transpose()?
+                        .or_else(|| {
+                            s.documents
+                                .iter()
+                                .rev()
+                                .find(|d| {
+                                    s.document_in_feature(d, &f.id)
+                                        && d.kind == "test"
+                                        && d.task_id.is_none()
+                                })
+                                .and_then(|d| d.test_recipe.clone())
+                        }),
+                    project_id: None,
+                    id: id(),
+                    feature_id: Some(f.id.clone()),
+                    task_id: Some(tid.clone()),
+                    kind: "test".into(),
+                    title: "Task 验收测试定义".into(),
+                    body: s
                         .documents
                         .iter()
                         .rev()
-                        .find(|d| d.task_id.as_deref() == Some(target) && d.kind == "test")
-                        .cloned();
-                    let test = snapshot
-                        .documents
-                        .iter()
-                        .filter_map(|id| {
-                            s.documents.iter().find(|d| &d.id == id && d.kind == "test")
+                        .find(|d| {
+                            s.document_in_feature(d, &f.id)
+                                && d.kind == "test"
+                                && d.task_id.is_none()
                         })
-                        .next()
-                        .ok_or_else(|| err("blocked", "规划缺少测试"))?
-                        .clone();
-                    let artifact = self.artifacts.seal(
-                        &task.feature_id,
-                        Some(target),
-                        "documents",
-                        &test.body,
-                    )?;
-                    let artifact_id = Some(artifact.id.clone());
-                    s.artifacts.push(artifact);
-                    s.documents.push(Document {
-                        id: id(),
-                        feature_id: task.feature_id.clone(),
-                        task_id: Some(target.into()),
-                        kind: "test".into(),
-                        title: test.title,
-                        body: test.body,
-                        version: old.as_ref().map_or(1, |d| d.version + 1),
-                        supersedes: old.map(|d| d.id),
-                        requirement_id: scope.requirement.clone(),
-                        design_id: scope.design.clone(),
-                        origin: Origin::Human,
-                        acceptance: vec![],
-                        verifies: scope.acceptance.clone(),
-                        artifact_id,
-                    });
-                    let affected: Vec<_> = s
-                        .attempts
-                        .iter()
-                        .filter(|a| {
-                            a.task_id.as_deref() == Some(target)
-                                && [Status::Running, Status::Prepared, Status::WaitingReview]
-                                    .contains(&a.status)
+                        .ok_or_else(|| err("blocked", "规划缺少测试定义"))?
+                        .body
+                        .clone(),
+                    version: 1,
+                    supersedes: None,
+                    requirement_id: req,
+                    design_id: design,
+                    origin: if live {
+                        source_origin
+                    } else {
+                        Origin::Simulated
+                    },
+                    acceptance: vec![],
+                    verifies: scope.acceptance.clone(),
+                    artifact_id: test_artifact_id,
+                });
+                let fm = s.features.iter_mut().find(|x| x.id == f.id).unwrap();
+                fm.status = Status::Developing;
+                fm.revision += 1;
+                json!({"id":tid})
+            }
+            "task.replan" => {
+                let task = s.task(target)?.clone();
+                mutable_feature(s, &task.feature_id)?;
+                require(
+                    task.status != Status::Completed,
+                    "已完成 Task 应通过后续 Task 承接变化",
+                )?;
+                require(s.planning_accepted(&task.feature_id), "当前规划尚未接受")?;
+                require(
+                    !s.attempts.iter().any(|a| {
+                        a.task_id.as_deref() == Some(target)
+                            && a.status == Status::Running
+                            && !a.paused
+                    }),
+                    "请先暂停或取消活动 Attempt",
+                )?;
+                let snapshot = s
+                    .snapshots
+                    .iter()
+                    .rev()
+                    .find(|snap| {
+                        snap.feature_id.as_deref() == Some(task.feature_id.as_str())
+                            && snap.task_id.is_none()
+                            && snap.kind == "initial"
+                    })
+                    .unwrap()
+                    .clone();
+                let requirement = snapshot
+                    .documents
+                    .iter()
+                    .find(|id| {
+                        s.documents
+                            .iter()
+                            .any(|d| &d.id == *id && d.kind == "requirement")
+                    })
+                    .cloned();
+                let design = snapshot
+                    .documents
+                    .iter()
+                    .find(|id| {
+                        s.documents
+                            .iter()
+                            .any(|d| &d.id == *id && d.kind == "design")
+                    })
+                    .cloned();
+                let acceptance = if let Some(v) = p.get("acceptance_keys") {
+                    serde_json::from_value(v.clone())
+                        .map_err(|_| err("invalid_params", "验收范围格式错误"))?
+                } else {
+                    requirement
+                        .as_deref()
+                        .map(|r| s.acceptance_keys(r))
+                        .transpose()?
+                        .unwrap_or_default()
+                };
+                let scope = TaskScope {
+                    requirement,
+                    design,
+                    acceptance,
+                };
+                s.validate_scope(&task.feature_id, &scope)?;
+                let old = s
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|d| d.task_id.as_deref() == Some(target) && d.kind == "test")
+                    .cloned();
+                let test = snapshot
+                    .documents
+                    .iter()
+                    .filter_map(|id| s.documents.iter().find(|d| &d.id == id && d.kind == "test"))
+                    .next()
+                    .ok_or_else(|| err("blocked", "规划缺少测试"))?
+                    .clone();
+                let artifact =
+                    self.artifacts
+                        .seal(&task.feature_id, Some(target), "documents", &test.body)?;
+                let artifact_id = Some(artifact.id.clone());
+                s.artifacts.push(artifact);
+                s.documents.push(Document {
+                    test_recipe: p
+                        .get("test_recipe")
+                        .filter(|v| !v.is_null())
+                        .map(|v| {
+                            serde_json::from_value::<TestRecipe>(v.clone())
+                                .map_err(|_| err("invalid_params", "无效测试配方"))
                         })
-                        .map(|a| a.id.clone())
-                        .collect();
-                    for a in s.attempts.iter_mut().filter(|a| affected.contains(&a.id)) {
-                        a.status = Status::Interrupted;
-                        a.paused = true;
-                        a.revision += 1;
-                    }
-                    for r in s.runs.iter_mut().filter(|r| {
-                        r.attempt_id
-                            .as_ref()
-                            .is_some_and(|id| affected.contains(id))
-                    }) {
-                        if r.status == Status::Running {
-                            r.cancel_requested = true;
-                        } else if r.status == Status::Queued {
-                            r.status = Status::Cancelled;
-                            r.finished = Some(now());
-                        }
-                    }
-                    for d in s.deliveries.iter_mut().filter(|d| {
-                        d.feature_id == task.feature_id
-                            && (d.task_id.as_deref() == Some(target)
-                                || (d.task_id.is_none()
-                                    && ["closure", "merge_candidate"].contains(&d.kind.as_str())))
-                    }) {
-                        d.stale = true;
-                    }
-                    let task = s.tasks.iter_mut().find(|t| t.id == target).unwrap();
-                    task.scope = scope;
-                    task.inherited_snapshot = snapshot.id;
-                    task.status = Status::Ready;
-                    task.revision += 1;
-                    let fid = task.feature_id.clone();
-                    self.invalidate_merges(s, &fid, Some(target));
-                    self.invalidate_feature_merges(s, &fid);
-                    json!({"id":target})
+                        .transpose()?
+                        .or_else(|| old.as_ref().and_then(|d| d.test_recipe.clone()))
+                        .or_else(|| test.test_recipe.clone()),
+                    project_id: None,
+                    id: id(),
+                    feature_id: Some(task.feature_id.clone()),
+                    task_id: Some(target.into()),
+                    kind: "test".into(),
+                    title: test.title,
+                    body: test.body,
+                    version: old.as_ref().map_or(1, |d| d.version + 1),
+                    supersedes: old.map(|d| d.id),
+                    requirement_id: scope.requirement.clone(),
+                    design_id: scope.design.clone(),
+                    origin: Origin::Human,
+                    acceptance: vec![],
+                    verifies: scope.acceptance.clone(),
+                    artifact_id,
+                });
+                let affected: Vec<_> = s
+                    .attempts
+                    .iter()
+                    .filter(|a| {
+                        a.task_id.as_deref() == Some(target)
+                            && [Status::Running, Status::Prepared, Status::WaitingReview]
+                                .contains(&a.status)
+                    })
+                    .map(|a| a.id.clone())
+                    .collect();
+                for a in s.attempts.iter_mut().filter(|a| affected.contains(&a.id)) {
+                    a.status = Status::Interrupted;
+                    a.paused = true;
+                    a.revision += 1;
                 }
-                "attempt.start" => {
-                    let (fid, tid, phase, b, worktree) = if let Some(t) =
-                        s.tasks.iter().find(|t| t.id == target).cloned()
-                    {
+                for r in s.runs.iter_mut().filter(|r| {
+                    r.attempt_id
+                        .as_ref()
+                        .is_some_and(|id| affected.contains(id))
+                }) {
+                    if r.status == Status::Running {
+                        r.cancel_requested = true;
+                    } else if r.status == Status::Queued {
+                        r.status = Status::Cancelled;
+                        r.finished = Some(now());
+                    }
+                }
+                for d in s.deliveries.iter_mut().filter(|d| {
+                    d.feature_id == task.feature_id
+                        && (d.task_id.as_deref() == Some(target)
+                            || (d.task_id.is_none()
+                                && ["closure", "merge_candidate"].contains(&d.kind.as_str())))
+                }) {
+                    d.stale = true;
+                }
+                let task = s.tasks.iter_mut().find(|t| t.id == target).unwrap();
+                task.scope = scope;
+                task.inherited_snapshot = snapshot.id;
+                task.status = Status::Ready;
+                task.revision += 1;
+                let fid = task.feature_id.clone();
+                self.invalidate_merges(s, &fid, Some(target));
+                self.invalidate_feature_merges(s, &fid);
+                json!({"id":target})
+            }
+            "attempt.start" => {
+                let (fid, tid, phase, mut b, worktree) =
+                    if let Some(t) = s.tasks.iter().find(|t| t.id == target).cloned() {
                         mutable_feature(s, &t.feature_id)?;
                         require(t.status != Status::Completed, "Task 已完成")?;
                         let current = document_ids(s, &t.feature_id, Some(&t.id));
@@ -1185,727 +1721,949 @@ impl Engine {
                             format!("logical-feature/{}", f.id),
                         )
                     };
+                require(
+                    !s.attempts.iter().any(|a| {
+                        a.feature_id == fid
+                            && a.task_id == tid
+                            && [Status::Running, Status::Prepared, Status::WaitingReview]
+                                .contains(&a.status)
+                            && a.input_version == s.feature(&fid).unwrap().input_version
+                    }),
+                    "已有活动 Attempt；请等待评审或取消",
+                )?;
+                require(
+                    !s.runs.iter().any(|r| {
+                        r.worktree == worktree && r.status == Status::Running && r.cancel_requested
+                    }),
+                    "等待旧 Run 取消确认后再启动",
+                )?;
+                let live = s.projects.iter().any(|p| {
+                    p.id == s.feature(&fid).unwrap().project_id && p.execution_mode == "live"
+                });
+                let live_sessions: std::collections::BTreeMap<String, Id> = if live {
+                    serde_json::from_value(p["live_sessions"].clone())
+                        .map_err(|_| err("blocked", "真实 Attempt 缺少宿主解析的阶段 Session"))?
+                } else {
+                    std::collections::BTreeMap::new()
+                };
+                if live && phase == "planning" {
+                    let docs = document_ids(s, &fid, None);
                     require(
-                        !s.attempts.iter().any(|a| {
-                            a.feature_id == fid
-                                && a.task_id == tid
-                                && [Status::Running, Status::Prepared, Status::WaitingReview]
-                                    .contains(&a.status)
-                                && a.input_version == s.feature(&fid).unwrap().input_version
-                        }),
-                        "已有活动 Attempt；请等待评审或取消",
-                    )?;
-                    require(
-                        !s.runs.iter().any(|r| {
-                            r.worktree == worktree
-                                && r.status == Status::Running
-                                && r.cancel_requested
-                        }),
-                        "等待旧 Run 取消确认后再启动",
-                    )?;
-                    s.validate_binding(&b)?;
-                    self.invalidate_merges(s, &fid, tid.as_deref());
-                    for d in s.deliveries.iter_mut().filter(|d| {
-                        d.feature_id == fid
-                            && d.task_id == tid
-                            && (d.kind == phase || d.merge_id.is_some())
-                    }) {
-                        d.stale = true;
-                    }
-                    let aid = id();
-                    let input = s.feature(&fid)?.input_version;
-                    let documents = document_ids(s, &fid, tid.as_deref());
-                    s.attempts.push(Attempt {
-                        id: aid.clone(),
-                        feature_id: fid.clone(),
-                        task_id: tid.clone(),
-                        phase: phase.clone(),
-                        baseline: None,
-                        git_context: Some(git_context(s, &fid, tid.as_deref())?),
-                        status: Status::Running,
-                        input_version: input,
-                        documents,
-                        outputs: vec![],
-                        scope: tid.as_ref().map(|id| s.task(id).unwrap().scope.clone()),
-                        binding: b.clone(),
-                        context_content: s
-                            .contexts
-                            .iter()
-                            .find(|c| c.owner_id == tid.as_deref().unwrap_or(&fid))
-                            .map(|c| c.content.clone())
-                            .unwrap_or_default(),
-                        context_revision: s
-                            .contexts
-                            .iter()
-                            .find(|c| c.owner_id == tid.as_deref().unwrap_or(&fid))
-                            .map(|c| c.revision)
-                            .unwrap_or_default(),
-                        paused: false,
-                        revision: 1,
-                    });
-                    let baseline = self.git.execution_revision(s.attempt(&aid)?, "red")?;
-                    s.attempts
-                        .iter_mut()
-                        .find(|a| a.id == aid)
-                        .unwrap()
-                        .baseline = Some(baseline);
-                    let nodes: Vec<(&str, Vec<&str>, bool)> = match phase.as_str() {
-                        "planning" => vec![
-                            ("research", vec![], false),
-                            ("requirement", vec!["research"], true),
-                            ("design", vec!["requirement"], true),
-                            ("task_plan", vec!["design"], false),
-                            ("test_plan", vec!["design"], false),
-                        ],
-                        "implementation" => vec![
-                            ("red", vec![], false),
-                            ("implement", vec!["red"], true),
-                            ("green", vec!["implement"], false),
-                            ("docs", vec!["implement"], true),
-                            ("verify", vec!["green", "docs"], false),
-                        ],
-                        _ => vec![
-                            ("feature_tests", vec![], false),
-                            ("docs", vec![], true),
-                            ("verify", vec!["feature_tests", "docs"], false),
-                        ],
-                    };
-                    valid_dag(
-                        &nodes
-                            .iter()
-                            .map(|(n, d, _)| {
-                                (n.to_string(), d.iter().map(|s| s.to_string()).collect())
+                        ["requirement", "design", "test"].iter().all(|kind| {
+                            docs.iter().any(|id| {
+                                s.documents.iter().any(|d| &d.id == id && d.kind == *kind)
                             })
-                            .collect::<Vec<_>>(),
+                        }),
+                        "真实规划需要先采纳 Requirement、Design、TestPlan",
                     )?;
-                    for (node, deps, writes) in nodes {
-                        self.add_run(
+                    require(
+                        s.proposals.iter().any(|p| {
+                            p.target.as_deref() == Some(&fid)
+                                && p.status == ProposalStatus::Accepted
+                                && matches!(p.content, ProposalContent::TaskPlan { .. })
+                                && p.adopted_objects.iter().all(|id| docs.contains(id))
+                        }),
+                        "真实规划需要已采纳的结构化 TaskPlan",
+                    )?;
+                    require(
+                        docs.iter()
+                            .filter_map(|id| {
+                                s.documents.iter().find(|d| &d.id == id && d.kind == "test")
+                            })
+                            .all(|d| d.test_recipe.is_some()),
+                        "真实 TestPlan 必须有可执行测试配方",
+                    )?;
+                    require(s.proposals.iter().filter(|p|p.target.as_deref()==Some(&fid)&&p.status==ProposalStatus::Accepted&&p.adopted_objects.iter().all(|id|docs.contains(id))).any(|p|matches!(&p.content,ProposalContent::TaskPlan{tasks,..} if tasks.iter().all(|t|t.test_recipe.is_some()))),"真实 TaskPlan 的每个条目都必须有独立测试配方")?;
+                }
+                if live {
+                    self.validate_live_sessions(
+                        s,
+                        tid.as_deref().unwrap_or(&fid),
+                        &phase,
+                        &live_sessions,
+                    )?;
+                    let primary = match phase.as_str() {
+                        "planning" => "design",
+                        "implementation" => "implement",
+                        _ => "docs",
+                    };
+                    b = self.live_binding(s, &live_sessions[primary], &b.standard)?;
+                }
+                s.validate_binding(&b)?;
+                let runtime = s.harnesses.iter().find(|h| h.id == b.harness).unwrap();
+                require(
+                    (live && runtime.origin == Origin::External)
+                        || (!live && runtime.origin == Origin::Simulated),
+                    "项目执行模式与 Harness 来源不符",
+                )?;
+                self.invalidate_merges(s, &fid, tid.as_deref());
+                for d in s.deliveries.iter_mut().filter(|d| {
+                    d.feature_id == fid
+                        && d.task_id == tid
+                        && (d.kind == phase || d.merge_id.is_some())
+                }) {
+                    d.stale = true;
+                }
+                let aid = id();
+                let input = s.feature(&fid)?.input_version;
+                let documents = document_ids(s, &fid, tid.as_deref());
+                s.attempts.push(Attempt {
+                    live_sessions: live_sessions.clone(),
+                    source_base: None,
+                    id: aid.clone(),
+                    feature_id: fid.clone(),
+                    task_id: tid.clone(),
+                    phase: phase.clone(),
+                    baseline: None,
+                    git_context: Some(git_context(s, &fid, tid.as_deref())?),
+                    status: Status::Running,
+                    input_version: input,
+                    documents,
+                    outputs: vec![],
+                    scope: tid.as_ref().map(|id| s.task(id).unwrap().scope.clone()),
+                    binding: b.clone(),
+                    context_content: s
+                        .contexts
+                        .iter()
+                        .find(|c| c.owner_id == tid.as_deref().unwrap_or(&fid))
+                        .map(|c| c.content.clone())
+                        .unwrap_or_default(),
+                    context_revision: s
+                        .contexts
+                        .iter()
+                        .find(|c| c.owner_id == tid.as_deref().unwrap_or(&fid))
+                        .map(|c| c.revision)
+                        .unwrap_or_default(),
+                    paused: false,
+                    revision: 1,
+                });
+                let baseline = if live {
+                    s.heads
+                        .iter()
+                        .find(|h| h.id == tid.as_deref().unwrap_or(&fid))
+                        .map(|h| h.revision.clone())
+                        .ok_or_else(|| err("blocked", "代码头尚未核对"))?
+                } else {
+                    self.git.execution_revision(s.attempt(&aid)?, "red")?
+                };
+                let attempt = s.attempts.iter_mut().find(|a| a.id == aid).unwrap();
+                attempt.source_base = live.then(|| baseline.clone());
+                attempt.baseline = if live && phase == "implementation" {
+                    None
+                } else {
+                    Some(baseline)
+                };
+                let nodes: Vec<(&str, Vec<&str>, bool)> = match phase.as_str() {
+                    "planning" => vec![
+                        ("research", vec![], false),
+                        ("requirement", vec!["research"], true),
+                        ("design", vec!["requirement"], true),
+                        ("task_plan", vec!["design"], false),
+                        ("test_plan", vec!["design"], false),
+                    ],
+                    "implementation" if live => vec![
+                        ("test_author", vec![], true),
+                        ("red", vec!["test_author"], false),
+                        ("implement", vec!["red"], true),
+                        ("green", vec!["implement"], false),
+                        ("docs", vec!["implement"], false),
+                        ("verify", vec!["green", "docs"], false),
+                    ],
+                    "implementation" => vec![
+                        ("red", vec![], false),
+                        ("implement", vec!["red"], true),
+                        ("green", vec!["implement"], false),
+                        ("docs", vec!["implement"], true),
+                        ("verify", vec!["green", "docs"], false),
+                    ],
+                    _ if live => vec![
+                        ("test_author", vec![], true),
+                        ("feature_tests", vec!["test_author"], false),
+                        ("docs", vec!["feature_tests"], false),
+                        ("verify", vec!["feature_tests", "docs"], false),
+                    ],
+                    _ => vec![
+                        ("feature_tests", vec![], false),
+                        ("docs", vec![], true),
+                        ("verify", vec!["feature_tests", "docs"], false),
+                    ],
+                };
+                valid_dag(
+                    &nodes
+                        .iter()
+                        .map(|(n, d, _)| (n.to_string(), d.iter().map(|s| s.to_string()).collect()))
+                        .collect::<Vec<_>>(),
+                )?;
+                for (node, deps, writes) in nodes {
+                    if live {
+                        self.add_live_run(
                             s,
-                            Some(&aid),
-                            None,
+                            &aid,
                             node,
                             deps.iter().map(|s| s.to_string()).collect(),
-                            writes,
-                            &worktree,
-                            &b,
-                            None,
-                            opt(p, "scenario").as_deref().unwrap_or("success"),
-                        );
-                    }
-                    if let Some(tid) = tid {
-                        let t = s.tasks.iter_mut().find(|x| x.id == tid).unwrap();
-                        t.status = Status::Running;
-                        t.revision += 1;
-                    } else {
-                        let f = s.features.iter_mut().find(|x| x.id == fid).unwrap();
-                        f.status = if phase == "planning" {
-                            Status::Planning
-                        } else {
-                            Status::Validating
-                        };
-                        f.revision += 1;
-                    }
-                    json!({"id":aid,"operation_id":aid})
-                }
-                "attempt.pause" => {
-                    let a = s
-                        .attempts
-                        .iter_mut()
-                        .find(|a| a.id == target)
-                        .ok_or_else(|| err("not_found", "Attempt 不存在"))?;
-                    require(
-                        [Status::Running, Status::Interrupted].contains(&a.status),
-                        "当前 Attempt 不可暂停",
-                    )?;
-                    a.paused = p.get("paused").and_then(Value::as_bool).unwrap_or(true);
-                    a.revision += 1;
-                    json!({"id":target})
-                }
-                "attempt.cancel" => {
-                    let a = s
-                        .attempts
-                        .iter_mut()
-                        .find(|a| a.id == target)
-                        .ok_or_else(|| err("not_found", "Attempt 不存在"))?;
-                    require(
-                        [
-                            Status::Running,
-                            Status::WaitingReview,
-                            Status::Interrupted,
-                            Status::Failed,
-                        ]
-                        .contains(&a.status),
-                        "Attempt 不可取消",
-                    )?;
-                    a.status = Status::Cancelled;
-                    a.revision += 1;
-                    for r in s
-                        .runs
-                        .iter_mut()
-                        .filter(|r| r.attempt_id.as_deref() == Some(target))
-                    {
-                        if r.status == Status::Running {
-                            r.cancel_requested = true;
-                        } else if r.status == Status::Queued {
-                            r.status = Status::Cancelled;
-                            r.finished = Some(now());
-                        }
-                    }
-                    json!({"id":target})
-                }
-                "run.cancel" | "run.continue" => {
-                    let r = s
-                        .runs
-                        .iter_mut()
-                        .find(|r| r.id == target)
-                        .ok_or_else(|| err("not_found", "Run 不存在"))?;
-                    require(
-                        [Status::Queued, Status::Running].contains(&r.status),
-                        "Run 已结束",
-                    )?;
-                    if method == "run.continue" {
-                        require(r.outcome == "hold", "该 Run 未处于受控等待点")?;
-                        r.outcome = "success".into();
-                    } else if r.status == Status::Queued {
-                        r.status = Status::Cancelled;
-                        r.finished = Some(now());
-                    } else {
-                        r.cancel_requested = true;
-                    }
-                    json!({"id":target})
-                }
-                "run.retry" => {
-                    let old = s
-                        .runs
-                        .iter()
-                        .find(|r| r.id == target)
-                        .cloned()
-                        .ok_or_else(|| err("not_found", "Run 不存在"))?;
-                    require(
-                        !s.effects.iter().any(|e| {
-                            e.run_id == old.id && e.status == EffectStatus::NeedsReconciliation
-                        }),
-                        "先核对旧 Run 外部结果",
-                    )?;
-                    require(
-                        old.binding_verified,
-                        "历史 Run 的完整执行锁未记录，不能推定身份配置；请创建新 Attempt/Merge/Review",
-                    )?;
-                    require(
-                        [Status::Failed, Status::Cancelled, Status::Interrupted]
-                            .contains(&old.status),
-                        "仅失败/取消/中断 Run 可重试",
-                    )?;
-                    require(
-                        s.latest_runs(old.attempt_id.as_deref(), old.merge_id.as_deref())
-                            .iter()
-                            .any(|r| r.node == old.node && r.id == old.id),
-                        "此 Run 已被重试替代",
-                    )?;
-                    require(
-                        !s.deliveries.iter().any(|d| d.evidence.contains(&old.id)),
-                        "执行已冻结进 Delivery，修订必须新 Attempt/Merge",
-                    )?;
-                    let mut affected = vec![old.node.clone()];
-                    loop {
-                        let next = s
-                            .latest_runs(old.attempt_id.as_deref(), old.merge_id.as_deref())
-                            .into_iter()
-                            .filter(|r| {
-                                !affected.contains(&r.node)
-                                    && r.dependencies.iter().any(|d| affected.contains(d))
-                            })
-                            .map(|r| r.node.clone())
-                            .collect::<Vec<_>>();
-                        if next.is_empty() {
-                            break;
-                        }
-                        affected.extend(next);
-                    }
-                    let descendants = s
-                        .latest_runs(old.attempt_id.as_deref(), old.merge_id.as_deref())
-                        .into_iter()
-                        .filter(|r| r.node != old.node && affected.contains(&r.node))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    require(
-                        !descendants.iter().any(|r| r.status == Status::Running),
-                        "等待下游执行结束或取消确认后再重试",
-                    )?;
-                    let _owner_binding = if let Some(aid) = &old.attempt_id {
-                        let a = s.attempt(aid)?.clone();
-                        require(
-                            a.input_version == s.feature(&a.feature_id)?.input_version,
-                            "输入已改变，必须创建新 Attempt",
+                            writes && phase != "planning",
                         )?;
-                        require(
-                            ![Status::Rejected, Status::Accepted, Status::Cancelled]
-                                .contains(&a.status),
-                            "Attempt 已终结，需创建新 Attempt",
-                        )?;
-                        let am = s.attempts.iter_mut().find(|x| x.id == *aid).unwrap();
-                        am.status = Status::Running;
-                        am.revision += 1;
-                        a.binding
-                    } else {
-                        let m = s.merge(old.merge_id.as_deref().unwrap())?;
-                        require(
-                            m.status == Status::Running
-                                && m.input_version == s.feature(&m.feature_id)?.input_version
-                                && s.accepted(s.delivery(&m.source_delivery)?)
-                                && s.heads
-                                    .iter()
-                                    .any(|h| h.id == m.target && h.revision == m.expected_target),
-                            "Merge 已失效或结束，请重新构造候选",
-                        )?;
-                        s.feature(&m.feature_id)?.binding.clone()
-                    };
-                    let b = old.binding.clone();
-                    let rid = self.add_run(
-                        s,
-                        old.attempt_id.as_deref(),
-                        old.merge_id.as_deref(),
-                        &old.node,
-                        old.dependencies.clone(),
-                        old.writes,
-                        &old.worktree,
-                        &b,
-                        Some(old.id.clone()),
-                        "success",
-                    );
-                    for r in descendants {
-                        if r.status != Status::Queued {
-                            self.add_run(
-                                s,
-                                r.attempt_id.as_deref(),
-                                r.merge_id.as_deref(),
-                                &r.node,
-                                r.dependencies,
-                                r.writes,
-                                &r.worktree,
-                                &b,
-                                Some(r.id),
-                                "success",
-                            );
-                        }
-                    }
-                    json!({"id":rid,"operation_id":rid})
-                }
-                "delivery.submit" => {
-                    let a = s.attempt(target)?.clone();
-                    require(
-                        [Status::WaitingReview, Status::Failed].contains(&a.status),
-                        "执行尚未结束",
-                    )?;
-                    require(
-                        a.input_version == s.feature(&a.feature_id)?.input_version,
-                        "Attempt 输入已失效，需新 Attempt",
-                    )?;
-                    let kind = if a.phase == "planning" {
-                        opt(p, "kind").unwrap_or_else(|| "requirement".into())
-                    } else {
-                        a.phase.clone()
-                    };
-                    require(
-                        (a.phase == "planning" && ["requirement", "plan"].contains(&kind.as_str()))
-                            || kind == a.phase,
-                        "无效交付边界",
-                    )?;
-                    require(
-                        !s.deliveries
-                            .iter()
-                            .any(|d| d.attempt_id.as_deref() == Some(target) && d.kind == kind),
-                        "该边界已提交，修订需新 Attempt",
-                    )?;
-                    let runs: Vec<_> = effective_runs(s, &a)
-                        .into_iter()
-                        .filter(|r| {
-                            kind != "requirement"
-                                || ["research", "requirement"].contains(&r.node.as_str())
-                        })
-                        .collect();
-                    if kind == "plan" {
-                        require(
-                            s.deliveries.iter().any(|d| {
-                                d.attempt_id.as_deref() == Some(&a.id)
-                                    && d.kind == "requirement"
-                                    && s.accepted(d)
-                            }),
-                            "需求交付通过 Review 后才能提交计划",
-                        )?;
-                    }
-                    require(
-                        runs.iter().all(|r| {
-                            r.status == Status::Succeeded
-                                || r.result
-                                    .as_ref()
-                                    .is_some_and(|v| v["failure_type"] == "assertion")
-                        }),
-                        "存在未完成或技术失败的 Run",
-                    )?;
-                    let evidence = runs.iter().map(|r| r.id.clone()).collect::<Vec<_>>();
-                    let docs = document_ids(s, &a.feature_id, a.task_id.as_deref())
-                        .into_iter()
-                        .filter(|id| {
-                            kind != "requirement"
-                                || s.documents
-                                    .iter()
-                                    .any(|d| &d.id == id && d.kind == "requirement")
-                        })
-                        .collect();
-                    let did = self.make_delivery(
-                        s,
-                        &a.feature_id,
-                        a.task_id.as_deref(),
-                        Some(&a.id),
-                        None,
-                        &kind,
-                        a.input_version,
-                        docs,
-                        evidence,
-                        Some(self.git.execution_revision(&a, "delivery")?),
-                    )?;
-                    if let Some(tid) = a.task_id {
-                        let t = s.tasks.iter_mut().find(|t| t.id == tid).unwrap();
-                        t.status = Status::WaitingReview;
-                        t.revision += 1;
-                    }
-                    json!({"id":did})
-                }
-                "review.submit" => {
-                    let d = s.delivery(target)?.clone();
-                    self.review(
-                        s,
-                        &d,
-                        serde_json::from_value(p.get("decision").cloned().unwrap_or(json!("pass")))
-                            .map_err(|_| err("invalid_params", "未知评审决定"))?,
-                        &text(p, "reason")?,
-                        "human:local",
-                        None,
-                    )?;
-                    json!({"id":target})
-                }
-                "review.request" => {
-                    let d = s.delivery(target)?.clone();
-                    require(!d.stale, "交付已失效")?;
-                    require(
-                        !s.runs.iter().any(|r| {
-                            r.node == format!("review:{}", d.id)
-                                && [Status::Queued, Status::Running].contains(&r.status)
-                        }),
-                        "评审已在执行",
-                    )?;
-                    let mut b = if let Some(aid) = &d.attempt_id {
-                        s.attempt(aid)?.binding.clone()
-                    } else {
-                        let m = s.merge(d.merge_id.as_deref().unwrap())?;
-                        let source = s.delivery(&m.source_delivery)?;
-                        s.attempt(source.attempt_id.as_deref().unwrap())?
-                            .binding
-                            .clone()
-                    };
-                    let author = s.agent_identity(&b.agent)?;
-                    b.agent = s
-                        .definitions
-                        .iter()
-                        .find(|x| {
-                            x.family == "agent"
-                                && s.agent_identity(&x.id)
-                                    .is_ok_and(|identity| identity != author)
-                        })
-                        .ok_or_else(|| err("blocked", "缺少独立 Reviewer 身份"))?
-                        .id
-                        .clone();
-                    let rid = self.add_run(
-                        s,
-                        d.attempt_id.as_deref(),
-                        d.merge_id.as_deref(),
-                        &format!("review:{}", d.id),
-                        vec![],
-                        false,
-                        "review-readonly",
-                        &b,
-                        None,
-                        opt(p, "scenario").as_deref().unwrap_or("success"),
-                    );
-                    json!({"id":rid,"operation_id":rid})
-                }
-                "override.accept" => {
-                    let d = s.delivery(target)?.clone();
-                    mutable_feature(s, &d.feature_id)?;
-                    if let Some(tid) = &d.task_id {
-                        require(
-                            s.task(tid)?.status != Status::Completed,
-                            "已完成 Task 已冻结",
-                        )?;
-                    }
-                    require(
-                        !d.stale && d.input_version == s.feature(&d.feature_id)?.input_version,
-                        "失效证据不能 Override",
-                    )?;
-                    self.check_merge_target(s, &d)?;
-                    s.validate_evidence(&d)?;
-                    if let Some(aid) = &d.attempt_id {
-                        require(
-                            s.attempt(aid)?.status != Status::Cancelled,
-                            "已取消 Attempt 不可接纳",
-                        )?;
-                    }
-                    let items: Vec<String> = serde_json::from_value(
-                        p.get("items").cloned().unwrap_or(json!(["review"])),
-                    )
-                    .map_err(|_| err("invalid_params", "items 应为条目列表"))?;
-                    require(!items.is_empty(), "必须选择豁免条目")?;
-                    for item in &items {
-                        require(
-                            item == "review"
-                                || d.evidence.iter().any(|rid| {
-                                    item == &format!("test:{rid}")
-                                        && s.runs.iter().find(|r| &r.id == rid).is_some_and(|r| {
-                                            r.result
-                                                .as_ref()
-                                                .is_some_and(|v| v["failure_type"] == "assertion")
-                                        })
-                                }),
-                            "仅可豁免 Review 或断言质量条件",
-                        )?;
-                    }
-                    let oid = id();
-                    s.overrides.push(Override {
-                        id: oid.clone(),
-                        delivery_id: d.id.clone(),
-                        actor: "human:local".into(),
-                        reason: text(p, "reason")?,
-                        items,
-                    });
-                    self.reconcile(s, &d)?;
-                    json!({"id":oid})
-                }
-                "merge.request" => {
-                    let (fid, tid) = if let Some(t) = s.tasks.iter().find(|x| x.id == target) {
-                        require(
-                            [Status::Accepted, Status::Merging].contains(&t.status),
-                            "Task 交付尚未接受",
-                        )?;
-                        (t.feature_id.clone(), Some(t.id.clone()))
-                    } else {
-                        let f = s.feature(target)?;
-                        require(
-                            [Status::Accepted, Status::Merging].contains(&f.status),
-                            "Feature 收尾交付尚未接受",
-                        )?;
-                        (f.id.clone(), None)
-                    };
-                    mutable_feature(s, &fid)?;
-                    let f = s.feature(&fid)?.clone();
-                    require(
-                        !s.merges.iter().any(|m| {
-                            m.feature_id == fid
-                                && m.task_id == tid
-                                && [Status::Running, Status::WaitingReview, Status::Accepted]
-                                    .contains(&m.status)
-                                && m.input_version == f.input_version
-                                && s.delivery(&m.source_delivery).is_ok_and(|d| s.accepted(d))
-                                && !s
-                                    .deliveries
-                                    .iter()
-                                    .any(|d| d.merge_id.as_deref() == Some(&m.id) && d.stale)
-                                && s.heads
-                                    .iter()
-                                    .any(|h| h.id == m.target && h.revision == m.expected_target)
-                        }),
-                        "已有有效 Merge，请查看该候选",
-                    )?;
-                    let mid = id();
-                    let target_head = if tid.is_some() {
-                        fid.clone()
-                    } else {
-                        format!("main:{}", f.project_id)
-                    };
-                    let expected = s
-                        .heads
-                        .iter()
-                        .find(|h| h.id == target_head)
-                        .unwrap()
-                        .revision
-                        .clone();
-                    let source_delivery = s
-                        .deliveries
-                        .iter()
-                        .rev()
-                        .find(|d| {
-                            d.feature_id == fid
-                                && d.task_id == tid
-                                && d.kind
-                                    == if tid.is_some() {
-                                        "implementation"
-                                    } else {
-                                        "closure"
-                                    }
-                                && s.accepted(d)
-                        })
-                        .ok_or_else(|| err("blocked", "缺少当前已接受源交付"))?
-                        .clone();
-                    s.validate_evidence(&source_delivery)?;
-                    let merge_binding = s
-                        .attempt(
-                            source_delivery
-                                .attempt_id
-                                .as_deref()
-                                .ok_or_else(|| err("blocked", "源交付缺少 Attempt 锁"))?,
-                        )?
-                        .binding
-                        .clone();
-                    let source = source_delivery
-                        .candidate
-                        .clone()
-                        .ok_or_else(|| err("blocked", "源交付缺少候选版本"))?;
-                    let source_attempt =
-                        s.attempt(source_delivery.attempt_id.as_deref().unwrap())?;
-                    let context = source_attempt.git_context.as_ref().ok_or_else(|| {
-                        err("blocked", "历史 Attempt 缺少确定仓库定位，请新建执行")
-                    })?;
-                    let candidate = self.git.candidate(context, &source, &expected, &mid)?;
-                    let m = Merge {
-                        id: mid.clone(),
-                        feature_id: fid.clone(),
-                        task_id: tid.clone(),
-                        status: Status::Running,
-                        revision: 1,
-                        input_version: f.input_version,
-                        source: source.clone(),
-                        source_delivery: source_delivery.id,
-                        target: target_head,
-                        expected_target: expected.clone(),
-                        candidate,
-                        committed_revision: None,
-                        change_request: Some(ChangeRequestRef {
-                            provider: "simulation".into(),
-                            repository: f.project_id.clone(),
-                            external_id: format!("sim-change-{mid}"),
-                            source_revision: source.clone(),
-                            target_revision: expected.clone(),
-                        }),
-                    };
-                    s.merges.push(m);
-                    if let Some(tid) = &tid {
-                        let t = s.tasks.iter_mut().find(|t| &t.id == tid).unwrap();
-                        t.status = Status::Merging;
-                        t.revision += 1;
-                    } else {
-                        let f = s.features.iter_mut().find(|x| x.id == fid).unwrap();
-                        f.status = Status::Merging;
-                        f.revision += 1;
+                        continue;
                     }
                     self.add_run(
                         s,
+                        Some(&aid),
                         None,
-                        Some(&mid),
-                        "merge_verify",
-                        vec![],
-                        false,
-                        "merge-readonly",
-                        &merge_binding,
+                        node,
+                        deps.iter().map(|s| s.to_string()).collect(),
+                        writes,
+                        &worktree,
+                        &b,
                         None,
                         opt(p, "scenario").as_deref().unwrap_or("success"),
                     );
-                    json!({"id":mid,"operation_id":mid})
                 }
-                "merge.apply" => {
-                    let m = s.merge(target)?.clone();
-                    require(m.status != Status::Completed, "Merge 已完成")?;
-                    require(
-                        m.input_version == s.feature(&m.feature_id)?.input_version,
-                        "需求已变化，请重新构造候选",
-                    )?;
-                    let d = s
-                        .deliveries
-                        .iter()
-                        .rev()
-                        .find(|d| d.merge_id.as_deref() == Some(target))
-                        .ok_or_else(|| err("blocked", "缺少候选交付"))?
-                        .clone();
-                    self.check_merge_target(s, &d)?;
-                    s.validate_evidence(&d)?;
-                    require(s.accepted(&d), "候选验证及 Review 尚未接受")?;
-                    require(
-                        !s.advances.iter().any(|advance| {
-                            advance.id != m.id
-                                && advance.target == m.target
-                                && ![AdvanceStatus::Applied, AdvanceStatus::NotApplied]
-                                    .contains(&advance.status)
-                        }),
-                        "目标存在待确认的推进操作",
-                    )?;
-                    if let Some(intent) = s.advances.iter().find(|intent| intent.id == m.id) {
-                        require(
-                            intent.candidate == m.candidate
-                                && intent.expected_target == m.expected_target
-                                && intent.delivery == d.id,
-                            "推进请求与既有意图不一致",
-                        )?;
+                if let Some(tid) = tid {
+                    let t = s.tasks.iter_mut().find(|x| x.id == tid).unwrap();
+                    t.status = Status::Running;
+                    if live {
+                        t.binding = b.clone();
+                    }
+                    t.revision += 1;
+                } else {
+                    let f = s.features.iter_mut().find(|x| x.id == fid).unwrap();
+                    if live {
+                        f.binding = b.clone();
+                    }
+                    f.status = if phase == "planning" {
+                        Status::Planning
                     } else {
-                        s.advances.push(MergeAdvance {
-                            id: m.id.clone(),
-                            context: s
-                                .delivery(&m.source_delivery)?
+                        Status::Validating
+                    };
+                    f.revision += 1;
+                }
+                json!({"id":aid,"operation_id":aid})
+            }
+            "attempt.pause" => {
+                let a = s
+                    .attempts
+                    .iter_mut()
+                    .find(|a| a.id == target)
+                    .ok_or_else(|| err("not_found", "Attempt 不存在"))?;
+                require(
+                    [Status::Running, Status::Interrupted].contains(&a.status),
+                    "当前 Attempt 不可暂停",
+                )?;
+                a.paused = p.get("paused").and_then(Value::as_bool).unwrap_or(true);
+                a.revision += 1;
+                json!({"id":target})
+            }
+            "attempt.cancel" => {
+                let a = s
+                    .attempts
+                    .iter_mut()
+                    .find(|a| a.id == target)
+                    .ok_or_else(|| err("not_found", "Attempt 不存在"))?;
+                require(
+                    [
+                        Status::Running,
+                        Status::WaitingReview,
+                        Status::Interrupted,
+                        Status::Failed,
+                    ]
+                    .contains(&a.status),
+                    "Attempt 不可取消",
+                )?;
+                a.status = Status::Cancelled;
+                a.revision += 1;
+                for r in s
+                    .runs
+                    .iter_mut()
+                    .filter(|r| r.attempt_id.as_deref() == Some(target))
+                {
+                    if r.status == Status::Running {
+                        r.cancel_requested = true;
+                    } else if r.status == Status::Queued {
+                        r.status = Status::Cancelled;
+                        r.finished = Some(now());
+                    }
+                }
+                json!({"id":target})
+            }
+            "run.cancel" | "run.continue" => {
+                let r = s
+                    .runs
+                    .iter_mut()
+                    .find(|r| r.id == target)
+                    .ok_or_else(|| err("not_found", "Run 不存在"))?;
+                require(
+                    [Status::Queued, Status::Running].contains(&r.status),
+                    "Run 已结束",
+                )?;
+                if method == "run.continue" {
+                    require(r.outcome == "hold", "该 Run 未处于受控等待点")?;
+                    r.outcome = "success".into();
+                } else if r.status == Status::Queued {
+                    r.status = Status::Cancelled;
+                    r.finished = Some(now());
+                } else {
+                    r.cancel_requested = true;
+                }
+                json!({"id":target})
+            }
+            "run.retry" => {
+                let old = s
+                    .runs
+                    .iter()
+                    .find(|r| r.id == target)
+                    .cloned()
+                    .ok_or_else(|| err("not_found", "Run 不存在"))?;
+                require(
+                    !s.effects.iter().any(|e| {
+                        e.run_id == old.id && e.status == EffectStatus::NeedsReconciliation
+                    }),
+                    "先核对旧 Run 外部结果",
+                )?;
+                require(
+                    old.binding_verified,
+                    "历史 Run 的完整执行锁未记录，不能推定身份配置；请创建新 Attempt/Merge/Review",
+                )?;
+                require(
+                    [Status::Failed, Status::Cancelled, Status::Interrupted].contains(&old.status),
+                    "仅失败/取消/中断 Run 可重试",
+                )?;
+                require(
+                    s.latest_runs(old.attempt_id.as_deref(), old.merge_id.as_deref())
+                        .iter()
+                        .any(|r| r.node == old.node && r.id == old.id),
+                    "此 Run 已被重试替代",
+                )?;
+                require(
+                    !s.deliveries.iter().any(|d| d.evidence.contains(&old.id)),
+                    "执行已冻结进 Delivery，修订必须新 Attempt/Merge",
+                )?;
+                let mut affected = vec![old.node.clone()];
+                loop {
+                    let next = s
+                        .latest_runs(old.attempt_id.as_deref(), old.merge_id.as_deref())
+                        .into_iter()
+                        .filter(|r| {
+                            !affected.contains(&r.node)
+                                && r.dependencies.iter().any(|d| affected.contains(d))
+                        })
+                        .map(|r| r.node.clone())
+                        .collect::<Vec<_>>();
+                    if next.is_empty() {
+                        break;
+                    }
+                    affected.extend(next);
+                }
+                let descendants = s
+                    .latest_runs(old.attempt_id.as_deref(), old.merge_id.as_deref())
+                    .into_iter()
+                    .filter(|r| r.node != old.node && affected.contains(&r.node))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                require(
+                    !descendants.iter().any(|r| r.status == Status::Running),
+                    "等待下游执行结束或取消确认后再重试",
+                )?;
+                if old.origin == Origin::External {
+                    return self.retry_live_runs(s, &old, &descendants);
+                }
+                let _owner_binding = if let Some(aid) = &old.attempt_id {
+                    let a = s.attempt(aid)?.clone();
+                    require(
+                        a.input_version == s.feature(&a.feature_id)?.input_version,
+                        "输入已改变，必须创建新 Attempt",
+                    )?;
+                    require(
+                        ![Status::Rejected, Status::Accepted, Status::Cancelled]
+                            .contains(&a.status),
+                        "Attempt 已终结，需创建新 Attempt",
+                    )?;
+                    let am = s.attempts.iter_mut().find(|x| x.id == *aid).unwrap();
+                    am.status = Status::Running;
+                    am.revision += 1;
+                    a.binding
+                } else {
+                    let m = s.merge(old.merge_id.as_deref().unwrap())?;
+                    require(
+                        m.status == Status::Running
+                            && m.input_version == s.feature(&m.feature_id)?.input_version
+                            && s.accepted(s.delivery(&m.source_delivery)?)
+                            && s.heads
+                                .iter()
+                                .any(|h| h.id == m.target && h.revision == m.expected_target),
+                        "Merge 已失效或结束，请重新构造候选",
+                    )?;
+                    s.feature(&m.feature_id)?.binding.clone()
+                };
+                let b = old.binding.clone();
+                let rid = self.add_run(
+                    s,
+                    old.attempt_id.as_deref(),
+                    old.merge_id.as_deref(),
+                    &old.node,
+                    old.dependencies.clone(),
+                    old.writes,
+                    &old.worktree,
+                    &b,
+                    Some(old.id.clone()),
+                    "success",
+                );
+                for r in descendants {
+                    if r.status != Status::Queued {
+                        self.add_run(
+                            s,
+                            r.attempt_id.as_deref(),
+                            r.merge_id.as_deref(),
+                            &r.node,
+                            r.dependencies,
+                            r.writes,
+                            &r.worktree,
+                            &b,
+                            Some(r.id),
+                            "success",
+                        );
+                    }
+                }
+                json!({"id":rid,"operation_id":rid})
+            }
+            "delivery.submit" => {
+                let a = s.attempt(target)?.clone();
+                require(
+                    [Status::WaitingReview, Status::Failed].contains(&a.status),
+                    "执行尚未结束",
+                )?;
+                require(
+                    a.input_version == s.feature(&a.feature_id)?.input_version,
+                    "Attempt 输入已失效，需新 Attempt",
+                )?;
+                let kind = if a.phase == "planning" {
+                    opt(p, "kind").unwrap_or_else(|| "requirement".into())
+                } else {
+                    a.phase.clone()
+                };
+                require(
+                    (a.phase == "planning" && ["requirement", "plan"].contains(&kind.as_str()))
+                        || kind == a.phase,
+                    "无效交付边界",
+                )?;
+                require(
+                    !s.deliveries
+                        .iter()
+                        .any(|d| d.attempt_id.as_deref() == Some(target) && d.kind == kind),
+                    "该边界已提交，修订需新 Attempt",
+                )?;
+                let runs: Vec<_> = effective_runs(s, &a)
+                    .into_iter()
+                    .filter(|r| {
+                        kind != "requirement"
+                            || ["research", "requirement"].contains(&r.node.as_str())
+                    })
+                    .collect();
+                if kind == "plan" {
+                    require(
+                        s.deliveries.iter().any(|d| {
+                            d.attempt_id.as_deref() == Some(&a.id)
+                                && d.kind == "requirement"
+                                && s.accepted(d)
+                        }),
+                        "需求交付通过 Review 后才能提交计划",
+                    )?;
+                }
+                require(
+                    runs.iter().all(|r| {
+                        r.status == Status::Succeeded
+                            || r.result
+                                .as_ref()
+                                .is_some_and(|v| v["failure_type"] == "assertion")
+                    }),
+                    "存在未完成或技术失败的 Run",
+                )?;
+                let evidence = runs.iter().map(|r| r.id.clone()).collect::<Vec<_>>();
+                let docs = document_ids(s, &a.feature_id, a.task_id.as_deref())
+                    .into_iter()
+                    .filter(|id| {
+                        kind != "requirement"
+                            || s.documents
+                                .iter()
+                                .any(|d| &d.id == id && d.kind == "requirement")
+                    })
+                    .collect();
+                let did = self.make_delivery(
+                    s,
+                    &a.feature_id,
+                    a.task_id.as_deref(),
+                    Some(&a.id),
+                    None,
+                    &kind,
+                    a.input_version,
+                    docs,
+                    evidence,
+                    Some(if a.source_base.is_some() {
+                        if ["implementation", "closure"].contains(&a.phase.as_str()) {
+                            effective_runs(s, &a)
+                                .iter()
+                                .find(|r| {
+                                    r.node
+                                        == if a.phase == "closure" {
+                                            "test_author"
+                                        } else {
+                                            "implement"
+                                        }
+                                })
+                                .and_then(|r| r.result.as_ref())
+                                .and_then(|v| v["code_revision"].as_str())
+                                .ok_or_else(|| err("blocked", "实现缺少实际代码封存回执"))?
+                                .to_string()
+                        } else {
+                            a.source_base.clone().unwrap()
+                        }
+                    } else {
+                        self.git.execution_revision(&a, "delivery")?
+                    }),
+                )?;
+                if let Some(tid) = a.task_id {
+                    let t = s.tasks.iter_mut().find(|t| t.id == tid).unwrap();
+                    t.status = Status::WaitingReview;
+                    t.revision += 1;
+                }
+                json!({"id":did})
+            }
+            "review.submit" => {
+                let d = s.delivery(target)?.clone();
+                self.review(
+                    s,
+                    &d,
+                    serde_json::from_value(p.get("decision").cloned().unwrap_or(json!("pass")))
+                        .map_err(|_| err("invalid_params", "未知评审决定"))?,
+                    &text(p, "reason")?,
+                    "human:local",
+                    None,
+                )?;
+                json!({"id":target})
+            }
+            "review.request" => {
+                let d = s.delivery(target)?.clone();
+                require(!d.stale, "交付已失效")?;
+                require(
+                    !s.runs.iter().any(|r| {
+                        r.node == format!("review:{}", d.id)
+                            && [Status::Queued, Status::Running].contains(&r.status)
+                    }),
+                    "评审已在执行",
+                )?;
+                if d.origin == Origin::External {
+                    let sid = text(p, "review_session")?;
+                    let session = s
+                        .sessions
+                        .iter()
+                        .find(|v| v.id == sid)
+                        .ok_or_else(|| err("blocked", "Reviewer Session 缺失"))?;
+                    require(
+                        session.owner_id == d.task_id.as_deref().unwrap_or(&d.feature_id)
+                            && session.runtime_binding.as_ref().is_some_and(|b| {
+                                b.work_type == WorkType::Review
+                                    && b.tool_policy == ToolPolicy::ReadOnly
+                            })
+                            && s.definitions
+                                .iter()
+                                .find(|v| v.id == session.agent)
+                                .and_then(|v| v.agent_profile.as_ref())
+                                .is_some_and(|p| p.role == AgentRole::Reviewer),
+                        "Reviewer 范围/角色/权限不符",
+                    )?;
+                    let source = if let Some(mid) = &d.merge_id {
+                        s.delivery(&s.merge(mid)?.source_delivery)?
+                    } else {
+                        &d
+                    };
+                    let standard = s
+                        .attempt(source.attempt_id.as_deref().unwrap())?
+                        .binding
+                        .standard
+                        .clone();
+                    let binding = self.live_binding(s, &sid, &standard)?;
+                    let rid = id();
+                    s.runs.push(Run {
+                        id: rid.clone(),
+                        attempt_id: d.attempt_id.clone(),
+                        merge_id: d.merge_id.clone(),
+                        node: format!("review:{}", d.id),
+                        dependencies: vec![],
+                        status: Status::Queued,
+                        retry_of: None,
+                        session_id: sid,
+                        binding,
+                        binding_verified: true,
+                        writes: false,
+                        worktree: "review-readonly".into(),
+                        outcome: "external".into(),
+                        cancel_requested: false,
+                        started: None,
+                        finished: None,
+                        result: None,
+                        result_artifact: None,
+                        origin: Origin::External,
+                    });
+                    return Ok(json!({"id":rid,"operation_id":rid}));
+                }
+                let mut b = if let Some(aid) = &d.attempt_id {
+                    s.attempt(aid)?.binding.clone()
+                } else {
+                    let m = s.merge(d.merge_id.as_deref().unwrap())?;
+                    let source = s.delivery(&m.source_delivery)?;
+                    s.attempt(source.attempt_id.as_deref().unwrap())?
+                        .binding
+                        .clone()
+                };
+                let author = s.agent_identity(&b.agent)?;
+                b.agent = s
+                    .definitions
+                    .iter()
+                    .find(|x| {
+                        x.family == "agent"
+                            && s.agent_identity(&x.id)
+                                .is_ok_and(|identity| identity != author)
+                    })
+                    .ok_or_else(|| err("blocked", "缺少独立 Reviewer 身份"))?
+                    .id
+                    .clone();
+                let rid = self.add_run(
+                    s,
+                    d.attempt_id.as_deref(),
+                    d.merge_id.as_deref(),
+                    &format!("review:{}", d.id),
+                    vec![],
+                    false,
+                    "review-readonly",
+                    &b,
+                    None,
+                    opt(p, "scenario").as_deref().unwrap_or("success"),
+                );
+                json!({"id":rid,"operation_id":rid})
+            }
+            "override.accept" => {
+                let d = s.delivery(target)?.clone();
+                mutable_feature(s, &d.feature_id)?;
+                if let Some(tid) = &d.task_id {
+                    require(
+                        s.task(tid)?.status != Status::Completed,
+                        "已完成 Task 已冻结",
+                    )?;
+                }
+                require(
+                    !d.stale && d.input_version == s.feature(&d.feature_id)?.input_version,
+                    "失效证据不能 Override",
+                )?;
+                self.check_merge_target(s, &d)?;
+                s.validate_evidence(&d)?;
+                if let Some(aid) = &d.attempt_id {
+                    require(
+                        s.attempt(aid)?.status != Status::Cancelled,
+                        "已取消 Attempt 不可接纳",
+                    )?;
+                }
+                let items: Vec<String> =
+                    serde_json::from_value(p.get("items").cloned().unwrap_or(json!(["review"])))
+                        .map_err(|_| err("invalid_params", "items 应为条目列表"))?;
+                require(!items.is_empty(), "必须选择豁免条目")?;
+                for item in &items {
+                    require(
+                        item == "review"
+                            || d.evidence.iter().any(|rid| {
+                                item == &format!("test:{rid}")
+                                    && s.runs.iter().find(|r| &r.id == rid).is_some_and(|r| {
+                                        r.result
+                                            .as_ref()
+                                            .is_some_and(|v| v["failure_type"] == "assertion")
+                                    })
+                            }),
+                        "仅可豁免 Review 或断言质量条件",
+                    )?;
+                }
+                let oid = id();
+                s.overrides.push(Override {
+                    id: oid.clone(),
+                    delivery_id: d.id.clone(),
+                    actor: "human:local".into(),
+                    reason: text(p, "reason")?,
+                    items,
+                });
+                self.reconcile(s, &d)?;
+                json!({"id":oid})
+            }
+            "merge.request" => {
+                if p.get("merge_session").is_some() {
+                    return self.prepare_live_merge(s, c);
+                }
+
+                let (fid, tid) = if let Some(t) = s.tasks.iter().find(|x| x.id == target) {
+                    require(
+                        [Status::Accepted, Status::Merging].contains(&t.status),
+                        "Task 交付尚未接受",
+                    )?;
+                    (t.feature_id.clone(), Some(t.id.clone()))
+                } else {
+                    let f = s.feature(target)?;
+                    require(
+                        [Status::Accepted, Status::Merging].contains(&f.status),
+                        "Feature 收尾交付尚未接受",
+                    )?;
+                    (f.id.clone(), None)
+                };
+                mutable_feature(s, &fid)?;
+                let f = s.feature(&fid)?.clone();
+                require(
+                    !s.merges.iter().any(|m| {
+                        m.feature_id == fid
+                            && m.task_id == tid
+                            && [Status::Running, Status::WaitingReview, Status::Accepted]
+                                .contains(&m.status)
+                            && m.input_version == f.input_version
+                            && s.delivery(&m.source_delivery).is_ok_and(|d| s.accepted(d))
+                            && !s
+                                .deliveries
+                                .iter()
+                                .any(|d| d.merge_id.as_deref() == Some(&m.id) && d.stale)
+                            && s.heads
+                                .iter()
+                                .any(|h| h.id == m.target && h.revision == m.expected_target)
+                    }),
+                    "已有有效 Merge，请查看该候选",
+                )?;
+                let mid = id();
+                let target_head = if tid.is_some() {
+                    fid.clone()
+                } else {
+                    format!("main:{}", f.project_id)
+                };
+                let expected = s
+                    .heads
+                    .iter()
+                    .find(|h| h.id == target_head)
+                    .unwrap()
+                    .revision
+                    .clone();
+                let source_delivery = s
+                    .deliveries
+                    .iter()
+                    .rev()
+                    .find(|d| {
+                        d.feature_id == fid
+                            && d.task_id == tid
+                            && d.kind
+                                == if tid.is_some() {
+                                    "implementation"
+                                } else {
+                                    "closure"
+                                }
+                            && s.accepted(d)
+                    })
+                    .ok_or_else(|| err("blocked", "缺少当前已接受源交付"))?
+                    .clone();
+                s.validate_evidence(&source_delivery)?;
+                let merge_binding = s
+                    .attempt(
+                        source_delivery
+                            .attempt_id
+                            .as_deref()
+                            .ok_or_else(|| err("blocked", "源交付缺少 Attempt 锁"))?,
+                    )?
+                    .binding
+                    .clone();
+                let source = source_delivery
+                    .candidate
+                    .clone()
+                    .ok_or_else(|| err("blocked", "源交付缺少候选版本"))?;
+                let source_attempt = s.attempt(source_delivery.attempt_id.as_deref().unwrap())?;
+                let context = source_attempt
+                    .git_context
+                    .as_ref()
+                    .ok_or_else(|| err("blocked", "历史 Attempt 缺少确定仓库定位，请新建执行"))?;
+                let candidate = self.git.candidate(context, &source, &expected, &mid)?;
+                let m = Merge {
+                    id: mid.clone(),
+                    feature_id: fid.clone(),
+                    task_id: tid.clone(),
+                    status: Status::Running,
+                    revision: 1,
+                    input_version: f.input_version,
+                    source: source.clone(),
+                    source_delivery: source_delivery.id,
+                    target: target_head,
+                    expected_target: expected.clone(),
+                    candidate,
+                    committed_revision: None,
+                    change_request: Some(ChangeRequestRef {
+                        provider: "simulation".into(),
+                        repository: f.project_id.clone(),
+                        external_id: format!("sim-change-{mid}"),
+                        source_revision: source.clone(),
+                        target_revision: expected.clone(),
+                    }),
+                };
+                s.merges.push(m);
+                if let Some(tid) = &tid {
+                    let t = s.tasks.iter_mut().find(|t| &t.id == tid).unwrap();
+                    t.status = Status::Merging;
+                    t.revision += 1;
+                } else {
+                    let f = s.features.iter_mut().find(|x| x.id == fid).unwrap();
+                    f.status = Status::Merging;
+                    f.revision += 1;
+                }
+                self.add_run(
+                    s,
+                    None,
+                    Some(&mid),
+                    "merge_verify",
+                    vec![],
+                    false,
+                    "merge-readonly",
+                    &merge_binding,
+                    None,
+                    opt(p, "scenario").as_deref().unwrap_or("success"),
+                );
+                json!({"id":mid,"operation_id":mid})
+            }
+            "merge.apply" => {
+                let m = s.merge(target)?.clone();
+                require(m.status != Status::Completed, "Merge 已完成")?;
+                require(
+                    m.input_version == s.feature(&m.feature_id)?.input_version,
+                    "需求已变化，请重新构造候选",
+                )?;
+                let d = s
+                    .deliveries
+                    .iter()
+                    .rev()
+                    .find(|d| d.merge_id.as_deref() == Some(target))
+                    .ok_or_else(|| err("blocked", "缺少候选交付"))?
+                    .clone();
+                self.check_merge_target(s, &d)?;
+                s.validate_evidence(&d)?;
+                require(s.accepted(&d), "候选验证及 Review 尚未接受")?;
+                require(
+                    !s.advances.iter().any(|advance| {
+                        advance.id != m.id
+                            && advance.target == m.target
+                            && ![AdvanceStatus::Applied, AdvanceStatus::NotApplied]
+                                .contains(&advance.status)
+                    }),
+                    "目标存在待确认的推进操作",
+                )?;
+                if let Some(intent) = s.advances.iter().find(|intent| intent.id == m.id) {
+                    require(
+                        intent.candidate == m.candidate
+                            && intent.expected_target == m.expected_target
+                            && intent.delivery == d.id,
+                        "推进请求与既有意图不一致",
+                    )?;
+                    if intent.status == AdvanceStatus::NotApplied {
+                        let current = s.advances.iter_mut().find(|a| a.id == m.id).unwrap();
+                        current.status = AdvanceStatus::Prepared;
+                        current.receipt = None;
+                        current.reason = "explicit_retry_after_confirmed_not_applied".into();
+                        current.revision += 1;
+                    }
+                } else {
+                    s.advances.push(MergeAdvance {
+                        id: m.id.clone(),
+                        context: s
+                            .delivery(&m.source_delivery)?
+                            .attempt_id
+                            .as_deref()
+                            .and_then(|id| s.attempt(id).ok())
+                            .and_then(|a| a.git_context.clone()),
+                        provider: self.git.identity_for(
+                            s.delivery(&m.source_delivery)?
                                 .attempt_id
                                 .as_deref()
                                 .and_then(|id| s.attempt(id).ok())
-                                .and_then(|a| a.git_context.clone()),
-                            provider: self.git.identity(),
-                            target: m.target.clone(),
-                            expected_target: m.expected_target.clone(),
-                            candidate: m.candidate.clone(),
-                            delivery: d.id.clone(),
-                            status: AdvanceStatus::Prepared,
-                            receipt: None,
-                            revision: 1,
-                            reason: "推进意图已持久化".into(),
-                        });
-                    }
-                    json!({"id":target,"operation_id":target,"accepted":true})
+                                .and_then(|a| a.git_context.as_ref()),
+                        ),
+                        target: m.target.clone(),
+                        expected_target: m.expected_target.clone(),
+                        candidate: m.candidate.clone(),
+                        delivery: d.id.clone(),
+                        status: AdvanceStatus::Prepared,
+                        receipt: None,
+                        revision: 1,
+                        reason: "推进意图已持久化".into(),
+                    });
                 }
-                "merge.reconcile" => {
-                    let merge = s.merge(target)?;
-                    require(merge.status != Status::Completed, "Merge 已完成")?;
-                    let intent = s
-                        .advances
-                        .iter_mut()
-                        .find(|intent| intent.id == target)
-                        .ok_or_else(|| err("not_found", "推进意图不存在"))?;
-                    require(
-                        intent.status == AdvanceStatus::NeedsReconciliation,
-                        "当前推进无需核对",
-                    )?;
-                    intent.reason = "reconcile_requested".into();
-                    intent.revision += 1;
-                    json!({"id":target,"operation_id":target})
-                }
-                "context.update" => {
-                    let x = s
-                        .contexts
-                        .iter()
-                        .find(|x| x.id == target)
-                        .cloned()
-                        .ok_or_else(|| err("not_found", "Context 不存在"))?;
-                    let fid = if let Some(t) = s.tasks.iter().find(|t| t.id == x.owner_id) {
-                        require(t.status != Status::Completed, "已完成 Task 已冻结")?;
-                        t.feature_id.clone()
-                    } else {
-                        x.owner_id.clone()
-                    };
+                json!({"id":target,"operation_id":target,"accepted":true})
+            }
+            "merge.capture_snapshot" => {
+                let m = s.merge(target)?.clone();
+                require(
+                    m.status == Status::Completed,
+                    "只有远端已核验的接纳可保存快照",
+                )?;
+                let d = s
+                    .deliveries
+                    .iter()
+                    .find(|d| d.merge_id.as_deref() == Some(target))
+                    .ok_or_else(|| err("blocked", "候选交付缺失"))?
+                    .clone();
+                let source = s.delivery(&m.source_delivery)?;
+                let binding = s
+                    .attempt(source.attempt_id.as_deref().unwrap())?
+                    .binding
+                    .clone();
+                let sid = self.snapshot(
+                    s,
+                    &m.feature_id,
+                    m.task_id.as_deref(),
+                    "remote_receipt",
+                    binding,
+                    Some(d.id),
+                )?;
+                json!({"id":sid})
+            }
+            "merge.reconcile" => {
+                let merge = s.merge(target)?;
+                require(merge.status != Status::Completed, "Merge 已完成")?;
+                let intent = s
+                    .advances
+                    .iter_mut()
+                    .find(|intent| intent.id == target)
+                    .ok_or_else(|| err("not_found", "推进意图不存在"))?;
+                require(
+                    intent.status == AdvanceStatus::NeedsReconciliation,
+                    "当前推进无需核对",
+                )?;
+                intent.reason = "reconcile_requested".into();
+                intent.revision += 1;
+                json!({"id":target,"operation_id":target})
+            }
+            "context.update" => {
+                let x = s
+                    .contexts
+                    .iter()
+                    .find(|x| x.id == target)
+                    .cloned()
+                    .ok_or_else(|| err("not_found", "Context 不存在"))?;
+                let fid = if let Some(t) = s.tasks.iter().find(|t| t.id == x.owner_id) {
+                    require(t.status != Status::Completed, "已完成 Task 已冻结")?;
+                    t.feature_id.clone()
+                } else {
+                    x.owner_id.clone()
+                };
+                if !s.projects.iter().any(|p| p.id == fid) {
                     mutable_feature(s, &fid)?;
-                    let next = text(p, "content")?;
-                    let previous = x.content.clone();
-                    let previous_revision = x.revision;
-                    let x = s.contexts.iter_mut().find(|x| x.id == target).unwrap();
-                    x.content = next.clone();
-                    x.revision += 1;
-                    event(s,target,"context.revised",&json!({"previous_revision":previous_revision,"revision":previous_revision+1,"previous":previous,"content":next}).to_string());
-                    json!({"id":target})
                 }
-                "snapshot.save" => {
+                let next = text(p, "content")?;
+                let previous = x.content.clone();
+                let previous_revision = x.revision;
+                let x = s.contexts.iter_mut().find(|x| x.id == target).unwrap();
+                x.content = next.clone();
+                x.revision += 1;
+                event(s,target,"context.revised",&json!({"previous_revision":previous_revision,"revision":previous_revision+1,"previous":previous,"content":next}).to_string());
+                json!({"id":target})
+            }
+            "snapshot.save" => {
+                if s.projects.iter().any(|project| project.id == target) {
+                    self.snapshot_project(s, target, p)?
+                } else {
                     let (fid, tid, b) = if let Some(t) = s.tasks.iter().find(|t| t.id == target) {
                         (t.feature_id.clone(), Some(t.id.clone()), t.binding.clone())
                     } else {
@@ -1922,15 +2680,10 @@ impl Engine {
                     let sid = self.snapshot(s, &fid, tid.as_deref(), "manual", b, None)?;
                     json!({"id":sid})
                 }
-                _ => return Err(err("method_not_found", format!("未知命令 {method}"))),
-            };
-            event(s, target, method, &format!("command_id={}", c.command_id));
-            Ok(result)
+            }
+            _ => return Err(err("method_not_found", format!("未知命令 {method}"))),
         };
-        let result = self
-            .store
-            .transact(Some((&c.command_id, &fingerprint)), &mut action)?;
-        // Long operations return their durable ID; the scheduler owns supplier dispatch.
+        event(s, target, method, &format!("command_id={}", c.command_id));
         Ok(result)
     }
     fn invalidate_merges(&self, s: &mut EngineeringState, fid: &str, tid: Option<&str>) {
@@ -2009,6 +2762,15 @@ impl Engine {
             .and_then(|tid| s.tasks.iter().find(|t| &t.id == tid))
             .map(|t| t.inherited_snapshot.clone());
         s.sessions.push(Session {
+            project_id: None,
+            feature_id: None,
+            task_id: None,
+            scope: None,
+            lifecycle: None,
+            runtime_binding: None,
+            external_session: None,
+            predecessor: None,
+            revision: 0,
             id: sid.clone(),
             owner_id: owner,
             agent: b.agent.clone(),
@@ -2057,6 +2819,7 @@ impl Engine {
             started: None,
             finished: None,
             result: None,
+            result_artifact: None,
             origin: Origin::Simulated,
         });
         rid
@@ -2075,13 +2838,59 @@ impl Engine {
         candidate: Option<String>,
     ) -> Result<String> {
         let did = id();
-        let body=format!("# 执行与交付报告\n\nDelivery: {did}\n类型: {kind}\n输入版本: {input}\norigin=simulated\n\n这是模拟工程结果，不代表真实代码合入。\n\n## 冻结输入与证据\n```json\n{}\n```\n",serde_json::to_string_pretty(&json!({"documents":documents,"evidence":evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"candidate":candidate})).unwrap());
-        let artifact = self.artifacts.seal(fid, tid, "deliveries", &body)?;
+        let origin = if evidence.iter().any(|id| {
+            s.runs
+                .iter()
+                .any(|r| &r.id == id && r.origin == Origin::External)
+        }) {
+            Origin::External
+        } else {
+            Origin::Simulated
+        };
+        let source_deliveries: Vec<Id> = if let Some(mid) = mid {
+            vec![s.merge(mid)?.source_delivery.clone()]
+        } else if kind == "closure" {
+            s.tasks
+                .iter()
+                .filter(|t| t.feature_id == fid && t.status == Status::Completed)
+                .filter_map(|t| {
+                    s.merges
+                        .iter()
+                        .rev()
+                        .find(|m| {
+                            m.task_id.as_ref() == Some(&t.id) && m.status == Status::Completed
+                        })
+                        .map(|m| m.source_delivery.clone())
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+        let source = serde_json::to_value(origin)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        let evidence_records: Vec<_> = evidence
+            .iter()
+            .filter_map(|id| s.runs.iter().find(|r| &r.id == id))
+            .collect();
+        let body = format!(
+            "# 执行与交付报告\n\nDelivery: {did}\n类型: {kind}\n输入版本: {input}\norigin={source}\n\n## 冻结输入与证据\n```json\n{}\n```\n",
+            serde_json::to_string_pretty(
+                &json!({"documents":documents,"evidence":evidence_records,"candidate":candidate,"source_deliveries":source_deliveries})
+            )
+            .unwrap()
+        );
+        let mut artifact = self.artifacts.seal(fid, tid, "deliveries", &body)?;
+        artifact.origin = origin;
         let artifact_id = artifact.id.clone();
-        let manifest=self.artifacts.seal(fid,tid,"manifests",&serde_json::to_string_pretty(&json!({"schema_version":1,"delivery_id":did,"report_artifact":artifact,"input_version":input,"documents":documents,"evidence":evidence,"candidate":candidate,"origin":"simulated","attempt":aid.and_then(|id|s.attempts.iter().find(|a|a.id==id))})).map_err(|e|err("serialization",e.to_string()))?)?;
+        let mut manifest=self.artifacts.seal(fid,tid,"manifests",&serde_json::to_string_pretty(&json!({"schema_version":1,"delivery_id":did,"report_artifact":artifact,"input_version":input,"documents":documents,"evidence":evidence,"source_deliveries":source_deliveries,"candidate":candidate,"origin":origin,"attempt":aid.and_then(|id|s.attempts.iter().find(|a|a.id==id))})).map_err(|e|err("serialization",e.to_string()))?)?;
+        manifest.origin = origin;
         s.artifacts.push(manifest);
         s.artifacts.push(artifact);
         let delivery = Delivery {
+            source_deliveries,
             id: did.clone(),
             feature_id: fid.into(),
             task_id: tid.map(str::to_owned),
@@ -2094,7 +2903,7 @@ impl Engine {
             artifact_id,
             candidate,
             stale: false,
-            origin: Origin::Simulated,
+            origin,
         };
         s.validate_evidence(&delivery)?;
         s.deliveries.push(delivery);
@@ -2187,7 +2996,7 @@ impl Engine {
                         .find(|r| &r.id == id)
                         .is_some_and(|r| r.status == Status::Succeeded)
                 }),
-                evidence: format!("{} 个模拟执行记录", d.evidence.len()),
+                evidence: format!("{} 个执行记录；origin={:?}", d.evidence.len(), d.origin),
             },
             Check {
                 key: "quality".into(),
@@ -2252,8 +3061,35 @@ impl Engine {
                 evidence: format!("standard={} slot={purpose} spec={}", standard.id, spec.id),
             });
         }
+        if let Some(run) = run.as_ref().and_then(|id| {
+            s.runs
+                .iter()
+                .find(|r| &r.id == id && r.origin == Origin::External)
+        }) {
+            let model_checks: Vec<Check> = serde_json::from_value(
+                run.result
+                    .as_ref()
+                    .and_then(|v| v.get("checks"))
+                    .cloned()
+                    .ok_or_else(|| err("adapter_contract", "真实评审缺少逐项检查"))?,
+            )
+            .map_err(|_| err("adapter_contract", "真实评审检查结构错误"))?;
+            require(
+                !model_checks.is_empty()
+                    && model_checks
+                        .iter()
+                        .all(|c| !c.key.is_empty() && !c.evidence.is_empty()),
+                "真实评审检查不完整",
+            )?;
+            checks.extend(model_checks);
+        }
         let rid = id();
-        let report=self.artifacts.seal(&d.feature_id,d.task_id.as_deref(),"reviews",&format!("# Review 报告\n\nDelivery: {}\nactor: {actor}\n决定: {decision:?}\n理由: {reason}\n证据来源: origin=simulated（人类决定不改变证据来源）\n\n{}",d.id,serde_json::to_string_pretty(&checks).unwrap()))?;
+        let mut report=self.artifacts.seal(&d.feature_id,d.task_id.as_deref(),"reviews",&format!("# Review 报告\n\nDelivery: {}\nactor: {actor}\n决定: {decision:?}\n理由: {reason}\n证据来源: origin={}（评审决定不改变证据来源）\n\n{}",d.id,serde_json::to_value(d.origin).unwrap().as_str().unwrap(),serde_json::to_string_pretty(&checks).unwrap()))?;
+        report.origin = if run.is_none() {
+            Origin::Human
+        } else {
+            d.origin
+        };
         s.artifacts.push(report);
         s.reviews.push(Review {
             id: rid,
@@ -2392,10 +3228,17 @@ impl Engine {
             .as_ref()
             .and_then(|id| s.deliveries.iter().find(|d| &d.id == id))
             .and_then(|d| d.attempt_id.clone());
+        let capture_merge = delivery
+            .as_ref()
+            .and_then(|id| s.deliveries.iter().find(|d| &d.id == id))
+            .and_then(|d| d.merge_id.clone());
         let captured_runs: Vec<_> = s
             .runs
             .iter()
-            .filter(|r| capture_attempt.is_some() && r.attempt_id == capture_attempt)
+            .filter(|r| {
+                (capture_attempt.is_some() && r.attempt_id == capture_attempt)
+                    || (capture_merge.is_some() && r.merge_id == capture_merge)
+            })
             .collect();
         let capture = SnapshotCapture {
             attempt: capture_attempt.clone(),
@@ -2415,9 +3258,31 @@ impl Engine {
             .and_then(|id| s.deliveries.iter().find(|d| &d.id == id))
             .map(|d| d.documents.clone())
             .unwrap_or_else(|| document_ids(s, fid, tid));
+        let execution_instances = s
+            .executions
+            .iter()
+            .filter(|e| {
+                e.run_id
+                    .as_ref()
+                    .is_some_and(|id| capture.runs.contains(id))
+            })
+            .map(|e| e.id.clone())
+            .collect();
         s.snapshots.push(Snapshot {
+            execution_instances,
+            runtime_bindings: capture
+                .sessions
+                .iter()
+                .filter_map(|id| {
+                    s.sessions
+                        .iter()
+                        .find(|session| &session.id == id)
+                        .and_then(|session| session.runtime_binding.clone())
+                })
+                .collect(),
+            project_id: None,
             id: sid.clone(),
-            feature_id: fid.into(),
+            feature_id: Some(fid.into()),
             task_id: tid.map(str::to_owned),
             kind: kind.into(),
             content,
@@ -2427,18 +3292,51 @@ impl Engine {
             delivery_id: delivery,
             inherited_from: inherited,
         });
-        let manifest=self.artifacts.seal(fid,tid,"snapshots",&serde_json::to_string_pretty(&json!({"schema_version":1,"snapshot":s.snapshots.last(),"execution_mode":"simulation"})).map_err(|e|err("serialization",e.to_string()))?)?;
+        let mode = s
+            .projects
+            .iter()
+            .find(|p| p.id == s.feature(fid).unwrap().project_id)
+            .map(|p| p.execution_mode.as_str())
+            .unwrap_or("simulation");
+        let mut manifest = self.artifacts.seal(
+            fid,
+            tid,
+            "snapshots",
+            &serde_json::to_string_pretty(
+                &json!({"schema_version":1,"snapshot":s.snapshots.last(),"execution_mode":mode,"merge":capture_merge.as_ref().and_then(|id|s.merges.iter().find(|m|&m.id==id)),"repository_receipts":s.repository_operations.iter().filter(|op|match &op.action{RepositoryAction::PullRequest{merge,..}|RepositoryAction::PublishRef{merge,..}=>Some(merge)==capture_merge.as_ref(),_=>false}).collect::<Vec<_>>()}),
+            )
+            .map_err(|e| err("serialization", e.to_string()))?,
+        )?;
+        if mode == "live" {
+            manifest.origin = Origin::External;
+        }
         s.artifacts.push(manifest);
         Ok(sid)
     }
     pub fn tick(&self, global_limit: usize) -> Result<()> {
+        self.reconcile_native_tests()?;
         self.reconcile_effects()?;
         self.drain_advances()?;
         let snapshot = self.store.snapshot()?;
         let mut outputs = vec![];
         for run in snapshot.runs.iter().filter(|r| r.status == Status::Running) {
-            if let Some(output) = self.poll_result(&snapshot, run)? {
-                outputs.push((run.clone(), output));
+            match self.poll_result(&snapshot, run) {
+                Ok(Some(output)) => outputs.push((run.clone(), output)),
+                Ok(None) => {}
+                Err(error)
+                    if run.origin == Origin::External
+                        && !snapshot
+                            .turns
+                            .iter()
+                            .any(|t| t.run_id.as_ref() == Some(&run.id))
+                        && !snapshot
+                            .executions
+                            .iter()
+                            .any(|e| e.run_id.as_ref() == Some(&run.id)) =>
+                {
+                    outputs.push((run.clone(),json!({"status":"failed","failure_type":"input_contract","code":error.code,"message":error.message,"not_dispatched":true,"origin":"external"})));
+                }
+                Err(error) => return Err(error),
             }
         }
         let mut action = |s: &mut EngineeringState| {
@@ -2541,8 +3439,16 @@ impl Engine {
                             s,
                             &d,
                             decision,
-                            "独立模拟 Reviewer 基于冻结交付评审；origin=simulated",
-                            "agent:sim-reviewer",
+                            if r.origin == Origin::External {
+                                output["summary"].as_str().unwrap_or("独立真实 Reviewer")
+                            } else {
+                                "独立模拟 Reviewer 基于冻结交付评审；origin=simulated"
+                            },
+                            if r.origin == Origin::External {
+                                "agent:native-reviewer"
+                            } else {
+                                "agent:sim-reviewer"
+                            },
                             Some(r.id.clone()),
                         ) {
                             let rm = s.runs.iter_mut().find(|x| x.id == r.id).unwrap();
@@ -2561,7 +3467,13 @@ impl Engine {
                     let m = s.merge(r.merge_id.as_deref().unwrap())?;
                     (m.feature_id.clone(), m.task_id.clone())
                 };
-                let log=self.artifacts.seal(&fid,tid.as_deref(),"runs",&format!("# Run {}\n\nnode={}\norigin=simulated\nstarted={:?}\nfinished={}\nstatus={status:?}\n\n```json\n{}\n```\n",r.id,r.node,r.started,now(),serde_json::to_string_pretty(&output).unwrap()))?;
+                let mut log=self.artifacts.seal(&fid,tid.as_deref(),"runs",&format!("# Run {}\n\nnode={}\norigin={}\nstarted={:?}\nfinished={}\nstatus={status:?}\n\n```json\n{}\n```\n",r.id,r.node,serde_json::to_value(r.origin).unwrap().as_str().unwrap(),r.started,now(),serde_json::to_string_pretty(&output).unwrap()))?;
+                log.origin = r.origin;
+                s.runs
+                    .iter_mut()
+                    .find(|v| v.id == r.id)
+                    .unwrap()
+                    .result_artifact = Some(log.id.clone());
                 s.artifacts.push(log);
                 self.finish_effects(s, &r.id, EffectStatus::Applied, "回执已接纳，产物已封存");
                 self.enqueue_cleanup(s, &r.id, output["cleanup_failed"] == true);
@@ -2657,10 +3569,14 @@ impl Engine {
                         || r.result
                             .as_ref()
                             .is_some_and(|v| v["failure_type"] == "assertion")
-                }) && !s
-                    .deliveries
-                    .iter()
-                    .any(|d| d.merge_id.as_deref() == Some(&m.id))
+                }) && (!rs.iter().any(|r| r.origin == Origin::External)
+                    || m.change_request
+                        .as_ref()
+                        .is_some_and(|p| p.provider == "github"))
+                    && !s
+                        .deliveries
+                        .iter()
+                        .any(|d| d.merge_id.as_deref() == Some(&m.id))
                 {
                     let evidence = rs.iter().map(|r| r.id.clone()).collect();
                     let docs = s.delivery(&m.source_delivery)?.documents.clone();
@@ -2704,16 +3620,22 @@ impl Engine {
                     instance.status = Status::Running;
                     instance.started = Some(now());
                 }
-                s.resources.push(self.sandbox.resource(&r.id));
+                if r.origin == Origin::Simulated {
+                    s.resources.push(self.sandbox.resource(&r.id));
+                }
                 event(s, &r.id, "run.started", &r.node);
             }
             Ok(json!({"ok":true}))
         };
         self.store.transact(None, &mut action)?;
         self.drain_cleanup()?;
+        self.drain_live_cleanup()?;
         Ok(())
     }
     fn poll_result(&self, s: &EngineeringState, r: &Run) -> Result<Option<Value>> {
+        if r.origin == Origin::External {
+            return self.poll_live_run(s, r);
+        }
         let mut input = if r.node.starts_with("review:") {
             let d = s.delivery(r.node.trim_start_matches("review:"))?;
             let artifact = s
@@ -2842,6 +3764,7 @@ impl Engine {
             };
             let request = TestRequest {
                 operation_id: r.id.clone(),
+                session_id: Some(r.session_id.clone()),
                 phase: r.node.clone(),
                 candidate: candidate.clone(),
                 test_definitions: documents
@@ -2910,6 +3833,14 @@ impl Engine {
         let (fid, paused) = if let Some(aid) = &r.attempt_id {
             let a = s.attempt(aid).ok()?;
             let reviewer = r.node.starts_with("review:");
+            if s.turns.iter().any(|t| {
+                t.session_id == r.session_id
+                    && t.status.active()
+                    && t.run_id.as_ref() != Some(&r.id)
+            }) {
+                return Some("等待角色 Session 的当前轮次结束".into());
+            }
+
             (
                 a.feature_id.clone(),
                 !reviewer && (a.paused || a.status != Status::Running),
@@ -2972,6 +3903,18 @@ impl Engine {
             return Some("项目并发额度".into());
         }
         if r.writes
+            && s.executions.iter().any(|e| {
+                !e.writer_revoked
+                    && e.run_id.as_ref().is_some_and(|id| {
+                        s.runs.iter().any(|owner| {
+                            &owner.id == id && owner.id != r.id && owner.worktree == r.worktree
+                        })
+                    })
+            })
+        {
+            return Some("旧原生执行者尚未证明停止".into());
+        }
+        if r.writes
             && s.resources.iter().any(|res| {
                 [Status::Active, Status::CleanupFailed].contains(&res.status)
                     && s.runs.iter().any(|owner| {
@@ -3008,13 +3951,13 @@ impl Engine {
         if kind == "requirement"
             && s.documents
                 .iter()
-                .any(|d| d.feature_id == a.feature_id && d.kind == kind)
+                .any(|d| s.document_in_feature(d, &a.feature_id) && d.kind == kind)
         {
             if let Some(req) = s
                 .documents
                 .iter()
                 .rev()
-                .find(|d| d.feature_id == a.feature_id && d.kind == "requirement")
+                .find(|d| s.document_in_feature(d, &a.feature_id) && d.kind == "requirement")
             {
                 let id = req.id.clone();
                 if !a.documents.contains(&id) {
@@ -3032,14 +3975,16 @@ impl Engine {
             .documents
             .iter()
             .rev()
-            .find(|d| d.feature_id == a.feature_id && d.task_id == a.task_id && d.kind == kind)
+            .find(|d| {
+                s.document_in_feature(d, &a.feature_id) && d.task_id == a.task_id && d.kind == kind
+            })
             .cloned();
         let req = s
             .documents
             .iter()
             .rev()
             .find(|d| {
-                d.feature_id == a.feature_id
+                s.document_in_feature(d, &a.feature_id)
                     && d.kind == "requirement"
                     && (a.documents.contains(&d.id) || a.outputs.contains(&d.id))
             })
@@ -3049,17 +3994,26 @@ impl Engine {
             .iter()
             .rev()
             .find(|d| {
-                d.feature_id == a.feature_id
+                s.document_in_feature(d, &a.feature_id)
                     && d.kind == "design"
                     && (a.documents.contains(&d.id) || a.outputs.contains(&d.id))
             })
             .map(|d| d.id.clone());
-        let artifact = self.artifacts.seal(
+        let origin = if a.source_base.is_some() {
+            Origin::External
+        } else {
+            Origin::Simulated
+        };
+        let mut artifact = self.artifacts.seal(
             &a.feature_id,
             a.task_id.as_deref(),
             "documents",
-            &format!("# {title}\n\norigin=simulated\n\n{body}"),
+            &format!(
+                "# {title}\n\norigin={}\n\n{body}",
+                serde_json::to_value(origin).unwrap().as_str().unwrap()
+            ),
         )?;
+        artifact.origin = origin;
         let artifact_id = Some(artifact.id.clone());
         s.artifacts.push(artifact);
         let acceptance = if kind == "requirement" {
@@ -3083,8 +4037,10 @@ impl Engine {
             .outputs
             .push(document_id.clone());
         s.documents.push(Document {
+            test_recipe: None,
+            project_id: None,
             id: document_id,
-            feature_id: a.feature_id,
+            feature_id: Some(a.feature_id),
             task_id: a.task_id,
             kind,
             title,
@@ -3093,7 +4049,7 @@ impl Engine {
             supersedes: old.map(|d| d.id),
             requirement_id: req,
             design_id: design,
-            origin: Origin::Simulated,
+            origin,
             acceptance,
             verifies,
             artifact_id,
@@ -3101,6 +4057,9 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if let Some(result) = self.conversation_query(method, p) {
+            return result;
+        }
         let s = self.store.snapshot()?;
         let offset = p.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
         let limit = p
@@ -3109,6 +4068,9 @@ impl Engine {
             .unwrap_or(50)
             .clamp(1, 100) as usize;
         match method {
+            "query.repository" => Ok(
+                json!({"project":s.projects.first(),"operations":s.repository_operations.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_operations":s.repository_operations.len(),"worktrees":s.repository_worktrees.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_worktrees":s.repository_worktrees.len()}),
+            ),
             "query.archive_preview" => {
                 let fid = text(p, "feature_id")?;
                 let f = s.feature(&fid)?;
@@ -3117,13 +4079,15 @@ impl Engine {
                     artifacts: s
                         .artifacts
                         .iter()
-                        .filter(|a| a.feature_id == fid)
+                        .filter(|a| a.feature_id.as_deref() == Some(fid.as_str())
+                            || s.documents.iter().any(|d| s.document_in_feature(d, &fid)
+                                && d.artifact_id.as_ref() == Some(&a.id)))
                         .map(|a| a.id.clone())
                         .collect(),
                     snapshots: s
                         .snapshots
                         .iter()
-                        .filter(|a| a.feature_id == fid)
+                        .filter(|a| a.feature_id.as_deref() == Some(fid.as_str()))
                         .map(|a| a.id.clone())
                         .collect(),
                     blocked_reasons: vec![if f.status != Status::Completed {
@@ -3276,7 +4240,7 @@ impl Engine {
             .map(|r| (r.id.clone(), self.blocked(s, r, global_limit)))
             .collect::<std::collections::BTreeMap<_, _>>();
         Ok(
-            json!({"advances":s.advances.iter().filter(|advance|s.merges.iter().any(|m|m.id==advance.id&&m.feature_id==fid)).rev().take(limit).collect::<Vec<_>>(),"effects":effects.iter().skip(page_offset("effects")).take(limit).collect::<Vec<_>>(),"totals":{"effects":effects.len(),"tasks":s.tasks.iter().filter(|x|x.feature_id==fid).count(),"attempts":s.attempts.iter().filter(|x|x.feature_id==fid).count(),"merges":s.merges.iter().filter(|x|x.feature_id==fid).count(),"deliveries":s.deliveries.iter().filter(|x|x.feature_id==fid).count(),"documents":s.documents.iter().filter(|x|x.feature_id==fid).count(),"snapshots":s.snapshots.iter().filter(|x|x.feature_id==fid).count(),"artifacts":s.artifacts.iter().filter(|x|x.feature_id==fid).count(),"runs":s.runs.iter().filter(|r|r.attempt_id.as_deref().is_some_and(|id|ids.contains(&id))||r.merge_id.as_deref().is_some_and(|id|mids.contains(&id))).count()},"feature":f,"tasks":tasks,"attempts":attempts,"runs":runs,"documents":s.documents.iter().filter(|d|d.feature_id==fid).rev().skip(page_offset("documents")).take(limit).collect::<Vec<_>>(),"deliveries":deliveries,"reviews":s.reviews.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).rev().take(limit).collect::<Vec<_>>(),"overrides":s.overrides.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).collect::<Vec<_>>(),"merges":merges,"snapshots":s.snapshots.iter().filter(|x|x.feature_id==fid).rev().skip(page_offset("snapshots")).take(limit).collect::<Vec<_>>(),"contexts":s.contexts.iter().filter(|x|x.owner_id==fid||tasks.iter().any(|t|t.id==x.owner_id)).collect::<Vec<_>>(),"artifacts":s.artifacts.iter().filter(|a|a.feature_id==fid).rev().skip(page_offset("artifacts")).take(limit).collect::<Vec<_>>(),"sessions":s.sessions.iter().filter(|x|runs.iter().any(|r|r.session_id==x.id)).collect::<Vec<_>>(),"resources":s.resources.iter().filter(|x|runs.iter().any(|r|r.id==x.run_id)).collect::<Vec<_>>(),"heads":s.heads.iter().filter(|h|h.project_id==f.project_id).collect::<Vec<_>>(),"allowed_actions":actions,"blocked_reasons":blocked,"accepted_deliveries":deliveries.iter().filter(|d|s.accepted(d)).map(|d|&d.id).collect::<Vec<_>>()}),
+            json!({"advances":s.advances.iter().filter(|advance|s.merges.iter().any(|m|m.id==advance.id&&m.feature_id==fid)).rev().take(limit).collect::<Vec<_>>(),"effects":effects.iter().skip(page_offset("effects")).take(limit).collect::<Vec<_>>(),"totals":{"effects":effects.len(),"tasks":s.tasks.iter().filter(|x|x.feature_id==fid).count(),"attempts":s.attempts.iter().filter(|x|x.feature_id==fid).count(),"merges":s.merges.iter().filter(|x|x.feature_id==fid).count(),"deliveries":s.deliveries.iter().filter(|x|x.feature_id==fid).count(),"documents":s.documents.iter().filter(|x|s.document_in_feature(x,fid)).count(),"snapshots":s.snapshots.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).count(),"artifacts":s.artifacts.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).count(),"runs":s.runs.iter().filter(|r|r.attempt_id.as_deref().is_some_and(|id|ids.contains(&id))||r.merge_id.as_deref().is_some_and(|id|mids.contains(&id))).count()},"feature":f,"tasks":tasks,"attempts":attempts,"runs":runs,"documents":s.documents.iter().filter(|d|s.document_in_feature(d,fid)).rev().skip(page_offset("documents")).take(limit).collect::<Vec<_>>(),"deliveries":deliveries,"reviews":s.reviews.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).rev().take(limit).collect::<Vec<_>>(),"overrides":s.overrides.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).collect::<Vec<_>>(),"merges":merges,"snapshots":s.snapshots.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).rev().skip(page_offset("snapshots")).take(limit).collect::<Vec<_>>(),"contexts":s.contexts.iter().filter(|x|x.owner_id==fid||tasks.iter().any(|t|t.id==x.owner_id)).collect::<Vec<_>>(),"artifacts":s.artifacts.iter().filter(|a|a.feature_id.as_deref()==Some(fid)).rev().skip(page_offset("artifacts")).take(limit).collect::<Vec<_>>(),"sessions":s.sessions.iter().filter(|x|x.feature_id.as_deref()==Some(fid)||runs.iter().any(|r|r.session_id==x.id)).collect::<Vec<_>>(),"pending_interactions":s.interactions.iter().filter(|i|i.status==InteractionStatus::Pending&&s.sessions.iter().any(|session|session.id==i.session_id&&session.feature_id.as_deref()==Some(fid))).collect::<Vec<_>>(),"merge_progress":merges.iter().map(|m|json!({"merge":m.id,"local":s.advances.iter().find(|a|a.id==m.id),"remote_operations":s.repository_operations.iter().filter(|op|match &op.action{RepositoryAction::PublishRef{merge,..}|RepositoryAction::PullRequest{merge,..}=>merge==&m.id,_=>false}).collect::<Vec<_>>()})).collect::<Vec<_>>(),"resources":s.resources.iter().filter(|x|runs.iter().any(|r|r.id==x.run_id)).collect::<Vec<_>>(),"heads":s.heads.iter().filter(|h|h.project_id==f.project_id).collect::<Vec<_>>(),"allowed_actions":actions,"blocked_reasons":blocked,"accepted_deliveries":deliveries.iter().filter(|d|s.accepted(d)).map(|d|&d.id).collect::<Vec<_>>()}),
         )
     }
     fn actions(&self, s: &EngineeringState, target: &str) -> Value {

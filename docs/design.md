@@ -14,11 +14,11 @@ Web 是长期客户端，Rust 编译时嵌入 Vite 产物。Node 仅构建依赖
 
 ## ADR-002：跨平台单机
 
-Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入平台业务 API。Linux x86_64 与 macOS Apple Silicon 均已执行后端及 Web 实机验收，分别保存平台证据，见 [验收记录](acceptance.md)。
+Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入平台业务 API。原型的 Linux x86_64 与 macOS Apple Silicon 后端/Web 实机证据见 [验收记录](acceptance.md)。新增真实工程链路目前 macOS 通过；Ubuntu 宿主复验另见 [平台入口](ubuntu-web-acceptance.md)，不能以 Linux worker 代替宿主验收。
 
-## ADR-003：真实规则、模拟外部能力
+## ADR-003：明确区分真实与模拟来源
 
-所有 Project 均为 simulation。Git/Harness/Tests/Sandbox 只产生有来源的能力结果；核心决定状态。适配器结果先校验结构，支持固定故障、取消和 hold/continue。后续真实适配器复用 ports 与契约测试，不需要重写 Review/Attempt 规则。
+Project 明确选择 simulation 或 live，历史来源不可改写。Git/Harness/Tests/Sandbox 只产生有来源的能力结果；核心决定状态。适配器结果先校验结构，支持固定故障、取消和 hold/continue。真实 Codex/DSH、CliGit、CommandTests、DockerSandbox 与 Sim 共用 ports 和 Review/Attempt 规则。
 
 ## ADR-004：持久化与幂等
 
@@ -28,7 +28,7 @@ Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入
 
 ## ADR-005：恢复与范围
 
-重启后首次打开项目时，将该项目运行未确认记录标记 interrupted。通过原适配器核对终态后才释放资源并允许显式重试，结果未知时保留资源与阻塞理由。供应商具体进程管理留在适配器中，内核恢复协议已由故障夹具验证。Archive 导出与 data 目录搬迁只预览，不写成功事实。只有自己初始化的空目录才能建数据集；不修改用户仓库。
+启动时遍历全局项目索引，核对所有项目的未确认运行；Run 标记 interrupted，未知讨论输入保留 needs_reconciliation。通过原适配器核对终态后才释放资源并允许显式重试，结果未知时保留资源与阻塞理由。供应商具体进程管理留在适配器中，内核恢复协议已由故障夹具验证。Archive 导出与 data 目录搬迁只预览，不写成功事实。只有自己初始化的空目录才能建数据集；仅在明确登记和授权的工程仓库执行受控操作。
 
 ## 阶段评审
 
@@ -52,7 +52,7 @@ AdvanceObservation 区分 applied、not_applied 和 unknown。确认已推进时
 
 Attempt.documents、scope、binding、context 与 baseline 是冻结输入；Attempt.outputs 保存本尝试生成的文档修订。后续 Run 明确接收 frozen_inputs、stage_outputs、锁定的定义正文及运行实例，不从可变 Feature 默认配置重新解释旧执行。Reviewer 和 Merge 验证继承源交付的 Standard/执行锁；最终 Snapshot 保存已接受 Attempt 实际使用的 Context，Context 更新另存追加修订事件。
 
-Archive/迁移执行、环境重建和真实供应商安装、账号/凭据接入仍按计划延期；实际供应商应实现已落地的操作与核对契约并通过隔离真实用例，再开放 live。参见 [适配器契约](real-adapter-contract.md)。
+Archive/数据目录搬迁执行与通用环境重建仍延期。真实供应商使用固定安装、独立凭据、持久化操作与核对契约。参见 [适配器契约](real-adapter-contract.md)。
 
 ## ADR-009：明确的仓库与测试请求路由
 
@@ -72,7 +72,7 @@ host 的 Workspace 管理活动 Engine。`project.create` 先在全局库预留�
 
 请求取得 Engine 后始终使用该实例，不因稍后切换而改写别的数据库。Web 为工程请求、Artifact 与 SSE 提交 `project_id`；活动项目已变化时拒绝过期作用域。项目切换会清除 Feature、分页、历史和快照对比选择。SSE 固定连接所属 Engine，事件 ID 使用 `<project-id>:<cursor>`，其他项目的 Last-Event-ID 不用于跳过本项目事件。
 
-已打开的 Engine 保留连接，切换回来不会重新执行启动恢复，也不会把正常运行标为 interrupted。单调度器继续处理这些项目，并扣除其他项目正在运行的 Run 后计算可用全局额度。重启只自动打开上次活动项目；其他项目在首次打开时执行其恢复检查。
+已打开的 Engine 保留连接，切换回来不会重新执行启动恢复，也不会把正常运行标为 interrupted。单调度器继续处理这些项目，并扣除其他项目正在运行的 Run 后计算可用全局额度。重启遍历全局索引加载并核对所有项目的原执行者，随后恢复上次活动选择，不重发结果未知的工作。
 
 旧版单库按 SQLite 一致性快照拆分；旧文件不原地升级。迁移在临时副本上执行 v1–v13 schema 升级，按领域归属复制所有工程行、事件、操作结果与 Artifact，并校验外键、归属覆盖和产物哈希。全部项目落盘后才在全局事务中发布目录和布局版本。中断或产物损坏后可重试；根目录旧库、旧 Artifact 和 `runtime.json` 留作原始来源，新布局成功后不再读取旧配置。此结构迁移与尚未实现的 data 目录搬迁是不同操作。
 
@@ -80,4 +80,14 @@ host 的 Workspace 管理活动 Engine。`project.create` 先在全局库预留�
 
 `devdesk_core::ports::{Harness, Git, Tests, Sandbox}` 是执行能力的抽象基接口；Rust 中由 trait 定义契约、由 `impl` 提供实现。`SimHarness`、`SimGit`、`SimTests`、`SimSandbox` 分别实现这四个接口，未来真实适配器直接实现相同接口。领域对象中的 Harness/Sandbox 是配置与历史模型，不承担运行接口的职责。
 
-`ExecutionAdapters` 统一持有四类接口对象，`Engine::new` 和 `Workspace::open_with_adapters` 在装配时注入；默认仍采用 Sim 集合。Engine 的调度、交付、回执接纳与数据库选择不依赖具体实现。保留旧 `*Port` trait 名称和 Sim 导入路径，并固定 Sim 的旧身份字符串，确保已有测试夹具和持久化恢复记录兼容。具体接口、替换方式与真实接入约束见[适配器契约](real-adapter-contract.md#基接口派生实现与装配)。
+`ExecutionAdapters` 统一持有四类接口对象，`Engine::new` 和 `Workspace::open_with_adapters` 在装配时注入；按来源路由 Sim 或真实集合；缺配置/故障不回退 Sim。Engine 的调度、交付、回执接纳与数据库选择不依赖具体实现。保留旧 `*Port` trait 名称和 Sim 导入路径，并固定 Sim 的旧身份字符串，确保已有测试夹具和持久化恢复记录兼容。具体接口、替换方式与真实接入约束见[适配器契约](real-adapter-contract.md#基接口派生实现与装配)。
+
+## ADR-012：真实会话、共享安装与双重交付
+
+RuntimeInstallation 独立于 Agent、Session 和 RuntimeExecution。同平台同版本同摘要的安装只登记一次；Docker 不同角色共用镜像层，独立容器和状态目录。角色是不可变 Definition；同范围连续轮次原生 resume，不共享不同项目/Task 的可变 Session。Host 解析偏好并冻结 RuntimeBinding，客户端不能注入工程写权限。
+
+讨论输出先形成 Proposal，经 schema、修订、归属、依赖与验收映射校验后采纳。正式工程阶段另有 Run/Delivery/独立 Review 门禁。同步模型事件按有序批次持久化，逐条去重；长输出保存在哈希封存 Artifact。
+
+CliGit 负责工作树、固定版本导出、候选、CAS 和发布；GitHubPullRequests 负责策略检查、幂等 PR 创建与状态观察。单父候选在 Docker 重验并正式 Review 后，先本地 CAS，再远端精确 lease，最后核对同一候选 PR merged；不能把本地完成作为远端完成。严格规则不兼容时阻塞，不修改规则。
+
+Feature 收尾递归固定已经接纳的 Task 交付，再执行完整测试、文档、复验和独立 Review。失败 Review 保留，修订使用新 Attempt。所有副作用先保存意图，外部 I/O 在事务外；未知输入与结果不盲目重发，停止、封存、清理分开确认。详细流程、限制与运行依赖见 [真实工程接入](real-engineering.md)。

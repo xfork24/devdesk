@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "first_host_sha256": "667b33f7dccb9500ff83cf824f641d7162e26dc27fc4c832363e6df74dcb4675",
+  "helper_sha256": "e30f39167b9dee76faf49d6c2eda4a627420c852b60cace8327e2658f09bcd9a",
+  "first_dummy_read": true,
+  "scope": "dedicated dummy credential only, real DeepSeek reference unchanged",
+  "second_host_sha256": "9df241a5fa1869bf50aee2d25f8d320c89cdbe39ec9041ecdcd34cc4b3fa334a",
+  "second_dummy_read": true,
+  "helper_unchanged": true,
+  "seconds": 0.242,
+  "unauthorized_caller_rejected": true
+}

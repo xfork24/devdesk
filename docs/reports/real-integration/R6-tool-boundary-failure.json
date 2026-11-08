@@ -1,0 +1,20 @@
+{
+  "project_id": "15b1cf44-b61e-456e-b01b-ffd38a31dd28",
+  "feature_id": "9ba9acde-2abe-4ce8-b4b8-52e7177dfbaa",
+  "tasks": {
+    "add": {
+      "id": "5fa8907d-bcd5-4cfe-9d66-72cb77258854",
+      "attempt": "18781a1b-69a8-47ac-8ae4-6246bfc9f4bf",
+      "provider": "codex"
+    },
+    "multiply": {
+      "id": "0725b8b7-26b8-467e-a082-0a56b7b18d6c",
+      "attempt": "50c01645-7f82-4b1c-8372-a73a4f8b8d1f",
+      "provider": "dsh"
+    }
+  },
+  "passed": false,
+  "stage": "failed",
+  "failure_type": "AssertionError",
+  "failure": "[{\"id\": \"9a35c609-b8cc-4217-953b-5d35c5ec6e04\", \"node\": \"test_author\", \"result\": {\"failure_type\": \"quality\", \"message\": \"阶段未完成\", \"origin\": \"external\", \"status\": \"failed\"}}]"
+}

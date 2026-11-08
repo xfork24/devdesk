@@ -1,0 +1,32 @@
+{
+  "provider": "dsh",
+  "passed": true,
+  "image": "sha256:009354c2ee03ddc4482823868d2cf0ccbf068c7935da2bdad3bea7d06fdf978c",
+  "turns": [
+    {
+      "message_id": "b9fd83d7-c123-4214-ad49-57d7380312a3",
+      "consumed": true,
+      "terminal": "completed",
+      "quiescent_wait": true,
+      "session_id": "devdesk-r0-f373b64b10684b4eaf6c84e19774b2f3",
+      "structured_json": true,
+      "context_retained": true,
+      "event_count": 20
+    },
+    {
+      "message_id": "b2d62fb9-b25b-44ab-bc17-f359f6a983c6",
+      "consumed": true,
+      "terminal": "completed",
+      "quiescent_wait": true,
+      "session_id": "devdesk-r0-f373b64b10684b4eaf6c84e19774b2f3",
+      "structured_json": true,
+      "context_retained": true,
+      "event_count": 11
+    }
+  ],
+  "container": "devdesk-turn-probe-12f8d61aeaf84054b32a1f53d4b3fd04",
+  "stage": "finished",
+  "model": "deepseek-v4-pro",
+  "session_id": "devdesk-r0-f373b64b10684b4eaf6c84e19774b2f3",
+  "writer_stopped": true
+}

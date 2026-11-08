@@ -9,7 +9,7 @@ impl Engine {
                 || (a.status == AdvanceStatus::NeedsReconciliation
                     && a.reason == "reconcile_requested")
         }) {
-            if intent.provider != self.git.identity() {
+            if intent.provider != self.git.identity_for(intent.context.as_ref()) {
                 continue;
             }
             let Some(context) = intent.context.as_ref() else {
@@ -55,6 +55,25 @@ impl Engine {
                     })?;
                     if claimed != true {
                         continue;
+                    }
+                    if context.origin == Origin::External {
+                        if let Err(error) =
+                            self.git.preflight_advance(context, &intent.expected_target)
+                        {
+                            self.store.transact(None, &mut |s| {
+                                let current =
+                                    s.advances.iter_mut().find(|a| a.id == intent.id).unwrap();
+                                current.status = AdvanceStatus::NotApplied;
+                                current.reason = format!("preflight_rejected:{}", error.message);
+                                current.revision += 1;
+                                let m = s.merges.iter_mut().find(|m| m.id == intent.id).unwrap();
+                                m.status = Status::Interrupted;
+                                m.revision += 1;
+                                event(s, &intent.id, "merge.preflight_rejected", &error.code);
+                                Ok(json!({}))
+                            })?;
+                            continue;
+                        }
                     }
                     receipt = self
                         .git
@@ -196,6 +215,24 @@ impl Engine {
                     .find(|h| h.id == m.target)
                     .unwrap()
                     .revision = committed.clone();
+                if context.origin == Origin::External {
+                    let mm = s.merges.iter_mut().find(|v| v.id == m.id).unwrap();
+                    mm.committed_revision = Some(committed.clone());
+                    mm.revision += 1;
+                    let current = s.advances.iter_mut().find(|v| v.id == intent.id).unwrap();
+                    current.status = AdvanceStatus::Applied;
+                    current.receipt = Some(committed.clone());
+                    current.revision += 1;
+                    current.reason = "本地 CAS 已完成；等待远端精确 lease 与 PR merged 核对".into();
+                    self.enqueue_remote_advance(s, &m, context);
+                    event(
+                        s,
+                        &intent.id,
+                        "merge.local_completed",
+                        "local CAS only; remote delivery pending",
+                    );
+                    return Ok(json!({}));
+                }
                 let mm = s.merges.iter_mut().find(|x| x.id == m.id).unwrap();
                 mm.status = Status::Completed;
                 mm.committed_revision = Some(committed.clone());

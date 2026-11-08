@@ -4,13 +4,27 @@ use rusqlite::{OptionalExtension, params};
 use std::collections::{HashMap, HashSet};
 
 pub struct GlobalStore {
-    connection: Mutex<Connection>,
-    writer: Mutex<()>,
+    pub(super) connection: Mutex<Connection>,
+    pub(super) writer: Mutex<()>,
     root: PathBuf,
     _lock: File,
 }
 
 impl GlobalStore {
+    pub fn dsh_credential_reference(&self) -> Result<Option<String>> {
+        Ok(setting(
+            &*self.connection.lock().map_err(storage)?,
+            "credentials.dsh",
+        )?
+        .and_then(|v| v.as_str().map(str::to_owned)))
+    }
+    pub fn set_dsh_credential_reference(&self, reference: &str) -> Result<()> {
+        put_setting(
+            &*self.connection.lock().map_err(storage)?,
+            "credentials.dsh",
+            &json!(reference),
+        )
+    }
     pub fn open(path: &Path) -> Result<Self> {
         let (root, lock) = lock_dataset(path)?;
         let mut connection = Connection::open(root.join("global.sqlite3")).map_err(storage)?;
@@ -22,10 +36,24 @@ impl GlobalStore {
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
-        require(version <= 1, "全局配置库版本比程序新")?;
+        require(version <= 3, "全局配置库版本比程序新")?;
         if version == 0 {
             let tx = connection.transaction().map_err(storage)?;
             tx.execute_batch(include_str!("../../../sql/global/001_initial.sql"))
+                .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 2 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!(
+                "../../../sql/global/002_runtime_installations.sql"
+            ))
+            .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 3 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../sql/global/003_agent_profiles.sql"))
                 .map_err(storage)?;
             tx.commit().map_err(storage)?;
         }
@@ -53,6 +81,40 @@ impl GlobalStore {
             "global_concurrency",
             &json!(value),
         )
+    }
+
+    pub fn default_harness(&self) -> Result<HarnessProvider> {
+        let value = setting(
+            &*self.connection.lock().map_err(storage)?,
+            "default_harness",
+        )?
+        .unwrap_or(json!("codex"));
+        serde_json::from_value(value).map_err(storage)
+    }
+
+    /// Change preferences together; existing immutable execution bindings are unaffected.
+    pub fn update_preferences(
+        &self,
+        concurrency: Option<usize>,
+        provider: Option<HarnessProvider>,
+    ) -> Result<()> {
+        require(
+            concurrency.is_some() || provider.is_some(),
+            "设置内容不能为空",
+        )?;
+        if let Some(n) = concurrency {
+            require((1..=32).contains(&n), "全局并发额度需为 1—32")?;
+        }
+        let _writer = self.writer.lock().map_err(storage)?;
+        let mut conn = self.connection.lock().map_err(storage)?;
+        let tx = conn.transaction().map_err(storage)?;
+        if let Some(n) = concurrency {
+            put_setting(&tx, "global_concurrency", &json!(n))?;
+        }
+        if let Some(p) = provider {
+            put_setting(&tx, "default_harness", &json!(p))?;
+        }
+        tx.commit().map_err(storage)
     }
 
     pub fn active_project(&self) -> Result<Option<String>> {
@@ -328,7 +390,10 @@ impl GlobalStore {
         let mut catalog = vec![];
         let global_ops: Vec<_> = operations
             .iter()
-            .filter(|op| op.method() == "definition.revise")
+            .filter(|op| {
+                ["definition.revise", "agent.create", "agent.revise"]
+                    .contains(&op.method().as_str())
+            })
             .collect();
         let global_ids: HashSet<_> = global_ops.iter().map(|op| op.id.as_str()).collect();
         let global_events: Vec<_> = source
@@ -513,6 +578,7 @@ impl EngineeringStore for GlobalStore {
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;
+        state.validate_conversations(&before)?;
         let value = serde_json::to_value(&state).map_err(storage)?;
         require(
             value.as_object().unwrap().iter().all(|(key, items)| {
@@ -600,10 +666,15 @@ fn project_state(source: &EngineeringState, pid: &str) -> EngineeringState {
     let mut s = source.clone();
     s.events.clear();
     s.projects.retain(|p| p.id == pid);
+    s.repository_operations.retain(|op| op.project_id == pid);
+    s.repository_worktrees.retain(|w| w.project_id == pid);
     s.features.retain(|f| f.project_id == pid);
     let features: HashSet<_> = s.features.iter().map(|f| f.id.clone()).collect();
     s.tasks.retain(|t| features.contains(&t.feature_id));
-    s.documents.retain(|d| features.contains(&d.feature_id));
+    s.documents.retain(|d| {
+        d.project_id.as_deref() == Some(pid)
+            || d.feature_id.as_ref().is_some_and(|f| features.contains(f))
+    });
     s.attempts.retain(|a| features.contains(&a.feature_id));
     s.merges.retain(|m| features.contains(&m.feature_id));
     let owners: HashSet<_> = s
@@ -613,6 +684,7 @@ fn project_state(source: &EngineeringState, pid: &str) -> EngineeringState {
         .chain(s.merges.iter().map(|m| m.id.clone()))
         .chain(s.tasks.iter().map(|t| t.id.clone()))
         .chain(features.iter().cloned())
+        .chain(std::iter::once(pid.to_string()))
         .collect();
     s.runs.retain(|r| {
         r.attempt_id
@@ -621,16 +693,32 @@ fn project_state(source: &EngineeringState, pid: &str) -> EngineeringState {
             .is_some_and(|id| owners.contains(id))
     });
     let runs: HashSet<_> = s.runs.iter().map(|r| r.id.clone()).collect();
-    s.sessions.retain(|s| owners.contains(&s.owner_id));
+    s.sessions.retain(|s| {
+        s.project_id.as_deref() == Some(pid)
+            || (s.project_id.is_none() && owners.contains(&s.owner_id))
+    });
+    let sessions: HashSet<_> = s.sessions.iter().map(|s| s.id.clone()).collect();
+    s.turns.retain(|t| t.project_id == pid);
+    let turns: HashSet<_> = s.turns.iter().map(|t| t.id.clone()).collect();
+    s.conversation_events.retain(|e| turns.contains(&e.turn_id));
+    s.interactions.retain(|i| i.project_id == pid);
+    s.proposals.retain(|p| p.project_id == pid);
+    s.executions.retain(|e| sessions.contains(&e.session_id));
     s.contexts.retain(|c| owners.contains(&c.owner_id));
-    s.snapshots.retain(|s| features.contains(&s.feature_id));
+    s.snapshots.retain(|s| {
+        s.project_id.as_deref() == Some(pid)
+            || s.feature_id.as_ref().is_some_and(|f| features.contains(f))
+    });
     s.deliveries.retain(|d| features.contains(&d.feature_id));
     let deliveries: HashSet<_> = s.deliveries.iter().map(|d| d.id.clone()).collect();
     s.reviews.retain(|r| deliveries.contains(&r.delivery_id));
     s.overrides.retain(|o| deliveries.contains(&o.delivery_id));
     s.heads.retain(|h| h.project_id == pid);
     s.resources.retain(|r| runs.contains(&r.run_id));
-    s.artifacts.retain(|a| features.contains(&a.feature_id));
+    s.artifacts.retain(|a| {
+        a.project_id.as_deref() == Some(pid)
+            || a.feature_id.as_ref().is_some_and(|f| features.contains(f))
+    });
     s.effects.retain(|e| runs.contains(&e.run_id));
     s.advances.retain(|a| s.merges.iter().any(|m| m.id == a.id));
     s

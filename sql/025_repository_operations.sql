@@ -1,0 +1,3 @@
+CREATE TABLE repository_operations(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) DEFERRABLE INITIALLY DEFERRED,action JSON NOT NULL CHECK(json_valid(action)),status TEXT NOT NULL,receipt JSON CHECK(receipt IS NULL OR json_valid(receipt)),reason TEXT NOT NULL,revision INTEGER NOT NULL);
+CREATE TABLE repository_worktrees(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) DEFERRABLE INITIALLY DEFERRED,owner_id TEXT NOT NULL,kind TEXT NOT NULL,branch TEXT NOT NULL,path TEXT NOT NULL UNIQUE,base TEXT NOT NULL,operation_id TEXT NOT NULL REFERENCES repository_operations(id) DEFERRABLE INITIALLY DEFERRED,UNIQUE(project_id,owner_id));
+PRAGMA user_version=25;

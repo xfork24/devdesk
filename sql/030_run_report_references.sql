@@ -1,0 +1,2 @@
+ALTER TABLE runs ADD COLUMN result_artifact TEXT REFERENCES artifacts(id) DEFERRABLE INITIALLY DEFERRED;
+PRAGMA user_version=30;

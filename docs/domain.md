@@ -1,16 +1,16 @@
 # DevDesk v0.2 领域规范
 
-版本 1。当前计划与其第 14 节是唯一领域基线。所有项目 execution_mode=simulation。应用代码中的对象是类型化结构，下面的 ID 均为稳定 UUID；逻辑分支名除外。
+当前工程库 schema v31，全局库 v3。原始设计与真实接入计划共同约束本轮领域模型。Project 明确使用 simulation 或 live；旧模拟记录保留原身份。应用代码中的对象是类型化结构，下面的 ID 均为稳定 UUID；逻辑分支名除外。
 
 ## 归属与对象契约
 
 | 对象 | 身份、归属与引用 | 可变性、生命周期与命令 | 事件、持久化与示例 |
 |---|---|---|---|
 | Project | 自身 ID，包含 Workspace 描述、默认 BindingLock | 配置可更新，revision 乐观锁；project.create/update | projects 表；project.create；示例“支付服务” |
-| Workspace | Project 的仓库/路径描述值，不拥有真实 worktree | 随 project.update 编辑；不执行用户目录 | projects.workspace；示例 /work/payment |
+| Workspace | Project 的仓库/路径描述值，live 工程由 RepositoryWorktree 管理真实工作树 | 随 project.update 编辑；不执行用户目录 | projects.workspace；示例 /work/payment |
 | Feature | Project 下独立开发闭环，可引用 predecessor | draft→planning→ready→developing→validating→accepted→completed；输入修订增 input_version | features 表；feature.create、evidence.stale；示例“新增导出” |
 | Task | Feature 下独立任务，绑定初始 Snapshot 和依赖 Tasks | ready→running→waiting_review→accepted→completed；完成后冻结 | tasks 表；task.create；示例“导出接口” |
-| Requirement | Feature 的不可变需求修订 | document.revise；规划正式 Delivery；新修订使旧证据 stale | documents(kind=requirement)，Artifact；示例“支持 CSV” |
+| Requirement | Project/Feature 的不可变需求修订 | document.revise；规划正式 Delivery；新修订使旧证据 stale | documents(kind=requirement)，Artifact；示例“支持 CSV” |
 | Design | 引用 Requirement 的不可变设计修订 | 规划交付，与 Task/Test 计划一起 Review | documents(kind=design)；示例“流式编码方案” |
 | Test | 引用 Requirement/Design 和可选 Task 的测试定义 | 定义先于 Task 实现冻结，TestRunner 请求实际携带测试定义、候选与环境并校验响应绑定；TestResult 在 Run.result | documents(kind=test)；示例“空列表返回表头” |
 | Doc | Feature/Task 的不可变说明修订 | document.revise 或模拟执行产生；所属交付 Review | documents(kind=doc)；示例“使用及限制” |
@@ -20,10 +20,10 @@
 | Agent | 身份定义，非执行环境 | 克隆、绑定；工程与评审身份分开 | definitions(family=agent)；例工程 Agent/评审 Agent |
 | Attempt | 属于 Feature 或 Task，固定输入、绑定、文档和 Context 内容/修订 | running→waiting_review→accepted/rejected；可 failed/cancelled/interrupted；attempt.start/pause/cancel | attempts 表；例某 Task 第一次实现 |
 | Run | 仅属于一个 Attempt 或 Merge，节点与执行 ID 分离 | queued→running→succeeded/failed/cancelled/interrupted；run.retry 新 Run 带 retry_of | runs 表及分段 Artifact；run.started/finished/interrupted；例 green 节点第二次执行 |
-| Session | 每 Run 独立身份，引用 Agent/Harness/Sandbox 和可选 Snapshot | 不共享可变 Session；随 Run 生命周期 | sessions 表；例评审会话 |
-| Harness | 执行运行时能力值 | sim-harness-v1；仅模拟；不允许自行批准业务门禁 | BindingLock、Session；例受控模拟执行器 |
+| Session | Project/Feature/Task 范围的角色会话，引用冻结 RuntimeBinding 和可选 Snapshot | 同范围角色连续讨论复用；Run 可关联既有 Session；不同范围隔离 | sessions 表；例评审会话 |
+| Harness | 执行运行时能力值 | Codex/DSH/Sim；不允许自行批准业务门禁 | BindingLock、Session；例受控模拟执行器 |
 | Sandbox | 执行环境能力值 | sim-sandbox-v1；启动、取消确认、结束、清理 | Session、Resource；例模拟环境 |
-| Resource | Run 所有的环境资源，无真实 PID | active→released/cleanup_failed；释放失败保留 | resources 表；例模拟环境实例 |
+| Resource | Run 所有的环境资源；真实容器生命周期另由 RuntimeExecution 记录 | active→released/cleanup_failed；释放失败保留 | resources 表；例模拟环境实例 |
 | Context | Feature/Task 独立可变内容，revision | context.update；Task 从初始 Snapshot 复制，不共享可变对象 | contexts 表；例任务补充说明 |
 | Snapshot | Feature/Task 下不可变上下文和绑定、文档 ID | initial/final/manual；snapshot.save、接受交付时生成 | snapshots 表；例 Task 最终交付上下文 |
 | Delivery | Feature/Task 下正式冻结边界，属于 Attempt 或 Merge | 不可修改，stale 为有效性投影；delivery.submit | deliveries、Artifact；delivery.created；例 Task 实现交付 |
@@ -31,7 +31,7 @@
 | Review | 指向确定 Delivery，逐项 Check、决定、理由 | 追加记录；pass/changes_requested/inconclusive/not_reviewable | reviews、报告 Artifact；review.submit；例退回缺少错误路径 |
 | Override | 指向确定 Delivery 的人类质量例外 | 只追加；review 或 test:RunID 条目；不改原事实 | overrides 表；override.accept；例接受已知断言缺陷 |
 | Merge | Feature/Task 的候选接纳操作，固定输入、源、预期目标 | running→waiting_review→accepted→completed；目标变化旧候选无效 | merges、heads；merge.request/apply；例 Task→Feature |
-| Artifact | Feature/Task 下封存文件 ID、相对路径、SHA256、来源 | 不可变；写临时文件→fsync→rename→数据库引用 | artifacts 表及本地文件；例执行报告 |
+| Artifact | Project/Feature/Task 下封存文件 ID、相对路径、SHA256、来源 | 不可变；写临时文件→fsync→rename→数据库引用 | artifacts 表及本地文件；例执行报告 |
 | Archive | 延期契约 | 本轮仅交互预览，不导出、不删除、不恢复 | 不写业务成功记录；例归档范围预览 |
 
 ## 核心规则
@@ -51,7 +51,7 @@
 
 ## 闭环例子
 
-创建 Project、Feature → 编辑 Requirement → planning Attempt → Requirement Delivery/Review → plan Delivery/Review → initial Snapshot → 两个独立 Tasks → 各自 implementation Attempt（Red/implement/Green/docs/verify）→ implementation Delivery/Review → final Snapshot → Task Merge 验证/Review/apply → closure Attempt → closure Delivery/Review → final Snapshot → Feature Merge 验证/Review/apply → 模拟流程已完成。
+创建 Project、Feature → 编辑 Requirement → planning Attempt → Requirement Delivery/Review → plan Delivery/Review → initial Snapshot → 两个独立 Tasks → 各自 implementation Attempt（Red/implement/Green/docs/verify）→ implementation Delivery/Review → final Snapshot → Task Merge 验证/Review/apply → closure Attempt → closure Delivery/Review → final Snapshot → Feature Merge 验证/Review/apply → 按来源显示模拟完成或 GitHub 核对后真实完成。
 
 ## 本轮领域补强（schema v13）
 
@@ -86,3 +86,25 @@ TestRequest/TestResult.environment 使用 Session.instance.id，绑定具体环�
 GitContext 是 Attempt 与 MergeAdvance 中的不可变值对象，固定 Project、Workspace 和源/目标 CodeLocation。供应商候选、推进及核对显式接收它，TestRequest/ Harness 输入也携带它。v13 迁移保留历史未知定位为 null；未记录代码路由的旧执行必须新建执行，不能推定一个当前工作目录。
 
 Run 首次调用的输入保存在 Harness EffectRecord 中；后续轮询及取消复用它。并行兄弟节点的新输出只进入后续新 Run 的输入，不能改变已在运行的请求。Agent 的身份由不可变修订链根确定，不把作者的另一修订当作独立 Reviewer。
+
+## 真实接入新增对象（schema v14–v31）
+
+| 对象 | 归属与契约 |
+|---|---|
+| AgentProfile | 不可变 Definition 的结构化角色、指令、技能、工具策略、工作类型与输出 schema；五个稳定身份根 |
+| RuntimeInstallation | 全局 provider/version/OS/CPU 安装；完整内容摘要去重，项目与角色只引用 |
+| RuntimeBinding | Session 冻结安装、适配器构建、模型、凭据引用、权限与写目录；偏好变化不回写 |
+| ConversationTurn | Session 下独立输入、客户端幂等 ID、原生消息/turn ID、消费与终态，不要求工程 Run |
+| ConversationEvent | 追加的消息、工具、状态、审批；有序分片与供应商去重键 |
+| PendingInteraction | 精确绑定 Session/Turn/request，类型化问题/审批及回答；迟到与跨范围回答拒绝 |
+| Proposal | 讨论来源、目标修订和依赖固定的结构化草案；采纳使用正式命令，不能直接批准交付 |
+| RuntimeExecution | 每次真实 worker/测试容器的 operation、Session/Run、镜像、容器、起止、停止证明与协议 Artifact |
+| TestRecipe | 固定 Node Test 文件、不可变镜像与超时；无任意宿主 shell |
+| RepositoryWorktree | 同项目 owner 的真实分支、位置、基线与创建操作 |
+| RepositoryOperation | Git/worktree/快照/发布/PR 的独立持久化意图、观测回执和待核对状态 |
+
+live Task DAG 为 test_author → Red → implement → Green → docs → verify。测试写目录与开发测试只读限制由冻结权限及 Docker 实际挂载共同执行。正式 Run 的输入封存上限为 512 KiB；普通讨论为 64 KiB，超限不会派发。
+
+Feature closure 为 test_author → feature_tests → docs → verify；Delivery.source_deliveries 固定两个已完成 Task 的实现交付，Merge Delivery 固定其源交付。原生 Reviewer 接收递归来源、历史 Red/Green/Review/远端回执和固定 SHA diff。最终 Snapshot 收录实际 Sessions、RuntimeBindings、RuntimeExecutions、文档与报告，不以当前默认配置替代历史。
+
+live 合入分别记录本地 CAS、远端精确 lease、PR merged 核对；只有三者一致才完成 Task/Feature。重启先遍历全局项目索引停止和核对原执行者，已消费结果未知的输入不重发。详见 [真实工程接入](real-engineering.md)。

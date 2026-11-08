@@ -17,3 +17,7 @@
 
 - [领域与工程接入基础补强](domain-hardening.md)：本轮模型、迁移、回归和真实适配器边界。
 - [每项目数据库与全局配置库](project-databases.md)：活动数据库切换、全局配置、旧库拆分及隔离验收。
+- [真实工程接入验收](real-integration/R8-acceptance.md)：双 Harness、Docker TDD、真实 PR 合入、取消/崩溃恢复与运行包；macOS Web 通过，Ubuntu 宿主按后续要求继续。
+
+- [Web 平台与系统凭据补充](web-platform-and-credentials.md)：稳定签名、无后台 Keychain 提示、Linux Secret Service 与 Ubuntu 待验收入口。
+- [Ubuntu Web 待执行验收计划](../plans/ubuntu-web-acceptance.md)：切换宿主后的 U0–U6 步骤、A01–A22 证据及独立运行包验收，尚未标记通过。

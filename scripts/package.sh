@@ -10,7 +10,13 @@ mkdir -p "$staging/$package_name" dist
 cp target/release/devdesk-host "$staging/$package_name/"
 cp docs/run-binary.md "$staging/$package_name/README.md"
 cp -R docs "$staging/$package_name/"
-COPYFILE_DISABLE=1 tar -czf "dist/$package_name.tar.gz" -C "$staging" "$package_name"
+cp -R containers "$staging/$package_name/"
+if [ "$(uname -s)" = Darwin ]; then
+  mkdir -p "$staging/$package_name/credential-helper"
+  cp "$HOME/Library/Application Support/DevDesk/credential-helper/v1/devdesk-credential-helper" "$staging/$package_name/credential-helper/"
+  cp "$HOME/Library/Application Support/DevDesk/credential-helper/v1/manifest.json" "$staging/$package_name/credential-helper/"
+fi
+COPYFILE_DISABLE=1 tar --exclude=.DS_Store --exclude=._'*' -czf "dist/$package_name.tar.gz" -C "$staging" "$package_name"
 (
   cd dist
   if command -v sha256sum >/dev/null; then

@@ -1,0 +1,23 @@
+{
+  "group": "github",
+  "passed": true,
+  "repository": "xfork24/devdesk-integration-test",
+  "run_id": "6331bee8d4184792afc16370f8da3c62",
+  "branch": "devdesk-r0/6331bee8d4184792afc16370f8da3c62",
+  "base": "main",
+  "baseline": "81866fb3a1f3623e2ef9e0b9252d2faf9a4e3adf",
+  "candidate": "c107207dcfd976a2ab1b3972b8df8a5cc3285a9b",
+  "pull_request": "https://github.com/xfork24/devdesk-integration-test/pull/1",
+  "local_cas_passed": true,
+  "local_stale_cas_rejected": true,
+  "remote_lease_advance_passed": true,
+  "stale_lease_rejected": true,
+  "pull_request_result": {
+    "headRefOid": "c107207dcfd976a2ab1b3972b8df8a5cc3285a9b",
+    "mergeCommit": {
+      "oid": "c107207dcfd976a2ab1b3972b8df8a5cc3285a9b"
+    },
+    "mergedAt": "2026-11-08T04:06:06Z",
+    "state": "MERGED"
+  }
+}

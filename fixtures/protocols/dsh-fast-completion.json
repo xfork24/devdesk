@@ -1,0 +1,103 @@
+{
+  "source": "Actual DSH 0.2.2-rc.1 SDK HTTP acceptance; admission follows consumption events; assistant content replaced, credentials absent",
+  "frames": [
+    {
+      "jsonrpc": "2.0",
+      "method": "session.event",
+      "params": {
+        "event": {
+          "data": {
+            "inserted": [
+              {
+                "content": [
+                  {
+                    "text": "Do not use tools. Reply only LIFECYCLE_OK. This is continuity round 1",
+                    "type": "text"
+                  }
+                ],
+                "id": "bddd0dc1-b93d-42c3-8a32-963bf23080f8",
+                "role": "user",
+                "source": {
+                  "kind": "user"
+                }
+              }
+            ],
+            "start": 0,
+            "target": "next-turn"
+          },
+          "seq": 3,
+          "time": 1794126306899,
+          "type": "agent/inbox/spliced"
+        },
+        "sessionId": "e48618fe-b056-47ea-8440-bd08e9791e10"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session.event",
+      "params": {
+        "event": {
+          "data": {
+            "inserted": [],
+            "removedCount": 1,
+            "start": 0,
+            "target": "next-turn"
+          },
+          "seq": 5,
+          "time": 1794126306900,
+          "type": "agent/inbox/spliced"
+        },
+        "sessionId": "e48618fe-b056-47ea-8440-bd08e9791e10"
+      }
+    },
+    {
+      "id": 2,
+      "jsonrpc": "2.0",
+      "result": {
+        "messageId": "bddd0dc1-b93d-42c3-8a32-963bf23080f8"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session.event",
+      "params": {
+        "event": {
+          "data": {
+            "message": {
+              "id": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "LIFECYCLE_OK"
+                }
+              ]
+            }
+          },
+          "seq": 15,
+          "surfaceOp": "append",
+          "time": 1794126308703,
+          "type": "assistant/message"
+        },
+        "sessionId": "e48618fe-b056-47ea-8440-bd08e9791e10"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "method": "session.event",
+      "params": {
+        "event": {
+          "data": {
+            "reason": {
+              "kind": "completed"
+            },
+            "turn": 1
+          },
+          "seq": 17,
+          "time": 1794126308705,
+          "type": "turn/end"
+        },
+        "sessionId": "e48618fe-b056-47ea-8440-bd08e9791e10"
+      }
+    }
+  ]
+}

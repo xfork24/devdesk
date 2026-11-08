@@ -12,6 +12,7 @@ use std::{
 type Active = Option<(String, Arc<Engine>)>;
 pub struct Workspace {
     pub global: Arc<GlobalStore>,
+    codex_auth: codex_auth::CodexAuthentication,
     configuration: Arc<Engine>,
     adapters: ports::ExecutionAdapters,
     active: RwLock<Active>,
@@ -23,8 +24,409 @@ fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters)
     Arc::new(Engine::new(store, artifacts, adapters.clone()))
 }
 impl Workspace {
+    fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
+        self.open_role_session(e, command, false)
+    }
+    fn open_role_session(
+        &self,
+        e: &Engine,
+        mut command: Command,
+        engineering: bool,
+    ) -> Result<Value> {
+        require(!command.command_id.is_empty(), "command_id 不能为空")?;
+        require(
+            command.payload.get("binding").is_none(),
+            "会话绑定由协调器解析，不能由客户端提供",
+        )?;
+        let fingerprint = command_fingerprint("session.open", &command);
+        if let Some(previous) = e.store.replay(&command.command_id, &fingerprint)? {
+            return Ok(previous);
+        }
+        let state = e.store.snapshot()?;
+        let agent = command.payload["agent"]
+            .as_str()
+            .ok_or_else(|| err("invalid_params", "需要 Agent 修订 ID"))?;
+        let definition = state
+            .definitions
+            .iter()
+            .find(|d| d.id == agent && d.agent_profile.is_some())
+            .ok_or_else(|| err("not_found", "Agent 角色修订不存在"))?;
+        let profile = definition.agent_profile.as_ref().unwrap();
+        let work_type: WorkType = command
+            .payload
+            .get("work_type")
+            .map(|v| serde_json::from_value(v.clone()))
+            .transpose()
+            .map_err(|_| err("invalid_params", "无效工作类型"))?
+            .unwrap_or(WorkType::Discussion);
+        require(
+            engineering || [WorkType::Discussion, WorkType::Design].contains(&work_type),
+            "工程实施/测试/正式评审须从冻结的 Run 入口启动",
+        )?;
+        require(
+            profile.allowed_work.contains(&work_type),
+            "角色不支持当前工作类型",
+        )?;
+        let preferences = state
+            .projects
+            .first()
+            .and_then(|p| p.runtime_preferences.as_ref());
+        let role_preference = preferences
+            .and_then(|p| p.roles.iter().find(|r| r.role == profile.role))
+            .map(|r| &r.preference);
+        let project_preference = preferences.and_then(|p| p.default.as_ref());
+        let provider: HarnessProvider = if let Some(value) = command.payload.get("provider") {
+            serde_json::from_value(value.clone())
+                .map_err(|_| err("invalid_params", "无效 Harness provider"))?
+        } else if let Some(preference) = role_preference.or(project_preference) {
+            preference.provider
+        } else {
+            self.global.default_harness()?
+        };
+        let preferred_installation = command.payload["installation_id"]
+            .as_str()
+            .or_else(|| {
+                role_preference
+                    .filter(|p| p.provider == provider)
+                    .and_then(|p| p.installation_id.as_deref())
+            })
+            .or_else(|| {
+                project_preference
+                    .filter(|p| p.provider == provider)
+                    .and_then(|p| p.installation_id.as_deref())
+            });
+        let installations = self.global.runtime_installations()?;
+        let candidates: Vec<_> = installations
+            .iter()
+            .filter(|r| {
+                r.key.provider == provider
+                    && r.key.os == "linux"
+                    && matches!(r.artifact, RuntimeArtifact::DockerImage { .. })
+                    && preferred_installation.is_none_or(|id| r.id == id)
+            })
+            .collect();
+        require(
+            candidates.len() == 1,
+            "需要明确且唯一的 Linux Docker 运行时安装，请先登记或选择安装",
+        )?;
+        let installation = candidates[0];
+        require(
+            self.global.runtime_integrity(&installation.id)?.verified,
+            "运行时镜像内容或平台未通过核验",
+        )?;
+        let preferred_model = command.payload["model"]
+            .as_str()
+            .or_else(|| {
+                role_preference
+                    .filter(|p| p.provider == provider)
+                    .and_then(|p| p.model.as_deref())
+            })
+            .or_else(|| {
+                project_preference
+                    .filter(|p| p.provider == provider)
+                    .and_then(|p| p.model.as_deref())
+            });
+        let model = if let Some(model) = preferred_model {
+            model.to_owned()
+        } else if provider == HarnessProvider::Dsh {
+            "deepseek-v4-pro".into()
+        } else {
+            let base_version = installation.key.version.split('+').next().unwrap_or("");
+            let native = installations
+                .iter()
+                .find(|r| {
+                    r.key.provider == provider
+                        && r.key.os == std::env::consts::OS
+                        && r.key.arch == std::env::consts::ARCH
+                        && r.key.version == base_version
+                        && matches!(r.artifact, RuntimeArtifact::Executable { .. })
+                })
+                .ok_or_else(|| err("blocked", "解析默认模型需要同版本本机 Codex 安装及官方登录"))?;
+            let directory = self.codex_auth.models(&self.global, &native.id)?;
+            directory["models"]
+                .as_array()
+                .and_then(|rows| rows.iter().find(|r| r["isDefault"] == true))
+                .and_then(|r| r["model"].as_str())
+                .ok_or_else(|| err("blocked", "供应商目录没有返回默认模型，请明确选择"))?
+                .to_string()
+        };
+        require(
+            !model.trim().is_empty() && model.len() <= 160,
+            "模型 ID 无效",
+        )?;
+        let policy =
+            if [WorkType::Discussion, WorkType::Design, WorkType::Review].contains(&work_type) {
+                ToolPolicy::ReadOnly
+            } else {
+                profile.tool_policy
+            };
+        require(
+            engineering || command.payload.get("writable_paths").is_none(),
+            "写目录只能由正式工程入口解析",
+        )?;
+        let writable_paths: Vec<String> = if policy == ToolPolicy::ReadOnly {
+            vec![]
+        } else {
+            serde_json::from_value(command.payload["writable_paths"].clone())
+                .map_err(|_| err("invalid_params", "缺少冻结写目录"))?
+        };
+        let read_only_paths = if policy == ToolPolicy::TaskWrite {
+            vec!["tests".to_string()]
+        } else {
+            vec![]
+        };
+        let adapter = harness::managed_adapter_identity(provider);
+        let credential_ref = match provider {
+            HarnessProvider::Codex => self.codex_auth.credential_reference()?,
+            HarnessProvider::Dsh => {
+                let status = credentials::CredentialVault::new(Path::new(&self.global.root()))?
+                    .status_reference(
+                        provider,
+                        self.global.dsh_credential_reference()?.as_deref(),
+                    )?;
+                require(
+                    status.available,
+                    "系统凭据库不可用；Linux 请安装 libsecret-tools 并使用桌面 Secret Service",
+                )?;
+                require(status.configured, "请先配置 DeepSeek 官方 API key")?;
+                // Fail before creating an execution when this Host has no vault access.
+                credentials::CredentialVault::new(Path::new(&self.global.root()))?
+                    .verify_reference(&status.reference)?;
+                status.reference
+            }
+        };
+        let digest = configuration_digest(
+            &json!({"installation":installation,"adapter":adapter,"agent":definition,"model":model,"policy":policy,"writable_paths":writable_paths,"read_only_paths":read_only_paths,"work_type":work_type,"sandbox":"docker-worker/v1","credential_ref":credential_ref}),
+        )?;
+        command.payload["binding"] = json!(RuntimeBinding {
+            installation: installation.clone(),
+            adapter_version: adapter,
+            model,
+            tool_policy: policy,
+            writable_paths,
+            read_only_paths,
+            work_type,
+            configuration_digest: digest,
+            credential_ref: Some(credential_ref),
+        });
+        e.execute_resolved("session.open", command, &fingerprint)
+    }
+    fn resolve_live_attempt(&self, e: &Engine, mut command: Command) -> Result<Value> {
+        require(
+            command.payload.get("live_sessions").is_none(),
+            "阶段 Session 由宿主解析，不能由客户端指定",
+        )?;
+        let fingerprint = command_fingerprint("attempt.start", &command);
+        if let Some(result) = e.store.replay(&command.command_id, &fingerprint)? {
+            return Ok(result);
+        }
+        let state = e.store.snapshot()?;
+        let target = command
+            .target
+            .as_deref()
+            .ok_or_else(|| err("invalid_params", "缺少 Attempt target"))?;
+        let task = state.tasks.iter().find(|t| t.id == target);
+        let phase = if task.is_some() {
+            "implementation"
+        } else {
+            command.payload["phase"].as_str().unwrap_or("planning")
+        };
+        let stage_roles: Vec<(&str, AgentRole, WorkType)> = match phase {
+            "planning" => vec![
+                ("research", AgentRole::Analyst, WorkType::Discussion),
+                ("requirement", AgentRole::Analyst, WorkType::Discussion),
+                ("design", AgentRole::Architect, WorkType::Design),
+                ("task_plan", AgentRole::Architect, WorkType::Design),
+                ("test_plan", AgentRole::Tester, WorkType::Discussion),
+            ],
+            "implementation" => vec![
+                ("test_author", AgentRole::Tester, WorkType::Testing),
+                ("red", AgentRole::Tester, WorkType::Discussion),
+                ("implement", AgentRole::Developer, WorkType::Implementation),
+                ("green", AgentRole::Tester, WorkType::Discussion),
+                ("docs", AgentRole::Developer, WorkType::Discussion),
+                ("verify", AgentRole::Tester, WorkType::Discussion),
+            ],
+            "closure" => vec![
+                ("test_author", AgentRole::Tester, WorkType::Testing),
+                ("feature_tests", AgentRole::Tester, WorkType::Discussion),
+                ("docs", AgentRole::Developer, WorkType::Discussion),
+                ("verify", AgentRole::Tester, WorkType::Discussion),
+            ],
+            _ => return Err(err("invalid_params", "未知阶段")),
+        };
+        let mut sessions = std::collections::BTreeMap::new();
+        for (stage, role, work_type) in stage_roles {
+            let key = match role {
+                AgentRole::Analyst => "analyst",
+                AgentRole::Architect => "architect",
+                AgentRole::Developer => "developer",
+                AgentRole::Tester => "tester",
+                AgentRole::Reviewer => "reviewer",
+            };
+            let root = format!("builtin-agent-{key}-v1");
+            let agent = state
+                .definitions
+                .iter()
+                .filter(|d| {
+                    d.agent_profile.as_ref().is_some_and(|p| p.role == role)
+                        && state.agent_identity(&d.id).is_ok_and(|id| id == root)
+                })
+                .max_by_key(|d| d.version)
+                .ok_or_else(|| err("blocked", "预置工程角色缺失"))?;
+            let paths = if work_type == WorkType::Implementation {
+                vec![".".to_string()]
+            } else if work_type == WorkType::Testing {
+                let recipe = state
+                    .documents
+                    .iter()
+                    .rev()
+                    .find(|d| {
+                        d.kind == "test"
+                            && if task.is_some() {
+                                d.task_id.as_deref() == Some(target)
+                            } else {
+                                d.task_id.is_none() && state.document_in_feature(d, target)
+                            }
+                    })
+                    .and_then(|d| d.test_recipe.as_ref())
+                    .ok_or_else(|| err("configuration_required", "Task Test 缺少实际测试配方"))?;
+                recipe.validate()?;
+                let mut paths = std::collections::BTreeSet::new();
+                for file in &recipe.files {
+                    let parent = file.rsplit_once('/').map(|p| p.0).unwrap_or("");
+                    require(
+                        parent.starts_with("tests/") && parent != "tests/",
+                        "测试作者配方需使用独立 tests/<suite>/ 目录",
+                    )?;
+                    paths.insert(parent.to_string());
+                }
+                paths.into_iter().collect()
+            } else {
+                vec![]
+            };
+            let mut payload =
+                json!({"agent":agent.id,"work_type":work_type,"writable_paths":paths});
+            for name in ["provider", "installation_id", "model"] {
+                if let Some(value) = command.payload.get(name) {
+                    payload[name] = value.clone();
+                }
+            }
+            let opened = self.open_role_session(
+                e,
+                Command {
+                    command_id: format!("{}:session:{stage}", command.command_id),
+                    target: command.target.clone(),
+                    expected_revision: command.expected_revision,
+                    payload,
+                },
+                true,
+            )?;
+            sessions.insert(
+                stage.to_string(),
+                opened["id"].as_str().unwrap().to_string(),
+            );
+        }
+        command.payload["live_sessions"] = json!(sessions);
+        e.execute_resolved("attempt.start", command, &fingerprint)
+    }
+    fn resolve_live_review(&self, e: &Engine, mut command: Command) -> Result<Value> {
+        require(
+            command.payload.get("review_session").is_none(),
+            "Reviewer Session 由宿主解析",
+        )?;
+        let fingerprint = command_fingerprint("review.request", &command);
+        if let Some(value) = e.store.replay(&command.command_id, &fingerprint)? {
+            return Ok(value);
+        }
+        let state = e.store.snapshot()?;
+        let delivery = state.delivery(command.target.as_deref().unwrap_or(""))?;
+        let owner = delivery.task_id.as_deref().unwrap_or(&delivery.feature_id);
+        let revision = if let Some(task) = &delivery.task_id {
+            state.task(task)?.revision
+        } else {
+            state.feature(owner)?.revision
+        };
+        let agent = state
+            .definitions
+            .iter()
+            .filter(|d| {
+                d.agent_profile
+                    .as_ref()
+                    .is_some_and(|p| p.role == AgentRole::Reviewer)
+                    && state
+                        .agent_identity(&d.id)
+                        .is_ok_and(|root| root == "builtin-agent-reviewer-v1")
+            })
+            .max_by_key(|d| d.version)
+            .ok_or_else(|| err("blocked", "缺少独立 Reviewer"))?;
+        let mut payload = json!({"agent":agent.id,"work_type":"review"});
+        for key in ["provider", "installation_id", "model"] {
+            if let Some(value) = command.payload.get(key) {
+                payload[key] = value.clone();
+            }
+        }
+        let session = self.open_role_session(
+            e,
+            Command {
+                command_id: format!("{}:review-session", command.command_id),
+                target: Some(owner.into()),
+                expected_revision: Some(revision),
+                payload,
+            },
+            true,
+        )?;
+        command.payload["review_session"] = session["id"].clone();
+        e.execute_resolved("review.request", command, &fingerprint)
+    }
+    fn resolve_live_merge(&self, e: &Engine, mut command: Command) -> Result<Value> {
+        require(
+            command.payload.get("merge_session").is_none(),
+            "候选 Session 由宿主解析",
+        )?;
+        let fingerprint = command_fingerprint("merge.request", &command);
+        if let Some(value) = e.store.replay(&command.command_id, &fingerprint)? {
+            return Ok(value);
+        }
+        let state = e.store.snapshot()?;
+        let owner = command.target.as_deref().unwrap_or("");
+        let revision = if let Some(task) = state.tasks.iter().find(|t| t.id == owner) {
+            task.revision
+        } else {
+            state.feature(owner)?.revision
+        };
+        let mut payload = json!({"agent":"builtin-agent-tester-v1","work_type":"discussion"});
+        for key in ["provider", "installation_id", "model"] {
+            if let Some(value) = command.payload.get(key) {
+                payload[key] = value.clone();
+            }
+        }
+        let session = self.open_role_session(
+            e,
+            Command {
+                command_id: format!("{}:merge-session", command.command_id),
+                target: Some(owner.into()),
+                expected_revision: Some(revision),
+                payload,
+            },
+            true,
+        )?;
+        command.payload["merge_session"] = session["id"].clone();
+        e.execute_resolved("merge.request", command, &fingerprint)
+    }
     pub fn open(root: &Path) -> Result<Arc<Self>> {
-        Self::open_with_adapters(root, simulation::adapters())
+        {
+            std::fs::create_dir_all(root).map_err(|e| err("storage", e.to_string()))?;
+            let mut adapters = simulation::adapters();
+            adapters.harness = Arc::new(RoutingHarness::new(root, adapters.harness)?);
+            adapters.git = Arc::new(git::RoutingGit::new(root, adapters.git)?);
+            adapters.pull_requests = Some(Arc::new(github::GitHubPullRequests));
+            adapters.tests = Arc::new(devdesk_adapters::tests::RoutingTests::new(
+                root,
+                adapters.tests,
+            )?);
+            Self::open_with_adapters(root, adapters)
+        }
     }
     pub fn open_with_adapters(
         root: &Path,
@@ -34,6 +436,7 @@ impl Workspace {
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
         let workspace = Arc::new(Self {
+            codex_auth: codex_auth::CodexAuthentication::new(root)?,
             global,
             configuration,
             adapters,
@@ -41,6 +444,17 @@ impl Workspace {
             opened: Mutex::new(BTreeMap::new()),
             switching: Mutex::new(()),
         });
+        let mut offset = 0;
+        loop {
+            let (projects, total) = workspace.global.projects(offset, 100)?;
+            for project in projects {
+                workspace.load_project(&project.id, false)?;
+            }
+            offset += 100;
+            if offset >= total {
+                break;
+            }
+        }
         if let Some(id) = workspace.global.active_project()? {
             let e = workspace.load_project(&id, false)?;
             *workspace.active.write().unwrap() = Some((id, e));
@@ -68,6 +482,22 @@ impl Workspace {
     }
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
         let shared = self.global.snapshot()?;
+        let existing = e.store.snapshot()?;
+        if shared.definitions.iter().all(|d| {
+            existing.definitions.iter().any(|v| {
+                v.id == d.id && serde_json::to_value(v).unwrap() == serde_json::to_value(d).unwrap()
+            })
+        }) && shared
+            .harnesses
+            .iter()
+            .all(|h| existing.harnesses.iter().any(|v| v.id == h.id))
+            && shared
+                .sandboxes
+                .iter()
+                .all(|b| existing.sandboxes.iter().any(|v| v.id == b.id))
+        {
+            return Ok(());
+        }
         e.store.transact(None, &mut |s| {
             // Revisions are immutable. Copies keep historical foreign keys self-contained.
             for d in &shared.definitions {
@@ -133,13 +563,115 @@ impl Workspace {
         Ok(())
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        if method == "github.diagnose" {
+            let repo = params["repository"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要 repository"))?;
+            let branch = params["branch"].as_str().unwrap_or("main");
+            return Ok(json!(github::GitHubPullRequests.diagnose(repo, branch)?));
+        }
+        if method == "runtime.discover_codex" {
+            return Ok(json!(self.global.discover_codex()?));
+        }
+        if method == "runtime.discover_docker" {
+            let provider: HarnessProvider = serde_json::from_value(params["provider"].clone())
+                .map_err(|_| err("invalid_params", "需要 provider"))?;
+            return Ok(json!(self.global.discover_docker_runtime(provider)?));
+        }
+        if method.starts_with("codex.auth.") {
+            let installation = params["installation_id"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要 installation_id"))?;
+            return match method {
+                "codex.auth.status" => self.codex_auth.status(&self.global, installation),
+                "codex.auth.models" => self.codex_auth.models(&self.global, installation),
+                "codex.auth.start" => self.codex_auth.start(
+                    &self.global,
+                    installation,
+                    params["device"].as_bool().unwrap_or(false),
+                ),
+                "codex.auth.cancel" => self.codex_auth.cancel(
+                    &self.global,
+                    installation,
+                    params["login_id"]
+                        .as_str()
+                        .ok_or_else(|| err("invalid_params", "需要 login_id"))?,
+                ),
+                _ => Err(err("method_not_found", "未知 Codex 认证命令")),
+            };
+        }
+        if method == "credentials.status" {
+            return Ok(json!(
+                credentials::CredentialVault::new(Path::new(&self.global.root()))?
+                    .status_reference(
+                        HarnessProvider::Dsh,
+                        self.global.dsh_credential_reference()?.as_deref()
+                    )?
+            ));
+        }
+        if ["credentials.authorize", "credentials.check"].contains(&method) {
+            let root = PathBuf::from(self.global.root());
+            let vault = credentials::CredentialVault::new(&root)?;
+            let status = vault.status_reference(
+                HarnessProvider::Dsh,
+                self.global.dsh_credential_reference()?.as_deref(),
+            )?;
+            require(status.configured, "请先保存 DeepSeek API key")?;
+            if method == "credentials.authorize" {
+                credentials::CredentialVault::request_authorization(&root, &status.reference)?;
+            }
+            vault.verify_reference(&status.reference)?;
+            return Ok(json!({"authorized":true,"storage":status.storage}));
+        }
+        if method == "credentials.configure" {
+            let provider: HarnessProvider = serde_json::from_value(params["provider"].clone())
+                .map_err(|_| err("invalid_params", "需要 provider"))?;
+            let secret = params["api_key"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要 API key"))?;
+            let status = credentials::CredentialVault::new(Path::new(&self.global.root()))?
+                .configure(provider, secret)?;
+            self.global
+                .set_dsh_credential_reference(&status.reference)?;
+            return Ok(json!(status));
+        }
         if method == "settings.update" {
-            let n = params["global_concurrency"]
-                .as_u64()
-                .ok_or_else(|| err("invalid_params", "需要并发额度"))?;
-            require((1..=32).contains(&n), "全局并发额度需为 1—32")?;
-            self.global.set_concurrency(n as usize)?;
-            return Ok(json!({"global_concurrency":n}));
+            let n = params
+                .get("global_concurrency")
+                .map(|v| {
+                    v.as_u64()
+                        .filter(|n| (1..=32).contains(n))
+                        .ok_or_else(|| err("invalid_params", "全局并发额度需为 1—32"))
+                })
+                .transpose()?;
+            let provider = params
+                .get("default_harness")
+                .map(|v| {
+                    serde_json::from_value::<HarnessProvider>(v.clone())
+                        .map_err(|_| err("invalid_params", "默认 Harness 需为 codex 或 dsh"))
+                })
+                .transpose()?;
+            self.global
+                .update_preferences(n.map(|n| n as usize), provider)?;
+            return Ok(
+                json!({"global_concurrency":self.global.concurrency()?, "default_harness":self.global.default_harness()?}),
+            );
+        }
+        if method == "query.runtime_installations" {
+            return Ok(
+                json!({"installations":self.global.runtime_installations()?, "default_harness":self.global.default_harness()?}),
+            );
+        }
+        if method == "runtime.register" {
+            let registration = serde_json::from_value(params)
+                .map_err(|e| err("invalid_params", format!("无效的运行时登记: {e}")))?;
+            return Ok(json!(self.global.register_runtime(registration)?));
+        }
+        if method == "runtime.integrity" {
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要安装 ID"))?;
+            return Ok(json!(self.global.runtime_integrity(id)?));
         }
         if method == "project.create" {
             let command: Command =
@@ -175,7 +707,7 @@ impl Workspace {
             *self.active.write().unwrap() = Some((id.into(), e));
             return Ok(json!({"id":id}));
         }
-        if method == "definition.revise" {
+        if ["definition.revise", "agent.create", "agent.revise"].contains(&method) {
             let c =
                 serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
             return self.configuration.execute(method, c);
@@ -202,6 +734,113 @@ impl Workspace {
         if e.store.project_id().is_some() {
             self.sync_configuration(&e)?;
         }
+        if method == "run.retry" {
+            let state = e.store.snapshot()?;
+            if let Some(run) = state.runs.iter().find(|r| {
+                Some(r.id.as_str()) == params["target"].as_str() && r.origin == Origin::External
+            }) {
+                let binding = state
+                    .sessions
+                    .iter()
+                    .find(|s| s.id == run.session_id)
+                    .and_then(|s| s.runtime_binding.as_ref())
+                    .ok_or_else(|| err("blocked", "旧运行时锁缺失"))?;
+                require(
+                    binding.adapter_version
+                        == harness::managed_adapter_identity(binding.installation.key.provider),
+                    "冻结适配器构建已更新，不能在技术重试时更换配置，请新建 Attempt",
+                )?;
+                if run.writes {
+                    let a = state.attempt(
+                        run.attempt_id
+                            .as_deref()
+                            .ok_or_else(|| err("blocked", "写 Run 缺少 Attempt"))?,
+                    )?;
+                    let context = a
+                        .git_context
+                        .as_ref()
+                        .ok_or_else(|| err("blocked", "旧代码定位缺失"))?;
+                    let head = state
+                        .heads
+                        .iter()
+                        .find(|h| h.id == context.source.owner)
+                        .ok_or_else(|| err("blocked", "代码头缺失"))?;
+                    git::CliGit::new(Path::new(&self.global.root()))?
+                        .validate_view(context, &head.revision)?;
+                }
+            }
+        }
+        if method == "conversation.send" {
+            let sid = params["target"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要 Session target"))?;
+            if let Some(binding) = e
+                .store
+                .snapshot()?
+                .sessions
+                .iter()
+                .find(|s| s.id == sid)
+                .and_then(|s| s.runtime_binding.as_ref())
+            {
+                require(
+                    binding.adapter_version
+                        == harness::managed_adapter_identity(binding.installation.key.provider),
+                    "适配器构建已更新，请点击开始/续用讨论创建带快照的后继会话",
+                )?;
+            }
+        }
+        if method == "attempt.start"
+            && e.store
+                .snapshot()?
+                .projects
+                .first()
+                .is_some_and(|p| p.execution_mode == "live")
+        {
+            let c: Command = serde_json::from_value(params.clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            return self.resolve_live_attempt(&e, c);
+        }
+        if method == "merge.request"
+            && e.store
+                .snapshot()?
+                .projects
+                .first()
+                .is_some_and(|p| p.execution_mode == "live")
+        {
+            return self.resolve_live_merge(
+                &e,
+                serde_json::from_value(params.clone())
+                    .map_err(|e| err("invalid_params", e.to_string()))?,
+            );
+        }
+        if method == "review.request" {
+            let state = e.store.snapshot()?;
+            if state.deliveries.iter().any(|d| {
+                Some(d.id.as_str()) == params["target"].as_str() && d.origin == Origin::External
+            }) {
+                return self.resolve_live_review(
+                    &e,
+                    serde_json::from_value(params.clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?,
+                );
+            }
+        }
+        if method == "session.open" {
+            let command = serde_json::from_value(params)
+                .map_err(|_| err("invalid_params", "无效 Session Command"))?;
+            return self.open_conversation(&e, command);
+        }
+        if ["session.list", "session.read"].contains(&method) {
+            return e.query(
+                if method == "session.list" {
+                    "query.sessions"
+                } else {
+                    "query.session"
+                },
+                &params,
+                self.project_limit(&e, self.global.concurrency()?)?,
+            );
+        }
         let global_limit = self.global.concurrency()?;
         if method.starts_with("query.") {
             let mut result = e.query(method, &params, self.project_limit(&e, global_limit)?)?;
@@ -219,6 +858,12 @@ impl Workspace {
                 result["projects"] = json!(projects);
                 result["total_projects"] = json!(total);
                 result["active_project_id"] = json!(e.store.project_id());
+                result["execution_mode"] = json!(
+                    current
+                        .as_ref()
+                        .map(|p| p.execution_mode.as_str())
+                        .unwrap_or("simulation")
+                );
                 result["active_project"] = json!(current);
                 result["project_data_root"] = if e.store.project_id().is_some() {
                     json!(e.store.root())
@@ -234,6 +879,44 @@ impl Workspace {
                     json!(PathBuf::from(self.global.root()).join("global.sqlite3"));
                 result["data_root"] = json!(self.global.root());
                 result["global_concurrency"] = json!(global_limit);
+                result["default_harness"] = json!(self.global.default_harness()?);
+                result["runtime_installations"] = json!(self.global.runtime_installations()?);
+                let state = e.store.snapshot()?;
+                let project = e.store.project_id();
+                let material_offset =
+                    params["project_document_offset"].as_u64().unwrap_or(0) as usize;
+                result["project_documents"] = json!(
+                    state
+                        .documents
+                        .iter()
+                        .filter(|d| d.project_id.is_some() && d.project_id == project)
+                        .rev()
+                        .skip(material_offset)
+                        .take(limit)
+                        .collect::<Vec<_>>()
+                );
+                result["total_project_documents"] = json!(
+                    state
+                        .documents
+                        .iter()
+                        .filter(|d| d.project_id.is_some() && d.project_id == project)
+                        .count()
+                );
+                result["project_snapshots"] = json!(
+                    state
+                        .snapshots
+                        .iter()
+                        .filter(|s| s.project_id.is_some() && s.project_id == project)
+                        .rev()
+                        .take(limit)
+                        .collect::<Vec<_>>()
+                );
+                result["project_context"] = json!(
+                    state
+                        .contexts
+                        .iter()
+                        .find(|c| Some(c.owner_id.as_str()) == project.as_deref())
+                );
             }
             return Ok(result);
         }
@@ -255,6 +938,13 @@ impl Workspace {
     }
     pub fn tick(&self) -> Result<()> {
         let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
+        let engines = engines
+            .into_iter()
+            .map(|e| e.store.has_pending_work().map(|pending| (e, pending)))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|(e, pending)| pending.then_some(e))
+            .collect::<Vec<_>>();
         let limit = self.global.concurrency()?;
         let mut failure = None;
         let mut running: Vec<usize> = engines
@@ -265,13 +955,24 @@ impl Workspace {
                     .runs
                     .iter()
                     .filter(|r| r.status == Status::Running)
-                    .count())
+                    .count()
+                    + e.conversation_running()?)
             })
             .collect::<Result<_>>()?;
         let mut total: usize = running.iter().sum();
         // The scheduler is single-threaded across projects. Other running projects consume quota.
         for (index, e) in engines.iter().enumerate() {
-            if let Err(error) = e.tick(limit.saturating_sub(total - running[index])) {
+            if let Err(error) = e.tick_repositories() {
+                failure.get_or_insert(error);
+            }
+            if let Err(error) = e.tick_conversations(limit.saturating_sub(total - running[index])) {
+                failure.get_or_insert(error);
+            }
+            if let Err(error) = e.tick(
+                limit
+                    .saturating_sub(total - running[index])
+                    .saturating_sub(e.conversation_running()?),
+            ) {
                 failure.get_or_insert(error);
             }
             let next = e
@@ -280,9 +981,20 @@ impl Workspace {
                 .runs
                 .iter()
                 .filter(|r| r.status == Status::Running)
-                .count();
+                .count()
+                + e.conversation_running()?;
             total = total - running[index] + next;
             running[index] = next;
+        }
+        failure.map_or(Ok(()), Err)
+    }
+    pub fn stop_owned_runtime(&self) -> Result<()> {
+        let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
+        let mut failure = None;
+        for engine in engines {
+            if let Err(e) = engine.stop_owned_runtime() {
+                failure.get_or_insert(e);
+            }
         }
         failure.map_or(Ok(()), Err)
     }

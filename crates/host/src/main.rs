@@ -175,8 +175,14 @@ async fn setup(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Json<Value>
 }
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     let workspace = app.workspace.read().unwrap().clone();
+    let mode = workspace
+        .as_ref()
+        .and_then(|w| w.active_engine(None).ok())
+        .and_then(|e| e.store.snapshot().ok())
+        .and_then(|s| s.projects.first().map(|p| p.execution_mode.clone()))
+        .unwrap_or_else(|| "simulation".into());
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"simulation","live":"unavailable","archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"id":"sim-harness-v1","capabilities":["structured-output","cancel","hold","fault-injection"]},"sandbox":{"id":"sim-sandbox-v1","capabilities":["logical-environment","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":mode,"live":"requires_registered_runtime_and_credentials","conversations":{"providers":["codex","dsh"],"managed_linux_workers":true,"engineering_run_contract":true},"archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"id":"sim-harness-v1","capabilities":["structured-output","cancel","hold","fault-injection"]},"sandbox":{"id":"sim-sandbox-v1","capabilities":["logical-environment","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -276,7 +282,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--port 4317]\nWithout --data, choose a dataset in the Web setup page. Only simulation mode is supported."
+            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--port 4317]\nWithout --data, choose a dataset in the Web setup page. Web UI supports explicit simulation and configured live projects."
         );
         return Ok(());
     }
@@ -286,6 +292,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|i| args.get(i + 1))
             .cloned()
     };
+    if let Some(reference) = option("--authorize-credential") {
+        let dataset =
+            option("--data").ok_or("credential authorization requires an existing dataset")?;
+        devdesk_adapters::credentials::CredentialVault::new(&PathBuf::from(dataset))?
+            .authorize_interactively(&reference)?;
+        println!("credential_authorized");
+        return Ok(());
+    }
     let port = option("--port")
         .unwrap_or_else(|| "4317".into())
         .parse::<u16>()?;
@@ -337,7 +351,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     println!(
-        "DevDesk · simulation\nhttp://{authority}\nRuntime: {} / {}",
+        "DevDesk · local engineering\nhttp://{authority}\nRuntime: {} / {}",
         std::env::consts::OS,
         std::env::consts::ARCH
     );
@@ -348,6 +362,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             exit.stopping.store(true, Ordering::Relaxed);
         })
         .await?;
-    task.abort();
+    app.stopping.store(true, Ordering::Relaxed);
+    let _ = task.await;
+    if let Ok(workspace) = app.workspace() {
+        tokio::task::spawn_blocking(move || workspace.stop_owned_runtime()).await??;
+    }
     Ok(())
 }

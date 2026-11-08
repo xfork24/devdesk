@@ -1,0 +1,14 @@
+{
+  "provider": "codex",
+  "passed": true,
+  "project_id": "15b1cf44-b61e-456e-b01b-ffd38a31dd28",
+  "session": "0936ef79-edc9-4a2c-8c54-dbc1f59c5e53",
+  "turn": "7dd16e24-f339-4472-8d56-c83e5ea28843",
+  "tool_events": [
+    "2d47878d-55ed-4f27-aadd-4d1b4a526986"
+  ],
+  "protocol_artifacts": [
+    "fe4b2d91-10b4-4f9c-8e6d-35fcc04b6b95",
+    "d5360db8-086a-43c3-a6ac-c02dc6ab988d"
+  ]
+}

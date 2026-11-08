@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/domain", "crates/core", "crates/adapters", "crates/host"]
+members = ["crates/domain", "crates/core", "crates/adapters", "crates/host", "crates/credential-helper"]
 resolver = "3"
 [workspace.package]
 version = "0.2.0"
@@ -9,3 +9,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
+
+# Runtime binaries are hundreds of MB; debug hashing must remain interactive too.
+[profile.dev.package.sha2]
+opt-level = 3

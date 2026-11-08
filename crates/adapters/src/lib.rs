@@ -1,4 +1,20 @@
 mod catalog;
+pub mod codex_auth;
+pub mod credentials;
+#[cfg(target_os = "macos")]
+mod credentials_macos;
+pub mod docker;
+pub mod git;
+pub mod github;
+pub mod tests;
+pub use tests::CommandTests;
+pub mod harness;
+pub use git::CliGit;
+mod jsonl;
+pub use harness::{CodexHarness, DshHarness, RoutingHarness, RuntimeWorkers};
+mod process;
+mod runtime_registry;
+pub use runtime_registry::configuration_digest;
 pub mod simulation;
 pub use catalog::GlobalStore;
 use devdesk_core::*;
@@ -76,6 +92,13 @@ impl SqliteStore {
     }
     fn load(conn: &Connection) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
+        s.turns = load_table(conn, "turns")?;
+        s.conversation_events = load_table(conn, "conversation_events")?;
+        s.interactions = load_table(conn, "interactions")?;
+        s.proposals = load_table(conn, "proposals")?;
+        s.executions = load_table(conn, "executions")?;
+        s.repository_operations = load_table(conn, "repository_operations")?;
+        s.repository_worktrees = load_table(conn, "repository_worktrees")?;
         s.advances = load_table::<MergeAdvance>(conn, "advances")?;
         s.effects = load_table::<EffectRecord>(conn, "effects")?;
         s.harnesses = load_table::<Harness>(conn, "harnesses")?;
@@ -101,6 +124,28 @@ impl SqliteStore {
         Ok(s)
     }
     fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
+        save_table(conn, "turns", &s.turns, &before.turns)?;
+        save_table(
+            conn,
+            "conversation_events",
+            &s.conversation_events,
+            &before.conversation_events,
+        )?;
+        save_table(conn, "interactions", &s.interactions, &before.interactions)?;
+        save_table(conn, "proposals", &s.proposals, &before.proposals)?;
+        save_table(conn, "executions", &s.executions, &before.executions)?;
+        save_table(
+            conn,
+            "repository_operations",
+            &s.repository_operations,
+            &before.repository_operations,
+        )?;
+        save_table(
+            conn,
+            "repository_worktrees",
+            &s.repository_worktrees,
+            &before.repository_worktrees,
+        )?;
         save_table(conn, "advances", &s.advances, &before.advances)?;
         save_table(conn, "effects", &s.effects, &before.effects)?;
         save_table(conn, "harnesses", &s.harnesses, &before.harnesses)?;
@@ -180,7 +225,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 13, "数据集版本比程序新")?;
+    require(version <= 31, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!("../../../sql/001_initial.sql"))
@@ -257,6 +302,139 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!("../../../sql/013_git_context.sql"))
             .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 14 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/014_agent_profiles.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 15 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/015_conversations.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 16 {
+        // SQLite's generalized ALTER procedure; changes and FK checks remain transactional.
+        // Disabling enforcement inside a transaction is a no-op, so do it before BEGIN.
+        connection
+            .execute_batch("PRAGMA foreign_keys=OFF")
+            .map_err(storage)?;
+        let upgrade = (|| -> Result<()> {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../sql/016_project_owned_material.sql"))
+                .map_err(storage)?;
+            let violation = tx
+                .prepare("PRAGMA foreign_key_check")
+                .map_err(storage)?
+                .exists([])
+                .map_err(storage)?;
+            require(!violation, "项目材料升级出现外键冲突，已回滚")?;
+            tx.commit().map_err(storage)
+        })();
+        connection
+            .execute_batch("PRAGMA foreign_keys=ON")
+            .map_err(storage)?;
+        upgrade?;
+    }
+    if version < 17 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/017_interaction_answers.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 18 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/018_project_runtime_preferences.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 19 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/019_session_lifecycle.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 20 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/020_snapshot_runtime_bindings.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 21 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/021_runtime_protocol_artifact.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 22 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/022_message_projection.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 23 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/023_proposal_task_instances.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 24 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/024_turn_inputs.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 25 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/025_repository_operations.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 26 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/026_test_recipes.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 27 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/027_live_run_bindings.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 28 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/028_source_code_base.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 29 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/029_turn_code_views.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 30 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/030_run_report_references.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 31 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/031_delivery_source_contract.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     Ok(connection)
@@ -380,6 +558,18 @@ fn save_table<T: Serialize>(
     Ok(())
 }
 impl EngineeringStore for SqliteStore {
+    fn has_pending_work(&self) -> Result<bool> {
+        // Idle projects must not deserialize their complete protocol history on every tick.
+        let conn = self.connection.lock().map_err(storage)?;
+        conn.query_row("SELECT
+          EXISTS(SELECT 1 FROM runs WHERE status IN ('queued','running')) OR
+          EXISTS(SELECT 1 FROM effects WHERE status IN ('pending','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
+          EXISTS(SELECT 1 FROM advances WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
+          EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed')) OR
+          EXISTS(SELECT 1 FROM turns WHERE status IN ('queued','dispatching','running','waiting_interaction') OR (status='needs_reconciliation' AND cancel_requested=1)) OR
+          EXISTS(SELECT 1 FROM executions WHERE writer_revoked=0 OR status='succeeded')",
+          [], |row| row.get(0)).map_err(storage)
+    }
     fn project_id(&self) -> Option<String> {
         self.project_id.clone()
     }
@@ -414,6 +604,7 @@ impl EngineeringStore for SqliteStore {
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;
+        state.validate_conversations(&before)?;
         if let Some(id) = &self.project_id {
             require(
                 state.projects.len() <= 1 && state.projects.iter().all(|p| &p.id == id),
@@ -479,6 +670,33 @@ impl ArtifactStore for FileArtifacts {
         category: &str,
         body: &str,
     ) -> Result<Artifact> {
+        self.seal_scoped(
+            &if let Some(id) = task {
+                MaterialOwner::Task {
+                    feature: feature.into(),
+                    id: id.into(),
+                }
+            } else {
+                MaterialOwner::Feature { id: feature.into() }
+            },
+            category,
+            body,
+        )
+    }
+    fn seal_scoped(&self, owner: &MaterialOwner, category: &str, body: &str) -> Result<Artifact> {
+        let (project_id, feature_id, task, folder) = match owner {
+            MaterialOwner::Project { id } => {
+                (Some(id.clone()), None, None, format!("project-{id}"))
+            }
+            MaterialOwner::Feature { id } => (None, Some(id.clone()), None, id.clone()),
+            MaterialOwner::Task { feature, id } => (
+                None,
+                Some(feature.clone()),
+                Some(id.as_str()),
+                feature.clone(),
+            ),
+        };
+        let feature = folder.as_str();
         for part in std::iter::once(feature)
             .chain(task)
             .chain(std::iter::once(category))
@@ -514,7 +732,8 @@ impl ArtifactStore for FileArtifacts {
         let sha256 = format!("{:x}", Sha256::digest(body.as_bytes()));
         Ok(Artifact {
             id: aid,
-            feature_id: feature.into(),
+            feature_id,
+            project_id,
             task_id: task.map(str::to_owned),
             relative_path: path,
             sha256,

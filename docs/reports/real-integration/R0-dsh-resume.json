@@ -1,0 +1,45 @@
+{
+  "provider": "dsh",
+  "passed": true,
+  "image": "sha256:009354c2ee03ddc4482823868d2cf0ccbf068c7935da2bdad3bea7d06fdf978c",
+  "turns": [
+    {
+      "message_id": "aec78963-a0af-4302-810a-311df19fdef6",
+      "consumed": true,
+      "terminal": "completed",
+      "quiescent_wait": true,
+      "session_id": "devdesk-r0-fd3613a4736b42af82fbfa3fb326a692",
+      "structured_json": true,
+      "context_retained": true,
+      "event_count": 20
+    },
+    {
+      "message_id": "d2af1929-2516-41c3-a6b4-dfd978998889",
+      "consumed": true,
+      "terminal": "completed",
+      "quiescent_wait": true,
+      "session_id": "devdesk-r0-fd3613a4736b42af82fbfa3fb326a692",
+      "structured_json": true,
+      "context_retained": true,
+      "event_count": 11
+    },
+    {
+      "message_id": "46b7d6df-bed3-4662-b2e3-1752f2814708",
+      "consumed": true,
+      "terminal": "completed",
+      "quiescent_wait": true,
+      "session_id": "devdesk-r0-fd3613a4736b42af82fbfa3fb326a692",
+      "structured_json": true,
+      "context_retained": true,
+      "event_count": 12
+    }
+  ],
+  "container": "devdesk-turn-probe-7451e98d8e2c4c11a4805a1c533948aa",
+  "stage": "finished",
+  "model": "deepseek-v4-pro",
+  "session_id": "devdesk-r0-fd3613a4736b42af82fbfa3fb326a692",
+  "first_writer_stopped": true,
+  "resumed_container": "devdesk-turn-probe-7451e98d8e2c4c11a4805a1c533948aa-resumed",
+  "native_resume": true,
+  "writer_stopped": true
+}

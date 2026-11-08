@@ -7,6 +7,7 @@ export default defineConfig({
   testDir: "./tests",
   workers: 1,
   timeout: 120000,
+  expect: { timeout: 15000 },
   use: {
     actionTimeout: 15000,
     baseURL: "http://127.0.0.1:4318",

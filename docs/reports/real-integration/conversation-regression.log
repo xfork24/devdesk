@@ -1,0 +1,18 @@
+   Compiling devdesk-core v0.2.0 (/Users/hengliu/workspace/devdesk/crates/core)
+   Compiling devdesk-adapters v0.2.0 (/Users/hengliu/workspace/devdesk/crates/adapters)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.25s
+     Running tests/conversations.rs (target/debug/deps/conversations-334f5e136831f157)
+
+running 9 tests
+test discussion_before_feature_survives_restart_without_fabricating_runs ... ok
+test completion_needs_external_session_consumption_and_writer_release_proof ... ok
+test project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revision ... ok
+test enforce_busy_cross_project_immutable_binding_and_append_only_messages ... ok
+test proposal_schema_failures_and_task_dependency_cycles_never_create_formal_objects ... ok
+test conversation_commands_are_idempotent_and_switching_creates_a_snapshot_successor ... ok
+test structured_proposals_adopt_atomically_then_reject_stale_and_cross_project_inputs ... ok
+test task_plan_validates_dependency_graph_and_cannot_skip_planning_review ... ok
+test coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.42s
+

@@ -1,10 +1,45 @@
+mod testing;
+pub use testing::*;
+mod repository;
+pub use repository::*;
 mod execution;
 pub use execution::*;
+mod runtime;
+pub use runtime::*;
+mod agents;
+pub use agents::*;
+mod conversation;
+pub use conversation::*;
 // Pure domain model: no I/O or adapter dependencies.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub type Id = String;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MaterialOwner {
+    Project { id: Id },
+    Feature { id: Id },
+    Task { feature: Id, id: Id },
+}
+pub fn material_owner(
+    project: Option<&str>,
+    feature: Option<&str>,
+    task: Option<&str>,
+) -> Result<MaterialOwner> {
+    match (project, feature, task) {
+        (Some(id), None, None) => Ok(MaterialOwner::Project { id: id.into() }),
+        (None, Some(id), None) => Ok(MaterialOwner::Feature { id: id.into() }),
+        (None, Some(feature), Some(id)) => Ok(MaterialOwner::Task {
+            feature: feature.into(),
+            id: id.into(),
+        }),
+        _ => Err(err(
+            "blocked",
+            "材料必须明确且唯一归属 Project、Feature 或 Task",
+        )),
+    }
+}
 pub fn id() -> Id {
     uuid::Uuid::new_v4().to_string()
 }
@@ -58,6 +93,7 @@ pub enum Status {
 pub enum Origin {
     Human,
     Simulated,
+    External,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -91,6 +127,8 @@ pub struct Project {
     pub binding: BindingLock,
     pub concurrency: u32,
     pub revision: u64,
+    #[serde(default)]
+    pub runtime_preferences: Option<ProjectRuntimePreferences>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Feature {
@@ -102,6 +140,8 @@ pub struct Feature {
     pub input_version: u64,
     pub binding: BindingLock,
     pub predecessor: Option<Id>,
+    #[serde(default)]
+    pub source_requirement: Option<Id>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
@@ -130,7 +170,9 @@ pub struct AcceptanceCriterion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     pub id: Id,
-    pub feature_id: Id,
+    pub feature_id: Option<Id>,
+    #[serde(default)]
+    pub project_id: Option<Id>,
     pub task_id: Option<Id>,
     pub kind: String,
     pub title: String,
@@ -143,6 +185,8 @@ pub struct Document {
     pub acceptance: Vec<AcceptanceCriterion>,
     pub verifies: Vec<String>,
     pub artifact_id: Option<Id>,
+    #[serde(default)]
+    pub test_recipe: Option<TestRecipe>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpecSlot {
@@ -159,6 +203,8 @@ pub struct Definition {
     pub body: String,
     pub slots: Vec<SpecSlot>,
     pub rules: Vec<String>,
+    #[serde(default)]
+    pub agent_profile: Option<AgentProfile>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attempt {
@@ -167,6 +213,10 @@ pub struct Attempt {
     pub task_id: Option<Id>,
     pub phase: String,
     pub baseline: Option<String>,
+    #[serde(default)]
+    pub source_base: Option<String>,
+    #[serde(default)]
+    pub live_sessions: std::collections::BTreeMap<String, Id>,
     pub git_context: Option<GitContext>,
     pub status: Status,
     pub input_version: u64,
@@ -198,6 +248,8 @@ pub struct Run {
     pub started: Option<u64>,
     pub finished: Option<u64>,
     pub result: Option<Value>,
+    #[serde(default)]
+    pub result_artifact: Option<Id>,
     pub origin: Origin,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +262,24 @@ pub struct Session {
     pub snapshot_id: Option<Id>,
     pub instance: Option<ExecutionInstance>,
     pub origin: Origin,
+    #[serde(default)]
+    pub project_id: Option<Id>,
+    #[serde(default)]
+    pub feature_id: Option<Id>,
+    #[serde(default)]
+    pub task_id: Option<Id>,
+    #[serde(default)]
+    pub scope: Option<SessionScope>,
+    #[serde(default)]
+    pub lifecycle: Option<SessionLifecycle>,
+    #[serde(default)]
+    pub runtime_binding: Option<RuntimeBinding>,
+    #[serde(default)]
+    pub external_session: Option<String>,
+    #[serde(default)]
+    pub predecessor: Option<Id>,
+    #[serde(default)]
+    pub revision: u64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
@@ -221,7 +291,9 @@ pub struct Context {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Snapshot {
     pub id: Id,
-    pub feature_id: Id,
+    pub feature_id: Option<Id>,
+    #[serde(default)]
+    pub project_id: Option<Id>,
     pub task_id: Option<Id>,
     pub kind: String,
     pub content: String,
@@ -230,6 +302,10 @@ pub struct Snapshot {
     pub delivery_id: Option<Id>,
     pub inherited_from: Option<Id>,
     pub capture: SnapshotCapture,
+    #[serde(default)]
+    pub runtime_bindings: Vec<RuntimeBinding>,
+    #[serde(default)]
+    pub execution_instances: Vec<Id>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Delivery {
@@ -243,6 +319,8 @@ pub struct Delivery {
     pub documents: Vec<Id>,
     pub evidence: Vec<Id>,
     pub artifact_id: Id,
+    #[serde(default)]
+    pub source_deliveries: Vec<Id>,
     pub candidate: Option<String>,
     pub stale: bool,
     pub origin: Origin,
@@ -299,7 +377,9 @@ pub struct Resource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Artifact {
     pub id: Id,
-    pub feature_id: Id,
+    pub feature_id: Option<Id>,
+    #[serde(default)]
+    pub project_id: Option<Id>,
     pub task_id: Option<Id>,
     pub relative_path: String,
     pub sha256: String,
@@ -316,6 +396,20 @@ pub struct Event {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EngineeringState {
+    #[serde(default)]
+    pub turns: Vec<ConversationTurn>,
+    #[serde(default)]
+    pub conversation_events: Vec<ConversationEvent>,
+    #[serde(default)]
+    pub interactions: Vec<PendingInteraction>,
+    #[serde(default)]
+    pub proposals: Vec<Proposal>,
+    #[serde(default)]
+    pub executions: Vec<RuntimeExecution>,
+    #[serde(default)]
+    pub repository_operations: Vec<RepositoryOperation>,
+    #[serde(default)]
+    pub repository_worktrees: Vec<RepositoryWorktree>,
     pub advances: Vec<MergeAdvance>,
     pub effects: Vec<EffectRecord>,
     pub harnesses: Vec<Harness>,
@@ -340,6 +434,18 @@ pub struct EngineeringState {
     pub events: Vec<Event>,
 }
 impl EngineeringState {
+    pub fn document_in_feature(&self, document: &Document, feature: &str) -> bool {
+        if document.feature_id.as_deref() == Some(feature) {
+            return true;
+        }
+        self.features
+            .iter()
+            .find(|f| f.id == feature)
+            .is_some_and(|f| {
+                document.project_id.as_ref() == Some(&f.project_id)
+                    && f.source_requirement.as_deref() == Some(document.id.as_str())
+            })
+    }
     pub fn feature(&self, id: &str) -> Result<&Feature> {
         self.features
             .iter()
@@ -462,12 +568,54 @@ impl EngineeringState {
                 "Delivery 与 Merge 的归属、阶段或版本不一致",
             )?;
         }
+        if d.origin == Origin::External && d.kind == "closure" {
+            let completed: Vec<_> = self
+                .tasks
+                .iter()
+                .filter(|t| t.feature_id == d.feature_id && t.status == Status::Completed)
+                .collect();
+            require(
+                !completed.is_empty() && d.source_deliveries.len() == completed.len(),
+                "Feature 收尾必须冻结每个已接纳 Task 的来源交付",
+            )?;
+            let mut task_ids = std::collections::HashSet::new();
+            for id in &d.source_deliveries {
+                let source = self.delivery(id)?;
+                require(
+                    source.kind == "implementation"
+                        && source.origin == Origin::External
+                        && source.feature_id == d.feature_id
+                        && source.task_id.as_ref().is_some_and(|tid| {
+                            completed.iter().any(|t| &t.id == tid) && task_ids.insert(tid)
+                        }),
+                    "Feature 来源交付归属错误或重复",
+                )?;
+                require(
+                    self.merges.iter().any(|m| {
+                        m.source_delivery == source.id
+                            && m.status == Status::Completed
+                            && m.change_request
+                                .as_ref()
+                                .is_some_and(|pr| pr.provider == "github")
+                    }),
+                    "来源 Task 尚未完成远端接纳",
+                )?;
+                self.validate_evidence(source)?;
+            }
+        }
+        if d.origin == Origin::External && d.kind == "merge_candidate" {
+            let m = self.merge(d.merge_id.as_deref().unwrap_or(""))?;
+            require(
+                d.source_deliveries == vec![m.source_delivery.clone()],
+                "候选必须冻结实际源交付",
+            )?;
+        }
         require(!d.documents.is_empty(), "交付缺少文档")?;
         for did in &d.documents {
             require(
                 self.documents
                     .iter()
-                    .any(|x| &x.id == did && x.feature_id == d.feature_id),
+                    .any(|x| &x.id == did && self.document_in_feature(x, &d.feature_id)),
                 "交付文档引用不完整",
             )?;
         }
@@ -487,7 +635,7 @@ impl EngineeringState {
                             && self.documents.iter().any(|req| {
                                 &req.id == id
                                     && req.kind == "requirement"
-                                    && req.feature_id == d.feature_id
+                                    && self.document_in_feature(req, &d.feature_id)
                             })
                     }),
                     "交付中的设计/测试必须引用同次冻结需求",
@@ -500,7 +648,7 @@ impl EngineeringState {
                             && self.documents.iter().any(|design| {
                                 &design.id == id
                                     && design.kind == "design"
-                                    && design.feature_id == d.feature_id
+                                    && self.document_in_feature(design, &d.feature_id)
                             })
                     }),
                     "交付测试必须引用同次冻结设计",
@@ -606,13 +754,36 @@ impl EngineeringState {
                         && result.origin == r.origin,
                     "测试证据操作、阶段或来源不匹配",
                 )?;
-                let instance = self
-                    .sessions
-                    .iter()
-                    .find(|session| session.id == r.session_id)
-                    .and_then(|session| session.instance.as_ref())
-                    .ok_or_else(|| err("blocked", "测试证据缺少确定环境实例"))?;
-                require(result.environment == instance.id, "测试证据环境不匹配")?;
+                if r.origin == Origin::External {
+                    let instance = self
+                        .executions
+                        .iter()
+                        .find(|e| {
+                            e.run_id.as_ref() == Some(&r.id)
+                                && e.kind == RuntimeExecutionKind::Tests
+                        })
+                        .ok_or_else(|| err("blocked", "真实测试缺少执行实例"))?;
+                    require(
+                        result.environment == instance.id
+                            && instance.writer_revoked
+                            && instance.protocol_artifact.is_some(),
+                        "真实测试证据缺少环境/停止/封存证明",
+                    )?;
+                    let raw = r.result.as_ref().unwrap();
+                    require(
+                        raw["container_id"].as_str() == instance.container_id.as_deref()
+                            && raw["image_digest"] == instance.image_digest,
+                        "真实测试容器/镜像证据不符",
+                    )?;
+                } else {
+                    let instance = self
+                        .sessions
+                        .iter()
+                        .find(|session| session.id == r.session_id)
+                        .and_then(|session| session.instance.as_ref())
+                        .ok_or_else(|| err("blocked", "测试证据缺少确定环境实例"))?;
+                    require(result.environment == instance.id, "测试证据环境不匹配")?;
+                }
                 let expected = if r.node == "red" {
                     d.attempt_id
                         .as_deref()
@@ -829,12 +1000,33 @@ impl EngineeringState {
                 .all(|cap| harness.capabilities.iter().any(|value| value == cap)),
             "Harness 缺少执行/取消/结构化结果能力",
         )?;
+        let simulated = harness.provider == "simulation"
+            && sandbox.provider == "simulation"
+            && harness.origin == Origin::Simulated
+            && sandbox.origin == Origin::Simulated;
+        let external = ["codex", "dsh"].contains(&harness.provider.as_str())
+            && harness.origin == Origin::External
+            && sandbox.provider == "docker"
+            && sandbox.origin == Origin::External
+            && sandbox.image.as_ref().is_some_and(|id| {
+                id.strip_prefix("sha256:")
+                    .or_else(|| {
+                        id.rsplit_once("@sha256:")
+                            .filter(|(name, _)| {
+                                !name.is_empty() && !name.chars().any(char::is_whitespace)
+                            })
+                            .map(|(_, digest)| digest)
+                    })
+                    .is_some_and(|digest| {
+                        digest.len() == 64
+                            && digest
+                                .bytes()
+                                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    })
+            });
         require(
-            harness.provider == "simulation"
-                && sandbox.provider == "simulation"
-                && harness.origin == Origin::Simulated
-                && sandbox.origin == Origin::Simulated,
-            "当前项目仅允许模拟能力绑定",
+            simulated || external,
+            "绑定必须是完整的模拟能力，或明确的真实 Harness + 固定 Docker 镜像能力",
         )
     }
 }
@@ -942,13 +1134,13 @@ impl EngineeringState {
         require(
             self.documents
                 .iter()
-                .any(|d| &d.id == req && d.feature_id == fid),
+                .any(|d| &d.id == req && self.document_in_feature(d, fid)),
             "Task 需求归属错误",
         )?;
         require(
             self.documents.iter().any(|d| {
                 &d.id == design
-                    && d.feature_id == fid
+                    && self.document_in_feature(d, fid)
                     && d.kind == "design"
                     && d.requirement_id.as_ref() == Some(req)
             }),

@@ -7,7 +7,7 @@
 - POST /rpc：JSON-RPC 2.0，id 必填。查询 params 为过滤参数；命令 params 为 Command。
 - GET /events?project_id=ID&cursor=N：SSE，连接固定到该活动项目；事件 ID 为 `ID:cursor`，cursor 在项目内持久化单调递增。支持同项目 Last-Event-ID；其他项目的游标忽略。分批补读，断线后重连；事件只是事实通知，页面重新查询。
 - GET /artifacts/{id}?project_id=ID：按活动项目数据库中的 ID 读取，路径不得由客户端提供；SHA256 校验后返回纯文本并禁止内容嗅探。
-- GET /capabilities：协议、版本、simulation/live unavailable/Archive preview/migration preview/platform validation 状态。
+- GET /capabilities：协议、版本、simulation/live 能力与配置/Archive preview/migration preview/platform validation 状态。
 - POST /setup：未打开数据集时设置 path；非空非 DevDesk 目录拒绝。打开后不能热切换。
 - POST /shutdown：可信人类会话退出 host。
 
@@ -47,9 +47,9 @@ Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执�
 - document.revise 只接受 Feature target，必须携带该 Feature 的 expected_revision；payload.feature_id 不能作为替代入口。
 - Requirement 可附 acceptance=[{key,description}]；Test 可附 verifies=[key]。Web 使用每行“标识 | 条件”和逗号列表录入。省略时分别登记完整正文为 AC-1、继承关联需求的全部条目。
 - task.create 可附 scope={requirement,design,acceptance} 或 acceptance_keys。默认从已接受的初始 Snapshot 解析。task.replan(target=Task, expected_revision) 采用当前已接受规划及选定条目，新测试修订保留 supersedes。
-- query.runtimes 返回 Harness/Sandbox 定义；query.archive_preview(feature_id) 返回产物/快照范围与不可执行理由。当前注册表仅内置模拟定义，真实定义的注册与部署在真实接入轮提供。
+- query.runtimes 返回 Harness/Sandbox 定义；query.archive_preview(feature_id) 返回产物/快照范围与不可执行理由。注册表同时提供 Sim 定义和已登记的真实运行时。
 - Run 返回不可变 binding；Session 返回 instance；Review 返回 assignment；Snapshot 返回 capture；Attempt 返回 baseline。
-- 数据库支持从 v1 顺序迁移至 v13。旧文档缺少结构化验收映射时保持空值，旧交付历史可读；重新参与增强门禁须明确修订和验收，不能将迁移当成人类复核。
+- 数据库支持从 v1 顺序升级至 v31（全局库 v3）。旧文档缺少结构化验收映射时保持空值，旧交付历史可读；重新参与增强门禁须明确修订和验收，不能将迁移当成人类复核。
 
 历史 Run 的 binding_verified=false，保留可从 Session 确定的身份，但不把无法证明的完整绑定用于技术重试；需要新建执行。新 Run 的 binding_verified=true。
 
@@ -64,3 +64,47 @@ Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执�
 - 新表 effects、advances 与业务事件使用同一 SQLite 事实源。部分副作用的意图、调用、回执和投影分开提交；不能把这个协议解释为跨供应商原子事务。
 
 GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含冻结的 Workspace 与源/目标 owner、branch、worktree。Harness 输入的 code、code_baseline 和 TestRequest 的 definitions/code/runtime 均来自锁定版本，避免适配器查找隐含的全局目录。旧定位为 null，需要新建执行。
+
+## 真实接入基础接口
+
+全局配置库 v2 追加 `runtime_installations`。`query.runtime_installations` 返回安装引用和 `default_harness`；`query.workspace` 同步附带这两个字段。`settings.update` 可原子更新 `default_harness: codex|dsh`、`global_concurrency: 1..32`，至少一个；已有 Session/Run 锁不因偏好变化而改变。默认偏好初始为 Codex，历史模拟工程调度仍为模拟模式。
+
+- `runtime.register({key:{provider,version,os,arch},artifact,source,license})`：登记原生 executable（canonical_path+sha256）或以 digest 固定的 oci_image 引用。同键同内容返回原 ID；内容冲突拒绝。原生文件检查 header/platform、执行权限和摘要；脚本入口不等于完整安装，不接受作为完整运行时。登记不下载、不执行工具、不复制或删除共享安装。
+- `runtime.discover_codex({})`：显式发现 PATH 中本机原生 Codex，校验格式并查询版本，登记一次。不调用模型。
+- `runtime.integrity({id})`：重新校验文件摘要；镜像只登记引用时明确标记尚未 Docker 核验。`inference_verified` 不因摘要正确而变 true。
+- `credentials.configure({provider:"dsh",api_key})`：macOS Keychain 写入；普通返回只含 configured、reference、storage。`credentials.status({})` 查询 DSH 状态。秘密不写 SQL、事件、日志或返回对象；Linux 当前不提供明文文件 fallback。
+- `codex.auth.start({installation_id,device?:boolean})`：官方 account/login/start；默认浏览器 ChatGPT OAuth，返回临时授权 URL 与 loginId；可选官方 device-code 流程。认证进程仅发送账户方法，不运行模型或工具。使用 data/credentials/codex 的独立私有目录，Codex 自行管理令牌。不是读取／复制宿主桌面凭据。
+- `codex.auth.status({installation_id})`：只返回 authenticated/type/pending，不返回账户个人信息或令牌。
+- `codex.auth.cancel({installation_id,login_id})`：仅取消当前认证实例的原 login 请求。
+
+这些配置/认证接口使用专用参数而非工程 Command；安装的幂等范围为全局安装唯一键，认证派发未知时拒绝盲目重复登录。真实工程会话、消息、提案与执行 API 尚在实施中，不能据此认为 R3 已通过。
+
+### Persistent role conversations (integration work in progress)
+
+`session.open` targets a Project/Feature/Task at its current revision. Its payload selects `agent` (immutable role revision), optional `provider`, `installation_id`, `model`, `work_type`, `snapshot_id`, and `predecessor`. Clients cannot supply a resolved `binding`. The host resolves defaults once and freezes the installation, image digest, adapter, model, tool policy, role and credential reference. Replaying the original command returns its original result before resolving current defaults.
+
+`conversation.send` targets the Session revision with `input` and `client_message_id`. A repeated client message ID with the same input returns the original Turn; changed input is rejected. One active or uncertain Turn blocks another input. `conversation.cancel` targets a Turn revision and records intent; a dispatched Turn only becomes cancelled after owned-container stop proof. Restart marks dispatched work `needs_reconciliation`, stops the previous writer and never resends its input. Explicit cancellation retires uncertain work; continuing uses a successor Session with a handoff Snapshot.
+
+`query.sessions` accepts `owner_id`, `offset`, `limit`. `query.session` accepts `id`, an event `cursor` (exclusive), turn `offset`, and `limit` (maximum 100), returning the frozen Session, Turns, ordered events and next cursor, interactions, proposals, and execution history. Event `mode=delta` appends to `provider_item`; `mode=full` replaces that item's displayed content. Stored events remain append-only.
+
+`interaction.answer` targets the request revision, requiring `session_id`, `turn_id`, and typed `answer` (`tool_approval` or `user_questions`). Runtime permission approval, clarifying questions, Proposal adoption and formal Delivery Review are separate decisions.
+
+`proposal.extract` reads the last complete assistant JSON from a completed `turn_id`. `proposal.create` accepts human-edited `content` conforming to `ProposalContent`; both require an explicit source Turn and resolve a `target` and `expected_revision`. `proposal.revise` creates a new immutable draft revision. `proposal.adopt`/`proposal.reject` target the Proposal revision. Adoption is atomic, validates current target and immutable input documents, and invokes the existing formal object commands. `proposal.instantiate` materializes an accepted TaskPlan's stable keys and dependencies after the existing planning Review/Snapshot gate; the key-to-Task mapping is persisted and cannot be replaced. Proposal acceptance does not accept a Delivery or a Merge.
+
+Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations and role definitions live in global schema v3; engineering records and conversation projections currently use project schema v31. Sequential SQL upgrades preserve original simulation history and never fabricate native IDs.
+
+## 真实工程操作与证据
+
+- `repository.connect` 登记专用仓库；`query.repository` 返回 Project、worktrees、operations。`repository.reconcile` 只核对原操作，不新建替代副作用。
+- `execution.retry_cleanup` 仅允许已停止、有协议 Artifact 且清理失败的 RuntimeExecution。历史失败事件保留，共享镜像不删除。
+- `merge.capture_snapshot` 为已完成接纳追加审计快照，原快照不改写；`merge.apply` 返回意图受理，不等同远端交付完成。
+- `RuntimeExecution` 返回 `kind/operation_id/session_id/run_id/image_digest/container_id/status/writer_revoked/protocol_artifact`。停止方式保存为结构化 status 事件（原生 interrupt、forced stop、恢复停止等）。
+- `Delivery.source_deliveries` 是不可变来源链；原生 Reviewer 冻结输入包含递归交付、文档、测试、评审、远端回执与固定版本 diff。
+- 普通 `conversation.send` 输入最多 64 KiB；正式 Run 由 Host/Core 生成的完整证据包最多 512 KiB。工程 Session 禁止前端伪造工程输入。派发前契约错误只记一次失败；未知派发结果保留待核对。
+- `PendingInteraction.questions` 附 `detail/multi_select/intent`；回答使用类型化 `answer`，精确包含 Session/Turn。凭据与持久权限请求不通过普通问题卡片批准。
+
+schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭据与运行方式见 [接入说明](real-engineering.md)。
+
+## 系统凭据与 Web 平台
+
+`credentials.status` 返回配置元数据、storage、available 与不透明引用，不返回秘密。`credentials.check` 在当前 Host 验证引用可读，只返回 authorized/storage；macOS 后台访问禁止交互 UI。`credentials.authorize` 是显式系统授权入口，由固定共享凭据助手执行（校验对应签名 Host），最长 30 秒；授权拒绝/超时返回错误，不要求通过 RPC 提交系统密码。Linux 通过 Secret Service/secret-tool 私有 stdin 保存，状态页不解锁读取。

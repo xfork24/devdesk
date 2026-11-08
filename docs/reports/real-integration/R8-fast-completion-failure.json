@@ -1,0 +1,35 @@
+{
+  "provider": "dsh",
+  "session": "e48618fe-b056-47ea-8440-bd08e9791e10",
+  "failure": "fast completion before admission buffering lost terminal; original consumed input not resent",
+  "retained_report": {
+    "passed": false,
+    "source": "actual HTTP, native Codex/DSH and owned Docker workers",
+    "project": "86f517a1-d203-4376-8b52-eeb98e577087",
+    "sessions": {
+      "codex": "e7808619-f909-4b3e-a9aa-106b9309572a",
+      "dsh": "e48618fe-b056-47ea-8440-bd08e9791e10"
+    },
+    "failure": {
+      "phase": "exercise",
+      "type": "TimeoutError",
+      "message": "acceptance deadline"
+    },
+    "default_switch": {
+      "passed": true,
+      "old_binding_preserved": true
+    },
+    "continuity": {
+      "codex": {
+        "session": "e7808619-f909-4b3e-a9aa-106b9309572a",
+        "native_session": "01a1ba42-2e77-75e2-b691-2667b5a12d1d",
+        "turns": [
+          "44c698eb-bc7d-471c-81b2-7c50ceb4632e",
+          "2ad6acd1-ce7a-4f7f-a1d4-635a73e387ce",
+          "18cfecb6-e901-4a17-a708-f940782a6a59"
+        ],
+        "passed": true
+      }
+    }
+  }
+}

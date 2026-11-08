@@ -1,7 +1,12 @@
 //! Durable adapter calls. No supplier call below holds EngineeringStore's writer lock.
 use super::*;
 impl Engine {
-    fn begin_effect(&self, run: &Run, kind: EffectKind, request: Value) -> Result<EffectRecord> {
+    pub(super) fn begin_effect(
+        &self,
+        run: &Run,
+        kind: EffectKind,
+        request: Value,
+    ) -> Result<EffectRecord> {
         let adapter = match kind {
             EffectKind::Harness | EffectKind::Cancel => self.harness.identity(),
             EffectKind::Test => self.tests.identity(),
@@ -46,7 +51,7 @@ impl Engine {
         })?;
         serde_json::from_value(result).map_err(|e| err("storage", e.to_string()))
     }
-    fn observe_effect(&self, id: &str, receipt: Value, confirmed: bool) -> Result<()> {
+    pub(super) fn observe_effect(&self, id: &str, receipt: Value, confirmed: bool) -> Result<()> {
         self.store.transact(None, &mut |s| {
             let e = s
                 .effects
@@ -126,7 +131,14 @@ impl Engine {
             return Ok(value);
         }
         require(e.status == EffectStatus::Pending, "测试操作需要核对")?;
-        let output = self.tests.validate(request, &run.outcome);
+        require(
+            run.origin == Origin::Simulated && request.origin == Origin::Simulated,
+            "同步测试夹具入口拒绝真实请求",
+        )?;
+        if let Some(control) = &self.simulation {
+            control.configure_test(&run.id, &run.outcome)?;
+        }
+        let output = self.tests.validate(request);
         self.observe_effect(&e.id, output.clone(), true)?;
         Ok(output)
     }

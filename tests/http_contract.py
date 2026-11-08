@@ -67,6 +67,14 @@ def run():
                 result = json.load(req('/rpc', {'jsonrpc':'2.0','id':1,'method':method,'params':params}))
                 assert 'error' not in result, result
                 return result['result']
+            preferences = rpc('query.runtime_installations', {})
+            assert preferences['default_harness'] == 'codex' and preferences['installations'] == []
+            rpc('settings.update', {'default_harness':'dsh'})
+            assert rpc('query.workspace', {})['default_harness'] == 'dsh'
+            invalid = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'settings.update','params':{'default_harness':'codex','global_concurrency':0}}))
+            assert 'error' in invalid
+            assert rpc('query.workspace', {})['default_harness'] == 'dsh'
+            rpc('settings.update', {'default_harness':'codex'})
             project = rpc('project.create', {'command_id':'same-id','payload':{'title':'HTTP 持久化'}})
             assert project == rpc('project.create', {'command_id':'same-id','payload':{'title':'HTTP 持久化'}})
             assert len(rpc('query.workspace', {})['projects'])==1

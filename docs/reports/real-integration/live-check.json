@@ -1,0 +1,90 @@
+{
+  "passed": false,
+  "mode": "verify-existing",
+  "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "providers": [
+    "codex",
+    "dsh"
+  ],
+  "groups": [
+    "git",
+    "github",
+    "web",
+    "workflow"
+  ],
+  "root": "/Users/hengliu/workspace/devdesk/data/real-integration",
+  "github_repository": "xfork24/devdesk-integration-test",
+  "steps": [
+    {
+      "name": "persisted-complete-feature",
+      "passed": true,
+      "started": 1794127024.626297,
+      "evidence": {
+        "merges": [
+          {
+            "id": "ef6c82d8-6546-4dc4-a9b4-87bd925f78e9",
+            "candidate": "1085d18d9c56228f1386eb4d037f9ea3e8620f32",
+            "parent": "c107207dcfd976a2ab1b3972b8df8a5cc3285a9b"
+          },
+          {
+            "id": "89c1f682-fea1-48b1-a55e-8886abbb945e",
+            "candidate": "3caa8e3aa37becbf378219fca6e5a75db281166b",
+            "parent": "1085d18d9c56228f1386eb4d037f9ea3e8620f32"
+          },
+          {
+            "id": "2700ed7e-c8e6-4a91-b5ee-af583705268e",
+            "candidate": "ee4785bd579f13c9479800a64ad53bfa83f04f5d",
+            "parent": "c107207dcfd976a2ab1b3972b8df8a5cc3285a9b"
+          }
+        ],
+        "closure_sources": [
+          "5a58dafc-85c2-4556-af8c-5b818e428561",
+          "a2bfcfd2-0d32-4dd6-9466-7afb7178997d"
+        ],
+        "snapshots": [
+          "b4facef0-cd5f-44aa-8ee3-9b68823b246b",
+          "9fce21c5-53a5-47ac-978c-7914044f0ebc",
+          "0e9907b3-0e69-4910-b4ee-81337d2b768e",
+          "ff4b893c-2d53-4b09-9110-c4d6d0e23d70",
+          "3a38a4b3-c993-4c6c-bbd9-76223af16803",
+          "2f7d1d0a-f46e-499a-8332-e89e9ece31d8"
+        ]
+      },
+      "finished": 1794127026.196621
+    },
+    {
+      "name": "remote-github-facts",
+      "passed": true,
+      "started": 1794127026.197323,
+      "evidence": [
+        {
+          "url": "https://github.com/xfork24/devdesk-integration-test/pull/2",
+          "candidate": "1085d18d9c56228f1386eb4d037f9ea3e8620f32",
+          "merged_at": "2026-11-08T07:40:07Z"
+        },
+        {
+          "url": "https://github.com/xfork24/devdesk-integration-test/pull/4",
+          "candidate": "3caa8e3aa37becbf378219fca6e5a75db281166b",
+          "merged_at": "2026-11-08T07:41:34Z"
+        },
+        {
+          "url": "https://github.com/xfork24/devdesk-integration-test/pull/5",
+          "candidate": "ee4785bd579f13c9479800a64ad53bfa83f04f5d",
+          "merged_at": "2026-11-08T08:18:57Z"
+        }
+      ],
+      "finished": 1794127031.529779
+    },
+    {
+      "name": "artifact-hashes-and-execution-release",
+      "passed": false,
+      "started": 1794127031.531165,
+      "error": "('unreleased execution', '4a1f77b0-9c4b-4902-a72a-48f41d4f71fa')",
+      "finished": 1794127031.669305
+    }
+  ],
+  "started": 1794127023.997971,
+  "error": "('unreleased execution', '4a1f77b0-9c4b-4902-a72a-48f41d4f71fa')",
+  "finished": 1794127031.6696231
+}

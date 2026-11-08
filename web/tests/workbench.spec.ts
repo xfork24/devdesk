@@ -80,7 +80,9 @@ test("完整 Web 闭环、双 Task 并行、Review、mainline、文档及历史"
   await page
     .getByLabel("Markdown 内容")
     .fill("## 需求\n导出 CSV。\n## 验收条件\n支持空列表和错误路径。");
-  await page.getByLabel(/需求验收条目/).fill("CSV-EMPTY | 空列表返回表头\nCSV-ERROR | 错误路径可观察");
+  await page
+    .getByLabel(/需求验收条目/)
+    .fill("CSV-EMPTY | 空列表返回表头\nCSV-ERROR | 错误路径可观察");
   await confirm(page);
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
   await page.getByRole("button", { name: "规划 Attempt", exact: true }).click();
@@ -102,8 +104,12 @@ test("完整 Web 闭环、双 Task 并行、Review、mainline、文档及历史"
   await passDelivery(page, "设计 / Task / Test 计划");
   await createTask(page, "导出接口", "CSV-EMPTY");
   await createTask(page, "错误处理", "CSV-ERROR");
-  await expect(page.locator(".task-card").filter({ hasText: "导出接口" })).toContainText("CSV-EMPTY");
-  await expect(page.locator(".task-card").filter({ hasText: "错误处理" })).toContainText("CSV-ERROR");
+  await expect(
+    page.locator(".task-card").filter({ hasText: "导出接口" }),
+  ).toContainText("CSV-EMPTY");
+  await expect(
+    page.locator(".task-card").filter({ hasText: "错误处理" }),
+  ).toContainText("CSV-ERROR");
   const tasks = page.locator(".task-card");
   await tasks
     .filter({ hasText: "导出接口" })
@@ -363,10 +369,12 @@ test("详情分页与 revision 冲突保留输入", async ({ page }) => {
     })
     .toBe("waiting_review");
   for (const kind of ["requirement", "plan"]) {
-    await expect.poll(async () => {
-      state = await get();
-      return state.detail.attempts[0].status;
-    }).toBe("waiting_review");
+    await expect
+      .poll(async () => {
+        state = await get();
+        return state.detail.attempts[0].status;
+      })
+      .toBe("waiting_review");
     state = await get();
     const did = (
       await command(
@@ -394,11 +402,9 @@ test("详情分页与 revision 冲突保留输入", async ({ page }) => {
   await page.getByLabel("当前项目", { exact: true }).selectOption(pid);
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
   await page.getByLabel("当前 Feature", { exact: true }).selectOption(fid);
-  const panel = page
-    .locator("section.panel")
-    .filter({
-      has: page.getByRole("heading", { name: "独立 Tasks", exact: true }),
-    });
+  const panel = page.locator("section.panel").filter({
+    has: page.getByRole("heading", { name: "独立 Tasks", exact: true }),
+  });
   await expect(panel.locator(".task-card")).toHaveCount(50);
   await panel.getByRole("button", { name: "下一页", exact: true }).click();
   await expect(
@@ -430,15 +436,23 @@ test("详情分页与 revision 冲突保留输入", async ({ page }) => {
 test("持久化清理回执和人工重试可从 Web 操作", async ({ page }) => {
   await ensureSetup(page);
   await page.getByRole("button", { name: "新项目", exact: true }).click();
-  await page.getByLabel("项目名称").fill("清理契约"); await confirm(page);
+  await page.getByLabel("项目名称").fill("清理契约");
+  await confirm(page);
   await page.getByRole("button", { name: "新 Feature", exact: true }).click();
-  await page.getByLabel("Feature 名称").fill("可核对的资源释放"); await confirm(page);
+  await page.getByLabel("Feature 名称").fill("可核对的资源释放");
+  await confirm(page);
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
-  await page.getByLabel("模拟场景", { exact: true }).selectOption("cleanup_failure");
-  await page.getByRole("button", { name: "规划 Attempt", exact: true }).click(); await confirm(page);
+  await page
+    .getByLabel("模拟场景", { exact: true })
+    .selectOption("cleanup_failure");
+  await page.getByRole("button", { name: "规划 Attempt", exact: true }).click();
+  await confirm(page);
   const recovery = page.getByRole("region", { name: "外部操作核对" });
   await recovery.getByRole("button", { name: "重试资源清理" }).first().click();
-  const retry = recovery.locator(".document-row").filter({ hasText: "retry_of=" }).first();
+  const retry = recovery
+    .locator(".document-row")
+    .filter({ hasText: "retry_of=" })
+    .first();
   await expect(retry).toContainText("applied");
   await retry.getByRole("button", { name: "查看回执" }).click();
   await expect(page.getByRole("dialog")).toContainText('"status": "released"');
@@ -460,7 +474,9 @@ test("打开项目切换独立数据库，重载保持选择和共享配置", as
   await page.getByLabel("Feature 名称").fill("只属于 A 的 Feature");
   await confirm(page);
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
-  await expect(page.getByLabel("当前 Feature", { exact: true }).locator("option:checked")).toHaveText("只属于 A 的 Feature");
+  await expect(
+    page.getByLabel("当前 Feature", { exact: true }).locator("option:checked"),
+  ).toHaveText("只属于 A 的 Feature");
   await page.getByRole("button", { name: "工作总览", exact: true }).click();
   await page.getByRole("button", { name: "新项目", exact: true }).click();
   await page.getByLabel("项目名称").fill("隔离项目 B");
@@ -468,27 +484,140 @@ test("打开项目切换独立数据库，重载保持选择和共享配置", as
   await expect(selector.locator("option:checked")).toHaveText("隔离项目 B");
   const b = await selector.inputValue();
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
-  await expect(page.getByLabel("当前 Feature", { exact: true }).locator("option")).not.toContainText(["只属于 A 的 Feature"]);
+  await expect(
+    page.getByLabel("当前 Feature", { exact: true }).locator("option"),
+  ).not.toContainText(["只属于 A 的 Feature"]);
   await page.getByRole("button", { name: "工作总览", exact: true }).click();
   await page.getByRole("button", { name: "新 Feature", exact: true }).click();
   await page.getByLabel("Feature 名称").fill("只属于 B 的 Feature");
   await confirm(page);
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  await expect(page.locator(".setting-row").filter({ has: page.getByRole("heading", { name: "当前项目数据库", exact: true }) })).toContainText(`/projects/${b}/engineering.sqlite3`);
-  await expect(page.locator(".setting-row").filter({ has: page.getByRole("heading", { name: "全局配置数据库", exact: true }) })).toContainText("global.sqlite3");
+  await expect(
+    page
+      .locator(".setting-row")
+      .filter({
+        has: page.getByRole("heading", { name: "当前项目数据库", exact: true }),
+      }),
+  ).toContainText(`/projects/${b}/engineering.sqlite3`);
+  await expect(
+    page
+      .locator(".setting-row")
+      .filter({
+        has: page.getByRole("heading", { name: "全局配置数据库", exact: true }),
+      }),
+  ).toContainText("global.sqlite3");
   await page.getByRole("button", { name: "调整", exact: true }).click();
   await page.getByLabel("并发额度 1—32").fill("3");
   await confirm(page);
   await selector.selectOption(a);
-  await expect(page.locator(".setting-row").filter({ has: page.getByRole("heading", { name: "当前项目数据库", exact: true }) })).toContainText(`/projects/${a}/engineering.sqlite3`);
-  await expect(page.getByText("3 个 Run · 单项目默认 2 个", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .locator(".setting-row")
+      .filter({
+        has: page.getByRole("heading", { name: "当前项目数据库", exact: true }),
+      }),
+  ).toContainText(`/projects/${a}/engineering.sqlite3`);
+  await expect(
+    page.getByText("3 个 Run · 单项目默认 2 个", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
-  await expect(page.getByLabel("当前 Feature", { exact: true }).locator("option")).toContainText(["选择 Feature", "只属于 A 的 Feature"]);
-  await expect(page.getByLabel("当前 Feature", { exact: true }).locator("option")).not.toContainText(["只属于 B 的 Feature"]);
+  await expect(
+    page.getByLabel("当前 Feature", { exact: true }).locator("option"),
+  ).toContainText(["选择 Feature", "只属于 A 的 Feature"]);
+  await expect(
+    page.getByLabel("当前 Feature", { exact: true }).locator("option"),
+  ).not.toContainText(["只属于 B 的 Feature"]);
   await page.reload();
   await expect(selector.locator("option:checked")).toHaveText("隔离项目 A");
   await page.getByRole("button", { name: "执行与交付", exact: true }).click();
   await selector.selectOption(b);
-  await expect(page.getByLabel("当前 Feature", { exact: true }).locator("option")).toContainText(["选择 Feature", "只属于 B 的 Feature"]);
+  await expect(
+    page.getByLabel("当前 Feature", { exact: true }).locator("option"),
+  ).toContainText(["选择 Feature", "只属于 B 的 Feature"]);
   expect(errors).toEqual([]);
+});
+
+test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async ({
+  page,
+  context,
+}) => {
+  await ensureSetup(page);
+  await page.route("**/rpc", async (route) => {
+    const request = route.request().postDataJSON();
+    if (request.method === "query.workspace") {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.result.runtime_installations = [
+        {
+          id: "browser-fixture",
+          key: {
+            provider: "codex",
+            version: "fixture",
+            os: "macos",
+            arch: "aarch64",
+          },
+          artifact: { canonical_path: "/fixture/codex" },
+        },
+      ];
+      await route.fulfill({ json: body });
+    } else if (request.method === "codex.auth.start") {
+      await route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: {
+            loginId: "fixture-login",
+            authUrl: "https://auth.openai.com/authorize?fixture=true",
+          },
+        },
+      });
+    } else if (request.method === "credentials.status") {
+      await route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { configured: false, storage: "test_vault" },
+        },
+      });
+    } else if (request.method === "credentials.configure") {
+      expect(request.params.provider).toBe("dsh");
+      await route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: { configured: true, storage: "test_vault" },
+        },
+      });
+    } else await route.continue();
+  });
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByLabel("默认 Agent Harness").selectOption("dsh");
+  await expect(page.getByLabel("默认 Agent Harness")).toHaveValue("dsh");
+  await expect(page.getByLabel("默认 Agent Harness")).toBeEnabled();
+  await page.reload();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByLabel("默认 Agent Harness")).toHaveValue("dsh");
+  const password = page.getByLabel("配置或更换 API key");
+  await expect(password).toHaveAttribute("type", "password");
+  // Explicit synthetic fixture, intercepted before the host: this never writes a real Keychain item.
+  await password.fill("synthetic-browser-fixture");
+  await page.getByRole("button", { name: "保存密钥", exact: true }).click();
+  await expect(password).toHaveValue("");
+  await expect(
+    page.getByText("已保存到系统凭据库", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "登记本机 Codex", exact: true }),
+  ).toBeEnabled();
+  await context.route("https://auth.openai.com/**", (route) =>
+    route.fulfill({ body: "Synthetic OAuth navigation fixture" }),
+  );
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "网页登录", exact: true }).click();
+  const popup = await popupPromise;
+  await expect(popup).toHaveURL(
+    "https://auth.openai.com/authorize?fixture=true",
+  );
+  await popup.close();
+  await page.getByLabel("默认 Agent Harness").selectOption("codex");
 });
