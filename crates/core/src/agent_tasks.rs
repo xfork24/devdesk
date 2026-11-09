@@ -303,7 +303,18 @@ impl Engine {
         let spec = lock
             .specification_snapshot
             .iter()
-            .find(|b| b.step == step_state.key)
+            .find(|b| {
+                let path = if runtime.task_id.is_some() {
+                    b.path.strip_prefix("tasks/")
+                } else {
+                    Some(b.path.as_str())
+                };
+                b.step == step_state.key
+                    && path.is_some_and(|path| {
+                        let (prefix, key) = path.rsplit_once('/').unwrap_or(("", path));
+                        crate::workflow_definition::namespace(prefix, key) == step_state.key
+                    })
+            })
             .ok_or_else(|| err("task_contract_mismatch", "任务步骤不在冻结编译闭包中"))?;
         let Some(def) = &spec.task else {
             return Ok(());

@@ -149,7 +149,7 @@ fn map_condition(condition: &mut WorkflowCondition, keys: &BTreeMap<String, Stri
         _ => {}
     }
 }
-fn namespace(prefix: &str, key: &str) -> String {
+pub(crate) fn namespace(prefix: &str, key: &str) -> String {
     if prefix.is_empty() {
         key.into()
     } else {

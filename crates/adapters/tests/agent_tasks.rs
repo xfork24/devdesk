@@ -93,6 +93,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Re
             .map(|r| r.revision)
             .or_else(|| s.projects.iter().find(|r| r.id == id).map(|r| r.revision))
             .or_else(|| s.features.iter().find(|r| r.id == id).map(|r| r.revision))
+            .or_else(|| s.tasks.iter().find(|r| r.id == id).map(|r| r.revision))
             .or_else(|| s.sessions.iter().find(|r| r.id == id).map(|r| r.revision))
     });
     e.execute(
@@ -165,7 +166,10 @@ fn binding() -> RuntimeBinding {
 }
 fn open(e: &Engine, fid: &str, key: &str, node: Option<&str>) -> Id {
     let s = e.store.snapshot().unwrap();
-    let lock = s.feature_configuration(fid).unwrap();
+    let task = s.tasks.iter().find(|t| t.id == fid);
+    let lock = s
+        .feature_configuration(task.map_or(fid, |t| t.feature_id.as_str()))
+        .unwrap();
     let rt = s
         .governance
         .iter()
@@ -173,7 +177,17 @@ fn open(e: &Engine, fid: &str, key: &str, node: Option<&str>) -> Id {
         .unwrap()
         .decode::<WorkflowRuntime>()
         .unwrap();
-    let step = lock.plan.steps.iter().find(|v| v.key == key).unwrap();
+    let plan = if task.is_some() {
+        &lock.task_plan
+    } else {
+        &lock.plan
+    };
+    let step = plan.steps.iter().find(|v| v.key == key).unwrap_or_else(|| {
+        panic!(
+            "Missing step {key}; available {:?}",
+            plan.steps.iter().map(|s| &s.key).collect::<Vec<_>>()
+        )
+    });
     let role = node
         .and_then(|n| step.execution_recipe.iter().find(|v| v.key == n))
         .and_then(|n| n.role_ref.as_ref())
@@ -445,9 +459,29 @@ fn queued_task_survives_restart_directory_changes_and_continuation_without_rerea
     let p = project(&e);
     let f = feature(&e, &p);
     let sid = open(&e, &f, "requirement_discussion", None);
+    e.store
+        .transact(None, &mut |s| {
+            let c = s.contexts.iter_mut().find(|c| c.owner_id == f).unwrap();
+            c.content = "Context at input acceptance".into();
+            c.revision += 1;
+            Ok(Value::Null)
+        })
+        .unwrap();
     let sent = send(&e, &sid, "First user input");
     let before = e
         .query("query.execution_task", &json!({"turn_id":sent["id"]}), 4)
+        .unwrap();
+    assert_eq!(
+        before["task"]["content"]["context"]["content"],
+        "Context at input acceptance"
+    );
+    e.store
+        .transact(None, &mut |s| {
+            let c = s.contexts.iter_mut().find(|c| c.owner_id == f).unwrap();
+            c.content = "Changed after input was queued".into();
+            c.revision += 1;
+            Ok(Value::Null)
+        })
         .unwrap();
     let draft = command(
         &e,
@@ -504,6 +538,200 @@ fn queued_task_survives_restart_directory_changes_and_continuation_without_rerea
             .unwrap()
             .contains("NEW WORKFLOW TASK")
     );
+}
+
+#[test]
+fn task_recipe_and_same_named_feature_review_keep_distinct_sources_for_two_tasks() {
+    let root = tempfile::tempdir().unwrap();
+    let port = Arc::new(Recorder::default());
+    let e = engine(root.path(), port.clone());
+    let p = project(&e);
+    // A Feature call named "task" intentionally shares compiled step keys with
+    // the Task plan. Only the full source path distinguishes their bindings.
+    let state = e.store.snapshot().unwrap();
+    let mut child = state
+        .configuration(DEFAULT_TASK_WORKFLOW_V3_ID)
+        .unwrap()
+        .data
+        .clone();
+    child["process_kind"] = json!("subworkflow");
+    child["steps"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|s| ["attempt.execute", "delivery.review"].contains(&s["kind"].as_str().unwrap()));
+    child["output_ports"] = json!({});
+    for step in child["steps"].as_array_mut().unwrap() {
+        if let Some(text) = step["task_instructions"].as_str() {
+            step["task_instructions"] = json!(format!("FEATURE ONLY: {text}"));
+        }
+    }
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"Feature call with colliding compiled keys","document":child}),
+    )
+    .unwrap();
+    let child = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let mut root_workflow = state
+        .configuration(DEFAULT_FEATURE_WORKFLOW_V3_ID)
+        .unwrap()
+        .data
+        .clone();
+    let stage = root_workflow["stages"][0]["key"].clone();
+    root_workflow["steps"].as_array_mut().unwrap().push(json!({"key":"task","name":"Feature-only call","stage":stage,"kind":"workflow.call","subworkflow_ref":child["id"]}));
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"Colliding Feature and Task source fixture","document":root_workflow}),
+    )
+    .unwrap();
+    let root_workflow = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let defaults = e.configuration_defaults(Some(&p)).unwrap();
+    command(&e,"project.configuration.update",Some(&p),json!({"workflow_ref":root_workflow["id"],"role_agent_bindings":defaults["role_agent_bindings"]})).unwrap();
+    let f = feature(&e, &p);
+    for _ in 0..2 {
+        let tid = id();
+        e.store
+            .transact(None, &mut |s| {
+                let feature = s.feature(&f)?.clone();
+                let lock = s.feature_configuration(&f).unwrap();
+                let mut record = s
+                    .governance
+                    .iter()
+                    .find(|r| r.kind == "workflow_instance" && r.definition_id == f)
+                    .unwrap()
+                    .clone();
+                let mut runtime: WorkflowRuntime = record.decode()?;
+                runtime.owner_id = tid.clone();
+                runtime.task_id = Some(tid.clone());
+                runtime.workflow_ref = DEFAULT_TASK_WORKFLOW_V3_ID.into();
+                runtime.steps = lock
+                    .task_plan
+                    .steps
+                    .iter()
+                    .map(|step| WorkflowStepRuntime {
+                        id: id(),
+                        key: step.key.clone(),
+                        round: 1,
+                        status: "pending".into(),
+                        input_hash: String::new(),
+                        outputs: Default::default(),
+                        reason: String::new(),
+                        revision: 1,
+                        confirmation: None,
+                    })
+                    .collect();
+                record.id = id();
+                record.definition_id = tid.clone();
+                record.data = json!(runtime);
+                record.content_hash = configuration_hash(&record.data);
+                s.governance.push(record);
+                let snapshot = id();
+                s.snapshots.push(Snapshot {
+                    id: snapshot.clone(),
+                    project_id: None,
+                    feature_id: Some(f.clone()),
+                    task_id: None,
+                    kind: "explicit-fixture".into(),
+                    content: "Frozen Task fixture context".into(),
+                    binding: feature.binding.clone(),
+                    documents: vec![],
+                    delivery_id: None,
+                    inherited_from: None,
+                    capture: SnapshotCapture {
+                        attempt: None,
+                        runs: vec![],
+                        sessions: vec![],
+                        resources: vec![],
+                        captured_at: Some(1),
+                        reason: "Explicit test fixture; no accepted delivery claim".into(),
+                    },
+                    runtime_bindings: vec![],
+                    execution_instances: vec![],
+                });
+                s.tasks.push(Task {
+                    id: tid.clone(),
+                    feature_id: f.clone(),
+                    title: "Explicit Task fixture".into(),
+                    status: Status::Ready,
+                    revision: 1,
+                    binding: feature.binding,
+                    inherited_snapshot: snapshot,
+                    dependencies: vec![],
+                    worktree: "fixture".into(),
+                    scope: TaskScope::default(),
+                });
+                s.contexts.push(Context {
+                    id: id(),
+                    owner_id: tid.clone(),
+                    content: format!("Task context {tid}"),
+                    revision: 1,
+                });
+                Ok(Value::Null)
+            })
+            .unwrap();
+        for (key, node) in [
+            ("implementation", Some("test_author")),
+            ("implementation", Some("implement")),
+            ("implementation", Some("docs")),
+            ("review", None),
+            ("merge_review", None),
+        ] {
+            let kind = match key {
+                "implementation" => "attempt.execute",
+                "review" => "delivery.review",
+                _ => "merge.review",
+            };
+            let compiled_key = e
+                .store
+                .snapshot()
+                .unwrap()
+                .feature_configuration(&f)
+                .unwrap()
+                .task_plan
+                .steps
+                .iter()
+                .find(|s| s.kind == kind)
+                .unwrap()
+                .key
+                .clone();
+            let sid = open(&e, &tid, &compiled_key, node);
+            let sent = send(&e, &sid, "Task input");
+            let task = e
+                .query("query.execution_task", &json!({"turn_id":sent["id"]}), 4)
+                .unwrap();
+            assert_eq!(
+                task["task"]["definition"]["workflow_revision_id"],
+                DEFAULT_TASK_WORKFLOW_V3_ID
+            );
+            assert_eq!(
+                task["task"]["definition"]["path"],
+                format!("tasks/task/{key}")
+            );
+            assert_eq!(task["task"]["content"]["source"]["task_id"], tid);
+            assert_eq!(
+                task["task"]["content"]["source"]["recipe_node"],
+                json!(node)
+            );
+            e.tick_conversations(4).unwrap();
+            e.tick_conversations(4).unwrap();
+            assert_eq!(
+                port.calls
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .task
+                    .as_ref()
+                    .unwrap()
+                    .digest,
+                task["task"]["digest"]
+            );
+        }
+    }
+    assert_eq!(port.calls.lock().unwrap().len(), 10);
 }
 
 #[test]
