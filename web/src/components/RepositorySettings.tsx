@@ -9,10 +9,11 @@ const operationLabels: Record<string, string> = {
 };
 type Props = {
   project: Row;
+  ready: boolean;
   request: (method: string, params?: Row) => Promise<any>;
   refresh: () => Promise<void>;
 };
-export function RepositorySettings({ project, request, refresh }: Props) {
+export function RepositorySettings({ project, ready, request, refresh }: Props) {
   const [state, setState] = useState<Row>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +32,7 @@ export function RepositorySettings({ project, request, refresh }: Props) {
         setState(value);
         setError("");
         if (
-          project.execution_mode !== "live" &&
+          !ready &&
           value.operations.some(
             (op: Row) =>
               op.action.kind === "connect" && op.status === "completed",
@@ -49,7 +50,7 @@ export function RepositorySettings({ project, request, refresh }: Props) {
       active = false;
       clearTimeout(timer);
     };
-  }, [project.id, project.execution_mode, request, refresh]);
+  }, [project.id, ready, request, refresh]);
   return (
     <section className="panel" aria-label="GitHub 仓库状态">
       <div className="panel-heading">
@@ -70,7 +71,7 @@ export function RepositorySettings({ project, request, refresh }: Props) {
           · {project.workspace_definition?.mainline}
         </p>
         <p role="status">
-          {project.execution_mode === "live"
+          {ready
             ? "仓库已接入"
             : connectionBlocked ? "仓库接入未完成，请根据下方原因核对后重试" : "正在准备仓库，完成后即可开始工作"}
         </p>

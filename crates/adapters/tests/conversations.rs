@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/runtime.rs"]
+mod runtime;
 use devdesk_adapters::*;
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -8,7 +10,7 @@ fn engine(path: &std::path::Path) -> Engine {
     let e = Engine::new(
         Arc::new(SqliteStore::open(path).unwrap()),
         Arc::new(FileArtifacts::new(path.into())),
-        simulation::adapters(),
+        runtime::adapters(),
     );
     e.bootstrap().unwrap();
     e
@@ -373,7 +375,7 @@ fn project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revisi
             .iter()
             .all(|a| a.feature_id.is_none() && a.project_id.as_ref() == Some(&project))
     );
-    let newer=call("document.revise",Some(&project),Some(2),json!({"kind":"requirement","title":"Export v2","body":"Export with errors","supersedes":requirement})).unwrap()["id"].as_str().unwrap().to_string();
+    let newer=call("document.revise",Some(&project),Some(state.projects.iter().find(|p| p.id == project).unwrap().revision),json!({"kind":"requirement","title":"Export v2","body":"Export with errors","supersedes":requirement})).unwrap()["id"].as_str().unwrap().to_string();
     let state = e.store.snapshot().unwrap();
     assert!(!state.document_in_feature(
         state.documents.iter().find(|d| d.id == newer).unwrap(),
@@ -723,7 +725,7 @@ fn task_plan_validates_dependency_graph_and_cannot_skip_planning_review() {
         .unwrap()
         .to_string();
     let (_, adopt) = command("proposal.adopt", Some(&proposal), Some(1), json!({}));
-    e.execute("proposal.adopt", adopt).unwrap();
+    assert!(e.execute("proposal.adopt", adopt).is_err());
     let (_, instantiate) = command("proposal.instantiate", Some(&proposal), Some(2), json!({}));
     assert!(e.execute("proposal.instantiate", instantiate).is_err());
     let s = e.store.snapshot().unwrap();
@@ -738,12 +740,6 @@ struct ConversationFixture {
     emit_terminal: std::sync::atomic::AtomicBool,
 }
 impl ports::Harness for ConversationFixture {
-    fn configure(&self, _: &str, _: &str) -> String {
-        "fixture".into()
-    }
-    fn poll(&self, _: &Run, _: &serde_json::Value, _: u64) -> Result<Option<serde_json::Value>> {
-        Ok(None)
-    }
     fn open_session(&self, r: &ports::SessionStart) -> Result<ports::SessionReceipt> {
         assert!(
             self.store
@@ -842,7 +838,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
         stop_allowed: false.into(),
         emit_terminal: true.into(),
     });
-    let mut adapters = simulation::adapters();
+    let mut adapters = runtime::adapters();
     adapters.harness = fixture.clone();
     let e = Engine::new(
         store.clone(),

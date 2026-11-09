@@ -194,11 +194,14 @@ impl EngineeringState {
                 )?;
             }
         }
-        for old in before
-            .projects
-            .iter()
-            .filter(|p| p.execution_mode == "live")
-        {
+        for old in before.projects.iter().filter(|p| {
+            p.execution_mode == "live"
+                && (before
+                    .repository_worktrees
+                    .iter()
+                    .any(|w| w.project_id == p.id && w.kind == WorktreeKind::Mainline)
+                    || before.features.iter().any(|f| f.project_id == p.id))
+        }) {
             if let Some(new) = self.projects.iter().find(|p| p.id == old.id) {
                 require(
                     new.execution_mode == "live"

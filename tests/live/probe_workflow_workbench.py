@@ -11,7 +11,7 @@ c=Client(a.url);report=['# Workflow 与工作台原生验收','',f'日期：{tim
 try:
  if not a.resume_project:
   project=c.command('project.open_github',payload={'repository':a.github_repo,'mainline':'main','title':'Workflow v0.3 native acceptance'})['id'];c.project=project
-  c.wait(lambda:c.rpc('query.workspace'),lambda v:v['active_project']['execution_mode']=='live',180)
+  c.wait(lambda:c.rpc('query.workspace'),lambda v:v['repository_ready'],180)
   c.rpc('runtime.prepare',{'provider':a.provider})
   installations=c.rpc('query.runtime_installations')['installations'];runtime=next(r for r in reversed(installations) if r['key']['provider']==a.provider and r['artifact']['kind']=='docker_image')
   image=runtime['artifact']['image_id'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-{suffix}-greeting.mjs';testfile=f'tests/workflow-{suffix}/behavior.test.mjs';fulltest=f'tests/workflow-{suffix}-feature/behavior.test.mjs'

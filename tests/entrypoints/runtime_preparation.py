@@ -12,7 +12,7 @@ import tempfile
 import time
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / 'target/debug/devdesk-host'
 
 with tempfile.TemporaryDirectory(prefix='devdesk-prepare-') as tmp:
@@ -112,6 +112,7 @@ sys.exit(3)
         opened = rpc('project.open_github', {'command_id':'github-open-fixture', 'payload':{'repository':'https://github.com/fixture/repository.git'}})
         assert 'result' in opened, opened
         github_id = opened['result']['id']
+        assert rpc('query.workspace')['result']['repository_ready'] is False
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline:
             state = rpc('query.repository', {'project_id':github_id})['result']
@@ -130,6 +131,7 @@ sys.exit(3)
             if op['status'] == 'completed' or (op['status'] == 'needs_reconciliation' and op['reason'] != 'reconcile_requested'): break
             time.sleep(.1)
         assert state['operations'][0]['status'] == 'completed', state
+        assert rpc('query.workspace')['result']['repository_ready'] is True
         assert (root/'fetches').read_text().splitlines() == ['fetch']
         assert (root/'data'/'projects'/github_id/'repository'/'preserve-fixture').read_text() == 'must survive reconciliation'
 
@@ -145,10 +147,12 @@ sys.exit(3)
 
         # A backend-only fixture selects Codex for a discussion. It must prepare that
         # Harness before reporting missing credentials, without sending any model input.
-        pid = rpc('project.create', {'command_id':'preparation-fixture', 'payload':{'title':'Runtime preparation fixture'}})['result']['id']
+        pid = rpc('project.create', {'command_id':'preparation-fixture', 'payload':{'title':'Runtime preparation fixture','use_builtin_defaults':True}})['result']['id']
+        revision = rpc('query.workspace')['result']['active_project']['revision']
+        agent_instance = defaults['bundle']['data']['agent_instance_refs']['analyst']
         def open_session(n):
-            return rpc('session.open', {'project_id':pid,'command_id':'open-'+str(n),'target':pid,'expected_revision':1,
-                'payload':{'agent':'builtin-agent-analyst-v1','provider':'codex','model':'offline-model-fixture'}})
+            return rpc('session.open', {'project_id':pid,'command_id':'open-'+str(n),'target':pid,'expected_revision':revision,
+                'payload':{'agent_instance_id':agent_instance}})
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(open_session, range(4)))
         assert all(r.get('error',{}).get('data',{}).get('code') == 'authentication_required' for r in results), results

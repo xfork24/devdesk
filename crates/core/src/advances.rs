@@ -15,6 +15,9 @@ impl Engine {
             let Some(context) = intent.context.as_ref() else {
                 continue;
             };
+            if context.origin != Origin::External {
+                continue;
+            }
             let mut receipt = intent.receipt.clone();
             if receipt.is_none() {
                 if intent.status == AdvanceStatus::Prepared {
@@ -215,63 +218,23 @@ impl Engine {
                     .find(|h| h.id == m.target)
                     .unwrap()
                     .revision = committed.clone();
-                if context.origin == Origin::External {
-                    let mm = s.merges.iter_mut().find(|v| v.id == m.id).unwrap();
-                    mm.committed_revision = Some(committed.clone());
-                    mm.revision += 1;
-                    let current = s.advances.iter_mut().find(|v| v.id == intent.id).unwrap();
-                    current.status = AdvanceStatus::Applied;
-                    current.receipt = Some(committed.clone());
-                    current.revision += 1;
-                    current.reason = "本地 CAS 已完成；等待远端精确 lease 与 PR merged 核对".into();
-                    self.enqueue_remote_advance(s, &m, context);
-                    event(
-                        s,
-                        &intent.id,
-                        "merge.local_completed",
-                        "local CAS only; remote delivery pending",
-                    );
-                    return Ok(json!({}));
-                }
-                let mm = s.merges.iter_mut().find(|x| x.id == m.id).unwrap();
-                mm.status = Status::Completed;
+
+                let mm = s.merges.iter_mut().find(|v| v.id == m.id).unwrap();
                 mm.committed_revision = Some(committed.clone());
                 mm.revision += 1;
-                for other in s.merges.iter_mut().filter(|x| {
-                    x.target == m.target && x.id != m.id && x.status != Status::Completed
-                }) {
-                    for d in s
-                        .deliveries
-                        .iter_mut()
-                        .filter(|d| d.merge_id.as_deref() == Some(&other.id))
-                    {
-                        d.stale = true;
-                    }
-                }
-                if let Some(tid) = m.task_id.clone() {
-                    let t = s.tasks.iter_mut().find(|t| t.id == tid).unwrap();
-                    t.status = Status::Completed;
-                    t.revision += 1;
-                } else {
-                    let f = s
-                        .features
-                        .iter_mut()
-                        .find(|f| f.id == m.feature_id)
-                        .unwrap();
-                    f.status = Status::Completed;
-                    f.revision += 1;
-                }
-                let current = s.advances.iter_mut().find(|a| a.id == intent.id).unwrap();
+                let current = s.advances.iter_mut().find(|v| v.id == intent.id).unwrap();
                 current.status = AdvanceStatus::Applied;
+                current.receipt = Some(committed.clone());
                 current.revision += 1;
-                current.reason = "回执、目标与验收一致，已提交工程结果".into();
+                current.reason = "本地 CAS 已完成；等待远端精确 lease 与 PR merged 核对".into();
+                self.enqueue_remote_advance(s, &m, context);
                 event(
                     s,
                     &intent.id,
-                    "merge.completed",
-                    "已核对推进回执；simulation",
+                    "merge.local_completed",
+                    "local CAS only; remote delivery pending",
                 );
-                Ok(json!({}))
+                return Ok(json!({}));
             })?;
         }
         Ok(())

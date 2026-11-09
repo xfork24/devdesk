@@ -93,10 +93,10 @@ impl Engine {
                     .find(|p| p.id == target)
                     .ok_or_else(|| err("not_found", "Project 不存在"))?;
                 require(
-                    project.execution_mode == "simulation"
+                    project.execution_mode == "live"
                         && !s.features.iter().any(|f| f.project_id == target)
                         && s.runs.is_empty(),
-                    "请在尚未创建 Feature/Run 的独立项目中登记仓库；模拟历史不能转成真实证据",
+                    "请在尚未创建 Feature/Run 的独立项目中登记仓库",
                 )?;
                 require(
                     !s.repository_operations.iter().any(|op| {
@@ -358,11 +358,16 @@ impl Engine {
                                 project.workspace_definition = Some(workspace.clone());
                                 project.execution_mode = "live".into();
                                 project.revision += 1;
-                                s.heads
-                                    .iter_mut()
-                                    .find(|h| h.id == format!("main:{}", operation.project_id))
-                                    .unwrap()
-                                    .revision = head.clone();
+                                let head_id = format!("main:{}", operation.project_id);
+                                if let Some(row) = s.heads.iter_mut().find(|h| h.id == head_id) {
+                                    row.revision = head.clone();
+                                } else {
+                                    s.heads.push(GitHead {
+                                        id: head_id,
+                                        project_id: operation.project_id.clone(),
+                                        revision: head.clone(),
+                                    });
+                                }
                                 self.attach_builtin_project_defaults(s, &operation.project_id)?;
                                 Some(worktree)
                             }

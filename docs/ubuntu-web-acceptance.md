@@ -12,12 +12,12 @@
 
 ```bash
 npm --prefix web ci
-./scripts/check.sh
+./scripts/check/check.sh
 # 在本机 Docker 平台构建；同版本各角色共用镜像，不复制 macOS 二进制
  docker build -t devdesk/codex:0.167.0 containers/codex
  docker build -f containers/dsh/Dockerfile -t devdesk/dsh:0.2.2-rc.1-permissions-v1 .
  gh auth login
-./scripts/doctor.sh --output docs/plans/ubuntu-web-acceptance/preflight.json
+./scripts/check/doctor.sh --output docs/plans/ubuntu-web-acceptance/preflight.json
 cargo build --locked -p devdesk-host
 ./target/debug/devdesk-host --data /absolute/path/to/dedicated-live-data --port 51751
 ```
@@ -30,11 +30,11 @@ macOS/aarch64、Linux/aarch64、Linux/x86_64 是不同安装键。不能复制�
 
 ```bash
 cargo test --locked -p devdesk-adapters --test command_tests --test docker_resources --test git_resources -- --include-ignored
-./scripts/check-live.sh --mode full --providers codex,dsh \
+./scripts/check/check-live.sh --mode full --providers codex,dsh \
   --root /absolute/path/to/dedicated-live-data \
   --github-repo owner/dedicated-test-repo \
   --url http://127.0.0.1:51751 --allow-host-restart
-./scripts/package.sh
+./scripts/release/package.sh
 ```
 
 完整 live 模式使用新报告目录和随机源码前缀，执行模型调用、创建真实 Feature/Task、PR 并接纳至专用仓库主干，还会 SIGKILL/重启唯一匹配数据集和端口的验收 Host。只使用专用测试数据集/仓库，不能以 DevDesk 自身仓库验收。缺配置、权限、镜像或恢复授权以非零退出，不把 skip 视为成功。
@@ -57,6 +57,6 @@ node tests/live/probe_oauth_recovery.mjs --output /tmp/devdesk-oauth-recovery.js
 
 Secret Service 预检使用 Ubuntu 的 `busctl` 只读查询默认集合元数据，不读取或解锁秘密。嵌套沙箱失败时保存实际 AppArmor 策略和原始诊断；不要通过 privileged、unconfined 或关闭宿主策略来取得通过。
 
-AppArmor 启用的 Ubuntu Docker 宿主需先审阅 `permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor`，再以管理员权限执行 `sudo ./scripts/install-linux-sandbox-policy.sh --install`；它只安装/加载 DevDesk 专用策略。安装后可用 `probe_nested_sandbox.py --apparmor-profile devdesk-harness-v1` 验证，不使用默认策略下的失败结果代替该实测。
+AppArmor 启用的 Ubuntu Docker 宿主需先审阅 `permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor`，再以管理员权限执行 `sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install`；它只安装/加载 DevDesk 专用策略。安装后可用 `probe_nested_sandbox.py --apparmor-profile devdesk-harness-v1` 验证，不使用默认策略下的失败结果代替该实测。
 
 同一轮 full 因真实阶段失败退出后，先用领域命令显式新建修正 Attempt 或执行合法技术重试，再以原参数加 `--resume` 续跑。入口会将此前报告原字节存入 `history/`，为新执行使用独立日志，校验复用成功步骤的日志哈希，并重新执行最终事实检查。`--resume` 不能改变数据集、仓库、providers/groups，也不能把失败阶段自动计为通过；新的独立验收轮次仍使用新报告目录。

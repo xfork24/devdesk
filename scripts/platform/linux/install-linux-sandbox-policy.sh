@@ -2,7 +2,7 @@
 # Install only DevDesk's named worker profile; never change docker-default,
 # daemon settings, sysctls, capabilities or AppArmor's enforcement mode.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../../.."
 policy=permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor
 destination=/etc/apparmor.d/devdesk-harness-v1
 if [[ "$(uname -s)" != Linux ]]; then

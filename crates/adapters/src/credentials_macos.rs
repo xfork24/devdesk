@@ -33,7 +33,7 @@ fn verify(path: &Path) -> Result<()> {
         requirement.contains("identifier \"dev.devdesk.host\"")
             && !requirement.contains("cdhash")
             && requirement.contains("certificate"),
-        "需要证书签名的 Host；请运行 scripts/dev.sh 或 scripts/build.sh",
+        "需要证书签名的 Host；请运行 scripts/dev/dev.sh 或 scripts/dev/build.sh",
     )?;
     let requirement = requirement.replace(
         "identifier \"dev.devdesk.host\"",
@@ -111,7 +111,7 @@ pub(super) fn helper_path() -> Result<PathBuf> {
         if !bundle.is_file() {
             return Err(err(
                 "credential_helper_unavailable",
-                "请先运行 scripts/install-macos-credential-helper.sh；运行包需包含 credential-helper",
+                "请先运行 scripts/platform/macos/install-macos-credential-helper.sh；运行包需包含 credential-helper",
             ));
         }
         verify(&bundle)?;

@@ -2,7 +2,7 @@
 # A shared immutable Keychain principal, independent of Host/project/role builds.
 set -euo pipefail
 [ "$(uname -s)" = Darwin ] || exit 0
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../../.."
 umask 077
 identity="${DEVDESK_CODESIGN_IDENTITY:-}"
 identity_file="$HOME/Library/Application Support/DevDesk/signing/identity.txt"
@@ -41,7 +41,7 @@ PYVERIFY
   [ "${1:-}" = --update ] || { echo 'Credential helper implementation changed; explicit --update is required and may require one new OS authorization.' >&2; exit 1; }
 fi
 cargo build --release --locked -p devdesk-credential-helper
-./scripts/sign-macos.sh target/release/devdesk-credential-helper dev.devdesk.credentials
+./scripts/platform/macos/sign-macos.sh target/release/devdesk-credential-helper dev.devdesk.credentials
 cp target/release/devdesk-credential-helper "$helper_dir/.helper-pending"
 chmod 700 "$helper_dir/.helper-pending"
 mv "$helper_dir/.helper-pending" "$helper_dir/devdesk-credential-helper"

@@ -489,35 +489,35 @@ fn validate_composition(s: &EngineeringState, a: &AgentComposition, scope: &Scop
         harness.model_providers.is_empty() || harness.model_providers.contains(&model.provider),
         "Harness 不支持该 Model 后端",
     )?;
-    if harness.provider != "simulation" {
+
+    require(
+        (harness.provider == "codex" && model.provider == "openai")
+            || (harness.provider == "dsh" && model.provider == "deepseek"),
+        "Model 协议不受此 Harness 支持",
+    )?;
+    require(
+        model.endpoint.is_none(),
+        "当前原生适配器不支持自定义 Model endpoint",
+    )?;
+    for (key, value) in &model.parameters {
         require(
-            (harness.provider == "codex" && model.provider == "openai")
-                || (harness.provider == "dsh" && model.provider == "deepseek"),
-            "Model 协议不受此 Harness 支持",
+            match harness.provider.as_str() {
+                "codex" => {
+                    key == "reasoning_effort"
+                        && value.as_str().is_some_and(|v| {
+                            ["minimal", "low", "medium", "high", "xhigh", "max"].contains(&v)
+                        })
+                }
+                "dsh" => {
+                    key == "max_tokens"
+                        && value.as_u64().is_some_and(|v| (1024..=131072).contains(&v))
+                }
+                _ => false,
+            },
+            format!("Model 参数 {key} 无法由此 Harness 精确执行"),
         )?;
-        require(
-            model.endpoint.is_none(),
-            "当前原生适配器不支持自定义 Model endpoint",
-        )?;
-        for (key, value) in &model.parameters {
-            require(
-                match harness.provider.as_str() {
-                    "codex" => {
-                        key == "reasoning_effort"
-                            && value.as_str().is_some_and(|v| {
-                                ["minimal", "low", "medium", "high", "xhigh", "max"].contains(&v)
-                            })
-                    }
-                    "dsh" => {
-                        key == "max_tokens"
-                            && value.as_u64().is_some_and(|v| (1024..=131072).contains(&v))
-                    }
-                    _ => false,
-                },
-                format!("Model 参数 {key} 无法由此 Harness 精确执行"),
-            )?;
-        }
     }
+
     for tool in &a.tools {
         let t: ToolDefinition = reference(s, tool, "tool", scope)?.decode()?;
         require(
@@ -641,30 +641,6 @@ impl Engine {
             let sessions:Vec<_>=s.sessions.iter().filter(|session|session.feature_id.as_deref()==Some(&f.id)||session.owner_id==f.id||s.tasks.iter().any(|t|t.id==session.owner_id&&t.feature_id==f.id)).map(|session|json!({"session":session.id,"agent":session.agent,"runtime_binding":session.runtime_binding})).collect();
             s.governance.push(record("legacy_feature_lock",f.id.clone(),Scope::Feature{project_id:f.project_id,feature_id:f.id},"历史 Feature 配置".into(),1,None,json!({"binding":f.binding,"known_sessions":sessions,"agent_instance_id":null,"model":"unknown unless present in a recorded runtime_binding","policy":"Do not infer AgentID or route new work using latest preferences; create a successor Feature"}),true));
         }
-    }
-
-    pub(crate) fn workflow_simulation_binding(
-        &self,
-        s: &EngineeringState,
-        feature: &str,
-        role: &str,
-        base: &BindingLock,
-    ) -> BindingLock {
-        let mut binding = base.clone();
-        if let Some(agent) = s
-            .feature_configuration(feature)
-            .and_then(|lock| lock.agent_refs.get(role).cloned())
-        {
-            binding.agent = agent.clone();
-            binding.skills = s
-                .definitions
-                .iter()
-                .find(|d| d.id == agent)
-                .and_then(|d| d.agent_profile.as_ref())
-                .map(|p| p.skill_revisions.clone())
-                .unwrap_or_default();
-        }
-        binding
     }
 
     pub(crate) fn index_experience(
@@ -1368,7 +1344,7 @@ impl Engine {
                         "无效的固定 Harness 配方",
                     )?;
                     require(
-                        ["codex", "dsh", "simulation"].contains(&h.provider.as_str())
+                        ["codex", "dsh"].contains(&h.provider.as_str())
                             && !h.runtime_version.is_empty(),
                         "无效 Harness 或运行版本",
                     )?;
@@ -1844,7 +1820,7 @@ impl Engine {
                             }
                         }
                         let mut states: BTreeMap<String, String> = BTreeMap::new();
-                        let mut simulation = vec![];
+                        let mut evaluation = vec![];
                         for key in &order {
                             let step = doc.steps.iter().find(|s| &s.key == key).unwrap();
                             let ready = step.dependencies.iter().all(|dep| {
@@ -1882,9 +1858,9 @@ impl Engine {
                                 "ready"
                             };
                             states.insert(key.clone(), state.into());
-                            simulation.push(json!({"key":key,"state":state,"role":step.participant_slot,"condition":step.condition,"reason":if state=="waiting_dependencies"{"前置结果尚未满足"}else if state=="waiting_confirmation"{"样本结果完成，等待精确输入确认"}else if state=="waiting_condition"{"样本条件不满足"}else{"仅作演练，不生成工程事实"},"rework_entries":step.rework_scope}));
+                            evaluation.push(json!({"key":key,"state":state,"role":step.participant_slot,"condition":step.condition,"reason":if state=="waiting_dependencies"{"前置结果尚未满足"}else if state=="waiting_confirmation"{"样本结果完成，等待精确输入确认"}else if state=="waiting_condition"{"样本条件不满足"}else{"仅作演练，不生成工程事实"},"rework_entries":step.rework_scope}));
                         }
-                        json!({"valid":true,"document_hash":configuration_hash(&doc),"order":order,"preview":doc.steps,"simulation":simulation,"external_actions":false})
+                        json!({"valid":true,"document_hash":configuration_hash(&doc),"order":order,"preview":doc.steps,"evaluation":evaluation,"external_actions":false})
                     }
                     Err(e) => json!({"valid":false,"errors":[e],"external_actions":false}),
                 });

@@ -1,3 +1,6 @@
+#[cfg(test)]
+#[path = "../../../tests/support/runtime.rs"]
+mod test_runtime;
 mod workspace;
 use axum::{
     Json, Router,
@@ -175,14 +178,8 @@ async fn setup(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Json<Value>
 }
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     let workspace = app.workspace.read().unwrap().clone();
-    let mode = workspace
-        .as_ref()
-        .and_then(|w| w.active_engine(None).ok())
-        .and_then(|e| e.store.snapshot().ok())
-        .and_then(|s| s.projects.first().map(|p| p.execution_mode.clone()))
-        .unwrap_or_else(|| "simulation".into());
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":mode,"live":"requires_registered_runtime_and_credentials","conversations":{"providers":["codex","dsh"],"managed_linux_workers":true,"engineering_run_contract":true},"archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"id":"sim-harness-v1","capabilities":["structured-output","cancel","hold","fault-injection"]},"sandbox":{"id":"sim-sandbox-v1","capabilities":["logical-environment","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":["codex","dsh"],"managed_linux_workers":true,"engineering_run_contract":true},"archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":["codex","dsh"],"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -282,7 +279,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--port 4317]\nWithout --data, choose a dataset in the Web setup page. Web UI supports explicit simulation and configured live projects."
+            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--port 4317]\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
         );
         return Ok(());
     }

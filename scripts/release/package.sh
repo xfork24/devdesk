@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
-cd "$(dirname "$0")/.."
-./scripts/build.sh
+cd "$(dirname "$0")/../.."
+./scripts/dev/build.sh
 package_name="devdesk-0.2.0-$(rustc -vV | sed -n 's/^host: //p')"
 staging="$(mktemp -d "${TMPDIR:-/tmp}/devdesk-package.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
@@ -14,8 +14,8 @@ cp -R containers "$staging/$package_name/"
 cp -R permissions "$staging/$package_name/"
 cp -R schemas "$staging/$package_name/"
 if [ "$(uname -s)" = Linux ]; then
-  mkdir -p "$staging/$package_name/scripts"
-  cp scripts/install-linux-sandbox-policy.sh "$staging/$package_name/scripts/"
+  mkdir -p "$staging/$package_name/scripts/platform/linux"
+  cp scripts/platform/linux/install-linux-sandbox-policy.sh "$staging/$package_name/scripts/platform/linux/"
 fi
 if [ "$(uname -s)" = Darwin ]; then
   mkdir -p "$staging/$package_name/credential-helper"

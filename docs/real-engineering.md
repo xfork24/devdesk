@@ -1,6 +1,6 @@
 # 真实工程接入
 
-Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检查、克隆；讨论与工程任务根据实际选中的 Harness 按需准备运行环境。后端继续保留模拟适配器、历史数据和离线夹具，Web 不再提供模拟项目或模拟场景入口。历史来源不会改写。
+Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检查、克隆；讨论与工程任务根据实际选中的 Harness 按需准备运行环境。产品只装配原生供应商执行器；旧原型项目只读保留，测试使用独立的静态数据和原生接口替身。
 
 ## 配置与运行
 
@@ -16,7 +16,7 @@ Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检�
 
 仓库核对请求在没有其他 Run/Turn 时也会唤醒后台调度，重启后仍处理已保存的请求。首次克隆中断后，核对会先验证所属 bare 仓库和 origin，再下载缺失的主分支；GitHub 的 Git 协调调用固定使用 HTTP/1.1，以避免部分网络下默认 HTTP 传输停滞；网络克隆/续传允许最多 180 秒，保留原目录、对象和操作 ID。
 
-Docker 未安装或未启动时显示环境阻塞，仓库权限或策略不兼容时保留原接入操作，供核对后重试。不会回退模拟执行，也不会修改 GitHub 规则。旧模拟项目不进入正常 Web 项目列表，仍可由后端离线回归读取。
+Docker 未安装或未启动时显示环境阻塞，仓库权限或策略不兼容时保留原接入操作，供核对后重试。不会回退模拟执行，也不会修改 GitHub 规则。历史原型项目不进入正常 Web 项目列表，后端仅提供只读兼容。
 
 新原生 Session 必须使用完整 Agent 及其 AgentID，不能另外覆盖 Model、Harness 或 Permission。Harness 偏好只作配置建议，不改写已发布组合。Project 默认调整只影响后来创建的 Feature；已有 Feature 后续 Task、Session、Attempt 和候选继续使用创建时的配置锁。技术重试沿用原锁，构建不兼容时明确阻塞。
 
@@ -63,7 +63,7 @@ flowchart LR
 
 ## 验证
 
-离线回归使用 `./scripts/check.sh`，包含 Rust、HTTP、debug/release Chromium 流程。真实测试使用专用数据集、仓库和带归属标签的容器；原始结果在 `docs/plans/real-engineering-integration/`。A01–A22 与分层证据见 [最终验收](plans/real-engineering-integration/R8-acceptance.md)。统一入口为 `scripts/check-live.sh --providers codex,dsh --root <独立数据集> --github-repo <owner/test-repo>`，默认 `--mode full`，可选 `--groups git,docker,harness,github,web,workflow,recovery`。恢复组需要 `--allow-host-restart`，只停止可证明归属该数据集和端口的 Host。`--mode verify-existing --reports <已有报告目录>` 只复核已有实际对象，不发新模型任务；报告明确区分两种模式。全新闭环使用独立报告目录与随机源码前缀，不能重跑已实现同名任务冒充 Red。
+离线回归使用 `./scripts/check/check.sh`，包含 Rust、HTTP、debug/release Chromium 流程。真实测试使用专用数据集、仓库和带归属标签的容器；原始结果在 `docs/plans/real-engineering-integration/`。A01–A22 与分层证据见 [最终验收](plans/real-engineering-integration/R8-acceptance.md)。统一入口为 `scripts/check/check-live.sh --providers codex,dsh --root <独立数据集> --github-repo <owner/test-repo>`，默认 `--mode full`，可选 `--groups git,docker,harness,github,web,workflow,recovery`。恢复组需要 `--allow-host-restart`，只停止可证明归属该数据集和端口的 Host。`--mode verify-existing --reports <已有报告目录>` 只复核已有实际对象，不发新模型任务；报告明确区分两种模式。全新闭环使用独立报告目录与随机源码前缀，不能重跑已实现同名任务冒充 Red。
 
 首批 Tests 仅支持无依赖的 Node `node:test` 固定文件配方。其他语言、依赖下载、网络测试和严格分支保护下的其他合入策略需要新的适配契约，不在现有执行路径中隐式放开。
 

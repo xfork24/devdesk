@@ -2696,8 +2696,7 @@
         "provider": {
           "enum": [
             "codex",
-            "dsh",
-            "simulation"
+            "dsh"
           ]
         },
         "runtime_version": {

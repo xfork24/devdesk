@@ -46,5 +46,5 @@ if [ "${1:---prepare}" = --import ]; then
   echo 'Configured the local DevDesk signing identity.'
 else
   printf 'Prepared certificate: %s\nPrepared private key: %s\n' "$certificate" "$private_key"
-  echo 'Run scripts/setup-macos-signing.sh --import to import and trust it for code signing only.'
+  echo 'Run scripts/platform/macos/setup-macos-signing.sh --import to import and trust it for code signing only.'
 fi

@@ -14,10 +14,7 @@ mod repositories;
 mod workflow_runtime;
 // Compatibility names for existing adapters and contract fixtures.
 use devdesk_domain::*;
-pub use ports::{
-    Git as GitPort, Harness as HarnessPort, Sandbox as SandboxPort, TestRequest,
-    Tests as TestRunnerPort,
-};
+pub use ports::{Git as GitPort, Harness as HarnessPort, TestRequest, Tests as TestRunnerPort};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -83,9 +80,7 @@ pub struct Engine {
     pub harness: Arc<dyn ports::Harness>,
     pub git: Arc<dyn ports::Git>,
     pub tests: Arc<dyn ports::Tests>,
-    pub sandbox: Arc<dyn ports::Sandbox>,
     pub pull_requests: Option<Arc<dyn ports::PullRequests>>,
-    pub simulation: Option<Arc<dyn ports::SimulationControls>>,
 }
 fn text(v: &Value, k: &str) -> Result<String> {
     v.get(k)
@@ -117,7 +112,7 @@ fn binding(s: &EngineeringState) -> BindingLock {
         agent: s
             .definitions
             .iter()
-            .find(|d| d.family == "agent" && d.name == "工程 Agent")
+            .find(|d| d.id == "builtin-agent-developer-v1")
             .unwrap()
             .id
             .clone(),
@@ -135,8 +130,8 @@ fn binding(s: &EngineeringState) -> BindingLock {
             .unwrap()
             .id
             .clone(),
-        harness: "sim-harness-v1".into(),
-        sandbox: "sim-sandbox-v1".into(),
+        harness: String::new(),
+        sandbox: String::new(),
     }
 }
 fn revision(s: &EngineeringState, id: &str) -> Option<u64> {
@@ -213,60 +208,29 @@ fn git_context(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Result<Git
         path: project.workspace.clone(),
         mainline: "main".into(),
     });
-    if project.execution_mode == "live" {
-        let location = |owner: &str| -> Result<CodeLocation> {
-            let w = s
-                .repository_worktrees
-                .iter()
-                .find(|w| w.project_id == project.id && w.owner_id == owner)
-                .ok_or_else(|| err("blocked", "受管理 worktree 尚未就绪，请核对仓库操作"))?;
-            Ok(CodeLocation {
-                owner: owner.into(),
-                branch: w.branch.clone(),
-                worktree: w.path.clone(),
-            })
-        };
-        return Ok(GitContext {
-            project: project.id.clone(),
-            workspace,
-            source: location(tid.unwrap_or(fid))?,
-            target: location(if tid.is_some() { fid } else { &project.id })?,
-            origin: Origin::External,
-        });
-    }
-    let source = if let Some(tid) = tid {
-        let t = s.task(tid)?;
-        CodeLocation {
-            owner: tid.into(),
-            branch: format!("task/{tid}"),
-            worktree: t.worktree.clone(),
-        }
-    } else {
-        CodeLocation {
-            owner: fid.into(),
-            branch: format!("feature/{fid}"),
-            worktree: format!("logical-feature/{fid}"),
-        }
-    };
-    let target = if tid.is_some() {
-        CodeLocation {
-            owner: fid.into(),
-            branch: format!("feature/{fid}"),
-            worktree: format!("logical-feature/{fid}"),
-        }
-    } else {
-        CodeLocation {
-            owner: format!("main:{}", project.id),
-            branch: workspace.mainline.clone(),
-            worktree: workspace.path.clone(),
-        }
+    require(
+        project.execution_mode == "live",
+        "历史项目只读，不能创建执行范围",
+    )?;
+
+    let location = |owner: &str| -> Result<CodeLocation> {
+        let w = s
+            .repository_worktrees
+            .iter()
+            .find(|w| w.project_id == project.id && w.owner_id == owner)
+            .ok_or_else(|| err("blocked", "受管理 worktree 尚未就绪，请核对仓库操作"))?;
+        Ok(CodeLocation {
+            owner: owner.into(),
+            branch: w.branch.clone(),
+            worktree: w.path.clone(),
+        })
     };
     Ok(GitContext {
         project: project.id.clone(),
         workspace,
-        source,
-        target,
-        origin: Origin::Simulated,
+        source: location(tid.unwrap_or(fid))?,
+        target: location(if tid.is_some() { fid } else { &project.id })?,
+        origin: Origin::External,
     })
 }
 /// Seed shared configuration without creating project or execution facts.
@@ -283,28 +247,6 @@ pub fn seed_configuration(s: &mut EngineeringState) {
         if !s.permissions.iter().any(|old| old.id == p.id) {
             s.permissions.push(p);
         }
-    }
-    if s.harnesses.is_empty() {
-        s.harnesses.push(Harness {
-            permission: None,
-            id: "sim-harness-v1".into(),
-            provider: "simulation".into(),
-            version: "1".into(),
-            capabilities: vec!["structured-output".into(), "cancel".into(), "poll".into()],
-            origin: Origin::Simulated,
-        });
-    }
-    if s.sandboxes.is_empty() {
-        s.sandboxes.push(Sandbox {
-            permission: None,
-            id: "sim-sandbox-v1".into(),
-            provider: "simulation".into(),
-            version: "1".into(),
-            platform: "logical".into(),
-            image: None,
-            network: false,
-            origin: Origin::Simulated,
-        });
     }
     if s.definitions.is_empty() {
         for (family, name, version, body) in [
@@ -332,8 +274,6 @@ pub fn seed_configuration(s: &mut EngineeringState) {
                 1,
                 "Red → 实现 → Green；证据绑定候选与测试定义",
             ),
-            ("agent", "工程 Agent", 1, "模拟工程执行身份"),
-            ("agent", "评审 Agent", 1, "独立模拟评审身份"),
             (
                 "standard",
                 "工程默认 Standard",
@@ -617,12 +557,19 @@ impl Engine {
             harness: adapters.harness,
             git: adapters.git,
             tests: adapters.tests,
-            sandbox: adapters.sandbox,
             pull_requests: adapters.pull_requests,
-            simulation: adapters.simulation,
         }
     }
     pub fn bootstrap(&self) -> Result<()> {
+        if self
+            .store
+            .snapshot()?
+            .projects
+            .iter()
+            .any(|p| p.execution_mode != "live")
+        {
+            return Ok(());
+        }
         self.store.transact(None, &mut |s| {
             seed_configuration(s);
             self.freeze_legacy_features(s);
@@ -668,9 +615,7 @@ impl Engine {
                 let interrupted_run = s.runs.iter().find(|r|r.id==rid).unwrap().clone();
                 let (fid,tid)=if let Some(aid)=&interrupted_run.attempt_id {let a=s.attempt(aid)?;(a.feature_id.clone(),a.task_id.clone())}else{let m=s.merge(interrupted_run.merge_id.as_deref().unwrap())?;(m.feature_id.clone(),m.task_id.clone())};
                 let mut report=self.artifacts.seal(&fid,tid.as_deref(),"runs",&format!("# Interrupted Run {rid}\norigin={:?}\n结果未确认；恢复仅核对外部事实，不自动接纳。",interrupted_run.origin))?;report.origin=interrupted_run.origin;s.runs.iter_mut().find(|r|r.id==rid).unwrap().result_artifact=Some(report.id.clone());s.artifacts.push(report);
-                let mut unresolved=false;
-                for effect in s.effects.iter_mut().filter(|e|e.run_id==rid&&[EffectStatus::Pending,EffectStatus::Observed].contains(&e.status)&&e.kind!=EffectKind::Cleanup) {effect.status=EffectStatus::NeedsReconciliation;effect.reason=if interrupted_run.origin==Origin::External{"restart_native_observation_only"}else{"reconcile_requested"}.into();effect.revision+=1;unresolved=true;}
-                if !unresolved {self.enqueue_cleanup(s,&rid,false);}
+                for effect in s.effects.iter_mut().filter(|e|e.run_id==rid&&[EffectStatus::Pending,EffectStatus::Observed].contains(&e.status)&&e.kind!=EffectKind::Cleanup) {effect.status=EffectStatus::NeedsReconciliation;effect.reason="restart_native_observation_only".into();effect.revision+=1;}
                 event(
                     s,
                     &rid,
@@ -680,7 +625,6 @@ impl Engine {
             }
             Ok(json!({"ok":true}))
         })?;
-        self.reconcile_effects()?;
         self.drain_advances()?;
         Ok(())
     }
@@ -741,6 +685,11 @@ impl Engine {
             }
         }
         let target = c.target.as_deref().unwrap_or("");
+        require(
+            s.projects.iter().all(|p| p.execution_mode == "live"),
+            "历史项目只读，请创建新的 GitHub 项目",
+        )?;
+        require(c.payload.get("scenario").is_none(), "不再支持模拟场景参数")?;
         let p = &c.payload;
         if let Some(result) = self.governance_command(method, c, s)? {
             event(s, target, method, &format!("command_id={}", c.command_id));
@@ -784,7 +733,7 @@ impl Engine {
                     .any(|p| Some(p.id.as_str()) == project && p.execution_mode == "live")
                     || (method == "attempt.start" && p.get("live_sessions").is_some())
                     || (method == "merge.request" && p.get("merge_session").is_some()),
-                "真实 Run 阶段执行契约正在接入，当前不能回退模拟实现",
+                "工程执行需要宿主解析的原生 Session",
             )?;
         }
         let result = match method {
@@ -843,64 +792,6 @@ impl Engine {
                 });
                 json!({"id":did})
             }
-            "effect.reconcile" => {
-                let effect = s
-                    .effects
-                    .iter_mut()
-                    .find(|e| e.id == target)
-                    .ok_or_else(|| err("not_found", "外部操作不存在"))?;
-                require(
-                    effect.status == EffectStatus::NeedsReconciliation,
-                    "该操作无需核对",
-                )?;
-                effect.reason = "reconcile_requested".into();
-                effect.revision += 1;
-                effect.updated = now();
-                json!({"id":target,"operation_id":target})
-            }
-            "effect.retry_cleanup" => {
-                let old = s
-                    .effects
-                    .iter()
-                    .find(|e| e.id == target)
-                    .ok_or_else(|| err("not_found", "清理操作不存在"))?
-                    .clone();
-                require(
-                    old.kind == EffectKind::Cleanup && old.status == EffectStatus::Failed,
-                    "仅失败清理可重试",
-                )?;
-                let resource = old.request["resource"]["id"]
-                    .as_str()
-                    .ok_or_else(|| err("blocked", "清理资源引用缺失"))?;
-                require(
-                    s.resources
-                        .iter()
-                        .any(|r| r.id == resource && r.status == Status::CleanupFailed),
-                    "资源已释放或当前不可重试",
-                )?;
-                require(
-                    !s.effects.iter().any(|e| {
-                        e.kind == EffectKind::Cleanup
-                            && e.request["resource"]["id"] == resource
-                            && [EffectStatus::Pending, EffectStatus::Observed].contains(&e.status)
-                    }),
-                    "清理重试已在进行",
-                )?;
-                let key = format!("{}:retry:{}", old.id, c.command_id);
-                let mut request = old.request.clone();
-                request["fault_injection"] = json!(false);
-                let mut next = old.clone();
-                next.id = key.clone();
-                next.request = request;
-                next.receipt = None;
-                next.status = EffectStatus::Pending;
-                next.revision = 1;
-                next.created = now();
-                next.updated = now();
-                next.reason = format!("retry_of={}", old.id);
-                s.effects.push(next);
-                json!({"id":key,"operation_id":key})
-            }
             "project.create" => {
                 let scoped = self.store.project_id();
                 require(
@@ -921,7 +812,7 @@ impl Engine {
                         path: opt(p, "workspace").unwrap_or_default(),
                         mainline: opt(p, "mainline").unwrap_or_else(|| "main".into()),
                     }),
-                    execution_mode: "simulation".into(),
+                    execution_mode: "live".into(),
                     binding: b,
                     concurrency: 2,
                     revision: 1,
@@ -932,11 +823,7 @@ impl Engine {
                     content: String::new(),
                     revision: 1,
                 });
-                s.heads.push(GitHead {
-                    id: format!("main:{pid}"),
-                    project_id: pid.clone(),
-                    revision: "sim-rev-root".into(),
-                });
+
                 if p["use_builtin_defaults"] == true {
                     self.attach_builtin_project_defaults(s, &pid)?;
                 }
@@ -1007,7 +894,7 @@ impl Engine {
                     .iter()
                     .find(|h| h.id == format!("main:{pid}"))
                     .map(|h| h.revision.clone())
-                    .unwrap_or_else(|| "sim-rev-root".into());
+                    .unwrap_or_default();
                 let predecessor = opt(p, "predecessor");
                 if let Some(prev) = &predecessor {
                     require(
@@ -1048,7 +935,7 @@ impl Engine {
                     content: "Feature 初始上下文".into(),
                     revision: 1,
                 });
-                if live {
+                if live && !base.is_empty() {
                     self.enqueue_worktree(s, &pid, &fid, WorktreeKind::Feature, &base);
                 }
                 self.freeze_feature_configuration(s, &fid, p)?;
@@ -1436,14 +1323,7 @@ impl Engine {
                     binding: f.binding,
                     inherited_snapshot: snap.id.clone(),
                     dependencies: deps,
-                    worktree: format!(
-                        "{}/{tid}",
-                        if live {
-                            "pending-worktree"
-                        } else {
-                            "logical-worktree"
-                        }
-                    ),
+                    worktree: format!("pending-worktree/{tid}"),
                     scope: scope.clone(),
                 });
                 if s.projects
@@ -1546,11 +1426,7 @@ impl Engine {
                     supersedes: None,
                     requirement_id: req,
                     design_id: design,
-                    origin: if live {
-                        source_origin
-                    } else {
-                        Origin::Simulated
-                    },
+                    origin: source_origin,
                     acceptance: vec![],
                     verifies: scope.acceptance.clone(),
                     artifact_id: test_artifact_id,
@@ -1802,7 +1678,11 @@ impl Engine {
                             None,
                             phase,
                             f.binding,
-                            format!("logical-feature/{}", f.id),
+                            s.repository_worktrees
+                                .iter()
+                                .find(|w| w.owner_id == f.id)
+                                .map(|w| w.path.clone())
+                                .unwrap_or_default(),
                         )
                     };
                 require(
@@ -1825,12 +1705,10 @@ impl Engine {
                 let live = s.projects.iter().any(|p| {
                     p.id == s.feature(&fid).unwrap().project_id && p.execution_mode == "live"
                 });
-                let live_sessions: std::collections::BTreeMap<String, Id> = if live {
+                require(live, "历史项目不能启动工程执行")?;
+                let live_sessions: std::collections::BTreeMap<String, Id> =
                     serde_json::from_value(p["live_sessions"].clone())
-                        .map_err(|_| err("blocked", "真实 Attempt 缺少宿主解析的阶段 Session"))?
-                } else {
-                    std::collections::BTreeMap::new()
-                };
+                        .map_err(|_| err("blocked", "Attempt 缺少宿主解析的阶段 Session"))?;
                 if live && ["planning", "solution_planning"].contains(&phase.as_str()) {
                     let docs = document_ids(s, &fid, None);
                     require(
@@ -1879,8 +1757,7 @@ impl Engine {
                 s.validate_binding(&b)?;
                 let runtime = s.harnesses.iter().find(|h| h.id == b.harness).unwrap();
                 require(
-                    (live && runtime.origin == Origin::External)
-                        || (!live && runtime.origin == Origin::Simulated),
+                    runtime.origin == Origin::External,
                     "项目执行模式与 Harness 来源不符",
                 )?;
                 self.invalidate_merges(s, &fid, tid.as_deref());
@@ -1924,15 +1801,12 @@ impl Engine {
                     paused: false,
                     revision: 1,
                 });
-                let baseline = if live {
-                    s.heads
-                        .iter()
-                        .find(|h| h.id == tid.as_deref().unwrap_or(&fid))
-                        .map(|h| h.revision.clone())
-                        .ok_or_else(|| err("blocked", "代码头尚未核对"))?
-                } else {
-                    self.git.execution_revision(s.attempt(&aid)?, "red")?
-                };
+                let baseline = s
+                    .heads
+                    .iter()
+                    .find(|h| h.id == tid.as_deref().unwrap_or(&fid))
+                    .map(|h| h.revision.clone())
+                    .ok_or_else(|| err("blocked", "代码头尚未核对"))?;
                 let attempt = s.attempts.iter_mut().find(|a| a.id == aid).unwrap();
                 attempt.source_base = live.then(|| baseline.clone());
                 attempt.baseline = if live && phase == "implementation" {
@@ -1953,7 +1827,7 @@ impl Engine {
                         ("task_plan", vec!["design"], false),
                         ("test_plan", vec!["design"], false),
                     ],
-                    "implementation" if live => vec![
+                    "implementation" => vec![
                         ("test_author", vec![], true),
                         ("red", vec!["test_author"], false),
                         ("implement", vec!["red"], true),
@@ -1961,22 +1835,10 @@ impl Engine {
                         ("docs", vec!["implement"], false),
                         ("verify", vec!["green", "docs"], false),
                     ],
-                    "implementation" => vec![
-                        ("red", vec![], false),
-                        ("implement", vec!["red"], true),
-                        ("green", vec!["implement"], false),
-                        ("docs", vec!["implement"], true),
-                        ("verify", vec!["green", "docs"], false),
-                    ],
-                    _ if live => vec![
+                    _ => vec![
                         ("test_author", vec![], true),
                         ("feature_tests", vec!["test_author"], false),
                         ("docs", vec!["feature_tests"], false),
-                        ("verify", vec!["feature_tests", "docs"], false),
-                    ],
-                    _ => vec![
-                        ("feature_tests", vec![], false),
-                        ("docs", vec![], true),
                         ("verify", vec!["feature_tests", "docs"], false),
                     ],
                 };
@@ -2006,35 +1868,7 @@ impl Engine {
                         .collect::<Vec<_>>(),
                 )?;
                 for (node, deps, writes) in nodes {
-                    if live {
-                        self.add_live_run(
-                            s,
-                            &aid,
-                            &node,
-                            deps.iter().map(|s| s.to_string()).collect(),
-                            writes && phase != "planning",
-                        )?;
-                        continue;
-                    }
-                    let role = match node.as_str() {
-                        "requirement_validate" => "analyst",
-                        "plan_validate" => "architect",
-                        "implement" | "docs" => "developer",
-                        _ => "tester",
-                    };
-                    let node_binding = self.workflow_simulation_binding(s, &fid, role, &b);
-                    self.add_run(
-                        s,
-                        Some(&aid),
-                        None,
-                        &node,
-                        deps.iter().map(|s| s.to_string()).collect(),
-                        writes,
-                        &worktree,
-                        &node_binding,
-                        None,
-                        opt(p, "scenario").as_deref().unwrap_or("success"),
-                    );
+                    self.add_live_run(s, &aid, &node, deps, writes && phase != "planning")?;
                 }
                 if let Some(tid) = tid {
                     let t = s.tasks.iter_mut().find(|x| x.id == tid).unwrap();
@@ -2105,7 +1939,7 @@ impl Engine {
                 }
                 json!({"id":target})
             }
-            "run.cancel" | "run.continue" => {
+            "run.cancel" => {
                 let r = s
                     .runs
                     .iter_mut()
@@ -2115,10 +1949,7 @@ impl Engine {
                     [Status::Queued, Status::Running].contains(&r.status),
                     "Run 已结束",
                 )?;
-                if method == "run.continue" {
-                    require(r.outcome == "hold", "该 Run 未处于受控等待点")?;
-                    r.outcome = "success".into();
-                } else if r.status == Status::Queued {
+                if r.status == Status::Queued {
                     r.status = Status::Cancelled;
                     r.finished = Some(now());
                 } else {
@@ -2183,67 +2014,7 @@ impl Engine {
                     !descendants.iter().any(|r| r.status == Status::Running),
                     "等待下游执行结束或取消确认后再重试",
                 )?;
-                if old.origin == Origin::External {
-                    return self.retry_live_runs(s, &old, &descendants);
-                }
-                let _owner_binding = if let Some(aid) = &old.attempt_id {
-                    let a = s.attempt(aid)?.clone();
-                    require(
-                        s.attempt_inputs_current(&a),
-                        "输入已改变，必须创建新 Attempt",
-                    )?;
-                    require(
-                        ![Status::Rejected, Status::Accepted, Status::Cancelled]
-                            .contains(&a.status),
-                        "Attempt 已终结，需创建新 Attempt",
-                    )?;
-                    let am = s.attempts.iter_mut().find(|x| x.id == *aid).unwrap();
-                    am.status = Status::Running;
-                    am.revision += 1;
-                    a.binding
-                } else {
-                    let m = s.merge(old.merge_id.as_deref().unwrap())?;
-                    require(
-                        m.status == Status::Running
-                            && m.input_version == s.feature(&m.feature_id)?.input_version
-                            && s.accepted(s.delivery(&m.source_delivery)?)
-                            && s.heads
-                                .iter()
-                                .any(|h| h.id == m.target && h.revision == m.expected_target),
-                        "Merge 已失效或结束，请重新构造候选",
-                    )?;
-                    s.feature(&m.feature_id)?.binding.clone()
-                };
-                let b = old.binding.clone();
-                let rid = self.add_run(
-                    s,
-                    old.attempt_id.as_deref(),
-                    old.merge_id.as_deref(),
-                    &old.node,
-                    old.dependencies.clone(),
-                    old.writes,
-                    &old.worktree,
-                    &b,
-                    Some(old.id.clone()),
-                    "success",
-                );
-                for r in descendants {
-                    if r.status != Status::Queued {
-                        self.add_run(
-                            s,
-                            r.attempt_id.as_deref(),
-                            r.merge_id.as_deref(),
-                            &r.node,
-                            r.dependencies,
-                            r.writes,
-                            &r.worktree,
-                            &b,
-                            Some(r.id),
-                            "success",
-                        );
-                    }
-                }
-                json!({"id":rid,"operation_id":rid})
+                self.retry_live_runs(s, &old, &descendants)?
             }
             "delivery.submit" => {
                 let a = s.attempt(target)?.clone();
@@ -2378,96 +2149,60 @@ impl Engine {
                     }),
                     "评审已在执行",
                 )?;
-                if d.origin == Origin::External {
-                    let sid = text(p, "review_session")?;
-                    let session = s
-                        .sessions
-                        .iter()
-                        .find(|v| v.id == sid)
-                        .ok_or_else(|| err("blocked", "Reviewer Session 缺失"))?;
-                    require(
-                        session.owner_id == d.task_id.as_deref().unwrap_or(&d.feature_id)
-                            && session.runtime_binding.as_ref().is_some_and(|b| {
-                                b.work_type == WorkType::Review
-                                    && b.tool_policy == ToolPolicy::ReadOnly
-                            })
-                            && s.definitions
-                                .iter()
-                                .find(|v| v.id == session.agent)
-                                .and_then(|v| v.agent_profile.as_ref())
-                                .is_some_and(|p| p.role == AgentRole::Reviewer),
-                        "Reviewer 范围/角色/权限不符",
-                    )?;
-                    let source = if let Some(mid) = &d.merge_id {
-                        s.delivery(&s.merge(mid)?.source_delivery)?
-                    } else {
-                        &d
-                    };
-                    let standard = s
-                        .attempt(source.attempt_id.as_deref().unwrap())?
-                        .binding
-                        .standard
-                        .clone();
-                    let binding = self.live_binding(s, &sid, &standard)?;
-                    let rid = id();
-                    s.runs.push(Run {
-                        id: rid.clone(),
-                        attempt_id: d.attempt_id.clone(),
-                        merge_id: d.merge_id.clone(),
-                        node: format!("review:{}", d.id),
-                        dependencies: vec![],
-                        status: Status::Queued,
-                        retry_of: None,
-                        session_id: sid,
-                        binding,
-                        binding_verified: true,
-                        writes: false,
-                        worktree: "review-readonly".into(),
-                        outcome: "external".into(),
-                        cancel_requested: false,
-                        started: None,
-                        finished: None,
-                        result: None,
-                        result_artifact: None,
-                        origin: Origin::External,
-                    });
-                    return Ok(json!({"id":rid,"operation_id":rid}));
-                }
-                let mut b = if let Some(aid) = &d.attempt_id {
-                    s.attempt(aid)?.binding.clone()
-                } else {
-                    let m = s.merge(d.merge_id.as_deref().unwrap())?;
-                    let source = s.delivery(&m.source_delivery)?;
-                    s.attempt(source.attempt_id.as_deref().unwrap())?
-                        .binding
-                        .clone()
-                };
-                let author = s.agent_identity(&b.agent)?;
-                b.agent = s
-                    .definitions
+                require(d.origin == Origin::External, "历史交付不能创建原生评审")?;
+
+                let sid = text(p, "review_session")?;
+                let session = s
+                    .sessions
                     .iter()
-                    .find(|x| {
-                        x.family == "agent"
-                            && s.agent_identity(&x.id)
-                                .is_ok_and(|identity| identity != author)
-                    })
-                    .ok_or_else(|| err("blocked", "缺少独立 Reviewer 身份"))?
-                    .id
+                    .find(|v| v.id == sid)
+                    .ok_or_else(|| err("blocked", "Reviewer Session 缺失"))?;
+                require(
+                    session.owner_id == d.task_id.as_deref().unwrap_or(&d.feature_id)
+                        && session.runtime_binding.as_ref().is_some_and(|b| {
+                            b.work_type == WorkType::Review && b.tool_policy == ToolPolicy::ReadOnly
+                        })
+                        && s.definitions
+                            .iter()
+                            .find(|v| v.id == session.agent)
+                            .and_then(|v| v.agent_profile.as_ref())
+                            .is_some_and(|p| p.role == AgentRole::Reviewer),
+                    "Reviewer 范围/角色/权限不符",
+                )?;
+                let source = if let Some(mid) = &d.merge_id {
+                    s.delivery(&s.merge(mid)?.source_delivery)?
+                } else {
+                    &d
+                };
+                let standard = s
+                    .attempt(source.attempt_id.as_deref().unwrap())?
+                    .binding
+                    .standard
                     .clone();
-                b = self.workflow_simulation_binding(s, &d.feature_id, "reviewer", &b);
-                let rid = self.add_run(
-                    s,
-                    d.attempt_id.as_deref(),
-                    d.merge_id.as_deref(),
-                    &format!("review:{}", d.id),
-                    vec![],
-                    false,
-                    "review-readonly",
-                    &b,
-                    None,
-                    opt(p, "scenario").as_deref().unwrap_or("success"),
-                );
-                json!({"id":rid,"operation_id":rid})
+                let binding = self.live_binding(s, &sid, &standard)?;
+                let rid = id();
+                s.runs.push(Run {
+                    id: rid.clone(),
+                    attempt_id: d.attempt_id.clone(),
+                    merge_id: d.merge_id.clone(),
+                    node: format!("review:{}", d.id),
+                    dependencies: vec![],
+                    status: Status::Queued,
+                    retry_of: None,
+                    session_id: sid,
+                    binding,
+                    binding_verified: true,
+                    writes: false,
+                    worktree: "review-readonly".into(),
+                    outcome: "external".into(),
+                    cancel_requested: false,
+                    started: None,
+                    finished: None,
+                    result: None,
+                    result_artifact: None,
+                    origin: Origin::External,
+                });
+                return Ok(json!({"id":rid,"operation_id":rid}));
             }
             "override.accept" => {
                 let d = s.delivery(target)?.clone();
@@ -2520,138 +2255,7 @@ impl Engine {
                 json!({"id":oid})
             }
             "merge.request" => {
-                if p.get("merge_session").is_some() {
-                    return self.prepare_live_merge(s, c);
-                }
-
-                let (fid, tid) = if let Some(t) = s.tasks.iter().find(|x| x.id == target) {
-                    require(
-                        [Status::Accepted, Status::Merging].contains(&t.status),
-                        "Task 交付尚未接受",
-                    )?;
-                    (t.feature_id.clone(), Some(t.id.clone()))
-                } else {
-                    let f = s.feature(target)?;
-                    require(
-                        [Status::Accepted, Status::Merging].contains(&f.status),
-                        "Feature 收尾交付尚未接受",
-                    )?;
-                    (f.id.clone(), None)
-                };
-                mutable_feature(s, &fid)?;
-                let f = s.feature(&fid)?.clone();
-                require(
-                    !s.merges.iter().any(|m| {
-                        m.feature_id == fid
-                            && m.task_id == tid
-                            && [Status::Running, Status::WaitingReview, Status::Accepted]
-                                .contains(&m.status)
-                            && m.input_version == f.input_version
-                            && s.delivery(&m.source_delivery).is_ok_and(|d| s.accepted(d))
-                            && !s
-                                .deliveries
-                                .iter()
-                                .any(|d| d.merge_id.as_deref() == Some(&m.id) && d.stale)
-                            && s.heads
-                                .iter()
-                                .any(|h| h.id == m.target && h.revision == m.expected_target)
-                    }),
-                    "已有有效 Merge，请查看该候选",
-                )?;
-                let mid = id();
-                let target_head = if tid.is_some() {
-                    fid.clone()
-                } else {
-                    format!("main:{}", f.project_id)
-                };
-                let expected = s
-                    .heads
-                    .iter()
-                    .find(|h| h.id == target_head)
-                    .unwrap()
-                    .revision
-                    .clone();
-                let source_delivery = s
-                    .deliveries
-                    .iter()
-                    .rev()
-                    .find(|d| {
-                        d.feature_id == fid
-                            && d.task_id == tid
-                            && d.kind
-                                == if tid.is_some() {
-                                    "implementation"
-                                } else {
-                                    "closure"
-                                }
-                            && s.accepted(d)
-                    })
-                    .ok_or_else(|| err("blocked", "缺少当前已接受源交付"))?
-                    .clone();
-                s.validate_evidence(&source_delivery)?;
-                let merge_binding = s
-                    .attempt(
-                        source_delivery
-                            .attempt_id
-                            .as_deref()
-                            .ok_or_else(|| err("blocked", "源交付缺少 Attempt 锁"))?,
-                    )?
-                    .binding
-                    .clone();
-                let source = source_delivery
-                    .candidate
-                    .clone()
-                    .ok_or_else(|| err("blocked", "源交付缺少候选版本"))?;
-                let source_attempt = s.attempt(source_delivery.attempt_id.as_deref().unwrap())?;
-                let context = source_attempt
-                    .git_context
-                    .as_ref()
-                    .ok_or_else(|| err("blocked", "历史 Attempt 缺少确定仓库定位，请新建执行"))?;
-                let candidate = self.git.candidate(context, &source, &expected, &mid)?;
-                let m = Merge {
-                    id: mid.clone(),
-                    feature_id: fid.clone(),
-                    task_id: tid.clone(),
-                    status: Status::Running,
-                    revision: 1,
-                    input_version: f.input_version,
-                    source: source.clone(),
-                    source_delivery: source_delivery.id,
-                    target: target_head,
-                    expected_target: expected.clone(),
-                    candidate,
-                    committed_revision: None,
-                    change_request: Some(ChangeRequestRef {
-                        provider: "simulation".into(),
-                        repository: f.project_id.clone(),
-                        external_id: format!("sim-change-{mid}"),
-                        source_revision: source.clone(),
-                        target_revision: expected.clone(),
-                    }),
-                };
-                s.merges.push(m);
-                if let Some(tid) = &tid {
-                    let t = s.tasks.iter_mut().find(|t| &t.id == tid).unwrap();
-                    t.status = Status::Merging;
-                    t.revision += 1;
-                } else {
-                    let f = s.features.iter_mut().find(|x| x.id == fid).unwrap();
-                    f.status = Status::Merging;
-                    f.revision += 1;
-                }
-                self.add_run(
-                    s,
-                    None,
-                    Some(&mid),
-                    "merge_verify",
-                    vec![],
-                    false,
-                    "merge-readonly",
-                    &merge_binding,
-                    None,
-                    opt(p, "scenario").as_deref().unwrap_or("success"),
-                );
-                json!({"id":mid,"operation_id":mid})
+                return self.prepare_live_merge(s, c);
             }
             "merge.apply" => {
                 let m = s.merge(target)?.clone();
@@ -2870,92 +2474,7 @@ impl Engine {
             }
         }
     }
-    fn add_run(
-        &self,
-        s: &mut EngineeringState,
-        aid: Option<&str>,
-        mid: Option<&str>,
-        node: &str,
-        deps: Vec<String>,
-        writes: bool,
-        worktree: &str,
-        b: &BindingLock,
-        retry: Option<String>,
-        scenario: &str,
-    ) -> String {
-        let rid = id();
-        let sid = id();
-        let owner = aid.or(mid).unwrap().to_string();
-        let snapshot_id = s
-            .attempts
-            .iter()
-            .find(|a| Some(a.id.as_str()) == aid)
-            .and_then(|a| a.task_id.as_ref())
-            .and_then(|tid| s.tasks.iter().find(|t| &t.id == tid))
-            .map(|t| t.inherited_snapshot.clone());
-        s.sessions.push(Session {
-            project_id: None,
-            feature_id: None,
-            task_id: None,
-            scope: None,
-            lifecycle: None,
-            runtime_binding: None,
-            external_session: None,
-            predecessor: None,
-            revision: 0,
-            id: sid.clone(),
-            owner_id: owner,
-            agent: b.agent.clone(),
-            harness: b.harness.clone(),
-            sandbox: b.sandbox.clone(),
-            snapshot_id,
-            instance: Some(ExecutionInstance {
-                id: id(),
-                run_id: rid.clone(),
-                harness: s
-                    .harnesses
-                    .iter()
-                    .find(|h| h.id == b.harness)
-                    .unwrap()
-                    .clone(),
-                sandbox: s
-                    .sandboxes
-                    .iter()
-                    .find(|env| env.id == b.sandbox)
-                    .unwrap()
-                    .clone(),
-                external_session: None,
-                external_environment: None,
-                status: Status::Prepared,
-                started: None,
-                finished: None,
-            }),
-            origin: Origin::Simulated,
-        });
-        let outcome = self.harness.configure(node, scenario);
-        s.runs.push(Run {
-            id: rid.clone(),
-            attempt_id: aid.map(str::to_owned),
-            merge_id: mid.map(str::to_owned),
-            node: node.into(),
-            dependencies: deps,
-            status: Status::Queued,
-            retry_of: retry,
-            session_id: sid,
-            binding: b.clone(),
-            binding_verified: true,
-            writes,
-            worktree: worktree.into(),
-            outcome: outcome.into(),
-            cancel_requested: false,
-            started: None,
-            finished: None,
-            result: None,
-            result_artifact: None,
-            origin: Origin::Simulated,
-        });
-        rid
-    }
+
     fn make_delivery(
         &self,
         s: &mut EngineeringState,
@@ -2970,15 +2489,16 @@ impl Engine {
         candidate: Option<String>,
     ) -> Result<String> {
         let did = id();
-        let origin = if evidence.iter().any(|id| {
-            s.runs
-                .iter()
-                .any(|r| &r.id == id && r.origin == Origin::External)
-        }) {
-            Origin::External
-        } else {
-            Origin::Simulated
-        };
+        require(
+            !evidence.is_empty()
+                && evidence.iter().all(|id| {
+                    s.runs
+                        .iter()
+                        .any(|r| &r.id == id && r.origin == Origin::External)
+                }),
+            "交付需要原生执行证据",
+        )?;
+        let origin = Origin::External;
         let source_deliveries: Vec<Id> = if let Some(mid) = mid {
             vec![s.merge(mid)?.source_delivery.clone()]
         } else if kind == "closure" {
@@ -3447,7 +2967,7 @@ impl Engine {
             .iter()
             .find(|p| p.id == s.feature(fid).unwrap().project_id)
             .map(|p| p.execution_mode.as_str())
-            .unwrap_or("simulation");
+            .unwrap_or("live");
         let mut manifest = self.artifacts.seal(
             fid,
             tid,
@@ -3464,13 +2984,25 @@ impl Engine {
         Ok(sid)
     }
     pub fn tick(&self, global_limit: usize) -> Result<()> {
+        if self
+            .store
+            .snapshot()?
+            .projects
+            .iter()
+            .any(|p| p.execution_mode != "live")
+        {
+            return Ok(());
+        }
         self.reconcile_native_tests()?;
-        self.reconcile_effects()?;
         self.drain_advances()?;
         let snapshot = self.store.snapshot()?;
         let mut outputs = vec![];
-        for run in snapshot.runs.iter().filter(|r| r.status == Status::Running) {
-            match self.poll_result(&snapshot, run) {
+        for run in snapshot
+            .runs
+            .iter()
+            .filter(|r| r.status == Status::Running && r.origin == Origin::External)
+        {
+            match self.poll_live_run(&snapshot, run) {
                 Ok(Some(output)) => outputs.push((run.clone(), output)),
                 Ok(None) => {}
                 Err(error)
@@ -3589,16 +3121,8 @@ impl Engine {
                             s,
                             &d,
                             decision,
-                            if r.origin == Origin::External {
-                                output["summary"].as_str().unwrap_or("独立真实 Reviewer")
-                            } else {
-                                "独立模拟 Reviewer 基于冻结交付评审；origin=simulated"
-                            },
-                            if r.origin == Origin::External {
-                                "agent:native-reviewer"
-                            } else {
-                                "agent:sim-reviewer"
-                            },
+                            output["summary"].as_str().unwrap_or("独立原生 Reviewer"),
+                            "agent:native-reviewer",
                             Some(r.id.clone()),
                         ) {
                             let rm = s.runs.iter_mut().find(|x| x.id == r.id).unwrap();
@@ -3626,7 +3150,6 @@ impl Engine {
                     .result_artifact = Some(log.id.clone());
                 s.artifacts.push(log);
                 self.finish_effects(s, &r.id, EffectStatus::Applied, "回执已接纳，产物已封存");
-                self.enqueue_cleanup(s, &r.id, output["cleanup_failed"] == true);
                 if let Some(instance) = s
                     .sessions
                     .iter_mut()
@@ -3750,7 +3273,7 @@ impl Engine {
             let queue = s
                 .runs
                 .iter()
-                .filter(|r| r.status == Status::Queued)
+                .filter(|r| r.status == Status::Queued && r.origin == Origin::External)
                 .cloned()
                 .collect::<Vec<_>>();
             for r in queue {
@@ -3770,214 +3293,14 @@ impl Engine {
                     instance.status = Status::Running;
                     instance.started = Some(now());
                 }
-                if r.origin == Origin::Simulated {
-                    s.resources.push(self.sandbox.resource(&r.id));
-                }
+
                 event(s, &r.id, "run.started", &r.node);
             }
             Ok(json!({"ok":true}))
         };
         self.store.transact(None, &mut action)?;
-        self.drain_cleanup()?;
         self.drain_live_cleanup()?;
         Ok(())
-    }
-    fn poll_result(&self, s: &EngineeringState, r: &Run) -> Result<Option<Value>> {
-        if r.origin == Origin::External {
-            return self.poll_live_run(s, r);
-        }
-        let mut input = if r.node.starts_with("review:") {
-            let d = s.delivery(r.node.trim_start_matches("review:"))?;
-            let artifact = s
-                .artifacts
-                .iter()
-                .find(|a| a.id == d.artifact_id)
-                .ok_or_else(|| err("blocked", "交付 Artifact 缺失"))?;
-            json!({"delivery":d,"documents":d.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"artifact":artifact,"artifact_body":String::from_utf8_lossy(&self.artifacts.read(artifact)?).into_owned()})
-        } else if let Some(aid) = &r.attempt_id {
-            let a = s.attempt(aid)?;
-            json!({"phase":a.phase,"context":{"content":a.context_content,"revision":a.context_revision},"initial_snapshot":s.sessions.iter().find(|session|session.id==r.session_id).and_then(|session|session.snapshot_id.as_ref()).and_then(|id|s.snapshots.iter().find(|snapshot|&snapshot.id==id)),"frozen_inputs":a.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"stage_outputs":a.outputs.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"documents":a.documents.iter().chain(a.outputs.iter()).filter(|id|!a.outputs.iter().any(|next|s.documents.iter().any(|d|&d.id==next&&d.supersedes.as_ref()==Some(*id)))).filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>()})
-        } else {
-            json!({})
-        };
-        let standard = s
-            .definitions
-            .iter()
-            .find(|definition| definition.id == r.binding.standard)
-            .ok_or_else(|| err("blocked", "执行 Standard 锁缺失"))?;
-        let definitions: Vec<_> = s
-            .definitions
-            .iter()
-            .filter(|d| {
-                d.id == r.binding.agent
-                    || d.id == r.binding.standard
-                    || r.binding.skills.contains(&d.id)
-                    || standard.slots.iter().any(|slot| slot.spec == d.id)
-            })
-            .collect();
-        let code_attempt = if let Some(aid) = r.attempt_id.as_deref() {
-            s.attempt(aid).ok()
-        } else {
-            r.merge_id
-                .as_deref()
-                .and_then(|id| s.merge(id).ok())
-                .and_then(|m| s.delivery(&m.source_delivery).ok())
-                .and_then(|d| d.attempt_id.as_deref())
-                .and_then(|id| s.attempt(id).ok())
-        };
-        input["code"] = json!(code_attempt.and_then(|a| a.git_context.as_ref()));
-        input["code_baseline"] = json!(code_attempt.and_then(|a| a.baseline.as_ref()));
-        if let Some(mid) = &r.merge_id {
-            input["merge"] = json!(s.merge(mid)?);
-        }
-        input["execution_binding"] = json!(r.binding);
-        input["definitions"] = json!(definitions);
-        input["runtime"] = json!(
-            s.sessions
-                .iter()
-                .find(|session| session.id == r.session_id)
-                .and_then(|session| session.instance.as_ref())
-        );
-        let result = match self.poll_harness(r, &input) {
-            Ok(Some(v)) => v,
-            Ok(None) => return Ok(None),
-            Err(e) => {
-                json!({"status":"failed","failure_type":"adapter_error","message":e.message})
-            }
-        };
-        if r.cancel_requested && result["cancellation_confirmed"] != true {
-            // A success arriving after cancel is not a cancellation acknowledgement.
-            // Keep the resource permit until the adapter confirms termination.
-            return Ok(None);
-        }
-        let valid = result
-            .get("session_id")
-            .is_none_or(|id| *id == r.session_id)
-            && result.get("run_id").is_none_or(|id| *id == r.id)
-            && result
-                .get("origin")
-                .is_none_or(|origin| *origin == json!(r.origin))
-            && result
-                .get("status")
-                .and_then(Value::as_str)
-                .is_some_and(|v| ["succeeded", "failed", "cancelled"].contains(&v))
-            && (!r.node.starts_with("review:")
-                || result["status"] != "succeeded"
-                || serde_json::from_value::<Decision>(
-                    result
-                        .get("review_decision")
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                )
-                .is_ok()
-                    && result["review_delivery"] == r.node.trim_start_matches("review:"))
-            && result.get("document").is_none_or(|d| {
-                d["kind"]
-                    .as_str()
-                    .is_some_and(|k| ["requirement", "design", "test", "doc"].contains(&k))
-                    && d["body"].as_str().is_some_and(|v| !v.is_empty())
-                    && d["title"].as_str().is_some_and(|v| !v.is_empty())
-            });
-        let status = if r.cancel_requested || result["status"] == "cancelled" {
-            Status::Cancelled
-        } else if !valid || result["status"] == "failed" {
-            Status::Failed
-        } else {
-            Status::Succeeded
-        };
-        let mut output = if !valid {
-            json!({"failure_type":"adapter_contract","message":"模拟供应商缺少 status 字段"})
-        } else {
-            result
-        };
-        if status == Status::Succeeded
-            && ["red", "green", "feature_tests", "verify", "merge_verify"]
-                .contains(&r.node.as_str())
-        {
-            let candidate = if let Some(mid) = &r.merge_id {
-                s.merge(mid)?.candidate.clone()
-            } else {
-                let a = s.attempt(r.attempt_id.as_deref().unwrap())?;
-                if r.node == "red" {
-                    a.baseline.clone().ok_or_else(|| {
-                        err("blocked", "历史 Attempt 缺少代码基线，请新建 Attempt")
-                    })?
-                } else {
-                    self.git.execution_revision(a, &r.node)?
-                }
-            };
-            let documents = if let Some(aid) = &r.attempt_id {
-                s.attempt(aid)?.documents.clone()
-            } else {
-                let m = s.merge(r.merge_id.as_deref().unwrap())?;
-                s.delivery(&m.source_delivery)?.documents.clone()
-            };
-            let request = TestRequest {
-                operation_id: r.id.clone(),
-                session_id: Some(r.session_id.clone()),
-                phase: r.node.clone(),
-                candidate: candidate.clone(),
-                test_definitions: documents
-                    .iter()
-                    .filter(|did| {
-                        s.documents
-                            .iter()
-                            .any(|d| &d.id == *did && d.kind == "test")
-                    })
-                    .cloned()
-                    .collect(),
-                environment: s
-                    .sessions
-                    .iter()
-                    .find(|session| session.id == r.session_id)
-                    .ok_or_else(|| err("blocked", "Session 缺失"))?
-                    .instance
-                    .as_ref()
-                    .ok_or_else(|| err("blocked", "历史 Session 缺少确定环境实例，请新建执行"))?
-                    .id
-                    .clone(),
-                origin: Origin::Simulated,
-                definitions: documents
-                    .iter()
-                    .filter_map(|id| s.documents.iter().find(|d| &d.id == id && d.kind == "test"))
-                    .cloned()
-                    .collect(),
-                code: code_attempt.and_then(|a| a.git_context.clone()),
-                runtime: s
-                    .sessions
-                    .iter()
-                    .find(|session| session.id == r.session_id)
-                    .and_then(|session| session.instance.clone())
-                    .map(|mut runtime| {
-                        if let Some(id) = output["external_environment"].as_str() {
-                            runtime.external_environment = Some(id.into());
-                        }
-                        if let Some(id) = output["external_session"].as_str() {
-                            runtime.external_session = Some(id.into());
-                        }
-                        runtime
-                    }),
-            };
-            output = self.test_effect(r, &request)?;
-            if serde_json::from_value::<TestResult>(output.clone()).is_err()
-                || output["operation_id"] != request.operation_id
-                || !output["status"]
-                    .as_str()
-                    .is_some_and(|v| ["succeeded", "failed"].contains(&v))
-                || output["candidate"] != request.candidate
-                || output["test_definitions"] != json!(request.test_definitions)
-                || output["origin"] != json!(request.origin)
-                || output["environment"] != request.environment
-                || output["test_phase"] != request.phase
-            {
-                output = json!({"status":"failed","failure_type":"adapter_contract","message":"测试结果缺字段或定义/版本/来源不匹配"});
-            }
-        }
-
-        if status != Status::Succeeded {
-            output["status"] = json!(status);
-        }
-        Ok(Some(output))
     }
     fn blocked(&self, s: &EngineeringState, r: &Run, limit: usize) -> Option<String> {
         let owner = r
@@ -4163,11 +3486,7 @@ impl Engine {
                     && (a.documents.contains(&d.id) || a.outputs.contains(&d.id))
             })
             .map(|d| d.id.clone());
-        let origin = if a.source_base.is_some() {
-            Origin::External
-        } else {
-            Origin::Simulated
-        };
+        let origin = Origin::External;
         let mut artifact = self.artifacts.seal(
             &a.feature_id,
             a.task_id.as_deref(),
@@ -4378,7 +3697,7 @@ impl Engine {
                     None
                 };
                 Ok(
-                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":s.runs.iter().filter(|r|r.status==Status::Running).count(),"waiting_review":s.deliveries.iter().filter(|d|!d.stale&&s.delivery_inputs_current(d)&&!s.reviews.iter().any(|r|r.delivery_id==d.id&&[Decision::Pass,Decision::ChangesRequested].contains(&r.decision))&&!s.accepted(d)).count(),"waiting_confirmation":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|step.status=="waiting_confirmation").count(),"blocked":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|["blocked","failed"].contains(&step.status.as_str())).count()},"configurations":s.governance.iter().filter(|r|["feature_lock","legacy_feature_lock","workflow_instance","project_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),"total_projects":s.projects.len(),"definitions":s.definitions,"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"simulation","global_concurrency":global_limit}),
+                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":s.runs.iter().filter(|r|r.status==Status::Running).count(),"waiting_review":s.deliveries.iter().filter(|d|!d.stale&&s.delivery_inputs_current(d)&&!s.reviews.iter().any(|r|r.delivery_id==d.id&&[Decision::Pass,Decision::ChangesRequested].contains(&r.decision))&&!s.accepted(d)).count(),"waiting_confirmation":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|step.status=="waiting_confirmation").count(),"blocked":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|["blocked","failed"].contains(&step.status.as_str())).count()},"configurations":s.governance.iter().filter(|r|["feature_lock","legacy_feature_lock","workflow_instance","project_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),"total_projects":s.projects.len(),"definitions":s.definitions,"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live","repository_ready":s.projects.iter().any(|p| p.execution_mode=="live" && s.repository_worktrees.iter().any(|w|w.project_id==p.id && w.kind==WorktreeKind::Mainline)),"global_concurrency":global_limit}),
                 )
             }
             "query.history" => {
@@ -4501,7 +3820,7 @@ impl Engine {
         }
         let blocked = runs
             .iter()
-            .filter(|r| r.status == Status::Queued)
+            .filter(|r| r.status == Status::Queued && r.origin == Origin::External)
             .map(|r| (r.id.clone(), self.blocked(s, r, global_limit)))
             .collect::<std::collections::BTreeMap<_, _>>();
         Ok(
@@ -4511,25 +3830,8 @@ impl Engine {
     fn actions(&self, s: &EngineeringState, target: &str) -> Value {
         let mut allowed = vec![];
         let mut blocked = vec![];
-        if let Some(effect) = s.effects.iter().find(|e| e.id == target) {
-            if effect.status == EffectStatus::NeedsReconciliation {
-                allowed.push("effect.reconcile");
-            }
-            if effect.kind == EffectKind::Cleanup && effect.status == EffectStatus::Failed {
-                let resource = effect.request["resource"]["id"].as_str().unwrap_or("");
-                if s.resources
-                    .iter()
-                    .any(|r| r.id == resource && r.status == Status::CleanupFailed)
-                    && !s.effects.iter().any(|other| {
-                        other.kind == EffectKind::Cleanup
-                            && other.request["resource"]["id"] == resource
-                            && [EffectStatus::Pending, EffectStatus::Observed]
-                                .contains(&other.status)
-                    })
-                {
-                    allowed.push("effect.retry_cleanup");
-                }
-            }
+        if s.projects.iter().any(|p| p.execution_mode != "live") {
+            return json!({"allowed":[],"blocked":["历史项目只读"]});
         }
         if let Some(f) = s.features.iter().find(|x| x.id == target) {
             if f.status != Status::Completed {

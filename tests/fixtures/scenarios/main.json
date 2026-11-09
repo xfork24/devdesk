@@ -1,9 +1,0 @@
-{
-  "schema_version": 1,
-  "name": "需求到 mainline",
-  "execution_mode": "simulation",
-  "feature": "可追踪的导出流程",
-  "tasks": ["导出接口", "错误处理"],
-  "scenarios": ["success", "technical_failure", "assertion_failure", "missing_fields", "hold", "cleanup_failure", "review_reject"],
-  "note": "通过同一领域 API 运行。场景值只配置模拟适配器，不授予状态修改权限。"
-}

@@ -121,11 +121,10 @@ impl Workspace {
             .projects
             .first()
             .ok_or_else(|| err("storage", "项目不存在"))?;
-        if project.execution_mode != "live"
-            && !state
-                .repository_operations
-                .iter()
-                .any(|op| matches!(op.action, RepositoryAction::Connect { .. }))
+        if !state
+            .repository_operations
+            .iter()
+            .any(|op| matches!(op.action, RepositoryAction::Connect { .. }))
         {
             e.execute(
                 "repository.connect",
@@ -171,7 +170,8 @@ mod tests {
     #[test]
     fn opening_github_project_automatically_connects_and_reuses_identity() {
         let temp = tempfile::tempdir().unwrap();
-        let w = Workspace::open_with_adapters(temp.path(), simulation::adapters()).unwrap();
+        let w =
+            Workspace::open_with_adapters(temp.path(), crate::test_runtime::adapters()).unwrap();
         let first = w
             .dispatch(
                 "project.open_github",
@@ -204,7 +204,8 @@ mod tests {
         ));
         assert!(state.features.is_empty());
         drop(w);
-        let w = Workspace::open_with_adapters(temp.path(), simulation::adapters()).unwrap();
+        let w =
+            Workspace::open_with_adapters(temp.path(), crate::test_runtime::adapters()).unwrap();
         let resumed = w
             .dispatch(
                 "project.open_github",
@@ -226,7 +227,8 @@ mod tests {
     #[test]
     fn repository_reconciliation_wakes_idle_project_and_survives_restart() {
         let temp = tempfile::tempdir().unwrap();
-        let w = Workspace::open_with_adapters(temp.path(), simulation::adapters()).unwrap();
+        let w =
+            Workspace::open_with_adapters(temp.path(), crate::test_runtime::adapters()).unwrap();
         w.dispatch(
             "project.open_github",
             json!({"command_id":"open","payload":{"repository":"owner/repo"}}),
@@ -250,7 +252,8 @@ mod tests {
         let revision = e.store.snapshot().unwrap().repository_operations[0].revision;
         drop(e);
         drop(w);
-        let w = Workspace::open_with_adapters(temp.path(), simulation::adapters()).unwrap();
+        let w =
+            Workspace::open_with_adapters(temp.path(), crate::test_runtime::adapters()).unwrap();
         assert!(
             w.active_engine(None)
                 .unwrap()

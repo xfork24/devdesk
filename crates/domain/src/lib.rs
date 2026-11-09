@@ -98,6 +98,7 @@ pub enum Status {
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
     Human,
+    /// Historical provenance only; no execution provider can create new simulated work.
     Simulated,
     External,
 }
@@ -1033,10 +1034,6 @@ impl EngineeringState {
                 .all(|cap| harness.capabilities.iter().any(|value| value == cap)),
             "Harness 缺少执行/取消/结构化结果能力",
         )?;
-        let simulated = harness.provider == "simulation"
-            && sandbox.provider == "simulation"
-            && harness.origin == Origin::Simulated
-            && sandbox.origin == Origin::Simulated;
         let external = ["codex", "dsh"].contains(&harness.provider.as_str())
             && harness.origin == Origin::External
             && sandbox.provider == "docker"
@@ -1057,10 +1054,7 @@ impl EngineeringState {
                                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
                     })
             });
-        require(
-            simulated || external,
-            "绑定必须是完整的模拟能力，或明确的真实 Harness + 固定 Docker 镜像能力",
-        )
+        require(external, "绑定必须是原生 Harness 与固定 Docker 镜像能力")
     }
 }
 pub fn valid_dag(nodes: &[(String, Vec<String>)]) -> Result<()> {
@@ -1090,7 +1084,7 @@ pub fn valid_dag(nodes: &[(String, Vec<String>)]) -> Result<()> {
 pub fn evidence_origin(mode: &str, origin: Origin) -> Result<()> {
     require(
         mode == "simulation" || origin != Origin::Simulated,
-        "模拟证据不能满足 live 门禁",
+        "历史模拟证据不能满足原生执行门禁",
     )
 }
 #[cfg(test)]
@@ -1119,7 +1113,7 @@ mod tests {
         );
     }
     #[test]
-    fn simulated_never_live() {
+    fn historical_provenance_is_readable_but_cannot_satisfy_native_gates() {
         assert!(evidence_origin("live", Origin::Simulated).is_err());
         assert!(evidence_origin("simulation", Origin::Simulated).is_ok());
     }

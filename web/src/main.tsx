@@ -368,7 +368,7 @@ function App() {
   const project = data?.active_project?.workspace_definition?.repository
     ? data.active_project
     : undefined;
-  const repositoryReady = project?.execution_mode === "live";
+  const repositoryReady = data?.repository_ready === true;
   const projectOptions =
     project && !projects.some((p) => p.id === project.id)
       ? [project, ...projects]
@@ -853,6 +853,7 @@ function App() {
             <RepositorySettings
               key={project.id}
               project={project}
+              ready={repositoryReady}
               request={rpc}
               refresh={load}
             />
@@ -1666,20 +1667,6 @@ function App() {
                                         取消
                                       </button>
                                     )}
-                                    {r.outcome === "hold" &&
-                                      ["running", "queued"].includes(
-                                        r.status,
-                                      ) && (
-                                        <button
-                                          onClick={() =>
-                                            command("run.continue", r.id).catch(
-                                              () => {},
-                                            )
-                                          }
-                                        >
-                                          继续下一步
-                                        </button>
-                                      )}
                                     <button
                                       onClick={() =>
                                         setView({
@@ -1984,28 +1971,6 @@ function App() {
                       >
                         查看回执
                       </button>
-                      {allowed(effect.id, "effect.reconcile") && (
-                        <button
-                          onClick={() =>
-                            command("effect.reconcile", effect.id).catch(
-                              () => {},
-                            )
-                          }
-                        >
-                          核对外部结果
-                        </button>
-                      )}
-                      {allowed(effect.id, "effect.retry_cleanup") && (
-                        <button
-                          onClick={() =>
-                            command("effect.retry_cleanup", effect.id).catch(
-                              () => {},
-                            )
-                          }
-                        >
-                          重试资源清理
-                        </button>
-                      )}
                     </div>
                   ))}
                   {pager("effects")}
@@ -2553,6 +2518,7 @@ function App() {
                   <RepositorySettings
                     key={project.id}
                     project={project}
+                    ready={repositoryReady}
                     request={rpc}
                     refresh={load}
                   />
@@ -2977,10 +2943,6 @@ function RunControls({
         {["running", "queued"].includes(run.status) && (
           <button onClick={() => perform("run.cancel")}>取消</button>
         )}
-        {run.outcome === "hold" &&
-          ["running", "queued"].includes(run.status) && (
-            <button onClick={() => perform("run.continue")}>继续下一步</button>
-          )}
         <button onClick={inspect}>详情</button>
       </div>
     </div>

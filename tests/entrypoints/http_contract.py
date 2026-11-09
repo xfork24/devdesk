@@ -3,6 +3,7 @@
 import http.client
 import http.cookiejar
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -14,7 +15,7 @@ import time
 import urllib.error
 import urllib.request
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT / 'target/debug/devdesk-host'
 
 def run():
@@ -23,8 +24,17 @@ def run():
         if '--standalone' in sys.argv:
             binary = Path(directory) / 'devdesk-host'
             shutil.copy2(BINARY, binary)
+        # This test covers the HTTP boundary; fail closed if a workflow asks for
+        # external infrastructure. Never build images or contact GitHub here.
+        commands = Path(directory) / 'commands'
+        commands.mkdir()
+        for name in ['docker', 'gh']:
+            command = commands / name
+            command.write_text('#!/bin/sh\nexit 1\n')
+            command.chmod(0o755)
+        env = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ['PATH']}
         dataset = Path(directory) / '中文 data set'
-        child = subprocess.Popen([str(binary), '--data', str(dataset), '--port', '0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=directory)
+        child = subprocess.Popen([str(binary), '--data', str(dataset), '--port', '0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=directory, env=env)
         try:
             child.stdout.readline()
             url = child.stdout.readline().strip()
@@ -54,7 +64,7 @@ def run():
                     assert len(asset.read()) > 100
                     assert 'text/html' not in asset.headers['Content-Type']
             capabilities = json.load(req('/capabilities'))
-            assert capabilities['execution_mode'] == 'simulation'
+            assert capabilities['execution_mode'] == 'live'
             assert capabilities['platform']['macos'] == 'runtime_verified_by_reports'
             assert capabilities['runtime']['os'] in ('macos', 'linux')
             # A second host must not acquire the same dataset, including a path
@@ -67,6 +77,7 @@ def run():
                 result = json.load(req('/rpc', {'jsonrpc':'2.0','id':1,'method':method,'params':params}))
                 assert 'error' not in result, result
                 return result['result']
+            assert rpc('query.workspace', {})['repository_ready'] is False
             preferences = rpc('query.runtime_installations', {})
             assert preferences['default_harness'] == 'codex' and preferences['installations'] == []
             rpc('settings.update', {'default_harness':'dsh'})
@@ -143,7 +154,7 @@ def run():
             stream.close()
             child.stdout.close()
             child.stderr.close()
-            child = subprocess.Popen([str(binary),'--data',str(dataset),'--port','0'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=directory)
+            child = subprocess.Popen([str(binary),'--data',str(dataset),'--port','0'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=directory,env=env)
             child.stdout.readline()
             url=child.stdout.readline().strip()
             client.open(url).read()

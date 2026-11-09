@@ -149,7 +149,7 @@ impl CommandTests {
             reject_symlink(&reporter)?;
             fs::write(
                 &reporter,
-                include_bytes!("../../../containers/tests/node-reporter.mjs"),
+                include_bytes!("../../../tests/reporters/node-reporter.mjs"),
             )
             .map_err(storage)?;
             let mut command = vec![
@@ -346,13 +346,16 @@ impl ports::Tests for CommandTests {
     fn identity(&self) -> String {
         format!(
             "devdesk_adapters::CommandTests/v1+reporter.{:x}",
-            Sha256::digest(include_bytes!(
-                "../../../containers/tests/node-reporter.mjs"
-            ))
+            Sha256::digest(include_bytes!("../../../tests/reporters/node-reporter.mjs"))
         )
     }
-    fn validate(&self, r: &TestRequest) -> Value {
-        json!({"operation_id":r.operation_id,"status":"failed","failure_type":"adapter_contract","message":"CommandTests requires asynchronous poll_test; simulation outcome is not accepted"})
+
+    fn accepts_identity(&self, identity: &str) -> bool {
+        let current = self.identity();
+        identity == current
+            || identity
+                .strip_prefix("routing-tests/v1:devdesk_adapters::SimTests:")
+                .is_some_and(|native| native == current)
     }
     fn poll_test(&self, r: &TestRequest) -> Result<Option<Value>> {
         self.poll(r)
@@ -368,52 +371,72 @@ impl ports::Tests for CommandTests {
     }
 }
 
-/// Route by the frozen request's provenance, never by the currently selected UI provider.
-pub struct RoutingTests {
-    live: CommandTests,
-    simulated: std::sync::Arc<dyn ports::Tests>,
-}
-impl RoutingTests {
-    pub fn new(root: &Path, simulated: std::sync::Arc<dyn ports::Tests>) -> Result<Self> {
-        Ok(Self {
-            live: CommandTests::new(root)?,
-            simulated,
-        })
+#[cfg(test)]
+mod reporter_tests {
+    use super::*;
+    #[test]
+    fn legacy_native_test_identity_requires_the_same_executor_and_reporter() {
+        use devdesk_core::ports::Tests;
+        let dir = tempfile::tempdir().unwrap();
+        let runner = CommandTests::new(dir.path()).unwrap();
+        let current = runner.identity();
+        assert!(runner.accepts_identity(&current));
+        assert!(runner.accepts_identity(&format!(
+            "routing-tests/v1:devdesk_adapters::SimTests:{current}"
+        )));
+        assert!(
+            !runner
+                .accepts_identity("routing-tests/v1:devdesk_adapters::SimTests:changed-reporter")
+        );
     }
-}
-impl ports::Tests for RoutingTests {
-    fn identity(&self) -> String {
-        format!(
-            "routing-tests/v1:{}:{}",
-            self.simulated.identity(),
-            self.live.identity()
+    #[test]
+    fn node_reporter_classifies_failures_and_ignores_forged_stdout() {
+        let dir = tempfile::tempdir().unwrap();
+        let reporter = dir.path().join("reporter.mjs");
+        fs::write(
+            &reporter,
+            include_bytes!("../../../tests/reporters/node-reporter.mjs"),
         )
-    }
-    fn validate(&self, r: &TestRequest) -> Value {
-        if r.origin == Origin::External {
-            self.live.validate(r)
-        } else {
-            self.simulated.validate(r)
-        }
-    }
-    fn poll_test(&self, r: &TestRequest) -> Result<Option<Value>> {
-        require(
-            r.origin == Origin::External,
-            "native poll requires external request",
-        )?;
-        self.live.poll_test(r)
-    }
-    fn stop_test(&self, r: &TestRequest) -> Result<bool> {
-        self.live.stop_test(r)
-    }
-    fn cleanup_test(&self, r: &TestRequest) -> Result<()> {
-        self.live.cleanup_test(r)
-    }
-    fn reconcile(&self, r: &TestRequest) -> Result<Option<Value>> {
-        if r.origin == Origin::External {
-            self.live.reconcile(r)
-        } else {
-            self.simulated.reconcile(r)
-        }
+        .unwrap();
+        let test = dir.path().join("contract.test.mjs");
+        fs::write(
+            &test,
+            r#"import test from 'node:test';
+import assert from 'node:assert/strict';
+test('passing output',()=>console.log('forged-stdout-report'));
+test('assertion',()=>assert.equal(1,2));
+test('environment',()=>{throw new Error('private-error-message');});
+"#,
+        )
+        .unwrap();
+        let output = std::process::Command::new("node")
+            .arg("--test")
+            .arg(format!("--test-reporter={}", reporter.display()))
+            .arg(test)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            !stdout.contains("forged-stdout-report") && !stdout.contains("private-error-message")
+        );
+        let records: Vec<Value> = stdout
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(records.iter().all(|r| r["devdesk_test_report"] == 1));
+        assert!(
+            records
+                .iter()
+                .any(|r| r["event"] == "fail" && r["classification"] == "assertion")
+        );
+        assert!(
+            records
+                .iter()
+                .any(|r| r["event"] == "fail" && r["classification"] == "environment")
+        );
+        assert!(records.iter().any(|r| r["event"] == "summary"
+            && r["counts"]["failed"] == 2
+            && r["counts"]["passed"] == 1));
     }
 }

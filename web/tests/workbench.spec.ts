@@ -55,7 +55,7 @@ async function githubFixture(page: Page) {
           project = {
             id: crypto.randomUUID(),
             title: "浏览器 GitHub 项目",
-            execution_mode: "simulation",
+            execution_mode: "live",
             revision: 1,
             concurrency: 2,
             binding: {},
@@ -77,6 +77,7 @@ async function githubFixture(page: Page) {
         result = {
           ...base,
           active_project: project,
+          repository_ready: operation?.status === "completed",
           active_project_id: project?.id,
           projects: project ? [project] : [],
           total_projects: project ? 1 : 0,
@@ -303,7 +304,7 @@ test("完整 Agent 无需手工登记安装，显示准备及失败原因", asyn
   ).toBeVisible();
 });
 
-test("后端保留的模拟项目不进入 Web 项目列表和工程内容", async ({ page }) => {
+test("未接入 GitHub 的后端项目不进入 Web 项目列表和工程内容", async ({ page }) => {
   await ensureSetup(page);
   const response = await page.request.post("/rpc", {
     data: {
@@ -312,14 +313,14 @@ test("后端保留的模拟项目不进入 Web 项目列表和工程内容", asy
       method: "project.create",
       params: {
         command_id: crypto.randomUUID(),
-        payload: { title: "仅后端的历史演示项目" },
+        payload: { title: "尚未接入仓库的项目" },
       },
     },
   });
   expect((await response.json()).error).toBeUndefined();
   await page.reload();
   await expect(page.getByLabel("当前项目", { exact: true })).not.toContainText(
-    "仅后端的历史演示项目",
+    "尚未接入仓库的项目",
   );
   await expect(
     page.getByRole("button", { name: "新 Feature", exact: true }),

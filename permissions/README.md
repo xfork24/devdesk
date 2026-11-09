@@ -29,9 +29,9 @@ Codex 0.167.0 全权限使用 App Server externalSandbox；受限配置使用原
 `docker-default-v1` 使用 Docker 默认 seccomp/AppArmor，无需安装专用嵌套策略。`docker-nested-v1` 使用 `docker/seccomp/nested-v1.json`；启用 AppArmor 的 Linux 宿主还需安装命名 profile：
 
 ```bash
-./scripts/install-linux-sandbox-policy.sh --check
-sudo ./scripts/install-linux-sandbox-policy.sh --install
-./scripts/doctor.sh --permission-backend docker-nested-v1
+./scripts/platform/linux/install-linux-sandbox-policy.sh --check
+sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
+./scripts/check/doctor.sh --permission-backend docker-nested-v1
 ```
 
 安装器核对并加载 `devdesk-harness-v1`，保留 Docker 默认策略。Moby 基线和许可证位于 `docker/upstream/`。修改内核策略内容必须发布新后端版本，不能覆盖旧运行引用的资产。
@@ -39,7 +39,7 @@ sudo ./scripts/install-linux-sandbox-policy.sh --install
 ## 构建与校验
 
 ```bash
-./scripts/check-permissions.sh
+./scripts/check/check-permissions.sh
 docker build -f containers/dsh/Dockerfile -t devdesk/dsh:0.2.2-rc.1-permissions-v1 .
 ```
 

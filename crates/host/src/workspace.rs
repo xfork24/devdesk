@@ -578,18 +578,7 @@ impl Workspace {
         e.execute_resolved("merge.request", command, &fingerprint)
     }
     pub fn open(root: &Path) -> Result<Arc<Self>> {
-        {
-            std::fs::create_dir_all(root).map_err(|e| err("storage", e.to_string()))?;
-            let mut adapters = simulation::adapters();
-            adapters.harness = Arc::new(RoutingHarness::new(root, adapters.harness)?);
-            adapters.git = Arc::new(git::RoutingGit::new(root, adapters.git)?);
-            adapters.pull_requests = Some(Arc::new(github::GitHubPullRequests));
-            adapters.tests = Arc::new(devdesk_adapters::tests::RoutingTests::new(
-                root,
-                adapters.tests,
-            )?);
-            Self::open_with_adapters(root, adapters)
-        }
+        Self::open_with_adapters(root, execution_adapters(root)?)
     }
     pub fn open_with_adapters(
         root: &Path,
@@ -647,6 +636,9 @@ impl Workspace {
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
         let shared = self.global.snapshot()?;
         let existing = e.store.snapshot()?;
+        if existing.projects.iter().any(|p| p.execution_mode != "live") {
+            return Ok(());
+        }
         if shared
             .governance
             .iter()
@@ -754,10 +746,16 @@ impl Workspace {
         }
         self.sync_configuration(&e)?;
         e.bootstrap()?;
-        e.ensure_builtin_project_defaults()?;
-        // Re-evaluate persisted facts once on reopen before the idle-project filter.
-        // This only prepares intents; adapters still run through the normal tick.
-        e.evaluate_workflows()?;
+        if e.store
+            .snapshot()?
+            .projects
+            .iter()
+            .all(|p| p.execution_mode == "live")
+        {
+            e.ensure_builtin_project_defaults()?;
+            // Re-evaluate native facts once on reopen before the idle-project filter.
+            e.evaluate_workflows()?;
+        }
         // Repair a stale directory summary after a crash between the two independent commits.
         if let Some(project) = e.store.snapshot()?.projects.first() {
             self.global.publish_project(project)?;
@@ -1005,6 +1003,16 @@ impl Workspace {
             }
             Err(error) => return Err(error),
         };
+        if !method.starts_with("query.") {
+            require(
+                e.store
+                    .snapshot()?
+                    .projects
+                    .iter()
+                    .all(|p| p.execution_mode == "live"),
+                "历史项目只读，请创建新的 GitHub 项目",
+            )?;
+        }
         if e.store.project_id().is_some() {
             self.sync_configuration(&e)?;
         }
@@ -1157,7 +1165,7 @@ impl Workspace {
                     current
                         .as_ref()
                         .map(|p| p.execution_mode.as_str())
-                        .unwrap_or("simulation")
+                        .unwrap_or("live")
                 );
                 result["active_project"] = json!(current);
                 result["project_data_root"] = if e.store.project_id().is_some() {
@@ -1236,7 +1244,17 @@ impl Workspace {
         let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
         let engines = engines
             .into_iter()
-            .map(|e| e.store.has_pending_work().map(|pending| (e, pending)))
+            .map(|e| {
+                let native = e
+                    .store
+                    .snapshot()?
+                    .projects
+                    .iter()
+                    .all(|p| p.execution_mode == "live");
+                e.store
+                    .has_pending_work()
+                    .map(|pending| (e, pending && native))
+            })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .filter_map(|(e, pending)| pending.then_some(e))
@@ -1578,93 +1596,18 @@ mod tests {
         );
         assert_eq!(w.active_id().as_deref(), Some(a.as_str()));
     }
-    #[test]
-    fn switching_keeps_inactive_execution_and_shared_quota() {
-        let dir = tempfile::tempdir().unwrap();
-        let w = Workspace::open(dir.path()).unwrap();
-        w.global.set_concurrency(1).unwrap();
-        let a = create(&w, "A");
-        let fa = cmd(
-            &w,
-            "feature.create",
-            Some(&a),
-            None,
-            "fa",
-            json!({"project_id":a,"title":"A"}),
-        )["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        w.dispatch("attempt.start",json!({"project_id":a,"command_id":"run-a","target":fa,"expected_revision":1,"payload":{"phase":"planning","scenario":"hold"}})).unwrap();
-        w.tick().unwrap();
-        let ea = w.active_engine(None).unwrap();
-        let b = create(&w, "B");
-        let fb = cmd(
-            &w,
-            "feature.create",
-            Some(&b),
-            None,
-            "fb",
-            json!({"project_id":b,"title":"B"}),
-        )["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        w.dispatch("attempt.start",json!({"project_id":b,"command_id":"run-b","target":fb,"expected_revision":1,"payload":{"phase":"planning","scenario":"hold"}})).unwrap();
-        let eb = w.active_engine(None).unwrap();
-        w.tick().unwrap();
-        let count = |e: &Engine| {
-            e.store
-                .snapshot()
-                .unwrap()
-                .runs
-                .iter()
-                .filter(|r| r.status == Status::Running)
-                .count()
-        };
-        assert_eq!(count(&ea), 1);
-        assert_eq!(count(&eb), 0);
-        select(&w, &a);
-        assert!(
-            ea.store
-                .snapshot()
-                .unwrap()
-                .runs
-                .iter()
-                .any(|r| r.status == Status::Running)
-        );
-        let (_, pinned) = w.event_engine(Some(&a)).unwrap();
-        select(&w, &b);
-        assert!(Arc::ptr_eq(&ea, &pinned));
-    }
 }
 
 #[cfg(test)]
 mod adapter_injection_tests {
     use super::*;
-    struct RecordingHarness(Arc<Mutex<Vec<String>>>);
-    impl ports::Harness for RecordingHarness {
-        fn identity(&self) -> String {
-            "fixture:workspace-harness:1".into()
-        }
-        fn configure(&self, node: &str, scenario: &str) -> String {
-            SimHarness.configure(node, scenario)
-        }
-        fn poll(&self, run: &Run, input: &Value, now: u64) -> Result<Option<Value>> {
-            self.0.lock().unwrap().push(run.id.clone());
-            SimHarness.poll(run, input, now + 10_000)
-        }
-    }
     #[test]
-    fn injected_providers_are_used_after_opening_another_project() {
+    fn injected_providers_are_shared_after_opening_another_project() {
         let dir = tempfile::tempdir().unwrap();
-        let calls = Arc::new(Mutex::new(vec![]));
-        let providers = ports::ExecutionAdapters {
-            harness: Arc::new(RecordingHarness(calls.clone())),
-            ..simulation::adapters()
-        };
+        let providers = crate::test_runtime::adapters();
+        let harness = providers.harness.clone();
         let w = Workspace::open_with_adapters(dir.path(), providers).unwrap();
-        let mut projects = vec![];
+        let mut engines = vec![];
         for title in ["A", "B"] {
             let pid = w
                 .dispatch(
@@ -1675,23 +1618,43 @@ mod adapter_injection_tests {
                 .as_str()
                 .unwrap()
                 .to_string();
-            let fid=w.dispatch("feature.create",json!({"project_id":pid,"command_id":id(),"payload":{"project_id":pid,"title":title}})).unwrap()["id"].as_str().unwrap().to_string();
-            w.dispatch("attempt.start",json!({"project_id":pid,"command_id":id(),"target":fid,"expected_revision":1,"payload":{"phase":"planning"}})).unwrap();
+            let e = w.active_engine(Some(&pid)).unwrap();
+            let (_, tid) = crate::test_runtime::queue_conversation(&e, &pid);
             w.tick().unwrap();
+            assert!(e.store.snapshot().unwrap().turns.iter().any(|t| t.id == tid
+                && [TurnStatus::Dispatching, TurnStatus::Running].contains(&t.status)));
+            engines.push(e);
+        }
+        for e in engines {
+            assert!(Arc::ptr_eq(&e.harness, &harness));
+        }
+    }
+    #[test]
+    fn switching_keeps_inactive_native_conversation_and_shared_quota() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        w.global.set_concurrency(1).unwrap();
+        let mut engines = vec![];
+        for title in ["A", "B"] {
+            let pid = w
+                .dispatch(
+                    "project.create",
+                    json!({"command_id":id(),"payload":{"title":title}}),
+                )
+                .unwrap()["id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            let e = w.active_engine(Some(&pid)).unwrap();
+            crate::test_runtime::queue_conversation(&e, &pid);
             w.tick().unwrap();
-            projects.push(w.active_engine(Some(&pid)).unwrap());
+            engines.push(e);
         }
-        let called = calls.lock().unwrap();
-        for e in projects {
-            assert!(
-                e.store
-                    .snapshot()
-                    .unwrap()
-                    .runs
-                    .iter()
-                    .any(|run| called.contains(&run.id))
-            );
-            assert_eq!(e.harness.identity(), "fixture:workspace-harness:1");
-        }
+        assert_eq!(engines[0].conversation_running().unwrap(), 1);
+        assert_eq!(engines[1].conversation_running().unwrap(), 0);
+        assert_eq!(
+            engines[1].store.snapshot().unwrap().turns[0].status,
+            TurnStatus::Queued
+        );
     }
 }

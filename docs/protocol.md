@@ -7,7 +7,7 @@
 - POST /rpc：JSON-RPC 2.0，id 必填。查询 params 为过滤参数；命令 params 为 Command。
 - GET /events?project_id=ID&cursor=N：SSE，连接固定到该活动项目；事件 ID 为 `ID:cursor`，cursor 在项目内持久化单调递增。支持同项目 Last-Event-ID；其他项目的游标忽略。分批补读，断线后重连；事件只是事实通知，页面重新查询。
 - GET /artifacts/{id}?project_id=ID：按活动项目数据库中的 ID 读取，路径不得由客户端提供；SHA256 校验后返回纯文本并禁止内容嗅探。
-- GET /capabilities：协议、版本、simulation/live 能力与配置/Archive preview/migration preview/platform validation 状态。
+- GET /capabilities：协议、版本、原生供应商和 Docker 能力与配置/Archive preview/migration preview/platform validation 状态。
 - POST /setup：未打开数据集时设置 path；非空非 DevDesk 目录拒绝。打开后不能热切换。
 - POST /shutdown：可信人类会话退出 host。
 
@@ -27,7 +27,7 @@ query.workspace 返回全局项目目录，以及仅属于活动项目的 featur
 
 错误 result 包含 code/message：invalid_params、not_found、blocked、revision_conflict、project_changed、project_required、method_not_found、storage、dataset_locked。JSON-RPC error.code 使用 -32600/-32601/-32602/-32000，domain code 在 data 中。
 
-SSE 和轮询使用同一个数据库事实源。所有命令在 SQLite 短事务内校验和提交；单写协调，状态与事件提交后才可见。模拟执行按受控同步点产生确定输出，不把适配器原始输出直接当业务终态。
+SSE 和轮询使用同一个数据库事实源。所有命令在 SQLite 短事务内校验和提交；单写协调，状态与事件提交后才可见。原生供应商事件先核对准入、消费与终止证明，再由 Core 决定业务终态。
 
 
 ## 分页与冻结执行输入
@@ -47,7 +47,7 @@ Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执�
 - document.revise 只接受 Feature target，必须携带该 Feature 的 expected_revision；payload.feature_id 不能作为替代入口。
 - Requirement 可附 acceptance=[{key,description}]；Test 可附 verifies=[key]。Web 使用每行“标识 | 条件”和逗号列表录入。省略时分别登记完整正文为 AC-1、继承关联需求的全部条目。
 - task.create 可附 scope={requirement,design,acceptance} 或 acceptance_keys。默认从已接受的初始 Snapshot 解析。task.replan(target=Task, expected_revision) 采用当前已接受规划及选定条目，新测试修订保留 supersedes。
-- query.runtimes 返回 Harness/Sandbox 定义；query.archive_preview(feature_id) 返回产物/快照范围与不可执行理由。注册表同时提供 Sim 定义和已登记的真实运行时。
+- query.runtimes 返回 Harness/Sandbox 定义；query.archive_preview(feature_id) 返回产物/快照范围与不可执行理由。注册表提供原生定义和已登记的真实运行时，旧定义只作历史引用。
 - Run 返回不可变 binding；Session 返回 instance；Review 返回 assignment；Snapshot 返回 capture；Attempt 返回 baseline。
 - 数据库支持从 v1 顺序升级至 v33（全局库 v4）。旧文档缺少结构化验收映射时保持空值，旧交付历史可读；重新参与增强门禁须明确修订和验收，不能将迁移当成人类复核。
 
@@ -55,9 +55,7 @@ Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执�
 
 ## 持久化外部操作
 
-- query.workspace.detail.effects 分页返回外部操作；detail.advances 返回当前 Feature 的有界目标推进记录。操作包含适配器身份、请求、回执、状态、revision 与理由；Web 提供查看、核对和清理重试入口。
-- effect.reconcile(target=Effect ID, expected_revision) 登记核对请求并返回 operation_id；调度器只查原供应商事实，不把 interrupted Run 改成成功。未知结果保留资源。
-- effect.retry_cleanup(target=失败的 Cleanup ID, expected_revision) 创建新清理操作并引用 retry_of；保留原失败。同一 command_id 返回原结果；已释放资源不能再次新建重试。
+- query.workspace.detail.effects 分页返回外部操作；detail.advances 返回当前 Feature 的有界目标推进记录。操作包含适配器身份、请求、回执、状态、revision 与理由；Web 提供查看回执，原生执行恢复通过 Session/RuntimeExecution 与 merge.reconcile 核对。
 - merge.apply(target=Merge, expected_revision) 返回 {id,operation_id,accepted:true}，表示意图已保存；是否完成以查询的 Merge/owner 状态为准。供应商调用由调度器负责。
 - merge.reconcile(target=Merge, expected_revision) 请求核对 needs_reconciliation 的推进。确认未推进后，旧候选 stale，重新 merge.request、验证与 Review。
 - Attempt 另返回 outputs 和 scope；Harness 输入明确区分 frozen_inputs / stage_outputs，附锁定定义和运行实例。持久化回执不是批准命令；核心仍核对版本、身份、来源及门禁。
@@ -67,7 +65,7 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 
 ## 真实接入基础接口
 
-全局配置库 v2 追加 `runtime_installations`。`query.runtime_installations` 返回安装引用和 `default_harness`；`query.workspace` 同步附带这两个字段。`settings.update` 可原子更新 `default_harness: codex|dsh`、`global_concurrency: 1..32`，至少一个；已有 Session/Run 锁不因偏好变化而改变。默认偏好初始为 Codex，历史模拟工程调度仍为模拟模式。
+全局配置库 v2 追加 `runtime_installations`。`query.runtime_installations` 返回安装引用和 `default_harness`；`query.workspace` 同步附带这两个字段。`settings.update` 可原子更新 `default_harness: codex|dsh`、`global_concurrency: 1..32`，至少一个；已有 Session/Run 锁不因偏好变化而改变。默认偏好初始为 Codex，历史原型项目只读保留，不再进入调度。
 
 - `runtime.register({key:{provider,version,os,arch},artifact,source,license})`：登记原生 executable（canonical_path+sha256）或以 digest 固定的 oci_image 引用。同键同内容返回原 ID；内容冲突拒绝。原生文件检查 header/platform、执行权限和摘要；脚本入口不等于完整安装，不接受作为完整运行时。登记不下载、不执行工具、不复制或删除共享安装。
 - `runtime.discover_codex({})`：显式发现 PATH 中本机原生 Codex，校验格式并查询版本，登记一次。不调用模型。
@@ -91,7 +89,7 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 
 `proposal.extract` reads the last complete assistant JSON from a completed `turn_id`. `proposal.create` accepts human-edited `content` conforming to `ProposalContent`; both require an explicit source Turn and resolve a `target` and `expected_revision`. `proposal.revise` creates a new immutable draft revision. `proposal.adopt`/`proposal.reject` target the Proposal revision. Adoption is atomic, validates current target and immutable input documents, and invokes the existing formal object commands. `proposal.instantiate` materializes an accepted TaskPlan's stable keys and dependencies after the existing planning Review/Snapshot gate; the key-to-Task mapping is persisted and cannot be replaced. Proposal acceptance does not accept a Delivery or a Merge.
 
-Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations, role definitions and Permission revisions live in global schema v4; engineering records and conversation projections currently use project schema v33. Sequential SQL upgrades preserve original simulation history and never fabricate native IDs.
+Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations, role definitions and Permission revisions live in global schema v5; engineering records and conversation projections currently use project schema v34. Sequential SQL upgrades preserve historical provenance and never fabricate native IDs. Historical prototype projects are read-only; active execution is native-only.
 
 ## 真实工程操作与证据
 
@@ -114,7 +112,7 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 
 正常 Web 使用 `project.open_github`（`Command` 参数）：首次传 `payload.repository`、可选 `payload.mainline`（默认 `main`）及可选 `payload.title`；再次打开可传 `target`。仓库支持 `owner/repo`、GitHub HTTPS 和 SSH URL。相同仓库/分支复用项目；接入意图、回执与核对沿用 `repository.connect` / `query.repository` / `repository.reconcile`。该接口返回项目 ID 后，克隆在调度器执行；只有真实仓库回执被接受后才可执行工程工作。
 
-`query.workspace` 的 `github_only=true` 在分页前过滤后端历史项目。旧 `project.create` / `project.open` 和模拟场景参数保留给后端兼容与离线测试，Web 不再调用这些入口。
+`query.workspace` 的 `github_only=true` 在分页前过滤后端历史项目。`project.create` 保留为后端项目元数据创建入口，新项目固定为 live；`project.open` 可只读打开历史项目。模拟场景参数已拒绝，Web 使用 `project.open_github`。
 
 `session.open`、真实 `attempt.start` / `review.request` / `merge.request` 在解析实际供应商后自动准备所需运行时；无显式固定安装时使用内嵌配方构建并复用共享镜像。`runtime.preparation_status` 返回 `{preparations:[{provider,status,message,code?}]}`，状态为 `preparing` / `ready` / `failed`。`runtime.prepare`（`{provider}`）可显式预热/重试，正常 Web 不要求此步骤。准备期间不持有工程数据库事务，准备失败不生成成功安装。
 
@@ -179,3 +177,5 @@ query.workspace 增加项目 summary、配置锁和流程实例投影；work_fil
 - `query.roles`：local/project_id、offset/limit；默认最新未删除版本，可用 include_history/include_deleted 查看历史。
 
 Agent 新建可提供 role_ref，省略模型与能力字段时填入 Sol High / Codex 默认组合；legacy role 指执行职责，缺少 role_ref 时解析当前默认 Role。直接 Session 不得单独覆盖 Role 修订，必须采用完整 Agent。Role 职责与 Agent 额外指令一起冻结到角色配置。
+
+`query.workspace.repository_ready` 只在已持久化当前项目的主干 worktree 时为 true；`execution_mode=live` 不代表仓库接入已完成。Web 根据该事实阻止接入中或失败项目的工程操作。

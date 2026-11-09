@@ -1,4 +1,4 @@
-//! Native engineering stages use frozen role Sessions; simulation remains a separate execution path.
+//! Native engineering stages use frozen role Sessions and managed test executions.
 use crate::*;
 use std::collections::BTreeMap;
 impl Engine {
@@ -835,7 +835,9 @@ impl Engine {
         }
         let request: TestRequest = if let Some(effect) = existing {
             require(
-                effect.request["adapter"] == self.tests.identity(),
+                effect.request["adapter"]
+                    .as_str()
+                    .is_some_and(|identity| self.tests.accepts_identity(identity)),
                 "测试适配器已更新，旧操作需核对",
             )?;
             serde_json::from_value(effect.request["test"].clone())
@@ -1093,6 +1095,12 @@ impl Engine {
                 .iter()
                 .find(|e| e.run_id == execution.operation_id && e.kind == EffectKind::Test)
                 .ok_or_else(|| err("blocked", "测试恢复缺少冻结请求"))?;
+            require(
+                effect.request["adapter"]
+                    .as_str()
+                    .is_some_and(|identity| self.tests.accepts_identity(identity)),
+                "测试执行器已变更，不能核对旧操作",
+            )?;
             let request: TestRequest = serde_json::from_value(effect.request["test"].clone())
                 .map_err(|e| err("storage", e.to_string()))?;
             require(self.tests.stop_test(&request)?, "旧测试执行者未停止")?;
@@ -1102,6 +1110,45 @@ impl Engine {
                 let row=s.executions.iter_mut().find(|v|v.id==execution.id).unwrap();row.writer_revoked=true;row.finished=Some(now());row.status=Status::Succeeded;row.protocol_artifact=Some(artifact.id.clone());s.artifacts.push(artifact);Ok(json!({"ok":true}))
             })?;
         }
+        if !state
+            .effects
+            .iter()
+            .any(|e| e.kind == EffectKind::Test && e.status == EffectStatus::NeedsReconciliation)
+        {
+            return Ok(());
+        }
+        // A stopped interrupted test remains unknown. Release only its old intent,
+        // so a new operation can be retried without replaying the interrupted one.
+        self.store.transact(None, &mut |s| {
+            let stopped: Vec<Id> = s
+                .executions
+                .iter()
+                .filter(|e| {
+                    e.kind == RuntimeExecutionKind::Tests
+                        && e.writer_revoked
+                        && e.protocol_artifact.is_some()
+                        && e.run_id.as_ref().is_some_and(|id| {
+                            s.runs.iter().any(|r| {
+                                &r.id == id
+                                    && r.origin == Origin::External
+                                    && r.status != Status::Running
+                            })
+                        })
+                })
+                .filter_map(|e| e.run_id.clone())
+                .collect();
+            for effect in s.effects.iter_mut().filter(|e| {
+                e.kind == EffectKind::Test
+                    && e.status == EffectStatus::NeedsReconciliation
+                    && stopped.contains(&e.run_id)
+            }) {
+                effect.status = EffectStatus::Discarded;
+                effect.reason = "旧原生测试已停止并封存；保留中断事实，重试使用新操作".into();
+                effect.revision += 1;
+                effect.updated = now();
+            }
+            Ok(Value::Null)
+        })?;
         Ok(())
     }
 }

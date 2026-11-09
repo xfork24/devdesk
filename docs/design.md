@@ -6,7 +6,7 @@
 
 - domain：类型、不可变版本、DAG、绑定、来源与验收规则；无 I/O。
 - core：命令/查询、调度与交付协调；定义 EngineeringStore、ArtifactStore，以及 `ports::{Harness, Git, Tests, Sandbox}` 执行接口。
-- adapters：SQLite 关系表、文件封存、执行接口的具体实现；模拟类独立位于 `simulation/`，不得绕过 core 改业务终态。
+- adapters：SQLite 关系表、文件封存、执行接口的具体实现；只装配原生供应商实现，不得绕过 core 改业务终态。
 - host：loopback HTTP/SSE、会话与同源验证、数据集生命周期、静态 Web 装配。
 - web：React/TypeScript 展示、编辑和调用 API；不设置业务状态。
 
@@ -20,13 +20,13 @@ Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入
 
 ## ADR-003：明确区分真实与模拟来源
 
-Web 项目固定使用真实 GitHub 仓库，打开时自动登记并接入，Harness 按需准备；simulation 仅为后端历史与测试夹具保留，历史来源不可改写。Git/Harness/Tests/Sandbox 只产生有来源的能力结果；核心决定状态。适配器结果先校验结构，支持固定故障、取消和 hold/continue。真实 Codex/DSH、CliGit、CommandTests、DockerSandbox 与 Sim 共用 ports 和 Review/Attempt 规则。
+Web 项目使用真实 GitHub 仓库，打开时登记并接入，Harness 按需准备。产品已移除原型模拟执行器、回退、故障注入和受控继续路径；旧原型项目只读保留，历史来源不改写。Harness、Git、Tests 和 GitHub 只产生有来源的外部事实，核心决定状态；DockerSandbox 负责实际容器边界。测试替身只位于测试代码，不进入产品运行时。
 
 ## ADR-004：持久化与幂等
 
 规范化关系表保存高频标量列、外键和索引；只有确定类型的数组、绑定锁和供应商结果用 JSON 列。初版每次工作单元加载类型化工程状态并写回变化，优先事务一致性；不把整个项目存成 JSON。查询返回有界结果。后续可在同一 port 下优化增量 SQL，不变更领域语义。
 
-命令结果及其派发意图在同一事务保存；operations 唯一键保存指纹与原结果。模拟 Git 目标推进、Merge 完成及事件在接纳回执的同一事务保存。单 host 数据集文件锁，进程内写协调。未提交的 Artifact 可成为孤儿文件，但不得成为可见交付；只读时验证 hash。数据库迁移按 user_version 执行，不以删库升级。
+命令结果及其派发意图在同一事务保存；operations 唯一键保存指纹与原结果。Git 目标推进先持久化意图并在事务外调用，再提交核验后的回执；远端交付单独核对。单 host 数据集文件锁，进程内写协调。未提交的 Artifact 可成为孤儿文件，但不得成为可见交付；只读时验证 hash。数据库迁移按 user_version 执行，不以删库升级。
 
 ## ADR-005：恢复与范围
 
@@ -76,13 +76,13 @@ host 的 Workspace 管理活动 Engine。`project.create` 先在全局库预留�
 
 已打开的 Engine 保留连接，切换回来不会重新执行启动恢复，也不会把正常运行标为 interrupted。单调度器继续处理这些项目，并扣除其他项目正在运行的 Run 后计算可用全局额度。重启遍历全局索引加载并核对所有项目的原执行者，随后恢复上次活动选择，不重发结果未知的工作。
 
-旧版单库按 SQLite 一致性快照拆分；旧文件不原地升级。迁移在临时副本上执行 v1–v13 schema 升级，按领域归属复制所有工程行、事件、操作结果与 Artifact，并校验外键、归属覆盖和产物哈希。全部项目落盘后才在全局事务中发布目录和布局版本。中断或产物损坏后可重试；根目录旧库、旧 Artifact 和 `runtime.json` 留作原始来源，新布局成功后不再读取旧配置。此结构迁移与尚未实现的 data 目录搬迁是不同操作。
+旧版单库按 SQLite 一致性快照拆分；旧文件不原地升级。迁移在临时副本上按当前 schema 序列升级，按领域归属复制所有工程行、事件、操作结果与 Artifact，并校验外键、归属覆盖和产物哈希。全部项目落盘后才在全局事务中发布目录和布局版本。中断或产物损坏后可重试；根目录旧库、旧 Artifact 和 `runtime.json` 留作原始来源，新布局成功后不再读取旧配置。此结构迁移与尚未实现的 data 目录搬迁是不同操作。
 
-## ADR-011：执行接口与模拟实现
+## ADR-011：原生执行接口与测试注入
 
-`devdesk_core::ports::{Harness, Git, Tests, Sandbox}` 是执行能力的抽象基接口；Rust 中由 trait 定义契约、由 `impl` 提供实现。`SimHarness`、`SimGit`、`SimTests`、`SimSandbox` 分别实现这四个接口，未来真实适配器直接实现相同接口。领域对象中的 Harness/Sandbox 是配置与历史模型，不承担运行接口的职责。
+`devdesk_core::ports::{Harness, Git, Tests, PullRequests}` 定义当前执行契约，分别由原生供应商、CliGit、CommandTests 和 GitHubPullRequests 实现。DockerSandbox 管理真实容器；领域模型中的 Harness/Sandbox 只描述配置与历史，不承担执行接口职责。
 
-`ExecutionAdapters` 统一持有四类接口对象，`Engine::new` 和 `Workspace::open_with_adapters` 在装配时注入；按来源路由 Sim 或真实集合；缺配置/故障不回退 Sim。Engine 的调度、交付、回执接纳与数据库选择不依赖具体实现。保留旧 `*Port` trait 名称和 Sim 导入路径，并固定 Sim 的旧身份字符串，确保已有测试夹具和持久化恢复记录兼容。具体接口、替换方式与真实接入约束见[适配器契约](real-adapter-contract.md#基接口派生实现与装配)。
+`ExecutionAdapters` 持有原生接口对象，由 `Engine::new` 和 `Workspace::open_with_adapters` 在装配时注入；只按冻结的供应商绑定路由。测试替身位于 `tests/support/`，不会编译进产品。历史操作的来源与固定身份只用于兼容核验，不提供模拟执行能力。具体约束见[适配器契约](real-adapter-contract.md#接口与装配)。
 
 ## ADR-012：真实会话、共享安装与双重交付
 

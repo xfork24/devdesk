@@ -2,6 +2,8 @@
 
 当前新能力的 Ubuntu x86_64 验收见 [Permission 补验](plans/permission-standardization/UBUNTU.md) 和 [Workflow/工作台补验](plans/workflow-and-workbench/UBUNTU.md)。以下保留 0.2 原型的历史验证规模与结果。
 
+本文保留原型阶段的历史验收事实，不代表当前支持模拟执行。当前产品仅使用原生供应商，验证入口见 [测试索引](../tests/README.md)。
+
 日期：2026-11-08。执行模式：simulation。原 Linux 验收为 Ubuntu 24.04.5 LTS x86_64；本轮补充 macOS 26.7.2（25G332）Apple Silicon arm64 实机验收。Linux 结果沿用原交付证据，本轮未在 Linux 重新运行。
 
 ## 验证结果
@@ -16,7 +18,7 @@
 | release 构建 | 通过 | `aarch64-apple-darwin` 本机构建通过 |
 | 独立评审 | 原阶段评审通过 | 独立 release HTTP 与 Web E2E（3 项，22.0 秒）通过 |
 
-本轮完整检查入口为 `./scripts/check.sh`，先构建 Web，再测试和构建 host，干净检出无需预先生成 `web/dist`。新增 HTTP 检查覆盖会话鉴权、Host/Origin、JS/CSS 实际读取、平台能力、中文及空格 data 路径、跨进程单写锁、幂等、Artifact 未知 ID/未鉴权访问、SSE 连接下退出与重启持久化。真实 Artifact 内容由 Web E2E 打开并断言来源标记，文件哈希与 symlink 边界由 Rust 测试验证。
+本轮完整检查入口为 `./scripts/check/check.sh`，先构建 Web，再测试和构建 host，干净检出无需预先生成 `web/dist`。新增 HTTP 检查覆盖会话鉴权、Host/Origin、JS/CSS 实际读取、平台能力、中文及空格 data 路径、跨进程单写锁、幂等、Artifact 未知 ID/未鉴权访问、SSE 连接下退出与重启持久化。真实 Artifact 内容由 Web E2E 打开并断言来源标记，文件哈希与 symlink 边界由 Rust 测试验证。
 
 浏览器使用真实 Rust API、SQLite 和本地文件，没有假后端。主流程与异常回路均断言无 pageerror。Web 截图：[原 Linux](assets/workbench.png)、[本轮 macOS](assets/workbench-macos.png)。作者验证与独立运行的范围分别保存在 [macOS 执行报告](plans/devdesk-prototype/macos-validation.md) 和 [独立评审](plans/devdesk-prototype/macos-independent-review.md)。
 
@@ -47,7 +49,7 @@
 
 ## 运行包
 
-`./scripts/package.sh` 从锁定依赖构建，生成本机目标的 `.tar.gz` 和 `.sha256`。本轮 macOS 交付为 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz`，含独立可执行程序、运行说明、演示及验收文档。构建后运行无需 Node/Rust 或源码；`otool -L` 只列出系统 libiconv 和 libSystem。详情见 [运行包说明](run-binary.md)。
+`./scripts/release/package.sh` 从锁定依赖构建，生成本机目标的 `.tar.gz` 和 `.sha256`。本轮 macOS 交付为 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz`，含独立可执行程序、运行说明、演示及验收文档。构建后运行无需 Node/Rust 或源码；`otool -L` 只列出系统 libiconv 和 libSystem。详情见 [运行包说明](run-binary.md)。
 
 ## 已知限制与下一轮边界
 

@@ -85,7 +85,7 @@ impl DockerSandbox {
         let expected = include_bytes!(
             "../../../permissions/backends/docker/apparmor/devdesk-harness-v1.apparmor"
         );
-        let message = "Ubuntu 嵌套沙箱需要已审阅的专用 AppArmor 策略；请在 Docker 宿主运行 sudo ./scripts/install-linux-sandbox-policy.sh --install";
+        let message = "Ubuntu 嵌套沙箱需要已审阅的专用 AppArmor 策略；请在 Docker 宿主运行 sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install";
         let metadata =
             fs::symlink_metadata(path).map_err(|_| err("sandbox_policy_required", message))?;
         require(
@@ -711,32 +711,5 @@ impl DockerSandbox {
             result.code == 0 && self.inspect(operation_id)?.is_none(),
             "容器清理尚未确认",
         )
-    }
-}
-
-impl ports::Sandbox for DockerSandbox {
-    fn identity(&self) -> String {
-        "devdesk_adapters::DockerSandbox/v1".into()
-    }
-    fn resource(&self, run_id: &str) -> Resource {
-        Resource {
-            id: run_id.into(),
-            run_id: run_id.into(),
-            kind: "docker_container".into(),
-            status: Status::Prepared,
-            origin: Origin::External,
-        }
-    }
-    fn cleanup(&self, resource: &mut Resource, fail: bool) {
-        resource.status = if !fail
-            && self
-                .stop(&resource.id)
-                .and_then(|_| self.remove(&resource.id))
-                .is_ok()
-        {
-            Status::Released
-        } else {
-            Status::CleanupFailed
-        };
     }
 }

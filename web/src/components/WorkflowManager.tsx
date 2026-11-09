@@ -1196,7 +1196,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                 按样本重新演练
               </button>
               <ol>
-                {preview.simulation?.map((result: Row) => {
+                {preview.evaluation?.map((result: Row) => {
                   const key = result.key;
                   const s = document.steps.find((s: Row) => s.key === key);
                   return (

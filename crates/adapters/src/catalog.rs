@@ -262,7 +262,7 @@ impl GlobalStore {
     ) -> Result<(Vec<Project>, usize)> {
         let conn = self.connection.lock().map_err(storage)?;
         let filter = if github_only {
-            "project IS NOT NULL AND coalesce(json_extract(project,'$.workspace_definition.repository'),'') <> ''"
+            "project IS NOT NULL AND json_extract(project,'$.execution_mode')='live' AND coalesce(json_extract(project,'$.workspace_definition.repository'),'') <> ''"
         } else {
             "project IS NOT NULL"
         };

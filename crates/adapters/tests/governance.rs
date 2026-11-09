@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/runtime.rs"]
+mod runtime;
 use devdesk_adapters::*;
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -5,7 +7,7 @@ use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
 
 fn engine(root: &Path) -> Engine {
-    let adapters = simulation::adapters();
+    let adapters = runtime::adapters();
     let e = Engine::new(
         Arc::new(SqliteStore::open(root).unwrap()),
         Arc::new(FileArtifacts::new(root.into())),
@@ -34,9 +36,9 @@ fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Re
     )
 }
 fn setup_agent(e: &Engine, role: &str) -> String {
-    let model=command(e,"model.create",None,json!({"name":"Model A","data":{"provider":"test-provider","model":"model-a","parameters":{},"capabilities":[]}})).unwrap();
-    let harness=command(e,"harness.create",None,json!({"name":"Harness","data":{"provider":"simulation","runtime_version":"1","capabilities":[],"model_providers":["test-provider"]}})).unwrap();
-    let tool=command(e,"tool.create",None,json!({"name":"原生工具","data":{"qualified_name":"simulation.native","implementation":"harness.native","input_schema":{},"output_schema":{},"capabilities":[]}})).unwrap();
+    let model=command(e,"model.create",None,json!({"name":"Model A","data":{"provider":"openai","model":"model-a","parameters":{},"capabilities":[]}})).unwrap();
+    let harness=command(e,"harness.create",None,json!({"name":"Harness","data":{"provider":"codex","runtime_version":"1","capabilities":[],"model_providers":["openai"]}})).unwrap();
+    let tool=command(e,"tool.create",None,json!({"name":"原生工具","data":{"qualified_name":"fixture.native","implementation":"harness.native","input_schema":{},"output_schema":{},"capabilities":[]}})).unwrap();
     command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"data":{"role":role,"instructions":"Execute the frozen scope","model_ref":model["id"],"harness_ref":harness["id"],"skills":[],"tools":[tool["id"]],"permissions":["permission-read-only-v1"]}})).unwrap()["id"].as_str().unwrap().into()
 }
 #[test]
@@ -244,18 +246,6 @@ fn publication_rejects_cycle_and_cross_project_scope() {
     assert!(command(&e,"agent.instance.create",None,json!({"name":"bad scope","agent_revision_id":agent,"scope":{"kind":"project","project_id":"missing"}})).is_err());
 }
 
-struct Immediate;
-impl HarnessPort for Immediate {
-    fn configure(&self, n: &str, s: &str) -> String {
-        SimHarness.configure(n, s)
-    }
-    fn poll(&self, r: &Run, input: &Value, time: u64) -> Result<Option<Value>> {
-        SimHarness.poll(r, input, time + 10_000)
-    }
-    fn reconcile(&self, r: &Run) -> Result<Option<Value>> {
-        SimHarness.reconcile(r)
-    }
-}
 fn configured(e: &Engine) -> (String, String) {
     let pid = command(
         e,
@@ -284,21 +274,7 @@ fn configured(e: &Engine) -> (String, String) {
         .to_owned();
     (pid, fid)
 }
-fn drive(e: &Engine, rounds: usize) {
-    for _ in 0..rounds {
-        e.evaluate_workflows().unwrap();
-        for intent in e.pending_workflow_intents().unwrap() {
-            let method = intent.data["method"].as_str().unwrap();
-            if ["session.open", "conversation.send", "proposal.extract"].contains(&method) {
-                continue;
-            }
-            let c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
-            let result = e.execute(method, c);
-            e.observe_workflow_intent(&intent.id, &result).unwrap();
-        }
-        e.tick(4).unwrap();
-    }
-}
+
 fn runtime(e: &Engine, fid: &str) -> WorkflowRuntime {
     e.store
         .snapshot()
@@ -315,179 +291,7 @@ fn runtime(e: &Engine, fid: &str) -> WorkflowRuntime {
         .decode()
         .unwrap()
 }
-fn revise(e: &Engine, fid: &str, kind: &str) -> String {
-    let revision = e.store.snapshot().unwrap().feature(fid).unwrap().revision;
-    e.execute("document.revise",Command{command_id:id(),target:Some(fid.into()),expected_revision:Some(revision),payload:json!({"kind":kind,"title":kind,"body":"Observable workflow acceptance behavior"})}).unwrap()["id"].as_str().unwrap().into()
-}
-#[test]
-fn failed_workflow_review_waits_for_explicit_retry_and_preserves_its_binding() {
-    struct FailReviewOnce(std::sync::atomic::AtomicBool);
-    impl HarnessPort for FailReviewOnce {
-        fn configure(&self, node: &str, scenario: &str) -> String {
-            Immediate.configure(node, scenario)
-        }
-        fn poll(&self, run: &Run, input: &Value, time: u64) -> Result<Option<Value>> {
-            let mut output = Immediate.poll(run, input, time)?;
-            if run.node.starts_with("review:")
-                && self.0.swap(false, std::sync::atomic::Ordering::SeqCst)
-            {
-                let result = output.as_mut().unwrap();
-                result["status"] = json!("failed");
-                result["failure_type"] = json!("adapter_contract");
-                result["message"] = json!("Reviewer output did not match the JSON contract");
-            }
-            Ok(output)
-        }
-        fn reconcile(&self, run: &Run) -> Result<Option<Value>> {
-            Immediate.reconcile(run)
-        }
-    }
-    let root = tempfile::tempdir().unwrap();
-    let mut e = engine(root.path());
-    e.harness = Arc::new(FailReviewOnce(std::sync::atomic::AtomicBool::new(true)));
-    let (_, fid) = configured(&e);
-    revise(&e, &fid, "requirement");
-    drive(&e, 30);
-    let state = e.store.snapshot().unwrap();
-    let failed = state
-        .runs
-        .iter()
-        .find(|r| r.node.starts_with("review:") && r.status == Status::Failed)
-        .unwrap()
-        .clone();
-    let step = runtime(&e, &fid)
-        .steps
-        .into_iter()
-        .find(|step| step.key == "requirement_review")
-        .unwrap();
-    assert_eq!(step.status, "failed");
-    assert!(step.reason.contains("JSON contract"));
-    assert!(
-        !state.accepted(
-            state
-                .delivery(step.outputs.get("delivery").unwrap())
-                .unwrap()
-        )
-    );
-    assert_eq!(
-        state.runs.iter().filter(|r| r.node == failed.node).count(),
-        1
-    );
-    e.execute(
-        "workflow.step.retry",
-        Command {
-            command_id: id(),
-            target: Some(step.id),
-            expected_revision: Some(step.revision),
-            payload: json!({}),
-        },
-    )
-    .unwrap();
-    // Evaluation may run again before the durable retry intent is dispatched.
-    e.evaluate_workflows().unwrap();
-    assert_eq!(
-        runtime(&e, &fid)
-            .steps
-            .iter()
-            .find(|step| step.key == "requirement_review")
-            .unwrap()
-            .status,
-        "active"
-    );
-    drive(&e, 30);
-    let state = e.store.snapshot().unwrap();
-    let retry = state
-        .runs
-        .iter()
-        .find(|r| r.retry_of.as_deref() == Some(failed.id.as_str()))
-        .unwrap();
-    assert_eq!(retry.status, Status::Succeeded);
-    assert_eq!(json!(retry.binding), json!(failed.binding));
-    assert_eq!(
-        state
-            .sessions
-            .iter()
-            .find(|s| s.id == retry.session_id)
-            .unwrap()
-            .agent,
-        state
-            .sessions
-            .iter()
-            .find(|s| s.id == failed.session_id)
-            .unwrap()
-            .agent
-    );
-    assert_eq!(
-        json!(state.runs.iter().find(|r| r.id == failed.id).unwrap()),
-        json!(failed)
-    );
-    assert_eq!(
-        state.runs.iter().filter(|r| r.node == failed.node).count(),
-        2
-    );
-    assert_eq!(
-        runtime(&e, &fid)
-            .steps
-            .iter()
-            .find(|step| step.key == "requirement_review")
-            .unwrap()
-            .status,
-        "completed"
-    );
-}
-#[test]
-fn requirement_is_delivered_and_reviewed_before_solution_and_unrelated_inputs_preserve_review() {
-    let root = tempfile::tempdir().unwrap();
-    let mut e = engine(root.path());
-    e.harness = Arc::new(Immediate);
-    let (_, fid) = configured(&e);
-    revise(&e, &fid, "requirement");
-    drive(&e, 30);
-    let s = e.store.snapshot().unwrap();
-    let req = s
-        .deliveries
-        .iter()
-        .find(|d| d.feature_id == fid && d.kind == "requirement")
-        .unwrap_or_else(|| {
-            panic!(
-                "runtime={} attempts={} intents={}",
-                json!(runtime(&e, &fid)),
-                json!(s.attempts),
-                json!(
-                    s.governance
-                        .iter()
-                        .filter(|r| r.kind == "workflow_intent")
-                        .collect::<Vec<_>>()
-                )
-            )
-        });
-    assert!(
-        s.accepted(req),
-        "requirement review must finish using only requirement input"
-    );
-    let reqid = req.id.clone();
-    assert!(!s.attempts.iter().any(|a| a.phase == "solution_planning"));
-    revise(&e, &fid, "design");
-    assert!(
-        e.store
-            .snapshot()
-            .unwrap()
-            .accepted(e.store.snapshot().unwrap().delivery(&reqid).unwrap())
-    );
-    assert!(command(&e, "attempt.start", Some(&fid), json!({"phase":"closure"})).is_err());
-    revise(&e, &fid, "requirement");
-    let s = e.store.snapshot().unwrap();
-    assert!(!s.accepted(s.delivery(&reqid).unwrap()));
-    assert_eq!(
-        runtime(&e, &fid)
-            .steps
-            .iter()
-            .find(|s| s.key == "requirement_execute")
-            .unwrap()
-            .round,
-        2
-    );
-}
+
 #[test]
 fn old_workflow_round_confirmation_and_direct_merge_cannot_bypass_preconditions() {
     let root = tempfile::tempdir().unwrap();
@@ -532,255 +336,13 @@ fn old_workflow_round_confirmation_and_direct_merge_cannot_bypass_preconditions(
 }
 
 #[test]
-fn a_workflow_drives_tdd_task_join_and_stops_before_mainline_confirmation() {
-    let root = tempfile::tempdir().unwrap();
-    let mut e = engine(root.path());
-    e.harness = Arc::new(Immediate);
-    let (pid, fid) = configured(&e);
-    let req = revise(&e, &fid, "requirement");
-    drive(&e, 24);
-    let design = revise(&e, &fid, "design");
-    drive(&e, 2);
-    let sid = id();
-    let tid = id();
-    let scope = Scope::Project {
-        project_id: pid.clone(),
-    };
-    let locked = e
-        .store
-        .snapshot()
-        .unwrap()
-        .feature_configuration(&fid)
-        .unwrap();
-    let agent = locked.agent_refs["architect"].clone();
-    e.store
-        .transact(None, &mut |s| {
-            s.sessions.push(Session {
-                id: sid.clone(),
-                owner_id: fid.clone(),
-                agent: agent.clone(),
-                harness: "workflow-domain-fixture".into(),
-                sandbox: "fixture".into(),
-                snapshot_id: None,
-                instance: None,
-                origin: Origin::External,
-                project_id: Some(pid.clone()),
-                feature_id: Some(fid.clone()),
-                task_id: None,
-                scope: Some(SessionScope::Feature),
-                lifecycle: Some(SessionLifecycle::Idle),
-                runtime_binding: Some(RuntimeBinding {
-                    agent_configuration: None,
-                    permissions: None,
-                    installation: RuntimeInstallation {
-                        id: "workflow-fixture".into(),
-                        key: RuntimeKey {
-                            provider: HarnessProvider::Codex,
-                            version: "fixture".into(),
-                            os: "linux".into(),
-                            arch: "x86_64".into(),
-                        },
-                        artifact: RuntimeArtifact::OciImage {
-                            reference: format!("example.test/fixture@sha256:{}", "a".repeat(64)),
-                        },
-                        source: "synthetic workflow domain fixture".into(),
-                        license: "test".into(),
-                    },
-                    adapter_version: "fixture/v1".into(),
-                    model: "fixture-model".into(),
-                    tool_policy: ToolPolicy::ReadOnly,
-                    writable_paths: vec![],
-                    read_only_paths: vec![],
-                    work_type: WorkType::Design,
-                    configuration_digest: "a".repeat(64),
-                    credential_ref: None,
-                }),
-                external_session: Some("fixture-session".into()),
-                predecessor: None,
-                revision: 1,
-            });
-            s.turns.push(ConversationTurn {
-                id: tid.clone(),
-                project_id: pid.clone(),
-                session_id: sid.clone(),
-                client_message_id: id(),
-                input: "Agreed one-task test plan".into(),
-                input_digest: "b".repeat(64),
-                input_snapshot: None,
-                code_view: None,
-                source_revision: Some(s.feature(&fid)?.revision),
-                status: TurnStatus::Completed,
-                external_message: Some("fixture-message".into()),
-                external_turn: Some("fixture-turn".into()),
-                consumed: true,
-                cancel_requested: false,
-                started: Some(1),
-                finished: Some(2),
-                run_id: None,
-                revision: 1,
-            });
-            let record = s
-                .governance
-                .iter_mut()
-                .find(|r| r.kind == "workflow_instance" && r.definition_id == fid)
-                .unwrap();
-            let step = record.data["steps"]
-                .as_array_mut()
-                .unwrap()
-                .iter_mut()
-                .find(|s| s["key"] == "task_discussion")
-                .unwrap();
-            step["outputs"]["session"] = json!(sid);
-            step["outputs"]["turn"] = json!(tid);
-            record.content_hash = configuration_hash(&record.data);
-            record.revision += 1;
-            Ok(Value::Null)
-        })
-        .unwrap();
-    let p=e.execute("proposal.create",Command{command_id:id(),target:Some(sid),expected_revision:None,payload:json!({"turn_id":tid,"target":fid,"content":{"kind":"task_plan","requirement":req,"design":design,"tasks":[{"key":"one","title":"One task","acceptance":["AC-1"],"dependencies":[]}]}})}).unwrap();
-    drive(&e, 2);
-    let proposal = p["id"].as_str().unwrap();
-    e.execute(
-        "proposal.adopt",
-        Command {
-            command_id: id(),
-            target: Some(proposal.into()),
-            expected_revision: Some(1),
-            payload: json!({}),
-        },
-    )
-    .unwrap();
-    revise(&e, &fid, "test");
-    drive(&e, 150);
-    let state = e.store.snapshot().unwrap();
-    let r = runtime(&e, &fid);
-    let waiting = r.steps.iter().find(|s| s.key == "merge_review").unwrap();
-    assert_eq!(
-        waiting.status,
-        "waiting_confirmation",
-        "runtime {}",
-        json!(r)
-    );
-    assert_eq!(r.task_members.len(), 1);
-    assert_eq!(
-        state.task(&r.task_members[0]).unwrap().status,
-        Status::Completed
-    );
-    let merge = state.merge(waiting.outputs.get("merge").unwrap()).unwrap();
-    assert_ne!(merge.status, Status::Completed);
-    assert!(
-        e.execute(
-            "merge.apply",
-            Command {
-                command_id: id(),
-                target: Some(merge.id.clone()),
-                expected_revision: Some(merge.revision),
-                payload: json!({})
-            }
-        )
-        .is_err()
-    );
-    e.execute(
-        "workflow.step.confirm",
-        Command {
-            command_id: id(),
-            target: Some(waiting.id.clone()),
-            expected_revision: Some(waiting.revision),
-            payload: json!({"input_hash":waiting.input_hash}),
-        },
-    )
-    .unwrap();
-    e.evaluate_workflows().unwrap();
-    let intent = e
-        .pending_workflow_intents()
-        .unwrap()
-        .into_iter()
-        .find(|i| i.data["method"] == "merge.apply" && i.data["command"]["target"] == merge.id)
-        .unwrap();
-    let cmd: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
-    let result = e.execute("merge.apply", cmd);
-    assert!(result.is_ok());
-    e.observe_workflow_intent(&intent.id, &result).unwrap();
-    // Inject a proved-not-applied preflight receipt; no Git side effect has run.
-    e.store
-        .transact(None, &mut |s| {
-            let advance = s.advances.iter_mut().find(|a| a.id == merge.id).unwrap();
-            advance.status = AdvanceStatus::NotApplied;
-            advance.reason = "synthetic preflight transport failure".into();
-            advance.revision += 1;
-            let m = s.merges.iter_mut().find(|m| m.id == merge.id).unwrap();
-            m.status = Status::Interrupted;
-            m.revision += 1;
-            Ok(Value::Null)
-        })
-        .unwrap();
-    e.evaluate_workflows().unwrap();
-    let retry = runtime(&e, &fid)
-        .steps
-        .into_iter()
-        .find(|s| s.key == "merge_apply")
-        .unwrap();
-    assert_eq!(retry.status, "blocked");
-    e.execute(
-        "workflow.step.retry",
-        Command {
-            command_id: id(),
-            target: Some(retry.id),
-            expected_revision: Some(retry.revision),
-            payload: json!({}),
-        },
-    )
-    .unwrap();
-    drive(&e, 30);
-    assert_eq!(
-        e.store.snapshot().unwrap().feature(&fid).unwrap().status,
-        Status::Completed
-    );
-    assert_eq!(runtime(&e, &fid).status, "completed");
-    let ended = runtime(&e, &fid);
-    let step = &ended.steps[0];
-    assert!(
-        e.execute(
-            "workflow.step.rework",
-            Command {
-                command_id: id(),
-                target: Some(step.id.clone()),
-                expected_revision: Some(step.revision),
-                payload: json!({})
-            }
-        )
-        .is_err(),
-        "completed workflows cannot be revived"
-    );
-    let instance = e
-        .store
-        .snapshot()
-        .unwrap()
-        .governance
-        .into_iter()
-        .find(|r| r.kind == "workflow_instance" && r.definition_id == fid)
-        .unwrap();
-    let actions = e
-        .query("query.workflow_actions", &json!({"id":instance.id}), 4)
-        .unwrap();
-    assert!(
-        actions["actions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|action| action["allowed"].as_array().unwrap().is_empty())
-    );
-    let _ = scope;
-}
-
-#[test]
 fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_integrity() {
     let root = tempfile::tempdir().unwrap();
     let global = Arc::new(GlobalStore::open(root.path()).unwrap());
     let shared = Engine::new(
         global.clone(),
         Arc::new(FileArtifacts::new(root.path().into())),
-        simulation::adapters(),
+        runtime::adapters(),
     );
     shared.bootstrap().unwrap();
     let agent = setup_agent(&shared, "analyst");
@@ -820,7 +382,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             Arc::new(FileArtifacts::new(
                 SqliteStore::project_path(root.path(), &pid).unwrap(),
             )),
-            simulation::adapters(),
+            runtime::adapters(),
         );
         e.bootstrap().unwrap();
         let config = global.snapshot().unwrap();
@@ -974,27 +536,21 @@ fn upgrade_locks_provable_legacy_feature_without_inventing_agent_id_or_model() {
             .as_str()
             .unwrap()
             .to_owned();
-        fid = command(
-            &e,
-            "feature.create",
-            None,
-            json!({"project_id":pid,"title":"old Feature"}),
-        )
-        .unwrap()["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        binding = e
-            .store
-            .snapshot()
-            .unwrap()
-            .feature(&fid)
-            .unwrap()
-            .binding
-            .clone();
+        fid = id();
+        binding = e.store.snapshot().unwrap().projects[0].binding.clone();
         e.store
             .transact(None, &mut |s| {
-                s.projects[0].execution_mode = "live".into();
+                s.features.push(Feature {
+                    id: fid.clone(),
+                    project_id: pid.clone(),
+                    source_requirement: None,
+                    title: "Historical native Feature without a configuration lock".into(),
+                    status: Status::Draft,
+                    revision: 1,
+                    input_version: 1,
+                    binding: binding.clone(),
+                    predecessor: None,
+                });
                 Ok(Value::Null)
             })
             .unwrap();
@@ -1049,11 +605,11 @@ fn mainline_refresh_is_an_explicit_frozen_intent_and_accepts_only_matching_recei
                 path: "owned/repository".into(),
                 mainline: "main".into(),
             });
-            s.heads
-                .iter_mut()
-                .find(|h| h.id == format!("main:{pid}"))
-                .unwrap()
-                .revision = old.clone();
+            s.heads.push(GitHead {
+                id: format!("main:{pid}"),
+                project_id: pid.clone(),
+                revision: old.clone(),
+            });
             let worktree = RepositoryWorktree {
                 id: pid.clone(),
                 project_id: pid.clone(),

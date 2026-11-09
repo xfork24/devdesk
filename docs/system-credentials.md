@@ -19,15 +19,15 @@ Host 在调用前检查助手归属、权限、内容和同证书签名；助手
 一次性开发设置：
 
 ```bash
-./scripts/setup-macos-signing.sh --prepare
-./scripts/setup-macos-signing.sh --import
-./scripts/install-macos-credential-helper.sh
-./scripts/dev.sh --data /absolute/path/to/data --port 51751
+./scripts/platform/macos/setup-macos-signing.sh --prepare
+./scripts/platform/macos/setup-macos-signing.sh --import
+./scripts/platform/macos/install-macos-credential-helper.sh
+./scripts/dev/dev.sh --data /absolute/path/to/data --port 51751
 ```
 
 开发和发行 Host 使用稳定 identifier `dev.devdesk.host`；助手使用 `dev.devdesk.credentials`，并验证调用者证书。脚本仅生成/导入 `DevDesk Local Development` 开发证书，信任限定为用户域 code signing，私钥只授权 codesign。证书材料在 `~/Library/Application Support/DevDesk/signing/`（目录 0700、私钥 0600），不在源码或发行包中。这不是 Developer ID 发行签名或公证。
 
-也可通过 `DEVDESK_CODESIGN_IDENTITY` 指定已有身份；必要时用 `DEVDESK_CODESIGN_CERTIFICATE_SHA1` 指定对应证书指纹。`scripts/dev.sh` 与 `scripts/build.sh` 自动检查/复用助手，并为 Host 签名。助手自身实现或依赖变化时，安装器要求显式 `--update`；该变化与普通 Host 重编译分开，可能需要一次新的助手授权，不静默覆盖已授权安装。
+也可通过 `DEVDESK_CODESIGN_IDENTITY` 指定已有身份；必要时用 `DEVDESK_CODESIGN_CERTIFICATE_SHA1` 指定对应证书指纹。`scripts/dev/dev.sh` 与 `scripts/dev/build.sh` 自动检查/复用助手，并为 Host 签名。助手自身实现或依赖变化时，安装器要求显式 `--update`；该变化与普通 Host 重编译分开，可能需要一次新的助手授权，不静默覆盖已授权安装。
 
 ## Ubuntu / Linux
 

@@ -1,10 +1,9 @@
-//! Execution adapter contracts. Implement these traits for either simulated or real providers.
+//! Native execution adapter contracts.
 //!
 //! These runtime interfaces are separate from `devdesk_domain::Harness` and
 //! `devdesk_domain::Sandbox`, which describe persisted configuration and instances.
 use devdesk_domain::{
-    AdvanceObservation, Attempt, Document, ExecutionInstance, GitContext, Id, Origin, Resource,
-    Result, Run,
+    AdvanceObservation, Attempt, Document, ExecutionInstance, GitContext, Id, Origin, Result,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,11 +16,7 @@ pub trait Harness: Send + Sync {
     fn identity(&self) -> String {
         std::any::type_name::<Self>().into()
     }
-    fn configure(&self, node: &str, scenario: &str) -> String;
-    fn poll(&self, run: &Run, input: &Value, now: u64) -> Result<Option<Value>>;
-    fn reconcile(&self, _run: &Run) -> Result<Option<Value>> {
-        Ok(None)
-    }
+
     fn open_session(&self, _request: &SessionStart) -> Result<SessionReceipt> {
         Err(devdesk_domain::err(
             "unsupported",
@@ -157,7 +152,7 @@ pub trait Git: Send + Sync {
     fn identity_for(&self, _context: Option<&devdesk_domain::GitContext>) -> String {
         self.identity()
     }
-    /// Read/freeze the code revision for an execution stage; simulation syntax belongs to the adapter.
+    /// Read/freeze the code revision for an execution stage.
     fn execution_revision(&self, attempt: &Attempt, phase: &str) -> Result<String>;
     fn repository_operation(
         &self,
@@ -188,11 +183,11 @@ pub trait Git: Send + Sync {
             "Git 适配器未提供固定版本 diff",
         ))
     }
-    fn preflight_advance(&self, context: &GitContext, _expected: &str) -> Result<()> {
-        devdesk_domain::require(
-            context.origin != Origin::External,
-            "真实 Git 适配器未提供远端/策略预检",
-        )
+    fn preflight_advance(&self, _context: &GitContext, _expected: &str) -> Result<()> {
+        Err(devdesk_domain::err(
+            "unsupported",
+            "Git 适配器未提供远端/策略预检",
+        ))
     }
     fn advance(
         &self,
@@ -226,7 +221,10 @@ pub trait Tests: Send + Sync {
     fn identity(&self) -> String {
         std::any::type_name::<Self>().into()
     }
-    fn validate(&self, request: &TestRequest) -> Value;
+    /// Accept only identities whose executor and immutable assets still match.
+    fn accepts_identity(&self, identity: &str) -> bool {
+        identity == self.identity()
+    }
     fn poll_test(&self, _request: &TestRequest) -> Result<Option<Value>> {
         Err(devdesk_domain::err(
             "unsupported",
@@ -246,16 +244,6 @@ pub trait Tests: Send + Sync {
         Ok(None)
     }
 }
-/// Base contract for describing execution resources and releasing their external instances.
-pub trait Sandbox: Send + Sync {
-    /// Stable provider + adapter version; production adapters must override this identity.
-    fn identity(&self) -> String {
-        std::any::type_name::<Self>().into()
-    }
-    /// Pure resource intent; implementations must not create external resources here.
-    fn resource(&self, run_id: &str) -> Resource;
-    fn cleanup(&self, resource: &mut Resource, fail: bool);
-}
 /// A replaceable set of execution providers shared by engines in one workspace.
 /// Cloning preserves provider instances, including their connection and recovery state.
 #[derive(Clone)]
@@ -263,9 +251,7 @@ pub struct ExecutionAdapters {
     pub harness: Arc<dyn Harness>,
     pub git: Arc<dyn Git>,
     pub tests: Arc<dyn Tests>,
-    pub sandbox: Arc<dyn Sandbox>,
     pub pull_requests: Option<Arc<dyn PullRequests>>,
-    pub simulation: Option<Arc<dyn SimulationControls>>,
 }
 
 /// PR API facts are separate from Git refs and model output. No platform merge/bypass operation.
@@ -279,9 +265,4 @@ pub trait PullRequests: Send + Sync {
         &self,
         request: &devdesk_domain::PullRequestRequest,
     ) -> Result<devdesk_domain::PullRequestReceipt>;
-}
-
-/// Optional fixture configuration, isolated from real Tests requests and only used by simulated Runs.
-pub trait SimulationControls: Send + Sync {
-    fn configure_test(&self, operation: &str, scenario: &str) -> Result<()>;
 }

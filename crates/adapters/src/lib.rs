@@ -18,11 +18,10 @@ pub use harness::{CodexHarness, DshHarness, RoutingHarness, RuntimeWorkers};
 mod process;
 pub mod runtime_preparation;
 mod runtime_registry;
-pub use runtime_registry::configuration_digest;
-pub mod simulation;
 pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
+pub use runtime_registry::configuration_digest;
 use rusqlite::{
     Connection,
     types::{Value as SqlValue, ValueRef},
@@ -30,7 +29,6 @@ use rusqlite::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-pub use simulation::{SimGit, SimHarness, SimSandbox, SimTests};
 use std::{
     fs::{self, File, OpenOptions},
     path::{Path, PathBuf},
@@ -257,92 +255,122 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     require(version <= 34, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/001_initial.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/foundation/001_initial.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 2 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/002_execution_binding.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/002_execution_binding.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 3 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/003_traceability.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/foundation/003_traceability.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 4 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/004_instances.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/004_instances.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 5 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/005_code_baseline.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/005_code_baseline.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 6 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/006_binding_provenance.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/006_binding_provenance.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 7 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/007_effects.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/007_effects.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 8 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/008_attempt_outputs.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/008_attempt_outputs.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 9 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/009_attempt_scope.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/009_attempt_scope.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 10 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/010_merge_advances.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/010_merge_advances.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 11 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/011_advance_provider.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/011_advance_provider.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 12 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/012_advance_observation.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/012_advance_observation.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 13 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/013_git_context.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/013_git_context.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 14 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/014_agent_profiles.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/configuration/014_agent_profiles.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 15 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/015_conversations.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/conversations/015_conversations.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 16 {
@@ -353,8 +381,10 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
             .map_err(storage)?;
         let upgrade = (|| -> Result<()> {
             let tx = connection.transaction().map_err(storage)?;
-            tx.execute_batch(include_str!("../../../sql/016_project_owned_material.sql"))
-                .map_err(storage)?;
+            tx.execute_batch(include_str!(
+                "../../../sql/project/foundation/016_project_owned_material.sql"
+            ))
+            .map_err(storage)?;
             let violation = tx
                 .prepare("PRAGMA foreign_key_check")
                 .map_err(storage)?
@@ -370,28 +400,32 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     }
     if version < 17 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/017_interaction_answers.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/conversations/017_interaction_answers.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 18 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
-            "../../../sql/018_project_runtime_preferences.sql"
+            "../../../sql/project/configuration/018_project_runtime_preferences.sql"
         ))
         .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 19 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/019_session_lifecycle.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/conversations/019_session_lifecycle.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 20 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
-            "../../../sql/020_snapshot_runtime_bindings.sql"
+            "../../../sql/project/execution/020_snapshot_runtime_bindings.sql"
         ))
         .map_err(storage)?;
         tx.commit().map_err(storage)?;
@@ -399,89 +433,113 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     if version < 21 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
-            "../../../sql/021_runtime_protocol_artifact.sql"
+            "../../../sql/project/execution/021_runtime_protocol_artifact.sql"
         ))
         .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 22 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/022_message_projection.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/conversations/022_message_projection.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 23 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/023_proposal_task_instances.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/023_proposal_task_instances.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 24 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/024_turn_inputs.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/conversations/024_turn_inputs.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 25 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/025_repository_operations.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/025_repository_operations.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 26 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/026_test_recipes.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/026_test_recipes.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 27 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/027_live_run_bindings.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/027_live_run_bindings.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 28 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/028_source_code_base.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/engineering/028_source_code_base.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 29 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/029_turn_code_views.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/conversations/029_turn_code_views.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 30 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/030_run_report_references.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/execution/030_run_report_references.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 31 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
-            "../../../sql/031_delivery_source_contract.sql"
+            "../../../sql/project/engineering/031_delivery_source_contract.sql"
         ))
         .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 32 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/032_permission_bindings.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/configuration/032_permission_bindings.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 33 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/033_execution_permissions.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/configuration/033_execution_permissions.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     if version < 34 {
         let tx = connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/034_governance.sql"))
-            .map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/configuration/034_governance.sql"
+        ))
+        .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
     Ok(connection)
@@ -611,7 +669,7 @@ impl EngineeringStore for SqliteStore {
         conn.query_row("SELECT
           EXISTS(SELECT 1 FROM governance_records instance WHERE instance.kind='workflow_instance' AND json_extract(instance.data,'$.paused')=0 AND json_extract(instance.data,'$.status') NOT IN ('cancelled','completed') AND NOT EXISTS(SELECT 1 FROM governance_records parent WHERE parent.kind='workflow_instance' AND parent.definition_id=json_extract(instance.scope,'$.feature_id') AND json_extract(parent.data,'$.paused')=1) AND (json_extract(instance.data,'$.dirty')=1 OR EXISTS(SELECT 1 FROM governance_records intent,json_each(instance.data,'$.steps') step WHERE intent.kind='workflow_intent' AND intent.definition_id=json_extract(step.value,'$.id') AND json_extract(intent.data,'$.status')='prepared' AND json_extract(step.value,'$.status') NOT IN ('completed','skipped')))) OR
           EXISTS(SELECT 1 FROM runs WHERE status IN ('queued','running')) OR
-          EXISTS(SELECT 1 FROM effects WHERE status IN ('pending','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
+          EXISTS(SELECT 1 FROM effects WHERE status IN ('pending','observed') OR (status='needs_reconciliation' AND (reason='reconcile_requested' OR (kind='test' AND reason='restart_native_observation_only')))) OR
           EXISTS(SELECT 1 FROM advances WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM turns WHERE status IN ('queued','dispatching','running','waiting_interaction') OR (status='needs_reconciliation' AND cancel_requested=1)) OR
@@ -793,7 +851,7 @@ impl ArtifactStore for FileArtifacts {
                 "text/markdown; charset=utf-8"
             }
             .into(),
-            origin: Origin::Simulated,
+            origin: Origin::Human,
         })
     }
     fn read(&self, artifact: &Artifact) -> Result<Vec<u8>> {
@@ -825,4 +883,15 @@ impl ArtifactStore for FileArtifacts {
         )?;
         Ok(bytes)
     }
+}
+
+/// Native execution providers. Construction performs no Docker, GitHub or model calls.
+pub fn execution_adapters(root: &Path) -> Result<ports::ExecutionAdapters> {
+    fs::create_dir_all(root).map_err(storage)?;
+    Ok(ports::ExecutionAdapters {
+        harness: std::sync::Arc::new(RoutingHarness::new(root)?),
+        git: std::sync::Arc::new(CliGit::new(root)?),
+        tests: std::sync::Arc::new(CommandTests::new(root)?),
+        pull_requests: Some(std::sync::Arc::new(github::GitHubPullRequests)),
+    })
 }

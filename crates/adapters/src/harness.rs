@@ -1141,12 +1141,7 @@ macro_rules! provider {
             fn identity(&self) -> String {
                 concat!("devdesk_adapters::", stringify!($name), "/v1").into()
             }
-            fn configure(&self, _: &str, _: &str) -> String {
-                "external".into()
-            }
-            fn poll(&self, _: &Run, _: &Value, _: u64) -> Result<Option<Value>> {
-                Err(err("unsupported", "真实工程 Run 尚未绑定执行契约"))
-            }
+
             fn open_session(&self, r: &SessionStart) -> Result<SessionReceipt> {
                 self.check(&r.session)?;
                 self.workers.open(r)
@@ -1250,17 +1245,15 @@ fn failed_preparation_keeps_missing_protocol_distinct_from_an_actual_journal() {
 provider!(CodexHarness, Codex);
 provider!(DshHarness, Dsh);
 
-/// Keep the historic Sim identity for old effect receipts; real sessions route only by frozen provider.
+/// Route native sessions using their frozen provider binding.
 pub struct RoutingHarness {
-    simulation: Arc<dyn ports::Harness>,
     codex: CodexHarness,
     dsh: DshHarness,
 }
 impl RoutingHarness {
-    pub fn new(root: &Path, simulation: Arc<dyn ports::Harness>) -> Result<Self> {
+    pub fn new(root: &Path) -> Result<Self> {
         let workers = RuntimeWorkers::new(root)?;
         Ok(Self {
-            simulation,
             codex: CodexHarness::new(workers.clone()),
             dsh: DshHarness::new(workers),
         })
@@ -1279,17 +1272,9 @@ impl RoutingHarness {
 }
 impl ports::Harness for RoutingHarness {
     fn identity(&self) -> String {
-        self.simulation.identity()
+        "devdesk_adapters::RoutingHarness/v2".into()
     }
-    fn configure(&self, n: &str, s: &str) -> String {
-        self.simulation.configure(n, s)
-    }
-    fn poll(&self, r: &Run, i: &Value, n: u64) -> Result<Option<Value>> {
-        self.simulation.poll(r, i, n)
-    }
-    fn reconcile(&self, r: &Run) -> Result<Option<Value>> {
-        self.simulation.reconcile(r)
-    }
+
     fn open_session(&self, r: &SessionStart) -> Result<SessionReceipt> {
         self.route(&r.session)?.open_session(r)
     }
