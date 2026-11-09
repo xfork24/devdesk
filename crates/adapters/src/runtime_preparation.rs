@@ -3,7 +3,7 @@
 use super::*;
 use std::{process::Command, time::Duration};
 
-pub const CODEX_VERSION: &str = "0.167.0";
+pub const CODEX_VERSION: &str = DEFAULT_CODEX_VERSION;
 const CODEX_FILES: &[(&str, &str)] = &[(
     "Dockerfile",
     include_str!("../../../containers/codex/Dockerfile"),

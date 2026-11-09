@@ -75,7 +75,7 @@ impl ConfigurationRecord {
     }
     pub fn is_definition(&self) -> bool {
         [
-            "model", "tool", "harness", "agent", "workflow", "standard", "skill", "spec",
+            "model", "tool", "harness", "agent", "workflow", "standard", "skill", "spec", "role",
         ]
         .contains(&self.kind.as_str())
     }
@@ -100,6 +100,9 @@ pub struct ModelDefinition {
 pub struct HarnessDefinition {
     pub provider: String,
     pub runtime_version: String,
+    /// Exact managed build inputs; its first verified image is permanently bound separately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_digest: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<String>,
     #[serde(default)]
@@ -119,6 +122,8 @@ pub struct ToolDefinition {
 #[serde(deny_unknown_fields)]
 pub struct AgentComposition {
     pub role: AgentRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_ref: Option<Id>,
     pub instructions: String,
     pub model_ref: Id,
     pub harness_ref: Id,
@@ -130,6 +135,12 @@ pub struct AgentComposition {
     pub permissions: Vec<Id>,
     #[serde(default)]
     pub approval: ApprovalPolicy,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleDefinition {
+    pub execution_role: AgentRole,
+    pub instructions: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -688,6 +699,8 @@ pub fn topological(nodes: &[(String, Vec<String>)]) -> Result<Vec<String>> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureConfiguration {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defaults_bundle_ref: Option<Id>,
     pub project_configuration_id: Id,
     pub workflow_ref: Id,
     pub standard_ref: Id,

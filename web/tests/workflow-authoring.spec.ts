@@ -105,3 +105,73 @@ test("Agent 组合管理不依赖 GitHub 连接且可以创建 Model 和 Tool", 
     panel.getByRole("button", { name: /Browser experience tool v1/ }),
   ).toBeVisible();
 });
+
+test("全新数据集内建完整 Sol High / Codex 套件，角色表单自动采用默认组合", async ({
+  page,
+}) => {
+  await setup(page);
+  const defaults = page.getByRole("region", { name: "内建默认套件" });
+  await expect(defaults.getByText(/GPT-6.1 Sol High · Codex/)).toBeVisible();
+  await defaults.getByText("查看 Workflow、规范、角色与运行配置").click();
+  for (const role of ["需求分析师", "架构师", "开发", "测试", "评审"])
+    await expect(
+      defaults.getByText(`${role} · Sol High / Codex`, { exact: true }),
+    ).toBeVisible();
+  await page.getByRole("button", { name: "规范与身份", exact: true }).click();
+  const catalog = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Agent 组合与实例", exact: true }),
+  });
+  await expect(catalog.getByLabel("Model 精确版本")).toHaveValue(
+    "builtin-model-gpt-6-1-sol-high-v1",
+  );
+  await catalog
+    .getByRole("combobox", { name: "Role 精确版本", exact: true })
+    .selectOption("builtin-role-developer-v1");
+  await expect(catalog.getByLabel("Model 精确版本")).toHaveValue(
+    "builtin-model-gpt-6-1-sol-high-v1",
+  );
+  await expect(catalog.getByLabel("Harness 精确版本")).toHaveValue(
+    "builtin-harness-codex-managed-v1",
+  );
+});
+
+test("Role 可以新增、编辑和删除，默认 Agent 自动创建", async ({ page }) => {
+  await setup(page);
+  await page.getByRole("button", { name: "规范与身份", exact: true }).click();
+  const panel = page.getByRole("region", { name: "角色管理" });
+  await panel.getByLabel("Role 名称", { exact: true }).fill("浏览器安全评审员");
+  await panel
+    .getByRole("combobox", { name: "执行职责", exact: true })
+    .selectOption("reviewer");
+  await panel
+    .getByLabel("Role 职责说明", { exact: true })
+    .fill("Review security boundaries and failure handling with evidence.");
+  await panel.getByRole("button", { name: "创建 Role", exact: true }).click();
+  await expect(
+    panel.getByRole("button", { name: /浏览器安全评审员 独立评审/ }),
+  ).toBeVisible();
+  await panel
+    .getByRole("button", { name: /浏览器安全评审员 独立评审/ })
+    .click();
+  await panel
+    .getByLabel("Role 名称", { exact: true })
+    .fill("浏览器高级安全评审员");
+  await panel
+    .getByRole("button", { name: "保存 Role 新版本", exact: true })
+    .click();
+  await expect(
+    panel.getByRole("button", { name: /浏览器高级安全评审员 独立评审 · v2/ }),
+  ).toBeVisible();
+  await panel
+    .getByRole("button", { name: "删除 浏览器高级安全评审员", exact: true })
+    .click();
+  await expect(
+    panel.getByRole("button", { name: /浏览器高级安全评审员 独立评审/ }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page
+      .getByRole("region", { name: "角色管理" })
+      .getByRole("button", { name: /浏览器高级安全评审员 独立评审/ }),
+  ).toHaveCount(0);
+});

@@ -428,6 +428,7 @@ pub(crate) fn seed_governance(s: &mut EngineeringState) {
             s.governance.push(r);
         }
     }
+    crate::builtin_defaults::seed_defaults(s);
 }
 
 fn check_scope(s: &EngineeringState, scope: &Scope, store_project: Option<&str>) -> Result<()> {
@@ -462,6 +463,18 @@ fn reference<'a>(
 }
 fn validate_composition(s: &EngineeringState, a: &AgentComposition, scope: &Scope) -> Result<()> {
     require(!a.instructions.trim().is_empty(), "Agent 指令不能为空")?;
+    if let Some(role_ref) = &a.role_ref {
+        let role = reference(s, role_ref, "role", scope)?;
+        let definition: RoleDefinition = role.decode()?;
+        require(
+            !crate::builtin_defaults::role_deleted(s, role),
+            "Role 已删除，不能用于新绑定",
+        )?;
+        require(
+            definition.execution_role == a.role,
+            "Agent 的执行职责与 Role 修订不一致",
+        )?;
+    }
     require(
         !a.tools.is_empty() && (1..=2).contains(&a.permissions.len()),
         "Agent 必须明确 Tools 及 Harness/Sandbox Permission",
@@ -545,7 +558,11 @@ fn validate_composition(s: &EngineeringState, a: &AgentComposition, scope: &Scop
     }
     Ok(())
 }
-fn install_agent_profile(s: &mut EngineeringState, r: &ConfigurationRecord, a: &AgentComposition) {
+pub(crate) fn install_agent_profile(
+    s: &mut EngineeringState,
+    r: &ConfigurationRecord,
+    a: &AgentComposition,
+) {
     if s.definitions.iter().any(|d| d.id == r.id) {
         return;
     }
@@ -568,7 +585,22 @@ fn install_agent_profile(s: &mut EngineeringState, r: &ConfigurationRecord, a: &
         name: r.name.clone(),
         version: r.version,
         supersedes: r.supersedes.clone(),
-        body: a.instructions.clone(),
+        body: a
+            .role_ref
+            .as_ref()
+            .and_then(|id| s.configuration(id).ok())
+            .and_then(|r| r.decode::<RoleDefinition>().ok())
+            .map(|role| {
+                if role.instructions == a.instructions {
+                    a.instructions.clone()
+                } else {
+                    format!(
+                        "{}\n\nAgent-specific instructions:\n{}",
+                        role.instructions, a.instructions
+                    )
+                }
+            })
+            .unwrap_or_else(|| a.instructions.clone()),
         slots: vec![],
         rules: vec![],
         agent_profile: Some(AgentProfile {
@@ -945,6 +977,17 @@ impl Engine {
         p: &Value,
     ) -> Result<()> {
         let f = s.feature(feature)?.clone();
+        if s.projects
+            .iter()
+            .any(|project| project.id == f.project_id && project.execution_mode == "live")
+            || s.governance.iter().any(|r| {
+                r.kind == "project_configuration"
+                    && r.definition_id == f.project_id
+                    && r.data["defaults_bundle_ref"].is_string()
+            })
+        {
+            self.attach_builtin_project_defaults(s, &f.project_id)?;
+        }
         let current = s
             .governance
             .iter()
@@ -1007,6 +1050,7 @@ impl Engine {
             for reference in std::iter::once(&ar)
                 .chain(std::iter::once(&a.model_ref))
                 .chain(std::iter::once(&a.harness_ref))
+                .chain(a.role_ref.iter())
                 .chain(a.tools.iter())
             {
                 let r = s.configuration(reference)?;
@@ -1084,7 +1128,20 @@ impl Engine {
                     .unwrap_or(configuration_hash(d)),
             );
         }
+        let defaults_bundle_ref = opt(&current.data, "defaults_bundle_ref");
+        if let Some(bundle) = &defaults_bundle_ref {
+            let record = s.configuration(bundle)?;
+            hashes.insert(record.id.clone(), record.content_hash.clone());
+            if let Some(sandbox) = s
+                .sandboxes
+                .iter()
+                .find(|sandbox| sandbox.id == f.binding.sandbox)
+            {
+                hashes.insert(sandbox.id.clone(), configuration_hash(sandbox));
+            }
+        }
         let config = FeatureConfiguration {
+            defaults_bundle_ref,
             project_configuration_id: current.id,
             workflow_ref: wf.id,
             standard_ref: standard.clone(),
@@ -1181,8 +1238,10 @@ impl Engine {
             return self.workflow_control(method, c, s).map(Some);
         }
         let family = method.split('.').next().unwrap_or("");
-        let config_create = ["model", "tool", "harness", "skill", "spec", "standard"]
-            .contains(&family)
+        let config_create = [
+            "model", "tool", "harness", "skill", "spec", "standard", "role",
+        ]
+        .contains(&family)
             && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
             || (["agent.create", "agent.revise"].contains(&method) && p.get("data").is_some());
         if config_create {
@@ -1202,11 +1261,89 @@ impl Engine {
                     "配置修订冲突或类型错误",
                 )?;
             }
-            let data = p
+            let mut data = p
                 .get("data")
                 .cloned()
                 .ok_or_else(|| err("invalid_params", "缺少配置正文"))?;
+            if family == "agent" {
+                if data.get("role_ref").is_none_or(Value::is_null) {
+                    let key = data["role"].as_str().unwrap_or("analyst");
+                    data["role_ref"] =
+                        crate::builtin_defaults::current_bundle(s)?.data["role_refs"][key].clone();
+                }
+                let role = reference(s, &text(&data, "role_ref")?, "role", &scope)?
+                    .decode::<RoleDefinition>()?;
+                if data.get("role").is_none_or(Value::is_null) {
+                    data["role"] = json!(role.execution_role);
+                }
+                for (key, value) in [
+                    ("model_ref", json!(DEFAULT_MODEL_ID)),
+                    ("harness_ref", json!(DEFAULT_HARNESS_ID)),
+                    ("instructions", json!(role.instructions)),
+                    (
+                        "tools",
+                        json!([DEFAULT_NATIVE_TOOL_ID, DEFAULT_EXPERIENCE_TOOL_ID]),
+                    ),
+                    (
+                        "permissions",
+                        json!([
+                            "permission-container-full-access-v1",
+                            "permission-container-full-access-v1"
+                        ]),
+                    ),
+                ] {
+                    if data.get(key).is_none_or(Value::is_null) {
+                        data[key] = value;
+                    }
+                }
+                if data.get("skills").is_none_or(Value::is_null) {
+                    data["skills"] = s
+                        .governance
+                        .iter()
+                        .find(|r| r.kind == "agent" && r.data["role_ref"] == data["role_ref"])
+                        .map(|r| r.data["skills"].clone())
+                        .unwrap_or(json!(["builtin-skill-engineering-context-v1"]));
+                }
+            }
             match family {
+                "role" => {
+                    let role: RoleDefinition = decode(&data)?;
+                    require(
+                        !role.instructions.trim().is_empty(),
+                        "Role 职责说明不能为空",
+                    )?;
+                    if let Some(old) = &old {
+                        require(
+                            !s.governance.iter().any(|r| {
+                                r.kind == "role"
+                                    && r.definition_id == old.definition_id
+                                    && r.version > old.version
+                            }),
+                            "Role 已有新版本，请重新读取后编辑",
+                        )?;
+                        require(
+                            !crate::builtin_defaults::role_deleted(s, old),
+                            "已删除的 Role 不能修改，请新建角色",
+                        )?;
+                        let is_default =
+                            crate::builtin_defaults::current_bundle(s)?.data["role_refs"]
+                                .as_object()
+                                .is_some_and(|slots| {
+                                    slots.values().filter_map(Value::as_str).any(|id| {
+                                        s.governance.iter().any(|r| {
+                                            r.id == id && r.definition_id == old.definition_id
+                                        })
+                                    })
+                                });
+                        if old.definition_id.starts_with("builtin-role-") || is_default {
+                            require(
+                                role.execution_role
+                                    == old.decode::<RoleDefinition>()?.execution_role,
+                                "默认角色的工程职责固定，可修改名称和职责说明",
+                            )?;
+                        }
+                    }
+                }
                 "model" => {
                     let m: ModelDefinition = decode(&data)?;
                     require(
@@ -1222,6 +1359,14 @@ impl Engine {
                 }
                 "harness" => {
                     let h: HarnessDefinition = decode(&data)?;
+                    require(
+                        h.recipe_digest.as_ref().is_none_or(|digest| {
+                            h.provider == "codex"
+                                && digest.len() == 64
+                                && digest.bytes().all(|b| b.is_ascii_hexdigit())
+                        }),
+                        "无效的固定 Harness 配方",
+                    )?;
                     require(
                         ["codex", "dsh", "simulation"].contains(&h.provider.as_str())
                             && !h.runtime_version.is_empty(),
@@ -1342,14 +1487,31 @@ impl Engine {
             }
 
             let result = json!(r);
-            s.governance.push(r);
+            s.governance.push(r.clone());
+            if family == "role" {
+                crate::builtin_defaults::install_role_agent(s, &r)?;
+            }
             return Ok(Some(result));
         }
         let result = match method {
+            "role.delete" => {
+                let role = s.configuration(target)?.clone();
+                check_scope(s, &role.scope, self.store.project_id().as_deref())?;
+                require(
+                    role.kind == "role" && c.expected_revision == Some(role.revision),
+                    "Role 类型或版本不匹配",
+                )?;
+                crate::builtin_defaults::replace_deleted_default_role(s, &role)?;
+                if !crate::builtin_defaults::role_deleted(s, &role) {
+                    s.governance.push(record("role_retirement",role.definition_id.clone(),role.scope.clone(),role.name.clone(),1,None,json!({"role_ref":role.id,"reason":opt(p,"reason").unwrap_or_else(||"用户删除角色".into())}),true));
+                }
+                json!({"id":role.id,"deleted":true})
+            }
             "configuration.retire" => {
                 let source = s.configuration(target)?.clone();
                 check_scope(s, &source.scope, self.store.project_id().as_deref())?;
                 require(source.is_definition(), "只能停用定义修订")?;
+                require(source.kind != "role", "请使用 role.delete 删除角色")?;
                 require(c.expected_revision == Some(source.revision), "版本冲突")?;
                 let r = record(
                     "configuration_retirement",
@@ -1603,6 +1765,7 @@ impl Engine {
         if ![
             "query.configurations",
             "query.agent_instances",
+            "query.roles",
             "query.agent_revision",
             "query.workflows",
             "query.workflow",
@@ -1621,6 +1784,33 @@ impl Engine {
         }
         Some((|| {
             let s = self.store.snapshot()?;
+            if method == "query.roles" {
+                let all = s
+                    .governance
+                    .iter()
+                    .filter(|r| {
+                        r.kind == "role"
+                            && (p["include_deleted"] == true
+                                || !crate::builtin_defaults::role_deleted(&s, r))
+                    })
+                    .collect::<Vec<_>>();
+                let mut rows = all
+                    .iter()
+                    .filter(|r| {
+                        p["include_history"] == true
+                            || !all.iter().any(|next| {
+                                next.definition_id == r.definition_id && next.version > r.version
+                            })
+                    })
+                    .copied()
+                    .collect::<Vec<_>>();
+                rows.sort_by_key(|r| std::cmp::Reverse(r.created_at));
+                let offset = p["offset"].as_u64().unwrap_or(0) as usize;
+                let limit = p["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
+                return Ok(
+                    json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len()}),
+                );
+            }
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let limit = p["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
             if ["query.workflow_validation", "query.workflow_preview"].contains(&method) {

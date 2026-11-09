@@ -10,3 +10,5 @@
 - 新 live 会话的旧角色入口及独立 Model 覆盖均被拒绝。
 
 结果：通过。宿主 macOS Apple Silicon，Linux Docker 原生 Harness。
+
+数据可用性更新（2026-11-09）：用户随后明确要求清空本工作区全部 data/ 和数据库，相关旧本机验收数据已删除。本文记录当时的执行事实；其中运行 ID、Artifact 和快照不再代表可读取的当前本机数据。新初始化见 ../builtin-defaults-and-roles/EXECUTION.md。

@@ -1,3 +1,5 @@
+import { RoleManager } from "./components/RoleManager";
+import { DefaultSuite } from "./components/DefaultSuite";
 import React, {
   useState,
   useEffect,
@@ -178,6 +180,7 @@ function App() {
   const [view, setView] = useState<{ title: string; body: string }>();
   const [setupPath, setSetupPath] = useState("./data");
   const [liveProvider, setLiveProvider] = useState("");
+  const [roleRevision, setRoleRevision] = useState(0);
   const [focusedSession, setFocusedSession] = useState<RecordData>();
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
   const [executionTab, setExecutionTab] = useState(
@@ -837,6 +840,9 @@ function App() {
             </div>
           )}
           <RuntimePreparationStatus request={rpc} />
+          {data && ["overview", "definitions", "workflows"].includes(tab) && (
+            <DefaultSuite key={`defaults:${roleRevision}`} request={rpc} />
+          )}
           {!project && data && (
             <div className="notice">
               打开 GitHub 仓库开始工作。
@@ -2332,7 +2338,17 @@ function App() {
           )}
           {data && tab === "definitions" && (
             <>
+              <RoleManager
+                key={projectId || "global-roles"}
+                request={rpc}
+                project={project}
+                onChanged={() => {
+                  setRoleRevision((value) => value + 1);
+                  void load();
+                }}
+              />
               <AgentCatalog
+                key={`agents:${projectId}:${roleRevision}`}
                 request={rpc}
                 project={project}
                 installations={data.runtime_installations || []}

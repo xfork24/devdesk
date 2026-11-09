@@ -4,6 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [内建默认套件与 Role](builtin-defaults-and-roles/PLAN.md) | [执行记录](builtin-defaults-and-roles/EXECUTION.md) | Sol High / Codex 完整默认配置、Role CRUD 与全新数据初始化 |
 | [架构与实现基线 v0.3](devdesk-v0.3/PLAN.md) | [本轮执行记录](workflow-and-workbench/EXECUTION.md) | 当前领域、Web 工作台、存储与能力边界 |
 | [架构设计 v0.2](devdesk-v0.2/PLAN.md) | 实施证据见下面各计划 | 原始领域与架构设计基线 |
 | [原型实施](devdesk-prototype/PLAN.md) | [F0–F5 与平台报告索引](devdesk-prototype/README.md) | 原型 Linux/macOS 验收记录 |

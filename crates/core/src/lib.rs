@@ -1,5 +1,6 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
 mod advances;
+mod builtin_defaults;
 mod conversation_runtime;
 mod conversations;
 mod effects;
@@ -936,6 +937,9 @@ impl Engine {
                     project_id: pid.clone(),
                     revision: "sim-rev-root".into(),
                 });
+                if p["use_builtin_defaults"] == true {
+                    self.attach_builtin_project_defaults(s, &pid)?;
+                }
                 json!({"id":pid})
             }
             "project.update" => {

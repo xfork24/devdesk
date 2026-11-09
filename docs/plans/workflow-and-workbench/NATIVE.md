@@ -26,3 +26,5 @@ Feature: 1920b938-b33a-4cad-b4fb-a8e2ed5ea27e
 原始 Artifact、Run、Review、Snapshot、仓库操作及来源保留在专用验收数据集；本计划目录仅保存 Markdown 报告。跨项目经验、不同 Model 和 DSH 原生组合分别见 EXPERIENCE.md 与 DSH.md，不将这一次 Codex Feature 闭环泛称为所有 Harness 的完整工程复验。
 
 结束状态补验：实际已完成 Workflow 的允许动作列表为空，直接 workflow.step.rework 被拒绝且记录内容不变；真实浏览器未显示暂停、返工或重试控件。
+
+数据可用性更新（2026-11-09）：用户随后明确要求清空本工作区全部 data/ 和数据库，相关旧本机验收数据已删除。本文记录当时的执行事实；其中运行 ID、Artifact 和快照不再代表可读取的当前本机数据。新初始化见 ../builtin-defaults-and-roles/EXECUTION.md。

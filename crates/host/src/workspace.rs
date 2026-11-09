@@ -111,7 +111,14 @@ impl Workspace {
         {
             let h: HarnessDefinition = state.configuration(agent)?.decode()?;
             require(
-                installation.key.version == h.runtime_version,
+                if h.recipe_digest.is_some() {
+                    installation
+                        .key
+                        .version
+                        .starts_with(&format!("{}+docker.", h.runtime_version))
+                } else {
+                    installation.key.version == h.runtime_version
+                },
                 "安装版本与 Agent 锁定的 Harness 版本不匹配",
             )?;
         }
@@ -674,7 +681,7 @@ impl Workspace {
                 .iter()
                 .all(|b| existing.sandboxes.iter().any(|v| v.id == b.id))
         {
-            return Ok(());
+            return e.ensure_builtin_project_defaults();
         }
         e.store.transact(None, &mut |s| {
             for r in shared.governance.iter().filter(|r| {
@@ -719,7 +726,7 @@ impl Workspace {
             }
             Ok(json!({"ok":true}))
         })?;
-        Ok(())
+        e.ensure_builtin_project_defaults()
     }
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let root = PathBuf::from(self.global.root());
@@ -747,6 +754,7 @@ impl Workspace {
         }
         self.sync_configuration(&e)?;
         e.bootstrap()?;
+        e.ensure_builtin_project_defaults()?;
         // Re-evaluate persisted facts once on reopen before the idle-project filter.
         // This only prepares intents; adapters still run through the normal tick.
         e.evaluate_workflows()?;
@@ -763,6 +771,46 @@ impl Workspace {
         Ok(())
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        if method == "query.default_configuration" {
+            let state = self.global.snapshot()?;
+            let bundle = state
+                .governance
+                .iter()
+                .filter(|r| {
+                    r.kind == "defaults_bundle"
+                        && r.definition_id == DEFAULTS_BUNDLE_ID.trim_end_matches("-v1")
+                })
+                .max_by_key(|r| r.version)
+                .ok_or_else(|| err("configuration_required", "默认套件缺失"))?;
+            let ids: Vec<_> = bundle
+                .data
+                .as_object()
+                .unwrap()
+                .values()
+                .flat_map(|value| match value {
+                    Value::String(id) => vec![id.clone()],
+                    Value::Array(ids) => ids
+                        .iter()
+                        .filter_map(|id| id.as_str().map(str::to_owned))
+                        .collect(),
+                    Value::Object(refs) => refs
+                        .values()
+                        .filter_map(|id| id.as_str().map(str::to_owned))
+                        .collect(),
+                    _ => vec![],
+                })
+                .collect();
+            return Ok(
+                json!({"bundle":bundle,"records":state.governance.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"permissions":state.permissions.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"sandboxes":state.sandboxes.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"materializations":state.governance.iter().filter(|r|r.kind=="harness_materialization"&&r.definition_id==DEFAULT_HARNESS_ID).collect::<Vec<_>>() }),
+            );
+        }
+        if method == "runtime.prepare_defaults" {
+            let state = self.global.snapshot()?;
+            return Ok(json!(self.materialize_harness(
+                &self.configuration,
+                state.configuration(DEFAULT_HARNESS_ID)?
+            )?));
+        }
         if method == "query.history" && params["scope"] == "global" {
             return self
                 .configuration

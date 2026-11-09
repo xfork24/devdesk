@@ -168,3 +168,14 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 query.workspace 增加项目 summary、配置锁和流程实例投影；work_filter 可选择 tasks/running/waiting_review/waiting_confirmation/blocked，task_id 可定位分页外 Task。地址和前端筛选不是业务权限；直接 RPC 同样经过内核门禁。query.history 可通过 scope:"global" 读取全局配置与发布事件，默认工程历史仍按活动项目隔离。
 
 `repository.refresh` 使用 Project target/revision 和 payload.revision（已观察的远端精确 SHA）。命令只写 RefreshMainline 意图；适配器核对仓库、所属干净 worktree、旧本地头及远端 SHA 后执行 `merge --ff-only`，回执才更新主干事实。存在未核对的接纳或在途仓库操作时拒绝同步。旧主干候选及其确认失效，需从候选准备返工；旧 operation 保留并标记 superseded_target。`query.workspace.detail.mainline_sync` 返回近期同步状态，失败可按原 ID 使用 repository.reconcile，不重新解释旧候选。
+
+
+## Role 与默认套件
+
+- `query.default_configuration`：当前默认套件修订、Role/Agent/Model/Harness/Workflow/Spec/Standard/Skills/Tools、Permission/Sandbox 及已物化安装；无需 Project 或 Docker。
+- `runtime.prepare_defaults`：按冻结的 Codex 配方准备并核验本机环境，首次保存不可变 harness_materialization；重复调用复用原安装，原镜像缺失时拒绝换绑。
+- `role.create` / `role.revise`：命令 envelope；payload.name、scope、data.execution_role、data.instructions；revise 使用当前 Role 修订 target/revision。自动创建对应默认 Skill、Agent 和 AgentID。角色编辑返回新版本，旧引用不改写。
+- `role.delete`：Role target/revision，可选 reason；删除保存停用记录并隐藏整条定义的修订。若当前默认流程采用该角色，需要有效的同执行职责全局替代角色。
+- `query.roles`：local/project_id、offset/limit；默认最新未删除版本，可用 include_history/include_deleted 查看历史。
+
+Agent 新建可提供 role_ref，省略模型与能力字段时填入 Sol High / Codex 默认组合；legacy role 指执行职责，缺少 role_ref 时解析当前默认 Role。直接 Session 不得单独覆盖 Role 修订，必须采用完整 Agent。Role 职责与 Agent 额外指令一起冻结到角色配置。

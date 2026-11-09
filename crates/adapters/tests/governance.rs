@@ -1052,3 +1052,316 @@ fn mainline_refresh_is_an_explicit_frozen_intent_and_accepts_only_matching_recei
     e.tick_repositories().unwrap();
     assert_eq!(e.store.snapshot().unwrap().heads[0].revision, new);
 }
+
+#[test]
+fn native_default_bundle_is_complete_idempotent_and_features_pin_its_whole_configuration() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path());
+    let before = e.store.snapshot().unwrap();
+    let bundle = before.configuration(DEFAULTS_BUNDLE_ID).unwrap().clone();
+    assert!(bundle.immutable && bundle.scope == Scope::Global);
+    for key in [
+        "model_ref",
+        "harness_ref",
+        "workflow_ref",
+        "task_workflow_ref",
+        "standard_ref",
+    ] {
+        assert!(
+            before
+                .configuration(bundle.data[key].as_str().unwrap())
+                .is_ok()
+        );
+    }
+    for key in ["skill_refs", "tool_refs", "spec_refs"] {
+        for reference in bundle.data[key].as_array().unwrap() {
+            assert!(before.configuration(reference.as_str().unwrap()).is_ok());
+        }
+    }
+    for reference in bundle.data["permission_refs"].as_array().unwrap() {
+        assert!(
+            before
+                .permissions
+                .iter()
+                .any(|p| p.id == reference.as_str().unwrap())
+        );
+    }
+    assert!(
+        before
+            .sandboxes
+            .iter()
+            .any(|b| b.id == DEFAULT_SANDBOX_ID && b.provider == "docker")
+    );
+    let model: ModelDefinition = before
+        .configuration(DEFAULT_MODEL_ID)
+        .unwrap()
+        .decode()
+        .unwrap();
+    assert_eq!(model.model, "gpt-6.1-sol");
+    assert_eq!(model.parameters["reasoning_effort"], "high");
+    let harness: HarnessDefinition = before
+        .configuration(DEFAULT_HARNESS_ID)
+        .unwrap()
+        .decode()
+        .unwrap();
+    assert_eq!(harness.runtime_version, DEFAULT_CODEX_VERSION);
+    assert_eq!(harness.recipe_digest, Some(default_codex_recipe_digest()));
+    for role in ["analyst", "architect", "developer", "tester", "reviewer"] {
+        let agent: AgentComposition = before
+            .configuration(&default_agent_id(role))
+            .unwrap()
+            .decode()
+            .unwrap();
+        assert_eq!(agent.model_ref, DEFAULT_MODEL_ID);
+        assert_eq!(agent.harness_ref, DEFAULT_HARNESS_ID);
+        assert!(
+            !agent.skills.is_empty() && !agent.tools.is_empty() && !agent.permissions.is_empty()
+        );
+        let instance: AgentInstance = before
+            .configuration(&default_agent_instance_id(role))
+            .unwrap()
+            .decode()
+            .unwrap();
+        assert_eq!(instance.agent_revision_id, default_agent_id(role));
+        assert_eq!(instance.scope, Scope::Global);
+    }
+    e.bootstrap().unwrap();
+    assert_eq!(
+        serde_json::to_value(
+            e.store
+                .snapshot()
+                .unwrap()
+                .configuration(DEFAULTS_BUNDLE_ID)
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(bundle).unwrap()
+    );
+    let pid = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Defaults","use_builtin_defaults":true}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let fid = command(
+        &e,
+        "feature.create",
+        None,
+        json!({"project_id":pid,"title":"Frozen default Feature","require_configuration":true}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let state = e.store.snapshot().unwrap();
+    let lock = state.feature_configuration(&fid).unwrap();
+    assert_eq!(
+        lock.defaults_bundle_ref.as_deref(),
+        Some(DEFAULTS_BUNDLE_ID)
+    );
+    assert_eq!(lock.workflow_ref, DEFAULT_FEATURE_WORKFLOW_ID);
+    assert_eq!(lock.standard_ref, DEFAULT_STANDARD_ID);
+    assert!(lock.definition_hashes.contains_key(DEFAULT_SANDBOX_ID));
+    let project = &state.projects[0];
+    assert_eq!(project.binding.sandbox, DEFAULT_SANDBOX_ID);
+    assert_eq!(project.binding.harness, DEFAULT_HARNESS_ID);
+    let config_count = state
+        .governance
+        .iter()
+        .filter(|r| r.kind == "project_configuration")
+        .count();
+    e.ensure_builtin_project_defaults().unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .filter(|r| r.kind == "project_configuration")
+            .count(),
+        config_count
+    );
+}
+
+#[test]
+fn roles_evolve_default_agents_and_bundle_without_rebinding_existing_features() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path());
+    let pid = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Role versions","use_builtin_defaults":true}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let first = command(
+        &e,
+        "feature.create",
+        None,
+        json!({"project_id":pid,"title":"Before role edit"}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let before = e
+        .store
+        .snapshot()
+        .unwrap()
+        .feature_configuration(&first)
+        .unwrap();
+    let initial = default_role_id("analyst");
+    let revised=command(&e,"role.revise",Some(&initial),json!({"name":"产品需求分析师","data":{"execution_role":"analyst","instructions":"Clarify measurable user outcomes, constraints, acceptance and failure paths."}})).unwrap();
+    assert_eq!(revised["version"], 2);
+    assert!(command(&e,"role.revise",Some(&initial),json!({"name":"stale","data":{"execution_role":"analyst","instructions":"stale overwrite"}})).is_err());
+    let second = command(
+        &e,
+        "feature.create",
+        None,
+        json!({"project_id":pid,"title":"After role edit"}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let state = e.store.snapshot().unwrap();
+    let after = state.feature_configuration(&second).unwrap();
+    assert_eq!(
+        state.feature_configuration(&first).unwrap().agent_refs,
+        before.agent_refs
+    );
+    assert_ne!(after.agent_refs["analyst"], before.agent_refs["analyst"]);
+    assert_ne!(after.defaults_bundle_ref, before.defaults_bundle_ref);
+    let agent: AgentComposition = state
+        .configuration(&after.agent_refs["analyst"])
+        .unwrap()
+        .decode()
+        .unwrap();
+    assert_eq!(agent.role_ref.as_deref(), revised["id"].as_str());
+    assert_eq!(agent.model_ref, DEFAULT_MODEL_ID);
+    assert!(
+        command(
+            &e,
+            "configuration.retire",
+            Some(revised["id"].as_str().unwrap()),
+            json!({"reason":"cannot bypass default Role lifecycle"})
+        )
+        .is_err()
+    );
+    assert!(
+        command(
+            &e,
+            "role.delete",
+            Some(revised["id"].as_str().unwrap()),
+            json!({})
+        )
+        .is_err(),
+        "default workflow cannot lose its required execution duty"
+    );
+    let replacement=command(&e,"role.create",None,json!({"name":"产品负责人","data":{"execution_role":"analyst","instructions":"Analyse user requirements and explicit acceptance criteria."}})).unwrap();
+    command(
+        &e,
+        "role.delete",
+        Some(revised["id"].as_str().unwrap()),
+        json!({}),
+    )
+    .unwrap();
+    let third = command(
+        &e,
+        "feature.create",
+        None,
+        json!({"project_id":pid,"title":"Replacement role"}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let state = e.store.snapshot().unwrap();
+    let lock = state.feature_configuration(&third).unwrap();
+    let agent: AgentComposition = state
+        .configuration(&lock.agent_refs["analyst"])
+        .unwrap()
+        .decode()
+        .unwrap();
+    assert_eq!(agent.role_ref.as_deref(), replacement["id"].as_str());
+    assert!(command(&e,"role.revise",Some(replacement["id"].as_str().unwrap()),json!({"data":{"execution_role":"reviewer","instructions":"Changed execution duty would break the default workflow."}})).is_err());
+    assert_eq!(
+        state.feature_configuration(&first).unwrap().agent_refs,
+        before.agent_refs
+    );
+    assert!(
+        !e.query("query.roles", &json!({}), 4).unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["definition_id"] == revised["definition_id"])
+    );
+}
+
+#[test]
+fn custom_role_create_edit_delete_preserves_history_and_enforces_scope() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path());
+    let pid = command(&e, "project.create", None, json!({"title":"Scoped roles"})).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let role=command(&e,"role.create",None,json!({"name":"安全评审员","scope":{"kind":"project","project_id":pid},"data":{"execution_role":"reviewer","instructions":"Review security boundaries using frozen evidence."}})).unwrap();
+    let old_agent = e
+        .store
+        .snapshot()
+        .unwrap()
+        .governance
+        .into_iter()
+        .find(|r| r.kind == "agent" && r.data["role_ref"] == role["id"])
+        .unwrap();
+    assert_eq!(old_agent.data["model_ref"], DEFAULT_MODEL_ID);
+    assert_eq!(old_agent.data["harness_ref"], DEFAULT_HARNESS_ID);
+    let extra = command(&e,"agent.create",None,json!({"name":"Role-only composition","scope":{"kind":"project","project_id":pid},"data":{"role_ref":role["id"]}})).unwrap();
+    assert_eq!(extra["data"]["role"], "reviewer");
+    assert_eq!(extra["data"]["model_ref"], DEFAULT_MODEL_ID);
+    assert_eq!(extra["data"]["harness_ref"], DEFAULT_HARNESS_ID);
+    assert!(
+        command(
+            &e,
+            "agent.create",
+            None,
+            json!({"name":"invalid global role reference","data":old_agent.data})
+        )
+        .is_err()
+    );
+    let revised=command(&e,"role.revise",Some(role["id"].as_str().unwrap()),json!({"name":"高级安全评审员","data":{"execution_role":"reviewer","instructions":"Review security and failure handling using frozen evidence."}})).unwrap();
+    command(
+        &e,
+        "role.delete",
+        Some(revised["id"].as_str().unwrap()),
+        json!({}),
+    )
+    .unwrap();
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state.configuration(&old_agent.id).unwrap().content_hash,
+        old_agent.content_hash
+    );
+    assert!(state.configuration(role["id"].as_str().unwrap()).is_ok());
+    assert!(command(&e,"agent.create",None,json!({"name":"deleted role reuse","scope":{"kind":"project","project_id":pid},"data":old_agent.data})).is_err());
+    assert!(
+        e.query(
+            "query.roles",
+            &json!({"include_deleted":true,"include_history":true}),
+            4
+        )
+        .unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == role["id"])
+    );
+}

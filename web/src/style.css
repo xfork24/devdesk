@@ -1187,3 +1187,15 @@ pre { overflow: auto; max-width: 100%; }
 
 .task-card h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; overflow-wrap: anywhere; }
 .task-card .row > .badge { flex-shrink: 0; }
+
+.role-manager > .workflow-list { margin: 20px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.role-manager .workflow-list article { display: flex; flex-direction: column; min-width: 0; border: 1px solid #e3e7ef; border-radius: 8px; overflow: hidden; }
+.role-manager .workflow-list article > button:first-child { flex: 1; width: 100%; border: 0; border-radius: 0; }
+.role-manager .workflow-list article > button:last-child { width: 100%; border: 0; border-top: 1px solid #edf0f5; border-radius: 0; padding: 8px 14px; color: #a35151; font-size: 12px; }
+.role-manager > form { margin: 20px; }
+.role-manager .role-instructions { grid-column: 1 / -1; }
+.role-manager textarea { min-height: 112px; resize: vertical; }
+.default-suite > details, .default-suite > .actions { margin: 16px 20px; }
+.document-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 16px 0; }
+.document-grid article { min-width: 0; border: 1px solid #e3e7ef; border-radius: 8px; padding: 12px; }
+.document-grid article p { margin: 6px 0; color: #787d89; font-size: 12px; }

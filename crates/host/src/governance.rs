@@ -161,7 +161,20 @@ impl Workspace {
                 .ok_or_else(|| err("blocked", "AgentID 缺少组合"))?
                 .to_owned()
         } else {
-            command.payload["agent"].as_str().unwrap_or("").to_owned()
+            command.payload["agent"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| {
+                    let role = command.payload["role"].as_str().unwrap_or("analyst");
+                    state
+                        .governance
+                        .iter()
+                        .filter(|r| r.kind == "project_configuration")
+                        .max_by_key(|r| r.version)
+                        .and_then(|r| r.data["agent_refs"][role].as_str())
+                        .map(str::to_owned)
+                        .unwrap_or_default()
+                })
         };
         let Some(record) = state
             .governance
@@ -178,17 +191,39 @@ impl Workspace {
             return Ok(());
         };
         let agent: AgentComposition = record.decode()?;
+        if let Some(role_ref) = &agent.role_ref {
+            let role = state.configuration(role_ref)?;
+            let retired = state
+                .governance
+                .iter()
+                .any(|r| r.kind == "role_retirement" && r.definition_id == role.definition_id);
+            let target = command.target.as_deref().unwrap_or("");
+            let feature = state
+                .tasks
+                .iter()
+                .find(|task| task.id == target)
+                .map(|task| task.feature_id.as_str())
+                .unwrap_or(target);
+            require(
+                !retired
+                    || state
+                        .feature_configuration(feature)
+                        .is_some_and(|lock| lock.agent_refs.values().any(|id| id == &record.id)),
+                "Role 已删除，新的项目讨论不能再采用它；已有 Feature 保留冻结版本",
+            )?;
+        }
         let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
         let harness: HarnessDefinition = state.configuration(&agent.harness_ref)?.decode()?;
         for key in [
             "model",
+            "role_ref",
             "provider",
             "permission_overrides",
             "installation_id",
         ] {
             require(
                 command.payload.get(key).is_none(),
-                "AgentID 执行不能单独覆盖 Model/Harness/Permission，请采用新的 Agent 版本",
+                "AgentID 执行不能单独覆盖 Role/Model/Harness/Permission，请采用新的 Agent 版本",
             )?;
         }
         let project = state
@@ -239,6 +274,11 @@ impl Workspace {
             !["managed", "latest", "default"].contains(&harness.runtime_version.as_str()),
             "Harness 必须选择精确运行版本",
         )?;
+        if harness.recipe_digest.is_some() {
+            let materialized =
+                self.materialize_harness(e, state.configuration(&agent.harness_ref)?)?;
+            command.payload["installation_id"] = json!(materialized.id);
+        }
         let installations = self.global.runtime_installations()?;
         if let Some(installation) = installations.iter().find(|r| {
             r.key.provider.as_str() == harness.provider
@@ -283,6 +323,7 @@ impl Workspace {
             || method.starts_with("model.")
             || method.starts_with("tool.")
             || method.starts_with("harness.")
+            || method.starts_with("role.")
             || method.starts_with("agent.instance.")
             || ([
                 "skill.create",
@@ -305,6 +346,7 @@ impl Workspace {
             "query.workflow_preview",
             "query.workflow_version_diff",
             "query.agent_instances",
+            "query.roles",
             "query.agent_revision",
         ]
         .contains(&method);

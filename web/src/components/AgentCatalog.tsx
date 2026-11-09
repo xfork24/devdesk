@@ -18,7 +18,8 @@ const split = (s: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 export function AgentCatalog({ request, project, installations }: Props) {
-  const [modelChoices, setModelChoices] = useState<Row[]>([]);
+  const [modelChoices, setModelChoices] = useState<Row[]>([]),
+    [roleChoices, setRoleChoices] = useState<Row[]>([]);
   const [records, setRecords] = useState<Row[]>([]),
     [permissions, setPermissions] = useState<Row[]>([]),
     [skills, setSkills] = useState<Row[]>([]),
@@ -42,12 +43,13 @@ export function AgentCatalog({ request, project, installations }: Props) {
     [instanceAgent, setInstanceAgent] = useState(""),
     [instanceScope, setInstanceScope] = useState("project"),
     [instanceName, setInstanceName] = useState("");
+  const [defaultAgentRefs, setDefaultAgentRefs] = useState<Row>({});
   const [page, setPage] = useState(0),
     [total, setTotal] = useState(0);
   const generation = useRef(0);
   const load = useCallback(async () => {
     const current = ++generation.current;
-    const [catalog, policy, definitions] = await Promise.all([
+    const [catalog, policy, definitions, roles, defaults] = await Promise.all([
       request("query.configurations", {
         local: !!project,
         project_id: project?.id,
@@ -56,9 +58,29 @@ export function AgentCatalog({ request, project, installations }: Props) {
       }),
       request("query.permissions"),
       request("query.workspace", { project_id: project?.id, limit: 1 }),
+      request("query.roles", {
+        local: !!project,
+        project_id: project?.id,
+        limit: 100,
+      }),
+      request("query.default_configuration"),
     ]);
     if (current !== generation.current) return;
     setRecords(catalog.records);
+    setRoleChoices(roles.records || []);
+    setDefaultAgentRefs(defaults.bundle?.data.agent_refs || {});
+    const analyst = catalog.records.find(
+      (row: Row) =>
+        row.id ===
+        (defaults.bundle?.data.agent_refs.analyst ||
+          "builtin-agent-sol-high-analyst-v1"),
+    );
+    if (analyst)
+      setForm((old) =>
+        old.model_ref === "" && old.harness_ref === ""
+          ? structuredClone(analyst.data)
+          : old,
+      );
     setTotal(catalog.total);
     setPermissions(policy.permissions);
     setSkills(
@@ -80,16 +102,23 @@ export function AgentCatalog({ request, project, installations }: Props) {
     setName("");
     setForm(
       k === "agent"
-        ? {
-            role: "analyst",
-            instructions: "",
-            model_ref: "",
-            harness_ref: "",
-            skills: [],
-            tools: [],
-            permissions: [],
-            approval: "never",
-          }
+        ? structuredClone(
+            records.find(
+              (row) =>
+                row.id ===
+                (defaultAgentRefs.analyst ||
+                  "builtin-agent-sol-high-analyst-v1"),
+            )?.data || {
+              role: "analyst",
+              instructions: "",
+              model_ref: "",
+              harness_ref: "",
+              skills: [],
+              tools: [],
+              permissions: [],
+              approval: "never",
+            },
+          )
         : k === "model"
           ? {
               provider: "openai",
@@ -254,10 +283,61 @@ export function AgentCatalog({ request, project, installations }: Props) {
           {kind === "agent" && (
             <>
               <label>
+                Role 精确版本
+                <select
+                  required
+                  value={form.role_ref || ""}
+                  onChange={(event) => {
+                    const role = roleChoices.find(
+                      (role) => role.id === event.target.value,
+                    );
+                    const template = records.find(
+                      (row) =>
+                        row.kind === "agent" && row.data.role_ref === role?.id,
+                    );
+                    update(
+                      template
+                        ? structuredClone(template.data)
+                        : {
+                            role_ref: role?.id,
+                            role: role?.data.execution_role,
+                            instructions: role?.data.instructions,
+                          },
+                    );
+                  }}
+                >
+                  <option value="">选择 Role</option>
+                  {roleChoices.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.name} v{role.version}
+                    </option>
+                  ))}
+                  {form.role_ref &&
+                    !roleChoices.some((role) => role.id === form.role_ref) && (
+                      <option value={form.role_ref}>
+                        已冻结 Role · {form.role_ref}
+                      </option>
+                    )}
+                </select>
+              </label>
+
+              <label>
                 职责
                 <select
                   value={form.role}
-                  onChange={(e) => update({ role: e.target.value })}
+                  disabled={!!form.role_ref}
+                  onChange={(e) => {
+                    const template = records.find(
+                      (row) =>
+                        row.id ===
+                        `builtin-agent-sol-high-${e.target.value}-v1`,
+                    );
+                    update(
+                      template
+                        ? structuredClone(template.data)
+                        : { role: e.target.value },
+                    );
+                  }}
                 >
                   {Object.entries(roles).map(([key, label]) => (
                     <option key={key} value={key}>
@@ -452,7 +532,10 @@ export function AgentCatalog({ request, project, installations }: Props) {
                     const runtime = await request("runtime.prepare", {
                       provider: form.provider,
                     });
-                    update({ runtime_version: runtime.key.version });
+                    update({
+                      runtime_version: runtime.key.version,
+                      recipe_digest: undefined,
+                    });
                     setMessage("已准备运行环境并填入精确版本。");
                   })
                 }
@@ -482,7 +565,12 @@ export function AgentCatalog({ request, project, installations }: Props) {
                   required
                   list="agent-runtime-versions"
                   value={form.runtime_version}
-                  onChange={(e) => update({ runtime_version: e.target.value })}
+                  onChange={(e) =>
+                    update({
+                      runtime_version: e.target.value,
+                      recipe_digest: undefined,
+                    })
+                  }
                 />
                 <datalist id="agent-runtime-versions">
                   {installations

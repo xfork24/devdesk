@@ -43,7 +43,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     [stepKey, setStepKey] = useState("");
   const [name, setName] = useState(""),
     [scope, setScope] = useState("global"),
-    [template, setTemplate] = useState("builtin-workflow-feature-v1"),
+    [template, setTemplate] = useState("builtin-workflow-feature-sol-high-v1"),
     [processKind, setProcessKind] = useState("feature");
   const [status, setStatus] = useState(""),
     [error, setError] = useState(""),
@@ -91,7 +91,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     if (configuration) {
       setWorkflowRef(
         configuration.configuration?.data.workflow_ref ||
-          "builtin-workflow-feature-v1",
+          "builtin-workflow-feature-sol-high-v1",
       );
       setStandardRef(
         configuration.configuration?.data.standard_ref ||

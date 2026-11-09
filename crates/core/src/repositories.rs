@@ -363,6 +363,7 @@ impl Engine {
                                     .find(|h| h.id == format!("main:{}", operation.project_id))
                                     .unwrap()
                                     .revision = head.clone();
+                                self.attach_builtin_project_defaults(s, &operation.project_id)?;
                                 Some(worktree)
                             }
                             (

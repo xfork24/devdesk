@@ -2714,6 +2714,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "recipe_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
         }
       },
       "required": [
@@ -2799,6 +2806,12 @@
           "enum": [
             "never",
             "on_request"
+          ]
+        },
+        "role_ref": {
+          "type": [
+            "string",
+            "null"
           ]
         }
       },
@@ -3271,6 +3284,29 @@
         "tool_revisions"
       ],
       "additionalProperties": false
+    },
+    "RoleDefinition": {
+      "type": "object",
+      "required": [
+        "execution_role",
+        "instructions"
+      ],
+      "properties": {
+        "execution_role": {
+          "enum": [
+            "analyst",
+            "architect",
+            "developer",
+            "tester",
+            "reviewer"
+          ]
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -3389,7 +3425,7 @@
       "if": {
         "properties": {
           "method": {
-            "pattern": "^(workflow|model|harness|tool|skill|spec|standard|configuration|experience|repository)\\."
+            "pattern": "^(role|workflow|model|harness|tool|skill|spec|standard|configuration|experience|repository)\\."
           }
         }
       },

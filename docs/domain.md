@@ -134,3 +134,9 @@ Permission 不替代业务门禁。正式工程的所属 worktree、测试写范
 AgentID 经验索引以项目名、Feature 名和工作时间为主要筛选，保留捕获名称和稳定 ID。跨库读取只读且不切换工程；原生工具挂载自身实例的只读经验目录。恢复创建带来源的后继上下文及新 Session，不能覆盖当前代码、正式材料或配置。
 
 旧 live Feature 启动升级时建立 legacy_feature_lock，仅保存可证明的 Binding 和已记录 Session，不生成虚构 AgentID。治理配置禁止换绑，新执行需使用完整 Project 配置建立后继 Feature；原冻结执行及回执仍可读取和核对。
+
+## Role 与内建默认套件
+
+RoleDefinition 定义名称、职责说明、执行职责和 Global/Project Scope，修订正文不可变。AgentComposition.role_ref 固定 RoleRevision，历史 role 枚举字段只作内核执行职责兼容。Role 修改产生新版本和默认 Agent/AgentID；role_retirement 表示用户删除，旧 Feature/实例历史继续可读。默认流程当前使用的角色需存在同职责替代者才能删除。
+
+默认集合 defaults_bundle 包含全部精确引用。内建模型为 gpt-6.1-sol / high，Harness 为 Codex 0.167.0 的固定配方；Project 自动采用，Feature 锁定 defaults_bundle_ref。harness_materialization 保存配方到实际 RuntimeInstallation 的不可变关联；Sandbox 定义与物理执行实例分开，构建模板不声称已发生执行。

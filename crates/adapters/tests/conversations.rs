@@ -138,7 +138,22 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
         .iter()
         .filter(|d| d.agent_profile.is_some())
         .collect();
-    assert_eq!(roles.len(), 5);
+    assert_eq!(roles.len(), 10);
+    assert_eq!(
+        restored
+            .governance
+            .iter()
+            .filter(|record| record.kind == "role")
+            .count(),
+        5
+    );
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|definition| definition.id.starts_with("builtin-agent-sol-high-"))
+            .count(),
+        5
+    );
     assert_ne!(
         roles
             .iter()

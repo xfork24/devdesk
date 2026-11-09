@@ -105,6 +105,10 @@ sys.exit(3)
         assert rpc('runtime.preparation_status')['result']['preparations'] == []
         assert rpc('query.runtime_installations')['result']['installations'] == []
         assert not (root / 'calls').exists()
+        defaults = rpc('query.default_configuration')['result']
+        assert len(defaults['bundle']['data']['role_refs']) == 5
+        model = next(row for row in defaults['records'] if row['id'] == defaults['bundle']['data']['model_ref'])
+        assert model['data']['model'] == 'gpt-6.1-sol' and model['data']['parameters']['reasoning_effort'] == 'high'
         opened = rpc('project.open_github', {'command_id':'github-open-fixture', 'payload':{'repository':'https://github.com/fixture/repository.git'}})
         assert 'result' in opened, opened
         github_id = opened['result']['id']
@@ -130,6 +134,9 @@ sys.exit(3)
         assert (root/'data'/'projects'/github_id/'repository'/'preserve-fixture').read_text() == 'must survive reconciliation'
 
         assert state['project']['execution_mode'] == 'live'
+        configuration = rpc('query.project_configuration', {'project_id':github_id})['result']['configuration']
+        assert configuration['data']['defaults_bundle_ref'] == defaults['bundle']['id']
+        assert len(configuration['data']['agent_refs']) == 5
         assert len(state['worktrees']) == 1 and state['worktrees'][0]['base'] == head
         assert rpc('project.open_github', {'command_id':'github-reopen-fixture','target':github_id,'payload':{}})['result']['id'] == github_id
         assert (root/'clones').read_text().splitlines() == ['clone']
@@ -148,6 +155,18 @@ sys.exit(3)
         installations = rpc('query.runtime_installations')['result']['installations']
         assert len(installations) == 1 and installations[0]['key']['provider'] == 'codex'
         assert rpc('runtime.prepare', {'provider':'codex'})['result']['id'] == installations[0]['id']
+        assert rpc('runtime.prepare_defaults')['result']['id'] == installations[0]['id']
+        assert rpc('runtime.prepare_defaults')['result']['id'] == installations[0]['id']
+        materialized = rpc('query.default_configuration')['result']['materializations']
+        assert len(materialized) == 1 and materialized[0]['data']['installation_id'] == installations[0]['id']
+        # Losing the pinned image cannot silently materialize this revision again.
+        image = installations[0]['artifact']['image_id']
+        import hashlib
+        pinned_file = root / hashlib.sha256(image.encode()).hexdigest()
+        previous_image = pinned_file.read_bytes();pinned_file.unlink()
+        assert 'error' in rpc('runtime.prepare_defaults')
+        assert rpc('query.default_configuration')['result']['materializations'] == materialized
+        pinned_file.write_bytes(previous_image)
         calls = [json.loads(line) for line in (root/'calls').read_text().splitlines()]
         assert sum(c[0] == 'build' for c in calls) == 1
         assert not any('dsh' in ' '.join(c) for c in calls)

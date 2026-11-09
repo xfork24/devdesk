@@ -72,3 +72,5 @@
 ## 运行与交付说明
 
 debug/release Host 已构建。验收只重启了本轮专用的 51752 Host；既有 4317 Host 没有被中断，它仍运行加载时的旧程序。重启该 Host 后才会加载新 Web 与迁移。当前源码回归和新能力原生验收宿主均为 macOS Apple Silicon。
+
+数据可用性更新（2026-11-09）：用户随后明确要求清空本工作区全部 data/ 和数据库，相关旧本机验收数据已删除。本文记录当时的执行事实；其中运行 ID、Artifact 和快照不再代表可读取的当前本机数据。新初始化见 ../builtin-defaults-and-roles/EXECUTION.md。

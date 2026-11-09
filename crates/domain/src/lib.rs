@@ -14,6 +14,8 @@ mod conversation;
 pub use conversation::*;
 mod governance;
 pub use governance::*;
+mod defaults;
+pub use defaults::*;
 // Pure domain model: no I/O or adapter dependencies.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

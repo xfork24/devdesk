@@ -44,6 +44,8 @@ Agent 是包含职责及指令的完整组合：Model + Harness + 显式 Skills 
 | FeatureConfigurationLock | 精确依赖摘要、解析后的 Feature/Task 计划、来源 Project 配置及编译器版本；不可变 |
 | Model | 提供方、模型标识、可选发布信息、参数及能力定义；不提供执行授权 |
 | Harness | 协议和运行工具能力；原生执行固定精确安装构建，不以模糊版本替换 |
+| Role / RoleRevision | 可管理的角色名称、职责、执行职责和 Scope；编辑追加版本，删除保留历史引用 |
+| DefaultsBundle | 完整内建配置集合的不可变修订，Project 自动采用，Feature 创建时冻结 |
 | AgentRevision | 职责、指令和 Model/Harness/Skill/Tool/Permission 的完整不可变组合 |
 | AgentID | 固定 AgentRevision 与 Global/Project 范围的具体实例；同组合允许多个实例 |
 | Skill / Tool / Permission | 分别描述工作方法、可执行能力契约、允许的权限；Skill 不自动安装或授权工具 |
@@ -60,7 +62,8 @@ Agent 是包含职责及指令的完整组合：Model + Harness + 显式 Skills 
 
 ```mermaid
 flowchart TD
-  Model --> Agent[AgentRevision]
+  Role[RoleRevision] --> Agent[AgentRevision]
+  Model --> Agent
   Harness --> Agent
   Skills[Skills / Tools / Permission] --> Agent
   Agent --> ID[AgentID · Global / Project]
@@ -98,6 +101,14 @@ Model 定义与 Harness 定义分离，同一 Harness 可以形成不同 Model �
 工具处理器首版支持显式声明的 Harness 原生工具组，以及 AgentID 经验检索。不是任意 Tool 名称都存在处理器。权限由冻结的 Harness 和 Sandbox 两层策略、审批及工程范围共同限制；Reviewer/讨论使用只读代码视图，测试作者只写指定测试目录，Developer 只写所属 Task，测试在独立无模型凭据容器中运行。
 
 会话不能单独覆盖完整 Agent 的 Model、Harness 安装或 Permission。共享运行时安装可复用，但组合身份和经验不会因此合并。
+
+### 当前内建默认配置与 Role 管理
+
+默认套件使用 GPT-6.1 Sol High（模型标识 gpt-6.1-sol、reasoning_effort=high）和 Codex 0.167.0，完整包含 Feature/Task Workflow、Spec、Standard、五种 Role 及其 Agent/全局实例、Skills、Tools、Permission 和 Docker Sandbox。新 GitHub Project 无需手工组合，Feature 自动冻结精确依赖。
+
+Role 是独立身份，Agent 通过 role_ref 采用其修订。自定义角色可新增、修改和删除，并自动获得默认完整 Agent。角色名称不再是固定枚举；五种执行职责仍用于已有 TDD/Review 门禁。编辑当前默认 Role 会追加 Role/Agent/实例及默认套件；默认 Project 为新 Feature 采用新版本，旧 Feature 保持原锁。删除当前默认角色需要同执行职责的替代角色，保留历史版本及使用事实。
+
+固定 Harness 构建配方在无需 Docker 时即可保存；首次物化到本机实际镜像后，记录不可变的安装/镜像关联。该镜像不可用时拒绝静默替换。数据重置及验收见 [默认套件与 Role 记录](../builtin-defaults-and-roles/EXECUTION.md)。
 
 ## 7 Workflow 定义、草稿及编译
 
@@ -233,7 +244,7 @@ Artifact 密封后保存 SHA256，读取验证路径和摘要。跨项目历史�
 
 本轮阶段为 Scope/版本基础、Workflow 编译及推进、AgentID 经验、执行工作台、配置编辑器、迁移与验收；对应 [实施计划](../workflow-and-workbench/PLAN.md) W0–W7。
 
-真实结果、修复过的问题和未覆盖平台统一记录于 [执行记录](../workflow-and-workbench/EXECUTION.md)。历史 v0.2、Ubuntu 和 Permission 报告是其执行日期的事实，不自动证明 v0.3 的新能力已在那些平台重跑。
+Workflow 与工作台结果记录于 [执行记录](../workflow-and-workbench/EXECUTION.md)，后续默认套件、Role CRUD 与数据重新初始化记录于 [默认套件与 Role 执行记录](../builtin-defaults-and-roles/EXECUTION.md)。历史 v0.2、Ubuntu 和 Permission 报告是其执行日期的事实，不自动证明 v0.3 的新能力已在那些平台重跑。
 
 所有计划目录只保留 Markdown。日志、JSON、截图和临时测试脚本已按用户要求清理；源码回归测试继续位于 crates、tests、web/tests。历史报告里的临时路径或 SHA 仅记录当时执行，原中间文件不再作为交付物。
 
