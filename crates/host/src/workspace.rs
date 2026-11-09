@@ -4,6 +4,8 @@ mod model_providers;
 mod github_projects;
 #[path = "governance.rs"]
 mod governance;
+#[path = "integrations.rs"]
+mod integrations;
 #[path = "permission_api.rs"]
 mod permission_api;
 #[path = "permission_resources.rs"]
@@ -34,7 +36,11 @@ pub struct Workspace {
 }
 fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters) -> Arc<Engine> {
     let artifacts = Arc::new(FileArtifacts::new(PathBuf::from(store.root())));
-    Arc::new(Engine::new(store, artifacts, adapters.clone()))
+    let tools = Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(store.root())
+            .expect("existing execution root"),
+    );
+    Arc::new(Engine::new(store, artifacts, adapters.clone()).with_tool_executor(tools))
 }
 impl Workspace {
     fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
@@ -995,6 +1001,9 @@ impl Workspace {
                 .configuration
                 .query(method, &params, self.global.concurrency()?);
         }
+        if let Some(result) = self.integration_dispatch(method, &params) {
+            return result;
+        }
         if let Some(result) = self.governance_dispatch(method, &params) {
             return result;
         }
@@ -1406,6 +1415,7 @@ impl Workspace {
         }
     }
     pub fn tick(&self) -> Result<()> {
+        self.configuration.drive_tool_calls()?;
         let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
         let engines = engines
             .into_iter()

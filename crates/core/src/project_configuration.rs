@@ -206,7 +206,23 @@ impl Engine {
                 s.governance.push(r);
             }
         }
+        let mut integration_locks = BTreeMap::new();
+        for key in resolved.values() {
+            let a: AgentComposition = s.configuration(key)?.decode()?;
+            let lock = crate::integrations::freeze_integrations(s, &a, Some(&f.project_id))?;
+            for t in &lock.tools {
+                for (id, hash) in [
+                    (&t.revision_id, &t.content_hash),
+                    (&t.definition.integration_ref, &t.integration_hash),
+                    (&t.binding_ref, &t.binding_hash),
+                ] {
+                    result.hashes.insert(id.clone(), hash.clone());
+                }
+            }
+            integration_locks.insert(key.clone(), lock);
+        }
         let config = FeatureConfiguration {
+            integration_locks,
             defaults_bundle_ref: None,
             project_configuration_id: current.id.clone(),
             workflow_ref: wf.id.clone(),

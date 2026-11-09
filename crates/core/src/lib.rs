@@ -10,6 +10,8 @@ pub use configuration::{
 mod conversation_runtime;
 mod conversations;
 mod effects;
+mod integrations;
+pub use integrations::{freeze_integrations, integration_feature_lock};
 mod governance;
 mod live_merges;
 mod live_runs;
@@ -87,6 +89,7 @@ pub fn command_fingerprint(method: &str, c: &Command) -> String {
     serde_json::to_string(&(method, &c.target, &c.expected_revision, &c.payload)).unwrap()
 }
 pub struct Engine {
+    pub tool_executor: Option<Arc<dyn ports::ToolExecutor>>,
     pub store: Arc<dyn EngineeringStore>,
     pub artifacts: Arc<dyn ArtifactStore>,
     pub harness: Arc<dyn ports::Harness>,
@@ -565,6 +568,7 @@ impl Engine {
         adapters: ports::ExecutionAdapters,
     ) -> Self {
         Self {
+            tool_executor: None,
             store,
             artifacts,
             harness: adapters.harness,
@@ -585,6 +589,7 @@ impl Engine {
         }
         self.store.transact(None, &mut |s| {
             seed_configuration(s);
+            for r in s.governance.iter_mut().filter(|r| r.kind=="tool_call" && r.data["status"]=="dispatched") { let mut d=r.data.clone();d["status"]=json!("needs_reconciliation");d["remote_effect"]=json!("unknown");governance::update_record(r,d); }
             configuration::migrate_capabilities(s);
             self.freeze_legacy_features(s);
             for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Dispatched){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="restart_after_dispatch".into();op.revision+=1;}
@@ -660,6 +665,8 @@ impl Engine {
                 "review.request",
                 "merge.request",
                 "permission.bindings.apply",
+                "integration.tools.publish",
+                "skill.import",
             ]
             .contains(&method),
             "该命令不支持绑定解析",
@@ -706,6 +713,9 @@ impl Engine {
         )?;
         require(c.payload.get("scenario").is_none(), "不再支持模拟场景参数")?;
         let p = &c.payload;
+        if let Some(result) = self.integration_command(method, c, s)? {
+            return Ok(result);
+        }
         if let Some(result) = self.permission_resource_command(method, c, s)? {
             return Ok(result);
         }
@@ -3037,6 +3047,7 @@ impl Engine {
         {
             return Ok(());
         }
+        self.drive_tool_calls()?;
         self.reconcile_native_tests()?;
         self.drain_advances()?;
         let snapshot = self.store.snapshot()?;
@@ -3584,6 +3595,9 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if let Some(result) = self.integration_query(method, p) {
+            return result;
+        }
         if let Some(result) = self.workflow_configuration_query(method, p) {
             return result;
         }

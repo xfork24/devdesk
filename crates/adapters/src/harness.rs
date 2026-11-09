@@ -465,6 +465,15 @@ impl RuntimeWorkers {
                             args["sandbox"] = json!("danger-full-access");
                         }
                     }
+                    if let Some(lock) = binding
+                        .agent_configuration
+                        .as_ref()
+                        .and_then(|a| a.integration_lock.as_ref())
+                    {
+                        if !lock.tools.is_empty() {
+                            args["dynamicTools"]=json!(lock.tools.iter().map(|t|json!({"type":"function","name":t.definition.qualified_name,"description":t.definition.description,"inputSchema":t.definition.input_schema})).collect::<Vec<_>>());
+                        }
+                    }
                     let method = if let Some(sid) = &r.session.external_session {
                         args["threadId"] = json!(sid);
                         "thread/resume"
@@ -727,6 +736,29 @@ impl Worker {
                 if self.provider == HarnessProvider::Codex && a.external.is_none() {
                     require(a.buffered.len() < 256, "输入回执前交互过多")?;
                     a.buffered.push(f);
+                    continue;
+                }
+                if self.provider == HarnessProvider::Codex && method == "item/tool/call" {
+                    require(
+                        p["threadId"] == self.session
+                            && p["turnId"].as_str() == a.external.as_deref(),
+                        "外部工具请求跨线程或轮次",
+                    )?;
+                    let key = serde_json::to_string(&f["id"]).map_err(storage)?;
+                    self.requests.entry(key).or_insert(Request {
+                        id: f["id"].clone(),
+                        method: method.into(),
+                        answered: false,
+                    });
+                    out.push(Obs::ToolCall {
+                        turn: a.turn.clone(),
+                        request: f["id"].clone(),
+                        thread: self.session.clone(),
+                        external_turn: a.external.clone().unwrap(),
+                        call: p["callId"].as_str().unwrap_or("").into(),
+                        tool: p["tool"].as_str().unwrap_or("").into(),
+                        arguments: p["arguments"].clone(),
+                    });
                     continue;
                 }
                 self.interaction(a, &f, &mut out)?;
@@ -1028,6 +1060,28 @@ impl Worker {
         });
         Ok(())
     }
+    fn answer_tool(&mut self, request: &Value, receipt: &ToolReceipt) -> Result<()> {
+        let key = serde_json::to_string(request).map_err(storage)?;
+        let entry = self
+            .requests
+            .get_mut(&key)
+            .ok_or_else(|| err("needs_reconciliation", "工具请求连接已丢失"))?;
+        require(entry.method == "item/tool/call", "请求类型不符")?;
+        if entry.answered {
+            return Ok(());
+        }
+        let mut content:Vec<Value>=receipt.content.iter().map(|v|match v["type"].as_str(){Some("text")=>json!({"type":"inputText","text":v["text"]}),Some("image")=>json!({"type":"inputImage","imageUrl":format!("data:{};base64,{}",v["mimeType"].as_str().unwrap_or("image/png"),v["data"].as_str().unwrap_or(""))}),Some("audio")=>json!({"type":"inputAudio","audioUrl":format!("data:{};base64,{}",v["mimeType"].as_str().unwrap_or("audio/wav"),v["data"].as_str().unwrap_or(""))}),_=>json!({"type":"inputText","text":serde_json::to_string(v).unwrap()})}).collect();
+        if let Some(value) = &receipt.structured_content {
+            content.push(
+                json!({"type":"inputText","text":serde_json::to_string(value).map_err(storage)?}),
+            );
+        }
+        self.wire.send(
+            &json!({"id":request,"result":{"success":receipt.success,"contentItems":content}}),
+        )?;
+        entry.answered = true;
+        Ok(())
+    }
     fn answer(&mut self, i: &PendingInteraction) -> Result<()> {
         if matches!(i.answer, Some(InteractionAnswer::ToolApproval { .. }))
             && self
@@ -1127,6 +1181,15 @@ macro_rules! provider {
             fn poll_session(&self, s: &Session) -> Result<Vec<Obs>> {
                 self.check(s)?;
                 self.workers.with(s, |w| w.poll())
+            }
+            fn answer_tool_call(
+                &self,
+                s: &Session,
+                request: &Value,
+                receipt: &ToolReceipt,
+            ) -> Result<()> {
+                self.check(s)?;
+                self.workers.with(s, |w| w.answer_tool(request, receipt))
             }
             fn answer_interaction(&self, s: &Session, i: &PendingInteraction) -> Result<()> {
                 self.check(s)?;
@@ -1257,6 +1320,9 @@ impl ports::Harness for RoutingHarness {
     }
     fn poll_session(&self, s: &Session) -> Result<Vec<Obs>> {
         self.route(s)?.poll_session(s)
+    }
+    fn answer_tool_call(&self, s: &Session, request: &Value, receipt: &ToolReceipt) -> Result<()> {
+        self.route(s)?.answer_tool_call(s, request, receipt)
     }
     fn answer_interaction(&self, s: &Session, i: &PendingInteraction) -> Result<()> {
         self.route(s)?.answer_interaction(s, i)

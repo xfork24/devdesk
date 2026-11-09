@@ -12,6 +12,17 @@ use std::sync::Arc;
 /// Base contract for an agent runtime: configuration, polling, cancellation acknowledgement and recovery.
 /// Implementations return provider facts; the engine decides whether to accept them.
 pub trait Harness: Send + Sync {
+    fn answer_tool_call(
+        &self,
+        _session: &devdesk_domain::Session,
+        _request: &Value,
+        _receipt: &devdesk_domain::ToolReceipt,
+    ) -> Result<()> {
+        Err(devdesk_domain::err(
+            "unsupported",
+            "Harness 不支持外部工具回执",
+        ))
+    }
     /// Stable provider + adapter version; production adapters must override this identity.
     fn identity(&self) -> String {
         std::any::type_name::<Self>().into()
@@ -106,6 +117,15 @@ pub enum ProviderTerminal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConversationObservation {
+    ToolCall {
+        turn: Id,
+        request: Value,
+        thread: String,
+        external_turn: String,
+        call: String,
+        tool: String,
+        arguments: Value,
+    },
     Admitted {
         turn: Id,
         message: Option<String>,
@@ -137,6 +157,25 @@ pub enum ConversationObservation {
         reason: String,
         quiescent: bool,
     },
+}
+
+/// Validations perform no I/O. Calls are asynchronously dispatched after persistence.
+pub trait ToolExecutor: Send + Sync {
+    fn validate_schema(&self, schema: &Value) -> Result<()>;
+    fn validate_arguments(&self, schema: &Value, value: &Value) -> Result<()>;
+    fn start(&self, invocation: &devdesk_domain::ToolInvocation) -> Result<()>;
+    fn poll(
+        &self,
+        invocation: &devdesk_domain::ToolInvocation,
+    ) -> Result<Option<devdesk_domain::ToolReceipt>>;
+    fn cancel(&self, invocation: &devdesk_domain::ToolInvocation) -> Result<()>;
+    fn discover(
+        &self,
+        source: &devdesk_domain::IntegrationDefinition,
+        binding: &devdesk_domain::IntegrationBinding,
+        image: &str,
+        permissions: &devdesk_domain::ExecutionPermissions,
+    ) -> Result<Value>;
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStop {

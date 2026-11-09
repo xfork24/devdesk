@@ -28,6 +28,84 @@ impl CredentialVault {
         #[cfg(not(target_os = "macos"))]
         { Err(err("unsupported", "仅 macOS 使用凭据助手")) }
     }
+    fn integration_account(reference: &str) -> Result<String> {
+        let id = reference
+            .strip_prefix("integration-secret:")
+            .ok_or_else(|| err("credential_store", "无效接入凭据引用"))?;
+        require(uuid::Uuid::parse_str(id).is_ok(), "无效接入凭据身份")?;
+        Ok(format!("integration-key-{id}"))
+    }
+    pub fn configure_integration(&self, secret: &str) -> Result<String> {
+        let reference = format!("integration-secret:{}", id());
+        self.write_integration(&reference, secret)?;
+        Ok(reference)
+    }
+    pub fn write_integration(&self, reference: &str, secret: &str) -> Result<()> {
+        require(
+            !secret.is_empty() && secret.len() <= 65536 && !secret.contains(['\n', '\r']),
+            "凭据内容格式无效或过大",
+        )?;
+        let account = Self::integration_account(reference)?;
+        #[cfg(target_os = "macos")]
+        {
+            crate::credentials_macos::call("store", &self.service, &account, Some(secret))
+                .map_err(|_| {
+                    err(
+                        "credential_helper_upgrade_required",
+                        "接入凭据需要支持 integration-key 的签名凭据助手；请显式升级助手",
+                    )
+                })?;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let mut command = std::process::Command::new(secret_tool()?);
+            command.args([
+                "store",
+                "--label=DevDesk integration",
+                "service",
+                &self.service,
+                "account",
+                &account,
+            ]);
+            let output = crate::process::capture_command(
+                command,
+                std::time::Duration::from_secs(20),
+                Some(secret.as_bytes().to_vec()),
+            )?;
+            require(output.code == 0, "系统凭据库写入失败")?;
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            return Err(err("unsupported", "当前平台没有凭据适配器"));
+        }
+        Ok(())
+    }
+    pub fn read_integration(&self, reference: &str) -> Result<String> {
+        let account = Self::integration_account(reference)?;
+        #[cfg(target_os = "macos")]
+        {
+            let value = crate::credentials_macos::call("read", &self.service, &account, None)?;
+            return value["secret"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| err("credential_missing", "接入凭据不可用"));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let mut command = std::process::Command::new(secret_tool()?);
+            command.args(["lookup", "service", &self.service, "account", &account]);
+            let output =
+                crate::process::capture_command(command, std::time::Duration::from_secs(20), None)?;
+            require(output.code == 0, "接入凭据不可用")?;
+            return String::from_utf8(output.stdout)
+                .map(|s| s.trim_end_matches('\n').to_owned())
+                .map_err(storage);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            Err(err("unsupported", "当前平台没有凭据适配器"))
+        }
+    }
     pub fn new(dataset: &Path) -> Result<Self> {
         let root = fs::canonicalize(dataset).map_err(storage)?;
         Ok(Self {

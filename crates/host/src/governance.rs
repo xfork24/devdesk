@@ -287,6 +287,16 @@ impl Workspace {
             command.payload["installation_id"] = json!(installation.id);
         }
         command.payload["agent_configuration"] = json!(AgentExecutionConfiguration {
+            integration_lock: Some(
+                match devdesk_core::integration_feature_lock(&state, &agent_id, Some(feature)) {
+                    Some(lock) => lock,
+                    None => devdesk_core::freeze_integrations(
+                        &state,
+                        &agent,
+                        state.projects.first().map(|p| p.id.as_str())
+                    )?,
+                }
+            ),
             agent_instance_id: instance.clone(),
             agent_revision_id: agent_id.clone(),
             composition_hash: record.content_hash.clone(),

@@ -11,7 +11,7 @@ struct Request {
     secret: Option<String>,
 }
 fn valid_account(account: &str) -> bool {
-    account == "deepseek-official-api-key" || ["deepseek-api-key-", "dsh-zai-coding-cn-api-key-", "dsh-minimax-cn-api-key-"].iter().any(|prefix| {
+    account == "deepseek-official-api-key" || ["deepseek-api-key-", "dsh-zai-coding-cn-api-key-", "dsh-minimax-cn-api-key-", "integration-key-"].iter().any(|prefix| {
         account.strip_prefix(prefix).is_some_and(|v| v.len()==36 && v.bytes().enumerate().all(|(i,c)|if [8,13,18,23].contains(&i){c==b'-'}else{c.is_ascii_hexdigit()}))
     })
 }
@@ -24,7 +24,7 @@ fn validate(r: &Request) -> bool {
         && ["status", "store", "read", "check", "authorize"].contains(&r.operation.as_str())
         && if r.operation == "store" {
             r.secret.as_ref().is_some_and(|s| {
-                (8..=4096).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_graphic())
+                (1..=65536).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_graphic())
             })
         } else {
             r.secret.is_none()
@@ -135,7 +135,7 @@ mod tests {
     use super::*;
     #[test]
     fn explicit_provider_namespaces_preserve_legacy_accounts() {
-        for prefix in ["deepseek-api-key-","dsh-zai-coding-cn-api-key-","dsh-minimax-cn-api-key-"] {
+        for prefix in ["deepseek-api-key-","dsh-zai-coding-cn-api-key-","dsh-minimax-cn-api-key-", "integration-key-"] {
             assert!(valid_account(&format!("{prefix}01234567-89ab-cdef-0123-456789abcdef")));
             assert!(!valid_account(&format!("{prefix}not-an-id")));
         }
