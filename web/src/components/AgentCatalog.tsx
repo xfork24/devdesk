@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { DshModelFields, type ModelProvider } from "./DshProviderSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RoleManager } from "./RoleManager";
@@ -112,14 +118,14 @@ export function AgentCatalog({
           aria-label="配置类别"
         >
           {kinds.map((id) => (
-            <button
+            <ActionButton
               key={id}
               role="tab"
               aria-selected={id === kind}
               onClick={() => setKind(id)}
             >
               {labels[id]}
-            </button>
+            </ActionButton>
           ))}
         </div>
       </section>
@@ -156,7 +162,21 @@ export function ResourceEditor({
   installations: Row[];
   revision: number;
 }) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [providers, setProviders] = useState<ModelProvider[]>([]);
+  const [runtimeOptions, setRuntimeOptions] = useState<Row>({
+    recipes: [],
+    installations: [],
+  });
   const [records, setRecords] = useState<Row[]>([]),
     [permissions, setPermissions] = useState<Row[]>([]),
     [permissionResources, setPermissionResources] = useState<Row>({
@@ -164,8 +184,6 @@ export function ResourceEditor({
       bindings: [],
       profiles: [],
     }),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [integrations, setIntegrations] = useState<Row[]>([]),
     [legacyCapabilities, setLegacyCapabilities] = useState<
@@ -183,6 +201,7 @@ export function ResourceEditor({
       resources,
       modelProviders,
       integrationResources,
+      runtimeOptions,
     ] = await Promise.all([
       loadCatalog(request, project),
       request("query.permissions"),
@@ -195,8 +214,10 @@ export function ResourceEditor({
       ["capability", "agent", "skill"].includes(kind)
         ? loadIntegrationRecords(request, project)
         : Promise.resolve([]),
+      request("query.runtime_options"),
     ]);
     setRecords(records);
+    setRuntimeOptions(runtimeOptions);
     setIntegrations(integrationResources);
     setProviders(modelProviders.providers || []);
     if (kind === "tool")
@@ -241,6 +262,9 @@ export function ResourceEditor({
       ...current,
       data: { ...current.data, ...value },
     }));
+  const runtimeVersions: Row[] = (runtimeOptions.recipes || []).filter(
+    (r: Row) => r.provider === data.provider,
+  );
   const options = (family: string) => records.filter((r) => r.kind === family);
   const select = (
     label: string,
@@ -261,7 +285,10 @@ export function ResourceEditor({
       }
       multiple={multiple}
       required={required}
-      onChange={(value) => patch({ [key]: value })}
+      onChange={(value) => {
+        captureFeedback();
+        return patch({ [key]: value });
+      }}
     />
   );
   const field = (label: string, key: string, required = false) => (
@@ -270,7 +297,10 @@ export function ResourceEditor({
       <input
         required={required}
         value={data[key] || ""}
-        onChange={(e) => patch({ [key]: e.target.value })}
+        onChange={(e) => {
+          captureFeedback();
+          return patch({ [key]: e.target.value });
+        }}
       />
     </label>
   );
@@ -319,7 +349,9 @@ export function ResourceEditor({
     }
   }, [records, kind]);
   async function save(remove = false) {
-    setBusy(true);
+    captureFeedback();
+
+    (beginFeedback(), setBusy(true));
     setError("");
     try {
       let payload = structuredClone(data);
@@ -330,6 +362,11 @@ export function ResourceEditor({
       if (kind === "spec") delete payload.slots;
       if (kind === "agent" && !payload.instructions)
         delete payload.instructions;
+      if (
+        kind === "harness" &&
+        !runtimeVersions.some((r) => r.version === payload.runtime_version)
+      )
+        throw new Error("请选择已支持的固定运行版本");
       if (kind === "harness" && !payload.recipe_digest)
         delete payload.recipe_digest;
       if (kind === "tool") {
@@ -387,7 +424,7 @@ export function ResourceEditor({
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      (endFeedback(), setBusy(false));
     }
   }
   const role = records.find((r) => r.id === data.role_ref),
@@ -409,40 +446,49 @@ export function ResourceEditor({
                   : "修订独立保存，修改后由使用方显式采用。"}
           </p>
         </div>
-        <button
-          onClick={() => {
-            const params = new URLSearchParams(location.search);
-            params.delete("config_object");
-            history.replaceState(null, "", `?${params}`);
-            setDraft({
-              selected: "",
-              name: "",
-              scope: "global",
-              data: initial(kind),
-            });
-          }}
-        >
-          新建 {labels[kind]}
-        </button>
       </div>
       <div className="configuration-layout">
         <div className="configuration-list">
+          <ActionButton
+            className="new-resource"
+            onClick={() => {
+              captureFeedback();
+
+              const params = new URLSearchParams(location.search);
+              params.delete("config_object");
+              history.replaceState(null, "", `?${params}`);
+              setDraft({
+                selected: "",
+                name: "",
+                scope: "global",
+                data: initial(kind),
+              });
+            }}
+          >
+            新建 {labels[kind]}
+          </ActionButton>
+
           {latest(records.filter((r) => r.kind === kind)).map((row) => (
-            <button
+            <ActionButton
               key={row.id}
               className={draft.selected === row.id ? "selected" : ""}
-              onClick={() => choose(row)}
+              onClick={() => {
+                captureFeedback();
+                return choose(row);
+              }}
             >
               <strong>{row.name}</strong>
               <span>
                 v{row.version} ·{" "}
                 {row.scope.kind === "global" ? "Global" : "项目"}
               </span>
-            </button>
+            </ActionButton>
           ))}
         </div>
-        <form
+        <ActionForm
           onSubmit={(e) => {
+            captureFeedback();
+
             e.preventDefault();
             void save();
           }}
@@ -453,19 +499,25 @@ export function ResourceEditor({
               <input
                 required
                 value={draft.name}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, name: e.target.value });
+                }}
               />
             </label>
             <label>
               定义范围
-              <select
+              <ActionSelect
                 disabled={!!old}
                 value={draft.scope}
-                onChange={(e) => setDraft({ ...draft, scope: e.target.value })}
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, scope: e.target.value });
+                }}
               >
                 <option value="global">Global</option>
                 {project && <option value="project">当前项目</option>}
-              </select>
+              </ActionSelect>
             </label>
             {kind === "agent" && (
               <>
@@ -506,9 +558,11 @@ export function ResourceEditor({
                   <summary>权限与兼容指令</summary>
                   <label>
                     权限绑定方式
-                    <select
+                    <ActionSelect
                       value={data.permission_selection ? "versioned" : "legacy"}
                       onChange={(e) => {
+                        captureFeedback();
+
                         const next = { ...data };
                         if (e.target.value === "versioned")
                           next.permission_selection = {
@@ -523,23 +577,24 @@ export function ResourceEditor({
                     >
                       <option value="versioned">按目标版本选择权限</option>
                       <option value="legacy">保留旧固定权限</option>
-                    </select>
+                    </ActionSelect>
                   </label>
                   {data.permission_selection ? (
                     <>
                       <label>
                         Sandbox 目标修订
-                        <select
+                        <ActionSelect
                           required
                           value={data.permission_selection.sandbox_ref}
-                          onChange={(e) =>
-                            patch({
+                          onChange={(e) => {
+                            captureFeedback();
+                            return patch({
                               permission_selection: {
                                 ...data.permission_selection,
                                 sandbox_ref: e.target.value,
                               },
-                            })
-                          }
+                            });
+                          }}
                         >
                           <option value="">选择 Sandbox</option>
                           {permissionResources.targets
@@ -552,7 +607,7 @@ export function ResourceEditor({
                                 {t.name} · v{t.version}
                               </option>
                             ))}
-                        </select>
+                        </ActionSelect>
                       </label>
                       {(["harness", "sandbox"] as const).map((layer) => {
                         const choice = data.permission_selection[layer];
@@ -574,10 +629,11 @@ export function ResourceEditor({
                           <div key={layer}>
                             <label>
                               {layer} 权限来源
-                              <select
+                              <ActionSelect
                                 value={choice.mode}
-                                onChange={(e) =>
-                                  update(
+                                onChange={(e) => {
+                                  captureFeedback();
+                                  return update(
                                     e.target.value === "follow_target"
                                       ? { mode: "follow_target" }
                                       : {
@@ -585,27 +641,28 @@ export function ResourceEditor({
                                           binding_revision_id:
                                             bindings[0]?.id || "",
                                         },
-                                  )
-                                }
+                                  );
+                                }}
                               >
                                 <option value="follow_target">
                                   追随目标活动绑定
                                 </option>
                                 <option value="pinned">固定绑定修订</option>
-                              </select>
+                              </ActionSelect>
                             </label>
                             {choice.mode === "pinned" ? (
                               <label>
                                 {layer} 固定绑定
-                                <select
+                                <ActionSelect
                                   required
                                   value={choice.binding_revision_id}
-                                  onChange={(e) =>
-                                    update({
+                                  onChange={(e) => {
+                                    captureFeedback();
+                                    return update({
                                       mode: "pinned",
                                       binding_revision_id: e.target.value,
-                                    })
-                                  }
+                                    });
+                                  }}
                                 >
                                   <option value="">选择绑定修订</option>
                                   {bindings.map((b: Row) => (
@@ -613,7 +670,7 @@ export function ResourceEditor({
                                       {b.name} · v{b.version} · {b.id}
                                     </option>
                                   ))}
-                                </select>
+                                </ActionSelect>
                               </label>
                             ) : (
                               <p className="muted">
@@ -646,6 +703,8 @@ export function ResourceEditor({
                           }
                           required
                           onChange={(value) => {
+                            captureFeedback();
+
                             const values = [...(data.permissions || ["", ""])];
                             values[index] = value;
                             patch({ permissions: values });
@@ -654,13 +713,16 @@ export function ResourceEditor({
                       ))}
                       <label>
                         确认策略
-                        <select
+                        <ActionSelect
                           value={data.approval || "never"}
-                          onChange={(e) => patch({ approval: e.target.value })}
+                          onChange={(e) => {
+                            captureFeedback();
+                            return patch({ approval: e.target.value });
+                          }}
                         >
                           <option value="never">不额外询问</option>
                           <option value="on_request">按请求确认</option>
-                        </select>
+                        </ActionSelect>
                       </label>
                     </>
                   )}
@@ -668,7 +730,10 @@ export function ResourceEditor({
                     附加指令（可选）
                     <textarea
                       value={data.instructions || ""}
-                      onChange={(e) => patch({ instructions: e.target.value })}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return patch({ instructions: e.target.value });
+                      }}
                     />
                   </label>
                 </details>
@@ -676,11 +741,13 @@ export function ResourceEditor({
             )}
             {kind === "agent" && old && (
               <div className="full-width actions">
-                <button
+                <ActionButton
                   type="button"
                   disabled={busy || !project}
                   onClick={async () => {
-                    setBusy(true);
+                    captureFeedback();
+
+                    (beginFeedback(), setBusy(true));
                     setError("");
                     setMessage("");
                     try {
@@ -696,17 +763,19 @@ export function ResourceEditor({
                     } catch (error) {
                       setError(String(error));
                     } finally {
-                      setBusy(false);
+                      (endFeedback(), setBusy(false));
                     }
                   }}
                 >
                   检查 DSH 容器连接
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   type="button"
                   disabled={busy || !project}
                   onClick={async () => {
-                    setBusy(true);
+                    captureFeedback();
+
+                    (beginFeedback(), setBusy(true));
                     setError("");
                     setMessage("");
                     try {
@@ -720,12 +789,12 @@ export function ResourceEditor({
                     } catch (error) {
                       setError(String(error));
                     } finally {
-                      setBusy(false);
+                      (endFeedback(), setBusy(false));
                     }
                   }}
                 >
                   实际模型与工具验证
-                </button>
+                </ActionButton>
                 {!project && (
                   <p className="muted">
                     打开项目后可验证完整 Agent；实际验证会调用所选模型。
@@ -775,7 +844,7 @@ export function ResourceEditor({
                   <p>
                     外部工具还需要项目选择接入绑定；保存 Capability
                     不会自动授权账户。
-                    <a href="?tab=integrations">管理工具接入</a>
+                    <a href="?tab=components&config_tab=http">管理工具接入</a>
                   </p>
                 )}
 
@@ -793,26 +862,27 @@ export function ResourceEditor({
               <>
                 <label>
                   模型后端
-                  <select
+                  <ActionSelect
                     aria-label="模型后端"
                     value={data.provider}
-                    onChange={(e) =>
-                      patch({
+                    onChange={(e) => {
+                      captureFeedback();
+                      return patch({
                         provider: e.target.value,
                         parameters: {},
                         endpoint: undefined,
                         context_window: undefined,
                         max_output_tokens: undefined,
                         model: "",
-                      })
-                    }
+                      });
+                    }}
                   >
                     {providers.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.label}
                       </option>
                     ))}
-                  </select>
+                  </ActionSelect>
                 </label>
                 {field("模型标识", "model", true)}
                 {data.provider !== "openai" && (
@@ -827,15 +897,16 @@ export function ResourceEditor({
                 {data.provider === "openai" ? (
                   <label>
                     推理强度
-                    <select
+                    <ActionSelect
                       value={data.parameters?.reasoning_effort || ""}
-                      onChange={(e) =>
-                        patch({
+                      onChange={(e) => {
+                        captureFeedback();
+                        return patch({
                           parameters: e.target.value
                             ? { reasoning_effort: e.target.value }
                             : {},
-                        })
-                      }
+                        });
+                      }}
                     >
                       <option value="">模型默认</option>
                       {["minimal", "low", "medium", "high", "xhigh", "max"].map(
@@ -843,7 +914,7 @@ export function ResourceEditor({
                           <option key={v}>{v}</option>
                         ),
                       )}
-                    </select>
+                    </ActionSelect>
                   </label>
                 ) : (
                   <label>
@@ -853,13 +924,14 @@ export function ResourceEditor({
                       min={data.provider === "deepseek" ? 1024 : 1}
                       max={data.max_output_tokens || 1000000}
                       value={data.parameters?.max_tokens || ""}
-                      onChange={(e) =>
-                        patch({
+                      onChange={(e) => {
+                        captureFeedback();
+                        return patch({
                           parameters: e.target.value
                             ? { max_tokens: Number(e.target.value) }
                             : {},
-                        })
-                      }
+                        });
+                      }}
                     />
                   </label>
                 )}
@@ -869,11 +941,19 @@ export function ResourceEditor({
               <>
                 <label>
                   运行时后端
-                  <select
+                  <ActionSelect
                     value={data.provider}
-                    onChange={(e) =>
-                      patch({
+                    onChange={(e) => {
+                      captureFeedback();
+                      return patch({
                         provider: e.target.value,
+                        runtime_version:
+                          runtimeOptions.recipes.find(
+                            (r: Row) => r.provider === e.target.value,
+                          )?.version || "",
+                        recipe_digest: runtimeOptions.recipes.find(
+                          (r: Row) => r.provider === e.target.value,
+                        )?.recipe_digest,
                         model_providers: [
                           ...(e.target.value === "codex"
                             ? ["openai"]
@@ -881,14 +961,48 @@ export function ResourceEditor({
                                 .filter((p) => p.harness === "dsh")
                                 .map((p) => p.id)),
                         ],
-                      })
-                    }
+                      });
+                    }}
                   >
                     <option value="codex">Codex</option>
                     <option value="dsh">DSH</option>
-                  </select>
+                  </ActionSelect>
                 </label>
-                {field("固定运行版本", "runtime_version", true)}
+                <label>
+                  固定运行版本
+                  <ActionSelect
+                    aria-label="固定运行版本"
+                    required
+                    value={data.runtime_version || ""}
+                    onChange={(e) => {
+                      const selected = runtimeVersions.find(
+                        (r) => r.version === e.target.value,
+                      );
+                      patch({
+                        runtime_version: e.target.value,
+                        recipe_digest: selected?.recipe_digest,
+                      });
+                    }}
+                  >
+                    <option value="" disabled>
+                      请选择支持的运行版本
+                    </option>
+                    {data.runtime_version &&
+                      !runtimeVersions.some(
+                        (r) => r.version === data.runtime_version,
+                      ) && (
+                        <option value={data.runtime_version} disabled>
+                          {data.runtime_version}（历史版本，当前不支持新建）
+                        </option>
+                      )}
+                    {runtimeVersions.map((r) => (
+                      <option key={r.version} value={r.version}>
+                        {r.version} ·{" "}
+                        {r.installed ? "已安装的固定构建" : "受支持构建配方"}
+                      </option>
+                    ))}
+                  </ActionSelect>
+                </label>
                 <fieldset>
                   <legend>支持的模型服务商</legend>
                   {providers
@@ -898,21 +1012,26 @@ export function ResourceEditor({
                         <input
                           type="checkbox"
                           checked={(data.model_providers || []).includes(p.id)}
-                          onChange={(event) =>
-                            patch({
+                          onChange={(event) => {
+                            captureFeedback();
+                            return patch({
                               model_providers: event.target.checked
                                 ? [...(data.model_providers || []), p.id]
                                 : (data.model_providers || []).filter(
                                     (id: string) => id !== p.id,
                                   ),
-                            })
-                          }
+                            });
+                          }}
                         />
                         {p.label}
                       </label>
                     ))}
                 </fieldset>
-                {field("构建配方摘要（可选）", "recipe_digest")}
+                {data.recipe_digest && (
+                  <p className="muted full-width">
+                    构建配方摘要：<code>{data.recipe_digest}</code>
+                  </p>
+                )}
                 <div className="full-width">
                   <h3>已登记安装</h3>
                   {installations
@@ -923,11 +1042,13 @@ export function ResourceEditor({
                       </p>
                     ))}
                   {old && (
-                    <button
+                    <ActionButton
                       type="button"
                       disabled={busy}
                       onClick={async () => {
-                        setBusy(true);
+                        captureFeedback();
+
+                        (beginFeedback(), setBusy(true));
                         try {
                           await request("runtime.prepare_harness", {
                             id: old.id,
@@ -937,12 +1058,12 @@ export function ResourceEditor({
                         } catch (e) {
                           setError(String(e));
                         } finally {
-                          setBusy(false);
+                          (endFeedback(), setBusy(false));
                         }
                       }}
                     >
                       准备所选 Harness
-                    </button>
+                    </ActionButton>
                   )}
                 </div>
               </>
@@ -980,9 +1101,11 @@ export function ResourceEditor({
                         )}
                       </details>
                     ))}
-                    <button
+                    <ActionButton
                       type="button"
                       onClick={async () => {
+                        captureFeedback();
+
                         try {
                           const value = await request("skill.export", {
                             id: old.id,
@@ -1004,7 +1127,7 @@ export function ResourceEditor({
                       }}
                     >
                       导出 Skill 包
-                    </button>
+                    </ActionButton>
                   </div>
                 ) : null;
               })()}
@@ -1013,12 +1136,15 @@ export function ResourceEditor({
                 {field("工具标识", "qualified_name", true)}
                 <label>
                   工具实现
-                  <select
+                  <ActionSelect
                     value={data.implementation}
-                    onChange={(e) => patch({ implementation: e.target.value })}
+                    onChange={(e) => {
+                      captureFeedback();
+                      return patch({ implementation: e.target.value });
+                    }}
                   >
                     <option value="harness.native">Harness 原生工具</option>
-                  </select>
+                  </ActionSelect>
                 </label>
                 {data.implementation === "harness.native" ? (
                   <p
@@ -1039,7 +1165,10 @@ export function ResourceEditor({
                           data.input_text ??
                           JSON.stringify(data.input_schema, null, 2)
                         }
-                        onChange={(e) => patch({ input_text: e.target.value })}
+                        onChange={(e) => {
+                          captureFeedback();
+                          return patch({ input_text: e.target.value });
+                        }}
                       />
                     </label>
                     <label>
@@ -1049,7 +1178,10 @@ export function ResourceEditor({
                           data.output_text ??
                           JSON.stringify(data.output_schema, null, 2)
                         }
-                        onChange={(e) => patch({ output_text: e.target.value })}
+                        onChange={(e) => {
+                          captureFeedback();
+                          return patch({ output_text: e.target.value });
+                        }}
                       />
                     </label>
                   </>
@@ -1062,47 +1194,52 @@ export function ResourceEditor({
                 label="Markdown 正文"
                 value={data.body || ""}
                 required
-                onChange={(body) => patch({ body })}
+                onChange={(body) => {
+                  captureFeedback();
+                  return patch({ body });
+                }}
               />
             )}
             {kind === "spec" && (
               <>
                 <label>
                   适用动作
-                  <select
+                  <ActionSelect
                     multiple
                     value={(data.applicable_actions || []).map(
                       (a: Row) => a.kind,
                     )}
-                    onChange={(e) =>
-                      patch({
+                    onChange={(e) => {
+                      captureFeedback();
+                      return patch({
                         applicable_actions: Array.from(
                           e.target.selectedOptions,
                           (o) => ({ kind: o.value }),
                         ),
-                      })
-                    }
+                      });
+                    }}
                   >
                     {Object.entries(actionLabels).map(([id, label]) => (
                       <option key={id} value={id}>
                         {label}
                       </option>
                     ))}
-                  </select>
+                  </ActionSelect>
                 </label>
                 <label>
                   自动检查规则
-                  <select
+                  <ActionSelect
                     multiple
                     value={data.rules || []}
-                    onChange={(e) =>
-                      patch({
+                    onChange={(e) => {
+                      captureFeedback();
+                      return patch({
                         rules: Array.from(
                           e.target.selectedOptions,
                           (o) => o.value,
                         ),
-                      })
-                    }
+                      });
+                    }}
                   >
                     {[
                       ["traceability", "需求追溯"],
@@ -1113,7 +1250,7 @@ export function ResourceEditor({
                         {label}
                       </option>
                     ))}
-                  </select>
+                  </ActionSelect>
                 </label>
                 <p className="muted full-width">
                   Markdown 要求可交给人或 Agent
@@ -1129,9 +1266,11 @@ export function ResourceEditor({
                     <legend>规则 {index + 1}</legend>
                     <label>
                       标准动作
-                      <select
+                      <ActionSelect
                         value={rule.selector.kind}
                         onChange={(e) => {
+                          captureFeedback();
+
                           const rules = structuredClone(data.baseline_rules);
                           rules[index].selector.kind = e.target.value;
                           patch({ baseline_rules: rules });
@@ -1142,13 +1281,15 @@ export function ResourceEditor({
                             {label}
                           </option>
                         ))}
-                      </select>
+                      </ActionSelect>
                     </label>
                     <label>
                       阶段限定（可选）
-                      <select
+                      <ActionSelect
                         value={rule.selector.phase || ""}
                         onChange={(e) => {
+                          captureFeedback();
+
                           const rules = structuredClone(data.baseline_rules);
                           if (e.target.value)
                             rules[index].selector.phase = e.target.value;
@@ -1165,13 +1306,15 @@ export function ResourceEditor({
                         ].map((value) => (
                           <option key={value}>{value}</option>
                         ))}
-                      </select>
+                      </ActionSelect>
                     </label>
                     <label>
                       交付类型限定（可选）
-                      <select
+                      <ActionSelect
                         value={rule.selector.delivery_kind || ""}
                         onChange={(e) => {
+                          captureFeedback();
+
                           const rules = structuredClone(data.baseline_rules);
                           if (e.target.value)
                             rules[index].selector.delivery_kind =
@@ -1190,7 +1333,7 @@ export function ResourceEditor({
                         ].map((value) => (
                           <option key={value}>{value}</option>
                         ))}
-                      </select>
+                      </ActionSelect>
                     </label>
                     <RevisionSelect
                       label={`规则 ${index + 1} 必需 Spec`}
@@ -1199,6 +1342,8 @@ export function ResourceEditor({
                       required
                       value={rule.required_spec_refs}
                       onChange={(value) => {
+                        captureFeedback();
+
                         const rules = structuredClone(data.baseline_rules);
                         rules[index].required_spec_refs = value;
                         patch({ baseline_rules: rules });
@@ -1212,30 +1357,34 @@ export function ResourceEditor({
                         required
                         value={rule.min_matches}
                         onChange={(e) => {
+                          captureFeedback();
+
                           const rules = structuredClone(data.baseline_rules);
                           rules[index].min_matches = Number(e.target.value);
                           patch({ baseline_rules: rules });
                         }}
                       />
                     </label>
-                    <button
+                    <ActionButton
                       type="button"
-                      onClick={() =>
-                        patch({
+                      onClick={() => {
+                        captureFeedback();
+                        return patch({
                           baseline_rules: data.baseline_rules.filter(
                             (_: Row, i: number) => i !== index,
                           ),
-                        })
-                      }
+                        });
+                      }}
                     >
                       删除规则 {index + 1}
-                    </button>
+                    </ActionButton>
                   </fieldset>
                 ))}
-                <button
+                <ActionButton
                   type="button"
-                  onClick={() =>
-                    patch({
+                  onClick={() => {
+                    captureFeedback();
+                    return patch({
                       baseline_rules: [
                         ...(data.baseline_rules || []),
                         {
@@ -1244,16 +1393,16 @@ export function ResourceEditor({
                           min_matches: 1,
                         },
                       ],
-                    })
-                  }
+                    });
+                  }}
                 >
                   添加覆盖规则
-                </button>
+                </ActionButton>
               </div>
             )}
           </div>
           <div className="actions">
-            <button
+            <ActionButton
               className="primary"
               disabled={
                 busy ||
@@ -1263,54 +1412,57 @@ export function ResourceEditor({
               }
             >
               {old ? `保存 ${labels[kind]} 新版本` : `创建 ${labels[kind]}`}
-            </button>
-            {old && (
-              <>
-                <button
+            </ActionButton>
+            <>
+              <ActionButton
+                type="button"
+                disabled={busy || !old}
+                onClick={() => {
+                  captureFeedback();
+                  return void save(true);
+                }}
+              >
+                删除 {labels[kind]}
+              </ActionButton>
+              {kind === "skill" && old && (
+                <ActionButton
                   type="button"
                   disabled={busy}
-                  onClick={() => void save(true)}
+                  onClick={async () => {
+                    captureFeedback();
+
+                    (beginFeedback(), setBusy(true));
+                    setError("");
+                    try {
+                      const pkg = await request("skill.export", {
+                        id: old.id,
+                        project_id: project?.id,
+                      });
+                      const row = await request("skill.import", {
+                        project_id: project?.id,
+                        command_id: crypto.randomUUID(),
+                        payload: {
+                          name: `${old.name} · 副本`,
+                          scope: old.scope,
+                          package: pkg,
+                        },
+                      });
+                      await load();
+                      choose(row);
+                      setMessage("Skill 已复制，材料和工具依赖保留。");
+                    } catch (e) {
+                      setError(String(e));
+                    } finally {
+                      (endFeedback(), setBusy(false));
+                    }
+                  }}
                 >
-                  删除 {labels[kind]}
-                </button>
-                {kind === "skill" && old && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={async () => {
-                      setBusy(true);
-                      setError("");
-                      try {
-                        const pkg = await request("skill.export", {
-                          id: old.id,
-                          project_id: project?.id,
-                        });
-                        const row = await request("skill.import", {
-                          project_id: project?.id,
-                          command_id: crypto.randomUUID(),
-                          payload: {
-                            name: `${old.name} · 副本`,
-                            scope: old.scope,
-                            package: pkg,
-                          },
-                        });
-                        await load();
-                        choose(row);
-                        setMessage("Skill 已复制，材料和工具依赖保留。");
-                      } catch (e) {
-                        setError(String(e));
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    复制 Skill
-                  </button>
-                )}
-              </>
-            )}
+                  复制 Skill
+                </ActionButton>
+              )}
+            </>
           </div>
-        </form>
+        </ActionForm>
       </div>
       {error && (
         <p role="alert" className="error">

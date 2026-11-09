@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useEffect, useState } from "react";
 export type PermissionRole = {
   id: string;
@@ -12,10 +18,18 @@ type Props = {
   onSaved: () => Promise<void>;
 };
 export function RolePermissionSettings({ roles, request, onSaved }: Props) {
+  const {
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [selected, setSelected] = useState("");
   const [value, setValue] = useState("{}");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+
   const role = roles.find((r) => r.id === selected) ?? roles[0];
   const current = JSON.stringify(
     role?.agent_profile.permission_overrides ?? {},
@@ -28,18 +42,21 @@ export function RolePermissionSettings({ roles, request, onSaved }: Props) {
       <summary>角色权限覆盖</summary>
       <label>
         角色
-        <select
+        <ActionSelect
           aria-label="权限角色"
           value={role?.id ?? ""}
           disabled={busy}
-          onChange={(e) => setSelected(e.target.value)}
+          onChange={(e) => {
+            captureFeedback();
+            return setSelected(e.target.value);
+          }}
         >
           {roles.map((r) => (
             <option key={r.id} value={r.id}>
               {r.name} · v{r.version}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
       <label>
         角色覆盖 JSON
@@ -48,17 +65,22 @@ export function RolePermissionSettings({ roles, request, onSaved }: Props) {
           rows={6}
           value={value}
           disabled={busy}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            captureFeedback();
+            return setValue(e.target.value);
+          }}
         />
       </label>
       <p className="muted">
         角色覆盖优先于项目覆盖。保存会创建新的角色修订，已有会话继续使用原修订。
       </p>
-      <button
+      <ActionButton
         disabled={busy || !role}
         onClick={async () => {
+          captureFeedback();
+
           if (!role) return;
-          setBusy(true);
+          (beginFeedback(), setBusy(true));
           setMessage("");
           try {
             const result = await request("agent.revise", {
@@ -80,12 +102,12 @@ export function RolePermissionSettings({ roles, request, onSaved }: Props) {
           } catch (error) {
             setMessage(String(error));
           } finally {
-            setBusy(false);
+            (endFeedback(), setBusy(false));
           }
         }}
       >
         保存角色权限修订
-      </button>
+      </ActionButton>
       <p role="status">{message}</p>
     </details>
   );

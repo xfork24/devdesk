@@ -51,7 +51,8 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
                 scope: Some(SessionScope::Project),
                 lifecycle: Some(SessionLifecycle::Prepared),
                 runtime_binding: Some(RuntimeBinding {
-                    model_connection: None, model_profile_digest: None,
+                    model_connection: None,
+                    model_profile_digest: None,
                     agent_configuration: None,
                     permissions: None,
                     installation: RuntimeInstallation {
@@ -986,4 +987,154 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
         !store.has_pending_work().unwrap(),
         "stopped and sealed idle histories do not need continuous full-state loading"
     );
+}
+
+#[test]
+fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_snapshots() {
+    let dir = tempfile::tempdir().unwrap();
+    struct CompletionHarness(std::sync::Mutex<Option<Id>>);
+    impl ports::Harness for CompletionHarness {
+        fn open_session(&self, r: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+            Ok(ports::SessionReceipt {
+                external_session: format!("global-fixture-{}", r.session.id),
+                container_id: "offline".into(),
+                image_digest: r.execution.image_digest.clone(),
+                operation_id: r.execution.operation_id.clone(),
+            })
+        }
+        fn dispatch_turn(&self, r: &ports::TurnDispatch) -> Result<()> {
+            *self.0.lock().unwrap() = Some(r.turn.id.clone());
+            Ok(())
+        }
+        fn poll_session(&self, _: &Session) -> Result<Vec<ports::ConversationObservation>> {
+            let Some(turn) = self.0.lock().unwrap().take() else {
+                return Ok(vec![]);
+            };
+            Ok(vec![
+                ports::ConversationObservation::Admitted {
+                    turn: turn.clone(),
+                    message: None,
+                    external_turn: Some("offline-turn".into()),
+                },
+                ports::ConversationObservation::Consumed {
+                    turn: turn.clone(),
+                    message: None,
+                },
+                ports::ConversationObservation::Message {
+                    turn: turn.clone(),
+                    key: "answer".into(),
+                    content: "Completed cross-project work".into(),
+                    kind: ConversationEventKind::Assistant,
+                    mode: MessageMode::Full,
+                    item: "answer".into(),
+                },
+                ports::ConversationObservation::Terminal {
+                    turn,
+                    outcome: ports::ProviderTerminal::Completed,
+                    reason: "completed".into(),
+                    quiescent: true,
+                },
+            ])
+        }
+        fn stop_session(&self, _: &Session, e: &RuntimeExecution) -> Result<ports::WorkerStop> {
+            Ok(ports::WorkerStop {
+                operation_id: e.operation_id.clone(),
+                writer_revoked: true,
+                requires_successor: false,
+                mode: "offline-fixture".into(),
+            })
+        }
+    }
+    let mut adapters = runtime::adapters();
+    adapters.harness = Arc::new(CompletionHarness(std::sync::Mutex::new(None)));
+    let e = Engine::new(
+        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(FileArtifacts::new(dir.path().into())),
+        adapters,
+    );
+    e.bootstrap().unwrap();
+    let agent = default_agent_id("analyst");
+    let instance = default_agent_instance_id("analyst");
+    let binding = RuntimeBinding {
+        model_connection: None,
+        model_profile_digest: None,
+        agent_configuration: None,
+        permissions: None,
+        installation: RuntimeInstallation {
+            id: "global-fixture".into(),
+            key: RuntimeKey {
+                provider: HarnessProvider::Codex,
+                version: "0.167.0".into(),
+                os: "linux".into(),
+                arch: "aarch64".into(),
+            },
+            artifact: RuntimeArtifact::DockerImage {
+                image_id: format!("sha256:{}", "a".repeat(64)),
+            },
+            source: "offline fixture".into(),
+            license: "test".into(),
+        },
+        adapter_version: "fixture:native-idle-harness:v1".into(),
+        model: "gpt-6.1-sol".into(),
+        tool_policy: ToolPolicy::ReadOnly,
+        writable_paths: vec![],
+        read_only_paths: vec![],
+        work_type: WorkType::Discussion,
+        configuration_digest: "a".repeat(64),
+        credential_ref: None,
+    };
+    let opened = e
+        .execute(
+            "session.open",
+            Command {
+                command_id: id(),
+                target: Some("global".into()),
+                expected_revision: None,
+                payload: json!({"agent":agent,"agent_instance_id":instance,"binding":binding}),
+            },
+        )
+        .unwrap();
+    let sid = opened["id"].as_str().unwrap();
+    let c = Command {
+        command_id: id(),
+        target: Some(sid.into()),
+        expected_revision: Some(1),
+        payload: json!({"client_message_id":id(),"input":"Remember this cross-project planning question"}),
+    };
+    let sent = e.execute("conversation.send", c.clone()).unwrap();
+    assert_eq!(e.execute("conversation.send", c).unwrap(), sent);
+    let state = e.store.snapshot().unwrap();
+    assert!(state.projects.is_empty());
+    assert_eq!(state.sessions[0].scope, Some(SessionScope::Global));
+    assert!(!state.snapshots.is_empty());
+    assert!(state.governance.iter().any(|r| r.kind == "experience"
+        && r.scope == Scope::Global
+        && r.data["agent_instance_id"] == instance));
+    e.tick_conversations(1).unwrap();
+    e.tick_conversations(1).unwrap();
+    let completed = e.store.snapshot().unwrap();
+    assert!(
+        completed
+            .snapshots
+            .iter()
+            .any(|snap| snap.kind == "conversation_completed"
+                && snap.content.contains("Completed cross-project work"))
+    );
+    drop(e);
+    let e = engine(dir.path());
+    let detail = e.query("query.session", &json!({"id":sid}), 1).unwrap();
+    assert!(
+        detail["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["content"] == "Remember this cross-project planning question")
+    );
+    assert_eq!(detail["agent_instance_id"],instance);
+    let owned=e.query("query.sessions",&json!({"owner_id":"global","agent_instance_id":instance}),1).unwrap();
+    assert_eq!(owned["total"],1);
+    assert_eq!(owned["sessions"][0]["agent_instance_id"],instance);
+    assert_eq!(e.query("query.sessions",&json!({"owner_id":"global","agent_instance_id":id()}),1).unwrap()["total"],0);
+    assert_eq!(detail["session"]["scope"], "global");
+    assert!(e.store.snapshot().unwrap().projects.is_empty());
 }

@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { WorkflowTaskPreview } from "./WorkflowTaskPreview";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
@@ -111,6 +117,16 @@ function specificationContext(
   return {};
 }
 export function WorkflowManager({ request, project, refresh }: Props) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const treeId = useId();
   const [rows, setRows] = useState<Row[]>([]),
     [records, setRecords] = useState<Row[]>([]),
@@ -118,8 +134,6 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       actions: [],
       recipe_nodes: [],
     }),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
     [validation, setValidation] = useState<Row>(),
     [moveStage, setMoveStage] = useState(""),
@@ -257,17 +271,21 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       payload,
     });
   async function act(fn: () => Promise<void>) {
-    setBusy(true);
+    captureFeedback();
+
+    (beginFeedback(), setBusy(true));
     setError("");
     try {
       await fn();
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      (endFeedback(), setBusy(false));
     }
   }
   async function save() {
+    captureFeedback();
+
     let row = selected;
     if (!row) {
       row = await mutate("workflow.create", undefined, {
@@ -300,6 +318,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     return row!;
   }
   async function validate() {
+    captureFeedback();
+
     const row = await request("query.workflow_requirements", {
       id: draft.selected,
       project_id: project?.id,
@@ -373,11 +393,13 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     return (
       <label key={label}>
         {label}
-        <select
+        <ActionSelect
           aria-label="{label}"
           value={value ? `${value.step}:${value.port}` : ""}
           disabled={!editable}
           onChange={(e) => {
+            captureFeedback();
+
             if (!e.target.value) onChange(undefined);
             else {
               const [step, port] = e.target.value.split(":");
@@ -396,7 +418,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               {option.label}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
     );
   }
@@ -421,8 +443,10 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               <h2>工作流程</h2>
               <p>Step 选择 Role 和 Spec；项目管理为 Role 绑定具体 Agent。</p>
             </div>
-            <button
+            <ActionButton
               onClick={() => {
+                captureFeedback();
+
                 const params = new URLSearchParams(location.search);
                 params.delete("workflow_id");
                 history.replaceState(null, "", `?${params}`);
@@ -440,14 +464,17 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               }}
             >
               新建 Workflow
-            </button>
+            </ActionButton>
           </div>
           <label>
             检索 Workflow
             <input
               type="search"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                captureFeedback();
+                return setSearch(e.target.value);
+              }}
             />
           </label>
           <div className="workflow-list">
@@ -462,17 +489,20 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                 row.name.toLowerCase().includes(search.toLowerCase()),
               )
               .map((row) => (
-                <button
+                <ActionButton
                   key={row.id}
                   className={draft.selected === row.id ? "selected" : ""}
-                  onClick={() => choose(row)}
+                  onClick={() => {
+                    captureFeedback();
+                    return choose(row);
+                  }}
                 >
                   <strong>{row.name}</strong>
                   <span>
                     {row.kind === "workflow_draft" ? "草稿" : `v${row.version}`}{" "}
                     · {row.scope.kind}
                   </span>
-                </button>
+                </ActionButton>
               ))}
           </div>
         </section>
@@ -489,8 +519,10 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               </p>
             </div>
             <div className="actions">
-              <button
+              <ActionButton
                 onClick={() => {
+                  captureFeedback();
+
                   setDraft((current) => ({ ...current, view: "list" }));
                   const params = new URLSearchParams(location.search);
                   params.delete("workflow_id");
@@ -498,12 +530,13 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                 }}
               >
                 返回流程列表
-              </button>
+              </ActionButton>
               {selected && !isTaskVersion ? (
-                <button
+                <ActionButton
                   disabled={busy}
-                  onClick={() =>
-                    void act(async () => {
+                  onClick={() => {
+                    captureFeedback();
+                    return void act(async () => {
                       const row = await mutate(
                         "workflow.task_upgrade",
                         selected.id,
@@ -516,17 +549,18 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         row.data.task_upgrade_diagnostics?.join("\n") ||
                           "已建立任务指令版草稿，请检查任务并显式选择升级后的子流程，再发布。",
                       );
-                    })
-                  }
+                    });
+                  }}
                 >
                   创建任务指令版草稿
-                </button>
+                </ActionButton>
               ) : null}
               {selected && (
-                <button
+                <ActionButton
                   disabled={busy}
-                  onClick={() =>
-                    void act(async () => {
+                  onClick={() => {
+                    captureFeedback();
+                    return void act(async () => {
                       const row = await mutate("workflow.create", undefined, {
                         name: `${draft.name} · 副本`,
                         scope: selected.scope,
@@ -534,19 +568,21 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       });
                       await load();
                       choose(row);
-                    })
-                  }
+                    });
+                  }}
                 >
                   复制流程
-                </button>
+                </ActionButton>
               )}
               {selected && (
                 <label>
                   历史修订
-                  <select
+                  <ActionSelect
                     aria-label="历史修订"
                     value={selected.id}
                     onChange={(e) => {
+                      captureFeedback();
+
                       const row = rows.find((r) => r.id === e.target.value);
                       if (row) choose(row);
                     }}
@@ -559,21 +595,26 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           v{r.version}
                         </option>
                       ))}
-                  </select>
+                  </ActionSelect>
                 </label>
               )}
-              <button
-                onClick={() =>
-                  setDraft((current) => ({ ...current, node: "workflow" }))
-                }
+              <ActionButton
+                onClick={() => {
+                  captureFeedback();
+                  return setDraft((current) => ({
+                    ...current,
+                    node: "workflow",
+                  }));
+                }}
               >
                 流程配置
-              </button>
+              </ActionButton>
               {!editable && selected && (
-                <button
+                <ActionButton
                   disabled={busy}
-                  onClick={() =>
-                    void act(async () => {
+                  onClick={() => {
+                    captureFeedback();
+                    return void act(async () => {
                       const row = await mutate(
                         "workflow.draft.create",
                         selected.id,
@@ -590,28 +631,30 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         node: draft.node,
                         collapsedStages,
                       }));
-                    })
-                  }
+                    });
+                  }}
                 >
                   编辑流程
-                </button>
+                </ActionButton>
               )}
               {editable && (
                 <>
-                  <button
+                  <ActionButton
                     disabled={busy || !draft.name.trim()}
-                    onClick={() =>
-                      void act(async () => {
+                    onClick={() => {
+                      captureFeedback();
+                      return void act(async () => {
                         await save();
-                      })
-                    }
+                      });
+                    }}
                   >
                     保存草稿
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     disabled={busy || !draft.name.trim()}
-                    onClick={() =>
-                      void act(async () => {
+                    onClick={() => {
+                      captureFeedback();
+                      return void act(async () => {
                         const row = await save();
                         await request("query.workflow_requirements", {
                           id: row.id,
@@ -627,21 +670,28 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         choose(published);
                         await refresh();
                         setMessage("流程可用版本已保存。");
-                      })
-                    }
+                      });
+                    }}
                   >
                     保存可用版本
-                  </button>
+                  </ActionButton>
                 </>
               )}
-              <button disabled={busy} onClick={() => void act(validate)}>
+              <ActionButton
+                disabled={busy}
+                onClick={() => {
+                  captureFeedback();
+                  return void act(validate);
+                }}
+              >
                 校验与规范预览
-              </button>
+              </ActionButton>
               {selected?.kind === "workflow" && (
-                <button
+                <ActionButton
                   disabled={busy}
-                  onClick={() =>
-                    void act(async () => {
+                  onClick={() => {
+                    captureFeedback();
+                    return void act(async () => {
                       await mutate(
                         "configuration.retire",
                         selected.id,
@@ -655,11 +705,11 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         editing: false,
                       }));
                       setMessage("流程已停用，历史保留。");
-                    })
-                  }
+                    });
+                  }}
                 >
                   删除流程
-                </button>
+                </ActionButton>
               )}
             </div>
           </div>
@@ -668,7 +718,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               <h3>阶段与子流程</h3>
               {document.stages.map((item: Row, index: number) => (
                 <div className="workflow-stage-group" key={item.key}>
-                  <button
+                  <ActionButton
                     type="button"
                     aria-label={`${collapsedStages.includes(item.key) ? "展开" : "折叠"}阶段：${item.name}`}
                     aria-expanded={!collapsedStages.includes(item.key)}
@@ -677,6 +727,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       draft.node === `stage:${item.key}` ? "selected" : ""
                     }
                     onClick={() => {
+                      captureFeedback();
+
                       setMoveStage("");
                       setDraft((current) => ({
                         ...current,
@@ -697,7 +749,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       </span>
                       {index + 1}. {item.name}
                     </strong>
-                  </button>
+                  </ActionButton>
                   <div
                     id={`${treeId}-${item.key}`}
                     hidden={collapsedStages.includes(item.key)}
@@ -705,32 +757,35 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     {document.steps
                       .filter((s: Row) => s.stage === item.key)
                       .map((item: Row) => (
-                        <button
+                        <ActionButton
                           key={item.key}
                           className={
                             step?.key === item.key
                               ? "selected workflow-node"
                               : "workflow-node"
                           }
-                          onClick={() =>
-                            setDraft((current) => ({
+                          onClick={() => {
+                            captureFeedback();
+                            return setDraft((current) => ({
                               ...current,
                               node: `step:${item.key}`,
-                            }))
-                          }
+                            }));
+                          }}
                         >
                           {item.kind === "workflow.call" ? "↳ " : ""}
                           {item.name}
                           <small>{actionLabels[item.kind]}</small>
-                        </button>
+                        </ActionButton>
                       ))}
                   </div>
                 </div>
               ))}
               {editable && (
                 <div className="actions">
-                  <button
+                  <ActionButton
                     onClick={() => {
+                      captureFeedback();
+
                       const key = `stage_${crypto.randomUUID().slice(0, 8)}`;
                       update({
                         stages: [...document.stages, { key, name: "新阶段" }],
@@ -742,19 +797,25 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     }}
                   >
                     添加阶段
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     disabled={!document.stages.length}
-                    onClick={() => addStep()}
+                    onClick={() => {
+                      captureFeedback();
+                      return addStep();
+                    }}
                   >
                     添加步骤
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     disabled={!document.stages.length}
-                    onClick={() => addStep("workflow.call")}
+                    onClick={() => {
+                      captureFeedback();
+                      return addStep("workflow.call");
+                    }}
                   >
                     添加子流程
-                  </button>
+                  </ActionButton>
                 </div>
               )}
             </aside>
@@ -768,39 +829,42 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       <input
                         required
                         value={draft.name}
-                        onChange={(e) =>
-                          setDraft({ ...draft, name: e.target.value })
-                        }
+                        onChange={(e) => {
+                          captureFeedback();
+                          return setDraft({ ...draft, name: e.target.value });
+                        }}
                       />
                     </label>
                     <label>
                       流程用途
-                      <select
+                      <ActionSelect
                         aria-label="流程用途"
                         value={document.process_kind}
-                        onChange={(e) =>
-                          update({ process_kind: e.target.value })
-                        }
+                        onChange={(e) => {
+                          captureFeedback();
+                          return update({ process_kind: e.target.value });
+                        }}
                       >
                         <option value="feature">Feature 流程</option>
                         <option value="task">Task 流程</option>
                         <option value="project_intake">项目讨论</option>
                         <option value="subworkflow">可复用子流程</option>
-                      </select>
+                      </ActionSelect>
                     </label>
                     <label>
                       定义范围
-                      <select
+                      <ActionSelect
                         aria-label="定义范围"
                         disabled={!!selected}
                         value={draft.scope}
-                        onChange={(e) =>
-                          setDraft({ ...draft, scope: e.target.value })
-                        }
+                        onChange={(e) => {
+                          captureFeedback();
+                          return setDraft({ ...draft, scope: e.target.value });
+                        }}
                       >
                         <option value="global">Global</option>
                         {project && <option value="project">当前项目</option>}
-                      </select>
+                      </ActionSelect>
                     </label>
                     {document.steps.some(
                       (s: Row) => s.kind === "tasks.foreach",
@@ -812,14 +876,15 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         )}
                         value={document.subworkflow_refs?.task || ""}
                         required
-                        onChange={(value) =>
-                          update({
+                        onChange={(value) => {
+                          captureFeedback();
+                          return update({
                             subworkflow_refs: {
                               ...document.subworkflow_refs,
                               task: value,
                             },
-                          })
-                        }
+                          });
+                        }}
                       />
                     )}
                     <details>
@@ -828,9 +893,12 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         输入端口名称（逗号或换行分隔）
                         <textarea
                           value={(document.input_ports || []).join("\n")}
-                          onChange={(e) =>
-                            update({ input_ports: split(e.target.value) })
-                          }
+                          onChange={(e) => {
+                            captureFeedback();
+                            return update({
+                              input_ports: split(e.target.value),
+                            });
+                          }}
                         />
                       </label>
                       {Object.entries(document.output_ports || {}).map(
@@ -862,33 +930,36 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                               else delete ports[name];
                               update({ output_ports: ports });
                             })}
-                            <button
+                            <ActionButton
                               type="button"
                               onClick={() => {
+                                captureFeedback();
+
                                 const ports = { ...document.output_ports };
                                 delete ports[name];
                                 update({ output_ports: ports });
                               }}
                             >
                               删除输出 {name}
-                            </button>
+                            </ActionButton>
                           </div>
                         ),
                       )}
-                      <button
+                      <ActionButton
                         type="button"
-                        onClick={() =>
-                          update({
+                        onClick={() => {
+                          captureFeedback();
+                          return update({
                             output_ports: {
                               ...document.output_ports,
                               [`output_${Object.keys(document.output_ports || {}).length + 1}`]:
                                 { step: "", port: "" },
                             },
-                          })
-                        }
+                          });
+                        }}
                       >
                         添加输出端口
-                      </button>
+                      </ActionButton>
                     </details>
                   </>
                 )}
@@ -899,15 +970,16 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       阶段名称
                       <input
                         value={stage.name}
-                        onChange={(e) =>
-                          update({
+                        onChange={(e) => {
+                          captureFeedback();
+                          return update({
                             stages: document.stages.map((s: Row) =>
                               s.key === stage.key
                                 ? { ...s, name: e.target.value }
                                 : s,
                             ),
-                          })
-                        }
+                          });
+                        }}
                       />
                     </label>
                     <MarkdownField
@@ -916,20 +988,23 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       rows={8}
                       readOnly={!editable}
                       value={stage.description || ""}
-                      onChange={(description) =>
-                        update({
+                      onChange={(description) => {
+                        captureFeedback();
+                        return update({
                           stages: document.stages.map((s: Row) =>
                             s.key === stage.key ? { ...s, description } : s,
                           ),
-                        })
-                      }
+                        });
+                      }}
                     />
                     <div className="actions">
                       {[-1, 1].map((direction) => (
-                        <button
+                        <ActionButton
                           key={direction}
                           type="button"
                           onClick={() => {
+                            captureFeedback();
+
                             const stages = [...document.stages];
                             const i = stages.findIndex(
                               (s) => s.key === stage.key,
@@ -945,16 +1020,19 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           }}
                         >
                           {direction < 0 ? "阶段上移" : "阶段下移"}
-                        </button>
+                        </ActionButton>
                       ))}
                     </div>
                     {document.steps.some((s: Row) => s.stage === stage.key) && (
                       <label>
                         删除阶段前将节点迁移到
-                        <select
+                        <ActionSelect
                           aria-label="删除阶段前将节点迁移到"
                           value={moveStage}
-                          onChange={(e) => setMoveStage(e.target.value)}
+                          onChange={(e) => {
+                            captureFeedback();
+                            return setMoveStage(e.target.value);
+                          }}
                         >
                           <option value="">请选择目标阶段</option>
                           {document.stages
@@ -964,10 +1042,10 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                 {s.name}
                               </option>
                             ))}
-                        </select>
+                        </ActionSelect>
                       </label>
                     )}
-                    <button
+                    <ActionButton
                       type="button"
                       disabled={
                         document.steps.some(
@@ -975,6 +1053,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         ) && !moveStage
                       }
                       onClick={() => {
+                        captureFeedback();
+
                         update({
                           stages: document.stages.filter(
                             (s: Row) => s.key !== stage.key,
@@ -992,7 +1072,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       }}
                     >
                       删除阶段
-                    </button>
+                    </ActionButton>
                   </>
                 )}
                 {step && (
@@ -1002,30 +1082,37 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       步骤名称
                       <input
                         value={step.name}
-                        onChange={(e) => updateStep({ name: e.target.value })}
+                        onChange={(e) => {
+                          captureFeedback();
+                          return updateStep({ name: e.target.value });
+                        }}
                       />
                     </label>
                     <label>
                       所属阶段
-                      <select
+                      <ActionSelect
                         aria-label="所属阶段"
                         value={step.stage}
-                        onChange={(e) => updateStep({ stage: e.target.value })}
+                        onChange={(e) => {
+                          captureFeedback();
+                          return updateStep({ stage: e.target.value });
+                        }}
                       >
                         {document.stages.map((s: Row) => (
                           <option key={s.key} value={s.key}>
                             {s.name}
                           </option>
                         ))}
-                      </select>
+                      </ActionSelect>
                     </label>
                     <label>
                       标准动作
-                      <select
+                      <ActionSelect
                         aria-label="标准动作"
                         value={step.kind}
-                        onChange={(e) =>
-                          updateStep({
+                        onChange={(e) => {
+                          captureFeedback();
+                          return updateStep({
                             kind: e.target.value,
                             contract_version:
                               isTaskVersion && requiresTask(e.target.value)
@@ -1050,15 +1137,15 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                               e.target.value === "workflow.call"
                                 ? step.subworkflow_ref || ""
                                 : null,
-                          })
-                        }
+                          });
+                        }}
                       >
                         {Object.entries(actionNames).map(([id, label]) => (
                           <option key={id} value={id}>
                             {label}
                           </option>
                         ))}
-                      </select>
+                      </ActionSelect>
                     </label>
                     {isTaskVersion && requiresTask(step.kind) ? (
                       <>
@@ -1073,9 +1160,10 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           rows={10}
                           readOnly={!editable}
                           value={step.task_instructions || ""}
-                          onChange={(task_instructions) =>
-                            updateStep({ task_instructions })
-                          }
+                          onChange={(task_instructions) => {
+                            captureFeedback();
+                            return updateStep({ task_instructions });
+                          }}
                         />
                         <p className="muted">
                           此任务与 Role、所选 Skill、步骤 Spec 一起传给
@@ -1093,12 +1181,13 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           }))}
                           required
                           value={step.role_ref || ""}
-                          onChange={(value) =>
-                            updateStep({
+                          onChange={(value) => {
+                            captureFeedback();
+                            return updateStep({
                               role_ref: value,
                               participant_slot: null,
-                            })
-                          }
+                            });
+                          }}
                         />
                         <RevisionSelect
                           label="步骤 Spec"
@@ -1124,24 +1213,28 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           multiple
                           required
                           value={step.spec_refs || []}
-                          onChange={(value) => updateStep({ spec_refs: value })}
+                          onChange={(value) => {
+                            captureFeedback();
+                            return updateStep({ spec_refs: value });
+                          }}
                         />
                       </>
                     )}
                     <label>
                       前置步骤
-                      <select
+                      <ActionSelect
                         aria-label="前置步骤"
                         multiple
                         value={step.dependencies || []}
-                        onChange={(e) =>
-                          updateStep({
+                        onChange={(e) => {
+                          captureFeedback();
+                          return updateStep({
                             dependencies: Array.from(
                               e.target.selectedOptions,
                               (o) => o.value,
                             ),
-                          })
-                        }
+                          });
+                        }}
                       >
                         {document.steps
                           .filter((s: Row) => s.key !== step.key)
@@ -1150,7 +1243,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                               {s.name}
                             </option>
                           ))}
-                      </select>
+                      </ActionSelect>
                     </label>
                     {step.kind === "workflow.call" && (
                       <>
@@ -1161,9 +1254,13 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           )}
                           required
                           value={step.subworkflow_ref || ""}
-                          onChange={(value) =>
-                            updateStep({ subworkflow_ref: value, inputs: {} })
-                          }
+                          onChange={(value) => {
+                            captureFeedback();
+                            return updateStep({
+                              subworkflow_ref: value,
+                              inputs: {},
+                            });
+                          }}
                         />
                         {child && (
                           <p>
@@ -1203,44 +1300,47 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                             required
                             readOnly={!editable}
                             value={step.interaction?.goal || ""}
-                            onChange={(goal) =>
-                              updateStep({
+                            onChange={(goal) => {
+                              captureFeedback();
+                              return updateStep({
                                 interaction: {
                                   ...step.interaction,
                                   goal,
                                 },
-                              })
-                            }
+                              });
+                            }}
                           />
                         ) : null}
                         <MarkdownTopicsField
                           key={`${draft.selected}:${step.key}:topics`}
                           value={step.interaction?.required_topics || []}
                           readOnly={!editable}
-                          onChange={(required_topics) =>
-                            updateStep({
+                          onChange={(required_topics) => {
+                            captureFeedback();
+                            return updateStep({
                               interaction: {
                                 ...step.interaction,
                                 required_topics,
                               },
-                            })
-                          }
+                            });
+                          }}
                         />
                         <label>
                           输出类型
-                          <select
+                          <ActionSelect
                             aria-label="输出类型"
                             value={
                               step.interaction?.output_kind || "requirement"
                             }
-                            onChange={(e) =>
-                              updateStep({
+                            onChange={(e) => {
+                              captureFeedback();
+                              return updateStep({
                                 interaction: {
                                   ...step.interaction,
                                   output_kind: e.target.value,
                                 },
-                              })
-                            }
+                              });
+                            }}
                           >
                             {[
                               "requirement",
@@ -1251,7 +1351,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                             ].map((id) => (
                               <option key={id}>{id}</option>
                             ))}
-                          </select>
+                          </ActionSelect>
                         </label>
                         <label>
                           最大轮数
@@ -1260,14 +1360,15 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                             min={1}
                             max={100}
                             value={step.interaction?.max_turns || 8}
-                            onChange={(e) =>
-                              updateStep({
+                            onChange={(e) => {
+                              captureFeedback();
+                              return updateStep({
                                 interaction: {
                                   ...step.interaction,
                                   max_turns: Number(e.target.value),
                                 },
-                              })
-                            }
+                              });
+                            }}
                           />
                         </label>
                       </>
@@ -1276,11 +1377,12 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       <>
                         <label>
                           执行阶段
-                          <select
+                          <ActionSelect
                             aria-label="执行阶段"
                             value={step.parameters?.phase || ""}
-                            onChange={(e) =>
-                              updateStep({
+                            onChange={(e) => {
+                              captureFeedback();
+                              return updateStep({
                                 parameters: {
                                   ...step.parameters,
                                   phase: e.target.value,
@@ -1291,8 +1393,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                       execution_recipe: [],
                                     }
                                   : {}),
-                              })
-                            }
+                              });
+                            }}
                           >
                             <option value="">请选择</option>
                             {Object.entries(phases).map(([id, label]) => (
@@ -1300,7 +1402,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                 {label}
                               </option>
                             ))}
-                          </select>
+                          </ActionSelect>
                         </label>
                         <h3>执行节点与 Role</h3>
                         {(step.execution_recipe || []).map(
@@ -1319,6 +1421,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                     readOnly={!editable}
                                     value={node.task_instructions || ""}
                                     onChange={(task_instructions) => {
+                                      captureFeedback();
+
                                       const recipe = structuredClone(
                                         step.execution_recipe,
                                       );
@@ -1344,6 +1448,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                 required
                                 value={node.role_ref || ""}
                                 onChange={(value) => {
+                                  captureFeedback();
+
                                   const recipe = structuredClone(
                                     step.execution_recipe,
                                   );
@@ -1353,11 +1459,13 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                               />
                               <label>
                                 节点前置依赖
-                                <select
+                                <ActionSelect
                                   aria-label="节点前置依赖"
                                   multiple
                                   value={node.dependencies || []}
                                   onChange={(e) => {
+                                    captureFeedback();
+
                                     const recipe = structuredClone(
                                       step.execution_recipe,
                                     );
@@ -1375,7 +1483,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                         {nodeLabels[n.key] || n.key}
                                       </option>
                                     ))}
-                                </select>
+                                </ActionSelect>
                               </label>
                               <span className="muted">
                                 {dutyLabels[node.role]} ·{" "}
@@ -1384,9 +1492,11 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                             </fieldset>
                           ),
                         )}
-                        <button
+                        <ActionButton
                           type="button"
                           onClick={() => {
+                            captureFeedback();
+
                             const phase = step.parameters?.phase;
                             const nodes: Row[] =
                               phase === "implementation"
@@ -1493,26 +1603,30 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           }}
                         >
                           设置该阶段执行节点
-                        </button>
+                        </ActionButton>
                       </>
                     )}
                     <label>
                       推进方式
-                      <select
+                      <ActionSelect
                         aria-label="推进方式"
                         value={step.advance_mode || "automatic"}
-                        onChange={(e) =>
-                          updateStep({ advance_mode: e.target.value })
-                        }
+                        onChange={(e) => {
+                          captureFeedback();
+                          return updateStep({ advance_mode: e.target.value });
+                        }}
                       >
                         <option value="automatic">自动</option>
                         <option value="human_confirmation">人工确认</option>
-                      </select>
+                      </ActionSelect>
                     </label>
                     <ConditionEditor
                       condition={step.condition || { op: "always" }}
                       steps={document.steps}
-                      onChange={(condition) => updateStep({ condition })}
+                      onChange={(condition) => {
+                        captureFeedback();
+                        return updateStep({ condition });
+                      }}
                     />
                     <label>
                       重试上限
@@ -1521,39 +1635,45 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         min={0}
                         max={10}
                         value={step.retry_limit ?? 3}
-                        onChange={(e) =>
-                          updateStep({ retry_limit: Number(e.target.value) })
-                        }
+                        onChange={(e) => {
+                          captureFeedback();
+                          return updateStep({
+                            retry_limit: Number(e.target.value),
+                          });
+                        }}
                       />
                     </label>
                     <label>
                       返工范围
-                      <select
+                      <ActionSelect
                         aria-label="返工范围"
                         multiple
                         value={step.rework_scope || []}
-                        onChange={(e) =>
-                          updateStep({
+                        onChange={(e) => {
+                          captureFeedback();
+                          return updateStep({
                             rework_scope: Array.from(
                               e.target.selectedOptions,
                               (o) => o.value,
                             ),
-                          })
-                        }
+                          });
+                        }}
                       >
                         {document.steps.map((s: Row) => (
                           <option value={s.key} key={s.key}>
                             {s.name}
                           </option>
                         ))}
-                      </select>
+                      </ActionSelect>
                     </label>
                     <div className="actions">
                       {[-1, 1].map((direction) => (
-                        <button
+                        <ActionButton
                           type="button"
                           key={direction}
                           onClick={() => {
+                            captureFeedback();
+
                             const steps = [...document.steps];
                             const index = steps.findIndex(
                               (s) => s.key === step.key,
@@ -1569,9 +1689,9 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           }}
                         >
                           {direction < 0 ? "步骤上移" : "步骤下移"}
-                        </button>
+                        </ActionButton>
                       ))}
-                      <button
+                      <ActionButton
                         type="button"
                         disabled={document.steps.some(
                           (s: Row) =>
@@ -1581,6 +1701,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                             ),
                         )}
                         onClick={() => {
+                          captureFeedback();
+
                           update({
                             steps: document.steps.filter(
                               (s: Row) => s.key !== step.key,
@@ -1593,7 +1715,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         }}
                       >
                         删除步骤
-                      </button>
+                      </ActionButton>
                     </div>
                     <p className="muted">
                       仍被其他步骤依赖时，先调整前置和输入引用再删除。
@@ -1668,7 +1790,7 @@ function ConditionEditor({
       <legend>推进条件</legend>
       <label>
         条件操作
-        <select
+        <ActionSelect
           aria-label="条件操作"
           value={condition.op}
           onChange={(e) =>
@@ -1688,12 +1810,12 @@ function ConditionEditor({
           <option value="accepted">交付已接受</option>
           <option value="all">全部条件</option>
           <option value="any">任一条件</option>
-        </select>
+        </ActionSelect>
       </label>
       {condition.op === "output_present" && (
         <label>
           引用步骤
-          <select
+          <ActionSelect
             aria-label="引用步骤"
             value={condition.step}
             onChange={(e) => onChange({ ...condition, step: e.target.value })}
@@ -1704,13 +1826,13 @@ function ConditionEditor({
                 {s.name}
               </option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
       )}
       {condition.op === "accepted" && (
         <label>
           接受的交付类型
-          <select
+          <ActionSelect
             aria-label="接受的交付类型"
             value={condition.kind}
             onChange={(e) => onChange({ ...condition, kind: e.target.value })}
@@ -1724,7 +1846,7 @@ function ConditionEditor({
             ].map((kind) => (
               <option key={kind}>{kind}</option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
       )}
       {["all", "any"].includes(condition.op) && (
@@ -1743,7 +1865,7 @@ function ConditionEditor({
                   })
                 }
               />
-              <button
+              <ActionButton
                 type="button"
                 onClick={() =>
                   onChange({
@@ -1755,10 +1877,10 @@ function ConditionEditor({
                 }
               >
                 删除子条件
-              </button>
+              </ActionButton>
             </div>
           ))}
-          <button
+          <ActionButton
             type="button"
             onClick={() =>
               onChange({
@@ -1768,7 +1890,7 @@ function ConditionEditor({
             }
           >
             添加子条件
-          </button>
+          </ActionButton>
         </>
       )}
     </fieldset>

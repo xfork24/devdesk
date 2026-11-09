@@ -1,6 +1,13 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useEffect, useRef, useState } from "react";
 type Row = Record<string, any>;
 type Props = {
+  revision?: string;
   request: (method: string, params?: Row) => Promise<any>;
   projectId: string;
   instanceId: string;
@@ -10,12 +17,21 @@ type Props = {
 };
 export function AgentExperience({
   request,
+  revision,
   projectId,
   instanceId,
   owner,
   onRestored,
   onLocate,
 }: Props) {
+  const {
+    error,
+    setError,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [project, setProject] = useState(""),
     [feature, setFeature] = useState(""),
     [from, setFrom] = useState(""),
@@ -23,7 +39,6 @@ export function AgentExperience({
     [page, setPage] = useState(0),
     [data, setData] = useState<Row>(),
     [detail, setDetail] = useState<Row>(),
-    [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const generation = useRef(0);
   useEffect(() => {
@@ -32,7 +47,9 @@ export function AgentExperience({
     setDetail(undefined);
     setError("");
     request("query.agent_experience", {
-      project_id: projectId,
+      ...(projectId === "global"
+        ? { scope: "global" }
+        : { project_id: projectId }),
       agent_instance_id: instanceId,
       project_name: project,
       feature_name: feature,
@@ -50,7 +67,17 @@ export function AgentExperience({
     return () => {
       ++generation.current;
     };
-  }, [request, projectId, instanceId, project, feature, from, to, page]);
+  }, [
+    request,
+    projectId,
+    instanceId,
+    project,
+    feature,
+    from,
+    to,
+    page,
+    revision,
+  ]);
   const filters = (
     <div className="form-grid">
       <label>
@@ -58,6 +85,8 @@ export function AgentExperience({
         <input
           value={project}
           onChange={(e) => {
+            captureFeedback();
+
             setProject(e.target.value);
             setPage(0);
           }}
@@ -68,6 +97,8 @@ export function AgentExperience({
         <input
           value={feature}
           onChange={(e) => {
+            captureFeedback();
+
             setFeature(e.target.value);
             setPage(0);
           }}
@@ -79,6 +110,8 @@ export function AgentExperience({
           type="datetime-local"
           value={from}
           onChange={(e) => {
+            captureFeedback();
+
             setFrom(e.target.value);
             setPage(0);
           }}
@@ -90,6 +123,8 @@ export function AgentExperience({
           type="datetime-local"
           value={to}
           onChange={(e) => {
+            captureFeedback();
+
             setTo(e.target.value);
             setPage(0);
           }}
@@ -121,13 +156,17 @@ export function AgentExperience({
                   : "Feature"}
               </p>
               <div className="actions">
-                <button
+                <ActionButton
                   onClick={async () => {
+                    captureFeedback();
+
                     setError("");
                     const g = ++generation.current;
                     try {
                       const value = await request("query.agent_experience", {
-                        project_id: projectId,
+                        ...(projectId === "global"
+                          ? { scope: "global" }
+                          : { project_id: projectId }),
                         agent_instance_id: instanceId,
                         snapshot_id: entry.snapshot_id,
                         source_project_id: entry.project_id,
@@ -139,9 +178,16 @@ export function AgentExperience({
                   }}
                 >
                   展开摘要与快照
-                </button>
+                </ActionButton>
                 {onLocate && (
-                  <button onClick={() => onLocate(entry)}>定位来源工作</button>
+                  <ActionButton
+                    onClick={() => {
+                      captureFeedback();
+                      return onLocate(entry);
+                    }}
+                  >
+                    定位来源工作
+                  </ActionButton>
                 )}
               </div>
             </article>
@@ -152,15 +198,24 @@ export function AgentExperience({
             </p>
           ))}
           <div className="actions">
-            <button disabled={!page} onClick={() => setPage((p) => p - 1)}>
+            <ActionButton
+              disabled={!page}
+              onClick={() => {
+                captureFeedback();
+                return setPage((p) => p - 1);
+              }}
+            >
               上一页
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               disabled={(page + 1) * 20 >= (data?.total || 0)}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => {
+                captureFeedback();
+                return setPage((p) => p + 1);
+              }}
             >
               下一页
-            </button>
+            </ActionButton>
           </div>
           {detail && (
             <article className="notice">
@@ -178,14 +233,18 @@ export function AgentExperience({
                 <summary>完整快照与证据引用</summary>
                 <pre>{JSON.stringify(detail, null, 2)}</pre>
               </details>
-              <button
+              <ActionButton
                 disabled={busy}
                 onClick={async () => {
-                  setBusy(true);
+                  captureFeedback();
+
+                  (beginFeedback(), setBusy(true));
                   setError("");
                   try {
                     const result = await request("experience.restore", {
-                      project_id: projectId,
+                      ...(projectId === "global"
+                        ? { scope: "global" }
+                        : { project_id: projectId }),
                       command_id: crypto.randomUUID(),
                       target: owner.id,
                       expected_revision: owner.revision,
@@ -199,12 +258,12 @@ export function AgentExperience({
                   } catch (e) {
                     setError(String(e));
                   } finally {
-                    setBusy(false);
+                    (endFeedback(), setBusy(false));
                   }
                 }}
               >
                 基于此快照开启新讨论
-              </button>
+              </ActionButton>
               <p>恢复保留来源引用，当前代码、文档和工作流配置保持各自版本。</p>
             </article>
           )}

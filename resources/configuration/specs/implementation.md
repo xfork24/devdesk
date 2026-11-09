@@ -1,24 +1,25 @@
-# Task TDD 实现与交付阶段 Spec
+# Task TDD 交付规范
 
 ## 阶段意图
 
-在冻结 Task 范围内以独立测试驱动实现。
+在冻结 Task 范围内交付经过独立测试、真实 TDD 与评审的实现。
 
-## 所需能力
+## 输入与前置条件
 
-测试设计、TDD 实现与工程说明。Agent 必须引用相应 Skill；执行职责与写范围仍受内核规则约束。
+冻结 Task、需求验收、设计、测试定义、基线、工作树与可写范围。
 
 ## 必需交付内容
 
-- 独立测试与真实 assertion Red。
-- Red→implement→Green→verify 依赖。
-- 代码、文档和验收映射。
-- 实际测试结果、失败、限制和独立评审。
+独立测试与 TestRecipe；真实断言 Red；最小实现；Green；必要回归与 verify；行为和使用文档；代码 SHA、环境、执行结果与剩余限制。
+
+## 内容与一致性检查
+
+核对 Red 的失败来自目标断言，Green 和 verify 对应实际交付代码；独立测试未被实现作者绕过或篡改，差异未越出 Task 范围。
 
 ## 完成与拒绝标准
 
-缺少断言 Red、修改独立测试、越界写入或没有真实 Green/verify 都不能通过；Task 不等待未来 Feature 收尾证据。
+交付由独立 Reviewer 逐项判断后接受。语法错误、缺依赖、旧代码上的通过结果及未经运行的声明都不能满足 TDD；Task 评审不要求未来 Feature 收尾证据。
 
-## 检查方式
+## 工具与证据
 
-由当前 Step 绑定本 Spec 精确修订，并提供给执行 Agent 与独立评审。Markdown 要求按内容和真实证据评审；现有 traceability、failure_paths、sections 只承担各自已实现的有限自动检查，不代表全文要求已自动验证。
+当前 Step 引用本 Spec 的精确修订，并提供给执行 Agent 和独立评审。保留材料修订、代码或候选 SHA、命令、环境与真实结果，明确未运行和结果未知的事项。traceability、failure_paths、sections 只承担各自已经实现的有限自动检查，正文要求仍需基于内容和证据评审。

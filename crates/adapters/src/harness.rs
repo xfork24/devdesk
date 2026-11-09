@@ -177,7 +177,12 @@ impl RuntimeWorkers {
             uuid::Uuid::parse_str(&session.id).is_ok(),
             "Session ID 无效",
         )?;
-        let root = SqliteStore::project_path(&self.root, project)?.join("execution");
+        let root = if session.scope == Some(SessionScope::Global) {
+            SqliteStore::global_discussion_path(&self.root)?
+        } else {
+            SqliteStore::project_path(&self.root, project)?
+        }
+        .join("execution");
         private_dir(&root)?;
         private_dir(&root.join("sessions"))?;
         let path = root.join("sessions").join(&session.id);

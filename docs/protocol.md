@@ -28,14 +28,18 @@ AgentComposition 可携带 permission_selection，以命名字段替代旧 permi
 
 `conversation.send` 对追随目标的讨论在接受新输入前检测改绑，无活动工作时持久化切换并创建后继 Session。返回值可增加 effective_session_id、predecessor，UI 跟随有效 Session；原 command_id 和 client_message_id 保持幂等。query.session/session.read 增加 permission_status，包含 frozen、desired、status、reason、pending_command；待恢复时可用 pending_command 原样重试 conversation.send。已有运行、排队输入、工程冻结与技术重试保留原权限，目标默认更新不改写它们。
 
-只监听 127.0.0.1。host 启动时生成随机本地会话；同源页面通过 HttpOnly、SameSite=Strict Cookie 使用。校验 Host 和有值的 Origin，缺失或错误凭据拒绝 RPC/SSE/Artifact。用户 human:local 身份由 host 装配，载荷中的 actor 无效。
+默认监听 127.0.0.1，可用 `--host IP` 显式监听其他地址；非 loopback 监听或配置 `--public-url` 时必须设置 `DEVDESK_ACCESS_TOKEN`（32–512 位非空白 ASCII 连接密钥）。内核启动时生成随机会话；默认本机页面自动建立会话，受密钥保护的内核只在 `POST /session` 验证通过后发放 HttpOnly、SameSite=Strict Cookie，公开地址为 HTTPS 时附带 Secure。校验连接地址对应的 Host 和有值的 Origin，缺失或错误会话拒绝 RPC/SSE/Artifact。用户 human:local 身份由 host 装配，载荷中的 actor 无效。
+
+Web 连接其他内核时，先以无凭据请求探测 `/connection`，确认产品及协议后导航到目标 origin，清除原地址中的 Project/Feature 等路由引用。RPC、SSE、产物和 OAuth 回调始终同源，目标内核自行建立会话；会话 Cookie 名按公开端口区分，避免同一主机不同端口相互覆盖。浏览器仅记住目标地址，连接密钥不进入 URL 或持久存储。退出当前内核后，已加载的界面保留连接入口。未来原生客户端可复用探测与会话接口。
 
 ## HTTP
 
+- GET /connection：无敏感信息的连接探测，仅返回 product=devdesk、protocol_version 和 authentication_required。此 GET 允许跨源读取，不发放会话，不返回数据集、账号或项目内容；其余接口不开放跨源访问。
+- POST /session：JSON `{access_token:"连接密钥"}` 验证并建立同源会话；默认未配置密钥的本机内核接受空对象刷新会话。错误密钥返回 401，错误 Host/Origin 返回 403。
 - POST /rpc：JSON-RPC 2.0，id 必填。查询 params 为过滤参数；命令 params 为 Command。
 - GET /events?project_id=ID&cursor=N：SSE，连接固定到该活动项目；事件 ID 为 `ID:cursor`，cursor 在项目内持久化单调递增。支持同项目 Last-Event-ID；其他项目的游标忽略。分批补读，断线后重连；事件只是事实通知，页面重新查询。
 - GET /artifacts/{id}?project_id=ID：按活动项目数据库中的 ID 读取，路径不得由客户端提供；SHA256 校验后返回纯文本并禁止内容嗅探。
-- GET /capabilities：协议、版本、原生供应商和 Docker 能力与配置/Archive preview/migration preview/platform validation 状态。
+- GET /capabilities：协议、版本、原生供应商和 Docker 能力、数据集配置与平台验证状态。
 - POST /setup：未打开数据集时设置 path；非空非 DevDesk 目录拒绝。打开后不能热切换。
 - POST /shutdown：可信人类会话退出 host。
 
@@ -79,7 +83,7 @@ Delivery 文件清单及工程 Snapshot 清单含 `schema_version=1`；Project �
 - document.revise 只接受 Feature target，必须携带该 Feature 的 expected_revision；payload.feature_id 不能作为替代入口。
 - Requirement 可附 acceptance=[{key,description}]；Test 可附 verifies=[key]。Web 使用每行“标识 | 条件”和逗号列表录入。省略时分别登记完整正文为 AC-1、继承关联需求的全部条目。
 - task.create 可附 scope={requirement,design,acceptance} 或 acceptance_keys。默认从已接受的初始 Snapshot 解析。task.replan(target=Task, expected_revision) 采用当前已接受规划及选定条目，新测试修订保留 supersedes。
-- query.runtimes 返回 Harness/Sandbox 定义；query.archive_preview(feature_id) 返回产物/快照范围与不可执行理由。注册表提供原生定义和已登记的真实运行时，旧定义只作历史引用。
+- query.runtimes 返回 Harness/Sandbox 定义。注册表提供原生定义和已登记的真实运行时，旧定义只作历史引用。
 - Run 返回不可变 binding；Session 返回 instance；Review 返回 assignment；Snapshot 返回 capture；Attempt 返回 baseline。
 - 数据库支持从 v1 顺序升级至 v33（全局库 v4）。旧文档缺少结构化验收映射时保持空值，旧交付历史可读；重新参与增强门禁须明确修订和验收，不能将迁移当成人类复核。
 
@@ -111,7 +115,7 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 
 ### Persistent role conversations (integration work in progress)
 
-`session.open` targets a Project/Feature/Task at its current revision. Its payload selects `agent` (immutable role revision), optional `provider`, `installation_id`, `model`, `work_type`, `snapshot_id`, and `predecessor`. Clients cannot supply a resolved `binding`. The host resolves defaults once and freezes the installation, image digest, adapter, model, tool policy, role and credential reference. Replaying the original command returns its original result before resolving current defaults.
+`session.open` targets a Project/Feature/Task at its current revision, or `global` with `scope: "global"` for a dataset-wide discussion. Its payload selects `agent` (immutable role revision), optional `provider`, `installation_id`, `model`, `work_type`, `snapshot_id`, and `predecessor`. Clients cannot supply a resolved `binding`. The host resolves defaults once and freezes the installation, image digest, adapter, model, tool policy, role and credential reference. Replaying the original command returns its original result before resolving current defaults.
 
 `conversation.send` targets the Session revision with `input` and `client_message_id`. A repeated client message ID with the same input returns the original Turn; changed input is rejected. One active or uncertain Turn blocks another input. `conversation.cancel` targets a Turn revision and records intent; a dispatched Turn only becomes cancelled after owned-container stop proof. Restart marks dispatched work `needs_reconciliation`, stops the previous writer and never resends its input. Explicit cancellation retires uncertain work; continuing uses a successor Session with a handoff Snapshot.
 
@@ -216,10 +220,24 @@ Agent 新建可提供 role_ref，省略模型与能力字段时填入 Sol High /
 
 ## 模型服务商接口
 
-`query.model_providers` 返回服务商、Harness、DSH 路由、协议、端点、认证类型与固定目录候选。`models.list` 通过 `model_provider` 选择目录；Ollama 可提供 endpoint，并由 Host 查询本机服务，云路由使用固定版本的内嵌目录。候选不自动保存，返回值显式区分目录来源与未验证的推理。
+`query.model_providers` 返回服务商、Harness、DSH 路由、协议、端点、认证类型与固定目录候选。`models.list` 通过 `model_provider` 选择目录；Ollama 可提供 endpoint，并由 Host 查询本机服务；DeepSeek 读取账号目录，智谱和 MiniMax 返回固定 DSH 版本的内嵌支持目录。候选不自动保存，返回值显式区分目录来源与未验证的推理。
 
 `credentials.configure/status/check/authorize` 增加 model_provider；省略时保持 DeepSeek 兼容语义。configure 保留 provider=dsh，api_key 仅用于 vault 写入，不进入普通查询。Ollama 状态 auth_kind=none，不支持存储或授权 key。
 
 `agent.connection.check` 和 `agent.model.verify` 接收 project_id、agent_revision_id。前者创建带冻结绑定的完整 Agent Session，从 DSH 镜像查询模型目录，返回 container_verified 和 inference_verified=false；后者通过既有 session.open/conversation.send 提交真实模型与工具验证，返回 Session/Turn/marker，完成状态从 query.session 读取。
 
 RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。旧缺字段绑定只按原有 Codex/DeepSeek 语义读取，新服务商缺快照必须拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。
+
+`query.runtime_options` 只读取安装、受支持配方和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。偏好界面保存具体 `installation_id`、`model`、`model_provider` 与服务商容量；`use_system_default` 仅跟随 Harness 名称，默认后端改变后须重新明确安装及模型。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务；智谱与 MiniMax 返回固定 DSH 版本支持的目录，并在 `source` 中区分。读取目录不执行推理。
+
+`integration.delete` 将接入源及所属工具、绑定从后续选择中删除，或单独删除已发布工具。操作原子检查在用引用，拒绝仍被 Capability、Agent、Skill 或项目配置使用的资源；修订和历史调用保留，紧急停用另由 `integration.disable` 处理。
+
+全局角色讨论使用 `scope: "global"`，`session.open` 的目标为 `global`，不得同时提供 `project_id`。数据单独保存在 `conversations/global/engineering.sqlite3`；不创建 Project。Session 的 `scope` 为 `global`，其兼容的 `project_id` 列保留固定的执行命名空间 `00000000-0000-4000-8000-000000000000`，用于容器归属和 Session/Turn 外键；它不属于项目目录。全局 Session 仅接受全局 AgentID，消息、快照及经验仍按该身份保存。全局讨论中的方案须切换到具体项目后再进入工程采纳流程。
+
+权限合同 v2 绑定权限语义、受支持运行版本与实际策略资产；普通 UI、模型目录及非权限 schema 更新不改变权限合同。适配器的精确构建仍在运行绑定中独立冻结。旧默认权限转换追加新的合同记录；尚无 Session/Attempt 的 Feature 可在预检证明 profile 与目标完全一致后追加 `feature_permission_renewal`，原冻结记录和摘要保留。已开始执行或发生实际策略资产漂移的 Feature 不自动更换冻结权限。
+
+`feature.create.predecessor` 只记录同项目 Feature 的前后关联，代码仍从项目主干基线建立。界面枚举同项目所有 Feature，并明确显示这一语义。
+
+`query.workflow_instance` 附带当前 TaskGroup 的 `children` 摘要（实例 ID/修订、任务名称、父步骤），子流程详细计划按实例单独读取。执行与交付以阶段为整行展示，编译展开的子流程保持在其调用阶段内；Task 子流程在所属阶段中按需展开，折叠状态按项目和工作流实例保存在本机。
+
+`query.sessions` 可按 `agent_instance_id` 在分页前筛选。列表和会话详情返回该身份的关联元数据，兼容早期仅有 `agent_session` 记录的会话。独立讨论完成后保存 `conversation_completed` 快照，AgentID 历史包含本轮消息与真实终态证据；切换身份不继续沿用原会话。

@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   dutyLabels,
@@ -16,10 +22,18 @@ export function RoleManager({
   project?: Row;
   onChanged?: () => void;
 }) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [rows, setRows] = useState<Row[]>([]),
     [projects, setProjects] = useState<Row[]>([]),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const empty = () => ({
     selected: "",
@@ -88,7 +102,9 @@ export function RoleManager({
   }, [rows]);
   const old = rows.find((r) => r.id === draft.selected);
   async function save(remove = false) {
-    setBusy(true);
+    captureFeedback();
+
+    (beginFeedback(), setBusy(true));
     setError("");
     setMessage("");
     try {
@@ -135,7 +151,7 @@ export function RoleManager({
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      (endFeedback(), setBusy(false));
     }
   }
   return (
@@ -145,24 +161,30 @@ export function RoleManager({
           <h2>角色 Role</h2>
           <p>定义职责和可见范围，再到 Agent tab 将角色与能力组合。</p>
         </div>
-        <button
-          onClick={() => {
-            const params = new URLSearchParams(location.search);
-            params.delete("config_object");
-            history.replaceState(null, "", `?${params}`);
-            setDraft(empty());
-          }}
-        >
-          新建 Role
-        </button>
       </div>
       <div className="configuration-layout">
         <div className="configuration-list">
+          <ActionButton
+            className="new-resource"
+            onClick={() => {
+              captureFeedback();
+
+              const params = new URLSearchParams(location.search);
+              params.delete("config_object");
+              history.replaceState(null, "", `?${params}`);
+              setDraft(empty());
+            }}
+          >
+            新建 Role
+          </ActionButton>
+
           {latest(rows).map((row) => (
-            <button
+            <ActionButton
               key={row.id}
               className={draft.selected === row.id ? "selected" : ""}
               onClick={() => {
+                captureFeedback();
+
                 choose(row);
                 setMessage("");
               }}
@@ -171,11 +193,13 @@ export function RoleManager({
               <span>
                 {dutyLabels[row.data.execution_role]} · v{row.version}
               </span>
-            </button>
+            </ActionButton>
           ))}
         </div>
-        <form
+        <ActionForm
           onSubmit={(e) => {
+            captureFeedback();
+
             e.preventDefault();
             void save();
           }}
@@ -185,33 +209,38 @@ export function RoleManager({
             <input
               required
               value={draft.name}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({ ...draft, name: e.target.value });
+              }}
             />
           </label>
           <label>
             Role Scope
-            <select
+            <ActionSelect
               value={draft.visibility.kind}
-              onChange={(e) =>
-                setDraft({
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft({
                   ...draft,
                   visibility: { kind: e.target.value, project_ids: [] },
-                })
-              }
+                });
+              }}
             >
               <option value="global">Global · 所有项目</option>
               <option value="projects">指定项目</option>
-            </select>
+            </ActionSelect>
           </label>
           {draft.visibility.kind === "projects" && (
             <label>
               可见项目
-              <select
+              <ActionSelect
                 multiple
                 required
                 value={draft.visibility.project_ids}
-                onChange={(e) =>
-                  setDraft({
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({
                     ...draft,
                     visibility: {
                       kind: "projects",
@@ -220,15 +249,15 @@ export function RoleManager({
                         (o) => o.value,
                       ),
                     },
-                  })
-                }
+                  });
+                }}
               >
                 {projects.map((row) => (
                   <option value={row.id} key={row.id}>
                     {row.title}
                   </option>
                 ))}
-              </select>
+              </ActionSelect>
             </label>
           )}
           <MarkdownField
@@ -236,47 +265,52 @@ export function RoleManager({
             label="Markdown 职责说明"
             value={draft.instructions}
             required
-            onChange={(instructions) => setDraft({ ...draft, instructions })}
+            onChange={(instructions) => {
+              captureFeedback();
+              return setDraft({ ...draft, instructions });
+            }}
           />
           <details>
             <summary>执行职责兼容设置</summary>
             <label>
               执行职责
-              <select
+              <ActionSelect
                 value={draft.execution_role}
-                onChange={(e) =>
-                  setDraft({ ...draft, execution_role: e.target.value })
-                }
+                onChange={(e) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, execution_role: e.target.value });
+                }}
               >
                 {Object.entries(dutyLabels).map(([id, label]) => (
                   <option value={id} key={id}>
                     {label}
                   </option>
                 ))}
-              </select>
+              </ActionSelect>
             </label>
             <p>用于动作和写入范围校验；Role 名称可以自由设置。</p>
           </details>
           <div className="actions">
-            <button
+            <ActionButton
               className="primary"
               disabled={
                 busy || !draft.name.trim() || !draft.instructions.trim()
               }
             >
               {old ? "保存 Role 新版本" : "创建 Role"}
-            </button>
-            {old && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void save(true)}
-              >
-                删除 Role
-              </button>
-            )}
+            </ActionButton>
+            <ActionButton
+              type="button"
+              disabled={busy || !old}
+              onClick={() => {
+                captureFeedback();
+                return void save(true);
+              }}
+            >
+              删除 Role
+            </ActionButton>
           </div>
-        </form>
+        </ActionForm>
       </div>
       {error && (
         <p role="alert" className="error">

@@ -1,11 +1,11 @@
-#[path = "model_providers.rs"]
-mod model_providers;
 #[path = "github_projects.rs"]
 mod github_projects;
 #[path = "governance.rs"]
 mod governance;
 #[path = "integrations.rs"]
 mod integrations;
+#[path = "model_providers.rs"]
+mod model_providers;
 #[path = "permission_api.rs"]
 mod permission_api;
 #[path = "permission_resources.rs"]
@@ -100,6 +100,12 @@ impl Workspace {
             serde_json::from_value(value.clone())
                 .map_err(|_| err("invalid_params", "无效 Harness provider"))?
         } else if let Some(preference) = role_preference.or(project_preference) {
+            if preference.use_system_default {
+                require(
+                    preference.provider == self.global.default_harness()?,
+                    "系统默认 Harness 已改变，请重新选择该偏好的明确安装和模型",
+                )?;
+            }
             preference.provider
         } else {
             self.global.default_harness()?
@@ -308,35 +314,71 @@ impl Workspace {
             )?
         };
         let adapter = harness::managed_adapter_identity(provider);
-        let agent_configuration: Option<AgentExecutionConfiguration> = command.payload.get("agent_configuration")
-            .map(|v| serde_json::from_value(v.clone()).map_err(|_| err("invalid_params", "无效 Agent 执行配置"))).transpose()?;
+        let agent_configuration: Option<AgentExecutionConfiguration> = command
+            .payload
+            .get("agent_configuration")
+            .map(|v| {
+                serde_json::from_value(v.clone())
+                    .map_err(|_| err("invalid_params", "无效 Agent 执行配置"))
+            })
+            .transpose()?;
         let model_connection = if provider == HarnessProvider::Dsh {
-            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration {
-                (state.configuration(&a.model_revision_id)?.decode()?, state.configuration(&a.harness_revision_id)?.decode()?)
+            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration
+            {
+                (
+                    state.configuration(&a.model_revision_id)?.decode()?,
+                    state.configuration(&a.harness_revision_id)?.decode()?,
+                )
             } else {
-                (serde_json::from_value(json!({"provider":"deepseek","model":model})).map_err(|e|err("invalid_configuration",e.to_string()))?,
+                (serde_json::from_value({
+                    let preference=role_preference.filter(|p|p.provider==provider).or(project_preference.filter(|p|p.provider==provider));
+                    json!({"provider":preference.and_then(|p|p.model_provider.as_deref()).unwrap_or("deepseek"),"model":model,
+                        "endpoint":preference.and_then(|p|p.endpoint.as_ref()),"context_window":preference.and_then(|p|p.context_window),"max_output_tokens":preference.and_then(|p|p.max_output_tokens)})
+                }).map_err(|e|err("invalid_configuration",e.to_string()))?,
                  serde_json::from_value(json!({"provider":"dsh","runtime_version":installation.key.version})).map_err(|e|err("invalid_configuration",e.to_string()))?)
             };
             require(m.model == model, "Model 修订与执行模型不一致")?;
             let connection = resolve_model_connection(&m, &h)?;
-            require(resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled, "Sandbox 禁网，无法连接模型服务")?;
+            require(
+                resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled,
+                "Sandbox 禁网，无法连接模型服务",
+            )?;
             connection
-        } else { None };
+        } else {
+            None
+        };
         let credential_ref = match provider {
             HarnessProvider::Codex => Some(self.codex_auth.credential_reference()?),
             HarnessProvider::Dsh => {
-                let p = model_connection.as_ref().ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?.provider;
+                let p = model_connection
+                    .as_ref()
+                    .ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?
+                    .provider;
                 if p.requires_key() {
                     let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
-                    let status = vault.status_model_reference(p, self.global.model_credential_reference(p)?.as_deref())?;
-                    require(status.available, "系统凭据库不可用，请检查共享凭据助手或 Secret Service")?;
+                    let status = vault.status_model_reference(
+                        p,
+                        self.global.model_credential_reference(p)?.as_deref(),
+                    )?;
+                    require(
+                        status.available,
+                        "系统凭据库不可用，请检查共享凭据助手或 Secret Service",
+                    )?;
                     require(status.configured, format!("请先配置 {} 凭据", p.label()))?;
                     vault.verify_model_reference(p, &status.reference)?;
                     Some(status.reference)
-                } else { None }
+                } else {
+                    None
+                }
             }
         };
-        let model_profile_digest = model_connection.as_ref().map(|c| devdesk_adapters::model_providers::dsh_model_patch(c, &model).and_then(|patch| configuration_digest(&json!(patch)))).transpose()?;
+        let model_profile_digest = model_connection
+            .as_ref()
+            .map(|c| {
+                devdesk_adapters::model_providers::dsh_model_patch(c, &model)
+                    .and_then(|patch| configuration_digest(&json!(patch)))
+            })
+            .transpose()?;
         let mut binding = RuntimeBinding {
             model_connection,
             model_profile_digest,
@@ -917,6 +959,7 @@ impl Workspace {
         self.sync_configuration(&e)?;
         e.bootstrap()?;
         e.recover_tool_receipts()?;
+        self.renew_unstarted_feature_permissions(&e)?;
         if e.store
             .snapshot()?
             .projects
@@ -939,8 +982,87 @@ impl Workspace {
         *self.active.write().unwrap() = Some((id.into(), e));
         Ok(())
     }
+    fn global_conversation_dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        require(params["project_id"].is_null(), "全局讨论不能同时指定项目")?;
+        let existing = {
+            self.opened
+                .lock()
+                .unwrap()
+                .get(GLOBAL_DISCUSSION_NAMESPACE)
+                .cloned()
+        };
+        let e = if let Some(e) = existing {
+            e
+        } else {
+            let root = SqliteStore::global_discussion_path(Path::new(&self.global.root()))?;
+            let e = engine(Arc::new(SqliteStore::open(&root)?), &self.adapters);
+            self.sync_configuration(&e)?;
+            e.bootstrap()?;
+            self.opened
+                .lock()
+                .unwrap()
+                .insert(GLOBAL_DISCUSSION_NAMESPACE.into(), e.clone());
+            e
+        };
+        self.sync_configuration(&e)?;
+        if let Some(result) = self.experience_dispatch(method, &params, &e) {
+            return result;
+        }
+        if method == "session.open" {
+            require(params["target"] == "global", "全局讨论必须以 global 为目标")?;
+            return self.open_conversation(
+                &e,
+                serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?,
+            );
+        }
+        if method == "conversation.send" {
+            let c = serde_json::from_value(params.clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            if let Some(result) = self.send_permission_conversation(&e, c)? {
+                return Ok(result);
+            }
+        }
+        if method.starts_with("query.") || ["session.list", "session.read"].contains(&method) {
+            let name = match method {
+                "session.list" => "query.sessions",
+                "session.read" => "query.session",
+                _ => method,
+            };
+            let mut result = e.query(name, &params, self.global.concurrency()?)?;
+            if name == "query.session" {
+                if let Some(id) = params["id"].as_str() {
+                    result["permission_status"] = self.permission_session_status(&e, id)?;
+                }
+            }
+            return Ok(result);
+        }
+        e.execute(
+            method,
+            serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?,
+        )
+    }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
-        if let Some(result) = self.model_provider_api(method, &params) { return result; }
+        if params["scope"] == "global"
+            && [
+                "session.open",
+                "session.list",
+                "session.read",
+                "query.sessions",
+                "query.session",
+                "conversation.send",
+                "conversation.cancel",
+                "execution.retry_cleanup",
+                "interaction.answer",
+                "query.agent_experience",
+                "experience.restore",
+            ]
+            .contains(&method)
+        {
+            return self.global_conversation_dispatch(method, params);
+        }
+        if let Some(result) = self.model_provider_api(method, &params) {
+            return result;
+        }
         if method == "query.configuration_defaults" {
             return self
                 .configuration
@@ -1090,6 +1212,45 @@ impl Workspace {
         if method == "query.runtime_installations" {
             return Ok(
                 json!({"installations":self.global.runtime_installations()?, "default_harness":self.global.default_harness()?}),
+            );
+        }
+        if method == "query.runtime_options" {
+            let installations: Vec<_> = self
+                .global
+                .runtime_installations()?
+                .into_iter()
+                .map(|runtime| {
+                    let supported = runtime.key.os == "linux"
+                        && runtime.key.arch == std::env::consts::ARCH
+                        && matches!(runtime.artifact, RuntimeArtifact::DockerImage { .. })
+                        && permissions::validate_runtime_version(&runtime).is_ok();
+                    let reason = if supported {
+                        None
+                    } else {
+                        Some(if runtime.key.provider == HarnessProvider::Codex {
+                            "本机 Codex 用于登录及模型目录；项目执行使用隔离的 Docker worker"
+                        } else {
+                            "此安装不是项目执行支持的 Docker worker"
+                        })
+                    };
+                    let mut value = json!(runtime);
+                    value["execution_supported"] = json!(supported);
+                    value["usage_reason"] = json!(reason);
+                    value
+                })
+                .collect();
+            let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
+            let providers:Vec<_>=DshModelProvider::ALL.into_iter().map(|provider|{
+                let reference=self.global.model_credential_reference(provider).ok().flatten();
+                let status=vault.status_model_reference(provider,reference.as_deref()).ok();
+                json!({"id":provider.as_str(),"label":provider.label(),"configured":status.as_ref().is_some_and(|s|s.configured),"available":status.as_ref().is_some_and(|s|s.available),"auth_kind":if provider.requires_key(){"api_key"}else{"none"}})
+            }).collect();
+            return Ok(
+                json!({"default_harness":self.global.default_harness()?,"host_os":std::env::consts::OS,"host_arch":std::env::consts::ARCH,
+                "installations":installations,"model_providers":providers,"recipes":[
+                    {"provider":"codex","version":DEFAULT_CODEX_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":default_codex_recipe_digest()},
+                    {"provider":"dsh","version":DEFAULT_DSH_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":default_dsh_recipe_digest()}
+                ]}),
             );
         }
         if method == "runtime.register" {
@@ -1809,8 +1970,21 @@ mod adapter_injection_tests {
         }
         for local in [false, true] {
             let catalog = w.dispatch("query.configurations", json!({"local":local,"project_id":pid,"kind":"tool","include_history":true,"include_deleted":true})).unwrap();
-            assert_eq!(catalog["total"], 1);
-            assert_eq!(catalog["records"][0]["id"], DEFAULT_NATIVE_TOOL_ID);
+            assert_eq!(catalog["total"], 2);
+            assert!(
+                catalog["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r["id"] == DEFAULT_NATIVE_TOOL_ID)
+            );
+            assert!(
+                catalog["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r["id"] == DEFAULT_DSH_NATIVE_TOOL_ID)
+            );
         }
     }
     #[test]
@@ -2038,6 +2212,50 @@ mod adapter_injection_tests {
                     .unwrap()
             ),
             frozen
+        );
+    }
+}
+
+#[cfg(test)]
+mod global_discussion_tests {
+    use super::*;
+    #[test]
+    fn dataset_discussions_are_separate_from_project_selection_and_require_an_unambiguous_scope() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let empty = w
+            .dispatch(
+                "query.sessions",
+                json!({"scope":"global","owner_id":"global"}),
+            )
+            .unwrap();
+        assert_eq!(empty["total"], 0);
+        assert!(w.active_id().is_none());
+        assert!(
+            SqliteStore::read_global_discussion_snapshot(root.path())
+                .unwrap()
+                .projects
+                .is_empty()
+        );
+        let project = w
+            .dispatch(
+                "project.create",
+                json!({"command_id":id(),"payload":{"title":"Separate selection"}}),
+            )
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        w.dispatch("query.sessions", json!({"scope":"global"}))
+            .unwrap();
+        assert_eq!(w.active_id().as_deref(), Some(project.as_str()));
+        assert!(
+            w.dispatch(
+                "query.sessions",
+                json!({"scope":"global","project_id":project})
+            )
+            .is_err()
         );
     }
 }

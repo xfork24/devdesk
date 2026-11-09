@@ -127,6 +127,58 @@ pub fn integration_feature_lock(
         .and_then(|c| c.integration_locks.get(agent).cloned())
 }
 
+/// Catalog deletion preserves immutable revisions and frozen execution history.
+/// Deleting a source also removes its own bindings/actions from future choices.
+pub fn integration_deletion_targets(
+    s: &EngineeringState,
+    source: &ConfigurationRecord,
+) -> Result<Vec<ConfigurationRecord>> {
+    require(
+        ["integration", "integration_binding", "tool"].contains(&source.kind.as_str())
+            && (source.kind != "tool" || source.data["schema_version"] == 2),
+        "只能删除接入源、绑定或已发布的外部工具",
+    )?;
+    let source_ids: Vec<_> = s
+        .governance
+        .iter()
+        .filter(|r| r.kind == source.kind && r.definition_id == source.definition_id)
+        .map(|r| r.id.as_str())
+        .collect();
+    let mut targets: Vec<_> = s
+        .governance
+        .iter()
+        .filter(|r| r.kind == source.kind && r.definition_id == source.definition_id)
+        .cloned()
+        .collect();
+    if source.kind == "integration" {
+        // A tool/binding family may have moved to another source in a later revision.
+        // Only cascade families whose current revision still belongs to this source.
+        let families: BTreeSet<_> = s
+            .governance
+            .iter()
+            .filter(|r| {
+                ["integration_binding", "tool"].contains(&r.kind.as_str())
+                    && r.data["integration_ref"]
+                        .as_str()
+                        .is_some_and(|id| source_ids.contains(&id))
+                    && !s.governance.iter().any(|next| {
+                        next.kind == r.kind
+                            && next.definition_id == r.definition_id
+                            && next.version > r.version
+                    })
+            })
+            .map(|r| (r.kind.clone(), r.definition_id.clone()))
+            .collect();
+        targets.extend(
+            s.governance
+                .iter()
+                .filter(|r| families.contains(&(r.kind.clone(), r.definition_id.clone())))
+                .cloned(),
+        );
+    }
+    Ok(targets)
+}
+
 impl Engine {
     pub(crate) fn project_tool_request(
         &self,
@@ -696,6 +748,48 @@ impl Engine {
             let value = json!(r);
             s.governance.push(r);
             return Ok(Some(value));
+        }
+        if method == "integration.delete" {
+            let source = s.configuration(c.target.as_deref().unwrap_or(""))?.clone();
+            let targets = integration_deletion_targets(s, &source)?;
+            let ids: Vec<_> = targets.iter().map(|r| r.id.as_str()).collect();
+            for target in &targets {
+                let refs = crate::configuration::integration_reference_users(s, target);
+                let external: Vec<_> = refs
+                    .iter()
+                    .filter(|r| !ids.contains(&r["id"].as_str().unwrap_or("")))
+                    .collect();
+                require(
+                    external.is_empty(),
+                    format!(
+                        "请先替换在用引用: {}",
+                        external
+                            .iter()
+                            .filter_map(|r| r["name"].as_str())
+                            .collect::<Vec<_>>()
+                            .join("、")
+                    ),
+                )?;
+            }
+            let mut removed = vec![];
+            for target in targets {
+                if crate::configuration::retired(s, &target) {
+                    continue;
+                }
+                let r = record(
+                    "configuration_retirement",
+                    target.id.clone(),
+                    target.scope,
+                    "删除接入资源".into(),
+                    1,
+                    None,
+                    json!({"reason": opt(p,"reason").unwrap_or_else(|| "用户删除接入资源".into())}),
+                    true,
+                );
+                removed.push(target.id);
+                s.governance.push(r);
+            }
+            return Ok(Some(json!({"deleted":removed,"history_preserved":true})));
         }
         if method == "integration.disable" || method == "integration.retire" {
             let source = s.configuration(c.target.as_deref().unwrap_or(""))?.clone();

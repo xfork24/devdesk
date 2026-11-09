@@ -1036,3 +1036,112 @@ fn docker_http_side_effect_timeout_recovery_artifact_and_redaction_are_real() {
             .contains("sensitive-canary-47")
     );
 }
+
+#[test]
+fn deleting_source_retires_descendants_atomically_and_protects_active_references() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path());
+    let source=command(&e,"integration.create",None,json!({"name":"Disposable API","data":{"source":{"kind":"http_api","base_url":"https://example.test"}}})).unwrap();
+    let tool = command(
+        &e,
+        "integration.tool.create",
+        None,
+        json!({"name":"Lookup","data":api_tool(source["id"].as_str().unwrap())}),
+    )
+    .unwrap();
+    let binding=command(&e,"integration.binding.create",None,json!({"name":"Disposable binding","data":{"integration_ref":source["id"],"harness_ref":DEFAULT_HARNESS_ID,"sandbox_ref":DEFAULT_PERMISSION_SANDBOX,"allowed_origins":["https://example.test"],"allowed_tools":[tool["id"]]}})).unwrap();
+    let cap=command(&e,"capability.create",None,json!({"name":"In-use tool","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID,tool["id"]],"skills":[]}})).unwrap();
+    let error = command(&e, "integration.delete", source["id"].as_str(), json!({})).unwrap_err();
+    assert!(error.message.contains("In-use tool"));
+    let before = e.store.snapshot().unwrap();
+    assert!(!configuration_retired(
+        &before,
+        before
+            .configuration(source["id"].as_str().unwrap())
+            .unwrap()
+    ));
+    command(
+        &e,
+        "configuration.retire",
+        cap["id"].as_str(),
+        json!({"reason":"test cleanup"}),
+    )
+    .unwrap();
+    command(&e, "integration.delete", source["id"].as_str(), json!({})).unwrap();
+    let after = e.store.snapshot().unwrap();
+    for row in [source, tool, binding] {
+        let current = after.configuration(row["id"].as_str().unwrap()).unwrap();
+        assert_eq!(json!(current), row);
+        assert!(configuration_retired(&after, current));
+    }
+    assert!(
+        e.query("query.integrations", &json!({}), 1).unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn dsh_native_group_is_available_and_rejects_cross_harness_composition() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path());
+    let model = command(
+        &e,
+        "model.create",
+        None,
+        json!({"name":"DSH model","data":{"provider":"deepseek","model":"deepseek-chat"}}),
+    )
+    .unwrap();
+    command(&e,"capability.create",None,json!({"name":"DSH native","data":{"model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider-v1","tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[]}})).unwrap();
+    assert!(command(&e,"capability.create",None,json!({"name":"Wrong harness","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[]}})).unwrap_err().message.contains("原生工具组不适用"));
+}
+
+#[test]
+fn deleting_an_old_source_protects_pinned_users_and_preserves_tools_moved_to_another_source() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path());
+    let make = |name: &str| {
+        command(&e,"integration.create",None,json!({"name":name,"data":{"source":{"kind":"http_api","base_url":"https://example.test"}}})).unwrap()
+    };
+    let a = make("Original source");
+    let b = make("Current source");
+    let first = command(
+        &e,
+        "integration.tool.create",
+        None,
+        json!({"name":"Moved lookup","data":api_tool(a["id"].as_str().unwrap())}),
+    )
+    .unwrap();
+    let second = command(
+        &e,
+        "integration.tool.revise",
+        first["id"].as_str(),
+        json!({"name":"Moved lookup","data":api_tool(b["id"].as_str().unwrap())}),
+    )
+    .unwrap();
+    let cap=command(&e,"capability.create",None,json!({"name":"Pins original source","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID,first["id"]],"skills":[]}})).unwrap();
+    assert!(
+        command(&e, "integration.delete", a["id"].as_str(), json!({}))
+            .unwrap_err()
+            .message
+            .contains("Pins original source")
+    );
+    command(
+        &e,
+        "configuration.retire",
+        cap["id"].as_str(),
+        json!({"reason":"replace pinned user"}),
+    )
+    .unwrap();
+    command(&e, "integration.delete", a["id"].as_str(), json!({})).unwrap();
+    let state = e.store.snapshot().unwrap();
+    assert!(!configuration_retired(
+        &state,
+        state.configuration(second["id"].as_str().unwrap()).unwrap()
+    ));
+    assert!(!configuration_retired(
+        &state,
+        state.configuration(b["id"].as_str().unwrap()).unwrap()
+    ));
+}

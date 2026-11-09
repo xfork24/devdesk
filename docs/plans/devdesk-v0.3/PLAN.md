@@ -2,7 +2,7 @@
 
 日期：2026-11-09。本文承接 [v0.2 架构设计](../devdesk-v0.2/PLAN.md) 的章节与工程原则，以当前源码、迁移和验收结果描述实际产品。本文的 v0.3 是领域及工作台基线；不是已发布安装包或新平台验收的声明。
 
-v0.2 中的 Swift 主界面、单工程数据库、Hugging Face 资产接入和完整 Archive 是当时的设计方向，不能作为当前已实现能力。当前交付采用 React Web 工作台、Rust 本机 Host、全局库加每项目 SQLite、Git/GitHub、Docker 和 Codex/DSH 原生 Harness。Archive 仍只有只读范围预览。
+v0.2 中的 Swift 主界面、单工程数据库、Hugging Face 资产接入和完整 Archive 是当时的设计方向，不能作为当前已实现能力。当前交付采用 React Web 工作台、Rust 本机 Host、全局库加每项目 SQLite、Git/GitHub、Docker 和 Codex/DSH 原生 Harness。
 
 ## 设计结论
 
@@ -56,7 +56,6 @@ Agent 是包含职责及指令的完整组合：Model + Harness + 显式 Skills 
 | Delivery / Review / Override | 冻结交付、独立评审和有理由的人工质量例外；例外不改原测试与评审事实 |
 | Merge / MergeAdvance | 候选、源、预期目标、接纳意图及远端 PR 核对；通过验证和确认后才能推进 |
 | RuntimeExecution / Resource / Artifact | worker/测试容器生命周期、资源所有权、密封文件与完整性摘要 |
-| Archive | 只读范围预览；尚不导出、删除冷数据或恢复 |
 
 ## 4 领域关系
 
@@ -226,7 +225,7 @@ Artifact 密封后保存 SHA256，读取验证路径和摘要。跨项目历史�
 
 ## 20 Archive 的真实现状
 
-当前仅查询可归档对象、产物范围和阻塞原因，`executable=false`。没有冷数据迁移、文件删除或 Archive 恢复。离线经验的来源目录和上下文导入不等于 Archive 实现。
+设置中的 Archive 与 data 迁移预览入口及归档预览接口已移除。当前未提供 Archive 导出、冷数据删除/恢复或数据目录搬迁；离线经验的来源目录和上下文导入不等于 Archive 实现。
 
 ## 21 核心不变量与验收入口
 

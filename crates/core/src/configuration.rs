@@ -153,6 +153,37 @@ fn references_value(value: &Value, ids: &[&str]) -> bool {
     }
 }
 pub(crate) fn references(s: &EngineeringState, source: &ConfigurationRecord) -> Vec<Value> {
+    reference_users(s, source, false)
+}
+pub(crate) fn integration_reference_users(
+    s: &EngineeringState,
+    source: &ConfigurationRecord,
+) -> Vec<Value> {
+    reference_users(s, source, true)
+}
+fn reference_users(
+    s: &EngineeringState,
+    source: &ConfigurationRecord,
+    recursive: bool,
+) -> Vec<Value> {
+    fn contains(
+        s: &EngineeringState,
+        value: &Value,
+        ids: &[&str],
+        seen: &mut std::collections::BTreeSet<Id>,
+    ) -> bool {
+        match value {
+            Value::String(id) => {
+                ids.contains(&id.as_str())
+                    || (seen.insert(id.clone())
+                        && s.configuration(id)
+                            .is_ok_and(|r| contains(s, &r.data, ids, seen)))
+            }
+            Value::Array(values) => values.iter().any(|v| contains(s, v, ids, seen)),
+            Value::Object(values) => values.values().any(|v| contains(s, v, ids, seen)),
+            _ => false,
+        }
+    }
     let mut ids = vec![source.id.as_str(), source.definition_id.as_str()];
     if source.kind == "role" {
         ids.extend(
@@ -198,7 +229,13 @@ pub(crate) fn references(s: &EngineeringState, source: &ConfigurationRecord) -> 
                         })
                 })
         })
-        .filter(|r| references_value(&r.data, &ids))
+        .filter(|r| {
+            if recursive {
+                contains(s, &r.data, &ids, &mut Default::default())
+            } else {
+                references_value(&r.data, &ids)
+            }
+        })
         .map(|r| json!({"id":r.id,"name":r.name,"kind":r.kind,"scope":r.scope}))
         .collect()
 }
@@ -337,7 +374,8 @@ pub fn project_configuration_references(
     s.governance
         .iter()
         .filter(|r| {
-            r.kind == "project_configuration"
+            ["project_configuration", "integration_project_configuration"]
+                .contains(&r.kind.as_str())
                 && !s.governance.iter().any(|next| {
                     next.kind == r.kind
                         && next.definition_id == r.definition_id

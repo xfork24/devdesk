@@ -31,9 +31,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub type Id = String;
+/// Isolated execution namespace for dataset-wide discussions, never a Project row.
+pub const GLOBAL_DISCUSSION_NAMESPACE: &str = "00000000-0000-4000-8000-000000000000";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MaterialOwner {
+    Global,
     Project { id: Id },
     Feature { id: Id },
     Task { feature: Id, id: Id },
@@ -44,6 +47,7 @@ pub fn material_owner(
     task: Option<&str>,
 ) -> Result<MaterialOwner> {
     match (project, feature, task) {
+        (None, None, None) => Ok(MaterialOwner::Global),
         (Some(id), None, None) => Ok(MaterialOwner::Project { id: id.into() }),
         (None, Some(id), None) => Ok(MaterialOwner::Feature { id: id.into() }),
         (None, Some(feature), Some(id)) => Ok(MaterialOwner::Task {

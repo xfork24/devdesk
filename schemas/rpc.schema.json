@@ -634,6 +634,7 @@
     },
     "SessionScope": {
       "enum": [
+        "global",
         "project",
         "feature",
         "task"
@@ -5205,6 +5206,12 @@
           "items": {
             "type": "string"
           }
+        },
+        "harness_provider": {
+          "enum": [
+            "codex",
+            "dsh"
+          ]
         }
       },
       "required": [
@@ -5743,6 +5750,64 @@
         "digest"
       ],
       "additionalProperties": false
+    },
+    "HarnessPreference": {
+      "type": "object",
+      "description": "New UI preferences pin an executable installation and an explicit catalog model. use_system_default follows the Harness name while requiring reselection if the global provider changes.",
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "dsh"
+          ]
+        },
+        "use_system_default": {
+          "type": "boolean",
+          "default": false
+        },
+        "installation_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_provider": {
+          "enum": [
+            "openai",
+            "deepseek",
+            "zai-coding-cn",
+            "minimax-cn",
+            "ollama"
+          ]
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "context_window": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "max_output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -6065,7 +6130,7 @@
       "if": {
         "properties": {
           "method": {
-            "pattern": "^(integration\\.(create|revise|retire|disable|binding\\.(create|revise)|tool\\.(create|revise)|tools\\.publish|project\\.bind|discover|publish_tools|test|openapi\\.(preview|import))|skill\\.import(_package)?|tool\\.call\\.(cancel|reconcile|approve))$"
+            "pattern": "^(integration\\.(create|revise|retire|delete|disable|binding\\.(create|revise)|tool\\.(create|revise)|tools\\.publish|project\\.bind|discover|publish_tools|test|openapi\\.(preview|import))|skill\\.import(_package)?|tool\\.call\\.(cancel|reconcile|approve))$"
           }
         }
       },

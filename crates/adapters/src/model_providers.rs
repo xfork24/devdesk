@@ -77,7 +77,7 @@ pub fn dsh_model_patch(connection: &ModelConnection, model: &str) -> Result<Stri
     ))
 }
 
-/// Only the local server is interrogated. Cloud candidates are the pinned, non-secret catalog.
+/// Read the local Ollama server without starting a model or requesting inference.
 pub fn discover_ollama_models(endpoint: &str) -> Result<Value> {
     let (url, _, _) = ollama_endpoint(endpoint)?;
     let result = process::capture(
@@ -117,6 +117,61 @@ pub fn discover_ollama_models(endpoint: &str) -> Result<Value> {
         .collect();
     Ok(
         json!({"provider":"ollama","source":"host_endpoint","inference_verified":false,"container_verified":false,"models":models}),
+    )
+}
+
+/// Read the account's published model directory, never invoking inference.
+/// Authentication goes over curl's stdin, not process arguments or a file.
+pub fn discover_deepseek_models(dataset: &Path, reference: &str) -> Result<Value> {
+    let mut key = crate::credentials::CredentialVault::new(dataset)?
+        .read_model_reference(DshModelProvider::Deepseek, reference)?;
+    require(
+        key.is_ascii() && !key.iter().any(|b| b.is_ascii_control()),
+        "模型凭据包含无效字符",
+    )?;
+    let header = format!(
+        "Authorization: Bearer {}",
+        std::str::from_utf8(&key).map_err(storage)?
+    );
+    let input = format!(
+        "header = {}\n",
+        serde_json::to_string(&header).map_err(storage)?
+    )
+    .into_bytes();
+    key.fill(0);
+    let mut command = std::process::Command::new("curl");
+    command.args([
+        "-q",
+        "--config",
+        "-",
+        "--silent",
+        "--fail",
+        "--max-time",
+        "10",
+        "--max-redirs",
+        "0",
+        "--proto",
+        "=https",
+        "--url",
+        "https://api.deepseek.com/models",
+    ]);
+    let result =
+        process::capture_command(command, std::time::Duration::from_secs(12), Some(input))?;
+    require(
+        result.code == 0 && !result.truncated,
+        "无法读取 DeepSeek 模型目录，请检查所配置的 API key 与网络",
+    )?;
+    let body: Value = serde_json::from_slice(&result.stdout)
+        .map_err(|_| err("model_catalog_invalid", "DeepSeek 返回了无效模型目录"))?;
+    let rows = body["data"]
+        .as_array()
+        .ok_or_else(|| err("model_catalog_invalid", "DeepSeek 目录缺少模型列表"))?;
+    let models:Vec<_>=rows.iter().filter_map(|row| {
+        let id=row["id"].as_str().filter(|id| !id.is_empty() && id.len()<=160 && !id.chars().any(char::is_control))?;
+        Some(json!({"id":id,"name":row["name"],"context_window":row["context_window"],"max_output_tokens":row["max_output_tokens"]}))
+    }).collect();
+    Ok(
+        json!({"provider":"deepseek","source":"provider_endpoint","inference_verified":false,"models":models}),
     )
 }
 

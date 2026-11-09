@@ -4,6 +4,7 @@ use crate::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionScope {
+    Global,
     Project,
     Feature,
     Task,
@@ -378,10 +379,18 @@ impl EngineeringState {
                 .ok_or_else(|| err("blocked", "讨论 Session 缺少项目"))?;
             require(session.lifecycle.is_some(), "讨论 Session 缺少生命周期状态")?;
             require(
-                self.projects.iter().any(|p| p.id == project),
+                self.projects.iter().any(|p| p.id == project)
+                    || (scope == SessionScope::Global && project == GLOBAL_DISCUSSION_NAMESPACE),
                 "Session 项目不存在",
             )?;
             match scope {
+                SessionScope::Global => require(
+                    session.owner_id == "global"
+                        && project == GLOBAL_DISCUSSION_NAMESPACE
+                        && session.feature_id.is_none()
+                        && session.task_id.is_none(),
+                    "Global Session 归属不一致",
+                )?,
                 SessionScope::Project => require(
                     session.owner_id == project
                         && session.feature_id.is_none()
@@ -866,6 +875,7 @@ impl EngineeringState {
 impl EngineeringState {
     pub fn material_project(&self, owner: &MaterialOwner) -> Result<&str> {
         match owner {
+            MaterialOwner::Global => Ok(GLOBAL_DISCUSSION_NAMESPACE),
             MaterialOwner::Project { id } => self
                 .projects
                 .iter()

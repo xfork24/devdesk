@@ -26,10 +26,12 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
                     "该 Harness 版本尚未验证权限执行合同",
                 ));
             }
+            // Execution build identity remains frozen separately in RuntimeBinding.
+            // A model-catalog/UI/schema change does not change permission semantics.
             Ok(format!(
-                "{}-native-v1:{}",
+                "{}-native-v2:{}",
                 provider.as_str(),
-                harness::managed_adapter_identity(provider)
+                permission_semantics_digest(provider)
             ))
         }
         PermissionTargetKind::Sandbox => {
@@ -41,11 +43,67 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
                 return Err(err("permission_unsupported", "未知 Sandbox 执行合同"));
             }
             Ok(format!(
-                "docker-worker/v1:{:x}",
-                Sha256::digest(include_bytes!("docker.rs"))
+                "docker-worker/v2:{}",
+                permission_semantics_digest(HarnessProvider::Codex)
             ))
         }
     }
+}
+
+fn permission_semantics_digest(provider: HarnessProvider) -> String {
+    // Bump this contract revision for any change to compiler/executor semantics.
+    // Actual policy files are content-addressed and verified against the manifest.
+    permission_content_hash(
+        &json!({"revision":"portable-permissions/2", "provider":provider,
+        "capabilities":permissions::capabilities(provider), "assets":permissions::asset_digests(),
+        "manifest":include_str!("../../../permissions/backends/manifest.json")}),
+    )
+}
+
+/// Revalidate an unchanged old grant under the current enforcement contract.
+/// Callers must publish a new binding; immutable source records are retained.
+pub fn renew_permission_bound(
+    s: &EngineeringState,
+    old: &BoundPermission,
+) -> Result<BoundPermission> {
+    let expected = permission_contract(s, &old.binding.target)?;
+    require(
+        old.binding.enforcement_contract == expected
+            || match old.binding.target.kind {
+                PermissionTargetKind::Harness => {
+                    old.binding
+                        .enforcement_contract
+                        .starts_with("codex-native-v1:codex-app-server/v1+build.")
+                        || old
+                            .binding
+                            .enforcement_contract
+                            .starts_with("dsh-native-v1:dsh-sdk/v1+build.")
+                }
+                PermissionTargetKind::Sandbox => old
+                    .binding
+                    .enforcement_contract
+                    .starts_with("docker-worker/v1:"),
+            },
+        "未知权限合同变化，不能自动修复",
+    )?;
+    let mut normalized = old.profile.clone();
+    normalized.normalize()?;
+    require(
+        normalized == old.profile
+            && old.profile_hash == permission_content_hash(&old.profile)
+            && old.binding_hash == permission_content_hash(&old.binding)
+            && old.binding.permission_revision_id == old.profile.id
+            && old.binding.target.kind == old.profile.target_kind
+            && s.configuration(&old.profile.id)?.data == json!(old.profile)
+            && s.configuration(&old.binding_revision_id)?.data == json!(old.binding),
+        "权限原始修订或摘要已漂移，不能修复合同",
+    )?;
+    preflight_profile(s, &old.binding.target, &old.profile)?;
+    let mut next = old.clone();
+    next.binding.enforcement_contract = permission_contract(s, &old.binding.target)?;
+    next.binding_hash = permission_content_hash(&next.binding);
+    next.binding_revision_id = format!("permission-contract:{}", next.binding_hash);
+    Ok(next)
 }
 
 pub fn compile_permission_profiles(
@@ -297,8 +355,7 @@ impl GlobalStore {
     /// Additive projections preserve immutable Agents and historical serialization.
     pub fn migrate_permission_selections(&self) -> Result<()> {
         self.transact(None,&mut |s| {
-            let agents:Vec<_>=s.governance.iter().filter(|r|r.kind=="agent" && r.data.get("permission_selection").is_none()
-                && !s.governance.iter().any(|m|m.kind=="permission_migration" && m.definition_id==r.id)).cloned().collect();
+            let agents:Vec<_>=s.governance.iter().filter(|r|r.kind=="agent" && r.data.get("permission_selection").is_none()).cloned().collect();
             for agent in agents {
                 let a:AgentComposition=agent.decode()?;
                 let converted=(||->Result<(Vec<PermissionProfile>,Vec<BoundPermission>,AgentPermissionSelection)> {
@@ -331,7 +388,13 @@ impl GlobalStore {
                     }
                     Err(e)=>json!({"status":"legacy_fixed","reason":e.message,"original_permissions":a.permissions,"original_approval":a.approval}),
                 };
-                s.governance.push(ConfigurationRecord{id:format!("permission-migration:{}",agent.id),kind:"permission_migration".into(),definition_id:agent.id,scope:agent.scope,name:agent.name,version:1,supersedes:None,content_hash:configuration_hash(&data),data,immutable:true,revision:1,created_at:0});
+                let previous=s.governance.iter().filter(|r|["permission_migration","permission_migration_renewal"].contains(&r.kind.as_str()) && r.definition_id==agent.id).max_by_key(|r|r.version);
+                if previous.is_some_and(|r|r.data==data) { continue; }
+                let version=previous.map_or(1,|r|r.version+1);
+                let supersedes=previous.map(|r|r.id.clone());
+                let hash=configuration_hash(&data);
+                let record_id=if version==1 {format!("permission-migration:{}",agent.id)}else{format!("permission-migration:{}:{hash}",agent.id)};
+                s.governance.push(ConfigurationRecord{id:record_id,kind:if version==1 {"permission_migration"}else{"permission_migration_renewal"}.into(),definition_id:agent.id,scope:agent.scope,name:agent.name,version,supersedes,content_hash:hash,data,immutable:true,revision:1,created_at:0});
             }
             Ok(Value::Null)
         })?;

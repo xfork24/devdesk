@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useEffect, useState } from "react";
 type Row = Record<string, any>;
 const operationLabels: Record<string, string> = {
@@ -13,17 +19,36 @@ type Props = {
   request: (method: string, params?: Row) => Promise<any>;
   refresh: () => Promise<void>;
 };
-export function RepositorySettings({ project, ready, request, refresh }: Props) {
+export function RepositorySettings({
+  project,
+  ready,
+  request,
+  refresh,
+}: Props) {
+  const {
+    error,
+    setError,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [state, setState] = useState<Row>();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+
   const repository = project.workspace_definition?.repository;
-  const connection = state?.operations.find((op: Row) => op.action.kind === "connect");
-  const connectionBlocked = connection?.status === "needs_reconciliation" && connection.reason !== "reconcile_requested";
+  const connection = state?.operations.find(
+    (op: Row) => op.action.kind === "connect",
+  );
+  const connectionBlocked =
+    connection?.status === "needs_reconciliation" &&
+    connection.reason !== "reconcile_requested";
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
+      captureFeedback();
+
       try {
         const value = await request("query.repository", {
           project_id: project.id,
@@ -73,7 +98,9 @@ export function RepositorySettings({ project, ready, request, refresh }: Props) 
         <p role="status">
           {ready
             ? "仓库已接入"
-            : connectionBlocked ? "仓库接入未完成，请根据下方原因核对后重试" : "正在准备仓库，完成后即可开始工作"}
+            : connectionBlocked
+              ? "仓库接入未完成，请根据下方原因核对后重试"
+              : "正在准备仓库，完成后即可开始工作"}
         </p>
         {error && (
           <div className="error" role="alert">
@@ -90,15 +117,23 @@ export function RepositorySettings({ project, ready, request, refresh }: Props) 
               <div>
                 <strong>
                   {op.action.kind === "connect" ? "仓库接入" : op.action.kind} ·{" "}
-                  {op.reason === "reconcile_requested" ? "等待后台核对" : operationLabels[op.status] || op.status}
+                  {op.reason === "reconcile_requested"
+                    ? "等待后台核对"
+                    : operationLabels[op.status] || op.status}
                 </strong>
-                <p className="muted">{op.reason === "reconcile_requested" ? "已收到重试请求，后台将继续核对原仓库操作。" : op.reason}</p>
+                <p className="muted">
+                  {op.reason === "reconcile_requested"
+                    ? "已收到重试请求，后台将继续核对原仓库操作。"
+                    : op.reason}
+                </p>
               </div>
               {op.status === "needs_reconciliation" && (
-                <button
+                <ActionButton
                   disabled={busy || op.reason === "reconcile_requested"}
                   onClick={async () => {
-                    setBusy(true);
+                    captureFeedback();
+
+                    (beginFeedback(), setBusy(true));
                     setError("");
                     try {
                       await request("repository.reconcile", {
@@ -112,12 +147,12 @@ export function RepositorySettings({ project, ready, request, refresh }: Props) 
                     } catch (e) {
                       setError(String(e));
                     } finally {
-                      setBusy(false);
+                      (endFeedback(), setBusy(false));
                     }
                   }}
                 >
                   核对并重试原操作
-                </button>
+                </ActionButton>
               )}
             </div>
           ))}

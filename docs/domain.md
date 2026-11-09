@@ -1,6 +1,6 @@
 # DevDesk v0.3 领域规范
 
-当前工程库 schema v38，全局库 v8。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
+当前工程库 schema v39，全局库 v8。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
 
 ## 归属与对象契约
 
@@ -27,7 +27,7 @@
 | WorkflowInstance / TaskGroup | 冻结编译计划、步骤轮次、固定 Task 成员 | intent 派发、确认、暂停、有限重试和新轮次返工 | workflow_instance / workflow_intent / workflow_task_group / workflow_step_history |
 | Attempt | 属于 Feature 或 Task，固定输入、绑定、文档和 Context 内容/修订 | running→waiting_review→accepted/rejected；可 failed/cancelled/interrupted；attempt.start/pause/cancel | attempts 表；例某 Task 第一次实现 |
 | Run | 仅属于一个 Attempt 或 Merge，节点与执行 ID 分离 | queued→running→succeeded/failed/cancelled/interrupted；run.retry 新 Run 带 retry_of | runs 表及分段 Artifact；run.started/finished/interrupted；例 green 节点第二次执行 |
-| Session | Project/Feature/Task 范围的角色会话，引用冻结 RuntimeBinding 和可选 Snapshot | 同范围角色连续讨论复用；Run 可关联既有 Session；不同范围隔离 | sessions 表；例评审会话 |
+| Session | 全局或 Project/Feature/Task 范围的角色会话，引用冻结 RuntimeBinding 和可选 Snapshot | 同范围角色连续讨论复用；Run 可关联既有 Session；不同范围隔离 | sessions 表；例评审会话 |
 | Harness | 执行运行时能力值 | Codex/DSH；不允许自行批准业务门禁 | BindingLock、Session；例原生 Codex 执行器 |
 | Sandbox | 执行环境能力值 | 固定 Docker 镜像、权限、启动、停止及清理 | Session、RuntimeExecution；历史 Resource 仅保留查询 |
 | Resource | Run 所有的环境资源；真实容器生命周期另由 RuntimeExecution 记录 | active→released/cleanup_failed；释放失败保留 | resources 表；历史资源描述只读保留 |
@@ -38,8 +38,7 @@
 | Review | 指向确定 Delivery，逐项 Check、决定、理由 | 追加记录；pass/changes_requested/inconclusive/not_reviewable | reviews、报告 Artifact；review.submit；例退回缺少错误路径 |
 | Override | 指向确定 Delivery 的人类质量例外 | 只追加；review 或 test:RunID 条目；不改原事实 | overrides 表；override.accept；例接受已知断言缺陷 |
 | Merge | Feature/Task 的候选接纳操作，固定输入、源、预期目标 | running→waiting_review→accepted→completed；目标变化旧候选无效 | merges、heads；merge.request/apply；例 Task→Feature |
-| Artifact | Project/Feature/Task 下封存文件 ID、相对路径、SHA256、来源 | 不可变；写临时文件→fsync→rename→数据库引用 | artifacts 表及本地文件；例执行报告 |
-| Archive | 延期契约 | 本轮仅交互预览，不导出、不删除、不恢复 | 不写业务成功记录；例归档范围预览 |
+| Artifact | 全局或 Project/Feature/Task 下封存文件 ID、相对路径、SHA256、来源 | 不可变；写临时文件→fsync→rename→数据库引用 | artifacts 表及本地文件；例执行报告 |
 
 ## 核心规则
 
@@ -68,7 +67,7 @@
 - Workspace 是仓库描述、路径与 mainline 的值对象。Harness 与 Sandbox 为独立、持久化的定义；Session.instance 为拥有稳定 ID 的运行实例，冻结两类定义和版本，并记录外部身份、起止和终态。旧数据中的 simulated 来源和实例标识仅供历史读取，不能用于新的原生执行。
 - TestResult 是有结构校验的领域结果，绑定 operation_id、测试修订、阶段、候选、环境与来源；仍以 Run.result 保存其序列化形式。Attempt.baseline 固定 Red 执行的代码版本；Green/Delivery 固定实现候选，二者不要求相等。代码 revision 由 GitPort 提供。
 - Snapshot.capture 固定来源 Attempt、Runs、Sessions、Resources、原因与时间；文档集合来自已接受交付。历史无法确定的捕获来源保持 legacy/空值。
-- ChangeRequestRef 是 Merge 内嵌的 GitHub PR 引用，冻结仓库、外部 ID 和源/目标版本。ArchivePreview 是有范围和阻塞理由的只读预览，executable=false；它不是已经归档的 Archive。
+- ChangeRequestRef 是 Merge 内嵌的 GitHub PR 引用，冻结仓库、外部 ID 和源/目标版本。
 
 ### 正式阶段契约
 
@@ -156,3 +155,5 @@ Workflow v3 为每个实际 Agent Step 声明 Markdown task_instructions；attem
 WorkflowTaskDefinition 随路径进入 Feature 编译闭包，AgentTaskBase 固定有效 AgentRevision、声明顺序的 Skill 和 Role 来源。execution_task_binding 关联步骤/轮次/节点，execution_task 按 Turn 唯一、同时引用 agent-task Artifact。FrozenAgentTask 使用 agent-task/v1 渲染器，分别保存定义、基础上下文、规范输入及总摘要；Markdown 原文不变，摘要用规范 JSON 对象键序。领域层核对正文、输出合同、Spec 顺序、来源、Artifact 哈希与不可变历史，不以最新 Workflow 重新解释排队输入。
 
 项目迁移 038 追加任务唯一索引与步骤索引，全局库为 v8。旧 Workflow/Feature/RuntimeBinding/清单不补写任务字段；旧兼容执行提示继续保留。新默认任务在编译时嵌入，运行时读写已导入 Workflow 修订。
+
+全局讨论独立于 Project/Feature/Task，使用全局 AgentID 和独立会话库。讨论范围与 AgentID 的经验范围分别表达会话归属和身份可见性：选择 AgentID 后不再重复选择经验范围；全局身份可积累跨项目工作，项目身份不能用于全局讨论。全局材料采用 `MaterialOwner::Global`，不挂靠虚构项目。

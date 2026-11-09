@@ -181,8 +181,21 @@ fn experience_leaves_tool_catalog_and_defaults_without_rewriting_legacy_composit
                 100,
             )
             .unwrap();
-        assert_eq!(rows["total"], 1);
-        assert_eq!(rows["records"][0]["id"], DEFAULT_NATIVE_TOOL_ID);
+        assert_eq!(rows["total"], 2);
+        assert!(
+            rows["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == DEFAULT_NATIVE_TOOL_ID)
+        );
+        assert!(
+            rows["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == DEFAULT_DSH_NATIVE_TOOL_ID)
+        );
     }
     // Existing pinned Agents remain usable without granting an experience Tool.
     command(
@@ -715,6 +728,100 @@ fn old_workflow_standard_pairs_convert_independently_and_idempotently() {
     let count = s.governance.len();
     e.migrate_project_configuration().unwrap();
     assert_eq!(count, e.store.snapshot().unwrap().governance.len());
+}
+
+#[test]
+fn compacted_defaults_survive_bootstrap_and_resolve_revised_model_and_harness() {
+    use std::collections::{BTreeMap, BTreeSet};
+    fn remap(value: &mut Value, aliases: &BTreeMap<String, String>) {
+        match value {
+            Value::String(id) => {
+                if let Some(latest) = aliases.get(id) {
+                    *id = latest.clone();
+                }
+            }
+            Value::Array(values) => values.iter_mut().for_each(|v| remap(v, aliases)),
+            Value::Object(values) => values.values_mut().for_each(|v| remap(v, aliases)),
+            _ => {}
+        }
+    }
+    let source_dir = tempfile::tempdir().unwrap();
+    let source = engine(source_dir.path());
+    let mut compact = source.store.snapshot().unwrap();
+    for old in [DEFAULT_MODEL_ID, DEFAULT_HARNESS_ID, DEFAULT_NATIVE_TOOL_ID] {
+        let mut revised = compact.configuration(old).unwrap().clone();
+        revised.id = format!("revised-{old}");
+        revised.version += 1;
+        revised.supersedes = Some(old.into());
+        compact.governance.push(revised);
+    }
+    let mut latest = BTreeMap::new();
+    for r in &compact.governance {
+        if r.is_definition() && r.definition_id.starts_with("builtin-") {
+            let entry = latest
+                .entry((r.kind.clone(), r.definition_id.clone()))
+                .or_insert(r);
+            if r.version > entry.version {
+                *entry = r;
+            }
+        }
+    }
+    let aliases: BTreeMap<_, _> = compact
+        .governance
+        .iter()
+        .filter_map(|r| {
+            let latest = latest.get(&(r.kind.clone(), r.definition_id.clone()))?;
+            (r.id != latest.id).then(|| (r.id.clone(), latest.id.clone()))
+        })
+        .collect();
+    compact.governance.retain(|r| !aliases.contains_key(&r.id));
+    compact.definitions.retain(|r| !aliases.contains_key(&r.id));
+    let mut value = json!(compact);
+    remap(&mut value, &aliases);
+    compact = serde_json::from_value(value).unwrap();
+    for r in &mut compact.governance {
+        r.supersedes = None;
+        r.content_hash = configuration_hash(&r.data);
+    }
+    for d in &mut compact.definitions {
+        d.supersedes = None;
+    }
+    let expected: BTreeSet<_> = compact.governance.iter().map(|r| r.id.clone()).collect();
+    let destination = tempfile::tempdir().unwrap();
+    let store = Arc::new(SqliteStore::open(destination.path()).unwrap());
+    store
+        .transact(None, &mut |s| {
+            *s = compact.clone();
+            Ok(json!({}))
+        })
+        .unwrap();
+    let e = Engine::new(
+        store,
+        Arc::new(FileArtifacts::new(destination.path().into())),
+        runtime::adapters(),
+    );
+    for _ in 0..2 {
+        e.bootstrap().unwrap();
+        let state = e.store.snapshot().unwrap();
+        let ids: BTreeSet<_> = state.governance.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(ids, expected);
+        for old in aliases.keys() {
+            assert!(!state.definitions.iter().any(|d| &d.id == old));
+        }
+        let defaults = e.configuration_defaults(None).unwrap();
+        assert_eq!(defaults["model_ref"], format!("revised-{DEFAULT_MODEL_ID}"));
+        assert_eq!(
+            defaults["harness_ref"],
+            format!("revised-{DEFAULT_HARNESS_ID}")
+        );
+        for old in aliases.keys() {
+            assert!(
+                !serde_json::to_string(&defaults)
+                    .unwrap()
+                    .contains(&format!("\"{old}\""))
+            );
+        }
+    }
 }
 
 #[test]

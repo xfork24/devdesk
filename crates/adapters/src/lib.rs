@@ -94,6 +94,21 @@ impl SqliteStore {
         )?;
         Ok(state)
     }
+    pub fn global_discussion_path(data_root: &Path) -> Result<PathBuf> {
+        let parent = data_root.join("conversations");
+        let root = parent.join("global");
+        reject_symlink(&parent)?;
+        reject_symlink(&root)?;
+        Ok(root)
+    }
+    pub fn read_global_discussion_snapshot(data_root: &Path) -> Result<EngineeringState> {
+        let path = Self::global_discussion_path(data_root)?.join("engineering.sqlite3");
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(storage)?;
+        conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;")
+            .map_err(storage)?;
+        Self::load(&conn)
+    }
     pub fn project_path(data_root: &Path, project_id: &str) -> Result<PathBuf> {
         require(uuid::Uuid::parse_str(project_id).is_ok(), "无效项目 ID")?;
         let parent = data_root.join("projects");
@@ -256,7 +271,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 38, "数据集版本比程序新")?;
+    require(version <= 39, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
@@ -578,6 +593,15 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
+    if version < 39 {
+        connection.execute_batch("PRAGMA foreign_keys=OFF;").map_err(storage)?;
+        let tx=connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/project/conversations/039_global_discussions.sql")).map_err(storage)?;
+        let invalid: bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",[],|r|r.get(0)).map_err(storage)?;
+        require(!invalid,"全局讨论迁移检测到外键冲突")?;
+        tx.commit().map_err(storage)?;
+        connection.execute_batch("PRAGMA foreign_keys=ON;").map_err(storage)?;
+    }
     Ok(connection)
 }
 
@@ -830,6 +854,7 @@ impl ArtifactStore for FileArtifacts {
     }
     fn seal_scoped(&self, owner: &MaterialOwner, category: &str, body: &str) -> Result<Artifact> {
         let (project_id, feature_id, task, folder) = match owner {
+            MaterialOwner::Global => (None, None, None, "global".into()),
             MaterialOwner::Project { id } => {
                 (Some(id.clone()), None, None, format!("project-{id}"))
             }

@@ -1,6 +1,14 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useEffect, useRef, useState } from "react";
+import { MarkdownPreview } from "./configuration-ui";
 type Row = Record<string, any>;
 type Props = {
+  nested?: boolean;
   request: (method: string, params?: Row) => Promise<any>;
   record: Row;
   projectId: string;
@@ -9,6 +17,7 @@ type Props = {
 };
 const stateLabels: Record<string, string> = {
   pending: "等待前置",
+  waiting: "等待子流程",
   waiting_dependencies: "等待前置",
   waiting_condition: "等待条件",
   active: "执行中",
@@ -20,38 +29,156 @@ const stateLabels: Record<string, string> = {
   failed: "失败",
   cancelled: "已取消",
 };
+function stageRows(plan: Row | undefined, steps: Row[]) {
+  const definitions = new Map<string, Row>(
+    (plan?.steps || []).map((step: Row) => [step.key, step]),
+  );
+  const stages: Row[] = plan?.stages || [];
+  const parents = new Map<string, string>();
+  for (const step of plan?.steps || []) {
+    const guard = (step.parameters?.call_guards || [])
+      .map((key: string) => definitions.get(key))
+      .find(
+        (entry: Row | undefined) => entry?.stage && entry.stage !== step.stage,
+      );
+    if (guard && !parents.has(step.stage)) parents.set(step.stage, guard.stage);
+  }
+  const root = (key: string) => {
+    const seen = new Set<string>();
+    while (parents.has(key) && !seen.has(key)) {
+      seen.add(key);
+      key = parents.get(key)!;
+    }
+    return key;
+  };
+  const rows = new Map<string, Row>();
+  for (const stage of stages.filter((stage) => !parents.has(stage.key)))
+    rows.set(stage.key, { ...stage, steps: [] });
+  for (const step of steps) {
+    const key = root(definitions.get(step.key)?.stage || "workflow");
+    if (!rows.has(key))
+      rows.set(key, {
+        ...(stages.find((stage) => stage.key === key) || {
+          key,
+          name: "流程阶段",
+        }),
+        steps: [],
+      });
+    rows.get(key)!.steps.push(step);
+  }
+  return [...rows.values()];
+}
+function stageStatus(steps: Row[]) {
+  if (!steps.length) return "pending";
+  if (steps.every((step) => ["completed", "skipped"].includes(step.status)))
+    return steps.every((step) => step.status === "skipped")
+      ? "skipped"
+      : "completed";
+  return (
+    [
+      "failed",
+      "blocked",
+      "waiting_confirmation",
+      "waiting_input",
+      "active",
+      "waiting_dependencies",
+      "waiting_condition",
+    ].find((status) => steps.some((step) => step.status === status)) ||
+    "pending"
+  );
+}
 export function WorkflowInstanceView({
   request,
   record,
+  nested = false,
   projectId,
   refresh,
   onDiscussion,
 }: Props) {
+  const {
+    error,
+    setError,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [data, setData] = useState<Row>(),
-    [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState("");
+  const storageKey = `devdesk:runtime-stages:${projectId}:${record.id}`;
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(storageKey) || "{}");
+      return Object.fromEntries(
+        Object.entries(value || {}).filter(
+          ([, flag]) => typeof flag === "boolean",
+        ),
+      ) as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(expanded));
+    } catch {}
+  }, [storageKey, expanded]);
   const generation = useRef(0);
   useEffect(() => {
     const g = ++generation.current;
-    request("query.workflow_instance", { id: record.id, project_id: projectId })
-      .then((d) => {
-        if (g === generation.current) setData(d);
-      })
-      .catch((e) => {
+    let pending = false;
+    const load = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const value = await request("query.workflow_instance", {
+          id: record.id,
+          project_id: projectId,
+        });
+        if (g === generation.current)
+          setData((old) =>
+            old?.record.revision === value.record.revision &&
+            JSON.stringify(
+              (old?.children || []).map((child: Row) => [
+                child.record.id,
+                child.record.revision,
+              ]),
+            ) ===
+              JSON.stringify(
+                (value.children || []).map((child: Row) => [
+                  child.record.id,
+                  child.record.revision,
+                ]),
+              )
+              ? old
+              : value,
+          );
+      } catch (e) {
         if (g === generation.current) setError(String(e));
-      });
+      } finally {
+        pending = false;
+      }
+    };
+    void load();
+    const timer =
+      nested || record.data.task_members?.length
+        ? window.setInterval(load, 1000)
+        : undefined;
     return () => {
       ++generation.current;
+      if (timer) window.clearInterval(timer);
     };
-  }, [request, record.id, record.revision, projectId]);
+  }, [request, record.id, record.revision, projectId, nested]);
   async function command(
     method: string,
     target: string,
     revision: number,
     payload: Row = {},
   ) {
-    setBusy(true);
+    captureFeedback();
+
+    (beginFeedback(), setBusy(true));
     setError("");
     try {
       await request(method, {
@@ -65,115 +192,245 @@ export function WorkflowInstanceView({
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      (endFeedback(), setBusy(false));
     }
   }
+  const currentRecord = data?.record || record;
+  const Heading = nested ? "h3" : "h2";
   const runtime = data?.record.data,
-    active = runtime?.steps.find(
-      (s: Row) => !["completed", "skipped", "pending"].includes(s.status),
+    active = runtime?.steps.find((s: Row) =>
+      [
+        "failed",
+        "blocked",
+        "waiting_confirmation",
+        "waiting_input",
+        "active",
+      ].includes(s.status),
     );
+  const renderStep = (step: Row, stage: Row) => {
+    const definition = data?.plan.steps.find((s: Row) => s.key === step.key);
+    return (
+      <article key={step.id} className={`workflow-node status-${step.status}`}>
+        <ActionButton
+          aria-expanded={selected === step.id}
+          onClick={() => {
+            captureFeedback();
+            return setSelected(selected === step.id ? "" : step.id);
+          }}
+        >
+          {definition?.stage !== stage.key && (
+            <small className="workflow-subflow-label">
+              子流程 ·{" "}
+              {data?.plan.stages
+                .find((source: Row) => source.key === definition?.stage)
+                ?.name.split(" / ")
+                .at(-1)}
+            </small>
+          )}
+          <strong>{definition?.name || step.key}</strong>
+          <span>
+            {stateLabels[step.status] || step.status} · 第 {step.round} 轮
+          </span>
+        </ActionButton>
+        {step.reason && <p>{step.reason}</p>}
+        {step.outputs.session && (
+          <ActionButton
+            onClick={() => {
+              captureFeedback();
+              return onDiscussion(step.outputs.session, runtime.owner_id);
+            }}
+          >
+            继续讨论 / 查看提案
+          </ActionButton>
+        )}
+        {(data?.actions.find((a: Row) => a.id === step.id)?.allowed || []).map(
+          (method: string) => (
+            <ActionButton
+              key={method}
+              disabled={busy || runtime.paused}
+              onClick={() => {
+                captureFeedback();
+                return command(
+                  method,
+                  step.id,
+                  step.revision,
+                  method === "workflow.step.confirm"
+                    ? { input_hash: step.input_hash }
+                    : method === "workflow.step.rework"
+                      ? {
+                          from_step:
+                            data?.actions.find((a: Row) => a.id === step.id)
+                              ?.rework_entries?.[0] || step.key,
+                        }
+                      : {},
+                );
+              }}
+            >
+              {method.endsWith("confirm")
+                ? "确认结果后继续"
+                : method.endsWith("retry")
+                  ? "技术重试"
+                  : `从${data?.plan.steps.find((definition: Row) => definition.key === data?.actions.find((action: Row) => action.id === step.id)?.rework_entries?.[0])?.name || "本步骤"}返工`}
+            </ActionButton>
+          ),
+        )}
+        {selected === step.id && (
+          <>
+            <p>
+              职责 {definition?.participant_slot || "协调器"} ·{" "}
+              {definition?.advance_mode === "automatic"
+                ? "自动推进"
+                : "结果完成后等待人确认"}
+            </p>
+            <p>{definition?.interaction.goal}</p>
+            <details>
+              <summary>该轮输入、证据和输出引用</summary>
+              <pre>{JSON.stringify(step, null, 2)}</pre>
+            </details>
+          </>
+        )}
+      </article>
+    );
+  };
+  const stages = stageRows(data?.plan, runtime?.steps || []);
+  const activeStage =
+    stages.find((stage) =>
+      stage.steps.some((step: Row) => step.id === active?.id),
+    )?.key || stages.find((stage) => stage.steps.length)?.key;
+  const toggle = (key: string, initial = false) =>
+    setExpanded((previous) => ({
+      ...previous,
+      [key]: !(previous[key] ?? initial),
+    }));
   return (
-    <section className="panel">
+    <section
+      className={`panel workflow-instance${nested ? " workflow-instance-child" : ""}`}
+    >
       <div className="panel-heading">
         <div>
-          <h2>当前工作流</h2>
+          <Heading>{nested ? "子流程进度" : "当前工作流"}</Heading>
           <p>
             {active
               ? `${data?.plan.steps.find((s: Row) => s.key === active.key)?.name} · ${stateLabels[active.status]}`
-              : stateLabels[record.data.status] || record.data.status}
+              : stateLabels[currentRecord.data.status] ||
+                currentRecord.data.status}
           </p>
         </div>
-        {!["completed", "cancelled"].includes(record.data.status) && (
-          <button
+        {!["completed", "cancelled"].includes(currentRecord.data.status) && (
+          <ActionButton
             disabled={busy}
-            onClick={() =>
-              command(
-                record.data.paused ? "workflow.resume" : "workflow.pause",
-                record.id,
-                record.revision,
-              )
-            }
+            onClick={() => {
+              captureFeedback();
+              return command(
+                currentRecord.data.paused
+                  ? "workflow.resume"
+                  : "workflow.pause",
+                currentRecord.id,
+                currentRecord.revision,
+              );
+            }}
           >
-            {record.data.paused ? "恢复流程" : "暂停流程"}
-          </button>
+            {currentRecord.data.paused ? "恢复流程" : "暂停流程"}
+          </ActionButton>
         )}
       </div>
       {!data && !error && <p role="status">正在读取流程与配置锁…</p>}
-      <div className="workflow-runtime">
-        {runtime?.steps.map((step: Row) => {
-          const definition = data?.plan.steps.find(
-            (s: Row) => s.key === step.key,
+      <div className="workflow-runtime workflow-runtime-stages">
+        {stages.map((stage, index) => {
+          const status = stageStatus(stage.steps);
+          const open = expanded[stage.key] ?? stage.key === activeStage;
+          const panelId = `stage-${record.id}-${encodeURIComponent(stage.key)}`;
+          const children = (data?.children || []).filter((child: Row) =>
+            stage.steps.some((step: Row) =>
+              child.parent_step_id
+                ? step.id === child.parent_step_id
+                : data?.plan.steps.find(
+                    (definition: Row) => definition.key === step.key,
+                  )?.kind === "tasks.foreach",
+            ),
           );
           return (
-            <article
-              key={step.id}
-              className={`workflow-node status-${step.status}`}
+            <section
+              key={stage.key}
+              className={`workflow-runtime-stage status-${status}`}
+              aria-label={`阶段 ${stage.name}`}
             >
-              <button
-                aria-expanded={selected === step.id}
-                onClick={() => setSelected(selected === step.id ? "" : step.id)}
+              <ActionButton
+                type="button"
+                className="workflow-runtime-stage-toggle"
+                disabled={busy}
+                aria-label={`阶段 ${stage.name}`}
+                aria-expanded={open}
+                aria-controls={panelId}
+                aria-describedby={`${panelId}-status`}
+                onClick={() => toggle(stage.key, stage.key === activeStage)}
               >
-                <strong>{definition?.name || step.key}</strong>
-                <span>
-                  {stateLabels[step.status] || step.status} · 第 {step.round} 轮
+                <strong>
+                  {index + 1}. {stage.name}
+                </strong>
+                <span id={`${panelId}-status`}>
+                  {stateLabels[status]} ·{" "}
+                  {
+                    stage.steps.filter((step: Row) =>
+                      ["completed", "skipped"].includes(step.status),
+                    ).length
+                  }
+                  /{stage.steps.length} 步骤 · {open ? "收起" : "展开"}
                 </span>
-              </button>
-              {step.reason && <p>{step.reason}</p>}
-              {step.outputs.session && (
-                <button
-                  onClick={() =>
-                    onDiscussion(step.outputs.session, runtime.owner_id)
-                  }
-                >
-                  继续讨论 / 查看提案
-                </button>
+              </ActionButton>
+              {open && (
+                <div className="workflow-runtime-stage-body" id={panelId}>
+                  {stage.description && (
+                    <details className="workflow-runtime-stage-description">
+                      <summary>阶段说明</summary>
+                      <MarkdownPreview text={stage.description} />
+                    </details>
+                  )}
+                  {stage.steps.length ? (
+                    <div className="workflow-stage-nodes">
+                      {stage.steps.map((step: Row) => renderStep(step, stage))}
+                    </div>
+                  ) : (
+                    <p className="muted">此阶段尚无步骤。</p>
+                  )}
+                  {children.map((child: Row) => (
+                    <div
+                      className="workflow-inline-subflow"
+                      key={child.record.id}
+                    >
+                      <ActionButton
+                        type="button"
+                        className="workflow-child-toggle"
+                        aria-expanded={
+                          expanded[`child:${child.record.id}`] || false
+                        }
+                        onClick={() => toggle(`child:${child.record.id}`)}
+                      >
+                        <strong>子流程 · {child.title}</strong>
+                        <span>
+                          {stateLabels[child.record.data.status] ||
+                            child.record.data.status}{" "}
+                          ·{" "}
+                          {expanded[`child:${child.record.id}`]
+                            ? "收起"
+                            : "展开"}
+                        </span>
+                      </ActionButton>
+                      {expanded[`child:${child.record.id}`] && (
+                        <WorkflowInstanceView
+                          nested
+                          record={child.record}
+                          request={request}
+                          projectId={projectId}
+                          refresh={refresh}
+                          onDiscussion={onDiscussion}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
-              {(
-                data?.actions.find((a: Row) => a.id === step.id)?.allowed || []
-              ).map((method: string) => (
-                <button
-                  key={method}
-                  disabled={busy || runtime.paused}
-                  onClick={() =>
-                    command(
-                      method,
-                      step.id,
-                      step.revision,
-                      method === "workflow.step.confirm"
-                        ? { input_hash: step.input_hash }
-                        : method === "workflow.step.rework"
-                          ? {
-                              from_step:
-                                data?.actions.find((a: Row) => a.id === step.id)
-                                  ?.rework_entries?.[0] || step.key,
-                            }
-                          : {},
-                    )
-                  }
-                >
-                  {method.endsWith("confirm")
-                    ? "确认结果后继续"
-                    : method.endsWith("retry")
-                      ? "技术重试"
-                      : `从${data?.plan.steps.find((definition: Row) => definition.key === data?.actions.find((action: Row) => action.id === step.id)?.rework_entries?.[0])?.name || "本步骤"}返工`}
-                </button>
-              ))}
-              {selected === step.id && (
-                <>
-                  <p>
-                    职责 {definition?.participant_slot || "协调器"} ·{" "}
-                    {definition?.advance_mode === "automatic"
-                      ? "自动推进"
-                      : "结果完成后等待人确认"}
-                  </p>
-                  <p>{definition?.interaction.goal}</p>
-                  <details>
-                    <summary>该轮输入、证据和输出引用</summary>
-                    <pre>{JSON.stringify(step, null, 2)}</pre>
-                  </details>
-                </>
-              )}
-            </article>
+            </section>
           );
         })}
       </div>

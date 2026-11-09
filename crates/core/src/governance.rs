@@ -559,6 +559,12 @@ pub(crate) fn validate_composition(
             "Tool 尚无可执行处理器",
         )?;
         require(
+            t.harness_provider
+                .as_ref()
+                .is_none_or(|p| p == &harness.provider),
+            "原生工具组不适用于所选 Harness",
+        )?;
+        require(
             t.capabilities
                 .iter()
                 .all(|c| harness.capabilities.contains(c)),
@@ -695,13 +701,17 @@ impl Engine {
         let pid = feature
             .map(|f| f.project_id.clone())
             .or(snap.project_id.clone())
-            .ok_or_else(|| err("invalid_scope", "Snapshot 缺少项目归属"))?;
-        let project = s
-            .projects
-            .iter()
-            .find(|p| p.id == pid)
-            .ok_or_else(|| err("not_found", "Project 不存在"))?
-            .clone();
+            .unwrap_or_else(|| GLOBAL_DISCUSSION_NAMESPACE.into());
+        let project_title = if pid == GLOBAL_DISCUSSION_NAMESPACE {
+            "全局 / 跨项目".to_owned()
+        } else {
+            s.projects
+                .iter()
+                .find(|p| p.id == pid)
+                .ok_or_else(|| err("not_found", "Project 不存在"))?
+                .title
+                .clone()
+        };
         let feature_name = feature.map(|f| f.title.clone());
         for session_id in &snap.capture.sessions {
             let link = s
@@ -721,7 +731,7 @@ impl Engine {
                         .rev()
                         .find(|t| t.session_id == *session_id)
                         .and_then(|t| t.finished.or(t.started));
-                    s.governance.push(record("experience",snapshot_id.into(),Scope::Project{project_id:pid.clone()},feature_name.clone().unwrap_or(project.title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project.title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
+                    s.governance.push(record("experience",snapshot_id.into(),if pid==GLOBAL_DISCUSSION_NAMESPACE {Scope::Global}else{Scope::Project{project_id:pid.clone()}},feature_name.clone().unwrap_or(project_title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
                 }
             }
         }
@@ -790,9 +800,15 @@ impl Engine {
                     .clone()
                     .ok_or_else(|| err("invalid_scope", "Session 缺少项目"))?;
                 require(
-                    instance.scope.visible_from(&Scope::Project {
-                        project_id: project.clone(),
-                    }),
+                    instance
+                        .scope
+                        .visible_from(&if session.scope == Some(SessionScope::Global) {
+                            Scope::Global
+                        } else {
+                            Scope::Project {
+                                project_id: project.clone(),
+                            }
+                        }),
                     "AgentID 不能用于其他项目",
                 )?;
                 require(
@@ -834,7 +850,7 @@ impl Engine {
                         "不能将 Session 重新归属其他 AgentID",
                     )?;
                 } else {
-                    s.governance.push(record("agent_session",session_id,Scope::Project{project_id:project},instance_record.name,1,None,json!({"agent_instance_id":instance_id,"agent_revision_id":instance.agent_revision_id,"composition_hash":s.configuration(&instance.agent_revision_id)?.content_hash,"model_ref":agent.model_ref,"harness_ref":agent.harness_ref,"binding":binding,"workflow_step_instance_id":c.payload["workflow_step_instance_id"]}),true));
+                    s.governance.push(record("agent_session",session_id,if session.scope==Some(SessionScope::Global){Scope::Global}else{Scope::Project{project_id:project}},instance_record.name,1,None,json!({"agent_instance_id":instance_id,"agent_revision_id":instance.agent_revision_id,"composition_hash":s.configuration(&instance.agent_revision_id)?.content_hash,"model_ref":agent.model_ref,"harness_ref":agent.harness_ref,"binding":binding,"workflow_step_instance_id":c.payload["workflow_step_instance_id"]}),true));
                 }
             }
         }
@@ -1383,6 +1399,12 @@ impl Engine {
                 "tool" => {
                     let t: ToolDefinition = decode(&data)?;
                     require(
+                        t.harness_provider
+                            .as_deref()
+                            .is_none_or(|p| ["codex", "dsh"].contains(&p)),
+                        "无效原生工具组 Harness",
+                    )?;
+                    require(
                         t.implementation != "experience.lookup",
                         "AgentID 经验属于可检索与恢复的上下文，不能定义为 Tool",
                     )?;
@@ -1434,12 +1456,25 @@ impl Engine {
                 install_agent_profile(s, &r, &r.decode()?);
             }
             if family == "skill" {
-                if let Some(previous) = r.supersedes.as_ref().and_then(|key|s.governance.iter().find(|p|p.kind == "skill_package" && p.definition_id == *key)) {
+                if let Some(previous) = r.supersedes.as_ref().and_then(|key| {
+                    s.governance
+                        .iter()
+                        .find(|p| p.kind == "skill_package" && p.definition_id == *key)
+                }) {
                     let mut package: SkillPackage = previous.decode()?;
                     package.body = r.data["body"].as_str().unwrap_or("").into();
                     package.source = format!("edited:{}", package.source);
                     package.validate()?;
-                    s.governance.push(record("skill_package",r.id.clone(),r.scope.clone(),r.name.clone(),1,None,json!(package),true));
+                    s.governance.push(record(
+                        "skill_package",
+                        r.id.clone(),
+                        r.scope.clone(),
+                        r.name.clone(),
+                        1,
+                        None,
+                        json!(package),
+                        true,
+                    ));
                 }
             }
             if ["skill", "spec", "standard"].contains(&family) {
@@ -2097,8 +2132,16 @@ impl Engine {
                             json!({"id":step.id,"rework_entries":rework_entries,"allowed":allowed})
                         })
                         .collect();
+                    let children: Vec<_> = s.governance.iter().filter(|child| child.kind == "workflow_instance"
+                        && child.data["parent_id"] == r.id && child.data["status"] != "cancelled"
+                        && child.data["owner_id"].as_str().is_some_and(|id|runtime.task_members.iter().any(|t|t==id)))
+                        .map(|child| {
+                            let owner=child.data["owner_id"].as_str().unwrap_or("");
+                            let parent_step=runtime.steps.iter().find(|step|step.outputs.get("group").and_then(|id|s.configuration(id).ok()).is_some_and(|group|group.data["members"].as_array().is_some_and(|ids|ids.iter().any(|id|id==owner))));
+                            json!({"record":{"id":child.id,"revision":child.revision,"data":{"owner_id":child.data["owner_id"],"status":child.data["status"],"paused":child.data["paused"],"task_members":child.data["task_members"]}},"title":s.tasks.iter().find(|t|t.id==owner).map(|t|t.title.as_str()).unwrap_or(&child.name),"parent_step_id":parent_step.map(|step|&step.id)})
+                        }).collect();
                     return Ok(
-                        json!({"record":r,"plan":plan,"configuration":lock,"actions":actions}),
+                        json!({"record":r,"plan":plan,"configuration":lock,"actions":actions,"children":children}),
                     );
                 }
                 return Ok(json!(r));

@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useState } from "react";
 import { MarkdownField, type Request, type Row } from "./configuration-ui";
 
@@ -96,10 +102,18 @@ export function WorkflowTaskPreview({
   roles: Row[];
   nodeKeys: string[];
 }) {
+  const {
+    error,
+    setError,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [node, setNode] = useState(nodeKeys[0] || "");
   const [agent, setAgent] = useState("");
   const [value, setValue] = useState<Row>();
-  const [error, setError] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [previewSignature, setPreviewSignature] = useState("");
   const selectedNode = nodeKeys.includes(node) ? node : nodeKeys[0] || "";
@@ -126,10 +140,12 @@ export function WorkflowTaskPreview({
       {nodeKeys.length ? (
         <label>
           预览配方节点
-          <select
+          <ActionSelect
             aria-label="预览配方节点"
             value={selectedNode}
             onChange={(e) => {
+              captureFeedback();
+
               setNode(e.target.value);
               setValue(undefined);
             }}
@@ -137,15 +153,17 @@ export function WorkflowTaskPreview({
             {nodeKeys.map((key) => (
               <option key={key}>{key}</option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
       ) : null}
       <label>
         预览 Agent（可选）
-        <select
+        <ActionSelect
           aria-label="预览 Agent"
           value={selectedAgent}
           onChange={(e) => {
+            captureFeedback();
+
             setAgent(e.target.value);
             setValue(undefined);
           }}
@@ -158,13 +176,15 @@ export function WorkflowTaskPreview({
                 {a.name} · v{a.version}
               </option>
             ))}
-        </select>
+        </ActionSelect>
       </label>
-      <button
+      <ActionButton
         type="button"
         disabled={busy}
         onClick={async () => {
-          setBusy(true);
+          captureFeedback();
+
+          (beginFeedback(), setBusy(true));
           setError("");
           setPreviewSignature(signature);
           try {
@@ -180,12 +200,12 @@ export function WorkflowTaskPreview({
           } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
           } finally {
-            setBusy(false);
+            (endFeedback(), setBusy(false));
           }
         }}
       >
         生成任务预览
-      </button>
+      </ActionButton>
       {error ? <p role="alert">{error}</p> : null}
       {value && previewSignature === signature ? (
         <AgentTaskView value={value} />
@@ -203,20 +223,30 @@ export function ExecutionTaskDetails({
   projectId: string;
   turns: Row[];
 }) {
+  const {
+    error,
+    setError,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [selected, setSelected] = useState("");
   const [loadedTurn, setLoadedTurn] = useState("");
   const [busy, setBusy] = useState(false);
   const [value, setValue] = useState<Row>();
-  const [error, setError] = useState("");
+
   return (
     <details>
       <summary>查看实际任务指令与上下文</summary>
       <label>
         任务轮次
-        <select
+        <ActionSelect
           aria-label="任务轮次"
           value={selected}
           onChange={(e) => {
+            captureFeedback();
+
             setSelected(e.target.value);
             setValue(undefined);
           }}
@@ -227,13 +257,15 @@ export function ExecutionTaskDetails({
               {t.id} · {t.status}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </label>
-      <button
+      <ActionButton
         type="button"
         disabled={!selected || busy}
         onClick={async () => {
-          setBusy(true);
+          captureFeedback();
+
+          (beginFeedback(), setBusy(true));
           setLoadedTurn(selected);
           setError("");
           try {
@@ -246,14 +278,16 @@ export function ExecutionTaskDetails({
           } catch (e) {
             setError(String(e));
           } finally {
-            setBusy(false);
+            (endFeedback(), setBusy(false));
           }
         }}
       >
         读取冻结任务
-      </button>
+      </ActionButton>
       {error ? <p role="alert">{error}</p> : null}
-      {value && loadedTurn === selected ? <AgentTaskView value={value} /> : null}
+      {value && loadedTurn === selected ? (
+        <AgentTaskView value={value} />
+      ) : null}
     </details>
   );
 }

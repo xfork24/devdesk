@@ -17,7 +17,7 @@
 ./target/release/devdesk-host --data ./data --port 4317
 ```
 
-Host 程序嵌入 Web 文件；macOS 的真实 DSH 凭据另使用运行包内的一份共享助手，运行时不需要 Node、开发服务器或源码目录。只监听 loopback。必须使用打印的 `127.0.0.1` 地址，Host 校验会拒绝其他主机名。
+Host 程序嵌入 Web 文件；macOS 的真实 DSH 凭据另使用运行包内的一份共享助手，运行时不需要 Node、开发服务器或源码目录。默认只监听 loopback。设置、初始化页和连接失败页均提供“连接内核”，填写 `http://ip:port` 后先验证内核，再打开目标工作台。远程监听通过 `--host IP` 和 `DEVDESK_ACCESS_TOKEN` 显式开启；部署及反向代理配置见[运行包说明](docs/run-binary.md)。Host 校验连接地址对应的 Host/Origin。
 
 原型曾在 Linux Ubuntu 24.04 x86_64 与 macOS Apple Silicon 上完成后端/Web 验收；早期真实工程接入已在 macOS 通过，Ubuntu 24.04.5 / x86_64 也已通过双 Harness Web 工程闭环、Linux 系统凭据、安装复用、取消/崩溃恢复和独立运行包验收，AppArmor Docker 宿主使用经批准的专用策略；见 [Ubuntu 续验报告](docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)。macOS 构建前需安装 Xcode Command Line Tools（`xcode-select --install`）；两平台使用相同命令。平台证据与限制见[验收记录](docs/acceptance.md)。
 
@@ -33,7 +33,7 @@ macOS Apple Silicon 输出 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz` 及 
 
 ## 使用与验证
 
-配置入口分为项目管理、工作流程、角色与 Agent、规范、基础组件。新项目页提供可直接采用的默认流程与六个职责 Agent；各职责引用独立 Capability 和 Markdown Skill/Spec，分别产出 PRD、Design Doc、Task Plan、测试、实现与评审。选择或调整后保存项目配置，再创建 Feature；Standard 为可选覆盖基线。[默认配置目录](resources/configuration/README.md)列出具体内容。
+配置入口分为项目管理、流程与规范、角色与 Agent、基础组件。流程与规范包含 Workflow、Spec、Standard；基础组件依次包含 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用记录位于历史记录的 Tools调用记录范围。本轮变更、状态与验收见[改进计划](docs/plans/settings-navigation-usability/PLAN.md)及[实施报告](docs/plans/settings-navigation-usability/REPORT.md)。新项目页提供可直接采用的默认流程与六个职责 Agent；各职责引用独立 Capability 和 Markdown Skill/Spec，分别产出 PRD、Design Doc、Task Plan、测试、实现与评审。选择或调整后保存项目配置，再创建 Feature；Standard 为可选覆盖基线。[默认配置目录](resources/configuration/README.md)列出具体内容。
 
 [真实工程接入](docs/real-engineering.md)说明正常 Web 操作；[历史演示步骤](docs/plans/devdesk-prototype/demo.md)仅记录后端模拟夹具，不再对应当前 Web 入口。需要先完成规划的两个 Delivery/Review，再建立独立 Tasks；Task 完成后还有 Feature 自身收尾。
 
@@ -58,7 +58,7 @@ npm --prefix web ci
 - [验收与限制](docs/acceptance.md)、[计划与验收索引](docs/plans/README.md)
 - [协议 JSON Schema](schemas/rpc.schema.json)、[文件清单 Schema](schemas/manifest.schema.json)
 
-数据集以 `.devdesk-dataset` 标记，使用独占写锁；非空非 DevDesk 目录不初始化。更换 data 路径需退出并重新启动，不隐式搬迁。Archive 导出与 data 目录搬迁仅交互预览。所有 reset/删除均不作为正常升级或恢复手段，本原型不提供任意路径删除功能。
+数据集以 `.devdesk-dataset` 标记，使用独占写锁；非空非 DevDesk 目录不初始化。更换 data 路径需退出并重新启动，不隐式搬迁。所有 reset/删除均不作为正常升级或恢复手段，本原型不提供任意路径删除功能。
 
 全局配置与项目工程数据分别使用 SQLite 文件：
 

@@ -1,13 +1,13 @@
 # 架构与 ADR
 
-当前实现基线为 [DevDesk v0.3](plans/devdesk-v0.3/PLAN.md)，工程库 v34、全局库 v5。下文保留既有架构决策；旧 BindingLock/单阶段 planning 行为仅适用于历史兼容，新 Feature 使用配置锁及 Workflow 驱动。
+当前实现基线为 [DevDesk v0.3](plans/devdesk-v0.3/PLAN.md)，工程库 v39、全局库 v5。下文保留既有架构决策；旧 BindingLock/单阶段 planning 行为仅适用于历史兼容，新 Feature 使用配置锁及 Workflow 驱动。
 
 ## 模块
 
 - domain：类型、不可变版本、DAG、绑定、来源与验收规则；无 I/O。
 - core：命令/查询、调度与交付协调；定义 EngineeringStore、ArtifactStore，以及 `ports::{Harness, Git, Tests, Sandbox}` 执行接口。
 - adapters：SQLite 关系表、文件封存、执行接口的具体实现；只装配原生供应商实现，不得绕过 core 改业务终态。
-- host：loopback HTTP/SSE、会话与同源验证、数据集生命周期、静态 Web 装配。
+- host：HTTP/SSE、会话与同源验证、显式密钥保护的远端连接、数据集生命周期、静态 Web 装配。
 - web：React/TypeScript 展示、编辑和调用 API；不设置业务状态。
 
 ## ADR-001：完整 Web
@@ -30,7 +30,7 @@ Web 项目使用真实 GitHub 仓库，打开时登记并接入，Harness 按需
 
 ## ADR-005：恢复与范围
 
-启动时遍历全局项目索引，核对所有项目的未确认运行；Run 标记 interrupted，未知讨论输入保留 needs_reconciliation。通过原适配器核对终态后才释放资源并允许显式重试，结果未知时保留资源与阻塞理由。供应商具体进程管理留在适配器中，内核恢复协议已由故障夹具验证。Archive 导出与 data 目录搬迁只预览，不写成功事实。只有自己初始化的空目录才能建数据集；仅在明确登记和授权的工程仓库执行受控操作。
+启动时遍历全局项目索引，核对所有项目的未确认运行；Run 标记 interrupted，未知讨论输入保留 needs_reconciliation。通过原适配器核对终态后才释放资源并允许显式重试，结果未知时保留资源与阻塞理由。供应商具体进程管理留在适配器中，内核恢复协议已由故障夹具验证。只有自己初始化的空目录才能建数据集；仅在明确登记和授权的工程仓库执行受控操作。
 
 ## 阶段评审
 
@@ -111,3 +111,9 @@ Workflow 是核心领域对象，组合交互契约与已有执行处理器。Gl
 持久化选择 governance_records 的类型化记录集合，避免草稿文档与可写图表形成两套事实。core 求值及记录幂等 intent，Host 在事务外解析真实运行时、派发并接纳结果；前端不设置完成状态。自动推进、人工确认、固定 TaskGroup 和返工轮次共用同一门禁。
 
 经验目录是项目事实的只读、可重建投影；原生 Agent 只挂载自身 ID 的冻结经验文件。跨项目引用作为有来源的历史材料导入新会话，不回写当前 Feature 的配置、文档或代码。
+
+## 配置导航与执行工作台
+
+“流程与规范”统一 Workflow、Spec、Standard；“基础组件”依次提供 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用历史移入“历史记录 → Tools调用记录”，可选择当前项目或 Global 接入并查看调用详情及回执。旧 specifications、integrations 和 tool/skill 配置链接迁至对应入口，保留对象定位。
+
+执行工作台按阶段逐行显示，阶段内展开编译后的步骤和 Task 子流程；子流程详情按展开时读取，按工作流实例保存折叠状态。讨论以 AgentID 确定历史归属，全局讨论使用独立存储命名空间，不创建占位 Project。权限合同由权限语义与策略资产决定，适配器执行构建身份继续独立冻结。具体改动、迁移约束与验证见 [本轮计划](plans/settings-navigation-usability/PLAN.md) 和 [实施报告](plans/settings-navigation-usability/REPORT.md)。

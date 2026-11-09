@@ -11,11 +11,26 @@ fn check_revision(expected: Option<u64>, actual: u64) -> Result<()> {
         ))
     }
 }
+fn session_instance<'a>(state: &'a EngineeringState, session: &'a Session) -> Option<&'a str> {
+    session
+        .runtime_binding
+        .as_ref()
+        .and_then(|b| b.agent_configuration.as_ref())
+        .map(|a| a.agent_instance_id.as_str())
+        .or_else(|| {
+            state
+                .governance
+                .iter()
+                .find(|r| r.kind == "agent_session" && r.definition_id == session.id)
+                .and_then(|r| r.data["agent_instance_id"].as_str())
+        })
+}
 fn session_owner(session: &Session) -> Result<MaterialOwner> {
     match session
         .scope
         .ok_or_else(|| err("blocked", "历史 Run Session 不接受讨论输入"))?
     {
+        SessionScope::Global => Ok(MaterialOwner::Global),
         SessionScope::Project => Ok(MaterialOwner::Project {
             id: session.project_id.clone().unwrap(),
         }),
@@ -39,26 +54,33 @@ impl Engine {
         let target = command.target.as_deref().unwrap_or("");
         let result = match method {
             "session.open" => {
-                let (project, feature, task, scope) =
-                    if let Some(project) = s.projects.iter().find(|v| v.id == target) {
-                        (project.id.clone(), None, None, SessionScope::Project)
-                    } else if let Some(feature) = s.features.iter().find(|v| v.id == target) {
-                        (
-                            feature.project_id.clone(),
-                            Some(feature.id.clone()),
-                            None,
-                            SessionScope::Feature,
-                        )
-                    } else if let Some(task) = s.tasks.iter().find(|v| v.id == target) {
-                        (
-                            s.feature(&task.feature_id)?.project_id.clone(),
-                            Some(task.feature_id.clone()),
-                            Some(task.id.clone()),
-                            SessionScope::Task,
-                        )
-                    } else {
-                        return Err(err("not_found", "Session owner 不存在"));
-                    };
+                let (project, feature, task, scope) = if target == "global" {
+                    require(s.projects.is_empty(), "全局讨论必须使用独立的全局讨论库")?;
+                    (
+                        GLOBAL_DISCUSSION_NAMESPACE.into(),
+                        None,
+                        None,
+                        SessionScope::Global,
+                    )
+                } else if let Some(project) = s.projects.iter().find(|v| v.id == target) {
+                    (project.id.clone(), None, None, SessionScope::Project)
+                } else if let Some(feature) = s.features.iter().find(|v| v.id == target) {
+                    (
+                        feature.project_id.clone(),
+                        Some(feature.id.clone()),
+                        None,
+                        SessionScope::Feature,
+                    )
+                } else if let Some(task) = s.tasks.iter().find(|v| v.id == target) {
+                    (
+                        s.feature(&task.feature_id)?.project_id.clone(),
+                        Some(task.feature_id.clone()),
+                        Some(task.id.clone()),
+                        SessionScope::Task,
+                    )
+                } else {
+                    return Err(err("not_found", "Session owner 不存在"));
+                };
                 let agent = text(p, "agent")?;
                 require(
                     s.definitions
@@ -481,6 +503,13 @@ impl Engine {
     ) -> Result<Id> {
         let owner = session_owner(session)?;
         let binding = match &owner {
+            MaterialOwner::Global => BindingLock {
+                agent: session.agent.clone(),
+                skills: vec![],
+                standard: String::new(),
+                harness: session.harness.clone(),
+                sandbox: session.sandbox.clone(),
+            },
             MaterialOwner::Project { id } => s
                 .projects
                 .iter()
@@ -533,6 +562,12 @@ impl Engine {
             serde_json::to_string(&json!({"specifications":specifications,"specification_source":specification_source,"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
                 .map_err(|e| err("serialization", e.to_string()))?;
         let mut documents = match &owner {
+            MaterialOwner::Global => s
+                .documents
+                .iter()
+                .filter(|d| d.project_id.is_none() && d.feature_id.is_none() && d.task_id.is_none())
+                .map(|d| d.id.clone())
+                .collect(),
             MaterialOwner::Project { id } => s
                 .documents
                 .iter()
@@ -580,6 +615,8 @@ impl Engine {
                 captured_at: Some(now()),
                 reason: if kind == "conversation_handoff" {
                     "Explicit successor after runtime/configuration change"
+                } else if kind == "conversation_completed" {
+                    "Completed discussion and sealed runtime evidence"
                 } else {
                     "Frozen input before dispatch"
                 }
@@ -617,6 +654,22 @@ impl Engine {
                             && p["owner_id"]
                                 .as_str()
                                 .is_none_or(|owner| v.owner_id == owner)
+                            && p["agent_instance_id"].as_str().is_none_or(|instance| {
+                                v.runtime_binding
+                                    .as_ref()
+                                    .and_then(|b| b.agent_configuration.as_ref())
+                                    .is_some_and(|a| a.agent_instance_id == instance)
+                                    || s.governance.iter().any(|r| {
+                                        r.kind == "agent_session"
+                                            && r.definition_id == v.id
+                                            && r.data["agent_instance_id"] == instance
+                                    })
+                            })
+                    })
+                    .map(|session| {
+                        let mut value = json!(session);
+                        value["agent_instance_id"] = json!(session_instance(&s, session));
+                        value
                     })
                     .collect();
                 return Ok(
@@ -648,7 +701,7 @@ impl Engine {
             let next = events.last().map_or(cursor, |e| e.sequence);
             let turns: Vec<_> = s.turns.iter().filter(|t| t.session_id == sid).collect();
             Ok(
-                json!({"session":session,"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
+                json!({"session":session,"agent_instance_id":session_instance(&s,session),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

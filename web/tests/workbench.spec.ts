@@ -126,8 +126,15 @@ async function githubFixture(page: Page) {
               kind: "harness",
               data: { provider: "codex", runtime_version: "fixture" },
             },
+            {
+              id: "configured-instance",
+              kind: "agent_instance",
+              name: "配置的全局 AgentID",
+              scope: { kind: "global" },
+              data: { agent_revision_id: "configured-analyst" },
+            },
           ],
-          total: 3,
+          total: 4,
         };
         break;
       case "query.repository":
@@ -135,6 +142,15 @@ async function githubFixture(page: Page) {
         break;
       case "runtime.preparation_status":
         result = { preparations };
+        break;
+      case "query.agent_experience":
+        result = {
+          records: [],
+          total: 0,
+          unavailable: [],
+          scope: { kind: "global" },
+          agent_revision_id: "configured-analyst",
+        };
         break;
       case "session.list":
         result = { sessions: [] };

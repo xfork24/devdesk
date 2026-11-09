@@ -1,3 +1,10 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  ActionInput,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useEffect, useState } from "react";
 
 type Request = (
@@ -24,6 +31,7 @@ type Target = {
   provider: string;
   runtime_version: string;
   supported: boolean;
+  allowed_permission_ids?: string[];
   unsupported_reason?: string;
   platforms: string[];
   recipe_digest?: string;
@@ -58,11 +66,20 @@ export function PermissionResources({
   refresh: () => Promise<void>;
   projectId?: string;
 }) {
+  const {
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [catalog, setCatalog] = useState<Catalog>();
   const [selected, setSelected] = useState("");
   const [targetId, setTargetId] = useState("");
+  const [bindingProfileId, setBindingProfileId] = useState("");
   const [draft, setDraft] = useState("");
-  const [message, setMessage] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<unknown>();
   const [source, setSource] = useState("");
@@ -88,21 +105,50 @@ export function PermissionResources({
   const target = catalog?.targets.find(
     (t) => t.target.revision_id === targetId,
   );
+  const bindingProfiles = (catalog?.profiles || []).filter(
+    (p) =>
+      target &&
+      p.target_kind === target.target.kind &&
+      (!target.allowed_permission_ids ||
+        target.allowed_permission_ids.includes(p.id)),
+  );
+  const bindingProfile = bindingProfiles.find((p) => p.id === bindingProfileId);
+  useEffect(() => {
+    if (!target || !catalog) {
+      setBindingProfileId("");
+      return;
+    }
+    const active = (catalog.bindings as any[]).find(
+      (row) => row.id === target.active?.binding_revision_id,
+    );
+    const activeProfile = active?.data?.permission_revision_id;
+    setBindingProfileId((previous) =>
+      bindingProfiles.some((p) => p.id === previous)
+        ? previous
+        : bindingProfiles.some((p) => p.id === activeProfile)
+          ? activeProfile
+          : "",
+    );
+  }, [targetId, catalog]);
   async function reload() {
+    captureFeedback();
+
     setCatalog(
       await request("query.permission_resources", { project_id: projectId }),
     );
     await refresh();
   }
   async function action(work: () => Promise<void>) {
-    setBusy(true);
+    captureFeedback();
+
+    (beginFeedback(), setBusy(true));
     setMessage("");
     try {
       await work();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      (endFeedback(), setBusy(false));
     }
   }
   const command = (method: string, payload: unknown, extra = {}) =>
@@ -178,10 +224,12 @@ export function PermissionResources({
           <legend>权限定义</legend>
           <label>
             权限修订
-            <select
+            <ActionSelect
               aria-label="版本化权限修订"
               value={selected}
               onChange={(e) => {
+                captureFeedback();
+
                 const p = catalog.profiles.find((p) => p.id === e.target.value);
                 if (p) edit(p);
               }}
@@ -192,26 +240,30 @@ export function PermissionResources({
                   {p.name} · {p.target_kind} · v{p.version}
                 </option>
               ))}
-            </select>
+            </ActionSelect>
           </label>
-          <button type="button" onClick={fresh}>
+          <ActionButton type="button" onClick={fresh}>
             新建权限草稿
-          </button>
+          </ActionButton>
           <label>
             统一权限 JSON
             <textarea
               aria-label="统一权限 JSON"
               rows={14}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                captureFeedback();
+                return setDraft(e.target.value);
+              }}
             />
           </label>
           <div className="actions">
-            <button
+            <ActionButton
               type="button"
               disabled={!draft}
-              onClick={() =>
-                action(async () => {
+              onClick={() => {
+                captureFeedback();
+                return action(async () => {
                   const p = parseDraft();
                   const saved = await command("permission.profile.create", {
                     identity: p.identity,
@@ -222,16 +274,17 @@ export function PermissionResources({
                   await reload();
                   edit(saved);
                   setMessage("已创建权限修订，尚未应用绑定。");
-                })
-              }
+                });
+              }}
             >
               创建独立权限
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               type="button"
               disabled={!profile}
-              onClick={() =>
-                action(async () => {
+              onClick={() => {
+                captureFeedback();
+                return action(async () => {
                   const p = parseDraft();
                   const saved = await command(
                     "permission.profile.revise",
@@ -248,16 +301,17 @@ export function PermissionResources({
                   await reload();
                   edit(saved);
                   setMessage("新修订已保存，原绑定保持不变。");
-                })
-              }
+                });
+              }}
             >
               保存权限新修订
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               type="button"
               disabled={!profile}
-              onClick={() =>
-                action(async () => {
+              onClick={() => {
+                captureFeedback();
+                return action(async () => {
                   const bundle = await request("permission.profile.export", {
                     id: profile!.id,
                   });
@@ -272,19 +326,21 @@ export function PermissionResources({
                   a.click();
                   setTimeout(() => URL.revokeObjectURL(url), 1000);
                   setMessage("已导出权限及前序修订。");
-                })
-              }
+                });
+              }}
             >
               导出权限
-            </button>
+            </ActionButton>
           </div>
           <label>
             导入权限文件
-            <input
+            <ActionInput
               aria-label="导入权限文件"
               type="file"
               accept="application/json,.json"
               onChange={(e) => {
+                captureFeedback();
+
                 const file = e.target.files?.[0];
                 if (!file) return;
                 e.target.value = "";
@@ -306,10 +362,12 @@ export function PermissionResources({
           <legend>目标版本绑定</legend>
           <label>
             目标资源修订
-            <select
+            <ActionSelect
               aria-label="权限目标版本"
               value={targetId}
               onChange={(e) => {
+                captureFeedback();
+
                 setTargetId(e.target.value);
                 setPreview(undefined);
               }}
@@ -321,10 +379,36 @@ export function PermissionResources({
                   {t.runtime_version}
                 </option>
               ))}
-            </select>
+            </ActionSelect>
           </label>
           {target ? (
             <>
+              <label>
+                应用到目标的权限
+                <ActionSelect
+                  aria-label="目标资源权限"
+                  value={bindingProfileId}
+                  onChange={(event) => {
+                    setBindingProfileId(event.target.value);
+                    setPreview(undefined);
+                  }}
+                  required
+                >
+                  <option value="" disabled>
+                    {bindingProfiles.length
+                      ? "请选择可应用的权限修订"
+                      : "此目标没有兼容的权限修订"}
+                  </option>
+                  {bindingProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · v{p.version} · {p.target_kind}
+                    </option>
+                  ))}
+                </ActionSelect>
+              </label>
+              <p className="muted">
+                仅列出与目标类型及执行能力兼容的权限。此选择独立于上方的权限编辑器。
+              </p>
               <p>
                 当前绑定：{target.active?.binding_revision_id || "尚未分配"} ·
                 revision {target.active?.revision || 0}
@@ -353,34 +437,36 @@ export function PermissionResources({
             </>
           ) : null}
           <div className="actions">
-            <button
+            <ActionButton
               type="button"
-              disabled={!profile || !target}
-              onClick={() =>
-                action(async () => {
+              disabled={!bindingProfile || !target}
+              onClick={() => {
+                captureFeedback();
+                return action(async () => {
                   setPreview(
                     await request("permission.binding.preflight", {
                       project_id: projectId,
                       target: target!.target,
-                      permission_revision_id: profile!.id,
+                      permission_revision_id: bindingProfile!.id,
                     }),
                   );
                   setMessage("目标兼容性预检通过，仍需实际执行范围校验。");
-                })
-              }
+                });
+              }}
             >
               预检目标绑定
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               type="button"
-              disabled={!profile || !target || !target.supported}
-              onClick={() =>
-                action(async () => {
+              disabled={!bindingProfile || !target || !target.supported}
+              onClick={() => {
+                captureFeedback();
+                return action(async () => {
                   await command("permission.bindings.apply", {
                     bindings: [
                       {
                         target: target!.target,
-                        permission_revision_id: profile!.id,
+                        permission_revision_id: bindingProfile!.id,
                         expected_revision: target!.active?.revision || 0,
                       },
                     ],
@@ -389,20 +475,23 @@ export function PermissionResources({
                   setMessage(
                     "活动绑定已更新；已有工作保留冻结权限，追随目标的讨论将在下一轮切换。",
                   );
-                })
-              }
+                });
+              }}
             >
               应用到该目标版本
-            </button>
+            </ActionButton>
           </div>
         </fieldset>
         <details>
           <summary>实际执行范围预览</summary>
           <label>
             Harness 组合目标
-            <select
+            <ActionSelect
               value={harnessId}
-              onChange={(e) => setHarnessId(e.target.value)}
+              onChange={(e) => {
+                captureFeedback();
+                return setHarnessId(e.target.value);
+              }}
             >
               <option value="">选择 Harness 修订</option>
               {catalog.targets
@@ -415,13 +504,16 @@ export function PermissionResources({
                     {t.name} · v{t.version}
                   </option>
                 ))}
-            </select>
+            </ActionSelect>
           </label>
           <label>
             Sandbox 组合目标
-            <select
+            <ActionSelect
               value={sandboxId}
-              onChange={(e) => setSandboxId(e.target.value)}
+              onChange={(e) => {
+                captureFeedback();
+                return setSandboxId(e.target.value);
+              }}
             >
               <option value="">选择 Sandbox 修订</option>
               {catalog.targets
@@ -434,21 +526,25 @@ export function PermissionResources({
                     {t.name} · v{t.version}
                   </option>
                 ))}
-            </select>
+            </ActionSelect>
           </label>
           <label>
             ExecutionScope JSON
             <textarea
               value={scope}
-              onChange={(e) => setScope(e.target.value)}
+              onChange={(e) => {
+                captureFeedback();
+                return setScope(e.target.value);
+              }}
               rows={5}
             />
           </label>
-          <button
+          <ActionButton
             type="button"
             disabled={busy || !harnessId || !sandboxId}
-            onClick={() =>
-              action(async () => {
+            onClick={() => {
+              captureFeedback();
+              return action(async () => {
                 setPreview(
                   await request("permission.binding.preflight", {
                     project_id: projectId,
@@ -462,11 +558,11 @@ export function PermissionResources({
                   }),
                 );
                 setMessage("完整范围预览通过；正式执行仍由协调器核验并冻结。");
-              })
-            }
+              });
+            }}
           >
             预览两层实际权限
-          </button>
+          </ActionButton>
         </details>
         {preview !== undefined ? (
           <details open>
@@ -497,43 +593,48 @@ export function PermissionResources({
               <li key={p}>{p}</li>
             ))}
           </ul>
-          <button
+          <ActionButton
             type="button"
             disabled={busy}
-            onClick={() =>
-              action(async () => {
+            onClick={() => {
+              captureFeedback();
+              return action(async () => {
                 const result = await command("permission.profile.reload", {});
                 await reload();
                 setMessage(
                   `预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}；活动绑定保持不变。`,
                 );
-              })
-            }
+              });
+            }}
           >
             重新加载预设
-          </button>
+          </ActionButton>
           <label>
             新增预设来源目录
             <input
               value={source}
-              onChange={(e) => setSource(e.target.value)}
+              onChange={(e) => {
+                captureFeedback();
+                return setSource(e.target.value);
+              }}
               placeholder="绝对目录"
             />
           </label>
-          <button
+          <ActionButton
             type="button"
             disabled={busy || !source}
-            onClick={() =>
-              action(async () => {
+            onClick={() => {
+              captureFeedback();
+              return action(async () => {
                 await command("permission.source.register", { path: source });
                 await reload();
                 setSource("");
                 setMessage("来源已登记，可重新加载预设。");
-              })
-            }
+              });
+            }}
           >
             登记预设目录
-          </button>
+          </ActionButton>
           <pre>
             {JSON.stringify(
               { bindings: catalog.bindings, origins: catalog.origins },

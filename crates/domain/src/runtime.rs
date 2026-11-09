@@ -93,8 +93,18 @@ pub struct RuntimeIntegrity {
 #[serde(deny_unknown_fields)]
 pub struct HarnessPreference {
     pub provider: HarnessProvider,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub use_system_default: bool,
     pub installation_id: Option<Id>,
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -122,6 +132,16 @@ impl ProjectRuntimePreferences {
             .iter()
             .chain(self.roles.iter().map(|r| &r.preference))
         {
+            if preference.use_system_default {
+                require(
+                    preference
+                        .installation_id
+                        .as_ref()
+                        .is_some_and(|id| !id.trim().is_empty())
+                        && preference.model.is_some(),
+                    "系统默认 Harness 的安装和模型仍须明确选择",
+                )?;
+            }
             require(
                 preference
                     .model
@@ -129,6 +149,19 @@ impl ProjectRuntimePreferences {
                     .is_none_or(|m| !m.trim().is_empty() && m.len() <= 160),
                 "模型 ID 无效",
             )?;
+            if let Some(provider) = &preference.model_provider {
+                require(
+                    (preference.provider == HarnessProvider::Codex && provider == "openai")
+                        || (preference.provider == HarnessProvider::Dsh
+                            && DshModelProvider::parse(provider).is_ok()),
+                    "模型服务商与 Harness 不兼容",
+                )?;
+                if let Some(model) = &preference.model {
+                    let definition: ModelDefinition = serde_json::from_value(serde_json::json!({"provider":provider,"model":model,"endpoint":preference.endpoint,"context_window":preference.context_window,"max_output_tokens":preference.max_output_tokens}))
+                        .map_err(|e|err("invalid_params",e.to_string()))?;
+                    validate_model_definition(&definition)?;
+                }
+            }
         }
         Ok(())
     }

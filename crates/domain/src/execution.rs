@@ -62,16 +62,6 @@ pub struct ChangeRequestRef {
     pub source_revision: String,
     pub target_revision: String,
 }
-/// A preview is deliberately distinct from a successfully exported Archive.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArchivePreview {
-    pub feature: Id,
-    pub artifacts: Vec<Id>,
-    pub snapshots: Vec<Id>,
-    pub blocked_reasons: Vec<String>,
-    pub executable: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TestOutcome {

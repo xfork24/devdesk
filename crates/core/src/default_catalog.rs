@@ -165,7 +165,7 @@ pub(crate) fn seed_stage_catalog(s: &mut EngineeringState) {
         &default_role_id("project-manager"),
         "role",
         "项目经理",
-        json!({"execution_role":"architect","instructions":"# 项目经理\n\n依据已采纳 PRD 与 Design Doc，拆分可交付 Task、依赖 DAG、验收映射及逐项 TestRecipe。维护任务边界、风险与汇合条件；不替架构师设计系统，不执行代码，不代人采纳提案。输出 task_plan 结构化提案，正文使用 Markdown。","visibility":{"kind":"global"}}),
+        json!({"execution_role":"architect","instructions":include_str!("../../../resources/configuration/roles/project-manager.md"),"visibility":{"kind":"global"}}),
     );
     for (role, name, methods) in [
         ("analyst", "需求分析师", vec!["prd"]),

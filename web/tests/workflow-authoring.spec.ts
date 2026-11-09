@@ -11,7 +11,7 @@ async function setup(page: Page) {
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
   }
   await expect(
-    page.getByRole("button", { name: "工作流程", exact: true }),
+    page.getByRole("button", { name: "流程与规范", exact: true }),
   ).toBeVisible();
 }
 async function rpc(page: Page, method: string, params: any = {}) {
@@ -26,13 +26,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   page,
 }) => {
   await setup(page);
-  for (const name of [
-    "项目管理",
-    "工作流程",
-    "角色与 Agent",
-    "规范",
-    "基础组件",
-  ])
+  for (const name of ["项目管理", "流程与规范", "角色与 Agent", "基础组件"])
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "项目管理", exact: true }).click();
   await expect(
@@ -49,15 +43,13 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     tools.records.filter(
       (row: any) => row.data.implementation === "harness.native",
     ),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
   for (const row of defaults.records.filter((row: any) =>
     ["capability", "agent"].includes(row.kind),
   ))
     expect(row.data.tools).toEqual(["builtin-tool-codex-native-v1"]);
-  await page
-    .getByRole("button", { name: "工具与技能接入", exact: true })
-    .click();
-  await page.getByRole("tab", { name: "原生工具", exact: true }).click();
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
+  await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
   await expect(page.getByText("AgentID 经验检索", { exact: true })).toHaveCount(
     0,
   );
@@ -196,7 +188,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
 });
 test("Workflow 两列编辑器保存发布并恢复对象及草稿", async ({ page }, info) => {
   await setup(page);
-  await page.getByRole("button", { name: "工作流程", exact: true }).click();
+  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await page
     .getByRole("button", { name: "新建 Workflow", exact: true })
     .click();
@@ -262,9 +254,9 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
   const body =
     '## Markdown 内容\n\n检查 **真实来源** 与 `revision`。\n\n- 保留换行\n- 保留列表\n\n| 字段 | 含义 |\n| --- | --- |\n| SHA | 代码修订 |\n\n```json\n{"source": "actual"}\n```';
   for (const [nav, kind] of [
-    ["规范", "Spec"],
-    ["规范", "Standard"],
-    ["工具与技能接入", "Skills"],
+    ["流程与规范", "Spec"],
+    ["流程与规范", "Standard"],
+    ["基础组件", "Skills"],
   ]) {
     await page.getByRole("button", { name: nav, exact: true }).click();
     await page.getByRole("tab", { name: kind, exact: true }).click();
@@ -593,4 +585,76 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
       .every((b: any) => b.task?.renderer_version === "agent-task/v1"),
   ).toBe(true);
   expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
+});
+
+test("合并配置页面保持 Tab 顺序，旧链接定位且 Tools 调用记录迁至历史", async ({
+  page,
+}, info) => {
+  await setup(page);
+  const sidebar = page.getByRole("navigation");
+  await expect(
+    sidebar.getByRole("button", { name: "工作流程", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    sidebar.getByRole("button", { name: "规范", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    sidebar.getByRole("button", { name: "工具与技能接入", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
+  await expect(
+    page.getByRole("tablist", { name: "配置类别" }).getByRole("tab"),
+  ).toHaveText(["Workflow", "Spec", "Standard"]);
+  await page.getByRole("tab", { name: "Workflow", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "新建 Workflow", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
+  await expect(
+    page.getByRole("tablist", { name: "配置类别" }).getByRole("tab"),
+  ).toHaveText([
+    "Model",
+    "Harness",
+    "MCP",
+    "Skills",
+    "Tools",
+    "Harness原生工具",
+  ]);
+  await page.getByRole("tab", { name: "Tools", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "HTTP API 新建接入", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "调用记录", exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("combined-foundations.png"),
+    fullPage: true,
+  });
+  await page.goto("/?tab=specifications&config_tab=standard");
+  await expect(
+    page.getByRole("tab", { name: "Standard", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/tab=workflows/);
+  await page.goto("/?tab=integrations&config_tab=mcp");
+  await expect(
+    page.getByRole("tab", { name: "MCP", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/tab=components/);
+  await page.goto("/?tab=integrations&config_tab=calls");
+  await expect(page.getByLabel("历史范围", { exact: true })).toHaveValue(
+    "tools",
+  );
+  await expect(
+    page.getByRole("region", { name: "工具调用记录" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/tab=history/);
+  await page.reload();
+  await expect(page.getByLabel("历史范围", { exact: true })).toHaveValue(
+    "tools",
+  );
+  await page.getByLabel("调用记录归属", { exact: true }).selectOption("global");
+  await expect(
+    page.getByRole("heading", { name: "实际调用记录", exact: true }),
+  ).toBeVisible();
 });

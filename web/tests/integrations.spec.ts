@@ -11,7 +11,7 @@ async function setup(page: Page) {
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
   }
   await expect(
-    page.getByRole("button", { name: "工具与技能接入", exact: true }),
+    page.getByRole("button", { name: "基础组件", exact: true }),
   ).toBeVisible();
 }
 async function rpc(page: Page, method: string, params: any = {}) {
@@ -36,37 +36,38 @@ test("HTTP 接入发布动作、绑定确切授权与历史修订，原入口只
   page,
 }, info) => {
   await setup(page);
-  await page
-    .getByRole("button", { name: "工具与技能接入", exact: true })
-    .click();
-  await page.getByRole("tab", { name: "HTTP API", exact: true }).click();
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
+  await page.getByRole("tab", { name: "Tools", exact: true }).click();
   const source = page.getByRole("region", { name: "HTTP API 接入管理" });
-  await source.getByRole("button", { name: "新建接入源" }).click();
+  const creator = page.getByRole("region", {
+    name: "HTTP API 新建接入",
+    exact: true,
+  });
   const name = "Browser API " + crypto.randomUUID().slice(0, 6);
-  await source.getByLabel("接入名称", { exact: true }).fill(name);
-  await source.getByLabel("API Base URL").fill("https://example.test/v1");
+  await creator.getByLabel("接入名称", { exact: true }).fill(name);
+  await creator.getByLabel("API Base URL").fill("https://example.test/v1");
   await markdown(
-    source,
+    creator,
     "接入说明",
     "## Ticket API\n\nRead **scoped** tickets.",
   );
-  await source.getByRole("button", { name: "创建接入源", exact: true }).click();
-  await expect(source.getByRole("status")).toContainText("接入定义已保存");
+  await creator
+    .getByRole("button", { name: "创建接入源", exact: true })
+    .click();
+  await expect(creator.getByRole("status")).toContainText("接入定义已保存");
   const tool = page.getByRole("region", { name: "HTTP 动作管理" });
   const alias = "ticket_" + crypto.randomUUID().slice(0, 6);
   await tool.getByLabel("工具调用名称", { exact: true }).fill(alias);
   await markdown(tool, "工具说明", "Lookup one ticket.");
   await tool.getByLabel("相对 path", { exact: true }).fill("/tickets/{id}");
-  await tool
-    .getByLabel("调用参数 JSON Schema", { exact: true })
-    .fill(
-      JSON.stringify({
-        type: "object",
-        properties: { id: { type: "string" } },
-        required: ["id"],
-        additionalProperties: false,
-      }),
-    );
+  await tool.getByLabel("调用参数 JSON Schema", { exact: true }).fill(
+    JSON.stringify({
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    }),
+  );
   await tool.getByRole("button", { name: "添加参数映射" }).click();
   await tool.getByLabel("参数名 1", { exact: true }).fill("id");
   await tool.getByLabel("输入 JSON Pointer 1", { exact: true }).fill("/id");
@@ -126,9 +127,7 @@ test("Skills 导入保留 Markdown 原文与工具依赖，旧链接跳转同一
   page,
 }) => {
   await setup(page);
-  await page
-    .getByRole("button", { name: "工具与技能接入", exact: true })
-    .click();
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "Skills", exact: true }).click();
   const importer = page.getByRole("region", { name: "Skill 包导入" });
   const name = "Browser Skill " + crypto.randomUUID().slice(0, 6);
@@ -189,18 +188,19 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
     command_id: crypto.randomUUID(),
     payload: { bindings },
   });
-  await page
-    .getByRole("button", { name: "工具与技能接入", exact: true })
-    .click();
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "MCP", exact: true }).click();
   const source = page.getByRole("region", { name: "MCP 接入管理" });
   const name = "Browser MCP " + crypto.randomUUID().slice(0, 6);
-  await source.getByRole("button", { name: "新建接入源" }).click();
-  await source.getByLabel("接入名称", { exact: true }).fill(name);
-  await source
+  const creator = page.getByRole("region", {
+    name: "MCP 新建接入",
+    exact: true,
+  });
+  await creator.getByLabel("接入名称", { exact: true }).fill(name);
+  await creator
     .getByRole("combobox", { name: "MCP 传输", exact: true })
     .selectOption("stdio");
-  await source
+  await creator
     .getByLabel("MCP 启动参数（JSON 数组）", { exact: true })
     .fill(
       JSON.stringify([
@@ -213,8 +213,10 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
         ),
       ]),
     );
-  await source.getByRole("button", { name: "创建接入源", exact: true }).click();
-  await expect(source.getByRole("status")).toContainText("接入定义已保存");
+  await creator
+    .getByRole("button", { name: "创建接入源", exact: true })
+    .click();
+  await expect(creator.getByRole("status")).toContainText("接入定义已保存");
   const account = page.getByRole("region", { name: "接入绑定管理" });
   await account
     .getByLabel("绑定名称", { exact: true })
@@ -281,7 +283,8 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
       { timeout: 60000 },
     )
     .toBe("succeeded");
-  await page.getByRole("tab", { name: "调用记录", exact: true }).click();
+  await page.getByRole("button", { name: "历史记录", exact: true }).click();
+  await page.getByLabel("历史范围", { exact: true }).selectOption("tools");
   const history = page.getByRole("region", { name: "工具调用记录" });
   await history.getByRole("button", { name: new RegExp(tool.name) }).click();
   await expect(
@@ -294,4 +297,102 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
     path: info.outputPath("integrations-mcp-receipt.png"),
     fullPage: true,
   });
+});
+
+test("HTTP 与 MCP 的新建区在管理区上方，接入源和发布工具可删除", async ({
+  page,
+}) => {
+  await setup(page);
+  const cmd = (method: string, payload: any, target?: any) =>
+    rpc(page, method, {
+      command_id: crypto.randomUUID(),
+      target: target?.id,
+      expected_revision: target?.revision,
+      payload,
+    });
+  for (const kind of ["http", "mcp"]) {
+    const name = `Delete ${kind} ${crypto.randomUUID().slice(0, 6)}`;
+    const source = await cmd("integration.create", {
+      name,
+      data: {
+        source:
+          kind === "http"
+            ? { kind: "http_api", base_url: "https://example.test" }
+            : {
+                kind: "mcp",
+                transport: "streamable_http",
+                url: "https://mcp.example.test",
+                command: [],
+                protocol_version: "2026-07-28",
+              },
+      },
+    });
+    const tool = await cmd("integration.tool.create", {
+      name: `Tool ${name}`,
+      data: {
+        schema_version: 2,
+        qualified_name: `fixture_${crypto.randomUUID().slice(0, 6)}`,
+        description: "Deletion fixture",
+        integration_ref: source.id,
+        implementation:
+          kind === "http"
+            ? {
+                kind: "http_api",
+                method: "GET",
+                path: "/items",
+                parameters: [],
+              }
+            : { kind: "mcp", name: "lookup", descriptor_hash: "a".repeat(64) },
+        input_schema: { type: "object" },
+        effect: "read_only",
+      },
+    });
+    await page.goto(
+      `/?tab=integrations&config_tab=${kind}&config_object=${source.id}`,
+    );
+    const label = kind === "http" ? "HTTP API" : "MCP";
+    const create = page.getByRole("region", {
+      name: `${label} 新建接入`,
+      exact: true,
+    });
+    const manage = page.getByRole("region", {
+      name: `${label} 接入管理`,
+      exact: true,
+    });
+    await expect(manage.getByLabel("接入名称", { exact: true })).toHaveValue(
+      name,
+    );
+    expect((await create.boundingBox())!.y).toBeLessThan(
+      (await manage.boundingBox())!.y,
+    );
+    const remove = page.getByRole("button", {
+      name: `删除工具 · Tool ${name}`,
+      exact: true,
+    });
+    await remove.click();
+    await expect(remove.locator("..").getByRole("status")).toContainText(
+      "工具已删除",
+    );
+    expect(
+      (
+        await rpc(page, "query.configurations", {
+          kind: "tool",
+          include_history: true,
+        })
+      ).records.some((r: any) => r.id === tool.id),
+    ).toBe(false);
+    const removeSource = manage.getByRole("button", {
+      name: "删除接入源",
+      exact: true,
+    });
+    await removeSource.click();
+    await expect(removeSource.locator("..").getByRole("status")).toContainText(
+      "接入源及所属动作、绑定已删除",
+    );
+    expect(
+      (
+        await rpc(page, "query.integrations", { include_history: true })
+      ).records.some((r: any) => r.id === source.id),
+    ).toBe(false);
+  }
 });

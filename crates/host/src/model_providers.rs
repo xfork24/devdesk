@@ -164,6 +164,20 @@ impl Workspace {
                         params.get("endpoint").is_none(),
                         "云服务商目录不接受自定义端点",
                     )?;
+                    if p == DshModelProvider::Deepseek {
+                        let reference = self.global.model_credential_reference(p)?;
+                        let vault =
+                            credentials::CredentialVault::new(Path::new(&self.global.root()))?;
+                        let status = vault.status_model_reference(p, reference.as_deref())?;
+                        require(
+                            status.configured,
+                            "请先配置 DeepSeek API key，再读取账号模型目录",
+                        )?;
+                        return devdesk_adapters::model_providers::discover_deepseek_models(
+                            Path::new(&self.global.root()),
+                            &status.reference,
+                        );
+                    }
                     Ok(
                         json!({"provider":p,"source":"pinned_catalog","inference_verified":false,"models":dsh_model_catalog(p)}),
                     )

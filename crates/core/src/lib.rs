@@ -5,6 +5,7 @@ mod builtin_defaults;
 mod configuration;
 mod default_catalog;
 mod default_tasks;
+mod shipped_prose;
 pub use configuration::{
     project_configuration_references, retired as configuration_retired,
     visible as configuration_visible,
@@ -13,7 +14,9 @@ mod conversation_runtime;
 mod conversations;
 mod effects;
 mod integrations;
-pub use integrations::{freeze_integrations, integration_feature_lock};
+pub use integrations::{
+    freeze_integrations, integration_deletion_targets, integration_feature_lock,
+};
 mod governance;
 mod live_merges;
 mod live_runs;
@@ -65,7 +68,7 @@ pub trait ArtifactStore: Send + Sync {
         match owner {
             MaterialOwner::Feature { id } => self.seal(id, None, category, body),
             MaterialOwner::Task { feature, id } => self.seal(feature, Some(id), category, body),
-            MaterialOwner::Project { .. } => {
+            MaterialOwner::Global | MaterialOwner::Project { .. } => {
                 Err(err("unsupported", "ArtifactStore 未提供 Project 产物封存"))
             }
         }
@@ -252,6 +255,7 @@ fn git_context(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Result<Git
 }
 /// Seed shared configuration without creating project or execution facts.
 pub fn seed_configuration(s: &mut EngineeringState) {
+    let existing = s.governance.clone();
     for body in [
         include_str!("../../../permissions/presets/container-full-access.json"),
         include_str!("../../../permissions/presets/read-only.json"),
@@ -271,31 +275,31 @@ pub fn seed_configuration(s: &mut EngineeringState) {
                 "spec",
                 "Internal Design Spec",
                 1,
-                "需求可追踪；设计说明边界；测试覆盖验收条件",
+                include_str!("../../../resources/configuration/specs/legacy-planning.md"),
             ),
             (
                 "spec",
                 "Internal Design Spec",
                 2,
-                "需求可追踪；设计说明边界；测试覆盖验收条件；明确失败路径",
+                include_str!("../../../resources/configuration/specs/legacy-planning.md"),
             ),
             (
                 "spec",
                 "Alternative Design Spec",
                 1,
-                "按问题、约束、方案、验证组织设计",
+                include_str!("../../../resources/configuration/specs/architecture.md"),
             ),
             (
                 "skill",
                 "TDD",
                 1,
-                "Red → 实现 → Green；证据绑定候选与测试定义",
+                include_str!("../../../resources/configuration/skills/engineering-method.md"),
             ),
             (
                 "standard",
                 "工程默认 Standard",
                 1,
-                "规划、实现、候选交付均需证据与 Review",
+                include_str!("../../../resources/configuration/standards/engineering.md"),
             ),
         ] {
             let slots = if family == "standard" {
@@ -418,6 +422,8 @@ pub fn seed_configuration(s: &mut EngineeringState) {
     governance::seed_governance(s);
     permission_resources::seed_permission_resources(s);
     default_tasks::seed_task_workflows(s);
+    builtin_defaults::discard_reintroduced_history(s, &existing);
+    shipped_prose::upgrade(s);
 }
 
 impl Engine {
@@ -3627,33 +3633,6 @@ impl Engine {
             "query.repository" => Ok(
                 json!({"project":s.projects.first(),"operations":s.repository_operations.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_operations":s.repository_operations.len(),"worktrees":s.repository_worktrees.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_worktrees":s.repository_worktrees.len()}),
             ),
-            "query.archive_preview" => {
-                let fid = text(p, "feature_id")?;
-                let f = s.feature(&fid)?;
-                Ok(json!(ArchivePreview {
-                    feature: fid.clone(),
-                    artifacts: s
-                        .artifacts
-                        .iter()
-                        .filter(|a| a.feature_id.as_deref() == Some(fid.as_str())
-                            || s.documents.iter().any(|d| s.document_in_feature(d, &fid)
-                                && d.artifact_id.as_ref() == Some(&a.id)))
-                        .map(|a| a.id.clone())
-                        .collect(),
-                    snapshots: s
-                        .snapshots
-                        .iter()
-                        .filter(|a| a.feature_id.as_deref() == Some(fid.as_str()))
-                        .map(|a| a.id.clone())
-                        .collect(),
-                    blocked_reasons: vec![if f.status != Status::Completed {
-                        "Feature 尚未完成".into()
-                    } else {
-                        "Archive 导出、冷数据删除与恢复尚未实现".into()
-                    }],
-                    executable: false
-                }))
-            }
             "query.runtimes" => Ok(json!({"harnesses":s.harnesses,"sandboxes":s.sandboxes})),
             "query.workspace" => {
                 let pid = opt(p, "project_id");

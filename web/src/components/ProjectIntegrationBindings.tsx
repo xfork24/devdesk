@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useCallback, useEffect, useState } from "react";
 import {
   latest,
@@ -16,11 +22,19 @@ export function ProjectIntegrationBindings({
   catalog: Row[];
   agents: string[];
 }) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [rows, setRows] = useState<Row[]>([]),
     [mapping, setMapping] = useState<Record<string, string>>({}),
     [source, setSource] = useState(""),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
     const result: Row[] = [];
@@ -77,19 +91,24 @@ export function ProjectIntegrationBindings({
                 r.data.integration_ref === id,
             )}
             value={mapping[id] || ""}
-            onChange={(value) => setMapping({ ...mapping, [id]: value })}
+            onChange={(value) => {
+              captureFeedback();
+              return setMapping({ ...mapping, [id]: value });
+            }}
             required
           />
         ))}
         <div className="actions">
-          <button
+          <ActionButton
             disabled={
               busy ||
               ![...required].every((id) => mapping[id]) ||
               !required.size
             }
             onClick={async () => {
-              setBusy(true);
+              captureFeedback();
+
+              (beginFeedback(), setBusy(true));
               setError("");
               try {
                 await request("integration.project.bind", {
@@ -108,14 +127,14 @@ export function ProjectIntegrationBindings({
               } catch (e) {
                 setError(String(e));
               } finally {
-                setBusy(false);
+                (endFeedback(), setBusy(false));
               }
             }}
           >
             保存项目接入绑定
-          </button>
+          </ActionButton>
           <a
-            href={`?tab=integrations&project_id=${encodeURIComponent(project.id)}`}
+            href={`?tab=components&config_tab=http&project_id=${encodeURIComponent(project.id)}`}
           >
             管理工具、账户与授权
           </a>

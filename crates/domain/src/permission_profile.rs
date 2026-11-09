@@ -285,7 +285,8 @@ pub fn agent_permission_selection(
     agent.permission_selection.clone().or_else(|| {
         s.governance
             .iter()
-            .find(|r| r.kind == "permission_migration" && r.definition_id == agent_id)
+            .filter(|r| ["permission_migration", "permission_migration_renewal"].contains(&r.kind.as_str()) && r.definition_id == agent_id)
+            .max_by_key(|r| r.version)
             .and_then(|r| serde_json::from_value(r.data["selection"].clone()).ok())
     })
 }
@@ -298,11 +299,12 @@ pub fn frozen_permission_lock(
     let r = s
         .governance
         .iter()
-        .find(|r| {
-            r.kind == "feature_permission_lock"
+        .filter(|r| {
+            ["feature_permission_lock", "feature_permission_renewal"].contains(&r.kind.as_str())
                 && r.data["feature_id"] == feature
                 && r.data["agent_revision_id"] == agent
         })
+        .max_by_key(|r| r.version)
         .ok_or_else(|| {
             err(
                 "permission_unconfigured",

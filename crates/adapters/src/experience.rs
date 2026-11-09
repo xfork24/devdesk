@@ -63,6 +63,20 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
             data
         })
         .collect();
+    if i.scope == Scope::Global {
+        if let Ok(s) = SqliteStore::read_global_discussion_snapshot(root) {
+            rows.extend(
+                s.governance
+                    .into_iter()
+                    .filter(|r| r.kind == "experience" && r.data["agent_instance_id"] == id)
+                    .map(|r| {
+                        let mut data = r.data;
+                        data["availability"] = json!("available");
+                        data
+                    }),
+            );
+        }
+    }
     let mut unavailable = vec![];
     for project in projects(root)? {
         if i.scope.project().is_some_and(|pid| pid != project.id) {
@@ -120,14 +134,23 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
             })
             .ok_or_else(|| err("not_found", "该 AgentID 没有此快照"))?;
         let pid = entry["project_id"].as_str().unwrap();
-        let s = SqliteStore::read_project_snapshot(root, pid)?;
+        let global = pid == GLOBAL_DISCUSSION_NAMESPACE;
+        let s = if global {
+            SqliteStore::read_global_discussion_snapshot(root)?
+        } else {
+            SqliteStore::read_project_snapshot(root, pid)?
+        };
         let snapshot = s
             .snapshots
             .iter()
             .find(|snap| snap.id == snapshot_id)
             .ok_or_else(|| err("not_found", "快照内容已不可用"))?;
         // Snapshot manifests use artifact IDs in paths; find the matching sealed manifest by content.
-        let files = FileArtifacts::new(SqliteStore::project_path(root, pid)?);
+        let files = FileArtifacts::new(if global {
+            SqliteStore::global_discussion_path(root)?
+        } else {
+            SqliteStore::project_path(root, pid)?
+        });
         let mut integrity = false;
         for a in s.artifacts.iter().filter(|a| {
             a.relative_path.contains("/snapshots/") && a.feature_id == snapshot.feature_id

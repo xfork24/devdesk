@@ -1,3 +1,4 @@
+import { ActionButton, ActionSelect } from "./ActionFeedback";
 import {
   lazy,
   Suspense,
@@ -177,7 +178,7 @@ export function RevisionSelect({
   return (
     <label>
       {label}
-      <select
+      <ActionSelect
         aria-label={label}
         multiple={multiple}
         required={required}
@@ -204,7 +205,7 @@ export function RevisionSelect({
               固定历史修订 · {id}
             </option>
           ))}
-      </select>
+      </ActionSelect>
     </label>
   );
 }
@@ -244,13 +245,13 @@ export function MarkdownField({
           <span>{label}</span>
         )}
         {!readOnly && (
-          <button
+          <ActionButton
             type="button"
             aria-label={editing ? `预览${label}` : `编辑${label}源码`}
             onClick={() => setEditing(!editing)}
           >
             {editing ? "完成编辑" : "编辑源码"}
-          </button>
+          </ActionButton>
         )}
       </div>
       {editing && !readOnly ? (
@@ -287,13 +288,13 @@ export function MarkdownTopicsField({
       <div className="markdown-field-heading">
         <span>{label}</span>
         {!readOnly && (
-          <button
+          <ActionButton
             type="button"
             aria-label={editing ? `预览${label}` : `编辑${label}源码`}
             onClick={() => setEditing(!editing)}
           >
             {editing ? "完成编辑" : "编辑源码"}
-          </button>
+          </ActionButton>
         )}
       </div>
       {editing && !readOnly ? (
@@ -314,18 +315,18 @@ export function MarkdownTopicsField({
                   }
                 />
               </label>
-              <button
+              <ActionButton
                 type="button"
                 aria-label={`删除讨论主题 ${index + 1}`}
                 onClick={() => onChange(value.filter((_, i) => i !== index))}
               >
                 删除主题
-              </button>
+              </ActionButton>
             </div>
           ))}
-          <button type="button" onClick={() => onChange([...value, ""])}>
+          <ActionButton type="button" onClick={() => onChange([...value, ""])}>
             添加讨论主题
-          </button>
+          </ActionButton>
         </>
       ) : value.length ? (
         <ol className="markdown-topics">

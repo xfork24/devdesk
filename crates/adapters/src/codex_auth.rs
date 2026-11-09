@@ -101,8 +101,28 @@ impl CodexAuthentication {
     }
     pub fn models(&self, store: &GlobalStore, installation: &str) -> Result<Value> {
         self.with_worker(store, installation, |worker| {
-            let directory = worker.process.request("model/list", json!({"limit":100}))?;
-            Ok(json!({"models":directory["data"],"next_cursor":directory["nextCursor"]}))
+            let mut models = vec![];
+            let mut cursor = None::<String>;
+            let mut seen = std::collections::BTreeSet::new();
+            for _ in 0..100 {
+                let directory = worker
+                    .process
+                    .request("model/list", json!({"limit":100,"cursor":cursor}))?;
+                let page = directory["data"]
+                    .as_array()
+                    .ok_or_else(|| err("invalid_response", "Codex 返回了无效模型目录"))?;
+                models.extend(page.iter().cloned());
+                let next = directory["nextCursor"].as_str().filter(|s| !s.is_empty());
+                let Some(next) = next else {
+                    return Ok(json!({"models":models,"next_cursor":null}));
+                };
+                require(
+                    seen.insert(next.to_owned()),
+                    "Codex 模型目录分页重复，请重试",
+                )?;
+                cursor = Some(next.to_owned());
+            }
+            Err(err("invalid_response", "Codex 模型目录超过分页上限"))
         })
     }
     pub fn new(dataset: &Path) -> Result<Self> {

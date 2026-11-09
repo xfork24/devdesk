@@ -1,3 +1,13 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  currentActionTarget,
+  publishActionFeedback,
+  type ActionTarget,
+  useActionFeedback,
+} from "./components/ActionFeedback";
+import "./browser-compat";
 import { ProjectManager } from "./components/ProjectManager";
 import React, {
   useState,
@@ -35,8 +45,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import "./style.css";
-import { WorkflowManager } from "./components/WorkflowManager";
-import { Integrations } from "./components/Integrations";
+import { ConfigurationPage } from "./components/ConfigurationPages";
+import { CallHistory } from "./components/Integrations";
 import { AgentCatalog } from "./components/AgentCatalog";
 import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
 import { RepositorySettings } from "./components/RepositorySettings";
@@ -45,6 +55,10 @@ import { RuntimePreferences } from "./components/RuntimePreferences";
 import { PermissionSettings } from "./components/PermissionSettings";
 import { RuntimeSettings } from "./components/RuntimeSettings";
 import { RuntimePreparationStatus } from "./components/RuntimePreparationStatus";
+import {
+  KernelAuthentication,
+  KernelConnection,
+} from "./components/KernelConnection";
 
 type RecordData = { [key: string]: any };
 type Field = {
@@ -54,6 +68,7 @@ type Field = {
   type?: "textarea" | "select" | "number";
   options?: { value: string; label: string }[];
   optional?: boolean;
+  description?: string;
 };
 type DialogSpec = {
   title: string;
@@ -62,6 +77,7 @@ type DialogSpec = {
   payload?: RecordData;
   fields: Field[];
   revision?: number;
+  feedbackTarget?: ActionTarget | null;
 };
 const labels: Record<string, string> = {
   draft: "草稿",
@@ -132,7 +148,7 @@ async function rpc(method: string, params: RecordData = {}) {
         : 30000,
     ),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} · 本地服务连接失败`);
+  if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);
   const data = await res.json();
   if (data.error)
     throw new Error(`${data.error.data?.code || ""} · ${data.error.message}`);
@@ -153,14 +169,33 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 const route = new URLSearchParams(location.search);
 function routeTabValue(p: URLSearchParams) {
-  if (
-    p.get("tab") === "components" &&
-    ["tool", "skill"].includes(p.get("config_tab") || "")
-  ) {
-    p.set("tab", "integrations");
-    p.set("config_tab", p.get("config_tab") === "tool" ? "native" : "skills");
-    history.replaceState(null, "", `?${p}`);
+  const original = p.toString();
+  const tab = p.get("tab");
+  if (tab === "specifications") {
+    p.set("tab", "workflows");
+    if (!["spec", "standard"].includes(p.get("config_tab") || ""))
+      p.set("config_tab", "spec");
   }
+  if (tab === "workflows" && p.has("workflow_id"))
+    p.set("config_tab", "workflow");
+  if (tab === "integrations") {
+    if (p.get("config_tab") === "calls") {
+      p.set("tab", "history");
+      p.set("history_scope", "tools");
+      p.delete("config_tab");
+    } else {
+      p.set("tab", "components");
+      if (
+        !["http", "mcp", "skills", "native"].includes(p.get("config_tab") || "")
+      )
+        p.set("config_tab", "http");
+    }
+  }
+  if (p.get("tab") === "components") {
+    if (p.get("config_tab") === "tool") p.set("config_tab", "native");
+    if (p.get("config_tab") === "skill") p.set("config_tab", "skills");
+  }
+  if (original !== p.toString()) history.replaceState(null, "", `?${p}`);
   return p.get("tab") === "workflow" || p.get("tab") === "documents"
     ? "execution"
     : p.get("tab") || "overview";
@@ -170,21 +205,26 @@ const routeTab = routeTabValue(route);
 function App() {
   const requestGeneration = useRef(0);
   const projectGeneration = useRef(0);
+  const kernelStopped = useRef(false);
   const [detailPages, setDetailPages] = useState<Record<string, number>>({});
-  const [dialogError, setDialogError] = useState("");
   const [data, setData] = useState<RecordData>();
   const [caps, setCaps] = useState<RecordData>();
   const [projectId, setProjectId] = useState("");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
   const [connection, setConnection] = useState("连接中");
   const [dialog, setDialog] = useState<DialogSpec>();
   const [busy, setBusy] = useState(false);
   const mutationInFlight = useRef(false);
+  const historyTarget = useRef<ActionTarget | null>(null);
   const [history, setHistory] = useState<RecordData[]>([]);
-  const [historyScope, setHistoryScope] = useState("project");
+  const [historyScope, setHistoryScope] = useState(
+    ["project", "global", "tools"].includes(route.get("history_scope") || "")
+      ? route.get("history_scope")!
+      : "project",
+  );
+  const [toolsHistoryScope, setToolsHistoryScope] = useState("project");
   const [historyPage, setHistoryPage] = useState(0);
   const [featurePage, setFeaturePage] = useState(0);
   const [projectPage, setProjectPage] = useState(0);
@@ -211,6 +251,7 @@ function App() {
     if (featureId) params.set("feature_id", featureId);
     if (taskFilter) params.set("task_id", taskFilter);
     if (tab === "execution") params.set("detail", executionTab);
+    if (tab === "history") params.set("history_scope", historyScope);
     if (workFilter) params.set("filter", workFilter);
     if (featurePage) params.set("page", String(featurePage));
     const url = `?${params}`;
@@ -223,6 +264,7 @@ function App() {
     executionTab,
     workFilter,
     featurePage,
+    historyScope,
   ]);
   useEffect(() => {
     const pop = () => {
@@ -243,6 +285,7 @@ function App() {
           .catch((e) => setError(String(e)));
       }
       setTab(routeTabValue(p));
+      setHistoryScope(p.get("history_scope") || "project");
       setFeatureId(p.get("feature_id") || "");
       setTaskFilter(p.get("task_id") || "");
       setExecutionTab(p.get("detail") || "overview");
@@ -258,12 +301,42 @@ function App() {
     async (afterCommand = false) => {
       // A command refresh must settle before another form captures its revision.
       // SSE refreshes during the mutation are covered by that final read.
-      if (mutationInFlight.current && !afterCommand) return;
+      if (kernelStopped.current || (mutationInFlight.current && !afterCommand))
+        return;
       const generation = ++requestGeneration.current;
       try {
-        const c = await fetch("/capabilities").then((r) => r.json());
+        let response = await fetch("/capabilities", {
+          signal: AbortSignal.timeout(10000),
+        });
+        if (response.status === 401) {
+          // A restarted local kernel can establish a fresh session without a
+          // key; a protected remote kernel instead presents its login form.
+          const session = await fetch("/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+            signal: AbortSignal.timeout(10000),
+          });
+          if (session.ok)
+            response = await fetch("/capabilities", {
+              signal: AbortSignal.timeout(10000),
+            });
+        }
+        if (generation !== requestGeneration.current) return;
+        if (response.status === 401) {
+          setCaps({ authentication_required: true });
+          setData(undefined);
+          setConnection("等待认证");
+          return;
+        }
+        if (!response.ok)
+          throw new Error(`无法连接内核 · HTTP ${response.status}`);
+        const c = await response.json();
+        if (c.protocol_version !== 1 && c.protocol_version !== undefined)
+          throw new Error("内核协议版本不兼容，请更新后重试。");
         if (generation !== requestGeneration.current) return;
         setCaps(c);
+        setConnection("已连接");
         if (!c.setup_required) {
           let active = c.active_project_id || "";
           if (!routeApplied.current) {
@@ -311,7 +384,10 @@ function App() {
           setData(d);
         }
       } catch (e) {
-        if (generation === requestGeneration.current) setError(String(e));
+        if (generation === requestGeneration.current) {
+          setError(String(e));
+          setConnection("连接失败");
+        }
       }
     },
     [
@@ -333,7 +409,9 @@ function App() {
     const stream = new EventSource(
       `/events${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
     );
-    stream.onopen = () => setConnection("已连接");
+    stream.onopen = () => {
+      if (!kernelStopped.current) setConnection("已连接");
+    };
     stream.onmessage = () => {
       if (!timer)
         timer = setTimeout(() => {
@@ -341,7 +419,9 @@ function App() {
           load();
         }, 180);
     };
-    stream.onerror = () => setConnection("连接中断 · 自动重连");
+    stream.onerror = () => {
+      if (!kernelStopped.current) setConnection("连接中断 · 自动重连");
+    };
     return () => {
       stream.close();
       if (timer) clearTimeout(timer);
@@ -349,7 +429,7 @@ function App() {
   }, [load, projectId, caps?.setup_required]);
   useEffect(() => {
     let current = true;
-    if (tab === "history" && data)
+    if (tab === "history" && data && historyScope !== "tools")
       rpc("query.history", {
         project_id: projectId || undefined,
         scope: historyScope,
@@ -360,17 +440,16 @@ function App() {
           if (current) setHistory(d.events);
         })
         .catch((e) => {
-          if (current) setError(String(e));
+          if (
+            current &&
+            !publishActionFeedback(historyTarget.current, String(e), true)
+          )
+            setError(String(e));
         });
     return () => {
       current = false;
     };
   }, [tab, historyPage, historyScope, data, projectId]);
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(""), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
   const detail = data?.detail;
   const f = detail?.feature;
   const projects: RecordData[] = (data?.projects || []).filter(
@@ -404,6 +483,7 @@ function App() {
     setData(undefined);
   };
   const openProject = async (id: string) => {
+    const feedbackTarget = currentActionTarget();
     setBusy(true);
     setError("");
     try {
@@ -415,7 +495,8 @@ function App() {
       resetProjectView(id);
       setDialog(undefined);
     } catch (e) {
-      setError(String(e));
+      if (!publishActionFeedback(feedbackTarget, String(e), true))
+        setError(String(e));
     } finally {
       setBusy(false);
     }
@@ -456,13 +537,20 @@ function App() {
     ].find((x) => x?.id === target)?.revision;
   };
   const show = (spec: DialogSpec) =>
-    setDialog({ ...spec, revision: getRevision(spec.target) });
+    setDialog({
+      ...spec,
+      revision: getRevision(spec.target),
+      feedbackTarget: spec.feedbackTarget ?? currentActionTarget(),
+    });
   const command = async (
     method: string,
     target?: string,
     payload: RecordData = {},
     revision?: number,
+    feedback = true,
   ) => {
+    const feedbackTarget = currentActionTarget();
+    if (feedback) publishActionFeedback(feedbackTarget, "");
     mutationInFlight.current = true;
     setBusy(true);
     setError("");
@@ -474,14 +562,15 @@ function App() {
         expected_revision: revision ?? getRevision(target) ?? null,
         payload,
       });
-      setToast("操作已保存");
+      if (feedback) publishActionFeedback(feedbackTarget, "操作已保存");
       if (method === "project.open_github") {
         resetProjectView(result.id);
         setTab("projects");
       } else await load(true);
       return result;
     } catch (e) {
-      setError(String(e));
+      if (feedback && !publishActionFeedback(feedbackTarget, String(e), true))
+        setError(String(e));
       throw e;
     } finally {
       mutationInFlight.current = false;
@@ -521,22 +610,58 @@ function App() {
         { key: "title", label: "项目名称", optional: true },
       ],
     });
-  const createFeature = () =>
-    show({
-      title: "创建 Feature",
-      method: "feature.create",
-      payload: {
-        project_id: project?.id,
-        require_configuration: true,
-        configuration_revision_id: data?.configurations
-          ?.filter((r: RecordData) => r.kind === "project_configuration")
-          .sort((a: RecordData, b: RecordData) => b.version - a.version)[0]?.id,
-      },
-      fields: [
-        { key: "title", label: "Feature 名称" },
-        { key: "predecessor", label: "关联前序 Feature ID", optional: true },
-      ],
-    });
+  const createFeature = async () => {
+    const target = currentActionTarget();
+    const generation = projectGeneration.current;
+    try {
+      const choices: RecordData[] = [];
+      for (let offset = 0; ;) {
+        const page = await rpc("query.workspace", {
+          project_id: project?.id,
+          offset,
+          limit: 100,
+        });
+        choices.push(...page.features);
+        offset += page.features.length;
+        if (offset >= page.total_features || !page.features.length) break;
+      }
+      if (generation !== projectGeneration.current) return;
+      show({
+        title: "创建 Feature",
+        method: "feature.create",
+        feedbackTarget: target,
+        payload: {
+          project_id: project?.id,
+          require_configuration: true,
+          configuration_revision_id: data?.configurations
+            ?.filter((r: RecordData) => r.kind === "project_configuration")
+            .sort((a: RecordData, b: RecordData) => b.version - a.version)[0]
+            ?.id,
+        },
+        fields: [
+          { key: "title", label: "Feature 名称" },
+          {
+            key: "predecessor",
+            label: "关联前序 Feature（可选）",
+            optional: true,
+            type: "select",
+            value: "",
+            description:
+              "用于记录同项目 Feature 的前后关联；新 Feature 的代码基线仍为项目主干。",
+            options: [
+              { value: "", label: "不关联前序 Feature" },
+              ...choices.map((f) => ({
+                value: f.id,
+                label: `${f.title} · ${labels[f.status] || f.status} · ${short(f.id)}`,
+              })),
+            ],
+          },
+        ],
+      });
+    } catch (e) {
+      publishActionFeedback(target, String(e), true);
+    }
+  };
   const review = (d: RecordData, decision: string) =>
     show({
       title: `${labels[decision]} · ${labels[d.kind] || d.kind}`,
@@ -580,9 +705,13 @@ function App() {
     primary = false,
   ) =>
     allowed(id, method) && (
-      <button className={primary ? "primary" : ""} disabled={busy} onClick={fn}>
+      <ActionButton
+        className={primary ? "primary" : ""}
+        disabled={busy}
+        onClick={fn}
+      >
         {title}
-      </button>
+      </ActionButton>
     );
   const deliveryCard = (d: RecordData) => {
     const reviews = (detail.reviews as RecordData[]).filter(
@@ -607,14 +736,14 @@ function App() {
         </p>
         {d.candidate && <code>{d.candidate}</code>}
         <div className="actions">
-          <button onClick={() => openArtifact(d.artifact_id)}>
+          <ActionButton onClick={() => openArtifact(d.artifact_id)}>
             交付报告 <ArrowRight size={13} />
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             onClick={() => setView({ title: "冻结交付版本", body: pretty(d) })}
           >
             冻结引用
-          </button>
+          </ActionButton>
           {act(d.id, "review.request", "Agent 评审", () =>
             command("review.request", d.id, executionSelection).catch(() => {}),
           )}
@@ -651,12 +780,12 @@ function App() {
             <span>
               {r.actor} · {r.reason}
             </span>
-            <button
+            <ActionButton
               className="text-button"
               onClick={() => setView({ title: "逐项 Review", body: pretty(r) })}
             >
               逐项标准
-            </button>
+            </ActionButton>
           </div>
         ))}
         {detail.overrides
@@ -675,6 +804,7 @@ function App() {
     );
   };
   const openArtifact = async (id: string) => {
+    const feedbackTarget = currentActionTarget();
     const generation = projectGeneration.current;
     try {
       const r = await fetch(
@@ -685,7 +815,11 @@ function App() {
       if (generation === projectGeneration.current)
         setView({ title: `Artifact · ${short(id)}`, body });
     } catch (e) {
-      if (generation === projectGeneration.current) setError(String(e));
+      if (
+        generation === projectGeneration.current &&
+        !publishActionFeedback(feedbackTarget, String(e), true)
+      )
+        setError(String(e));
     }
   };
   const nav = [
@@ -693,14 +827,35 @@ function App() {
     ["execution", "执行与交付", Workflow],
     ["discussion", "角色讨论", FileText],
     ["projects", "项目管理", Layers3],
-    ["workflows", "工作流程", Workflow],
+    ["workflows", "流程与规范", Workflow],
     ["actors", "角色与 Agent", Library],
-    ["specifications", "规范", Library],
     ["components", "基础组件", Settings],
-    ["integrations", "工具与技能接入", Library],
     ["history", "历史记录", History],
     ["settings", "设置", Settings],
   ] as const;
+  if (caps?.authentication_required)
+    return (
+      <div className="setup">
+        <div className="setup-card">
+          <div className="brand">
+            <Layers3 />
+            <strong>DevDesk</strong>
+          </div>
+          <KernelAuthentication
+            authenticated={async () => {
+              setError("");
+              await load();
+            }}
+          />
+          {error && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          <KernelConnection />
+        </div>
+      </div>
+    );
   if (caps?.setup_required)
     return (
       <div className="setup">
@@ -711,11 +866,14 @@ function App() {
             <span>WORKBENCH 0.3</span>
           </div>
           <h1>为工程建立一个工作空间</h1>
-          <p>选择本地 data 目录。工程状态、文档和执行历史将真实保存在这里。</p>
+          <p>
+            选择当前内核所在主机的 data
+            目录。工程状态、文档和执行历史将保存在这里。
+          </p>
           <div className="notice">
             打开 GitHub 仓库开始工作，所需 Harness 运行环境由 DevDesk 按需准备
           </div>
-          <form
+          <ActionForm
             onSubmit={async (e) => {
               e.preventDefault();
               try {
@@ -745,15 +903,16 @@ function App() {
             <p className="muted">
               支持空目录或已有 DevDesk 数据集。切换目录需重启程序。
             </p>
-            <button className="primary" disabled={busy}>
+            <ActionButton className="primary" disabled={busy}>
               初始化 / 打开数据集 <ArrowRight size={16} />
-            </button>
-          </form>
+            </ActionButton>
+          </ActionForm>
           {error && (
             <div className="error" role="alert">
               {error}
             </div>
           )}
+          <KernelConnection />
         </div>
       </div>
     );
@@ -769,7 +928,7 @@ function App() {
         </div>
         <div className="project-selector">
           <span>当前项目</span>
-          <select
+          <ActionSelect
             aria-label="当前项目"
             value={projectId || project?.id || ""}
             disabled={busy}
@@ -781,10 +940,10 @@ function App() {
                 {p.title}
               </option>
             ))}
-          </select>
-          <button aria-label="打开 GitHub 项目" onClick={createProject}>
+          </ActionSelect>
+          <ActionButton aria-label="打开 GitHub 项目" onClick={createProject}>
             <Plus size={16} />
-          </button>
+          </ActionButton>
         </div>
         {(data?.total_projects || 0) > 50 && (
           <Pagination
@@ -797,7 +956,7 @@ function App() {
         )}
         <nav>
           {nav.map(([id, title, Icon]) => (
-            <button
+            <ActionButton
               key={id}
               className={tab === id ? "nav active" : "nav"}
               onClick={() => setTab(id)}
@@ -815,7 +974,7 @@ function App() {
                     }
                   </span>
                 )}
-            </button>
+            </ActionButton>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -855,16 +1014,18 @@ function App() {
             <div className="error" role="alert">
               <AlertTriangle size={16} />
               <span>{error}</span>
-              <button aria-label="关闭错误" onClick={() => setError("")}>
+              <ActionButton aria-label="关闭错误" onClick={() => setError("")}>
                 <X size={16} />
-              </button>
+              </ActionButton>
             </div>
           )}
-          <RuntimePreparationStatus request={rpc} />
+          {data && <RuntimePreparationStatus request={rpc} />}
           {!project && data && (
             <div className="notice">
               打开 GitHub 仓库开始工作。
-              <button onClick={createProject}>打开 GitHub 项目</button>
+              <ActionButton onClick={createProject}>
+                打开 GitHub 项目
+              </ActionButton>
             </div>
           )}
           {project && !repositoryReady && tab !== "settings" && (
@@ -883,7 +1044,9 @@ function App() {
               <div className="notice">
                 项目待配置：已提供默认 Workflow、Role Agent
                 和规范，可在项目管理中采用或调整。
-                <button onClick={() => setTab("projects")}>配置项目</button>
+                <ActionButton onClick={() => setTab("projects")}>
+                  配置项目
+                </ActionButton>
               </div>
             )}
           <div className="page-heading">
@@ -903,16 +1066,16 @@ function App() {
                           ? "锁定规范与身份，为每次执行建立确定起点。"
                           : tab === "history"
                             ? "持久记录命令、执行边界与关键决定。"
-                            : "本地数据与执行能力。"}
+                            : "内核数据与执行能力。"}
               </p>
             </div>
             <div className="actions">
               {tab === "overview" && (
                 <>
-                  <button onClick={createProject}>
+                  <ActionButton onClick={createProject}>
                     <Plus size={16} /> 打开 GitHub 项目
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     className="primary"
                     disabled={
                       !repositoryReady || !data?.configuration_ready || busy
@@ -920,12 +1083,23 @@ function App() {
                     onClick={createFeature}
                   >
                     <Plus size={16} /> 新 Feature
-                  </button>
+                  </ActionButton>
                 </>
               )}
             </div>
           </div>
-          {!data && <Empty>正在连接本地内核…</Empty>}
+          {!data && (
+            <section className="panel">
+              <Empty>
+                {connection === "已断开"
+                  ? "内核已退出，请连接其他内核或重新启动后连接。"
+                  : error
+                    ? "当前内核无法连接，可重试或连接其他内核。"
+                    : "正在连接内核…"}
+              </Empty>
+              <KernelConnection />
+            </section>
+          )}
           {data && repositoryReady && tab === "overview" && (
             <>
               <div className="metrics">
@@ -1021,7 +1195,7 @@ function App() {
                   ) : (
                     <div className="feature-list">
                       {features.map((feature) => (
-                        <button
+                        <ActionButton
                           className={`feature-row ${feature.id === featureId ? "selected" : ""}`}
                           key={feature.id}
                           onClick={() => {
@@ -1043,7 +1217,7 @@ function App() {
                           </div>
                           <Badge value={feature.status} />
                           <ChevronRight size={16} />
-                        </button>
+                        </ActionButton>
                       ))}
                     </div>
                   )}
@@ -1130,9 +1304,9 @@ function App() {
                     {act(f.id, "binding.update", "配置绑定", () =>
                       editBinding(f),
                     )}
-                    <button onClick={() => setTab("execution")}>
+                    <ActionButton onClick={() => setTab("execution")}>
                       进入执行工作台 <ArrowRight size={15} />
-                    </button>
+                    </ActionButton>
                   </div>
                   <p className="muted">
                     {detail.tasks.length} Tasks · {detail.attempts.length}{" "}
@@ -1147,7 +1321,7 @@ function App() {
             <div className="feature-picker">
               <label>
                 当前 Feature
-                <select
+                <ActionSelect
                   aria-label="当前 Feature"
                   value={featureId}
                   onChange={(e) => {
@@ -1165,7 +1339,7 @@ function App() {
                       {x.title}
                     </option>
                   ))}
-                </select>
+                </ActionSelect>
               </label>
               {f && (
                 <>
@@ -1177,21 +1351,21 @@ function App() {
               )}
             </div>
           )}
-          {data && project && repositoryReady && tab === "discussion" && (
+          {data && tab === "discussion" && (
             <RoleConversation
               key={
-                project.id +
-                (focusedSession && focusedSession.project_id === project.id
+                (project?.id || "global") +
+                (focusedSession && focusedSession.project_id === project?.id
                   ? focusedSession.id
                   : "")
               }
               initialOwner={
-                focusedSession && focusedSession.project_id === project.id
+                focusedSession && focusedSession.project_id === project?.id
                   ? focusedSession.owner_id
                   : featureId || undefined
               }
               initialSession={
-                focusedSession && focusedSession.project_id === project.id
+                focusedSession && focusedSession.project_id === project?.id
                   ? focusedSession.id
                   : undefined
               }
@@ -1201,6 +1375,8 @@ function App() {
               agents={definitions}
               configurations={data.configurations || []}
               onLocateExperience={async (entry) => {
+                if (entry.project_id === "00000000-0000-4000-8000-000000000000")
+                  return;
                 if (entry.project_id !== projectId)
                   await openProject(entry.project_id);
                 setFeatureId(entry.feature_id);
@@ -1240,7 +1416,7 @@ function App() {
                 </div>
                 <label>
                   查看对象
-                  <select
+                  <ActionSelect
                     aria-label="执行对象"
                     value={taskFilter}
                     onChange={(e) => setTaskFilter(e.target.value)}
@@ -1251,7 +1427,7 @@ function App() {
                         Task · {t.title}
                       </option>
                     ))}
-                  </select>
+                  </ActionSelect>
                 </label>
               </div>
               <div className="detail-tabs" role="tablist" aria-label="执行详情">
@@ -1263,14 +1439,14 @@ function App() {
                   ["context", "上下文"],
                   ["tests", "测试"],
                 ].map(([key, label]) => (
-                  <button
+                  <ActionButton
                     key={key}
                     role="tab"
                     aria-selected={executionTab === key}
                     onClick={() => setExecutionTab(key)}
                   >
                     {label}
-                  </button>
+                  </ActionButton>
                 ))}
               </div>
               {executionTab === "overview" && (
@@ -1297,6 +1473,7 @@ function App() {
                         request={rpc}
                         refresh={load}
                         onDiscussion={(id, owner) => {
+                          setTaskFilter(owner === f.id ? "" : owner);
                           setFocusedSession({
                             id,
                             owner_id: owner,
@@ -1307,7 +1484,7 @@ function App() {
                       />
                     ))}
                   {(configurationLock || legacyLock) && (
-                    <button
+                    <ActionButton
                       onClick={() =>
                         show({
                           title: "基于当前 Project 配置创建后继 Feature",
@@ -1328,7 +1505,7 @@ function App() {
                       }
                     >
                       创建后继 Feature
-                    </button>
+                    </ActionButton>
                   )}
                 </>
               )}
@@ -1384,9 +1561,11 @@ function App() {
                         </summary>
                         <pre>{pretty(r)}</pre>
                         {r.artifact_id && (
-                          <button onClick={() => openArtifact(r.artifact_id)}>
+                          <ActionButton
+                            onClick={() => openArtifact(r.artifact_id)}
+                          >
                             读取证据
-                          </button>
+                          </ActionButton>
                         )}
                       </details>
                     ))}
@@ -1403,7 +1582,7 @@ function App() {
                   <section className="notice">
                     <h3>工程执行等待输入</h3>
                     {detail.pending_interactions.map((i: RecordData) => (
-                      <button
+                      <ActionButton
                         key={i.id}
                         onClick={() => {
                           const session = detail.sessions.find(
@@ -1419,7 +1598,7 @@ function App() {
                           ? "处理工具审批"
                           : "回答 Agent 问题"}{" "}
                         · {i.reason}
-                      </button>
+                      </ActionButton>
                     ))}
                   </section>
                 )}
@@ -1427,7 +1606,7 @@ function App() {
                   {!configurationLock && (
                     <label>
                       下一次工程执行的 Harness
-                      <select
+                      <ActionSelect
                         aria-label="工程 Harness"
                         value={liveProvider}
                         onChange={(e) => setLiveProvider(e.target.value)}
@@ -1435,7 +1614,7 @@ function App() {
                         <option value="">继承角色 / 项目 / 全局偏好</option>
                         <option value="codex">Codex</option>
                         <option value="dsh">DeepSeek Harness</option>
-                      </select>
+                      </ActionSelect>
                     </label>
                   )}
                   <div className="actions">
@@ -1553,15 +1732,15 @@ function App() {
                             {act(t.id, "binding.update", "绑定", () =>
                               editBinding(t),
                             )}
-                            <button
+                            <ActionButton
                               onClick={() =>
                                 setTaskFilter(taskFilter === t.id ? "" : t.id)
                               }
                             >
                               {taskFilter === t.id ? "显示全部" : "查看执行"}
-                            </button>
+                            </ActionButton>
                           </div>
-                          <button
+                          <ActionButton
                             className="text-button"
                             onClick={() =>
                               setView({
@@ -1571,7 +1750,7 @@ function App() {
                             }
                           >
                             查看锁定版本
-                          </button>
+                          </ActionButton>
                         </article>
                       ))}
                     </div>
@@ -1584,12 +1763,12 @@ function App() {
                 >
                   <div className="panel-heading">
                     <h2>Attempts 与 Run DAG</h2>
-                    <button
+                    <ActionButton
                       className="text-button"
                       onClick={() => setTaskFilter("")}
                     >
                       Feature 自身 + 全部 Tasks
-                    </button>
+                    </ActionButton>
                   </div>
                   {detail.attempts.filter(
                     (a: RecordData) => !taskFilter || a.task_id === taskFilter,
@@ -1631,7 +1810,7 @@ function App() {
                               {act(a.id, "attempt.cancel", "取消 Attempt", () =>
                                 command("attempt.cancel", a.id).catch(() => {}),
                               )}
-                              <button
+                              <ActionButton
                                 onClick={() =>
                                   setView({
                                     title:
@@ -1641,7 +1820,7 @@ function App() {
                                 }
                               >
                                 输入与锁
-                              </button>
+                              </ActionButton>
                             </div>
                           </div>
                           <div className="run-table">
@@ -1673,7 +1852,7 @@ function App() {
                                       "cancelled",
                                       "interrupted",
                                     ].includes(r.status) && (
-                                      <button
+                                      <ActionButton
                                         title="技术重试"
                                         onClick={() =>
                                           command("run.retry", r.id).catch(
@@ -1682,12 +1861,12 @@ function App() {
                                         }
                                       >
                                         <RotateCcw size={13} /> 重试
-                                      </button>
+                                      </ActionButton>
                                     )}
                                     {["running", "queued"].includes(
                                       r.status,
                                     ) && (
-                                      <button
+                                      <ActionButton
                                         onClick={() =>
                                           command("run.cancel", r.id).catch(
                                             () => {},
@@ -1695,9 +1874,9 @@ function App() {
                                         }
                                       >
                                         取消
-                                      </button>
+                                      </ActionButton>
                                     )}
-                                    <button
+                                    <ActionButton
                                       onClick={() =>
                                         setView({
                                           title: "Run 日志 / 输出 / Session",
@@ -1718,7 +1897,7 @@ function App() {
                                       }
                                     >
                                       详情
-                                    </button>
+                                    </ActionButton>
                                   </div>
                                   {detail.blocked_reasons[r.id] && (
                                     <div className="run-blocked">
@@ -1785,9 +1964,10 @@ function App() {
                   <div className="panel-heading">
                     <h2>Merge 候选</h2>
                     {project?.execution_mode === "live" && (
-                      <button
+                      <ActionButton
                         disabled={busy}
                         onClick={async () => {
+                          const target = currentActionTarget();
                           try {
                             const policy = await rpc("github.diagnose", {
                               repository:
@@ -1803,12 +1983,12 @@ function App() {
                               project.revision,
                             );
                           } catch (error) {
-                            setError(String(error));
+                            publishActionFeedback(target, String(error), true);
                           }
                         }}
                       >
                         核对并快进主干
-                      </button>
+                      </ActionButton>
                     )}
                     <GitMerge size={18} />
                   </div>
@@ -1816,7 +1996,7 @@ function App() {
                     <p className="notice" key={operation.id}>
                       主干同步 · {operation.status} · {operation.reason}
                       {operation.status === "needs_reconciliation" && (
-                        <button
+                        <ActionButton
                           disabled={busy}
                           onClick={() =>
                             command(
@@ -1828,7 +2008,7 @@ function App() {
                           }
                         >
                           核对主干同步
-                        </button>
+                        </ActionButton>
                       )}
                     </p>
                   ))}
@@ -1911,7 +2091,7 @@ function App() {
                               {op.action.kind} · {op.status} · {op.reason}
                               {op.status === "needs_reconciliation" &&
                                 op.reason !== "superseded_target" && (
-                                  <button
+                                  <ActionButton
                                     onClick={() =>
                                       command(
                                         "repository.reconcile",
@@ -1922,7 +2102,7 @@ function App() {
                                     }
                                   >
                                     核对远端操作
-                                  </button>
+                                  </ActionButton>
                                 )}
                             </p>
                           ))}
@@ -1948,7 +2128,7 @@ function App() {
                             () => command("merge.apply", m.id).catch(() => {}),
                             true,
                           )}
-                          <button
+                          <ActionButton
                             onClick={() =>
                               setView({
                                 title: "Merge 固定源/目标与验证 Runs",
@@ -1965,7 +2145,7 @@ function App() {
                             }
                           >
                             候选与验证
-                          </button>
+                          </ActionButton>
                           <span className="muted">
                             {detail.allowed_actions[m.id]?.blocked.join(" · ")}
                           </span>
@@ -1991,7 +2171,7 @@ function App() {
                           {effect.status} · {effect.reason}
                         </p>
                       </div>
-                      <button
+                      <ActionButton
                         onClick={() =>
                           setView({
                             title: "外部调用意图与回执",
@@ -2000,7 +2180,7 @@ function App() {
                         }
                       >
                         查看回执
-                      </button>
+                      </ActionButton>
                     </div>
                   ))}
                   {pager("effects")}
@@ -2085,7 +2265,7 @@ function App() {
                                 ` · 验收条目 ${d.acceptance.map((c: RecordData) => c.key).join("、")}`}
                             </p>
                           </div>
-                          <button
+                          <ActionButton
                             onClick={() =>
                               setView({
                                 title: `${d.title} · v${d.version}`,
@@ -2094,7 +2274,7 @@ function App() {
                             }
                           >
                             阅读
-                          </button>
+                          </ActionButton>
                           {act(f.id, "document.revise", "修订", () =>
                             show({
                               title: "修订文档 · 旧证据将失效",
@@ -2164,7 +2344,7 @@ function App() {
                             revision {c.revision} · {c.content.slice(0, 100)}
                           </p>
                         </div>
-                        <button
+                        <ActionButton
                           onClick={() =>
                             show({
                               title: "更新独立 Context",
@@ -2182,14 +2362,14 @@ function App() {
                           }
                         >
                           编辑
-                        </button>
-                        <button
+                        </ActionButton>
+                        <ActionButton
                           onClick={() =>
                             command("snapshot.save", c.owner_id).catch(() => {})
                           }
                         >
                           保存 Snapshot
-                        </button>
+                        </ActionButton>
                       </div>
                     ))}
                   {detail.snapshots
@@ -2210,7 +2390,7 @@ function App() {
                             {short(s.inherited_from)}
                           </p>
                         </div>
-                        <button
+                        <ActionButton
                           onClick={() =>
                             setView({
                               title: "不可变 Snapshot / 重建引用",
@@ -2219,7 +2399,7 @@ function App() {
                           }
                         >
                           查看
-                        </button>
+                        </ActionButton>
                       </div>
                     ))}
                   {pager("tasks")}
@@ -2228,7 +2408,7 @@ function App() {
                     <div className="snapshot-compare">
                       <label>
                         快照 A
-                        <select
+                        <ActionSelect
                           value={snapshotA}
                           onChange={(e) => setSnapshotA(e.target.value)}
                         >
@@ -2243,11 +2423,11 @@ function App() {
                                 {s.kind} · {short(s.id)}
                               </option>
                             ))}
-                        </select>
+                        </ActionSelect>
                       </label>
                       <label>
                         快照 B
-                        <select
+                        <ActionSelect
                           value={snapshotB}
                           onChange={(e) => setSnapshotB(e.target.value)}
                         >
@@ -2262,9 +2442,9 @@ function App() {
                                 {s.kind} · {short(s.id)}
                               </option>
                             ))}
-                        </select>
+                        </ActionSelect>
                       </label>
-                      <button
+                      <ActionButton
                         disabled={!snapshotA || !snapshotB}
                         onClick={() =>
                           setView({
@@ -2281,7 +2461,7 @@ function App() {
                         }
                       >
                         比较
-                      </button>
+                      </ActionButton>
                     </div>
                   )}
                 </section>
@@ -2297,7 +2477,9 @@ function App() {
                         <strong>{a.relative_path}</strong>
                         <p>SHA256 {a.sha256}</p>
                       </div>
-                      <button onClick={() => openArtifact(a.id)}>打开</button>
+                      <ActionButton onClick={() => openArtifact(a.id)}>
+                        打开
+                      </ActionButton>
                     </div>
                   ))}
                   {pager("artifacts")}
@@ -2308,13 +2490,13 @@ function App() {
             <section className="panel">
               <h2>Feature 工作队列{workFilter ? ` · ${workFilter}` : ""}</h2>
               {features.map((feature) => (
-                <button
+                <ActionButton
                   className="feature-row"
                   key={feature.id}
                   onClick={() => setFeatureId(feature.id)}
                 >
                   {feature.title} · {labels[feature.status] || feature.status}
-                </button>
+                </ActionButton>
               ))}
               <Pagination
                 page={featurePage}
@@ -2323,40 +2505,25 @@ function App() {
               />
             </section>
           )}
-          {data && tab === "integrations" && (
-            <Integrations
-              key={`integrations:${projectId || "global"}`}
+          {data && ["workflows", "components"].includes(tab) && (
+            <ConfigurationPage
+              key={`${tab}:${projectId}`}
+              group={tab === "workflows" ? "processes" : "foundations"}
               request={rpc}
               project={project}
               installations={data.runtime_installations || []}
-            />
-          )}
-          {tab === "workflows" && (
-            <WorkflowManager
-              key={`workflow-manager:${projectId || "global"}`}
-              request={rpc}
-              project={project}
               refresh={load}
             />
           )}
-          {data &&
-            ["actors", "definitions", "specifications", "components"].includes(
-              tab,
-            ) && (
-              <AgentCatalog
-                key={`${tab}:${projectId}`}
-                request={rpc}
-                project={project}
-                installations={data.runtime_installations || []}
-                group={
-                  tab === "specifications"
-                    ? "specifications"
-                    : tab === "components"
-                      ? "foundations"
-                      : "actors"
-                }
-              />
-            )}
+          {data && ["actors", "definitions"].includes(tab) && (
+            <AgentCatalog
+              key={`actors:${projectId}`}
+              request={rpc}
+              project={project}
+              installations={data.runtime_installations || []}
+              group="actors"
+            />
+          )}
           {data && tab === "projects" && (
             <ProjectManager
               key={`project-manager:${projectId || "global"}`}
@@ -2372,19 +2539,42 @@ function App() {
           {data && tab === "history" && (
             <label>
               历史范围
-              <select
+              <ActionSelect
                 value={historyScope}
                 onChange={(e) => {
+                  historyTarget.current = currentActionTarget();
                   setHistoryScope(e.target.value);
                   setHistoryPage(0);
                 }}
               >
                 <option value="project">当前项目</option>
                 <option value="global">Global 配置与发布</option>
-              </select>
+                <option value="tools">Tools调用记录</option>
+              </ActionSelect>
             </label>
           )}
-          {data && tab === "history" && (
+          {data && tab === "history" && historyScope === "tools" && (
+            <>
+              <label>
+                调用记录归属
+                <ActionSelect
+                  value={project ? toolsHistoryScope : "global"}
+                  onChange={(e) => setToolsHistoryScope(e.target.value)}
+                >
+                  <option value="project" disabled={!project}>
+                    当前项目
+                  </option>
+                  <option value="global">Global 接入</option>
+                </ActionSelect>
+              </label>
+              <CallHistory
+                key={`${projectId}:${toolsHistoryScope}`}
+                request={rpc}
+                project={toolsHistoryScope === "global" ? undefined : project}
+              />
+            </>
+          )}
+          {data && tab === "history" && historyScope !== "tools" && (
             <section className="panel">
               <div className="panel-heading">
                 <h2>持久化事件</h2>
@@ -2407,7 +2597,10 @@ function App() {
               )}
               <Pagination
                 page={historyPage}
-                setPage={setHistoryPage}
+                setPage={(page) => {
+                  historyTarget.current = currentActionTarget();
+                  setHistoryPage(page);
+                }}
                 hasMore={history.length === 50}
               />
             </section>
@@ -2419,16 +2612,17 @@ function App() {
                   <h2>数据与运行</h2>
                   <span className="muted">按需准备运行环境</span>
                 </div>
+                <KernelConnection />
                 <div className="setting-row">
                   <div>
-                    <h3>本地 data 目录</h3>
+                    <h3>内核 data 目录</h3>
                     <code>{data.data_root}</code>
                     <p className="muted">
                       全局配置与各项目分别保存；打开项目即可切换。更改 data
                       路径需退出后以 --data 新路径重启。
                     </p>
                   </div>
-                  <button
+                  <ActionButton
                     onClick={() =>
                       setView({
                         title: "打开其他数据集",
@@ -2437,7 +2631,7 @@ function App() {
                     }
                   >
                     更改路径说明
-                  </button>
+                  </ActionButton>
                 </div>
                 <div className="setting-row">
                   <div>
@@ -2491,7 +2685,7 @@ function App() {
                     <h3>全局并发额度</h3>
                     <p>{data.global_concurrency} 个 Run · 单项目默认 2 个</p>
                   </div>
-                  <button
+                  <ActionButton
                     onClick={() =>
                       show({
                         title: "修改全局并发",
@@ -2508,7 +2702,7 @@ function App() {
                     }
                   >
                     调整
-                  </button>
+                  </ActionButton>
                 </div>
                 {project && (
                   <div className="setting-row">
@@ -2520,10 +2714,10 @@ function App() {
                       </p>
                     </div>
                     <div className="actions">
-                      <button onClick={() => setTab("workflows")}>
+                      <ActionButton onClick={() => setTab("workflows")}>
                         默认绑定
-                      </button>
-                      <button
+                      </ActionButton>
+                      <ActionButton
                         onClick={() =>
                           show({
                             title: "编辑 Project",
@@ -2552,7 +2746,7 @@ function App() {
                         }
                       >
                         编辑
-                      </button>
+                      </ActionButton>
                     </div>
                   </div>
                 )}
@@ -2563,63 +2757,31 @@ function App() {
                       未确认的运行在下次启动后标记中断，可显式重试。
                     </p>
                   </div>
-                  <button
+                  <ActionButton
                     className="danger"
                     onClick={() =>
                       show({
-                        title: "退出本地内核",
+                        title: "退出当前内核",
                         method: "shutdown",
                         fields: [],
                       })
                     }
                   >
                     退出
-                  </button>
+                  </ActionButton>
                 </div>
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>数据生命周期</h2>
-                  <span className="badge">仅交互预览</span>
-                </div>
-                {["Archive", "data 迁移"].map((title) => (
-                  <div className="setting-row" key={title}>
-                    <div>
-                      <h3>{title}</h3>
-                      <p className="muted">
-                        本轮预览操作范围，不执行导出、删除、恢复或搬迁。
-                      </p>
-                    </div>
-                    <button
-                      onClick={() =>
-                        setView({
-                          title: `${title} · 预览结束`,
-                          body: `当前目录：${data.data_root}\n项目数量：${projects.length}\n\n${title === "Archive" ? "未来将固定归档引用、导出清单与校验。" : "未来将校验目标、复制、核对并切换数据集。"}\n\n预览结束。未写入业务结果，未搬动或删除文件。`,
-                        })
-                      }
-                    >
-                      预览
-                    </button>
-                  </div>
-                ))}
               </section>
               <div className="notice">
-                Web UI 通过本地 Rust Host 运行。真实工程需配置 Harness、Docker
-                和 GitHub；平台验收记录见文档。
+                Web UI 连接当前 Rust Host。真实工程需配置 Harness、Docker 和
+                GitHub；平台验收记录见文档。
               </div>
             </>
           )}
           <footer>
-            DevDesk 0.2 <span>本地工程内核 · 持久化历史 · GitHub 工程接入</span>
+            DevDesk 0.2 <span>工程内核 · 持久化历史 · GitHub 工程接入</span>
           </footer>
         </main>
       </div>
-      {toast && (
-        <div className="toast" role="status">
-          <Check size={17} />
-          {toast}
-        </div>
-      )}
       {dialog && (
         <CommandDialog
           key={dialog.method + (dialog.target || "")}
@@ -2633,7 +2795,13 @@ function App() {
                 const response = await fetch("/shutdown", { method: "POST" });
                 if (!response.ok)
                   throw new Error(`退出失败 HTTP ${response.status}`);
-                setToast("内核已退出");
+                kernelStopped.current = true;
+                ++requestGeneration.current;
+                ++projectGeneration.current;
+                setView(undefined);
+                setConnection("已断开");
+                setCaps(undefined);
+                setData(undefined);
               } else if (dialog.method === "settings.update") {
                 result = await rpc(dialog.method, payload);
                 await load();
@@ -2643,12 +2811,18 @@ function App() {
                   dialog.target,
                   payload,
                   dialog.revision,
+                  false,
                 );
               }
               if (dialog.method === "feature.create" && result?.id) {
                 setFeatureId(result.id);
                 setTab("overview");
               }
+              if (dialog.method !== "shutdown")
+                publishActionFeedback(
+                  dialog.feedbackTarget || null,
+                  "操作已保存",
+                );
               setDialog(undefined);
             } catch (e) {
               throw e;
@@ -2678,13 +2852,13 @@ function Metric({
   onClick?: () => void;
 }) {
   return (
-    <button className="metric" onClick={onClick}>
+    <ActionButton className="metric" onClick={onClick}>
       <div>
         <span>{title}</span>
         <strong>{value.toString().padStart(2, "0")}</strong>
       </div>
       <div className="metric-icon">{icon}</div>
-    </button>
+    </ActionButton>
   );
 }
 function Pagination({
@@ -2698,13 +2872,13 @@ function Pagination({
 }) {
   return (
     <div className="pagination">
-      <button disabled={page === 0} onClick={() => setPage(page - 1)}>
+      <ActionButton disabled={page === 0} onClick={() => setPage(page - 1)}>
         上一页
-      </button>
+      </ActionButton>
       <span>第 {page + 1} 页</span>
-      <button disabled={!hasMore} onClick={() => setPage(page + 1)}>
+      <ActionButton disabled={!hasMore} onClick={() => setPage(page + 1)}>
         下一页
-      </button>
+      </ActionButton>
     </div>
   );
 }
@@ -2719,7 +2893,12 @@ function CommandDialog({
   close: () => void;
   submit: (p: RecordData) => Promise<void>;
 }) {
-  const [localError, setLocalError] = useState("");
+  const {
+    error: localError,
+    setError: setLocalError,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
   const formRef = useRef<HTMLFormElement>(null);
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -2731,6 +2910,7 @@ function CommandDialog({
   });
   const send = async (e: FormEvent) => {
     e.preventDefault();
+    beginFeedback();
     setLocalError("");
     try {
       const payload: RecordData = { ...spec.payload };
@@ -2771,6 +2951,8 @@ function CommandDialog({
       await submit(payload);
     } catch (error) {
       setLocalError(String(error));
+    } finally {
+      endFeedback();
     }
   };
   useEffect(() => {
@@ -2782,7 +2964,7 @@ function CommandDialog({
   }, [close, busy]);
   return (
     <div className="modal-backdrop">
-      <form
+      <ActionForm
         className="modal"
         ref={formRef}
         role="dialog"
@@ -2792,14 +2974,14 @@ function CommandDialog({
       >
         <div className="modal-heading">
           <h2>{spec.title}</h2>
-          <button
+          <ActionButton
             type="button"
             aria-label="关闭"
             disabled={busy}
             onClick={close}
           >
             <X size={18} />
-          </button>
+          </ActionButton>
         </div>
         {localError && (
           <div className="error" role="alert">
@@ -2822,7 +3004,8 @@ function CommandDialog({
                 }
               />
             ) : f.type === "select" ? (
-              <select
+              <ActionSelect
+                aria-label={f.label}
                 value={values[f.key]}
                 onChange={(e) =>
                   setValues({ ...values, [f.key]: e.target.value })
@@ -2833,7 +3016,7 @@ function CommandDialog({
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </ActionSelect>
             ) : (
               <input
                 autoFocus={i === 0}
@@ -2845,17 +3028,18 @@ function CommandDialog({
                 }
               />
             )}
+            {f.description && <span className="muted">{f.description}</span>}
           </label>
         ))}
         <div className="modal-actions">
-          <button type="button" disabled={busy} onClick={close}>
+          <ActionButton type="button" disabled={busy} onClick={close}>
             取消
-          </button>
-          <button className="primary" disabled={busy}>
+          </ActionButton>
+          <ActionButton className="primary" disabled={busy}>
             {busy ? "保存中…" : "确认"}
-          </button>
+          </ActionButton>
         </div>
-      </form>
+      </ActionForm>
     </div>
   );
 }
@@ -2881,12 +3065,14 @@ function RunControls({
       <Badge value={run.status} />
       <div className="actions">
         {["failed", "interrupted", "cancelled"].includes(run.status) && (
-          <button onClick={() => perform("run.retry")}>重试</button>
+          <ActionButton onClick={() => perform("run.retry")}>重试</ActionButton>
         )}
         {["running", "queued"].includes(run.status) && (
-          <button onClick={() => perform("run.cancel")}>取消</button>
+          <ActionButton onClick={() => perform("run.cancel")}>
+            取消
+          </ActionButton>
         )}
-        <button onClick={inspect}>详情</button>
+        <ActionButton onClick={inspect}>详情</ActionButton>
       </div>
     </div>
   );
@@ -2956,9 +3142,9 @@ function Reader({
       >
         <div className="modal-heading">
           <h2>{title}</h2>
-          <button aria-label="关闭" onClick={close}>
+          <ActionButton aria-label="关闭" onClick={close}>
             <X size={18} />
-          </button>
+          </ActionButton>
         </div>
         <pre>{body}</pre>
       </section>

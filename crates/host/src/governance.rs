@@ -11,10 +11,13 @@ impl Workspace {
             return None;
         }
         Some((|| {
-            let pid = e
-                .store
-                .project_id()
-                .ok_or_else(|| err("project_required", "需要当前项目"))?;
+            let pid = if params["scope"] == "global" {
+                GLOBAL_DISCUSSION_NAMESPACE.into()
+            } else {
+                e.store
+                    .project_id()
+                    .ok_or_else(|| err("project_required", "需要当前项目"))?
+            };
             let root = PathBuf::from(self.global.root());
             let p = if method == "experience.restore" {
                 &params["payload"]
@@ -32,7 +35,7 @@ impl Workspace {
                 .map_err(|e| err("storage", e.to_string()))?;
             let original = snap.id.clone();
             snap.id = format!("import:{}", command.command_id);
-            snap.project_id = Some(pid.clone());
+            snap.project_id = (pid != GLOBAL_DISCUSSION_NAMESPACE).then(|| pid.clone());
             snap.feature_id = None;
             snap.task_id = None;
             snap.documents.clear();
@@ -84,8 +87,12 @@ impl Workspace {
                         id: format!("source:{}", command.command_id),
                         kind: "experience_import".into(),
                         definition_id: snapid.clone(),
-                        scope: Scope::Project {
-                            project_id: pid.clone(),
+                        scope: if pid == GLOBAL_DISCUSSION_NAMESPACE {
+                            Scope::Global
+                        } else {
+                            Scope::Project {
+                                project_id: pid.clone(),
+                            }
                         },
                         name: "恢复经验场景".into(),
                         version: 1,
@@ -246,13 +253,15 @@ impl Workspace {
                 "AgentID 执行不能单独覆盖 Role/Model/Harness/Permission，请采用新的 Agent 版本",
             )?;
         }
-        let project = state
-            .projects
-            .first()
-            .ok_or_else(|| err("project_required", "Agent 执行需要项目"))?;
-        let scope = Scope::Project {
-            project_id: project.id.clone(),
-        };
+        let project = state.projects.first();
+        require(
+            project.is_some() || owner == "global",
+            "Agent 执行需要项目或全局讨论范围",
+        )?;
+        let scope = project.map_or(Scope::Global, |p| Scope::Project {
+            project_id: p.id.clone(),
+        });
+        let title = project.map_or("全局 / 跨项目", |p| p.title.as_str());
         let instance = if let Some(instance) = selected {
             let r = state.configuration(&instance)?;
             let i: AgentInstance = r.decode()?;
@@ -265,7 +274,7 @@ impl Workspace {
         }) {
             r.id.clone()
         } else {
-            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,project.title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen{Some(feature)}else{None}})})?["id"].as_str().unwrap().into()
+            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen{Some(feature)}else{None}})})?["id"].as_str().unwrap().into()
         };
         resolve_model_connection(&model, &harness)?;
         require(

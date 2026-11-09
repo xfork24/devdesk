@@ -134,6 +134,8 @@ pub struct HarnessDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_provider: Option<String>,
     pub qualified_name: String,
     pub implementation: String,
     pub input_schema: Value,

@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { useState } from "react";
 import { DshProviderSettings } from "./DshProviderSettings";
 
@@ -20,8 +26,16 @@ export function RuntimeSettings({
   request,
   refresh,
 }: Props) {
+  const {
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+
   const [login, setLogin] = useState<{ loginId: string; authUrl: string }>();
   return (
     <>
@@ -32,39 +46,47 @@ export function RuntimeSettings({
             分配任务或开始讨论时自动准备所选 Harness。已有执行继续使用冻结绑定。
           </p>
         </div>
-        <select
+        <ActionSelect
           aria-label="默认 Agent Harness"
           value={provider}
           disabled={busy}
           onChange={async (event) => {
-            setBusy(true);
+            captureFeedback();
+
+            (beginFeedback(), setBusy(true));
             setMessage("");
             try {
               await request("settings.update", {
                 default_harness: event.target.value,
               });
               await refresh();
+              window.dispatchEvent(
+                new Event("devdesk:runtime-options-changed"),
+              );
             } catch {
               setMessage("默认 Harness 保存失败");
             } finally {
-              setBusy(false);
+              (endFeedback(), setBusy(false));
             }
           }}
         >
           <option value="codex">Codex</option>
           <option value="dsh">DeepSeek Harness</option>
-        </select>
+        </ActionSelect>
       </div>
       <div className="setting-row">
         <div>
           <h3>Codex · ChatGPT OAuth</h3>
           <p className="muted">
-            登录组件由 DevDesk 自动准备，通过官方网页授权；登录信息保存在此数据集的独立目录。
+            登录组件由 DevDesk
+            自动准备，通过官方网页授权；登录信息保存在此数据集的独立目录。
           </p>
           <div className="actions">
-            <button
+            <ActionButton
               disabled={busy}
               onClick={async () => {
+                captureFeedback();
+
                 // Open during the click so browsers permit navigation after the asynchronous RPC.
                 let authorizationWindow: Window | null = null;
                 try {
@@ -73,11 +95,14 @@ export function RuntimeSettings({
                 } catch {
                   // The official link below also works when popups are blocked.
                 }
-                setBusy(true);
+                (beginFeedback(), setBusy(true));
                 setMessage("正在准备登录组件并请求官方授权地址…");
                 try {
                   const result = await request("codex.auth.start");
                   await refresh();
+                  window.dispatchEvent(
+                    new Event("devdesk:runtime-options-changed"),
+                  );
                   const url = new URL(result.authUrl);
                   if (
                     url.protocol !== "https:" ||
@@ -94,26 +119,33 @@ export function RuntimeSettings({
                     authorizationWindow?.close();
                     authorizationWindow = null;
                   }
-                  setMessage(authorizationWindow
-                    ? "请在官方网页完成授权，然后检查登录状态"
-                    : "浏览器未打开新窗口；请点击下方官方授权链接，完成后检查登录状态");
+                  setMessage(
+                    authorizationWindow
+                      ? "请在官方网页完成授权，然后检查登录状态"
+                      : "浏览器未打开新窗口；请点击下方官方授权链接，完成后检查登录状态",
+                  );
                 } catch (error) {
                   authorizationWindow?.close();
                   setMessage(`无法开始登录，可再次点击重试：${String(error)}`);
                 } finally {
-                  setBusy(false);
+                  (endFeedback(), setBusy(false));
                 }
               }}
             >
               网页登录
-            </button>
-            <button
+            </ActionButton>
+            <ActionButton
               disabled={busy}
               onClick={async () => {
-                setBusy(true);
+                captureFeedback();
+
+                (beginFeedback(), setBusy(true));
                 try {
                   const result = await request("codex.auth.status");
                   await refresh();
+                  window.dispatchEvent(
+                    new Event("devdesk:runtime-options-changed"),
+                  );
                   setMessage(
                     result.authenticated
                       ? "Codex OAuth 已登录"
@@ -123,17 +155,19 @@ export function RuntimeSettings({
                 } catch {
                   setMessage("无法核对登录状态，请检查运行环境或稍后重试");
                 } finally {
-                  setBusy(false);
+                  (endFeedback(), setBusy(false));
                 }
               }}
             >
               检查登录状态
-            </button>
+            </ActionButton>
             {login && (
-              <button
+              <ActionButton
                 disabled={busy}
                 onClick={async () => {
-                    setBusy(true);
+                  captureFeedback();
+
+                  (beginFeedback(), setBusy(true));
                   try {
                     await request("codex.auth.cancel", {
                       login_id: login.loginId,
@@ -142,12 +176,12 @@ export function RuntimeSettings({
                   } catch {
                     setMessage("登录取消结果未知，请核对状态");
                   } finally {
-                    setBusy(false);
+                    (endFeedback(), setBusy(false));
                   }
                 }}
               >
                 取消登录
-              </button>
+              </ActionButton>
             )}
           </div>
           {login && (
@@ -164,7 +198,9 @@ export function RuntimeSettings({
       <div className="setting-row">
         <div>
           <h3>共享运行时安装</h3>
-          <p className="muted">运行时由 DevDesk 按需下载、构建并复用，无需手动登记。</p>
+          <p className="muted">
+            运行时由 DevDesk 按需下载、构建并复用，无需手动登记。
+          </p>
           {installations.length === 0 ? (
             <p className="muted">尚未使用 Harness；首次执行时自动准备</p>
           ) : (

@@ -10,6 +10,7 @@ pub const DEFAULT_SANDBOX_ID: &str = "builtin-sandbox-codex-docker-v1";
 pub const DEFAULT_STANDARD_ID: &str = "builtin-standard-engineering-v1";
 pub const DEFAULT_FEATURE_WORKFLOW_ID: &str = "builtin-workflow-feature-sol-high-v1";
 pub const DEFAULT_TASK_WORKFLOW_ID: &str = "builtin-workflow-task-sol-high-v1";
+pub const DEFAULT_DSH_NATIVE_TOOL_ID: &str = "builtin-tool-dsh-native-v1";
 pub const DEFAULT_NATIVE_TOOL_ID: &str = "builtin-tool-codex-native-v1";
 
 pub fn default_agent_id(role: &str) -> String {
@@ -39,9 +40,21 @@ pub fn default_configured_agent_id(role: &str) -> String {
 /// Matches the embedded DSH runtime recipe; sessions pin its immutable materialization.
 pub fn default_dsh_recipe_digest() -> String {
     configuration_hash(&[
-        ("Dockerfile", include_str!("../../../containers/dsh/Dockerfile")),
-        ("permissions/backends/dsh/package.json", include_str!("../../../permissions/backends/dsh/package.json")),
-        ("permissions/backends/dsh/tool-policy.mjs", include_str!("../../../permissions/backends/dsh/tool-policy.mjs")),
-        ("permissions/backends/dsh/bwrap-runner.sh", include_str!("../../../permissions/backends/dsh/bwrap-runner.sh")),
+        (
+            "Dockerfile",
+            include_str!("../../../containers/dsh/Dockerfile"),
+        ),
+        (
+            "permissions/backends/dsh/package.json",
+            include_str!("../../../permissions/backends/dsh/package.json"),
+        ),
+        (
+            "permissions/backends/dsh/tool-policy.mjs",
+            include_str!("../../../permissions/backends/dsh/tool-policy.mjs"),
+        ),
+        (
+            "permissions/backends/dsh/bwrap-runner.sh",
+            include_str!("../../../permissions/backends/dsh/bwrap-runner.sh"),
+        ),
     ])
 }

@@ -136,6 +136,7 @@ impl Engine {
             let protocol = if execution.protocol_artifact.is_none() {
                 if let Some(log) = self.harness.session_log(execution)? {
                     let owner = match session.scope {
+                        Some(SessionScope::Global) => MaterialOwner::Global,
                         Some(SessionScope::Project) => MaterialOwner::Project {
                             id: session.project_id.clone().unwrap(),
                         },

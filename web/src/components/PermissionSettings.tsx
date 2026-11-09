@@ -1,4 +1,10 @@
 import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
+import {
   RolePermissionSettings,
   type PermissionRole,
 } from "./RolePermissionSettings";
@@ -36,6 +42,14 @@ type Props = {
 };
 
 export function PermissionSettings({ request, project, refresh }: Props) {
+  const {
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [data, setData] = useState<Result>();
   const [target, setTarget] = useState("codex");
   const [revision, setRevision] = useState("");
@@ -46,7 +60,7 @@ export function PermissionSettings({ request, project, refresh }: Props) {
   const [policy, setPolicy] = useState("{}");
   const [preview, setPreview] = useState<unknown>();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+
   useEffect(() => {
     let active = true;
     request("query.permissions")
@@ -80,6 +94,8 @@ export function PermissionSettings({ request, project, refresh }: Props) {
     setProjectPatch(JSON.stringify(JSON.parse(projectJson), null, 2));
   }, [project?.id, projectJson]);
   async function reload() {
+    captureFeedback();
+
     setData(await request("query.permissions"));
     await refresh();
   }
@@ -90,6 +106,8 @@ export function PermissionSettings({ request, project, refresh }: Props) {
     };
   }
   async function preflight() {
+    captureFeedback();
+
     const overrides =
       target === "docker"
         ? { sandbox: selectedBinding() }
@@ -101,9 +119,11 @@ export function PermissionSettings({ request, project, refresh }: Props) {
     });
   }
   async function save(event: FormEvent) {
+    captureFeedback();
+
     event.preventDefault();
     if (!data) return;
-    setBusy(true);
+    (beginFeedback(), setBusy(true));
     setMessage("");
     try {
       const result = await preflight();
@@ -130,7 +150,7 @@ export function PermissionSettings({ request, project, refresh }: Props) {
     } catch (error) {
       setMessage(String(error));
     } finally {
-      setBusy(false);
+      (endFeedback(), setBusy(false));
     }
   }
   return (
@@ -151,27 +171,32 @@ export function PermissionSettings({ request, project, refresh }: Props) {
             </p>
             {data ? (
               <>
-                <form onSubmit={save}>
+                <ActionForm onSubmit={save}>
                   <label>
                     权限目标
-                    <select
+                    <ActionSelect
                       aria-label="权限目标"
                       value={target}
                       disabled={busy}
-                      onChange={(e) => setTarget(e.target.value)}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setTarget(e.target.value);
+                      }}
                     >
                       <option value="codex">Codex Harness</option>
                       <option value="dsh">DSH Harness</option>
                       <option value="docker">Docker Sandbox</option>
-                    </select>
+                    </ActionSelect>
                   </label>
                   <label>
                     权限修订
-                    <select
+                    <ActionSelect
                       aria-label="权限修订"
                       value={revision}
                       disabled={busy}
                       onChange={(e) => {
+                        captureFeedback();
+
                         setRevision(e.target.value);
                         const selected = data.permissions.find(
                           (p) => p.id === e.target.value,
@@ -185,21 +210,24 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                           {p.name} · v{p.version}
                         </option>
                       ))}
-                    </select>
+                    </ActionSelect>
                   </label>
                   <label>
                     运行时审批
-                    <select
+                    <ActionSelect
                       aria-label="权限审批"
                       value={approval}
                       disabled={busy}
-                      onChange={(e) =>
-                        setApproval(e.target.value as Configuration["approval"])
-                      }
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setApproval(
+                          e.target.value as Configuration["approval"],
+                        );
+                      }}
                     >
                       <option value="never">无需询问</option>
                       <option value="on_request">按需询问</option>
-                    </select>
+                    </ActionSelect>
                   </label>
                   <label>
                     字段覆盖 JSON
@@ -208,7 +236,10 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                       rows={5}
                       value={patch}
                       disabled={busy}
-                      onChange={(e) => setPatch(e.target.value)}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setPatch(e.target.value);
+                      }}
                     />
                   </label>
                   <p className="muted">
@@ -217,26 +248,28 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                     。预检会说明当前后端能否执行。
                   </p>
                   <div className="actions">
-                    <button
+                    <ActionButton
                       type="button"
                       disabled={busy}
                       onClick={async () => {
-                        setBusy(true);
+                        captureFeedback();
+
+                        (beginFeedback(), setBusy(true));
                         try {
                           setPreview(await preflight());
                           setMessage("预检通过，未启动模型或容器。");
                         } catch (error) {
                           setMessage(String(error));
                         } finally {
-                          setBusy(false);
+                          (endFeedback(), setBusy(false));
                         }
                       }}
                     >
                       预览最终权限
-                    </button>
-                    <button disabled={busy}>保存权限绑定</button>
+                    </ActionButton>
+                    <ActionButton disabled={busy}>保存权限绑定</ActionButton>
                   </div>
-                </form>
+                </ActionForm>
                 {preview !== undefined && (
                   <details open>
                     <summary>解析结果与执行后端</summary>
@@ -252,14 +285,19 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                         aria-label="项目权限覆盖"
                         rows={6}
                         value={projectPatch}
-                        onChange={(e) => setProjectPatch(e.target.value)}
+                        onChange={(e) => {
+                          captureFeedback();
+                          return setProjectPatch(e.target.value);
+                        }}
                         disabled={busy}
                       />
                     </label>
-                    <button
+                    <ActionButton
                       disabled={busy}
                       onClick={async () => {
-                        setBusy(true);
+                        captureFeedback();
+
+                        (beginFeedback(), setBusy(true));
                         try {
                           await request("project.update", {
                             command_id: crypto.randomUUID(),
@@ -274,12 +312,12 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                         } catch (error) {
                           setMessage(String(error));
                         } finally {
-                          setBusy(false);
+                          (endFeedback(), setBusy(false));
                         }
                       }}
                     >
                       保存项目权限
-                    </button>
+                    </ActionButton>
                   </details>
                 )}
                 <RolePermissionSettings
@@ -294,7 +332,10 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                     <input
                       aria-label="新权限名称"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setName(e.target.value);
+                      }}
                       disabled={busy}
                     />
                   </label>
@@ -304,20 +345,25 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                       aria-label="新权限策略"
                       rows={8}
                       value={policy}
-                      onChange={(e) => setPolicy(e.target.value)}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setPolicy(e.target.value);
+                      }}
                       disabled={busy}
                     />
                   </label>
                   <div className="actions">
                     {[false, true].map((revise) => (
-                      <button
+                      <ActionButton
                         key={String(revise)}
                         disabled={busy || !name.trim()}
                         onClick={async () => {
+                          captureFeedback();
+
                           const old = data.permissions.find(
                             (p) => p.id === revision,
                           );
-                          setBusy(true);
+                          (beginFeedback(), setBusy(true));
                           try {
                             await request(
                               revise
@@ -343,12 +389,12 @@ export function PermissionSettings({ request, project, refresh }: Props) {
                           } catch (error) {
                             setMessage(String(error));
                           } finally {
-                            setBusy(false);
+                            (endFeedback(), setBusy(false));
                           }
                         }}
                       >
                         {revise ? "创建所选权限的新修订" : "创建权限"}
-                      </button>
+                      </ActionButton>
                     ))}
                   </div>
                 </details>

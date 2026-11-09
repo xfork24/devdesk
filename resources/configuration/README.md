@@ -30,3 +30,5 @@ Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审�
 | 候选评审 | review-candidate-task / review-candidate-feature | 候选来源、只读代码与合入门禁 |
 
 新 v3 路径只传这些已冻结正文和受控材料，不再从 live_runs 的旧分支追加业务提示。旧字符串继续服务旧编译锁；系统测试和 merge.prepare 不调用 Agent。
+
+工程上下文、V1 工作方法、Role 职责、Spec 与 Standard 正文分别维护在 `skills/`、`roles/`、`specs/`、`standards/`。升级时仅为未被用户自定义的内置正文追加修订；原冻结引用、已发表内容与摘要保持不变。DSH 原生工具组通过明确的 Harness 标识限制适用后端，旧通用原生工具绑定继续用于历史组合。

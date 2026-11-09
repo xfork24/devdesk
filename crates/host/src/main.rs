@@ -32,10 +32,24 @@ struct App {
     workspace: RwLock<Option<Arc<Workspace>>>,
     cookie: String,
     authority: String,
+    origin: String,
+    access_token: Option<String>,
     stopping: AtomicBool,
     shutdown: tokio::sync::Notify,
 }
 impl App {
+    fn session_cookie(&self) -> HeaderValue {
+        HeaderValue::from_str(&format!(
+            "{}; HttpOnly; SameSite=Strict; Path=/{}",
+            self.cookie,
+            if self.origin.starts_with("https://") {
+                "; Secure"
+            } else {
+                ""
+            },
+        ))
+        .expect("generated session cookie")
+    }
     fn workspace(&self) -> devdesk_domain::Result<Arc<Workspace>> {
         self.workspace
             .read()
@@ -48,6 +62,8 @@ fn failure(e: Error) -> Value {
     json!({"code":match e.code.as_str(){"method_not_found"=>-32601,"invalid_params"=>-32602,_=>-32000},"message":e.message,"data":{"code":e.code}})
 }
 async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Response {
+    let path = request.uri().path();
+    let discovery = path == "/connection" && request.method() == axum::http::Method::GET;
     let host = request
         .headers()
         .get(header::HOST)
@@ -57,11 +73,10 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
         return (StatusCode::FORBIDDEN, "Host rejected").into_response();
     }
     if let Some(origin) = request.headers().get(header::ORIGIN) {
-        if origin.to_str().unwrap_or("") != format!("http://{}", app.authority) {
+        if !discovery && origin.to_str().unwrap_or("") != app.origin {
             return (StatusCode::FORBIDDEN, "Origin rejected").into_response();
         }
     }
-    let path = request.uri().path();
     let protected = path == "/rpc"
         || path == "/events"
         || path == "/setup"
@@ -76,7 +91,7 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
     if protected && !authenticated {
         return (StatusCode::UNAUTHORIZED, "Local session required").into_response();
     }
-    let is_page = !protected && !path.contains('.');
+    let is_page = !protected && path != "/connection" && path != "/session" && !path.contains('.');
     let mut response = next.run(request).await;
     response.headers_mut().insert(
         "x-content-type-options",
@@ -85,23 +100,112 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
     response
         .headers_mut()
         .insert("referrer-policy", HeaderValue::from_static("no-referrer"));
-    response.headers_mut().insert("content-security-policy",HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"));
+    response.headers_mut().insert("content-security-policy",HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https:; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"));
     if protected || is_page {
         response
             .headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
-    if is_page {
-        response.headers_mut().insert(
-            header::SET_COOKIE,
-            HeaderValue::from_str(&format!(
-                "{}; HttpOnly; SameSite=Strict; Path=/",
-                app.cookie
-            ))
-            .unwrap(),
-        );
+    if is_page && (app.access_token.is_none() || authenticated) {
+        response
+            .headers_mut()
+            .insert(header::SET_COOKIE, app.session_cookie());
     }
     response
+}
+// Discovery carries no dataset, account, session or project information. It is
+// the only cross-origin endpoint; actual work stays on the selected origin.
+async fn connection(State(app): State<Arc<App>>) -> Response {
+    let status = if app.stopping.load(Ordering::Relaxed) {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    (
+        status,
+        [(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"), (header::CACHE_CONTROL, "no-store")],
+        Json(json!({"product":"devdesk","protocol_version":1,"authentication_required":app.access_token.is_some()})),
+    ).into_response()
+}
+async fn session(State(app): State<Arc<App>>, Json(body): Json<Value>) -> Response {
+    if let Some(expected) = &app.access_token {
+        let provided = body["access_token"].as_str().unwrap_or("");
+        let matches = provided.len() == expected.len()
+            && provided
+                .as_bytes()
+                .iter()
+                .zip(expected.as_bytes())
+                .fold(0u8, |difference, (a, b)| difference | (a ^ b))
+                == 0;
+        if !matches {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error":"authentication_required"})),
+            )
+                .into_response();
+        }
+    }
+    let mut response = Json(json!({"ok":true})).into_response();
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, app.session_cookie());
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+fn connection_origin(value: &str) -> devdesk_domain::Result<String> {
+    let url = url::Url::parse(value).map_err(|_| {
+        err(
+            "invalid_params",
+            "无效的 --public-url，需为 http(s)://主机:端口",
+        )
+    })?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.port() == Some(0)
+    {
+        return Err(err(
+            "invalid_params",
+            "--public-url 仅包含 http(s)://主机:端口，不包含路径、账号或参数",
+        ));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+fn connection_key(
+    listen: std::net::IpAddr,
+    public_url: bool,
+    value: Option<String>,
+) -> devdesk_domain::Result<Option<String>> {
+    if listen.is_unspecified() && !public_url {
+        return Err(err(
+            "invalid_params",
+            "监听所有网卡时需用 --public-url 指定客户端连接地址",
+        ));
+    }
+    if let Some(value) = value {
+        if !(32..=512).contains(&value.len()) || !value.bytes().all(|b| b.is_ascii_graphic()) {
+            return Err(err(
+                "invalid_params",
+                "DEVDESK_ACCESS_TOKEN 需为 32–512 位非空白 ASCII 字符",
+            ));
+        }
+        Ok(Some(value))
+    } else if !listen.is_loopback() || public_url {
+        Err(err(
+            "authentication_required",
+            "远程监听需先配置 DEVDESK_ACCESS_TOKEN（至少 32 位随机连接密钥）",
+        ))
+    } else {
+        Ok(None)
+    }
 }
 async fn static_file(request: Request) -> Response {
     let path = request.uri().path().trim_start_matches('/');
@@ -215,7 +319,7 @@ async fn integration_oauth_callback(
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     let workspace = app.workspace.read().unwrap().clone();
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":["codex","dsh"],"managed_linux_workers":true,"engineering_run_contract":true},"archive":"preview","migration":"preview","platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":["codex","dsh"],"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":["codex","dsh"],"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":["codex","dsh"],"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -315,7 +419,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--port 4317]\n       devdesk-host --update-credential-helper (macOS bundle, explicit upgrade)\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
+            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT]\n       devdesk-host --update-credential-helper (macOS bundle, explicit upgrade)\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
         );
         return Ok(());
     }
@@ -343,19 +447,48 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let port = option("--port")
         .unwrap_or_else(|| "4317".into())
         .parse::<u16>()?;
+    let listen = option("--host")
+        .unwrap_or_else(|| "127.0.0.1".into())
+        .parse::<std::net::IpAddr>()?;
+    let public_url = option("--public-url")
+        .map(|value| connection_origin(&value))
+        .transpose()?;
+    let token = match std::env::var("DEVDESK_ACCESS_TOKEN") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(err("invalid_params", "DEVDESK_ACCESS_TOKEN 必须使用 ASCII 字符").into());
+        }
+    };
+    let access_token = connection_key(listen, public_url.is_some(), token)?;
     let workspace = option("--data")
         .map(|p| Workspace::open(&PathBuf::from(p)))
         .transpose()?;
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
-    let authority = format!("127.0.0.1:{}", listener.local_addr()?.port());
+    let listener = tokio::net::TcpListener::bind((listen, port)).await?;
+    let origin = match public_url {
+        Some(origin) => origin,
+        None => connection_origin(&format!("http://{}", listener.local_addr()?))?,
+    };
+    let authority = origin
+        .split_once("://")
+        .expect("validated origin")
+        .1
+        .to_owned();
+    let session_port = url::Url::parse(&origin)?
+        .port_or_known_default()
+        .expect("HTTP origin has a port");
     let app = Arc::new(App {
         workspace: RwLock::new(workspace),
-        cookie: format!("devdesk_session={}", uuid::Uuid::new_v4()),
+        cookie: format!("devdesk_session_{session_port}={}", uuid::Uuid::new_v4()),
         authority: authority.clone(),
+        origin: origin.clone(),
+        access_token,
         stopping: AtomicBool::new(false),
         shutdown: tokio::sync::Notify::new(),
     });
     let router = Router::new()
+        .route("/connection", get(connection))
+        .route("/session", post(session).layer(DefaultBodyLimit::max(4096)))
         .route(
             "/rpc",
             post(rpc).layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
@@ -398,7 +531,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     println!(
-        "DevDesk · local engineering\nhttp://{authority}\nRuntime: {} / {}",
+        "DevDesk · engineering kernel\n{origin}\nRuntime: {} / {}",
         std::env::consts::OS,
         std::env::consts::ARCH
     );
@@ -415,4 +548,44 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tokio::task::spawn_blocking(move || workspace.stop_owned_runtime()).await??;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod connection_tests {
+    use super::*;
+
+    #[test]
+    fn remote_listeners_require_a_key_and_wildcards_require_an_address() {
+        assert_eq!(
+            connection_key("127.0.0.1".parse().unwrap(), false, None).unwrap(),
+            None
+        );
+        assert!(connection_key("192.0.2.10".parse().unwrap(), false, None).is_err());
+        assert!(connection_key("127.0.0.1".parse().unwrap(), true, None).is_err());
+        assert!(connection_key("0.0.0.0".parse().unwrap(), false, Some("x".repeat(32))).is_err());
+        assert!(connection_key("0.0.0.0".parse().unwrap(), true, Some("x".repeat(32))).is_ok());
+        assert!(connection_key("::1".parse().unwrap(), false, Some("short".into())).is_err());
+    }
+
+    #[test]
+    fn public_addresses_are_canonical_origins_without_embedded_credentials() {
+        assert_eq!(
+            connection_origin("https://KERNEL.example:443/").unwrap(),
+            "https://kernel.example"
+        );
+        assert_eq!(
+            connection_origin("http://[::1]:4317/").unwrap(),
+            "http://[::1]:4317"
+        );
+        for invalid in [
+            "file:///tmp",
+            "http://user:secret@localhost:4317",
+            "http://localhost:4317/path",
+            "http://localhost/?token=secret",
+            "http://localhost/#secret",
+            "http://localhost:0",
+        ] {
+            assert!(connection_origin(invalid).is_err(), "{invalid}");
+        }
+    }
 }

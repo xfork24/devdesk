@@ -33,6 +33,7 @@ def run():
             command.write_text('#!/bin/sh\nexit 1\n')
             command.chmod(0o755)
         env = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ['PATH']}
+        env.pop('DEVDESK_ACCESS_TOKEN', None)
         dataset = Path(directory) / '中文 data set'
         child = subprocess.Popen([str(binary), '--data', str(dataset), '--port', '0'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=directory, env=env)
         try:
@@ -102,7 +103,7 @@ def run():
             feature_a = rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}})
             rpc('document.revise', {'project_id':pid,'command_id':'a-doc','target':feature_a['id'],'expected_revision':1,'payload':{'kind':'requirement','title':'A 需求','body':'A 的独立产物'}})
             view_a = rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})
-            artifact_a = view_a['detail']['artifacts'][0]['id']
+            artifact_a = next(document['artifact_id'] for document in view_a['detail']['documents'] if document['title']=='A 需求')
             project_b = rpc('project.create', {'command_id':'create-b','payload':{'title':'项目 B'}})['id']
             configure(project_b)
             feature_b = rpc('feature.create', {'project_id':project_b,'command_id':'same-feature-id','payload':{'project_id':project_b,'title':'仅属于 B'}})
@@ -179,5 +180,76 @@ def run():
             child.stdout.close()
             child.stderr.close()
 
+def connection_contract():
+    with tempfile.TemporaryDirectory(prefix='devdesk-connection-http-') as directory:
+        token = 'synthetic-http-connection-key-not-a-real-secret'
+        env = {**os.environ, 'DEVDESK_ACCESS_TOKEN':token}
+        clean_env = dict(env)
+        del clean_env['DEVDESK_ACCESS_TOKEN']
+        rejected_data = Path(directory) / 'must-not-be-created'
+        denied = subprocess.run([str(BINARY),'--host','192.0.2.10','--data',str(rejected_data)], env=clean_env, capture_output=True, text=True, timeout=10)
+        assert denied.returncode != 0 and 'DEVDESK_ACCESS_TOKEN' in denied.stderr
+        assert not rejected_data.exists()
+        child = subprocess.Popen([str(BINARY),'--host','127.0.0.1','--data',str(Path(directory)/'data'),'--port','0'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        peer = None
+        try:
+            child.stdout.readline()
+            url = child.stdout.readline().strip()
+            assert url.startswith('http://127.0.0.1:'), child.stderr.read() if child.poll() is not None else url
+            cookies = http.cookiejar.CookieJar()
+            client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
+            def req(path, data=None, headers=None):
+                request=urllib.request.Request(url+path, json.dumps(data).encode() if data is not None else None, {'Content-Type':'application/json',**(headers or {})})
+                try:return client.open(request,timeout=10)
+                except urllib.error.HTTPError as error:return error
+            probe=req('/connection', headers={'Origin':'http://another-kernel.invalid'})
+            assert probe.status==200 and probe.headers['Access-Control-Allow-Origin']=='*'
+            assert probe.headers.get('Set-Cookie') is None
+            assert json.load(probe)=={'product':'devdesk','protocol_version':1,'authentication_required':True}
+            assert req('/connection',headers={'Host':'evil.invalid'}).status==403
+            assert req('/').status==200 and len(cookies)==0
+            for endpoint in ['/capabilities','/events','/artifacts/unknown']:
+                assert req(endpoint).status==401
+            assert req('/rpc',{}).status==401
+            assert req('/session',{'access_token':token},{'Origin':'http://evil.invalid'}).status==403
+            assert req('/session',{'access_token':'wrong'}).status==401 and len(cookies)==0
+            session=req('/session',{'access_token':token},{'Origin':url})
+            assert session.status==200
+            assert 'HttpOnly' in session.headers['Set-Cookie'] and 'SameSite=Strict' in session.headers['Set-Cookie']
+            assert token not in session.headers['Set-Cookie']
+            assert json.load(session)=={'ok':True}
+            assert json.load(req('/capabilities'))['setup_required'] is False
+            # Browsers share cookies across ports. Distinct names must keep
+            # both protected kernels signed in without overwriting a session.
+            peer = subprocess.Popen([str(BINARY),'--data',str(Path(directory)/'peer'),'--port','0'], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            peer.stdout.readline()
+            peer_url = peer.stdout.readline().strip()
+            original_url = url
+            url = peer_url
+            assert req('/capabilities').status==401
+            assert req('/session',{'access_token':token}).status==200
+            assert len(cookies)==2
+            assert json.loads(req('/capabilities').read())['setup_required'] is False
+            assert json.load(req('/shutdown',{}))['ok']
+            assert peer.wait(timeout=5)==0
+            url = original_url
+            assert req('/capabilities').status==200
+            rpc=req('/rpc',{'jsonrpc':'2.0','id':1,'method':'query.workspace','params':{}})
+            assert rpc.headers.get('Access-Control-Allow-Origin') is None
+            assert json.load(rpc)['result']['projects']==[]
+            assert req('/rpc',{}, {'Origin':'http://evil.invalid'}).status==403
+            assert req('/connection').headers.get('Set-Cookie') is None
+            assert json.load(req('/shutdown',{}))['ok']
+            assert child.wait(timeout=5)==0
+            print('PASS connection: discovery-only CORS, no anonymous remote session, key authentication, Host/Origin protection, HttpOnly cookies with separate port names, remote opt-in before dataset initialization')
+        finally:
+            if peer is not None:
+                if peer.poll() is None:peer.terminate();peer.wait(timeout=5)
+                peer.stdout.close();peer.stderr.close()
+            if child.poll() is None:
+                child.terminate();child.wait(timeout=5)
+            child.stdout.close();child.stderr.close()
+
 if __name__=='__main__':
     run()
+    connection_contract()

@@ -3,6 +3,7 @@ use crate::*;
 use ports::{ConversationObservation as Obs, ProviderTerminal, SessionStart, TurnDispatch};
 fn owner(s: &Session) -> MaterialOwner {
     match s.scope.unwrap() {
+        SessionScope::Global => MaterialOwner::Global,
         SessionScope::Project => MaterialOwner::Project {
             id: s.project_id.clone().unwrap(),
         },
@@ -318,6 +319,11 @@ impl Engine {
                             })
                         })
                         .filter(|d| match session.scope.unwrap() {
+                            SessionScope::Global => {
+                                d.project_id.is_none()
+                                    && d.feature_id.is_none()
+                                    && d.task_id.is_none()
+                            }
                             SessionScope::Project => d.project_id == session.project_id,
                             SessionScope::Feature | SessionScope::Task => snapshot
                                 .document_in_feature(d, session.feature_id.as_deref().unwrap()),
@@ -648,6 +654,15 @@ impl Engine {
                 MessageMode::Full,
                 None,
             );
+            if s.turns
+                .iter()
+                .any(|t| t.id == tid && t.run_id.is_none() && t.status == TurnStatus::Completed)
+                && s.governance
+                    .iter()
+                    .any(|r| r.kind == "agent_session" && r.definition_id == session.id)
+            {
+                self.capture_conversation(s, session, "conversation_completed", None, None)?;
+            }
             Ok(json!({"ok":true}))
         })?;
         for (execution, _, _) in results {

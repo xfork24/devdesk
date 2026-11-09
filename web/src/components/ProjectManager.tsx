@@ -1,3 +1,9 @@
+import {
+  ActionButton,
+  ActionForm,
+  ActionSelect,
+  useActionFeedback,
+} from "./ActionFeedback";
 import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -19,15 +25,23 @@ export function ProjectManager({
   onOpen: (id: string) => Promise<unknown>;
   refresh: () => Promise<unknown>;
 }) {
+  const {
+    error,
+    setError,
+    message,
+    setMessage,
+    capture: captureFeedback,
+    beginFeedback,
+    endFeedback,
+  } = useActionFeedback();
+
   const [projects, setProjects] = useState<Row[]>([]),
     [records, setRecords] = useState<Row[]>([]),
     [configuration, setConfiguration] = useState<Row>(),
     [defaults, setDefaults] = useState<Row>(),
     [health, setHealth] = useState<Row>(),
     [requirements, setRequirements] = useState<Row>(),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("");
+    [busy, setBusy] = useState(false);
   const [repository, setRepository] = useState(""),
     [mainline, setMainline] = useState("main"),
     [title, setTitle] = useState("");
@@ -121,8 +135,10 @@ export function ProjectManager({
     (r) => r.kind === "standard" && Array.isArray(r.data.baseline_rules),
   );
   async function save() {
+    captureFeedback();
+
     if (!project) return;
-    setBusy(true);
+    (beginFeedback(), setBusy(true));
     setError("");
     try {
       const row = await request("project.configuration.update", {
@@ -146,7 +162,7 @@ export function ProjectManager({
     } catch (e) {
       setError(String(e));
     } finally {
-      setBusy(false);
+      (endFeedback(), setBusy(false));
     }
   }
   return (
@@ -169,19 +185,20 @@ export function ProjectManager({
               High · Codex · 默认 Tools / Skills · Docker 与默认 Permissions。
             </p>
             {project && (
-              <button
+              <ActionButton
                 disabled={busy}
-                onClick={() =>
-                  setDraft({
+                onClick={() => {
+                  captureFeedback();
+                  return setDraft({
                     workflow_ref: defaults.workflow_ref,
                     standard_ref: "",
                     role_agent_bindings: defaults.role_agent_bindings,
                     source_configuration_id: configuration?.id || "",
-                  })
-                }
+                  });
+                }}
               >
                 采用默认配置
-              </button>
+              </ActionButton>
             )}
           </div>
         )}
@@ -199,30 +216,34 @@ export function ProjectManager({
         ))}
         <div className="configuration-list project-list">
           {projects.map((row) => (
-            <button
+            <ActionButton
               key={row.id}
               className={row.id === project?.id ? "selected" : ""}
               disabled={busy}
               onClick={() => {
-                setBusy(true);
+                captureFeedback();
+
+                (beginFeedback(), setBusy(true));
                 void onOpen(row.id)
                   .catch((e) => setError(String(e)))
-                  .finally(() => setBusy(false));
+                  .finally(() => (endFeedback(), setBusy(false)));
               }}
             >
               <strong>{row.title}</strong>
               <span>
                 {row.workspace_definition?.repository || "待配置仓库"}
               </span>
-            </button>
+            </ActionButton>
           ))}
         </div>
         <details>
           <summary>集成新项目</summary>
-          <form
+          <ActionForm
             onSubmit={async (e) => {
+              captureFeedback();
+
               e.preventDefault();
-              setBusy(true);
+              (beginFeedback(), setBusy(true));
               setError("");
               try {
                 const row = await request("project.open_github", {
@@ -236,7 +257,7 @@ export function ProjectManager({
               } catch (e) {
                 setError(String(e));
               } finally {
-                setBusy(false);
+                (endFeedback(), setBusy(false));
               }
             }}
           >
@@ -246,7 +267,10 @@ export function ProjectManager({
                 <input
                   required
                   value={repository}
-                  onChange={(e) => setRepository(e.target.value)}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setRepository(e.target.value);
+                  }}
                   placeholder="owner/repo"
                 />
               </label>
@@ -255,21 +279,27 @@ export function ProjectManager({
                 <input
                   required
                   value={mainline}
-                  onChange={(e) => setMainline(e.target.value)}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setMainline(e.target.value);
+                  }}
                 />
               </label>
               <label>
                 项目名称
                 <input
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setTitle(e.target.value);
+                  }}
                 />
               </label>
             </div>
-            <button className="primary" disabled={busy}>
+            <ActionButton className="primary" disabled={busy}>
               登记项目并配置
-            </button>
-          </form>
+            </ActionButton>
+          </ActionForm>
         </details>
       </section>
       {project && (
@@ -284,8 +314,10 @@ export function ProjectManager({
               </p>
             </div>
           </div>
-          <form
+          <ActionForm
             onSubmit={(e) => {
+              captureFeedback();
+
               e.preventDefault();
               void save();
             }}
@@ -296,17 +328,19 @@ export function ProjectManager({
                 records={workflows}
                 value={draft.workflow_ref}
                 required
-                onChange={(value) =>
-                  setDraft({ ...draft, workflow_ref: value })
-                }
+                onChange={(value) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, workflow_ref: value });
+                }}
               />
               <label>
                 Standard（可选质量基线）
-                <select
+                <ActionSelect
                   value={draft.standard_ref}
-                  onChange={(e) =>
-                    setDraft({ ...draft, standard_ref: e.target.value })
-                  }
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({ ...draft, standard_ref: e.target.value });
+                  }}
                 >
                   <option value="">
                     不选基线 · 仍执行 Step Spec 和工程门禁
@@ -316,18 +350,18 @@ export function ProjectManager({
                       {r.name} · v{r.version}
                     </option>
                   ))}
-                </select>
+                </ActionSelect>
               </label>
             </div>
             <p>
               <a
-                href={`?tab=workflows&project_id=${encodeURIComponent(project.id)}`}
+                href={`?tab=workflows&config_tab=workflow&project_id=${encodeURIComponent(project.id)}`}
               >
                 新建或编辑 Workflow
               </a>{" "}
               ·{" "}
               <a
-                href={`?tab=specifications&project_id=${encodeURIComponent(project.id)}`}
+                href={`?tab=workflows&config_tab=spec&project_id=${encodeURIComponent(project.id)}`}
               >
                 管理 Spec 与 Standard
               </a>{" "}
@@ -359,15 +393,16 @@ export function ProjectManager({
                       records={agents}
                       required
                       value={draft.role_agent_bindings[item.role_id] || ""}
-                      onChange={(value) =>
-                        setDraft({
+                      onChange={(value) => {
+                        captureFeedback();
+                        return setDraft({
                           ...draft,
                           role_agent_bindings: {
                             ...draft.role_agent_bindings,
                             [item.role_id]: value,
                           },
-                        })
-                      }
+                        });
+                      }}
                     />
                   );
                 })}
@@ -417,7 +452,7 @@ export function ProjectManager({
                 </details>
               </>
             )}
-            <button
+            <ActionButton
               className="primary"
               disabled={
                 busy ||
@@ -426,8 +461,8 @@ export function ProjectManager({
               }
             >
               保存项目配置
-            </button>
-          </form>
+            </ActionButton>
+          </ActionForm>
         </section>
       )}
       {error && (

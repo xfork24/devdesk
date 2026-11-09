@@ -84,6 +84,20 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   const first = (await rpc("query.permission_resources")).profiles.find(
     (p: any) => p.identity === identity,
   );
+  await page.getByLabel("目标资源权限", { exact: true }).selectOption(first.id);
+  const eligible = await page
+    .getByLabel("目标资源权限", { exact: true })
+    .locator("option")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => (n as HTMLOptionElement).value).filter(Boolean),
+    );
+  expect(eligible).toContain(first.id);
+  const allProfiles = (await rpc("query.permission_resources")).profiles;
+  expect(
+    allProfiles
+      .filter((p: any) => eligible.includes(p.id))
+      .every((p: any) => p.target_kind === "harness"),
+  ).toBe(true);
   await page.getByRole("button", { name: "预检目标绑定" }).click();
   await expect(
     page.getByText("目标兼容性预检通过，仍需实际执行范围校验。", {
@@ -115,6 +129,12 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
     readFileSync((await (await download).path())!, "utf8"),
   );
   expect(exported.profiles.map((p: any) => p.version)).toEqual([1, 2]);
+  const second = (await rpc("query.permission_resources")).profiles.find(
+    (p: any) => p.identity === identity && p.version === 2,
+  );
+  await page
+    .getByLabel("目标资源权限", { exact: true })
+    .selectOption(second.id);
   await page.getByRole("button", { name: "应用到该目标版本" }).click();
   await expect
     .poll(async () => (await active()).revision)
@@ -127,6 +147,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   await page
     .getByLabel("版本化权限修订", { exact: true })
     .selectOption(first.id);
+  await page.getByLabel("目标资源权限", { exact: true }).selectOption(first.id);
   await page.getByRole("button", { name: "应用到该目标版本" }).click();
   await expect
     .poll(async () => (await active()).revision)

@@ -110,7 +110,8 @@ impl Workspace {
             let target = params["target"].as_str().or(params["id"].as_str());
             let target_local =
                 target.is_some_and(|id| !global.governance.iter().any(|r| r.id == id));
-            let e = if local || target_local {
+            let e = if (local && !(method == "integration.delete" && !target_local)) || target_local
+            {
                 let e = self.active_engine(params["project_id"].as_str())?;
                 self.sync_configuration(&e)?;
                 e
@@ -512,6 +513,32 @@ impl Workspace {
                         && r.data["status"] != "needs_reconciliation"
                 }) {
                     return Ok(json!(record));
+                }
+            }
+            if method == "integration.delete" {
+                let state = e.store.snapshot()?;
+                let source = state.configuration(c.target.as_deref().unwrap_or(""))?;
+                let targets = devdesk_core::integration_deletion_targets(&state, source)?;
+                let mut offset = 0;
+                loop {
+                    let (projects, total) = self.global.projects(offset, 100)?;
+                    for project in &projects {
+                        let snapshot = SqliteStore::read_project_snapshot(
+                            Path::new(&self.global.root()),
+                            &project.id,
+                        )?;
+                        for target in &targets {
+                            require(
+                                devdesk_core::project_configuration_references(&snapshot, target)
+                                    .is_empty(),
+                                format!("项目 {} 仍引用 {}，请先换绑", project.title, target.name),
+                            )?;
+                        }
+                    }
+                    offset += projects.len();
+                    if offset >= total || projects.is_empty() {
+                        break;
+                    }
                 }
             }
             e.execute(method, c)
