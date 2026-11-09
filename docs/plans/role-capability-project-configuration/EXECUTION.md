@@ -53,3 +53,11 @@
 - 修复“编辑流程”请求未携带 `base_revision_id`。已发布流程（包括子流程）从准确来源建立新草稿，保留当前所选阶段/步骤；编辑、保存和发布均不改写原有版本。
 
 验证：Web 构建、Rust workspace（110 项通过、8 项忽略）、HTTP、准备回归、release 独立二进制检查通过；debug/release Chromium 各 12 项通过。新增浏览器回归实际保存并重载 Spec/Standard/Skill 的 Markdown，校验讨论目标/主题的完整原文和阶段折叠状态，并从父流程进入子流程完成新修订发布、核对旧版不变。debug/release Host 已重新构建并签名，格式及差异检查通过。本次不调用真实模型；日志在 `/tmp/devdesk-workflow-ui-*`，截图为未提交的浏览器临时产物。
+
+## 2026-11-09 补充：原生工具组隐藏占位 Schema
+
+`harness.native` 的工具表单隐藏输入/输出 JSON Schema，说明沿用 Harness 原生协议，实际权限另行解析。保存忽略旧界面遗留的输入/输出 JSON 源码缓冲区，保留已有修订的元数据，新建使用兼容占位对象。没有修改原生工具执行或宣称 JSON 字段可以定义可用工具。
+
+后续 API/MCP/Skill 独立接入页与完整执行通路见 [工具与技能接入计划](../tool-skill-integrations/PLAN.md)，本轮仅编写计划，尚未实施接入功能。
+
+本次 Web 构建、`git diff --check` 与 debug/release 原生工具组定向浏览器回归均通过：Schema 不显示，旧 JSON 源码缓冲不会阻止新建保存，提交数据不携带表单缓冲字段。debug/release Host 已构建并签名。没有运行真实模型或外部 API/MCP 调用；日志位于 `/tmp/devdesk-native-tool-schema-*`。

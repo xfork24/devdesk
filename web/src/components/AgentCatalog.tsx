@@ -316,10 +316,16 @@ function ResourceEditor({
       if (kind === "harness" && !payload.recipe_digest)
         delete payload.recipe_digest;
       if (kind === "tool") {
-        if (payload.input_text !== undefined)
-          payload.input_schema = JSON.parse(payload.input_text);
-        if (payload.output_text !== undefined)
-          payload.output_schema = JSON.parse(payload.output_text);
+        if (payload.implementation === "harness.native") {
+          // Native contracts belong to the Harness; keep existing metadata for history.
+          payload.input_schema = old?.data.input_schema ?? { type: "object" };
+          payload.output_schema = old?.data.output_schema ?? { type: "object" };
+        } else {
+          if (payload.input_text !== undefined)
+            payload.input_schema = JSON.parse(payload.input_text);
+          if (payload.output_text !== undefined)
+            payload.output_schema = JSON.parse(payload.output_text);
+        }
         delete payload.input_text;
         delete payload.output_text;
       }
@@ -796,26 +802,40 @@ function ResourceEditor({
                     <option value="harness.native">Harness 原生工具</option>
                   </select>
                 </label>
-                <label>
-                  输入 JSON Schema
-                  <textarea
-                    value={
-                      data.input_text ??
-                      JSON.stringify(data.input_schema, null, 2)
-                    }
-                    onChange={(e) => patch({ input_text: e.target.value })}
-                  />
-                </label>
-                <label>
-                  输出 JSON Schema
-                  <textarea
-                    value={
-                      data.output_text ??
-                      JSON.stringify(data.output_schema, null, 2)
-                    }
-                    onChange={(e) => patch({ output_text: e.target.value })}
-                  />
-                </label>
+                {data.implementation === "harness.native" ? (
+                  <p
+                    className="notice full-width"
+                    role="note"
+                    aria-label="原生工具组说明"
+                  >
+                    使用所选 Harness 自带的原生工具，无需手工配置输入或输出
+                    Schema。 此处不通过 JSON 增删工具，可访问范围以实际生效的
+                    Permission 为准。
+                  </p>
+                ) : (
+                  <>
+                    <label>
+                      输入 JSON Schema
+                      <textarea
+                        value={
+                          data.input_text ??
+                          JSON.stringify(data.input_schema, null, 2)
+                        }
+                        onChange={(e) => patch({ input_text: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      输出 JSON Schema
+                      <textarea
+                        value={
+                          data.output_text ??
+                          JSON.stringify(data.output_schema, null, 2)
+                        }
+                        onChange={(e) => patch({ output_text: e.target.value })}
+                      />
+                    </label>
+                  </>
+                )}
               </>
             )}
             {["skill", "spec", "standard"].includes(kind) && (

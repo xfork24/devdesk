@@ -99,6 +99,61 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     role.getByRole("button", { name: new RegExp(name + " v2") }),
   ).toHaveCount(0);
 });
+test("原生工具组隐藏 Schema 且旧源码草稿不影响保存", async ({ page }) => {
+  await setup(page);
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
+  await page.getByRole("tab", { name: "Tool", exact: true }).click();
+  await page.getByRole("button", { name: "新建 Tool", exact: true }).click();
+  await expect(
+    page.getByRole("note", { name: "原生工具组说明" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("输入 JSON Schema", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("输出 JSON Schema", { exact: true }),
+  ).toHaveCount(0);
+  const name = "Native Tool " + crypto.randomUUID().slice(0, 6);
+  await page.getByLabel("名称", { exact: true }).fill(name);
+  await page.getByLabel("工具标识", { exact: true }).fill("fixture.native");
+  // Previous UI versions could persist incomplete JSON source buffers in local drafts.
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        localStorage.getItem("devdesk:v2:resource:global:tool"),
+      ),
+    )
+    .toContain(name);
+  await page.evaluate(() => {
+    const key = "devdesk:v2:resource:global:tool";
+    const saved = JSON.parse(localStorage.getItem(key)!);
+    saved.value.data.input_text = "{unfinished input";
+    saved.value.data.output_text = "{unfinished output";
+    localStorage.setItem(key, JSON.stringify(saved));
+  });
+  await page.reload();
+  await expect(page.getByLabel("名称", { exact: true })).toHaveValue(name);
+  const created = page.waitForRequest(
+    (r) =>
+      r.url().endsWith("/rpc") && r.postDataJSON()?.method === "tool.create",
+  );
+  await page.getByRole("button", { name: "创建 Tool", exact: true }).click();
+  const payload = (await created).postDataJSON().params.payload.data;
+  expect(payload.input_schema).toEqual({ type: "object" });
+  expect(payload.output_schema).toEqual({ type: "object" });
+  expect(payload).not.toHaveProperty("input_text");
+  expect(payload).not.toHaveProperty("output_text");
+  await expect(page.getByRole("status")).toHaveText(/已保存/);
+  await expect(
+    page.getByLabel("输入 JSON Schema", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("输出 JSON Schema", { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "删除 Tool", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText(/已停用/);
+});
+
 test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保留草稿", async ({
   page,
 }) => {
