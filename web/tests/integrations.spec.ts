@@ -1,0 +1,297 @@
+import { test, expect, Page } from "@playwright/test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+async function setup(page: Page) {
+  await page.goto("/");
+  if (await page.getByLabel("数据目录").count()) {
+    await page
+      .getByLabel("数据目录")
+      .fill(mkdtempSync(join(tmpdir(), "devdesk-integrations-web-")));
+    await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+  }
+  await expect(
+    page.getByRole("button", { name: "工具与技能接入", exact: true }),
+  ).toBeVisible();
+}
+async function rpc(page: Page, method: string, params: any = {}) {
+  const response = await page.request.post("/rpc", {
+    data: { jsonrpc: "2.0", id: 1, method, params },
+  });
+  const result = await response.json();
+  expect(result.error, JSON.stringify(result)).toBeUndefined();
+  return result.result;
+}
+async function markdown(page: any, label: string, value: string) {
+  const field = page.getByRole("group", { name: label, exact: true });
+  await field
+    .getByRole("button", { name: `编辑${label}源码`, exact: true })
+    .click();
+  await field.getByRole("textbox", { name: label, exact: true }).fill(value);
+  await field
+    .getByRole("button", { name: `预览${label}`, exact: true })
+    .click();
+}
+test("HTTP 接入发布动作、绑定确切授权与历史修订，原入口只保留 Model/Harness", async ({
+  page,
+}, info) => {
+  await setup(page);
+  await page
+    .getByRole("button", { name: "工具与技能接入", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "HTTP API", exact: true }).click();
+  const source = page.getByRole("region", { name: "HTTP API 接入管理" });
+  await source.getByRole("button", { name: "新建接入源" }).click();
+  const name = "Browser API " + crypto.randomUUID().slice(0, 6);
+  await source.getByLabel("接入名称", { exact: true }).fill(name);
+  await source.getByLabel("API Base URL").fill("https://example.test/v1");
+  await markdown(
+    source,
+    "接入说明",
+    "## Ticket API\n\nRead **scoped** tickets.",
+  );
+  await source.getByRole("button", { name: "创建接入源", exact: true }).click();
+  await expect(source.getByRole("status")).toContainText("接入定义已保存");
+  const tool = page.getByRole("region", { name: "HTTP 动作管理" });
+  const alias = "ticket_" + crypto.randomUUID().slice(0, 6);
+  await tool.getByLabel("工具调用名称", { exact: true }).fill(alias);
+  await markdown(tool, "工具说明", "Lookup one ticket.");
+  await tool.getByLabel("相对 path", { exact: true }).fill("/tickets/{id}");
+  await tool
+    .getByLabel("调用参数 JSON Schema", { exact: true })
+    .fill(
+      JSON.stringify({
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      }),
+    );
+  await tool.getByRole("button", { name: "添加参数映射" }).click();
+  await tool.getByLabel("参数名 1", { exact: true }).fill("id");
+  await tool.getByLabel("输入 JSON Pointer 1", { exact: true }).fill("/id");
+  await tool
+    .getByRole("combobox", { name: "参数位置 1", exact: true })
+    .selectOption("path");
+  await tool
+    .getByRole("button", { name: "发布 HTTP 动作", exact: true })
+    .click();
+  await expect(tool.getByRole("status")).toContainText("HTTP 工具已发布");
+  const catalog = await rpc(page, "query.configurations", {
+    kind: "tool",
+    include_history: true,
+  });
+  const published = catalog.records.find(
+    (r: any) => r.data.qualified_name === alias,
+  );
+  expect(published.data).not.toHaveProperty("output_schema");
+  const binding = page.getByRole("region", { name: "接入绑定管理" });
+  await binding.getByLabel("绑定名称", { exact: true }).fill("Account " + name);
+  await binding
+    .getByLabel("绑定允许的确切工具修订", { exact: true })
+    .selectOption(published.id);
+  await binding
+    .getByRole("button", { name: "创建接入绑定", exact: true })
+    .click();
+  await expect(binding.getByRole("status")).toContainText("绑定已保存");
+  await source.getByLabel("接入名称", { exact: true }).fill(name + " v2");
+  await source.getByRole("button", { name: "保存接入新修订" }).click();
+  await expect(source.getByRole("status")).toContainText("接入定义已保存");
+  await page.reload();
+  await expect(source.getByLabel("接入名称", { exact: true })).toHaveValue(
+    name + " v2",
+  );
+  await source
+    .getByRole("combobox", { name: "接入历史修订", exact: true })
+    .selectOption({ label: "v1 · " + name });
+  await expect(
+    source.getByRole("heading", { name: "Ticket API", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("integrations-http.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "Model", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Tool", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("tab", { name: "Skill", exact: true }),
+  ).toHaveCount(0);
+});
+test("Skills 导入保留 Markdown 原文与工具依赖，旧链接跳转同一资源", async ({
+  page,
+}) => {
+  await setup(page);
+  await page
+    .getByRole("button", { name: "工具与技能接入", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "Skills", exact: true }).click();
+  const importer = page.getByRole("region", { name: "Skill 包导入" });
+  const name = "Browser Skill " + crypto.randomUUID().slice(0, 6);
+  const body =
+    "---\nname: scoped-review\ndescription: Preserve source, scope and evidence.\n---\n\n# Review, evidence\n\nUse [reference](references/check.md).\n\n```text\nNo installation\n```";
+  await importer.getByLabel("导入 Skill 名称", { exact: true }).fill(name);
+  await markdown(importer, "导入 Skill Markdown", body);
+  await importer
+    .getByLabel("Skill 必需工具", { exact: true })
+    .selectOption("builtin-tool-codex-native-v1");
+  await importer
+    .getByRole("button", { name: "导入 Skill 包", exact: true })
+    .click();
+  await expect(importer.getByRole("status")).toContainText("Skill 已导入");
+  await expect(
+    page.getByRole("button", { name: new RegExp(name + " v1") }),
+  ).toBeVisible();
+  const catalog = await rpc(page, "query.configurations", {
+    kind: "skill",
+    include_history: true,
+  });
+  const skill = catalog.records.find((r: any) => r.name === name);
+  const pkg = await rpc(page, "skill.export", { id: skill.id });
+  expect(pkg.body).toBe(body);
+  expect(pkg.requires_tools).toEqual(["builtin-tool-codex-native-v1"]);
+  await page.goto(
+    `/?tab=components&config_tab=skill&config_object=${skill.id}`,
+  );
+  await expect(page.getByLabel("名称", { exact: true })).toHaveValue(name);
+  await expect(
+    page
+      .getByRole("group", { name: "Markdown 正文", exact: true })
+      .getByRole("heading", { name: "Review, evidence" }),
+  ).toBeVisible();
+});
+
+test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docker 调用回执", async ({
+  page,
+}, info) => {
+  await setup(page);
+  const resources = await rpc(page, "query.permission_resources");
+  const bindings = resources.targets
+    .filter((r: any) =>
+      [
+        "builtin-harness-codex-managed-v1",
+        "builtin-permission-sandbox-docker-v1",
+      ].includes(r.target.revision_id),
+    )
+    .map((r: any) => ({
+      target: r.target,
+      permission_revision_id:
+        r.target.kind === "harness"
+          ? "permission-harness-full-access-v2-r1"
+          : "permission-sandbox-full-access-v2-r1",
+      expected_revision: r.active?.revision || 0,
+    }));
+  await rpc(page, "permission.bindings.apply", {
+    command_id: crypto.randomUUID(),
+    payload: { bindings },
+  });
+  await page
+    .getByRole("button", { name: "工具与技能接入", exact: true })
+    .click();
+  await page.getByRole("tab", { name: "MCP", exact: true }).click();
+  const source = page.getByRole("region", { name: "MCP 接入管理" });
+  const name = "Browser MCP " + crypto.randomUUID().slice(0, 6);
+  await source.getByRole("button", { name: "新建接入源" }).click();
+  await source.getByLabel("接入名称", { exact: true }).fill(name);
+  await source
+    .getByRole("combobox", { name: "MCP 传输", exact: true })
+    .selectOption("stdio");
+  await source
+    .getByLabel("MCP 启动参数（JSON 数组）", { exact: true })
+    .fill(
+      JSON.stringify([
+        "node",
+        "--input-type=module",
+        "-e",
+        readFileSync(
+          "../tests/fixtures/tool-integrations/mcp-service.mjs",
+          "utf8",
+        ),
+      ]),
+    );
+  await source.getByRole("button", { name: "创建接入源", exact: true }).click();
+  await expect(source.getByRole("status")).toContainText("接入定义已保存");
+  const account = page.getByRole("region", { name: "接入绑定管理" });
+  await account
+    .getByLabel("绑定名称", { exact: true })
+    .fill("MCP Account " + name);
+  await account
+    .getByRole("button", { name: "创建接入绑定", exact: true })
+    .click();
+  await expect(account.getByRole("status")).toContainText("绑定已保存");
+  await account
+    .getByRole("button", { name: "发现 MCP 工具", exact: true })
+    .click();
+  await expect(
+    account.getByRole("heading", { name: "发现的 MCP 工具", exact: true }),
+  ).toBeVisible({ timeout: 90000 });
+  await account.getByRole("checkbox", { name: "sum", exact: true }).check();
+  await account
+    .getByRole("combobox", { name: "动作影响 · sum", exact: true })
+    .selectOption("read_only");
+  await account
+    .getByRole("button", { name: "发布所选 MCP 工具", exact: true })
+    .click();
+  await expect(account.getByRole("status")).toContainText("工具已发布");
+  const sources = (
+    await rpc(page, "query.integrations", { include_history: true })
+  ).records;
+  const src = sources.find(
+    (r: any) => r.kind === "integration" && r.name === name,
+  );
+  const tools = (
+    await rpc(page, "query.configurations", {
+      kind: "tool",
+      include_history: true,
+    })
+  ).records.filter((r: any) => r.data.integration_ref === src.id);
+  expect(tools).toHaveLength(1);
+  const tool = tools[0];
+  await account
+    .getByLabel("绑定允许的确切工具修订", { exact: true })
+    .selectOption(tool.id);
+  await account
+    .getByRole("button", { name: "保存绑定新修订", exact: true })
+    .click();
+  await expect(account.getByRole("status")).toContainText("绑定已保存");
+  await account
+    .getByLabel("测试工具修订", { exact: true })
+    .selectOption(tool.id);
+  await account
+    .getByLabel("测试调用参数", { exact: true })
+    .fill('{"a":4,"b":9}');
+  await account
+    .getByRole("button", { name: "执行测试调用", exact: true })
+    .click();
+  await expect(
+    account.getByRole("status").filter({ hasText: "调用已登记" }),
+  ).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const calls = await rpc(page, "query.tool_calls", {
+          tool_ref: tool.id,
+        });
+        return calls.records[0]?.data.status;
+      },
+      { timeout: 60000 },
+    )
+    .toBe("succeeded");
+  await page.getByRole("tab", { name: "调用记录", exact: true }).click();
+  const history = page.getByRole("region", { name: "工具调用记录" });
+  await history.getByRole("button", { name: new RegExp(tool.name) }).click();
+  await expect(
+    history.getByRole("article", { name: "调用详情" }),
+  ).toContainText("succeeded");
+  await expect(
+    history.getByRole("article", { name: "调用详情" }),
+  ).toContainText("13");
+  await page.screenshot({
+    path: info.outputPath("integrations-mcp-receipt.png"),
+    fullPage: true,
+  });
+});

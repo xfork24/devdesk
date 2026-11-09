@@ -6,6 +6,7 @@ import {
   dutyLabels,
   latest,
   loadCatalog,
+  loadIntegrationRecords,
   MarkdownField,
   MarkdownPreview,
   RevisionSelect,
@@ -89,7 +90,7 @@ export function AgentCatalog({
     group === "actors"
       ? ["role", "capability", "agent"]
       : group === "foundations"
-        ? ["model", "harness", "tool", "skill"]
+        ? ["model", "harness"]
         : ["spec", "standard"];
   const [kind, setKind] = useGroupTab(group, kinds);
   const [revision, setRevision] = useState(0);
@@ -142,7 +143,7 @@ export function AgentCatalog({
     </>
   );
 }
-function ResourceEditor({
+export function ResourceEditor({
   kind,
   request,
   project,
@@ -166,6 +167,7 @@ function ResourceEditor({
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
+    [integrations, setIntegrations] = useState<Row[]>([]),
     [legacyCapabilities, setLegacyCapabilities] = useState<
       Record<string, string>
     >({});
@@ -174,7 +176,14 @@ function ResourceEditor({
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
-    const [records, policy, capabilities, resources, modelProviders] = await Promise.all([
+    const [
+      records,
+      policy,
+      capabilities,
+      resources,
+      modelProviders,
+      integrationResources,
+    ] = await Promise.all([
       loadCatalog(request, project),
       request("query.permissions"),
       request("query.capabilities", {
@@ -183,8 +192,12 @@ function ResourceEditor({
       }),
       request("query.permission_resources", { project_id: project?.id }),
       request("query.model_providers"),
+      ["capability", "agent", "skill"].includes(kind)
+        ? loadIntegrationRecords(request, project)
+        : Promise.resolve([]),
     ]);
     setRecords(records);
+    setIntegrations(integrationResources);
     setProviders(modelProviders.providers || []);
     if (kind === "tool")
       setDraft((current) =>
@@ -661,21 +674,65 @@ function ResourceEditor({
                 </details>
               </>
             )}
-            {kind === "agent" && old && <div className="full-width actions">
-              <button type="button" disabled={busy || !project} onClick={async () => {
-                setBusy(true); setError(""); setMessage("");
-                try { const result = await request("agent.connection.check", { project_id: project?.id, agent_revision_id: old.id });
-                  setMessage(result.container_verified ? `容器连接通过：${result.worker_endpoint}；模型${result.detail.model_present ? "已列出" : "未在目录列出"}，尚未验证推理。` : "容器连接未通过；请检查地址、网络或凭据。");
-                } catch (error) { setError(String(error)); } finally { setBusy(false); }
-              }}>检查 DSH 容器连接</button>
-              <button type="button" disabled={busy || !project} onClick={async () => {
-                setBusy(true); setError(""); setMessage("");
-                try { const result = await request("agent.model.verify", { project_id: project?.id, agent_revision_id: old.id });
-                  setMessage(`已提交实际模型验证。请在讨论页查看 Session ${result.session_id} 的终态与工具结果；提交不代表验证通过。`);
-                } catch (error) { setError(String(error)); } finally { setBusy(false); }
-              }}>实际模型与工具验证</button>
-              {!project && <p className="muted">打开项目后可验证完整 Agent；实际验证会调用所选模型。</p>}
-            </div>}
+            {kind === "agent" && old && (
+              <div className="full-width actions">
+                <button
+                  type="button"
+                  disabled={busy || !project}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    setMessage("");
+                    try {
+                      const result = await request("agent.connection.check", {
+                        project_id: project?.id,
+                        agent_revision_id: old.id,
+                      });
+                      setMessage(
+                        result.container_verified
+                          ? `容器连接通过：${result.worker_endpoint}；模型${result.detail.model_present ? "已列出" : "未在目录列出"}，尚未验证推理。`
+                          : "容器连接未通过；请检查地址、网络或凭据。",
+                      );
+                    } catch (error) {
+                      setError(String(error));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  检查 DSH 容器连接
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !project}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    setMessage("");
+                    try {
+                      const result = await request("agent.model.verify", {
+                        project_id: project?.id,
+                        agent_revision_id: old.id,
+                      });
+                      setMessage(
+                        `已提交实际模型验证。请在讨论页查看 Session ${result.session_id} 的终态与工具结果；提交不代表验证通过。`,
+                      );
+                    } catch (error) {
+                      setError(String(error));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  实际模型与工具验证
+                </button>
+                {!project && (
+                  <p className="muted">
+                    打开项目后可验证完整 Agent；实际验证会调用所选模型。
+                  </p>
+                )}
+              </div>
+            )}
             {kind === "capability" && (
               <>
                 {select("Model 精确版本", "model", "model_ref", false, true)}
@@ -688,6 +745,40 @@ function ResourceEditor({
                 )}
                 {select("Tools", "tool", "tools", true, true)}
                 {select("Skills", "skill", "skills", true)}
+                {(data.skills || []).map((id: string) => {
+                  const pkg = integrations.find(
+                    (r) => r.kind === "skill_package" && r.definition_id === id,
+                  );
+                  if (!pkg) return null;
+                  const missing = (pkg.data.requires_tools || []).filter(
+                    (id: string) =>
+                      !(data.tools || []).some(
+                        (tool: string) =>
+                          tool === id ||
+                          records.find((r) => r.id === tool)?.definition_id ===
+                            id,
+                      ),
+                  );
+                  return (
+                    <p key={id} className={missing.length ? "error" : "notice"}>
+                      {records.find((r) => r.id === id)?.name}：
+                      {missing.length
+                        ? `缺少工具依赖 ${missing.join(", ")}`
+                        : "工具依赖已满足"}
+                    </p>
+                  );
+                })}
+                {(data.tools || []).filter(
+                  (id: string) =>
+                    records.find((r) => r.id === id)?.data.schema_version === 2,
+                ).length > 0 && (
+                  <p>
+                    外部工具还需要项目选择接入绑定；保存 Capability
+                    不会自动授权账户。
+                    <a href="?tab=integrations">管理工具接入</a>
+                  </p>
+                )}
+
                 {model && harness && (
                   <p className="notice">
                     {harness.data.model_providers?.length &&
@@ -706,14 +797,33 @@ function ResourceEditor({
                     aria-label="模型后端"
                     value={data.provider}
                     onChange={(e) =>
-                      patch({ provider: e.target.value, parameters: {}, endpoint: undefined, context_window: undefined, max_output_tokens: undefined, model: "" })
+                      patch({
+                        provider: e.target.value,
+                        parameters: {},
+                        endpoint: undefined,
+                        context_window: undefined,
+                        max_output_tokens: undefined,
+                        model: "",
+                      })
                     }
                   >
-                    {providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    {providers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 {field("模型标识", "model", true)}
-                {data.provider !== "openai" && <DshModelFields key={data.provider} request={request} data={{ ...data, provider: String(data.provider) }} patch={patch} providers={providers} />}
+                {data.provider !== "openai" && (
+                  <DshModelFields
+                    key={data.provider}
+                    request={request}
+                    data={{ ...data, provider: String(data.provider) }}
+                    patch={patch}
+                    providers={providers}
+                  />
+                )}
                 {data.provider === "openai" ? (
                   <label>
                     推理强度
@@ -765,7 +875,11 @@ function ResourceEditor({
                       patch({
                         provider: e.target.value,
                         model_providers: [
-                          ...(e.target.value === "codex" ? ["openai"] : providers.filter(p => p.harness === "dsh").map(p => p.id)),
+                          ...(e.target.value === "codex"
+                            ? ["openai"]
+                            : providers
+                                .filter((p) => p.harness === "dsh")
+                                .map((p) => p.id)),
                         ],
                       })
                     }
@@ -775,7 +889,29 @@ function ResourceEditor({
                   </select>
                 </label>
                 {field("固定运行版本", "runtime_version", true)}
-                <fieldset><legend>支持的模型服务商</legend>{providers.filter(p => p.harness === data.provider).map(p => <label key={p.id}><input type="checkbox" checked={(data.model_providers || []).includes(p.id)} onChange={event => patch({ model_providers: event.target.checked ? [...(data.model_providers || []), p.id] : (data.model_providers || []).filter((id: string) => id !== p.id) })} />{p.label}</label>)}</fieldset>
+                <fieldset>
+                  <legend>支持的模型服务商</legend>
+                  {providers
+                    .filter((p) => p.harness === data.provider)
+                    .map((p) => (
+                      <label key={p.id}>
+                        <input
+                          type="checkbox"
+                          checked={(data.model_providers || []).includes(p.id)}
+                          onChange={(event) =>
+                            patch({
+                              model_providers: event.target.checked
+                                ? [...(data.model_providers || []), p.id]
+                                : (data.model_providers || []).filter(
+                                    (id: string) => id !== p.id,
+                                  ),
+                            })
+                          }
+                        />
+                        {p.label}
+                      </label>
+                    ))}
+                </fieldset>
                 {field("构建配方摘要（可选）", "recipe_digest")}
                 <div className="full-width">
                   <h3>已登记安装</h3>
@@ -811,6 +947,67 @@ function ResourceEditor({
                 </div>
               </>
             )}
+            {kind === "skill" &&
+              old &&
+              (() => {
+                const pkg = integrations.find(
+                  (r) =>
+                    r.kind === "skill_package" && r.definition_id === old.id,
+                );
+                return pkg ? (
+                  <div className="notice">
+                    <p>来源：{pkg.data.source}</p>
+                    <p>
+                      静态材料：{pkg.data.files.length} 个 ·{" "}
+                      {pkg.data.scripts_disabled ? "脚本执行未启用" : "无脚本"}
+                    </p>
+                    <p>
+                      必需工具：
+                      {pkg.data.requires_tools
+                        .map(
+                          (id: string) =>
+                            records.find((r) => r.id === id)?.name || id,
+                        )
+                        .join(", ") || "无"}
+                    </p>
+                    {pkg.data.files.map((file: Row) => (
+                      <details key={file.path}>
+                        <summary>{file.path}</summary>
+                        {file.path.endsWith(".md") ? (
+                          <MarkdownPreview text={file.content} />
+                        ) : (
+                          <pre>{file.content}</pre>
+                        )}
+                      </details>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const value = await request("skill.export", {
+                            id: old.id,
+                            project_id: project?.id,
+                          });
+                          const url = URL.createObjectURL(
+                            new Blob([JSON.stringify(value, null, 2)], {
+                              type: "application/json",
+                            }),
+                          );
+                          const link = document.createElement("a");
+                          link.href = url;
+                          link.download = `${old.name}.skill.json`;
+                          link.click();
+                          setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        } catch (e) {
+                          setError(String(e));
+                        }
+                      }}
+                    >
+                      导出 Skill 包
+                    </button>
+                  </div>
+                ) : null;
+              })()}
             {kind === "tool" && (
               <>
                 {field("工具标识", "qualified_name", true)}
@@ -1068,13 +1265,49 @@ function ResourceEditor({
               {old ? `保存 ${labels[kind]} 新版本` : `创建 ${labels[kind]}`}
             </button>
             {old && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void save(true)}
-              >
-                删除 {labels[kind]}
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void save(true)}
+                >
+                  删除 {labels[kind]}
+                </button>
+                {kind === "skill" && old && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      setError("");
+                      try {
+                        const pkg = await request("skill.export", {
+                          id: old.id,
+                          project_id: project?.id,
+                        });
+                        const row = await request("skill.import", {
+                          project_id: project?.id,
+                          command_id: crypto.randomUUID(),
+                          payload: {
+                            name: `${old.name} · 副本`,
+                            scope: old.scope,
+                            package: pkg,
+                          },
+                        });
+                        await load();
+                        choose(row);
+                        setMessage("Skill 已复制，材料和工具依赖保留。");
+                      } catch (e) {
+                        setError(String(e));
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    复制 Skill
+                  </button>
+                )}
+              </>
             )}
           </div>
         </form>

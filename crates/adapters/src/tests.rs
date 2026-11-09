@@ -193,6 +193,8 @@ impl CommandTests {
                 credential_env_file: None,
                 profile_file: Some(reporter),
                 runner_file: None,
+                skill_directory: None,
+                sensitive_output: false,
                 profile_target: Some("/run/devdesk/test-reporter.mjs".into()),
             })?;
             require(

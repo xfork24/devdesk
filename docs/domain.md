@@ -1,6 +1,6 @@
 # DevDesk v0.3 领域规范
 
-当前工程库 schema v37，全局库 v7。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
+当前工程库 schema v38，全局库 v8。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
 
 ## 归属与对象契约
 
@@ -155,4 +155,4 @@ Workflow v3 为每个实际 Agent Step 声明 Markdown task_instructions；attem
 
 WorkflowTaskDefinition 随路径进入 Feature 编译闭包，AgentTaskBase 固定有效 AgentRevision、声明顺序的 Skill 和 Role 来源。execution_task_binding 关联步骤/轮次/节点，execution_task 按 Turn 唯一、同时引用 agent-task Artifact。FrozenAgentTask 使用 agent-task/v1 渲染器，分别保存定义、基础上下文、规范输入及总摘要；Markdown 原文不变，摘要用规范 JSON 对象键序。领域层核对正文、输出合同、Spec 顺序、来源、Artifact 哈希与不可变历史，不以最新 Workflow 重新解释排队输入。
 
-项目迁移 037 追加任务唯一索引与步骤索引，全局库仍为 v7。旧 Workflow/Feature/RuntimeBinding/清单不补写任务字段；旧兼容执行提示继续保留。新默认任务在编译时嵌入，运行时读写已导入 Workflow 修订。
+项目迁移 038 追加任务唯一索引与步骤索引，全局库为 v8。旧 Workflow/Feature/RuntimeBinding/清单不补写任务字段；旧兼容执行提示继续保留。新默认任务在编译时嵌入，运行时读写已导入 Workflow 修订。

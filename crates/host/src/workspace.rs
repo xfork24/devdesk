@@ -1,9 +1,11 @@
+#[path = "model_providers.rs"]
+mod model_providers;
 #[path = "github_projects.rs"]
 mod github_projects;
 #[path = "governance.rs"]
 mod governance;
-#[path = "model_providers.rs"]
-mod model_providers;
+#[path = "integrations.rs"]
+mod integrations;
 #[path = "permission_api.rs"]
 mod permission_api;
 #[path = "permission_resources.rs"]
@@ -34,7 +36,11 @@ pub struct Workspace {
 }
 fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters) -> Arc<Engine> {
     let artifacts = Arc::new(FileArtifacts::new(PathBuf::from(store.root())));
-    Arc::new(Engine::new(store, artifacts, adapters.clone()))
+    let tools = Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(store.root())
+            .expect("existing execution root"),
+    );
+    Arc::new(Engine::new(store, artifacts, adapters.clone()).with_tool_executor(tools))
 }
 impl Workspace {
     fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
@@ -302,73 +308,35 @@ impl Workspace {
             )?
         };
         let adapter = harness::managed_adapter_identity(provider);
-        let agent_configuration: Option<AgentExecutionConfiguration> = command
-            .payload
-            .get("agent_configuration")
-            .map(|v| {
-                serde_json::from_value(v.clone())
-                    .map_err(|_| err("invalid_params", "无效 Agent 执行配置"))
-            })
-            .transpose()?;
+        let agent_configuration: Option<AgentExecutionConfiguration> = command.payload.get("agent_configuration")
+            .map(|v| serde_json::from_value(v.clone()).map_err(|_| err("invalid_params", "无效 Agent 执行配置"))).transpose()?;
         let model_connection = if provider == HarnessProvider::Dsh {
-            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration
-            {
-                (
-                    state.configuration(&a.model_revision_id)?.decode()?,
-                    state.configuration(&a.harness_revision_id)?.decode()?,
-                )
+            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration {
+                (state.configuration(&a.model_revision_id)?.decode()?, state.configuration(&a.harness_revision_id)?.decode()?)
             } else {
-                (
-                    serde_json::from_value(json!({"provider":"deepseek","model":model}))
-                        .map_err(|e| err("invalid_configuration", e.to_string()))?,
-                    serde_json::from_value(
-                        json!({"provider":"dsh","runtime_version":installation.key.version}),
-                    )
-                    .map_err(|e| err("invalid_configuration", e.to_string()))?,
-                )
+                (serde_json::from_value(json!({"provider":"deepseek","model":model})).map_err(|e|err("invalid_configuration",e.to_string()))?,
+                 serde_json::from_value(json!({"provider":"dsh","runtime_version":installation.key.version})).map_err(|e|err("invalid_configuration",e.to_string()))?)
             };
             require(m.model == model, "Model 修订与执行模型不一致")?;
             let connection = resolve_model_connection(&m, &h)?;
-            require(
-                resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled,
-                "Sandbox 禁网，无法连接模型服务",
-            )?;
+            require(resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled, "Sandbox 禁网，无法连接模型服务")?;
             connection
-        } else {
-            None
-        };
+        } else { None };
         let credential_ref = match provider {
             HarnessProvider::Codex => Some(self.codex_auth.credential_reference()?),
             HarnessProvider::Dsh => {
-                let p = model_connection
-                    .as_ref()
-                    .ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?
-                    .provider;
+                let p = model_connection.as_ref().ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?.provider;
                 if p.requires_key() {
                     let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
-                    let status = vault.status_model_reference(
-                        p,
-                        self.global.model_credential_reference(p)?.as_deref(),
-                    )?;
-                    require(
-                        status.available,
-                        "系统凭据库不可用，请检查共享凭据助手或 Secret Service",
-                    )?;
+                    let status = vault.status_model_reference(p, self.global.model_credential_reference(p)?.as_deref())?;
+                    require(status.available, "系统凭据库不可用，请检查共享凭据助手或 Secret Service")?;
                     require(status.configured, format!("请先配置 {} 凭据", p.label()))?;
                     vault.verify_model_reference(p, &status.reference)?;
                     Some(status.reference)
-                } else {
-                    None
-                }
+                } else { None }
             }
         };
-        let model_profile_digest = model_connection
-            .as_ref()
-            .map(|c| {
-                devdesk_adapters::model_providers::dsh_model_patch(c, &model)
-                    .and_then(|patch| configuration_digest(&json!(patch)))
-            })
-            .transpose()?;
+        let model_profile_digest = model_connection.as_ref().map(|c| devdesk_adapters::model_providers::dsh_model_patch(c, &model).and_then(|patch| configuration_digest(&json!(patch)))).transpose()?;
         let mut binding = RuntimeBinding {
             model_connection,
             model_profile_digest,
@@ -758,6 +726,7 @@ impl Workspace {
         let global = Arc::new(GlobalStore::open(root)?);
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
+        configuration.recover_tool_receipts()?;
         global.reload_permission_presets(&Command {
             command_id: id(),
             target: None,
@@ -947,6 +916,7 @@ impl Workspace {
         }
         self.sync_configuration(&e)?;
         e.bootstrap()?;
+        e.recover_tool_receipts()?;
         if e.store
             .snapshot()?
             .projects
@@ -970,9 +940,7 @@ impl Workspace {
         Ok(())
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
-        if let Some(result) = self.model_provider_api(method, &params) {
-            return result;
-        }
+        if let Some(result) = self.model_provider_api(method, &params) { return result; }
         if method == "query.configuration_defaults" {
             return self
                 .configuration
@@ -1035,6 +1003,9 @@ impl Workspace {
             return self
                 .configuration
                 .query(method, &params, self.global.concurrency()?);
+        }
+        if let Some(result) = self.integration_dispatch(method, &params) {
+            return result;
         }
         if let Some(result) = self.governance_dispatch(method, &params) {
             return result;
@@ -1447,6 +1418,7 @@ impl Workspace {
         }
     }
     pub fn tick(&self) -> Result<()> {
+        self.configuration.drive_tool_calls()?;
         let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
         let engines = engines
             .into_iter()

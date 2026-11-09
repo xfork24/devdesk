@@ -546,6 +546,13 @@ pub(crate) fn validate_composition(
         if record.is_legacy_experience_tool() {
             continue;
         }
+        if record.data["schema_version"] == 2 {
+            let t: ExternalTool = record.decode()?;
+            t.validate()?;
+            reference(s, &t.integration_ref, "integration", scope)?;
+            require(harness.provider == "codex", "此 Harness 尚不支持外部工具")?;
+            continue;
+        }
         let t: ToolDefinition = record.decode()?;
         require(
             t.implementation == "harness.native",
@@ -1164,6 +1171,7 @@ impl Engine {
             }
         }
         let config = FeatureConfiguration {
+            integration_locks: BTreeMap::new(),
             specification_snapshot: vec![],
             baseline_check: None,
             role_agent_bindings: BTreeMap::new(),
@@ -1424,6 +1432,15 @@ impl Engine {
             );
             if family == "agent" {
                 install_agent_profile(s, &r, &r.decode()?);
+            }
+            if family == "skill" {
+                if let Some(previous) = r.supersedes.as_ref().and_then(|key|s.governance.iter().find(|p|p.kind == "skill_package" && p.definition_id == *key)) {
+                    let mut package: SkillPackage = previous.decode()?;
+                    package.body = r.data["body"].as_str().unwrap_or("").into();
+                    package.source = format!("edited:{}", package.source);
+                    package.validate()?;
+                    s.governance.push(record("skill_package",r.id.clone(),r.scope.clone(),r.name.clone(),1,None,json!(package),true));
+                }
             }
             if ["skill", "spec", "standard"].contains(&family) {
                 let source = r.data["standard_ref"]

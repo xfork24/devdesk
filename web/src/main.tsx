@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import "./style.css";
 import { WorkflowManager } from "./components/WorkflowManager";
+import { Integrations } from "./components/Integrations";
 import { AgentCatalog } from "./components/AgentCatalog";
 import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
 import { RepositorySettings } from "./components/RepositorySettings";
@@ -151,10 +152,21 @@ function Empty({ children }: { children: React.ReactNode }) {
   );
 }
 const route = new URLSearchParams(location.search);
-const routeTab =
-  route.get("tab") === "workflow" || route.get("tab") === "documents"
+function routeTabValue(p: URLSearchParams) {
+  if (
+    p.get("tab") === "components" &&
+    ["tool", "skill"].includes(p.get("config_tab") || "")
+  ) {
+    p.set("tab", "integrations");
+    p.set("config_tab", p.get("config_tab") === "tool" ? "native" : "skills");
+    history.replaceState(null, "", `?${p}`);
+  }
+  return p.get("tab") === "workflow" || p.get("tab") === "documents"
     ? "execution"
-    : route.get("tab") || "overview";
+    : p.get("tab") || "overview";
+}
+const routeTab = routeTabValue(route);
+
 function App() {
   const requestGeneration = useRef(0);
   const projectGeneration = useRef(0);
@@ -230,7 +242,7 @@ function App() {
           })
           .catch((e) => setError(String(e)));
       }
-      setTab(p.get("tab") || "overview");
+      setTab(routeTabValue(p));
       setFeatureId(p.get("feature_id") || "");
       setTaskFilter(p.get("task_id") || "");
       setExecutionTab(p.get("detail") || "overview");
@@ -685,6 +697,7 @@ function App() {
     ["actors", "角色与 Agent", Library],
     ["specifications", "规范", Library],
     ["components", "基础组件", Settings],
+    ["integrations", "工具与技能接入", Library],
     ["history", "历史记录", History],
     ["settings", "设置", Settings],
   ] as const;
@@ -2309,6 +2322,14 @@ function App() {
                 hasMore={(featurePage + 1) * 50 < (data?.total_features || 0)}
               />
             </section>
+          )}
+          {data && tab === "integrations" && (
+            <Integrations
+              key={`integrations:${projectId || "global"}`}
+              request={rpc}
+              project={project}
+              installations={data.runtime_installations || []}
+            />
           )}
           {tab === "workflows" && (
             <WorkflowManager

@@ -1,3 +1,5 @@
+mod integrations;
+pub use integrations::*;
 mod configuration;
 pub use configuration::*;
 mod agent_task;

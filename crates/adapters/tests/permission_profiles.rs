@@ -929,6 +929,8 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
             credential_env_file,
             profile_file,
             runner_file,
+            skill_directory: None,
+            sensitive_output: false,
             profile_target: None,
         };
         let docker = DockerSandbox::new(root.path()).unwrap();

@@ -25,7 +25,7 @@ cargo test -p devdesk-adapters --test schema_contracts --test workflows --locked
 cargo test --workspace --locked
 ```
 
-`schema_contracts` 离线编译所有 Schema 和 `$defs`，验证相对引用、当前内置配置、Serde 默认值与序列化输出、权限预设、历史产物和关键非法输入。工作流回归校验实际生成的交付与快照文件。JSON Schema 验证器仅作为 Rust 测试依赖，不需要额外安装 Python 包或访问网络。
+`schema_contracts` 离线编译所有 Schema 和 `$defs`，验证相对引用、当前内置配置、Serde 默认值与序列化输出、权限预设、历史产物和关键非法输入。工作流回归校验实际生成的交付与快照文件。外部工具的 JSON Schema 同时在生产适配器离线校验定义、参数和结果，不需要额外安装 Python 包或访问网络。
 
 Workflow v1 继续描述已冻结历史。v2 Step 使用稳定 Role 身份和精确 Spec 修订；可复用 `workflow.call` 经编译展开，Stage 的 `description` 是可选 Markdown 意图。Agent 输入只选择 Role/Capability，服务端展开执行兼容字段；不能伪造 Model/Harness/Tool/Skill 覆盖。Standard v2 按动作、阶段/交付上下文检查 Spec 覆盖，`standard_ref=null` 表示项目不选基线，不表示关闭工程门禁。
 
@@ -33,3 +33,4 @@ Workflow v1 继续描述已冻结历史。v2 Step 使用稳定 Role 身份和精
 
 
 Workflow v3 使用可选读取、按执行者强制的 task_instructions，动作合同 v2 仅用于 Agent 动作。v1/v2 不接受此字段。agent-task.schema.json 描述持久化 FrozenAgentTask、基础上下文与任务定义；摘要/来源/Spec 对应关系由领域层验证。任务 UTF-8 字节限制由 Rust 精确执行，JSON Schema maxLength 只提供字符数量上界。query.workflow_task_preview 与 query.execution_task 的选择参数纳入 RPC Schema。
+`integration.schema.json`、`integration-binding.schema.json`、`skill-package.schema.json`、`tool-call.schema.json` 与 `feature-configuration.schema.json` 描述接入定义、授权绑定、静态材料、实际调用输入及冻结配置。RPC 的 `IntegrationLock` 保存来源/工具/绑定摘要；Tool v2 的输出 Schema 可省，Tool v1 保持不可变历史兼容。OAuth 凭据仅为系统存储引用。

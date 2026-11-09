@@ -4,7 +4,7 @@ mod test_runtime;
 mod workspace;
 use axum::{
     Json, Router,
-    extract::{Path, Query, Request, State},
+    extract::{DefaultBodyLimit, Path, Query, Request, State},
     http::{HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{
@@ -176,6 +176,42 @@ async fn setup(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Json<Value>
         Err(e) => Json(json!({"error":e.message})),
     }
 }
+async fn integration_oauth_callback(
+    State(app): State<Arc<App>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let result = if params.contains_key("error") {
+        Err(err(
+            "oauth_denied",
+            "授权服务未完成授权，请回到接入页面重新授权",
+        ))
+    } else if let (Some(state), Some(code)) = (params.get("state"), params.get("code")) {
+        let app = app.clone();
+        let (state, code) = (state.clone(), code.clone());
+        tokio::task::spawn_blocking(move || {
+            app.workspace()?.integration_oauth_callback(&state, &code)
+        })
+        .await
+        .unwrap_or_else(|_| Err(err("oauth_failed", "授权交换未完成")))
+    } else {
+        Err(err("oauth_state", "缺少授权状态或授权码"))
+    };
+    match result {
+        Ok(_) => (
+            StatusCode::OK,
+            "授权已完成。请关闭此页，回到 DevDesk 接入页面保存新的绑定修订。".to_owned(),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            format!(
+                "授权未完成（{}）。请回到 DevDesk 接入页面重新授权。",
+                e.code
+            ),
+        )
+            .into_response(),
+    }
+}
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     let workspace = app.workspace.read().unwrap().clone();
     Json(
@@ -291,7 +327,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     if args.iter().any(|a| a == "--update-credential-helper") {
         devdesk_adapters::credentials::CredentialVault::update_bundled_helper()?;
-        println!("credential_helper_updated; use the explicit settings authorization action if required");
+        println!(
+            "credential_helper_updated; use the explicit settings authorization action if required"
+        );
         return Ok(());
     }
     if let Some(reference) = option("--authorize-credential") {
@@ -318,7 +356,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         shutdown: tokio::sync::Notify::new(),
     });
     let router = Router::new()
-        .route("/rpc", post(rpc))
+        .route(
+            "/rpc",
+            post(rpc).layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
+        .route(
+            "/oauth/integrations/callback",
+            get(integration_oauth_callback),
+        )
         .route("/setup", post(setup))
         .route("/shutdown", post(shutdown))
         .route("/capabilities", get(capabilities))

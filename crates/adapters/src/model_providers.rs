@@ -43,7 +43,10 @@ pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnect
             .is_none_or(|a| a.model_provider == "deepseek"),
         "新服务商缺少冻结模型连接，不能回退 DeepSeek",
     )?;
-    require(binding.model_profile_digest.is_none(), "缺少连接快照却包含新 profile 摘要")?;
+    require(
+        binding.model_profile_digest.is_none(),
+        "缺少连接快照却包含新 profile 摘要",
+    )?;
     let m: ModelDefinition = serde_json::from_value(
         json!({"provider":"deepseek","model":binding.model,"parameters":parameters}),
     )
@@ -206,6 +209,8 @@ const b=JSON.parse(text);if(!Array.isArray(b.data))throw Error('catalog');consol
             anthropic = connection.protocol == "anthropic-messages"
         );
         let receipt = sandbox.create(&crate::docker::ContainerSpec {
+            skill_directory: None,
+            sensitive_output: false,
             host_gateway: connection.host_gateway,
             permissions: binding.permissions.clone(),
             purpose: crate::docker::ContainerPurpose::Harness,

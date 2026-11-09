@@ -459,6 +459,7 @@ impl Engine {
             return Ok(());
         }
         match observation {
+            Obs::ToolCall { .. } => self.project_tool_request(s, session, tid, observation)?,
             Obs::Admitted {
                 turn,
                 message,

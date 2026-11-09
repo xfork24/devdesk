@@ -81,4 +81,7 @@ Workflow 任务专项：`cargo test -p devdesk-adapters --test agent_tasks --loc
 
 `DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --test agent_tasks frozen_task_reaches_native --locked -- --ignored --nocapture` 使用固定 DSH SDK、Docker --network=none 和本地模型响应，核对原生请求中的完整任务/Spec 与基础 Role/Skill、工具结果及恢复；不声称真实 DSH 模型推理。`probe_workflow_tasks.py --binary … --auth-file … --output …` 在临时私有数据集中用真实 Codex 执行两个任务，核对实际工具输出和受控 HTTP 回执，只复制显式提供的登录文件，不读取原项目库。探针输出不含凭据。
 
-`web/tests/workflow-tasks.spec.ts` 验证浏览器编辑、保存、发布、上下文预览及公共/配方任务持久化。独立发布包探针 probe_permission_package.py 同时验证嵌入的默认 v3 任务、编辑发布、只读预览和项目 schema v37，不调用模型。
+`web/tests/workflow-tasks.spec.ts` 验证浏览器编辑、保存、发布、上下文预览及公共/配方任务持久化。独立发布包探针 probe_permission_package.py 同时验证嵌入的默认 v3 任务、编辑发布、只读预览和项目 schema v38，不调用模型。
+工具与技能接入：`crates/adapters/tests/tool_integrations.rs` 覆盖修订、作用域、配置锁、依赖、离线 Schema、审批/取消/核对；其 `docker_` 忽略用例使用真实 Docker HTTP/MCP/OAuth 夹具，不调用模型。`web/tests/integrations.spec.ts` 使用实际 Host 完成配置，MCP 测试通过真正的 Docker stdio 服务发现及调用，需可用 Docker 和固定 Codex 镜像。
+
+`tests/live/probe_tool_integrations.py --codex-auth-source /绝对路径/专用/auth.json --host /绝对路径/devdesk-host --report /tmp/tools-native.json` 创建独立数据集，配置 HTTP/MCP/Skill、Capability、Agent 和项目绑定，真实 Codex 执行两轮并重启 Host，核验文件只读和外部调用回执。始终不调用 DSH；只复制明确提供的 Codex 登录文件，结束后删除测试中的 auth.json 副本，保留无凭据运行证据。

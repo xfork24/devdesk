@@ -11,7 +11,9 @@ pub enum ContainerPurpose {
     Tests,
 }
 
-fn is_false(value: &bool) -> bool { !value }
+fn is_false(value: &bool) -> bool {
+    !value
+}
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ContainerSpec {
@@ -45,6 +47,10 @@ pub struct ContainerSpec {
     pub runner_file: Option<PathBuf>,
     #[serde(default)]
     pub profile_target: Option<String>,
+    #[serde(default)]
+    pub skill_directory: Option<PathBuf>,
+    #[serde(default)]
+    pub sensitive_output: bool,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -390,13 +396,34 @@ impl DockerSandbox {
             None
         };
         if spec.host_gateway {
-            require(spec.purpose == ContainerPurpose::Harness && spec.network, "宿主模型地址映射仅用于联网 Harness worker")?;
-            let context = std::env::var("DOCKER_HOST").ok().map(Ok).unwrap_or_else(|| {
-                let out = capture("docker", &["context".into(),"inspect".into(),"--format".into(),"{{.Endpoints.docker.Host}}".into()], Duration::from_secs(5))?;
-                require(out.code == 0 && !out.truncated, "无法核对 Docker daemon 地址")?;
-                Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
-            })?;
-            require(context.starts_with("unix://"), "远程 Docker daemon 需要显式配置 worker 可达的 Ollama 地址")?;
+            require(
+                spec.purpose == ContainerPurpose::Harness && spec.network,
+                "宿主模型地址映射仅用于联网 Harness worker",
+            )?;
+            let context = std::env::var("DOCKER_HOST")
+                .ok()
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    let out = capture(
+                        "docker",
+                        &[
+                            "context".into(),
+                            "inspect".into(),
+                            "--format".into(),
+                            "{{.Endpoints.docker.Host}}".into(),
+                        ],
+                        Duration::from_secs(5),
+                    )?;
+                    require(
+                        out.code == 0 && !out.truncated,
+                        "无法核对 Docker daemon 地址",
+                    )?;
+                    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+                })?;
+            require(
+                context.starts_with("unix://"),
+                "远程 Docker daemon 需要显式配置 worker 可达的 Ollama 地址",
+            )?;
         }
         let mut args: Vec<String> = vec![
             "create",
@@ -476,7 +503,12 @@ impl DockerSandbox {
             }
         }
         #[cfg(target_os = "linux")]
-        if spec.host_gateway { args.extend(["--add-host".into(),"host.docker.internal:host-gateway".into()]); }
+        if spec.host_gateway {
+            args.extend([
+                "--add-host".into(),
+                "host.docker.internal:host-gateway".into(),
+            ]);
+        }
         if let Some(file) = credential {
             args.extend(["--env-file".into(), file.to_string_lossy().into_owned()]);
         }
@@ -597,6 +629,26 @@ impl DockerSandbox {
                 "--mount".into(),
                 format!(
                     "type=bind,source={},target=/work/{relative},readonly",
+                    path.display()
+                ),
+            ]);
+        }
+        if spec.sensitive_output {
+            args.extend(["--log-driver".into(), "none".into()]);
+        }
+        if let Some(path) = &spec.skill_directory {
+            reject_symlink(path)?;
+            let path = fs::canonicalize(path).map_err(storage)?;
+            require(
+                path.starts_with(&self.root)
+                    && path.is_dir()
+                    && path.file_name().is_some_and(|n| n == "selected-skills"),
+                "Skill 材料必须属于当前执行根",
+            )?;
+            args.extend([
+                "--mount".into(),
+                format!(
+                    "type=bind,source={},target=/skills,readonly",
                     path.display()
                 ),
             ]);

@@ -89,6 +89,8 @@ impl ConfigurationRecord {
             "spec",
             "role",
             "capability",
+            "integration",
+            "integration_binding",
             "sandbox",
             "permission_profile",
             "permission_binding",
@@ -179,6 +181,8 @@ pub struct AgentInstance {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentExecutionConfiguration {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration_lock: Option<IntegrationLock>,
     pub agent_instance_id: Id,
     pub agent_revision_id: Id,
     pub composition_hash: String,
@@ -598,6 +602,8 @@ pub fn topological(nodes: &[(String, Vec<String>)]) -> Result<Vec<String>> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureConfiguration {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub integration_locks: BTreeMap<Id, IntegrationLock>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub specification_snapshot: Vec<SpecificationBinding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
