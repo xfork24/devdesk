@@ -205,7 +205,6 @@
     "identity",
     "name",
     "version",
-    "supersedes",
     "schema_version",
     "policy"
   ],

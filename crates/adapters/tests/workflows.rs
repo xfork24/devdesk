@@ -5,6 +5,8 @@ use serde_json::{Value, json};
 use std::{path::Path, sync::Arc};
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
+#[path = "../../../tests/support/schemas.rs"]
+mod schemas;
 fn engine(path: &Path) -> Engine {
     let store = Arc::new(SqliteStore::open(path).unwrap());
     let e = Engine::new(
@@ -635,6 +637,39 @@ fn native_run_accepts_structured_output_after_writer_stop_and_protocol_export() 
     assert!(s.runs.iter().all(|r| r.origin == Origin::External));
 }
 #[test]
+fn generated_engineering_and_project_snapshots_match_the_published_schema() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let rid = recorded_native_stage(&e, &native_stage_answer(), true, false);
+    e.tick(4).unwrap();
+    let state = e.store.snapshot().unwrap();
+    let attempt = state
+        .runs
+        .iter()
+        .find(|r| r.id == rid)
+        .unwrap()
+        .attempt_id
+        .clone()
+        .unwrap();
+    let feature = state.attempt(&attempt).unwrap().feature_id.clone();
+    let project = state.feature(&feature).unwrap().project_id.clone();
+    call(&e, "snapshot.save", &feature, json!({}));
+    call(&e, "snapshot.save", &project, json!({}));
+    let state = e.store.snapshot().unwrap();
+    let mut count = 0;
+    for artifact in &state.artifacts {
+        if artifact.relative_path.contains("/manifests/")
+            || artifact.relative_path.contains("/snapshots/")
+        {
+            let manifest: Value =
+                serde_json::from_slice(&e.artifacts.read(artifact).unwrap()).unwrap();
+            schemas::SCHEMAS.assert_valid("manifest.schema.json", &manifest);
+            count += 1;
+        }
+    }
+    assert_eq!(count, 2);
+}
+#[test]
 fn native_run_cannot_accept_terminal_output_without_writer_stop_proof() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
@@ -829,6 +864,20 @@ fn failed_workflow_review_waits_for_explicit_retry_and_preserves_its_binding() {
     let result = e.execute("delivery.submit", command);
     e.observe_workflow_intent(&intent.id, &result).unwrap();
     let delivery = result.unwrap()["id"].as_str().unwrap().to_owned();
+    let manifests: Vec<_> = e
+        .store
+        .snapshot()
+        .unwrap()
+        .artifacts
+        .into_iter()
+        .filter(|artifact| artifact.relative_path.contains("/manifests/"))
+        .collect();
+    assert_eq!(manifests.len(), 1);
+    let manifest: Value =
+        serde_json::from_slice(&e.artifacts.read(&manifests[0]).unwrap()).unwrap();
+    assert_eq!(manifest["delivery_id"], delivery);
+    assert_eq!(manifest["origin"], "external");
+    schemas::SCHEMAS.assert_valid("manifest.schema.json", &manifest);
     e.evaluate_workflows().unwrap();
     let mut reviewer = e
         .store

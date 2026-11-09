@@ -21,8 +21,11 @@
             "minLength": 1
           },
           "provider": {
-            "type": "string",
-            "minLength": 1
+            "enum": [
+              "docker",
+              "codex",
+              "dsh"
+            ]
           },
           "assets": {
             "type": "array",
@@ -30,12 +33,96 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nested_sandbox": {
+            "type": "boolean"
+          },
+          "apparmor_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "const": "docker"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "platforms",
+                "nested_sandbox"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "provider": {
+                  "enum": [
+                    "codex",
+                    "dsh"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "version"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "nested_sandbox": {
+                  "const": true
+                }
+              },
+              "required": [
+                "nested_sandbox"
+              ]
+            },
+            "then": {
+              "required": [
+                "apparmor_profile"
+              ]
+            }
+          }
+        ],
+        "additionalProperties": false
       }
     },
     "upstream": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "moby_seccomp_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "apparmor_source": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "moby_seccomp_commit",
+        "apparmor_source"
+      ],
+      "additionalProperties": false
     },
     "assets": {
       "type": "object",

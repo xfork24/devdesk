@@ -5,8 +5,7 @@
   "required": [
     "jsonrpc",
     "id",
-    "method",
-    "params"
+    "method"
   ],
   "properties": {
     "jsonrpc": {
@@ -15,7 +14,8 @@
     "id": {
       "type": [
         "string",
-        "integer"
+        "number",
+        "null"
       ]
     },
     "method": {
@@ -29,8 +29,7 @@
     "Command": {
       "type": "object",
       "required": [
-        "command_id",
-        "payload"
+        "command_id"
       ],
       "properties": {
         "command_id": {
@@ -51,7 +50,7 @@
           "minimum": 0
         },
         "payload": {
-          "type": "object"
+          "description": "Defaults to null when omitted. Each command validates its own payload fields."
         },
         "project_id": {
           "type": [
@@ -86,11 +85,11 @@
         },
         "harness": {
           "type": "string",
-          "minLength": 1
+          "description": "May be empty before native runtime preparation; the concrete installation is frozen in RuntimeBinding."
         },
         "sandbox": {
           "type": "string",
-          "minLength": 1
+          "description": "May be empty before native runtime preparation; the concrete installation is frozen in RuntimeBinding."
         }
       }
     },
@@ -116,6 +115,7 @@
     "TestRequest": {
       "type": "object",
       "required": [
+        "operation_id",
         "phase",
         "candidate",
         "test_definitions",
@@ -139,10 +139,45 @@
           "type": "string"
         },
         "origin": {
-          "enum": [
-            "simulated",
-            "human",
-            "external"
+          "$ref": "#/$defs/Origin"
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "definitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Document"
+          }
+        },
+        "code": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GitContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionInstance"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       }
@@ -182,7 +217,9 @@
         },
         "version": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9._+-]+$"
         },
         "os": {
           "enum": [
@@ -233,7 +270,7 @@
             },
             "reference": {
               "type": "string",
-              "pattern": ".+@sha256:[0-9a-f]{64}$"
+              "pattern": "^(?!-)[A-Za-z0-9/._:-]+@sha256:[0-9a-f]{64}$"
             }
           }
         },
@@ -611,35 +648,7 @@
       "type": "object",
       "properties": {
         "installation": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "minLength": 1
-            },
-            "key": {
-              "$ref": "#/$defs/RuntimeKey"
-            },
-            "artifact": {
-              "$ref": "#/$defs/RuntimeArtifact"
-            },
-            "source": {
-              "type": "string",
-              "minLength": 1
-            },
-            "license": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "id",
-            "key",
-            "artifact",
-            "source",
-            "license"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/RuntimeInstallation"
         },
         "adapter_version": {
           "type": "string",
@@ -716,8 +725,7 @@
         "model",
         "tool_policy",
         "work_type",
-        "configuration_digest",
-        "credential_ref"
+        "configuration_digest"
       ],
       "additionalProperties": false
     },
@@ -774,8 +782,7 @@
                 },
                 "required": [
                   "id",
-                  "selected",
-                  "custom"
+                  "selected"
                 ],
                 "additionalProperties": false
               }
@@ -791,7 +798,8 @@
           ],
           "additionalProperties": false
         }
-      ]
+      ],
+      "description": "Answers accepted by native providers. The persisted legacy text variant is historical only and cannot answer a live interaction."
     },
     "MaterialOwner": {
       "oneOf": [
@@ -872,7 +880,8 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "pattern": "^(?![-/])(?!.*[\\\\\\n\\r\\u0000])(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
           }
         },
         "image": {
@@ -913,10 +922,7 @@
           "default": false
         },
         "intent": {
-          "type": [
-            "object",
-            "null"
-          ]
+          "description": "Opaque provider intent, preserved as any JSON value; defaults to null."
         }
       },
       "required": [
@@ -960,7 +966,7 @@
           "type": "string"
         },
         "status": {
-          "type": "string"
+          "$ref": "#/$defs/Status"
         },
         "writer_revoked": {
           "type": "boolean"
@@ -972,15 +978,25 @@
           ]
         },
         "started": {
-          "type": [
-            "integer",
-            "null"
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "finished": {
-          "type": [
-            "integer",
-            "null"
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "permissions": {
@@ -1008,7 +1024,7 @@
       "type": "object",
       "properties": {
         "context": {
-          "type": "object"
+          "$ref": "#/$defs/GitContext"
         },
         "revision": {
           "type": "string"
@@ -1045,9 +1061,14 @@
           "type": "string"
         },
         "number": {
-          "type": [
-            "integer",
-            "null"
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -1088,7 +1109,7 @@
       "description": "merge.capture_snapshot: append an audit snapshot for a completed merge; original snapshots remain immutable."
     },
     "NativeInputLimits": {
-      "description": "Ordinary conversation input is at most 65536 UTF-8 bytes; a host-created formal Run evidence envelope is at most 524288 bytes. A native execution budget is fifteen minutes, excluding pending human decisions. Errors never implicitly select Sim."
+      "description": "Ordinary conversation input is at most 65536 UTF-8 bytes; a host-created formal Run evidence envelope is at most 524288 bytes. A native execution budget is fifteen minutes, excluding pending human decisions. Errors never switch execution providers implicitly."
     },
     "Permission": {
       "type": "object",
@@ -1294,7 +1315,6 @@
         "identity",
         "name",
         "version",
-        "supersedes",
         "schema_version",
         "policy"
       ],
@@ -2295,7 +2315,6 @@
         }
       },
       "required": [
-        "protected_metadata",
         "read_only_root",
         "executable_tmp",
         "nested_sandbox",
@@ -2460,8 +2479,7 @@
     "GitHubProjectOpen": {
       "type": "object",
       "required": [
-        "command_id",
-        "payload"
+        "command_id"
       ],
       "properties": {
         "command_id": {
@@ -2475,7 +2493,10 @@
           ]
         },
         "payload": {
-          "type": "object",
+          "type": [
+            "object",
+            "null"
+          ],
           "properties": {
             "repository": {
               "type": "string",
@@ -2490,6 +2511,13 @@
             }
           },
           "additionalProperties": false
+        },
+        "expected_revision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
         }
       },
       "anyOf": [
@@ -2509,9 +2537,13 @@
             "payload": {
               "required": [
                 "repository"
-              ]
+              ],
+              "type": "object"
             }
-          }
+          },
+          "required": [
+            "payload"
+          ]
         }
       ]
     },
@@ -2657,10 +2689,13 @@
       "type": "object",
       "properties": {
         "provider": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "model": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 199
         },
         "endpoint": {
           "type": [
@@ -2700,7 +2735,8 @@
           ]
         },
         "runtime_version": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "capabilities": {
           "type": "array",
@@ -2719,7 +2755,7 @@
             "string",
             "null"
           ],
-          "pattern": "^[0-9a-f]{64}$"
+          "pattern": "^[0-9a-fA-F]{64}$"
         }
       },
       "required": [
@@ -2732,13 +2768,11 @@
       "type": "object",
       "properties": {
         "qualified_name": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "implementation": {
-          "enum": [
-            "harness.native",
-            "experience.lookup"
-          ]
+          "type": "string"
         },
         "input_schema": {
           "type": "object"
@@ -2793,13 +2827,16 @@
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "minItems": 1
         },
         "permissions": {
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "minItems": 1,
+          "maxItems": 2
         },
         "approval": {
           "enum": [
@@ -2967,9 +3004,7 @@
       },
       "required": [
         "key",
-        "role",
-        "dependencies",
-        "writes"
+        "role"
       ],
       "additionalProperties": false
     },
@@ -3043,17 +3078,9 @@
             },
             "max_turns": {
               "type": "integer",
-              "minimum": 0,
-              "maximum": 100
+              "minimum": 0
             }
           },
-          "required": [
-            "mode",
-            "goal",
-            "required_topics",
-            "output_kind",
-            "max_turns"
-          ],
           "additionalProperties": false
         },
         "advance_mode": {
@@ -3092,7 +3119,56 @@
         "stage",
         "kind"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "agent.interact"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "participant_slot",
+              "interaction"
+            ],
+            "properties": {
+              "participant_slot": {
+                "type": "string"
+              },
+              "interaction": {
+                "required": [
+                  "goal",
+                  "output_kind",
+                  "max_turns"
+                ],
+                "properties": {
+                  "goal": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "max_turns": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "output_kind": {
+                    "enum": [
+                      "requirement",
+                      "feature",
+                      "design",
+                      "task_plan",
+                      "test_plan"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "WorkflowDocument": {
       "type": "object",
@@ -3164,7 +3240,8 @@
           "maxItems": 200,
           "items": {
             "$ref": "#/$defs/WorkflowStep"
-          }
+          },
+          "minItems": 1
         },
         "subworkflow_refs": {
           "type": "object",
@@ -3232,7 +3309,6 @@
         "scope",
         "name",
         "version",
-        "supersedes",
         "content_hash",
         "data",
         "immutable",
@@ -3306,6 +3382,420 @@
         }
       },
       "additionalProperties": false
+    },
+    "Origin": {
+      "enum": [
+        "human",
+        "simulated",
+        "external"
+      ],
+      "description": "simulated is readable historical provenance only; native execution produces external evidence."
+    },
+    "Status": {
+      "enum": [
+        "draft",
+        "planning",
+        "ready",
+        "developing",
+        "validating",
+        "accepted",
+        "merging",
+        "completed",
+        "prepared",
+        "running",
+        "waiting_review",
+        "rejected",
+        "failed",
+        "cancelled",
+        "interrupted",
+        "queued",
+        "succeeded",
+        "active",
+        "released",
+        "cleanup_failed"
+      ]
+    },
+    "Workspace": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "mainline": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "path",
+        "mainline"
+      ]
+    },
+    "CodeLocation": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "worktree": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "branch",
+        "worktree"
+      ]
+    },
+    "GitContext": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        },
+        "source": {
+          "$ref": "#/$defs/CodeLocation"
+        },
+        "target": {
+          "$ref": "#/$defs/CodeLocation"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        }
+      },
+      "required": [
+        "project",
+        "workspace",
+        "source",
+        "target",
+        "origin"
+      ]
+    },
+    "Document": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "feature_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "supersedes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirement_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "design_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AcceptanceCriterion"
+          }
+        },
+        "verifies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "artifact_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "test_recipe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestRecipe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "body",
+        "version",
+        "origin",
+        "acceptance",
+        "verifies"
+      ]
+    },
+    "Harness": {
+      "type": "object",
+      "properties": {
+        "permission": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionBinding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "version",
+        "capabilities",
+        "origin"
+      ]
+    },
+    "Sandbox": {
+      "type": "object",
+      "properties": {
+        "permission": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionBinding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "network": {
+          "type": "boolean"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "version",
+        "platform",
+        "network",
+        "origin"
+      ]
+    },
+    "ExecutionInstance": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "harness": {
+          "$ref": "#/$defs/Harness"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/Sandbox"
+        },
+        "external_session": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "external_environment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "started": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "run_id",
+        "harness",
+        "sandbox",
+        "status"
+      ]
+    },
+    "RuntimeInstallation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "$ref": "#/$defs/RuntimeKey"
+        },
+        "artifact": {
+          "$ref": "#/$defs/RuntimeArtifact"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "artifact",
+        "source",
+        "license"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -3322,7 +3812,10 @@
           "params": {
             "$ref": "#/$defs/Command"
           }
-        }
+        },
+        "required": [
+          "params"
+        ]
       }
     },
     {
@@ -3338,7 +3831,10 @@
           "params": {
             "$ref": "#/$defs/SettingsUpdate"
           }
-        }
+        },
+        "required": [
+          "params"
+        ]
       }
     },
     {
@@ -3354,7 +3850,10 @@
           "params": {
             "$ref": "#/$defs/RuntimeRegistration"
           }
-        }
+        },
+        "required": [
+          "params"
+        ]
       }
     },
     {
@@ -3370,7 +3869,10 @@
           "params": {
             "$ref": "#/$defs/CredentialConfiguration"
           }
-        }
+        },
+        "required": [
+          "params"
+        ]
       }
     },
     {
@@ -3387,7 +3889,8 @@
               "proposal.revise",
               "proposal.adopt",
               "proposal.reject",
-              "proposal.instantiate"
+              "proposal.instantiate",
+              "execution.retry_cleanup"
             ]
           }
         }
@@ -3397,7 +3900,10 @@
           "params": {
             "$ref": "#/$defs/Command"
           }
-        }
+        },
+        "required": [
+          "params"
+        ]
       }
     },
     {
@@ -3417,7 +3923,10 @@
           "params": {
             "$ref": "#/$defs/Command"
           }
-        }
+        },
+        "required": [
+          "params"
+        ]
       }
     },
     {
@@ -3432,6 +3941,47 @@
         "properties": {
           "params": {
             "$ref": "#/$defs/Command"
+          }
+        },
+        "required": [
+          "params"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "runtime.prepare"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/RuntimePrepare"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "project.open_github"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/GitHubProjectOpen"
           }
         }
       }

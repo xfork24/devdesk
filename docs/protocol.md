@@ -15,7 +15,7 @@
 {"jsonrpc":"2.0","id":1,"method":"attempt.start","params":{"command_id":"uuid","target":"feature-id","expected_revision":3,"payload":{"phase":"planning","provider":"codex"}}}
 ```
 
-命令：project.create/open/update、feature.create、document.revise、definition.revise、binding.update、task.create、attempt.start/pause/cancel、run.cancel/retry/continue、delivery.submit、review.submit/request、override.accept、merge.request/apply、context.update、snapshot.save。不存在 set_status。
+命令：project.create/open/update、feature.create、document.revise、definition.revise、binding.update、task.create、attempt.start/pause/cancel、run.cancel/retry、delivery.submit、review.submit/request、override.accept、merge.request/apply、context.update、snapshot.save。不存在 set_status。
 
 `project.open` 使用 Command，target 为项目 ID，payload 可为空；成功后切换活动数据库并保存上次选择。`project.create` 创建独立数据库并自动打开。工程查询和 Command 可在 params 顶层携带 `project_id`，与当前活动项目不符时返回 `project_changed`；不通过查询隐式切换项目。省略作用域时使用请求开始时的活动数据库。没有活动项目时工程命令返回 `project_required`，仍可查询全局工作区和配置、修改并发配置或修订共享定义。
 
@@ -36,9 +36,9 @@ query.workspace 的 project_offset 与 Feature offset 独立；detail_pages 对 
 
 Standard 的 slots 结构为 `[{"purpose":"planning","spec":"固定Spec-ID"}, ...]`，同时具备 planning/implementation/merge 三个用途。Spec 仅解释内置 traceability、failure_paths、sections 规则；无任意脚本。定义版本、适用标准与实际逐项结果都留在 Review 历史。
 
-Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执行输入包含冻结 Context 和继承 Snapshot；Reviewer 输入为目标 Delivery 的冻结文档、证据和报告正文。TestRequest 包含 phase、candidate、test_definitions、environment、origin，适配器结果必须回传匹配的绑定。
+Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执行输入包含冻结 Context 和继承 Snapshot；Reviewer 输入为目标 Delivery 的冻结文档、证据和报告正文。TestRequest 必须包含 operation_id、phase、candidate、test_definitions、environment、origin，可附 session_id、完整 definitions、code 和 runtime，适配器结果必须回传匹配的绑定。
 
-文件清单含 schema_version=1；Delivery 清单和 Snapshot JSON 均封存并记录哈希，不成为可写工程事实源。JSON-RPC 不实现 batch/notification，查询与命令均要求 request id。
+Delivery 文件清单及工程 Snapshot 清单含 `schema_version=1`；Project 上下文和会话输入/交接快照直接序列化 `Snapshot`，没有清单外层。上述格式均由 `schemas/manifest.schema.json` 描述，封存并记录哈希，不成为可写工程事实源。原生交付使用 `origin=external`，`simulated` 仅供历史读取。各 Schema 的对应实现与校验边界见 [Schema 说明](../schemas/README.md)。JSON-RPC 不实现 batch/notification，查询与命令均要求 request id；无参数查询可省略 params，Command.payload 省略时为 null。
 
 实现参考：[Axum SSE](https://docs.rs/axum/0.8.9/axum/response/sse/)、[Cargo Workspaces](https://doc.rust-lang.org/stable/cargo/reference/workspaces.html)。
 

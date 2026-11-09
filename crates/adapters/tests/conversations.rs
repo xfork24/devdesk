@@ -1,5 +1,7 @@
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
+#[path = "../../../tests/support/schemas.rs"]
+mod schemas;
 use devdesk_adapters::*;
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -535,6 +537,20 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
         Some(&next)
     );
     assert_eq!(e.store.snapshot().unwrap().runs.len(), 0);
+    let artifacts: Vec<_> = e
+        .store
+        .snapshot()
+        .unwrap()
+        .artifacts
+        .into_iter()
+        .filter(|artifact| artifact.relative_path.contains("/snapshots/"))
+        .collect();
+    assert!(!artifacts.is_empty());
+    for artifact in artifacts {
+        let snapshot = serde_json::from_slice(&e.artifacts.read(&artifact).unwrap()).unwrap();
+        schemas::SCHEMAS.assert_valid("manifest.schema.json", &snapshot);
+        assert_eq!(artifact.origin, Origin::External);
+    }
 }
 
 fn complete_fixture(e: &Engine, sid: &str, tid: &str) {
