@@ -4,11 +4,13 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [Ubuntu 六项改造验收](ubuntu-six-plan-acceptance/PLAN.md) | [执行记录](ubuntu-six-plan-acceptance/EXECUTION.md) | 已通过用户最终判据；165 项 Rust、双 profile 各 31 浏览器、Codex 完整闭环、独立 Linux 包；修复四项产品问题，MiniMax 模型能力限制单列 |
+| [设置、配置与执行工作台改进](settings-navigation-usability/PLAN.md) | [实施报告](settings-navigation-usability/REPORT.md)、[Ubuntu 补验](ubuntu-six-plan-acceptance/EXECUTION.md) | 已实施；Ubuntu 导航、反馈、连接、AgentID、阶段布局与完整 Codex 工程通过 |
 | [Workflow Step 任务指令改造](workflow-step-task-instructions/PLAN.md) | [实施记录](workflow-step-task-instructions/EXECUTION.md) | 已实施；可编辑任务、Role/Skill/Spec 逐轮冻结、权限后继与完整路径隔离；152 项 Rust、双 profile 浏览器、真实 Codex 与独立发布包通过，DSH 为原生 SDK 模拟模型验证 |
-| [DeepSeek Harness 多模型服务商接入](dsh-model-providers/PLAN.md) | [实施记录](dsh-model-providers/EXECUTION.md) | 已实现；阶段回归、固定 DSH 模拟协议与独立包真实 Codex 通过；DSH 真实订阅及 Ubuntu 宿主待验 |
-| [工具与技能接入](tool-skill-integrations/PLAN.md) | 接入设计与分阶段执行计划 | 待实施；独立接入页、HTTP API/MCP 可调用工具、Skill 资源、Capability 绑定、权限冻结与真实调用回执；原生工具组 Schema 表单先行修正 |
-| [Permission 资源与运行时版本绑定](permission-runtime-bindings/PLAN.md) | [实施记录](permission-runtime-bindings/EXECUTION.md) | 已实施；统一文件/UI、确切目标绑定与后继 Session 生效，macOS 自动化、双供应商原生边界和真实 Codex 改绑通过；Ubuntu、DSH 真实模型与完整崩溃矩阵待补验 |
-| [Role、Capability、Workflow 与项目配置重构](role-capability-project-configuration/PLAN.md) | [实施记录](role-capability-project-configuration/EXECUTION.md)、[契约](role-capability-project-configuration/CONTRACT.md) | 五组配置导航、Role/Capability/Agent、显式规范、可选基线、独立子流程及按阶段区分能力的默认配置；macOS 自动化与真实 Codex 工程闭环通过，Ubuntu 本轮未重跑 |
+| [DeepSeek Harness 多模型服务商接入](dsh-model-providers/PLAN.md) | [实施记录](dsh-model-providers/EXECUTION.md) | 已实现；阶段回归、固定 DSH 模拟协议与独立包真实 Codex 通过；历史 macOS 结果保留；Ubuntu 补验和 MiniMax 实测边界见本轮六项报告 |
+| [工具与技能接入](tool-skill-integrations/PLAN.md) | [实施记录](tool-skill-integrations/EXECUTION.md) | 已实施；Ubuntu 本轮补验见六项改造验收报告，历史 macOS 结果保留 |
+| [Permission 资源与运行时版本绑定](permission-runtime-bindings/PLAN.md) | [实施记录](permission-runtime-bindings/EXECUTION.md) | 已实施；统一文件/UI、确切目标绑定与后继 Session 生效，macOS 自动化、双供应商原生边界和真实 Codex 改绑通过；Ubuntu 原生边界、真实 Codex 与五个进程退出边界补验见本轮六项报告 |
+| [Role、Capability、Workflow 与项目配置重构](role-capability-project-configuration/PLAN.md) | [实施记录](role-capability-project-configuration/EXECUTION.md)、[契约](role-capability-project-configuration/CONTRACT.md) | 五组配置导航、Role/Capability/Agent、显式规范、可选基线、独立子流程及按阶段区分能力的默认配置；macOS 自动化与真实 Codex 工程闭环通过，Ubuntu 补验见本轮六项报告 |
 | [内建默认套件与 Role](builtin-defaults-and-roles/PLAN.md) | [执行记录](builtin-defaults-and-roles/EXECUTION.md) | 已实施的历史方案；后续入口与自动绑定重构见 Role、Capability、Workflow 与项目配置计划 |
 | [架构与实现基线 v0.3](devdesk-v0.3/PLAN.md) | [本轮执行记录](workflow-and-workbench/EXECUTION.md) | 当前领域、Web 工作台、存储与能力边界 |
 | [架构设计 v0.2](devdesk-v0.2/PLAN.md) | 实施证据见下面各计划 | 原始领域与架构设计基线 |

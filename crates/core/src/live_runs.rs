@@ -1,6 +1,22 @@
 //! Native engineering stages use frozen role Sessions and managed test executions.
 use crate::*;
 use std::collections::BTreeMap;
+fn candidate_review_evidence(
+    merge: &Merge,
+    candidate: &str,
+    parents: Vec<String>,
+    operations: &[RepositoryOperation],
+) -> Result<Value> {
+    require(
+        merge.candidate == candidate && parents == [merge.expected_target.clone()],
+        "候选父节点或冻结目标基线不匹配",
+    )?;
+    let receipts = operations.iter().filter(|op| op.status == RepositoryOperationStatus::Completed && matches!(&op.action,
+        RepositoryAction::Candidate{merge:id,..} | RepositoryAction::PublishRef{merge:id,..} | RepositoryAction::PullRequest{merge:id,..} if id == &merge.id)).collect::<Vec<_>>();
+    Ok(
+        json!({"merge":merge,"candidate":candidate,"parents":parents,"source":"coordinator Git commit graph read","construction_receipts":receipts}),
+    )
+}
 impl Engine {
     pub(crate) fn live_binding(
         &self,
@@ -354,7 +370,20 @@ impl Engine {
                         .collect::<std::collections::BTreeSet<_>>()
                         .into_iter()
                         .collect::<Vec<_>>();
-                    let input = json!({"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":self.git.diff(&code.context,&base,&code.revision)?},"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>()});
+                    let candidate_provenance = d
+                        .merge_id
+                        .as_deref()
+                        .map(|id| {
+                            let merge = s.merge(id)?;
+                            candidate_review_evidence(
+                                merge,
+                                &code.revision,
+                                self.git.commit_parents(&code.context, &code.revision)?,
+                                &s.repository_operations,
+                            )
+                        })
+                        .transpose()?;
+                    let input = json!({"delivery":d,"candidate_provenance":candidate_provenance,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":self.git.diff(&code.context,&base,&code.revision)?},"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>()});
                     (documents, code, input)
                 } else {
                     let a = s.attempt(
@@ -1349,5 +1378,29 @@ impl Engine {
             "new Run with original role/runtime/model/inputs; prior input is never resent",
         );
         Ok(json!({"id":rid,"operation_id":rid}))
+    }
+}
+
+#[cfg(test)]
+mod candidate_review_tests {
+    use super::*;
+    #[test]
+    fn candidate_review_has_exact_target_and_actual_single_parent_evidence() {
+        let merge: Merge = serde_json::from_value(json!({"id":"merge","feature_id":"feature","task_id":null,"status":"waiting_review","revision":1,"input_version":1,"source":"source","source_delivery":"delivery","target":"target","expected_target":"base","candidate":"candidate","committed_revision":null,"change_request":null})).unwrap();
+        let evidence =
+            candidate_review_evidence(&merge, "candidate", vec!["base".into()], &[]).unwrap();
+        assert_eq!(evidence["merge"]["expected_target"], "base");
+        assert_eq!(evidence["parents"], json!(["base"]));
+        assert!(candidate_review_evidence(&merge, "other", vec!["base".into()], &[]).is_err());
+        assert!(
+            candidate_review_evidence(
+                &merge,
+                "candidate",
+                vec!["base".into(), "source".into()],
+                &[]
+            )
+            .is_err()
+        );
+        assert!(candidate_review_evidence(&merge, "candidate", vec!["stale".into()], &[]).is_err());
     }
 }

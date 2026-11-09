@@ -241,3 +241,13 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `query.workflow_instance` 附带当前 TaskGroup 的 `children` 摘要（实例 ID/修订、任务名称、父步骤），子流程详细计划按实例单独读取。执行与交付以阶段为整行展示，编译展开的子流程保持在其调用阶段内；Task 子流程在所属阶段中按需展开，折叠状态按项目和工作流实例保存在本机。
 
 `query.sessions` 可按 `agent_instance_id` 在分页前筛选。列表和会话详情返回该身份的关联元数据，兼容早期仅有 `agent_session` 记录的会话。独立讨论完成后保存 `conversation_completed` 快照，AgentID 历史包含本轮消息与真实终态证据；切换身份不继续沿用原会话。
+
+### 冻结任务渲染器兼容
+
+新配置冻结使用 `agent-task/v2`，正式 Agent 执行的输出合同携带与协调器解析一致的 `output_schema`：检查项使用 `key`、`passed`、`evidence`，四个检查 key 各出现一次；文档任务明确 `document.kind=doc` 和正文类型。历史 `agent-task/v1` 定义、载荷、输出合同及摘要继续按原版本读取和验证，不自动重渲染；采用修正后的合同需要形成新配置冻结。输出校验和真实测试、独立评审门禁保持原有语义。
+
+候选评审的冻结输入另含 `candidate_provenance`：协调器通过 Git 端口读取确切候选的实际 parents，要求恰好一个且等于冻结 expected_target，并附 Merge 及对应已完成仓库操作回执。模型不需要访问隐藏的 Git 元数据来猜测父子关系；历史评审输入不回写，新的评审 Run 冻结当前实际证据。
+
+`Structured Task Plan` 与普通实现说明分别维护 doc 修订链。普通说明不能通过 supersedes 隐藏规划输入；历史跨链引用保持原记录，只在新 Attempt 的有效输入投影中区分两类文档。
+
+工具正常调度会核对 needs_reconciliation 调用迟到的实际持久化回执；未取得真实回执时保持未知状态，不自动重派写调用。

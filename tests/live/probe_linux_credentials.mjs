@@ -22,6 +22,7 @@ const dataset = path.join(root, 'data');
 const service = 'devdesk.' + createHash('sha256').update(dataset).digest('hex');
 const secrets = [randomBytes(24).toString('hex'), randomBytes(24).toString('hex')];
 const references = [];
+const providerReferences = new Map();
 const report = {
   passed: false, source: 'actual Chromium → Host → Linux Secret Service',
   synthetic_entries_only: true, collection_lock_tested: false,
@@ -55,6 +56,7 @@ const start = async (unavailable = false) => {
   } finally { clearTimeout(timeout); lines.close(); host.stdout.resume(); }
   page = await browser.newPage();
   await page.goto(url);
+  await page.getByRole('button', { name: '设置', exact: true }).waitFor();
 };
 const rpc = async (method, params = {}, allowError = false) => {
   const response = await page.request.post(url + '/rpc', {
@@ -75,6 +77,7 @@ const stop = async () => {
 };
 const tool = (operation, account) => spawnSync('secret-tool', [operation, 'service', service, 'account', account], { timeout: 20000 });
 const account = reference => {
+  if (/^integration-secret:[0-9a-f-]{36}$/.test(reference)) return 'integration-key-' + reference.slice('integration-secret:'.length);
   check(reference.startsWith(service + ':'), 'entry_belongs_to_probe_dataset');
   return reference.slice(service.length + 1);
 };
@@ -106,6 +109,22 @@ try {
   }
   check(references[0] !== references[1], 'updates_create_new_opaque_reference');
   check(tool('lookup', account(references[0])).stdout.toString().trimEnd() === secrets[0], 'old_frozen_reference_preserved');
+  for (const provider of ['zai-coding-cn', 'minimax-cn']) {
+    const secret = randomBytes(24).toString('hex');
+    secrets.push(secret);
+    const saved = await rpc('credentials.configure', { provider: 'dsh', model_provider: provider, api_key: secret });
+    references.push(saved.reference);
+    providerReferences.set(provider, saved.reference);
+    await rpc('credentials.check', { model_provider: provider });
+    check(tool('lookup', account(saved.reference)).stdout.toString().trimEnd() === secret, provider + '_vault_roundtrip');
+  }
+  const integrationSecret = randomBytes(24).toString('hex');
+  secrets.push(integrationSecret);
+  const integration = await rpc('credentials.integration.configure', { payload: { secret: integrationSecret } });
+  references.push(integration.reference);
+  check((await rpc('credentials.integration.status', { payload: { reference: integration.reference } })).available, 'integration_credential_available');
+  check(tool('lookup', account(integration.reference)).stdout.toString().trimEnd() === integrationSecret, 'integration_vault_roundtrip');
+  check((await rpc('credentials.status', { model_provider: 'ollama' })).auth_kind === 'none', 'ollama_needs_no_key');
   const storage = await page.evaluate(() => JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)]));
   check(!secrets.some(secret => storage.includes(secret)), 'browser_storage_contains_no_secret');
   for (const name of fs.readdirSync(dataset).filter(name => name.startsWith('global.sqlite3'))) {
@@ -117,6 +136,11 @@ try {
   check((await rpc('credentials.status')).reference === references[1], 'reference_survives_restart');
   check((await rpc('query.workspace')).projects.some(value => value.id === project.id), 'existing_project_survives_restart');
   await rpc('credentials.check');
+  for (const [provider, reference] of providerReferences) {
+    check((await rpc('credentials.status', { model_provider: provider })).reference === reference, provider + '_reference_survives_restart');
+    await rpc('credentials.check', { model_provider: provider });
+  }
+  check((await rpc('credentials.integration.status', { payload: { reference: integration.reference } })).available, 'integration_survives_restart');
   report.checks.push('secret_read_survives_restart');
   await stop();
   await start(true);

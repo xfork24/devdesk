@@ -7,7 +7,7 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/");
-  if (await page.getByLabel("数据目录").count()) {
+  if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
     await page.getByLabel("数据目录").fill(mkdtempSync(join(tmpdir(), "devdesk-model-provider-web-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
   }

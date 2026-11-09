@@ -6,6 +6,7 @@ from pathlib import Path
 import argparse
 import json
 import os
+import platform
 import shutil
 import signal
 import subprocess
@@ -81,7 +82,7 @@ def main():
             project = c.command('project.create', payload={'title': 'Isolated provider acceptance'})['id']
             c.open(project)
             model = c.command('model.create', payload={'name': 'Host Ollama fixture', 'data': {'provider': 'ollama', 'model': 'host-fixture-model', 'endpoint': f'http://127.0.0.1:{server.server_port}/v1', 'context_window': 32768, 'max_output_tokens': 4096, 'parameters': {'max_tokens': 2048}}})['id']
-            cap = c.command('capability.create', payload={'name': 'Host Ollama capability', 'data': {'model_ref': model, 'harness_ref': 'builtin-harness-dsh-multi-provider-v1', 'tools': ['builtin-tool-codex-native-v1'], 'skills': []}})['id']
+            cap = c.command('capability.create', payload={'name': 'Host Ollama capability', 'data': {'model_ref': model, 'harness_ref': 'builtin-harness-dsh-multi-provider-v1', 'tools': ['builtin-tool-dsh-native-v1'], 'skills': []}})['id']
             agent = c.command('agent.create', payload={'name': 'Host Ollama Agent', 'data': {'role_ref': 'builtin-role-analyst-v1', 'capability_ref': cap, 'permissions': ['permission-container-full-access-v1'], 'approval': 'never'}})['id']
             checked = c.rpc('agent.connection.check', {'agent_revision_id': agent})
             assert checked['container_verified'] and not checked['inference_verified'], checked
@@ -137,7 +138,7 @@ def main():
                 assert not any(secret in body for secret in secrets), 'OAuth secret leaked into persisted non-credential data'
             if secrets:
                 rows += ['- Codex OAuth token 扫描通过：非凭据持久化文件未发现 token，报告不包含秘密。']
-            rows += ['', '结果：通过。本次为 macOS 本机与 Linux Docker；Ubuntu 宿主和 DSH 真实推理未验收。']
+            rows += ['', f'结果：通过。宿主：{platform.system()} / {platform.machine()}；执行器：Linux Docker；DSH 真实推理未验收。']
         finally:
             stop()
             server.shutdown()

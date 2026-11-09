@@ -5646,7 +5646,7 @@
       "type": "object",
       "properties": {
         "renderer_version": {
-          "const": "agent-task/v1"
+          "enum": ["agent-task/v1", "agent-task/v2"]
         },
         "workflow_revision_id": {
           "type": "string"
@@ -5707,7 +5707,7 @@
       "type": "object",
       "properties": {
         "renderer_version": {
-          "const": "agent-task/v1"
+          "enum": ["agent-task/v1", "agent-task/v2"]
         },
         "definition": {
           "$ref": "#/$defs/WorkflowTaskDefinition"

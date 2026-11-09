@@ -884,6 +884,10 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
         "needs_reconciliation"
     );
     assert_eq!(observed.starts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        e.store.has_pending_work().unwrap(),
+        "late receipts must remain eligible for scheduler reconciliation"
+    );
     observed.receipts.lock().unwrap().insert(
         i.id.clone(),
         ToolReceipt {
@@ -896,7 +900,9 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
             origin: Origin::External,
         },
     );
-    e.recover_tool_receipts().unwrap();
+    // A receipt may arrive after dispatch/poll raced or after a restart.
+    // Normal scheduling must reconcile it without starting the write again.
+    e.drive_tool_calls().unwrap();
     assert_eq!(
         e.store
             .snapshot()
@@ -907,6 +913,10 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
         "succeeded"
     );
     assert_eq!(observed.starts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        !e.store.has_pending_work().unwrap(),
+        "settled manual calls return the project to idle"
+    );
     i.id = id();
     e.enqueue_tool_test(&test_command(), &i).unwrap();
     e.drive_tool_calls().unwrap();

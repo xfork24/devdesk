@@ -489,6 +489,8 @@ impl Engine {
         Ok(())
     }
     pub fn drive_tool_calls(&self) -> Result<()> {
+        // Reconcile late persisted receipts on every tick; never redispatch an unknown call.
+        self.recover_tool_receipts()?;
         let Some(executor) = &self.tool_executor else {
             return Ok(());
         };

@@ -1,5 +1,7 @@
 # Ubuntu Web 验收入口
 
+2026-11-10 六项配置改造补验：[计划](plans/ubuntu-six-plan-acceptance/PLAN.md)、[执行记录](plans/ubuntu-six-plan-acceptance/EXECUTION.md)。独立 Ubuntu 数据集及 Codex 完整闭环已通过，修复四项产品问题；MiniMax 实测限制和用户最终判据见执行记录。
+
 2026-11-09 新能力补验：[Permission 标准化](plans/permission-standardization/UBUNTU.md)、[Workflow 与工程工作台](plans/workflow-and-workbench/UBUNTU.md)。这两份报告使用当前源码及独立 Ubuntu x86_64 数据集；下述 U0–U6 是此前工程接入的历史验收。
 
 本轮 macOS 的真实工程报告在 [R8](plans/real-engineering-integration/R8-acceptance.md)。Ubuntu 已执行 [本轮实机检查](plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)：U0–U6 全部通过，包含双 Harness 工程闭环、真实 PR merged、系统凭据、安装复用、取消/崩溃恢复和独立发布包；AppArmor Docker 宿主使用经批准的专用策略。Web UI 是本轮客户端，macOS native 客户端延后。

@@ -1195,3 +1195,49 @@ fn formal_run_queues_frozen_task_before_dispatch_and_retry_preserves_business_in
     assert_eq!(second["task"]["content"]["retry_of"], rid);
     assert_ne!(second["task"]["digest"], first["task"]["digest"]);
 }
+
+#[test]
+fn output_contract_describes_typed_evidence_checks_and_preserves_legacy_snapshots() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path(), Arc::default());
+    let p = project(&e);
+    let f = feature(&e, &p);
+    let sid = open(&e, &f, "requirement_discussion", None);
+    let sent = send(&e, &sid, "Contract regression");
+    let task: FrozenAgentTask = serde_json::from_value(
+        e.query("query.execution_task", &json!({"turn_id":sent["id"]}), 4)
+            .unwrap()["task"]
+            .clone(),
+    )
+    .unwrap();
+    let mut step = task.definition.decode_step().unwrap();
+    step.kind = "attempt.execute".into();
+    let output = agent_task_output_contract(&step, Some("requirement_validate"));
+    let validator = jsonschema::validator_for(&output["output_schema"]).unwrap();
+    let valid = json!({"summary":"verified","checks":[
+        {"key":"traceability","passed":true,"evidence":"adopted PRD"},
+        {"key":"scope","passed":true,"evidence":"one module"},
+        {"key":"tests","passed":true,"evidence":"verifiable acceptance; implementation not required yet"},
+        {"key":"failure_paths","passed":true,"evidence":"invalid input TypeError"}]});
+    assert!(validator.is_valid(&valid));
+    let mut wrong = valid.clone();
+    wrong["checks"][0] = json!({"name":"traceability","status":"pass","evidence":["PRD"]});
+    assert!(!validator.is_valid(&wrong));
+    wrong = valid.clone();
+    wrong["checks"][0]["key"] = json!("scope");
+    assert!(!validator.is_valid(&wrong));
+    let mut definition = task.definition.clone();
+    definition.renderer_version = "agent-task/v1".into();
+    let mut content = task.content.clone();
+    content["renderer_version"] = json!("agent-task/v1");
+    content["output_contract"]
+        .as_object_mut()
+        .unwrap()
+        .remove("output_schema");
+    let old = FrozenAgentTask::new(definition, task.base, content).unwrap();
+    let bytes = serde_json::to_vec(&old).unwrap();
+    let restored: FrozenAgentTask = serde_json::from_slice(&bytes).unwrap();
+    restored.validate().unwrap();
+    assert_eq!(serde_json::to_vec(&restored).unwrap(), bytes);
+    assert_eq!(restored.renderer_version, "agent-task/v1");
+}

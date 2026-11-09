@@ -223,6 +223,13 @@ pub trait Git: Send + Sync {
         target: &str,
         operation: &str,
     ) -> Result<String>;
+    /// Read the exact commit graph in the coordinator, without exposing repository metadata to a model.
+    fn commit_parents(&self, _context: &GitContext, _revision: &str) -> Result<Vec<String>> {
+        Err(devdesk_domain::err(
+            "unsupported",
+            "Git 适配器未提供提交父节点查询",
+        ))
+    }
     fn diff(&self, _context: &GitContext, _base: &str, _head: &str) -> Result<String> {
         Err(devdesk_domain::err(
             "unsupported",

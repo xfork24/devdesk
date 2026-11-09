@@ -458,7 +458,8 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
         .unwrap()
         .to_owned();
     let binding = RuntimeBinding {
-        model_connection: None, model_profile_digest: None,
+        model_connection: None,
+        model_profile_digest: None,
         agent_configuration: None,
         permissions: None,
         installation: RuntimeInstallation {
@@ -911,7 +912,8 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
             .output()
             .unwrap();
         assert!(output.status.success());
-        let spec = ContainerSpec { host_gateway: false,
+        let spec = ContainerSpec {
+            host_gateway: false,
             permissions: Some(plan),
             purpose: ContainerPurpose::Harness,
             project_id: id(),
@@ -970,5 +972,232 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
             "v2-native-ok"
         );
         assert!(!work.join("tests/prohibited").exists());
+    }
+}
+
+/// Real subprocess exits leave SQLite to recover its own committed/rolled-back transactions.
+#[test]
+fn permission_switch_survives_process_exit_at_durable_boundaries() {
+    use std::path::{Path, PathBuf};
+    struct CrashStore {
+        inner: Arc<SqliteStore>,
+        boundary: String,
+    }
+    impl EngineeringStore for CrashStore {
+        fn snapshot(&self) -> Result<EngineeringState> {
+            self.inner.snapshot()
+        }
+        fn root(&self) -> String {
+            self.inner.root()
+        }
+        fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
+            self.inner.replay(id, fingerprint)
+        }
+        fn transact(
+            &self,
+            key: Option<(&str, &str)>,
+            action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
+        ) -> Result<Value> {
+            let result = self.inner.transact(key, &mut |state| {
+                let value = action(state)?;
+                if self.boundary == "before_successor_commit"
+                    && state
+                        .governance
+                        .iter()
+                        .any(|r| r.kind == "permission_switch" && r.data["status"] == "adopted")
+                {
+                    std::process::exit(86);
+                }
+                Ok(value)
+            })?;
+            let state = self.inner.snapshot()?;
+            if let Some(intent) = state
+                .governance
+                .iter()
+                .find(|r| r.kind == "permission_switch")
+            {
+                let stopped = intent.data["stop_receipts"]
+                    .as_object()
+                    .is_some_and(|v| !v.is_empty());
+                if (self.boundary == "intent_committed" && intent.data["status"] == "prepared")
+                    || (self.boundary == "stop_committed" && stopped)
+                    || (self.boundary == "input_committed" && intent.data["status"] == "adopted")
+                {
+                    std::process::exit(86);
+                }
+            }
+            Ok(result)
+        }
+    }
+    struct Stopper {
+        root: PathBuf,
+        crash: bool,
+    }
+    impl ports::Harness for Stopper {
+        fn stop_session(
+            &self,
+            _: &Session,
+            execution: &RuntimeExecution,
+        ) -> Result<ports::WorkerStop> {
+            // The same operation can be reconciled after its receipt was lost.
+            std::fs::write(self.root.join("stopped-operation"), &execution.operation_id).unwrap();
+            if self.crash {
+                std::process::exit(86);
+            }
+            Ok(ports::WorkerStop {
+                operation_id: execution.operation_id.clone(),
+                writer_revoked: true,
+                mode: "fixture-stop".into(),
+                requires_successor: true,
+            })
+        }
+    }
+    let adapters = |root: &Path, crash: bool| {
+        let mut adapters = runtime::adapters();
+        adapters.harness = Arc::new(Stopper {
+            root: root.into(),
+            crash,
+        });
+        adapters
+    };
+    if let Ok(root) = std::env::var("DEVDESK_SWITCH_CRASH_ROOT") {
+        let root = PathBuf::from(root);
+        let boundary = std::env::var("DEVDESK_SWITCH_CRASH_BOUNDARY").unwrap();
+        let value: Value =
+            serde_json::from_slice(&std::fs::read(root.join("request.json")).unwrap()).unwrap();
+        let store = Arc::new(CrashStore {
+            inner: Arc::new(SqliteStore::open(&root).unwrap()),
+            boundary: boundary.clone(),
+        });
+        let engine = Engine::new(
+            store,
+            Arc::new(FileArtifacts::new(root.clone())),
+            adapters(&root, boundary == "stop_receipt_lost"),
+        );
+        engine
+            .send_with_permission_binding(
+                serde_json::from_value(value["command"].clone()).unwrap(),
+                serde_json::from_value(value["binding"].clone()).unwrap(),
+            )
+            .unwrap();
+        panic!("crash boundary was not reached");
+    }
+    for boundary in [
+        "intent_committed",
+        "stop_receipt_lost",
+        "stop_committed",
+        "before_successor_commit",
+        "input_committed",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let engine = Engine::new(
+            Arc::new(SqliteStore::open(root).unwrap()),
+            Arc::new(FileArtifacts::new(root.into())),
+            adapters(root, false),
+        );
+        engine.bootstrap().unwrap();
+        let (_, sid, mut binding) = prepared_discussion(&engine);
+        binding.configuration_digest = "b".repeat(64);
+        engine
+            .store
+            .transact(None, &mut |state| {
+                state.executions.push(RuntimeExecution {
+                    permissions: None,
+                    kind: RuntimeExecutionKind::Harness,
+                    id: id(),
+                    session_id: sid.clone(),
+                    run_id: None,
+                    operation_id: id(),
+                    container_id: None,
+                    image_digest: format!("sha256:{}", "a".repeat(64)),
+                    status: Status::Prepared,
+                    writer_revoked: false,
+                    started: None,
+                    finished: None,
+                    protocol_artifact: None,
+                });
+                Ok(Value::Null)
+            })
+            .unwrap();
+        let request = command(
+            "conversation.send",
+            json!({"input":"one crash-safe input","client_message_id":"crash-message"}),
+            Some(&sid),
+            Some(1),
+        )
+        .1;
+        std::fs::write(
+            root.join("request.json"),
+            serde_json::to_vec(&json!({"command":request,"binding":binding})).unwrap(),
+        )
+        .unwrap();
+        drop(engine);
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "permission_switch_survives_process_exit_at_durable_boundaries",
+                "--nocapture",
+            ])
+            .env("DEVDESK_SWITCH_CRASH_ROOT", root)
+            .env("DEVDESK_SWITCH_CRASH_BOUNDARY", boundary)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(86),
+            "{boundary}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let engine = Engine::new(
+            Arc::new(SqliteStore::open(root).unwrap()),
+            Arc::new(FileArtifacts::new(root.into())),
+            adapters(root, false),
+        );
+        engine.bootstrap().unwrap();
+        // A new default cannot replace the original durable switching intent.
+        binding.configuration_digest = "c".repeat(64);
+        let result = engine
+            .send_with_permission_binding(request.clone(), binding.clone())
+            .unwrap();
+        assert_eq!(
+            engine
+                .send_with_permission_binding(request, binding)
+                .unwrap(),
+            result
+        );
+        let state = engine.store.snapshot().unwrap();
+        assert_eq!(state.sessions.len(), 2, "{boundary}");
+        assert_eq!(state.turns.len(), 1, "{boundary}");
+        assert!(
+            state.executions.iter().all(|e| e.writer_revoked),
+            "{boundary}"
+        );
+        let successor = state
+            .sessions
+            .iter()
+            .find(|s| s.id == result["effective_session_id"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(successor.predecessor.as_deref(), Some(sid.as_str()));
+        assert_eq!(
+            successor
+                .runtime_binding
+                .as_ref()
+                .unwrap()
+                .configuration_digest,
+            "b".repeat(64)
+        );
+        assert_eq!(
+            state
+                .sessions
+                .iter()
+                .find(|s| s.id == sid)
+                .unwrap()
+                .runtime_binding
+                .as_ref()
+                .unwrap()
+                .configuration_digest,
+            "a".repeat(64)
+        );
     }
 }

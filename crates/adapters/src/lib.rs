@@ -594,13 +594,26 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         tx.commit().map_err(storage)?;
     }
     if version < 39 {
-        connection.execute_batch("PRAGMA foreign_keys=OFF;").map_err(storage)?;
-        let tx=connection.transaction().map_err(storage)?;
-        tx.execute_batch(include_str!("../../../sql/project/conversations/039_global_discussions.sql")).map_err(storage)?;
-        let invalid: bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",[],|r|r.get(0)).map_err(storage)?;
-        require(!invalid,"全局讨论迁移检测到外键冲突")?;
+        connection
+            .execute_batch("PRAGMA foreign_keys=OFF;")
+            .map_err(storage)?;
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/conversations/039_global_discussions.sql"
+        ))
+        .map_err(storage)?;
+        let invalid: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(storage)?;
+        require(!invalid, "全局讨论迁移检测到外键冲突")?;
         tx.commit().map_err(storage)?;
-        connection.execute_batch("PRAGMA foreign_keys=ON;").map_err(storage)?;
+        connection
+            .execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(storage)?;
     }
     Ok(connection)
 }
@@ -728,7 +741,7 @@ impl EngineeringStore for SqliteStore {
         let conn = self.connection.lock().map_err(storage)?;
         conn.query_row("SELECT
           EXISTS(SELECT 1 FROM governance_records instance WHERE instance.kind='workflow_instance' AND json_extract(instance.data,'$.paused')=0 AND json_extract(instance.data,'$.status') NOT IN ('cancelled','completed') AND NOT EXISTS(SELECT 1 FROM governance_records parent WHERE parent.kind='workflow_instance' AND parent.definition_id=json_extract(instance.scope,'$.feature_id') AND json_extract(parent.data,'$.paused')=1) AND (json_extract(instance.data,'$.dirty')=1 OR EXISTS(SELECT 1 FROM governance_records intent,json_each(instance.data,'$.steps') step WHERE intent.kind='workflow_intent' AND intent.definition_id=json_extract(step.value,'$.id') AND json_extract(intent.data,'$.status')='prepared' AND json_extract(step.value,'$.status') NOT IN ('completed','skipped')))) OR
-          EXISTS(SELECT 1 FROM governance_records WHERE kind='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
+          EXISTS(SELECT 1 FROM governance_records WHERE kind='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
           EXISTS(SELECT 1 FROM runs WHERE status IN ('queued','running')) OR
           EXISTS(SELECT 1 FROM effects WHERE status IN ('pending','observed') OR (status='needs_reconciliation' AND (reason='reconcile_requested' OR (kind='test' AND reason='restart_native_observation_only')))) OR
           EXISTS(SELECT 1 FROM advances WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR

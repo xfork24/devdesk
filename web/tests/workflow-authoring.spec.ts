@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 async function setup(page: Page) {
   await page.goto("/");
-  if (await page.getByLabel("数据目录").count()) {
+  if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
     await page
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-config-web-")));
@@ -582,7 +582,7 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
           "merge.review",
         ].includes(b.action),
       )
-      .every((b: any) => b.task?.renderer_version === "agent-task/v1"),
+      .every((b: any) => b.task?.renderer_version === "agent-task/v2"),
   ).toBe(true);
   expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
 });

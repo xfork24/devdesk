@@ -525,6 +525,19 @@ impl CliGit {
         require(out.code == 0, "源分支推进未知，需核对快照 ref")?;
         Ok(commit)
     }
+    pub fn commit_parents(&self, c: &GitContext, revision: &str) -> Result<Vec<String>> {
+        let repo = self.context(c)?;
+        require(valid_oid(revision), "提交父节点查询必须使用固定对象")?;
+        let output = self.output(&repo, &["rev-list", "--parents", "-n", "1", revision, "--"])?;
+        let mut objects = output.split_whitespace();
+        require(objects.next() == Some(revision), "Git 提交父节点回执不匹配")?;
+        let parents = objects.map(str::to_owned).collect::<Vec<_>>();
+        require(
+            parents.iter().all(|oid| valid_oid(oid)),
+            "Git 父节点对象无效",
+        )?;
+        Ok(parents)
+    }
     pub fn diff(&self, c: &GitContext, base: &str, head: &str) -> Result<String> {
         let repo = self.context(c)?;
         require(valid_oid(base) && valid_oid(head), "diff 必须使用固定对象")?;
@@ -1081,6 +1094,9 @@ impl ports::Git for CliGit {
     ) -> Result<String> {
         let _lock = self.writer.lock().map_err(storage)?;
         self.candidate_unlocked(c, source, target, operation)
+    }
+    fn commit_parents(&self, c: &GitContext, revision: &str) -> Result<Vec<String>> {
+        CliGit::commit_parents(self, c, revision)
     }
     fn diff(&self, c: &GitContext, base: &str, head: &str) -> Result<String> {
         CliGit::diff(self, c, base, head)

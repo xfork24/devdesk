@@ -85,3 +85,7 @@ Workflow 任务专项：`cargo test -p devdesk-adapters --test agent_tasks --loc
 工具与技能接入：`crates/adapters/tests/tool_integrations.rs` 覆盖修订、作用域、配置锁、依赖、离线 Schema、审批/取消/核对；其 `docker_` 忽略用例使用真实 Docker HTTP/MCP/OAuth 夹具，不调用模型。`web/tests/integrations.spec.ts` 使用实际 Host 完成配置，MCP 测试通过真正的 Docker stdio 服务发现及调用，需可用 Docker 和固定 Codex 镜像。
 
 `tests/live/probe_tool_integrations.py --codex-auth-source /绝对路径/专用/auth.json --host /绝对路径/devdesk-host --report /tmp/tools-native.json` 创建独立数据集，配置 HTTP/MCP/Skill、Capability、Agent 和项目绑定，真实 Codex 执行两轮并重启 Host，核验文件只读和外部调用回执。始终不调用 DSH；只复制明确提供的 Codex 登录文件，结束后删除测试中的 auth.json 副本，保留无凭据运行证据。
+
+Ubuntu 六项补验见 `docs/plans/ubuntu-six-plan-acceptance/PLAN.md`。权限切换专项增加真实子进程退出测试，覆盖意图提交、停止回执丢失/提交、后继事务回滚及输入提交后恢复。任务专项验证 v2 渲染输出 Schema 的字段类型和唯一检查项，以及历史 v1 快照逐字往返；浏览器初始化根据 `/capabilities.setup_required` 判断，避免首屏渲染竞态。
+
+候选评审增加协调器 Git commit_parents 查询：真实 Git 资源测试核对候选的实际单父关系并拒绝符号引用；Core 回归拒绝候选或基线不匹配。v3 评审的冻结输入携带 candidate_provenance，包含实际父节点、Merge 和对应仓库回执，不要求模型读取受保护的 Git 元数据。

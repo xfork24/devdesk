@@ -5,7 +5,7 @@ Only the final Markdown report is retained. Runtime evidence remains in the data
 from client import Client
 from pathlib import Path
 import argparse,json,platform,subprocess,time,uuid
-p=argparse.ArgumentParser();p.add_argument('--url',required=True);p.add_argument('--github-repo',required=True);p.add_argument('--provider',choices=['codex','dsh'],default='codex');p.add_argument('--report',type=Path,required=True);p.add_argument('--resume-project');p.add_argument('--resume-feature');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--url',required=True);p.add_argument('--github-repo',required=True);p.add_argument('--provider',choices=['codex','dsh'],default='codex');p.add_argument('--report',type=Path,required=True);p.add_argument('--model-provider', choices=['deepseek','zai-coding-cn','minimax-cn'], default='deepseek');p.add_argument('--model', default='deepseek-v4-pro');p.add_argument('--max-tokens', type=int, default=8192);p.add_argument('--resume-project');p.add_argument('--resume-feature');a=p.parse_args()
 assert a.github_repo!='xfork24/devdesk' and 'test' in a.github_repo.lower(),'dedicated test repository required'
 c=Client(a.url);report=['# Workflow 与工作台原生验收','',f'日期：{time.strftime("%Y-%m-%d %H:%M:%S %z")}',f'宿主：{platform.system()} / {platform.machine()}',f'Harness：{a.provider}',''];feature=a.resume_feature
 try:
@@ -26,32 +26,36 @@ try:
   image=runtime['artifact']['image_id'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-{suffix}-greeting.mjs';testfile=f'tests/workflow-{suffix}/behavior.test.mjs';fulltest=f'tests/workflow-{suffix}-feature/behavior.test.mjs'
   defaults=c.rpc('query.configuration_defaults');agents=defaults['role_agent_bindings']
   if a.provider=='dsh':
-   model=c.command('model.create',payload={'name':'Explicit DSH acceptance model','data':{'provider':'deepseek','model':'deepseek-v4-pro','parameters':{'max_tokens':8192},'capabilities':['structured-output']}})['id']
-   harness=c.command('harness.create',payload={'name':'Explicit DSH acceptance Harness','data':{'provider':'dsh','runtime_version':runtime['key']['version'],'model_providers':['deepseek'],'capabilities':['structured-output','tool-calling']}})['id']
+   model=c.command('model.create',payload={'name':'Explicit DSH acceptance model','data':{'provider':a.model_provider,'model':a.model,'parameters':{'max_tokens':a.max_tokens},'capabilities':['structured-output']}})['id']
+   harness=c.command('harness.create',payload={'name':'Explicit DSH acceptance Harness','data':{'provider':'dsh','runtime_version':runtime['key']['version'],'model_providers':[a.model_provider],'capabilities':['structured-output','tool-calling']}})['id']
    for role,agent_id in list(agents.items()):
-    agent=c.rpc('query.agent_revision',{'id':agent_id});data=agent['data'];cap=c.command('capability.create',payload={'name':'DSH '+role,'data':{'model_ref':model,'harness_ref':harness,'tools':data['tools'],'skills':data['skills']}})['id']
-    agents[role]=c.command('agent.create',payload={'name':'DSH '+role,'data':{'role_ref':data['role_ref'],'capability_ref':cap,'permissions':data['permissions'],'approval':'never'}})['id']
-  workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];recipe=lambda f:{'runner':'node_test','files':[f],'image':image,'timeout_seconds':60}
-  requirement=f'Implement one dependency-free ESM module {module}, exporting greeting(name). Trim surrounding whitespace, return "Hello, <trimmed name>!". Throw TypeError for blank or non-string input. Only this new module, its new test suites and README may change. Exactly one Task. Acceptance AC-GREET covers trimmed greeting; AC-INVALID covers blank and non-string TypeError. Tests use node:test and node:assert/strict. Test import uses dynamic import with catch and assert.fail so absent implementation gives an assertion Red, not an environment failure.'
+    agent=c.rpc('query.agent_revision',{'id':agent_id});data=agent['data'];cap=c.command('capability.create',payload={'name':'DSH '+role,'data':{'model_ref':model,'harness_ref':harness,'tools':['builtin-tool-dsh-native-v1'],'skills':data['skills']}})['id']
+    agents[role]=c.command('agent.create',payload={'name':'DSH '+role,'data':{'role_ref':data['role_ref'],'capability_ref':cap,'instructions':'Return ONLY the single JSON object required by the frozen output_contract and output_schema. No Markdown headings, code fences, introduction, commentary or suggested next steps outside that object. Put all findings inside summary/checks evidence strings; use exactly key, passed:boolean, evidence:string for evidence checks. Never add requirements from older repository examples. At requirement_definition or requirement review, evaluate only PRD clarity, scope, verifiable acceptance and failure paths; future Design, TaskPlan, TestPlan recipes, code, CI, PRs and executed tests are not required yet. Other stages follow their own frozen boundary. Do not use Git or inspect runtime state.','permissions':data['permissions'],'approval':'never'}})['id']
+  workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];recipe=lambda f:{'runner':'node_test','files':[testfile,fulltest] if f==fulltest else [f],'image':image,'timeout_seconds':60}
+  requirement=f'Implement one dependency-free ESM module {module}, exporting greeting(name). Trim surrounding whitespace, return "Hello, <trimmed name>!". Throw TypeError for blank or non-string input. Only {module}, {testfile}, {fulltest} and README may change; both test files are new. Keep test plans and handoff notes in domain documents; do not create TEST_PLAN.md or auxiliary repository files. The Feature TestRecipe runs both test suites together at the final revision. Exactly one Task. Acceptance AC-GREET covers trimmed greeting; AC-INVALID covers blank and non-string TypeError. Tests use node:test and node:assert/strict. Test import uses dynamic import with catch and assert.fail so absent implementation gives an assertion Red, not an environment failure.'
   for step in workflow['steps']:
    if step['kind']=='agent.interact':
-    step['interaction']['goal']=requirement+' Facts are fully agreed; no clarification needed. Return ONLY a complete ProposalContent JSON object. Document body is Markdown with ## headings and an explicit 错误与失败 section. Do not wrap the JSON in Markdown fences. Preserve current real document IDs. '
-    if step['key']=='requirement_discussion':step['interaction']['goal']+='Output kind requirement, title/body and acceptance [{key:AC-GREET,description:trimmed greeting},{key:AC-INVALID,description:invalid input TypeError}].'
-    if step['key']=='design_discussion':step['interaction']['goal']+='Output kind design; state exact module path and named export, implementation and independent tests, failure paths and no dependencies.'
-    if step['key']=='task_discussion':step['interaction']['goal']+='Output kind task_plan with exactly one task key greeting, acceptance [AC-GREET,AC-INVALID], dependencies [], and test_recipe '+json.dumps(recipe(testfile))
-    if step['key']=='test_discussion':step['interaction']['goal']+='Output kind test_plan, verifies [AC-GREET,AC-INVALID], feature test_recipe '+json.dumps(recipe(fulltest))+f'. The feature suite independently tests {module}; both suites import ../../{module}. It covers all acceptance and error paths.'
+    step['interaction'].pop('goal',None)
+    step['task_instructions']=requirement+' Facts are fully agreed; no clarification needed. For these planning discussions, do not inspect files or call tools; all fixture facts are supplied. Formal execution later still uses real tools. Return ONLY a complete ProposalContent JSON object. Document body is Markdown with ## headings and an explicit 错误与失败 section. Do not wrap the JSON in Markdown fences. Preserve current real document IDs. '
+    if step['key']=='requirement_discussion':step['task_instructions']+='Output kind requirement, title/body and acceptance [{key:AC-GREET,description:trimmed greeting},{key:AC-INVALID,description:invalid input TypeError}].'
+    if step['key']=='design_discussion':step['task_instructions']+='Output kind design; state exact module path and named export, implementation and independent tests, failure paths and no dependencies.'
+    if step['key']=='task_discussion':step['task_instructions']+='Output kind task_plan with exactly one task key greeting, acceptance [AC-GREET,AC-INVALID], dependencies [], and test_recipe '+json.dumps(recipe(testfile))
+    if step['key']=='test_discussion':step['task_instructions']+='Output kind test_plan, verifies [AC-GREET,AC-INVALID], feature test_recipe '+json.dumps(recipe(fulltest))+f'. The feature suite independently tests {module}; both suites import ../../{module}. It covers all acceptance and error paths.'
   # A real reusable Workflow call forwards the PRD proposal/session to the parent's adoption step.
   original=next(step for step in workflow['steps'] if step['key']=='requirement_discussion')
   child_step=json.loads(json.dumps(original));child_step['key']='prd';child_step['stage']='prd';child_step['dependencies']=[];child_step['inputs']={}
-  child_doc={'schema_version':2,'process_kind':'subworkflow','stages':[{'key':'prd','name':'Reusable PRD','description':'# PRD\n需求分析师产出可采纳 PRD。'}],'steps':[child_step],'output_ports':{key:{'step':'prd','port':key} for key in ['proposal','session']}}
+  child_doc={'schema_version':3,'process_kind':'subworkflow','stages':[{'key':'prd','name':'Reusable PRD','description':'# PRD\n需求分析师产出可采纳 PRD。'}],'steps':[child_step],'output_ports':{key:{'step':'prd','port':key} for key in ['proposal','session']}}
   child=c.command('workflow.create',payload={'name':'Reusable PRD '+suffix,'document':child_doc});child=c.command('workflow.publish',child['id'],child['revision'])
+  original.pop('task_instructions',None)
+  original.pop('interaction',None)
+  original.pop('contract_version',None)
   original.update(kind='workflow.call',role_ref=None,participant_slot=None,spec_refs=[],subworkflow_ref=child['id'])
   draft=c.command('workflow.create',payload={'name':'Native greeting Workflow '+suffix,'scope':{'kind':'global'},'document':workflow});published=c.command('workflow.publish',draft['id'],draft['revision'])
   projectrow=c.rpc('query.workspace')['active_project'];configuration=c.command('project.configuration.update',project,projectrow['revision'],{'workflow_ref':published['id'],'role_agent_bindings':agents})
   feature=c.command('feature.create',payload={'project_id':project,'title':'Workflow greeting '+suffix,'require_configuration':True,'configuration_revision_id':configuration['id']})['id']
  else:
   project=a.resume_project;c.open(project)
- report+=['Project: '+project,'Feature: '+feature,'配置：v2；按阶段区分 Role、Capability、Markdown Skill 与 Spec；本次供应商：'+a.provider,''];a.report.parent.mkdir(parents=True,exist_ok=True);a.report.write_text('\n'.join(report)+'\n状态：运行中。\n')
+ report+=['Project: '+project,'Feature: '+feature,'配置：Workflow v3 / Project v2；按阶段区分 Role、Capability、Markdown Skill 与 Spec；本次供应商：'+a.provider,''];a.report.parent.mkdir(parents=True,exist_ok=True);a.report.write_text('\n'.join(report)+'\n状态：运行中。\n')
  deadline=time.monotonic()+2400;last='';adopted=set();confirmed=set();reconciliations={}
  while time.monotonic()<deadline:
   v=c.rpc('query.workspace',{'feature_id':feature,'limit':100});instances=[r for r in v['configurations'] if r['kind']=='workflow_instance' and r['data']['feature_id']==feature and r['data']['status']!='cancelled'];root=next(r for r in instances if r['definition_id']==feature)
@@ -66,7 +70,7 @@ try:
   if state!=last:print(state,flush=True);last=state
   for r,step in active:
    if step['status']=='failed' or (step['status']=='blocked' and not step['reason'].startswith('等待')):
-    raise AssertionError(json.dumps({'owner':r['definition_id'],'step':step,'failed_runs':[{'node':run['node'],'result':run['result']} for run in v['detail']['runs'] if run['status'] in ['failed','interrupted']]},ensure_ascii=False))
+    raise AssertionError(json.dumps({'owner':r['definition_id'],'step':step,'failed_runs':[{'node':run['node'],'result':run['result']} for run in v['detail']['runs'] if run['status'] in ['failed','interrupted','cancelled']]},ensure_ascii=False))
    if step['status']=='waiting_confirmation' and step['id'] not in confirmed:
     if step['key']=='merge_review' and r['definition_id']==feature:
      merge=next(m for m in v['detail']['merges'] if m['id']==step['outputs']['merge']);assert merge['status']!='completed' and merge['committed_revision'] is None,'mainline already advanced before confirmation'

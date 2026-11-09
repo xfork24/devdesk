@@ -75,7 +75,7 @@ async function rpc(page: Page, method: string, params: any = {}) {
 }
 async function setup(page: Page) {
   await page.goto("/");
-  if (await page.getByLabel("数据目录").count()) {
+  if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
     await page
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-stage-rows-")));

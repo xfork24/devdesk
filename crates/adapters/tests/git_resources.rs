@@ -100,6 +100,11 @@ fn actual_worktrees_single_parent_candidate_cas_and_recovery() {
         git(&repo, &["rev-list", "--parents", "-n", "1", &candidate]),
         format!("{candidate} {base}")
     );
+    assert_eq!(
+        adapter.commit_parents(&context, &candidate).unwrap(),
+        vec![base.clone()]
+    );
+    assert!(adapter.commit_parents(&context, "HEAD").is_err());
     assert!(
         adapter
             .diff(&context, &base, &candidate)

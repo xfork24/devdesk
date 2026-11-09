@@ -202,16 +202,21 @@ fn criteria(payload: &Value, body: &str) -> Result<Vec<AcceptanceCriterion>> {
     )?;
     Ok(items)
 }
+fn same_document_stream(document: &Document, kind: &str, title: &str) -> bool {
+    document.kind == kind
+        && (kind != "doc"
+            || (document.title == "Structured Task Plan") == (title == "Structured Task Plan"))
+}
 fn document_ids(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Vec<Id> {
     s.documents
         .iter()
         .filter(|d| {
             s.document_in_feature(d, &fid)
                 && (d.task_id.is_none() || d.task_id.as_deref() == tid)
-                && !s
-                    .documents
-                    .iter()
-                    .any(|n| n.supersedes.as_deref() == Some(&d.id))
+                && !s.documents.iter().any(|n| {
+                    n.supersedes.as_deref() == Some(&d.id)
+                        && same_document_stream(n, &d.kind, &d.title)
+                })
         })
         .map(|d| d.id.clone())
         .collect()
@@ -1015,7 +1020,13 @@ impl Engine {
                         .iter()
                         .rev()
                         .find(|d| {
-                            s.document_in_feature(d, &fid) && d.task_id == task_id && d.kind == kind
+                            s.document_in_feature(d, &fid)
+                                && d.task_id == task_id
+                                && same_document_stream(
+                                    d,
+                                    &kind,
+                                    p["title"].as_str().unwrap_or("修订文档"),
+                                )
                         })
                         .cloned();
                     let did = id();
@@ -3527,7 +3538,9 @@ impl Engine {
             .iter()
             .rev()
             .find(|d| {
-                s.document_in_feature(d, &a.feature_id) && d.task_id == a.task_id && d.kind == kind
+                s.document_in_feature(d, &a.feature_id)
+                    && d.task_id == a.task_id
+                    && same_document_stream(d, &kind, &title)
             })
             .cloned();
         let req = s
@@ -4068,5 +4081,47 @@ impl Engine {
             return json!({"allowed":allowed,"blocked":blocked,"attempt_phases":phases});
         }
         json!({"allowed":allowed,"blocked":blocked,"attempt_phases":if let Some(f)=s.features.iter().find(|f|f.id==target){if !s.planning_accepted(&f.id){vec!["planning"]}else if s.tasks.iter().any(|t|t.feature_id==f.id)&&s.tasks.iter().filter(|t|t.feature_id==f.id).all(|t|t.status==Status::Completed){vec!["closure"]}else{vec![]}}else{vec!["implementation"]}})
+    }
+}
+
+#[cfg(test)]
+mod document_stream_tests {
+    use super::*;
+    #[test]
+    fn runtime_document_does_not_hide_the_structured_task_plan() {
+        let mut state = EngineeringState::default();
+        let make = |id: &str, title: &str, supersedes: Option<&str>| Document {
+            id: id.into(),
+            feature_id: Some("feature".into()),
+            project_id: None,
+            task_id: None,
+            kind: "doc".into(),
+            title: title.into(),
+            body: "body".into(),
+            version: 1,
+            supersedes: supersedes.map(str::to_owned),
+            requirement_id: None,
+            design_id: None,
+            origin: Origin::External,
+            acceptance: vec![],
+            verifies: vec![],
+            artifact_id: None,
+            test_recipe: None,
+        };
+        state
+            .documents
+            .push(make("plan", "Structured Task Plan", None));
+        // Historical writers incorrectly linked their output to the planning stream.
+        state
+            .documents
+            .push(make("notes", "Implementation notes", Some("plan")));
+        assert_eq!(document_ids(&state, "feature", None), vec!["plan", "notes"]);
+        state
+            .documents
+            .push(make("new-plan", "Structured Task Plan", Some("plan")));
+        assert_eq!(
+            document_ids(&state, "feature", None),
+            vec!["notes", "new-plan"]
+        );
     }
 }
