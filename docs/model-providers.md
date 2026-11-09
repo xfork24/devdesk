@@ -38,7 +38,7 @@ DeepSeek 继续兼容旧助手及旧 vault 引用。智谱和 MiniMax 需要支�
 ./devdesk-host --update-credential-helper
 ```
 
-升级验证 Host 与助手的签名和内容，不读取 Keychain。之后首次使用新助手如需系统授权，在设置中选择对应服务商，再执行“授权已保存的钥匙串凭据”。普通 Host 构建及打包不会自动替换本机已授权助手。Linux 继续使用 Secret Service，Ollama 不要求任何系统凭据库。
+升级验证 Host 与助手的签名和内容，不读取 Keychain。之后首次使用新助手如需系统授权，在设置中选择对应服务商，再执行“授权已保存的钥匙串凭据”。普通启动和构建使用 `--ensure`，校验通过的兼容旧助手可以继续复用；只有新服务商凭据功能要求显式升级，启动和打包不会自动替换已授权助手。Linux 继续使用 Secret Service，Ollama 不要求任何系统凭据库。
 
 ## 历史与验证范围
 

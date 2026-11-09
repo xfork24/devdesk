@@ -5,7 +5,7 @@ cd "$(dirname "$0")/../.."
 ./scripts/check/check-permissions.sh
 npm --prefix web ci
 if [ "${DEVDESK_SKIP_CREDENTIAL_HELPER_INSTALL:-0}" != 1 ]; then
-  ./scripts/platform/macos/install-macos-credential-helper.sh
+  ./scripts/platform/macos/install-macos-credential-helper.sh --ensure
 fi
 npm --prefix web run build
 cargo build --release --locked -p devdesk-host

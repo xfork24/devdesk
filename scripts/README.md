@@ -13,7 +13,7 @@
 | `release/` | `package.sh` | 先构建，再生成本机独立运行包与 SHA-256 文件 |
 | `release/` | `package-source.sh` | 打包当前工作区源码与文件清单，排除运行数据和构建产物 |
 | `platform/macos/` | `setup-macos-signing.sh` | 准备或导入 DevDesk 本地稳定签名身份 |
-| `platform/macos/` | `install-macos-credential-helper.sh` | 安装或复用共享凭据助手；更新既有安装需显式 `--update` |
+| `platform/macos/` | `install-macos-credential-helper.sh` | `--ensure` 校验并复用兼容助手供启动/构建使用；更新既有安装需显式 `--update` |
 | `platform/macos/` | `sign-macos.sh` | 对指定 Host 或助手二进制应用配置好的签名身份 |
 | `platform/linux/` | `install-linux-sandbox-policy.sh` | 检查或安装受限嵌套沙箱的命名 AppArmor 策略 |
 | `py/` | `doctor.py`、`check-permissions.py`、`package-source.py` | 对应 Shell 入口的 Python 实现 |

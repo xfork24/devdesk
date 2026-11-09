@@ -2,6 +2,10 @@
 # A shared immutable Keychain principal, independent of Host/project/role builds.
 set -euo pipefail
 [ "$(uname -s)" = Darwin ] || exit 0
+case "${1:-}" in
+  ""|--ensure|--update|--bundle) ;;
+  *) echo 'Usage: install-macos-credential-helper.sh [--ensure|--update|--bundle DIRECTORY]' >&2; exit 2 ;;
+esac
 cd "$(dirname "$0")/../../.."
 umask 077
 identity="${DEVDESK_CODESIGN_IDENTITY:-}"
@@ -31,14 +35,20 @@ trap 'rmdir "$helper_dir/.install-lock"' EXIT
 source_digest="$(python3 scripts/py/credential-helper-fingerprint.py "$certificate")"
 if [ -f "$helper_dir/manifest.json" ] && [ -f "$helper_dir/devdesk-credential-helper" ]; then
   existing="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["source_digest"])' "$helper_dir/manifest.json")"
-  if [ "$existing" = "$source_digest" ]; then
+  if [ "$existing" = "$source_digest" ] || [ "${1:-}" = --ensure ]; then
     python3 - "$helper_dir" <<'PYVERIFY'
 import json,sys,pathlib,hashlib
 root=pathlib.Path(sys.argv[1]);manifest=json.loads((root/'manifest.json').read_text());actual=hashlib.sha256((root/'devdesk-credential-helper').read_bytes()).hexdigest()
+if manifest.get('protocol') not in (1,2):raise SystemExit('Installed credential helper protocol is unsupported; explicit update is required.')
 if actual!=manifest['binary_sha256']:raise SystemExit('Installed credential helper content changed; explicit repair is required.')
 PYVERIFY
     /usr/bin/codesign --verify --strict -R "=identifier \"dev.devdesk.credentials\" and certificate leaf = H\"$certificate\"" "$helper_dir/devdesk-credential-helper"
-    echo 'Reused the installed macOS credential helper.'
+    if [ "$existing" = "$source_digest" ]; then
+      echo 'Reused the installed macOS credential helper.'
+    else
+      echo 'Reused the compatible installed macOS credential helper; Host startup can continue.'
+      echo 'To enable new provider credentials, run scripts/platform/macos/install-macos-credential-helper.sh --update explicitly.'
+    fi
     exit 0
   fi
   [ "${1:-}" = --update ] || [ "${1:-}" = --bundle ] || { echo 'Credential helper implementation changed; explicit --update is required and may require one new OS authorization.' >&2; exit 1; }

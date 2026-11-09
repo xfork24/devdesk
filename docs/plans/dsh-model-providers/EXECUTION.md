@@ -40,3 +40,9 @@
 本轮未执行真实智谱、MiniMax、DeepSeek 或 Ollama 推理，也未保存、读取或授权真实 DSH key。新服务商的实际订阅权限及 macOS 新助手的首次 Keychain 授权，需要用户按设置流程完成，不能由模拟调用或签名检查代替。Ubuntu 宿主与 Linux Secret Service 运行验证未在本机执行。现有 DSH 真实模型和跨平台待验矩阵继续保留，不影响本轮按用户指定范围完成实现与验证。
 
 用户配置入口及助手升级说明见 [模型服务商](../../model-providers.md)。
+
+## 启动兼容修正
+
+源码启动和构建入口使用助手安装器的 --ensure 模式。兼容的 protocol 1/2 助手在内容和同证书签名校验通过后继续复用，源码/依赖身份变化不再中断 Host 启动。手工替换仍要求 --update，智谱/MiniMax 的新账号格式仍要求新版助手。
+
+已执行 `python3 tests/entrypoints/credential_helper_startup.py --launch`：验证兼容旧助手复用、显式更新门禁、未知协议/内容篡改/外部签名程序拒绝，并通过实际 dev.sh 启动和 HTTP setup 检查。比较前后共享助手二进制与清单，确认未改变；没有模型调用或 Keychain 读写。
