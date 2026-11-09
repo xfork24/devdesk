@@ -4,7 +4,7 @@ Uses existing dedicated test projects; only a Markdown execution report is retai
 """
 from client import Client
 from pathlib import Path
-import argparse,json,time,uuid
+import argparse,json,platform,time,uuid
 p=argparse.ArgumentParser();p.add_argument('--url',required=True);p.add_argument('--project-a',required=True);p.add_argument('--project-b',required=True);p.add_argument('--agent-ref',required=True);p.add_argument('--report',type=Path,required=True);a=p.parse_args()
 c=Client(a.url);lines=['# AgentID 原生经验与场景恢复验收','',f'日期：{time.strftime("%Y-%m-%d %H:%M:%S %z")}',''];marker='experience-'+uuid.uuid4().hex;source=None
 
@@ -46,7 +46,7 @@ try:
  assert marker in '\n'.join(e['content'] for e in scene['events'] if e['kind']=='assistant'), 'restored native context did not contain the source marker'
  after=c.rpc('query.workspace')['active_project'];assert before==after,'scene restoration changed Project configuration'
  across=c.rpc('query.agent_experience',{'agent_instance_id':aid,'limit':100});assert {a.project_a,a.project_b}<={r['project_id'] for r in across['records']}
- lines+=['- Global AgentID 在第二个现有验收项目读取第一项目经验；Project AgentID 越界被拒绝。','- 项目名称和精确时间过滤命中原快照；跨项目恢复产生新 Session，并在真实模型输入中保留来源 marker。','- 恢复前后当前 Project 对象相等；没有改写代码、正式文档或工作流配置。',f'- 恢复 Project：{a.project_b}；新 Session：{restored["id"]}。','','结果：通过。宿主 macOS Apple Silicon，原生 Codex Linux Docker。']
+ lines+=['- Global AgentID 在第二个现有验收项目读取第一项目经验；Project AgentID 越界被拒绝。','- 项目名称和精确时间过滤命中原快照；跨项目恢复产生新 Session，并在真实模型输入中保留来源 marker。','- 恢复前后当前 Project 对象相等；没有改写代码、正式文档或工作流配置。',f'- 恢复 Project：{a.project_b}；新 Session：{restored["id"]}。','',f'结果：通过。宿主 {platform.system()} / {platform.machine()}，原生 Codex Linux Docker。']
 except Exception as error:
  lines+=['','结果：未通过。',str(error)];raise
 finally:

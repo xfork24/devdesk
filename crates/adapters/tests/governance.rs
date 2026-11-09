@@ -320,6 +320,122 @@ fn revise(e: &Engine, fid: &str, kind: &str) -> String {
     e.execute("document.revise",Command{command_id:id(),target:Some(fid.into()),expected_revision:Some(revision),payload:json!({"kind":kind,"title":kind,"body":"Observable workflow acceptance behavior"})}).unwrap()["id"].as_str().unwrap().into()
 }
 #[test]
+fn failed_workflow_review_waits_for_explicit_retry_and_preserves_its_binding() {
+    struct FailReviewOnce(std::sync::atomic::AtomicBool);
+    impl HarnessPort for FailReviewOnce {
+        fn configure(&self, node: &str, scenario: &str) -> String {
+            Immediate.configure(node, scenario)
+        }
+        fn poll(&self, run: &Run, input: &Value, time: u64) -> Result<Option<Value>> {
+            let mut output = Immediate.poll(run, input, time)?;
+            if run.node.starts_with("review:")
+                && self.0.swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                let result = output.as_mut().unwrap();
+                result["status"] = json!("failed");
+                result["failure_type"] = json!("adapter_contract");
+                result["message"] = json!("Reviewer output did not match the JSON contract");
+            }
+            Ok(output)
+        }
+        fn reconcile(&self, run: &Run) -> Result<Option<Value>> {
+            Immediate.reconcile(run)
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let mut e = engine(root.path());
+    e.harness = Arc::new(FailReviewOnce(std::sync::atomic::AtomicBool::new(true)));
+    let (_, fid) = configured(&e);
+    revise(&e, &fid, "requirement");
+    drive(&e, 30);
+    let state = e.store.snapshot().unwrap();
+    let failed = state
+        .runs
+        .iter()
+        .find(|r| r.node.starts_with("review:") && r.status == Status::Failed)
+        .unwrap()
+        .clone();
+    let step = runtime(&e, &fid)
+        .steps
+        .into_iter()
+        .find(|step| step.key == "requirement_review")
+        .unwrap();
+    assert_eq!(step.status, "failed");
+    assert!(step.reason.contains("JSON contract"));
+    assert!(
+        !state.accepted(
+            state
+                .delivery(step.outputs.get("delivery").unwrap())
+                .unwrap()
+        )
+    );
+    assert_eq!(
+        state.runs.iter().filter(|r| r.node == failed.node).count(),
+        1
+    );
+    e.execute(
+        "workflow.step.retry",
+        Command {
+            command_id: id(),
+            target: Some(step.id),
+            expected_revision: Some(step.revision),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    // Evaluation may run again before the durable retry intent is dispatched.
+    e.evaluate_workflows().unwrap();
+    assert_eq!(
+        runtime(&e, &fid)
+            .steps
+            .iter()
+            .find(|step| step.key == "requirement_review")
+            .unwrap()
+            .status,
+        "active"
+    );
+    drive(&e, 30);
+    let state = e.store.snapshot().unwrap();
+    let retry = state
+        .runs
+        .iter()
+        .find(|r| r.retry_of.as_deref() == Some(failed.id.as_str()))
+        .unwrap();
+    assert_eq!(retry.status, Status::Succeeded);
+    assert_eq!(json!(retry.binding), json!(failed.binding));
+    assert_eq!(
+        state
+            .sessions
+            .iter()
+            .find(|s| s.id == retry.session_id)
+            .unwrap()
+            .agent,
+        state
+            .sessions
+            .iter()
+            .find(|s| s.id == failed.session_id)
+            .unwrap()
+            .agent
+    );
+    assert_eq!(
+        json!(state.runs.iter().find(|r| r.id == failed.id).unwrap()),
+        json!(failed)
+    );
+    assert_eq!(
+        state.runs.iter().filter(|r| r.node == failed.node).count(),
+        2
+    );
+    assert_eq!(
+        runtime(&e, &fid)
+            .steps
+            .iter()
+            .find(|step| step.key == "requirement_review")
+            .unwrap()
+            .status,
+        "completed"
+    );
+}
+#[test]
 fn requirement_is_delivered_and_reviewed_before_solution_and_unrelated_inputs_preserve_review() {
     let root = tempfile::tempdir().unwrap();
     let mut e = engine(root.path());

@@ -2,7 +2,7 @@
 """One real native turn with a typed, immutable Agent composition."""
 from client import Client
 from pathlib import Path
-import argparse,json,time,uuid
+import argparse,json,platform,time,uuid
 p=argparse.ArgumentParser();p.add_argument('--url',required=True);p.add_argument('--project',required=True);p.add_argument('--provider',choices=['codex','dsh'],required=True);p.add_argument('--model',required=True);p.add_argument('--report',type=Path,required=True);a=p.parse_args();c=Client(a.url);rows=['# 完整 Agent 组合原生验收','',f'日期：{time.strftime("%Y-%m-%d %H:%M:%S %z")}','']
 try:
  c.open(a.project);owner=c.rpc('query.workspace')['active_project'];runtime=next(r for r in reversed(c.rpc('query.runtime_installations')['installations']) if r['key']['provider']==a.provider and r['key']['os']=='linux');provider='openai' if a.provider=='codex' else 'deepseek'
@@ -18,6 +18,6 @@ try:
  session=c.command('session.open',owner['id'],owner['revision'],{'agent_instance_id':instance,'work_type':'discussion','force_new':True})['id'];s=c.rpc('query.session',{'id':session});marker='typed-'+uuid.uuid4().hex;tid=c.command('conversation.send',session,s['session']['revision'],{'client_message_id':str(uuid.uuid4()),'input':'Reply with exactly this acceptance marker, without tools or file changes: '+marker})['id']
  final=c.wait(lambda:c.rpc('query.session',{'id':session,'limit':100}),lambda s:next(t for t in s['turns'] if t['id']==tid)['status'] in ['completed','failed','cancelled','needs_reconciliation'],300);turn=next(t for t in final['turns'] if t['id']==tid);assert turn['status']=='completed' and turn['consumed'];assert marker in '\n'.join(e['content'] for e in final['events'] if e['kind']=='assistant')
  binding=final['session']['runtime_binding'];assert binding['model']==a.model and binding['installation']['key']==runtime['key'] and binding['agent_configuration']['agent_instance_id']==instance
- rows+=['- Harness：'+a.provider+' · '+runtime['key']['version'],'- 实际 Model：'+binding['model'],f'- AgentRevision：{agent}；AgentID：{instance}。',f'- Session：{session}；Turn：{tid}。','- 原生输入已消费、模型输出核对完成，worker 已停止并导出。','- 新 live 会话的旧角色入口及独立 Model 覆盖均被拒绝。','','结果：通过。宿主 macOS Apple Silicon，Linux Docker 原生 Harness。']
+ rows+=['- Harness：'+a.provider+' · '+runtime['key']['version'],'- 实际 Model：'+binding['model'],f'- AgentRevision：{agent}；AgentID：{instance}。',f'- Session：{session}；Turn：{tid}。','- 原生输入已消费、模型输出核对完成，worker 已停止并导出。','- 新 live 会话的旧角色入口及独立 Model 覆盖均被拒绝。','',f'结果：通过。宿主 {platform.system()} / {platform.machine()}，Linux Docker 原生 Harness。']
 except Exception as error:rows+=['','结果：未通过。',str(error)];raise
 finally:a.report.parent.mkdir(parents=True,exist_ok=True);a.report.write_text('\n'.join(rows)+'\n')

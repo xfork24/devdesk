@@ -2,6 +2,8 @@
 
 创建日期：2026-11-08。更新日期：2026-11-09。状态：已实施并完成本轮验收，实际结果及首版边界见 EXECUTION.md。范围：Scope 与配置版本及绑定、Workflow 核心领域、Agent/Model/Harness/Skill/Tool/Permission 组合与 AgentID、上下文检索和恢复、前端信息架构、数据迁移及验收。
 
+后续 Ubuntu x86_64 补验及修复见 [UBUNTU.md](UBUNTU.md)。Codex 范围已通过；DSH 按用户后续要求暂停，其未完成闭环不计为通过。
+
 以 Workflow 统一驱动软件开发与人和 Agent 的交互，以 Feature 和 Task 组织全部执行及交付信息。Agent 是 Model、Harness 和一组 Skills、Tools、Permission 的版本化组合，包含角色职责与行为指令；AgentID 唯一标识采用某个确定 AgentRevision 的实例。实例独立绑定 Global 或 Project Scope，分别跨项目或仅在所属项目积累经验。项目名称、Feature 名称和时间是经验快照的主要筛选条件，具体组合与实际模型信息保留在证据中。
 
 Scope 统一表达全局、Project 和 Feature 的边界。Workflow、Standard 等配置定义通过不可变修订独立演化，Project 可动态调整默认绑定；Feature 从创建时即冻结所采用的全部配置及依赖版本。Project 后续绑定变化只作用于之后创建的 Feature，已有 Feature 的未执行步骤、新 Task、新 Attempt 和新 Session 均沿用原配置。

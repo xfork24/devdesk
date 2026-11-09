@@ -1,5 +1,7 @@
 # DevDesk 0.2 验收记录
 
+当前新能力的 Ubuntu x86_64 验收见 [Permission 补验](plans/permission-standardization/UBUNTU.md) 和 [Workflow/工作台补验](plans/workflow-and-workbench/UBUNTU.md)。以下保留 0.2 原型的历史验证规模与结果。
+
 日期：2026-11-08。执行模式：simulation。原 Linux 验收为 Ubuntu 24.04.5 LTS x86_64；本轮补充 macOS 26.7.2（25G332）Apple Silicon arm64 实机验收。Linux 结果沿用原交付证据，本轮未在 Linux 重新运行。
 
 ## 验证结果

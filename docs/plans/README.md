@@ -13,8 +13,8 @@
 | [真实工程接入](real-engineering-integration/PLAN.md) | [R0–R8 最终验收](real-engineering-integration/R8-acceptance.md)及同目录证据 | macOS Web 真实闭环通过 |
 | [Web 平台与系统凭据](web-platform-and-credentials/PLAN.md) | [补充验收](web-platform-and-credentials/web-platform-and-credentials.md)及同目录证据 | macOS/Linux 系统凭据、Ubuntu 双 Harness Web 闭环与发布包通过 |
 | [Ubuntu Web 验收](ubuntu-web-acceptance/PLAN.md) | [Ubuntu 本轮报告](ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)及独立运行证据 | U0–U6 通过；真实 PR、恢复、发布包与批准的命名策略均有实机证据 |
-| [Permission 领域模型与权限标准化](permission-standardization/PLAN.md) | [执行报告](permission-standardization/EXECUTION.md)及同目录证据 | macOS 开发、真实闭环、权限覆盖/恢复及发布包验收通过；Ubuntu 按用户要求顺延 |
-| [Workflow 领域与工程工作台调整](workflow-and-workbench/PLAN.md) | [执行记录](workflow-and-workbench/EXECUTION.md)、[原生记录](workflow-and-workbench/NATIVE.md) | 本轮实现及验收完成，平台和能力边界见记录；Scope 与配置冻结、Workflow 编辑存储及执行、Agent/Model/Harness/Skill/Tool/Permission 组合、实例经验和工作台 |
+| [Permission 领域模型与权限标准化](permission-standardization/PLAN.md) | [首轮执行报告](permission-standardization/EXECUTION.md)、[Ubuntu 补验](permission-standardization/UBUNTU.md) | macOS 及 Ubuntu x86_64 验收通过；Ubuntu 含固定 AppArmor、debug/release 双供应商真实权限与独立发布包 |
+| [Workflow 领域与工程工作台调整](workflow-and-workbench/PLAN.md) | [首轮执行记录](workflow-and-workbench/EXECUTION.md)、[原生记录](workflow-and-workbench/NATIVE.md)、[Ubuntu 补验](workflow-and-workbench/UBUNTU.md) | macOS 首轮与 Ubuntu Codex 验收通过；修复评审失败状态投影，Ubuntu DSH 按用户后续要求暂停 |
 
 ## 历史证据的路径
 

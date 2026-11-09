@@ -1041,6 +1041,32 @@ impl Engine {
                         return Ok(false);
                     }
                 }
+                if let Some(run) = s
+                    .runs
+                    .iter()
+                    .rev()
+                    .find(|r| r.node == format!("review:{delivery}"))
+                    && [Status::Failed, Status::Interrupted, Status::Cancelled]
+                        .contains(&run.status)
+                {
+                    let retry_pending = s.governance.iter().any(|intent| {
+                        intent.kind == "workflow_intent"
+                            && intent.definition_id == state.id
+                            && intent.data["method"] == "run.retry"
+                            && intent.data["status"] == "prepared"
+                            && intent.data["command"]["target"] == run.id
+                    });
+                    if !retry_pending {
+                        state.status = "failed".into();
+                        state.reason = run
+                            .result
+                            .as_ref()
+                            .and_then(|result| result["message"].as_str())
+                            .unwrap_or("评审执行失败，需要显式技术重试或返工")
+                            .into();
+                    }
+                    return Ok(false);
+                }
                 if !s.runs.iter().any(|r| {
                     r.node == format!("review:{delivery}")
                         && [Status::Queued, Status::Running].contains(&r.status)

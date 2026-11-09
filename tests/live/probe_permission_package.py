@@ -88,14 +88,15 @@ try:
         assert saved == rpc('permission.bind', binding)
         project = command('project.create', {'title': 'Standalone Permission schema'})['id']
         db = dataset / 'projects' / project / 'engineering.sqlite3'
+        expected_schema = max(int(path.name.split('_', 1)[0]) for path in (source / 'sql').glob('[0-9]*_*.sql'))
         with sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True) as conn:
-            assert conn.execute('PRAGMA user_version').fetchone()[0] == 33
+            assert conn.execute('PRAGMA user_version').fetchone()[0] == expected_schema
         assert rpc('query.runtime_installations')['installations'] == []
         req = urllib.request.Request(url + '/shutdown', data=b'{}', headers={'Content-Type': 'application/json'})
         http.open(req, timeout=10).close()
         assert child.wait(timeout=10) == 0
         report.update(passed=True, standalone_api=True, immutable_revisions=True,
-                      binding_replay=True, project_schema=33, automatic_downloads=0)
+                      binding_replay=True, project_schema=expected_schema, automatic_downloads=0)
 except Exception as error:
     report.update(failure_type=type(error).__name__, failure=str(error))
 finally:

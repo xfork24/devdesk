@@ -75,3 +75,5 @@ npm --prefix web ci
 开发 Web Host 可用 `./scripts/dev.sh --data /完整路径/数据集 --port 4317`；它会在 macOS 重建后应用已配置的稳定签名。
 
 运行权限采用独立的 Permission 修订，支持 Harness/Sandbox 绑定、覆盖和执行前预览。新配置默认容器内全权限，旧数据保留原绑定；见 [权限说明](permissions/README.md) 和 [实施报告](docs/plans/permission-standardization/EXECUTION.md)。
+
+2026-11-09 两项新能力的 Ubuntu x86_64 实机验证分别见 [Permission 补验](docs/plans/permission-standardization/UBUNTU.md) 和 [Workflow 与工作台补验](docs/plans/workflow-and-workbench/UBUNTU.md)，包含当前源码回归、双 Harness 原生执行、Linux 隔离与发布包证据。
