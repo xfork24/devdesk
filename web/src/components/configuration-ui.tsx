@@ -57,6 +57,22 @@ export async function loadCatalog(request: Request, project?: Row) {
   }
   return result;
 }
+export async function loadIntegrationRecords(request: Request, project?: Row) {
+  const result: Row[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await request("query.integrations", {
+      local: !!project,
+      project_id: project?.id,
+      include_history: true,
+      offset,
+      limit: 100,
+    });
+    result.push(...page.records);
+    offset += page.records.length;
+    if (offset >= page.total || !page.records.length) return result;
+  }
+}
 export function useDraft<T>(key: string, initial: () => T) {
   const cache = useRef<Record<string, T>>({});
   const [value, rawSet] = useState<T>(() => {

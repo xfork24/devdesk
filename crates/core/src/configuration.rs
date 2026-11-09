@@ -187,6 +187,17 @@ pub(crate) fn references(s: &EngineeringState, source: &ConfigurationRecord) -> 
                     || (t.kind == "role_retirement" && t.definition_id == r.definition_id)
             })
         })
+        .filter(|r| {
+            r.kind != "skill_package"
+                || s.configuration(&r.definition_id).is_ok_and(|owner| {
+                    !retired(s, owner)
+                        && !s.governance.iter().any(|next| {
+                            next.kind == "skill"
+                                && next.definition_id == owner.definition_id
+                                && next.version > owner.version
+                        })
+                })
+        })
         .filter(|r| references_value(&r.data, &ids))
         .map(|r| json!({"id":r.id,"name":r.name,"kind":r.kind,"scope":r.scope}))
         .collect()

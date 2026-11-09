@@ -35,7 +35,7 @@ if(process.argv.includes('--http')) {
     if(frame.method==='tools/call'){headers['Content-Type']='text/event-stream';res.writeHead(200,headers).end(`data: ${JSON.stringify(result)}\n\n`);return;}
     res.writeHead(200,headers).end(JSON.stringify(result));
   });
-  server.listen(0,'0.0.0.0',()=>process.stdout.write(JSON.stringify({port:server.address().port})+'\n'));
+  server.listen(Number(process.env.DEVDESK_MCP_FIXTURE_PORT||0),'0.0.0.0',()=>process.stdout.write(JSON.stringify({port:server.address().port})+'\n'));
 }else {
   readline.createInterface({input:process.stdin}).on('line',line=>{const result=answer(JSON.parse(line));if(result)process.stdout.write(JSON.stringify(result)+'\n');});
 }

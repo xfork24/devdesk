@@ -125,17 +125,18 @@ impl NativeTools {
             .ancestors()
             .find(|p| p.join("global.sqlite3").is_file())
             .unwrap_or(&self.root);
-        let db = if root.join("global.sqlite3").is_file() {
-            root.join("global.sqlite3")
-        } else {
-            root.join("engineering.sqlite3")
-        };
-        if !db.is_file() {
-            return Ok(false);
+        let mut disabled: Vec<ConfigurationRecord> = Vec::new();
+        for db in [
+            root.join("global.sqlite3"),
+            self.root.join("engineering.sqlite3"),
+        ] {
+            if !db.is_file() {
+                continue;
+            }
+            let c = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .map_err(storage)?;
+            disabled.extend(load_table::<ConfigurationRecord>(&c, "governance_records")?);
         }
-        let c = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(storage)?;
-        let disabled: Vec<ConfigurationRecord> = load_table(&c, "governance_records")?;
         let refs = [
             &tool.revision_id,
             &tool.definition.integration_ref,
@@ -240,6 +241,11 @@ impl NativeTools {
             require(network, "Permission 禁止远程工具网络")?;
         }
         let spec = ContainerSpec {
+            host_gateway: binding.allow_private_network
+                && binding.allowed_origins.iter().any(|s| {
+                    s.starts_with("http://host.docker.internal:")
+                        || s.starts_with("https://host.docker.internal:")
+                }),
             permissions: Some(p.clone()),
             purpose: ContainerPurpose::Harness,
             project_id: operation(&format!("{id}:project")),
@@ -271,12 +277,16 @@ impl NativeTools {
             profile_target: None,
         };
         let docker = DockerSandbox::new(&self.root)?;
-        docker.create(&spec)?;
         let request = json!({"invocation_id":id,"action":action,"source":source.source,"binding":binding,"tool":tool,"arguments":arguments,"secret":if action=="oauth"{None}else{self.secret(binding,source,image,permissions)?}});
-        let output = crate::process::capture_command(
+        docker.create(&spec)?;
+        let output = crate::process::capture_command_limited(
             docker.attach_command(&spec.operation_id)?,
             Duration::from_millis(binding.timeout_ms + 5000),
             Some(serde_json::to_vec(&request).map_err(storage)?),
+            binding
+                .max_result_bytes
+                .saturating_mul(8)
+                .saturating_add(65536),
         );
         let _ = docker.stop(&spec.operation_id);
         let value = output.and_then(|r| {
@@ -331,10 +341,26 @@ impl NativeTools {
     }
     pub fn read_artifact(&self, id: &str, receipt: &ToolReceipt) -> Result<(Vec<u8>, String)> {
         require(receipt.invocation_id == id, "文件回执不属于该调用")?;
-        let link = receipt.content.iter().find(|c|c["type"] == "resource_link" && c["uri"] == format!("devdesk-tool-artifact:{id}")).ok_or_else(||err("not_found", "调用没有文件结果"))?;
+        let link = receipt
+            .content
+            .iter()
+            .find(|c| {
+                c["type"] == "resource_link" && c["uri"] == format!("devdesk-tool-artifact:{id}")
+            })
+            .ok_or_else(|| err("not_found", "调用没有文件结果"))?;
         let bytes = fs::read(self.directory(id).join("result.bin")).map_err(storage)?;
-        require(link["sha256"] == format!("{:x}",Sha256::digest(&bytes)) && link["size"].as_u64() == Some(bytes.len() as u64), "文件结果摘要不符")?;
-        Ok((bytes,link["mimeType"].as_str().unwrap_or("application/octet-stream").into()))
+        require(
+            link["sha256"] == format!("{:x}", Sha256::digest(&bytes))
+                && link["size"].as_u64() == Some(bytes.len() as u64),
+            "文件结果摘要不符",
+        )?;
+        Ok((
+            bytes,
+            link["mimeType"]
+                .as_str()
+                .unwrap_or("application/octet-stream")
+                .into(),
+        ))
     }
     fn execute(&self, i: &ToolInvocation) -> Result<ToolReceipt> {
         require(!self.revoked(&i.tool)?, "接入已紧急停用")?;
@@ -421,6 +447,16 @@ impl ports::ToolExecutor for NativeTools {
         )?;
         self.validate_arguments(&i.tool.definition.input_schema, &i.arguments)?;
         require(!self.revoked(&i.tool)?, "接入已紧急停用")?;
+        let mut jobs = self.jobs.lock().map_err(storage)?;
+        require(
+            jobs.contains_key(&i.id)
+                || jobs
+                    .values()
+                    .filter(|j| j.lock().is_ok_and(|v| v.is_none()))
+                    .count()
+                    < 4,
+            "工具并发已满",
+        )?;
         let directory = self.directory(&i.id);
         fs::create_dir_all(&directory).map_err(storage)?;
         let identity = directory.join("input-hash");
@@ -446,9 +482,7 @@ impl ports::ToolExecutor for NativeTools {
                     fs::read_to_string(&identity).map_err(storage)? == fingerprint,
                     "调用 ID 被不同的输入或授权复用",
                 )?;
-                if self.jobs.lock().map_err(storage)?.contains_key(&i.id)
-                    || directory.join("receipt.json").is_file()
-                {
+                if jobs.contains_key(&i.id) || directory.join("receipt.json").is_file() {
                     return Ok(());
                 }
                 return Err(err(
@@ -458,17 +492,6 @@ impl ports::ToolExecutor for NativeTools {
             }
             Err(e) => return Err(storage(e)),
         }
-        let mut jobs = self.jobs.lock().map_err(storage)?;
-        if jobs.contains_key(&i.id) {
-            return Ok(());
-        }
-        require(
-            jobs.values()
-                .filter(|j| j.lock().is_ok_and(|v| v.is_none()))
-                .count()
-                < 4,
-            "工具并发已满",
-        )?;
         let job = Arc::new(Mutex::new(None));
         jobs.insert(i.id.clone(), job.clone());
         let root = self.root.clone();
@@ -499,12 +522,16 @@ impl ports::ToolExecutor for NativeTools {
         Ok(())
     }
     fn poll(&self, i: &ToolInvocation) -> Result<Option<ToolReceipt>> {
-        if self.revoked(&i.tool)? {
-            self.cancel(i)?;
-            return Err(err("integration_disabled", "接入已停用，调用需核对"));
-        }
         if let Some(job) = self.jobs.lock().map_err(storage)?.get(&i.id) {
-            return job.lock().map_err(storage)?.clone().transpose();
+            let result = job.lock().map_err(storage)?.clone().transpose()?;
+            if result.is_some() {
+                return Ok(result);
+            }
+            if self.revoked(&i.tool)? {
+                self.cancel(i)?;
+                return Err(err("integration_disabled", "接入已停用，调用需核对"));
+            }
+            return Ok(None);
         }
         let path = self.directory(&i.id).join("receipt.json");
         if path.is_file() {
@@ -632,6 +659,13 @@ pub fn import_openapi_with_auth(
                     let scheme = requirement
                         .as_object()
                         .ok_or_else(|| err("openapi_security", "无效 Security Requirement"))?;
+                    if let Some(selected) = security_scheme {
+                        if !(scheme.contains_key(selected)
+                            || (scheme.is_empty() && selected == "none"))
+                        {
+                            continue;
+                        }
+                    }
                     require(
                         scheme.len() <= 1,
                         "首版不支持 Security Requirement 的多方案 AND 组合",
@@ -668,6 +702,16 @@ pub fn import_openapi_with_auth(
                     };
                     alternatives.push((name.clone(), auth));
                 }
+            }
+            if security_scheme.is_some()
+                && security
+                    .and_then(Value::as_array)
+                    .is_some_and(|a| !a.is_empty())
+            {
+                require(
+                    !alternatives.is_empty(),
+                    "所选认证方案不满足 operation 的 OR 组合",
+                )?;
             }
             let required_auth = if alternatives.is_empty() {
                 Some(ToolAuthRequirement::None)
@@ -848,7 +892,19 @@ pub fn import_skill_zip(bytes: &[u8]) -> Result<Vec<SkillPackage>> {
         if name.eq_ignore_ascii_case("SKILL.md") {
             require(body.is_none(), "包必须只有一个 SKILL.md")?;
             body = Some(text);
-        } else if name.starts_with("scripts/") {
+        } else if name.to_ascii_lowercase().starts_with("scripts/")
+            || [
+                "sh", "py", "js", "mjs", "cjs", "ts", "ps1", "bat", "cmd", "exe",
+            ]
+            .contains(
+                &name
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase()
+                    .as_str(),
+            )
+        {
             scripts = true;
         } else {
             files.push(SkillFile {
@@ -918,6 +974,10 @@ pub fn import_skill_git(
         let mut cmd = std::process::Command::new("git");
         cmd.current_dir(&path)
             .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_ASKPASS", "/usr/bin/false")
+            .env("SSH_ASKPASS", "/usr/bin/false")
+            .env("GIT_CONFIG_COUNT", "0")
+            .env_remove("GIT_CONFIG_PARAMETERS")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .args([
@@ -985,7 +1045,20 @@ pub fn import_skill_git(
             name.strip_prefix(&format!("{}/", directory.trim_end_matches('/')))
                 .ok_or_else(|| err("skill_git", "文件不在所选目录"))?
         };
-        if relative.starts_with("scripts/") {
+        if relative.to_ascii_lowercase().starts_with("scripts/")
+            || parts[0] == "100755"
+            || [
+                "sh", "py", "js", "mjs", "cjs", "ts", "ps1", "bat", "cmd", "exe",
+            ]
+            .contains(
+                &relative
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase()
+                    .as_str(),
+            )
+        {
             scripts = true;
             continue;
         }

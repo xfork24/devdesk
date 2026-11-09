@@ -1,6 +1,6 @@
 # 工具与技能接入执行契约
 
-当前开发基线：隔离 worktree `codex/tool-skill-integrations`，依赖快照 `e439afb`。该快照用于保留主干尚未提交的 Permission 接口；最终合入前以主干已完成提交替换快照，并重新验证。
+开发在隔离 worktree `codex/tool-skill-integrations` 完成；已 rebase 到主干 `4cca5d8` 并移除临时依赖快照，保留主干最终 Permission、模型服务商和凭据助手兼容合同。分阶段及真实运行证据见 [EXECUTION.md](EXECUTION.md)。
 
 资源以不可变治理记录保存。接入源、外部 Tool v2、绑定、Skill 包分别修订；项目接入映射单独版本化。Feature 冻结每个 Agent 的完整 IntegrationLock，讨论 RuntimeBinding 冻结同一结构。旧 Tool v1、旧配置锁与历史 Agent 不修改。
 

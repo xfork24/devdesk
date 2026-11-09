@@ -11,9 +11,26 @@ struct Request {
     secret: Option<String>,
 }
 fn valid_account(account: &str) -> bool {
-    account == "deepseek-official-api-key" || ["deepseek-api-key-", "dsh-zai-coding-cn-api-key-", "dsh-minimax-cn-api-key-", "integration-key-"].iter().any(|prefix| {
-        account.strip_prefix(prefix).is_some_and(|v| v.len()==36 && v.bytes().enumerate().all(|(i,c)|if [8,13,18,23].contains(&i){c==b'-'}else{c.is_ascii_hexdigit()}))
-    })
+    account == "deepseek-official-api-key"
+        || [
+            "deepseek-api-key-",
+            "dsh-zai-coding-cn-api-key-",
+            "dsh-minimax-cn-api-key-",
+            "integration-key-",
+        ]
+        .iter()
+        .any(|prefix| {
+            account.strip_prefix(prefix).is_some_and(|v| {
+                v.len() == 36
+                    && v.bytes().enumerate().all(|(i, c)| {
+                        if [8, 13, 18, 23].contains(&i) {
+                            c == b'-'
+                        } else {
+                            c.is_ascii_hexdigit()
+                        }
+                    })
+            })
+        })
 }
 fn validate(r: &Request) -> bool {
     r.service.strip_prefix("devdesk.").is_some_and(|s| {
@@ -144,12 +161,23 @@ mod tests {
     use super::*;
     #[test]
     fn explicit_provider_namespaces_preserve_legacy_accounts() {
-        for prefix in ["deepseek-api-key-","dsh-zai-coding-cn-api-key-","dsh-minimax-cn-api-key-", "integration-key-"] {
-            assert!(valid_account(&format!("{prefix}01234567-89ab-cdef-0123-456789abcdef")));
+        for prefix in [
+            "deepseek-api-key-",
+            "dsh-zai-coding-cn-api-key-",
+            "dsh-minimax-cn-api-key-",
+            "integration-key-",
+        ] {
+            assert!(valid_account(&format!(
+                "{prefix}01234567-89ab-cdef-0123-456789abcdef"
+            )));
             assert!(!valid_account(&format!("{prefix}not-an-id")));
         }
-        assert!(!valid_account("dsh-ollama-api-key-01234567-89ab-cdef-0123-456789abcdef"));
-        assert!(!valid_account("arbitrary-key-01234567-89ab-cdef-0123-456789abcdef"));
+        assert!(!valid_account(
+            "dsh-ollama-api-key-01234567-89ab-cdef-0123-456789abcdef"
+        ));
+        assert!(!valid_account(
+            "arbitrary-key-01234567-89ab-cdef-0123-456789abcdef"
+        ));
     }
     #[test]
     fn rejects_foreign_services_invalid_accounts_and_extra_secret_inputs() {

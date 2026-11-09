@@ -51,6 +51,88 @@ pub struct OAuthConfig {
     #[serde(default)]
     pub scopes: Vec<String>,
 }
+fn endpoint(value: &str) -> Result<url::Url> {
+    let url = url::Url::parse(value).map_err(|_| err("invalid_configuration", "无效服务 URL"))?;
+    require(
+        ["https", "http"].contains(&url.scheme())
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.fragment().is_none(),
+        "服务 URL 只允许无内嵌凭据的 HTTP(S) 地址",
+    )?;
+    Ok(url)
+}
+impl IntegrationDefinition {
+    pub fn validate(&self) -> Result<()> {
+        match &self.source {
+            IntegrationSource::HttpApi { base_url } => {
+                require(
+                    endpoint(base_url)?.query().is_none(),
+                    "Base URL 不接受 query，请在动作中映射参数",
+                )?;
+            }
+            IntegrationSource::Mcp {
+                transport,
+                url,
+                command,
+                protocol_version,
+            } => {
+                require(
+                    ["2025-11-25", "2026-07-28"].contains(&protocol_version.as_str()),
+                    "不支持的 MCP 协议版本",
+                )?;
+                if transport == "streamable_http" {
+                    endpoint(
+                        url.as_deref()
+                            .ok_or_else(|| err("invalid_configuration", "MCP URL 缺失"))?,
+                    )?;
+                    require(command.is_empty(), "HTTP MCP 不使用本地命令")?;
+                } else {
+                    require(
+                        transport == "stdio"
+                            && url.is_none()
+                            && !command.is_empty()
+                            && command.len() <= 128
+                            && command
+                                .iter()
+                                .all(|s| s.len() <= 131072 && !s.contains('\0')),
+                        "无效 MCP 命令或传输",
+                    )?;
+                    let executable = command[0].rsplit('/').next().unwrap_or("");
+                    require(
+                        !["npx", "npm", "pnpm", "yarn", "uvx", "pip", "pip3", "bunx"]
+                            .contains(&executable),
+                        "请将服务包固定到 Harness 镜像后运行，不能在调用时安装包",
+                    )?;
+                }
+            }
+            IntegrationSource::SkillPackage { .. } => {}
+        }
+        if let Some(oauth) = &self.oauth {
+            require(!oauth.client_id.trim().is_empty(), "缺少 OAuth client_id")?;
+            for value in std::iter::once(&oauth.authorization_url)
+                .chain(std::iter::once(&oauth.token_url))
+                .chain(oauth.revocation_url.iter())
+            {
+                endpoint(value)?;
+            }
+        }
+        Ok(())
+    }
+}
+impl IntegrationBinding {
+    pub fn validate_origins(&self) -> Result<()> {
+        for value in &self.allowed_origins {
+            let url = endpoint(value)?;
+            require(
+                url.origin().ascii_serialization() == *value,
+                "允许目标必须是规范化的 origin，不能包含 path 或 query",
+            )?;
+        }
+        Ok(())
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum IntegrationAuth {
@@ -159,9 +241,13 @@ pub struct ExternalTool {
 pub enum ToolAuthRequirement {
     None,
     Bearer,
-    ApiKey { header: String },
+    ApiKey {
+        header: String,
+    },
     #[serde(rename = "oauth")]
-    OAuth { scopes: Vec<String> },
+    OAuth {
+        scopes: Vec<String>,
+    },
 }
 impl ToolAuthRequirement {
     pub fn satisfied_by(&self, auth: &IntegrationAuth) -> bool {
@@ -344,7 +430,18 @@ impl SkillPackage {
                 "Skill 文件越界或重复",
             )?;
             require(
-                !f.path.starts_with("scripts/"),
+                !f.path.to_ascii_lowercase().starts_with("scripts/")
+                    && ![
+                        "sh", "py", "js", "mjs", "cjs", "ts", "ps1", "bat", "cmd", "exe",
+                    ]
+                    .contains(
+                        &f.path
+                            .rsplit('.')
+                            .next()
+                            .unwrap_or("")
+                            .to_ascii_lowercase()
+                            .as_str(),
+                    ),
                 "脚本不能作为可执行 Skill 材料导入；请注册受控工具",
             )?;
             size += f.content.len();

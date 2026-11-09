@@ -526,3 +526,38 @@ fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline(
         SCHEMAS.assert_valid("capability.schema.json", &cap.data);
     }
 }
+
+#[test]
+fn integration_contracts_cover_current_serde_and_optional_structured_output() {
+    let source = round_trip::<IntegrationDefinition>(
+        "IntegrationDefinition",
+        json!({"source":{"kind":"http_api","base_url":"https://example.test"}}),
+    );
+    SCHEMAS.assert_valid("integration.schema.json", &source);
+    let pending = round_trip::<IntegrationAuth>(
+        "IntegrationAuth",
+        json!({"kind":"oauth_pending","account":"team","scopes":["read"]}),
+    );
+    assert_eq!(pending["kind"], "oauth_pending");
+    let binding = round_trip::<IntegrationBinding>(
+        "IntegrationBinding",
+        json!({"integration_ref":"source","harness_ref":"harness","sandbox_ref":"sandbox"}),
+    );
+    SCHEMAS.assert_valid("integration-binding.schema.json", &binding);
+    let tool = round_trip::<ExternalTool>(
+        "ExternalTool",
+        json!({"schema_version":2,"qualified_name":"read_item","description":"Read one scoped item","integration_ref":"source","implementation":{"kind":"http_api","method":"GET","path":"/item"},"input_schema":{"type":"object","additionalProperties":false},"effect":"read_only"}),
+    );
+    assert!(tool.get("output_schema").is_none());
+    SCHEMAS.assert_valid("tool.schema.json", &tool);
+    let package = round_trip::<SkillPackage>(
+        "SkillPackage",
+        json!({"body":"# Method\n\nKeep source.","description":"Review source"}),
+    );
+    SCHEMAS.assert_valid("skill-package.schema.json", &package);
+    round_trip::<IntegrationLock>("IntegrationLock", json!({}));
+    round_trip::<ToolReceipt>(
+        "ToolReceipt",
+        json!({"invocation_id":"call","success":false,"content":[],"remote_effect":"unknown","origin":"external"}),
+    );
+}

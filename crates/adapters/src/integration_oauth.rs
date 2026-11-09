@@ -260,14 +260,7 @@ pub fn finish(
     vault.write(&flow.verifier_ref, &json!({"used":true}).to_string())?;
     Ok(flow)
 }
-pub fn access_token(
-    reference: &str,
-    config: &OAuthConfig,
-    account: &str,
-    scopes: &[String],
-    vault: &dyn IntegrationSecrets,
-    exchange: impl Fn(&str, Value) -> Result<Value>,
-) -> Result<String> {
+fn grant_lock(reference: &str) -> Result<std::sync::Arc<Mutex<()>>> {
     static LOCKS: std::sync::OnceLock<
         Mutex<std::collections::HashMap<String, std::sync::Arc<Mutex<()>>>>,
     > = std::sync::OnceLock::new();
@@ -278,11 +271,24 @@ pub fn access_token(
         .entry(reference.into())
         .or_default()
         .clone();
+    Ok(lock)
+}
+
+pub fn access_token(
+    reference: &str,
+    config: &OAuthConfig,
+    account: &str,
+    scopes: &[String],
+    vault: &dyn IntegrationSecrets,
+    exchange: impl Fn(&str, Value) -> Result<Value>,
+) -> Result<String> {
+    let lock = grant_lock(reference)?;
     let _guard = lock.lock().map_err(storage)?;
     let previous: Value = serde_json::from_str(&vault.read(reference)?)
         .map_err(|_| err("oauth_credential", "授权记录不可用"))?;
     require(
         previous["revoked"] != true
+            && previous["refresh_pending"] != true
             && previous["client_id"] == config.client_id
             && previous["token_url"] == config.token_url
             && previous["account"] == account,
@@ -307,13 +313,19 @@ pub fn access_token(
         .as_str()
         .filter(|s| !s.is_empty())
         .ok_or_else(|| err("oauth_reauthorization_required", "授权已过期且无刷新凭据"))?;
+    let mut pending = previous.clone();
+    pending["refresh_pending"] = json!(true);
+    vault.write(reference, &pending.to_string())?;
     let value = exchange(
         &config.token_url,
         json!({"grant_type":"refresh_token","client_id":config.client_id,"refresh_token":refresh}),
     )?;
     let next = tokens(&value, config, account, &allowed, Some(&previous))?;
-    let granted:Vec<String> = serde_json::from_value(next["scopes"].clone()).map_err(storage)?;
-    require(scopes.iter().all(|s| granted.contains(s)), "刷新后的授权缩小，需要重新授权以满足冻结绑定")?;
+    let granted: Vec<String> = serde_json::from_value(next["scopes"].clone()).map_err(storage)?;
+    require(
+        scopes.iter().all(|s| granted.contains(s)),
+        "刷新后的授权缩小，需要重新授权以满足冻结绑定",
+    )?;
     vault.write(reference, &next.to_string())?;
     Ok(next["access_token"].as_str().unwrap().into())
 }
@@ -323,6 +335,8 @@ pub fn revoke(
     vault: &dyn IntegrationSecrets,
     exchange: impl Fn(&str, Value) -> Result<Value>,
 ) -> Result<Value> {
+    let lock = grant_lock(reference)?;
+    let _guard = lock.lock().map_err(storage)?;
     let previous: Value = serde_json::from_str(&vault.read(reference)?)
         .map_err(|_| err("oauth_credential", "授权记录不可用"))?;
     vault.write(

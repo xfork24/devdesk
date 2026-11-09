@@ -4,7 +4,7 @@ mod test_runtime;
 mod workspace;
 use axum::{
     Json, Router,
-    extract::{Path, Query, Request, State},
+    extract::{DefaultBodyLimit, Path, Query, Request, State},
     http::{HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{
@@ -327,7 +327,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     if args.iter().any(|a| a == "--update-credential-helper") {
         devdesk_adapters::credentials::CredentialVault::update_bundled_helper()?;
-        println!("credential_helper_updated; use the explicit settings authorization action if required");
+        println!(
+            "credential_helper_updated; use the explicit settings authorization action if required"
+        );
         return Ok(());
     }
     if let Some(reference) = option("--authorize-credential") {
@@ -354,7 +356,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         shutdown: tokio::sync::Notify::new(),
     });
     let router = Router::new()
-        .route("/rpc", post(rpc))
+        .route(
+            "/rpc",
+            post(rpc).layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
         .route(
             "/oauth/integrations/callback",
             get(integration_oauth_callback),

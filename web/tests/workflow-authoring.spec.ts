@@ -45,17 +45,25 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     kind: "tool",
     include_history: true,
   });
-  expect(tools.records.filter((row:any)=>row.data.implementation === "harness.native")).toHaveLength(1);
+  expect(
+    tools.records.filter(
+      (row: any) => row.data.implementation === "harness.native",
+    ),
+  ).toHaveLength(1);
   for (const row of defaults.records.filter((row: any) =>
     ["capability", "agent"].includes(row.kind),
   ))
     expect(row.data.tools).toEqual(["builtin-tool-codex-native-v1"]);
-  await page.getByRole("button", { name: "工具与技能接入", exact: true }).click();
+  await page
+    .getByRole("button", { name: "工具与技能接入", exact: true })
+    .click();
   await page.getByRole("tab", { name: "原生工具", exact: true }).click();
   await expect(page.getByText("AgentID 经验检索", { exact: true })).toHaveCount(
     0,
   );
-  await expect(page.getByRole("region", {name:"原生工具目录"})).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "原生工具目录" }),
+  ).toBeVisible();
   const before = await rpc(page, "query.configurations", {
     kind: "agent",
     include_history: true,
@@ -97,14 +105,28 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     role.getByRole("button", { name: new RegExp(name + " v2") }),
   ).toHaveCount(0);
 });
-test("原生工具目录不编辑 Schema，旧 Tool 链接跳转到独立目录", async ({page})=>{
+test("原生工具目录不编辑 Schema，旧 Tool 链接跳转到独立目录", async ({
+  page,
+}) => {
   await setup(page);
-  await page.goto("/?tab=components&config_tab=tool&config_object=builtin-tool-codex-native-v1");
-  await expect(page.getByRole("region",{name:"原生工具目录"})).toBeVisible();
-  await expect(page.getByRole("note",{name:"原生工具组说明"})).toBeVisible();
-  await expect(page.getByLabel("输入 JSON Schema",{exact:true})).toHaveCount(0);
-  await expect(page.getByLabel("输出 JSON Schema",{exact:true})).toHaveCount(0);
-  await expect(page.getByRole("button",{name:"新建 Tool",exact:true})).toHaveCount(0);
+  await page.goto(
+    "/?tab=components&config_tab=tool&config_object=builtin-tool-codex-native-v1",
+  );
+  await expect(
+    page.getByRole("region", { name: "原生工具目录" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("note", { name: "原生工具组说明" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("输入 JSON Schema", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("输出 JSON Schema", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "新建 Tool", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保留草稿", async ({

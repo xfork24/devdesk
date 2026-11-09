@@ -212,7 +212,34 @@ impl Engine {
             worktree: worktree.clone(),
             input_hash,
         };
-        self.insert_tool_invocation(s, &invocation)?;
+        if let Err(error) = self.insert_tool_invocation(s, &invocation) {
+            if s.configuration(&invocation.id).is_ok() {
+                return Err(error);
+            }
+            let receipt = ToolReceipt {
+                invocation_id: invocation.id.clone(),
+                success: false,
+                content: vec![json!({"type":"text","text":error.message})],
+                structured_content: None,
+                remote_effect: "not_applied".into(),
+                error: Some(json!({"code":error.code})),
+                origin: Origin::External,
+            };
+            let mut r = record(
+                "tool_call",
+                invocation.id.clone(),
+                Scope::Project {
+                    project_id: session.project_id.clone().unwrap_or_default(),
+                },
+                tool.clone(),
+                1,
+                None,
+                json!({"status":"failed","remote_effect":"not_applied","invocation":invocation,"receipt":receipt,"created_at":now(),"finished_at":now(),"reply_sent":false}),
+                false,
+            );
+            r.id = receipt.invocation_id.clone();
+            s.governance.push(r);
+        }
         Ok(())
     }
     fn insert_tool_invocation(
@@ -402,7 +429,9 @@ impl Engine {
         {
             let i: ToolInvocation = decode(&r.data["invocation"])?;
             if let Ok(Some(receipt)) = executor.poll(&i) {
-                self.accept_tool_receipt(&r.id, &receipt)?;
+                if r.data["receipt"] != json!(receipt) {
+                    self.accept_tool_receipt(&r.id, &receipt)?;
+                }
             }
         }
         Ok(())
@@ -418,7 +447,7 @@ impl Engine {
             .into_iter()
             .filter(|r| {
                 r.kind == "tool_call"
-                    && [
+                    && ([
                         "awaiting_approval",
                         "prepared",
                         "dispatched",
@@ -427,12 +456,16 @@ impl Engine {
                         "cancelled",
                     ]
                     .contains(&r.data["status"].as_str().unwrap_or(""))
+                        || (r.data["status"] == "needs_reconciliation"
+                            && r.data["receipt"].is_object()
+                            && r.data["reply_sent"] != true))
             })
             .collect();
         for r in calls {
             let invocation: ToolInvocation = decode(&r.data["invocation"])?;
             if ["succeeded", "failed", "cancelled"]
                 .contains(&r.data["status"].as_str().unwrap_or(""))
+                || (r.data["status"] == "needs_reconciliation" && r.data["receipt"].is_object())
             {
                 if r.data["reply_sent"] != true {
                     if let (Some(sid), Some(request)) =
@@ -553,6 +586,8 @@ impl Engine {
         self.tool_record_update(key, |d| {
             d["status"] = json!(if receipt.success {
                 "succeeded"
+            } else if receipt.remote_effect == "unknown" {
+                "needs_reconciliation"
             } else {
                 "failed"
             });
@@ -588,18 +623,39 @@ impl Engine {
             let mut rows = vec![];
             for (index, tool) in tools.iter().enumerate() {
                 let source = s.configuration(tool["integration_ref"].as_str().unwrap_or(""))?;
-                let old = s.governance.iter().filter(|r|r.kind == "tool" && r.data["schema_version"] == 2 && r.data["qualified_name"] == tool["qualified_name"])
-                    .filter(|r|r.data["integration_ref"].as_str().and_then(|id|s.configuration(id).ok()).is_some_and(|previous|previous.definition_id == source.definition_id))
-                    .max_by_key(|r|r.version).cloned();
+                let old = s
+                    .governance
+                    .iter()
+                    .filter(|r| {
+                        r.kind == "tool"
+                            && r.data["schema_version"] == 2
+                            && r.data["qualified_name"] == tool["qualified_name"]
+                    })
+                    .filter(|r| {
+                        r.data["integration_ref"]
+                            .as_str()
+                            .and_then(|id| s.configuration(id).ok())
+                            .is_some_and(|previous| previous.definition_id == source.definition_id)
+                    })
+                    .max_by_key(|r| r.version)
+                    .cloned();
                 let next = Command {
                     command_id: format!("{}:{index}", c.command_id),
-                    target: old.as_ref().map(|r|r.id.clone()),
-                    expected_revision: old.as_ref().map(|r|r.revision),
+                    target: old.as_ref().map(|r| r.id.clone()),
+                    expected_revision: old.as_ref().map(|r| r.revision),
                     payload: json!({"name":tool["qualified_name"],"scope":p.get("scope").cloned().unwrap_or(json!({"kind":"global"})),"data":tool}),
                 };
                 rows.push(
-                    self.integration_command(if old.is_some() { "integration.tool.revise" } else { "integration.tool.create" }, &next, s)?
-                        .unwrap(),
+                    self.integration_command(
+                        if old.is_some() {
+                            "integration.tool.revise"
+                        } else {
+                            "integration.tool.create"
+                        },
+                        &next,
+                        s,
+                    )?
+                    .unwrap(),
                 );
             }
             return Ok(Some(json!({"records":rows})));
@@ -621,6 +677,12 @@ impl Engine {
                 live(s, r)?;
             }
             let old = latest(s, "integration_project_configuration", &project).cloned();
+            if let Some(expected) = p.get("source_configuration_id") {
+                require(
+                    expected.as_str() == old.as_ref().map(|r| r.id.as_str()),
+                    "项目接入映射已有新修订，请刷新后保存",
+                )?;
+            }
             let r = record(
                 "integration_project_configuration",
                 project,
@@ -688,6 +750,9 @@ impl Engine {
                     json!({"effect":effect,"evidence":text(p,"evidence")?,"time":now()});
                 data["remote_effect"] = json!(effect);
                 if effect != "unknown" {
+                    if data["receipt"].is_object() {
+                        data["original_receipt"] = data["receipt"].clone();
+                    }
                     data["status"] = json!("failed");
                     data["receipt"] = json!(ToolReceipt {
                         invocation_id: s.governance[index].id.clone(),
@@ -708,6 +773,23 @@ impl Engine {
                     "调用已经结束",
                 )?;
                 data["cancel_requested"] = json!(true);
+                if ["prepared", "awaiting_approval"]
+                    .contains(&data["status"].as_str().unwrap_or(""))
+                {
+                    data["status"] = json!("cancelled");
+                    data["finished_at"] = json!(now());
+                    data["receipt"] = json!(ToolReceipt {
+                        invocation_id: s.governance[index].id.clone(),
+                        success: false,
+                        content: vec![
+                            json!({"type":"text","text":"User cancelled tool call before dispatch"})
+                        ],
+                        structured_content: None,
+                        remote_effect: "not_applied".into(),
+                        error: Some(json!({"code":"cancelled"})),
+                        origin: Origin::Human
+                    });
+                }
             }
             update_record(&mut s.governance[index], data);
             return Ok(Some(json!(s.governance[index])));
@@ -756,6 +838,13 @@ impl Engine {
             let old = opt(p, "source_revision_id")
                 .map(|id| reference(s, &id, "skill", &scope).cloned())
                 .transpose()?;
+            if let Some(previous) = &old {
+                require(
+                    latest(s, "skill", &previous.definition_id)
+                        .is_some_and(|r| r.id == previous.id),
+                    "Skill 已有新修订，请选择最新修订",
+                )?;
+            }
             let r = record(
                 "skill",
                 old.as_ref()
@@ -815,6 +904,7 @@ impl Engine {
         match family {
             "integration" => {
                 let def: IntegrationDefinition = decode(&data)?;
+                def.validate()?;
                 if let Some(oauth) = &def.oauth {
                     require(
                         !oauth.client_id.trim().is_empty() && oauth.client_id.len() <= 1024,
@@ -872,7 +962,32 @@ impl Engine {
             }
             "integration_binding" => {
                 let b: IntegrationBinding = decode(&data)?;
-                reference(s, &b.integration_ref, "integration", &scope)?;
+                b.validate_origins()?;
+                let source = reference(s, &b.integration_ref, "integration", &scope)?;
+                for key in &b.allowed_tools {
+                    let tool = reference(s, key, "tool", &scope)?;
+                    require(
+                        tool.data["integration_ref"] == b.integration_ref,
+                        "授权工具不属于绑定的接入源修订",
+                    )?;
+                }
+                if let IntegrationAuth::OAuth {
+                    account, scopes, ..
+                }
+                | IntegrationAuth::OAuthPending { account, scopes } = &b.auth
+                {
+                    let definition: IntegrationDefinition = source.decode()?;
+                    let config = definition
+                        .oauth
+                        .as_ref()
+                        .ok_or_else(|| err("oauth_configuration", "来源未配置 OAuth 公共客户端"))?;
+                    require(
+                        !account.trim().is_empty()
+                            && account.len() <= 256
+                            && scopes.iter().all(|scope| config.scopes.contains(scope)),
+                        "账户标签或授权范围无效",
+                    )?;
+                }
                 reference(s, &b.harness_ref, "harness", &scope)?;
                 require(
                     s.governance
@@ -948,6 +1063,10 @@ impl Engine {
         }
         let old = if method.ends_with("revise") {
             let r = reference(s, c.target.as_deref().unwrap_or(""), family, &scope)?.clone();
+            require(
+                r.scope == scope && c.expected_revision == Some(r.revision),
+                "接入修订冲突或作用域变更",
+            )?;
             require(
                 latest(s, family, &r.definition_id).is_some_and(|n| n.id == r.id),
                 "已有新修订",

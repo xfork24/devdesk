@@ -1,3 +1,4 @@
+import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
 import { useCallback, useEffect, useState } from "react";
 import {
   latest,
@@ -438,6 +439,14 @@ export function ProjectManager({
         <p role="status" className="notice">
           {message}
         </p>
+      )}
+      {project && (
+        <ProjectIntegrationBindings
+          request={request}
+          project={project}
+          catalog={records}
+          agents={Object.values(draft.role_agent_bindings)}
+        />
       )}
     </>
   );

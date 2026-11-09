@@ -75,3 +75,7 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 DSH 多服务商离线验证：设置 DEVDESK_DSH_MOCK_IMAGE 为固定镜像 ID，运行 `cargo test -p devdesk-adapters --test model_providers -- --ignored --nocapture`。DSH 流式/工具/恢复由禁外网容器内的模拟端点提供；另一测试只查询模拟 Ollama 目录，不推理。`tests/live/probe_model_providers.py` 验证完整 Host 连接与冻结；仅传入 --codex-auth-source 时允许 Codex 真实模型验证，始终不发 DSH 真实推理请求。
 
 macOS 源码启动兼容回归：在已配置同证书签名助手的开发机执行 `python3 tests/entrypoints/credential_helper_startup.py --launch`。兼容/拒绝检查使用隔离的助手副本，实际启动只打开空工作空间，不读取凭据、不调用模型，也不替换共享助手。
+
+工具与技能接入：`crates/adapters/tests/tool_integrations.rs` 覆盖修订、作用域、配置锁、依赖、离线 Schema、审批/取消/核对；其 `docker_` 忽略用例使用真实 Docker HTTP/MCP/OAuth 夹具，不调用模型。`web/tests/integrations.spec.ts` 使用实际 Host 完成配置，MCP 测试通过真正的 Docker stdio 服务发现及调用，需可用 Docker 和固定 Codex 镜像。
+
+`tests/live/probe_tool_integrations.py --codex-auth-source /绝对路径/专用/auth.json --host /绝对路径/devdesk-host --report /tmp/tools-native.json` 创建独立数据集，配置 HTTP/MCP/Skill、Capability、Agent 和项目绑定，真实 Codex 执行两轮并重启 Host，核验文件只读和外部调用回执。始终不调用 DSH；只复制明确提供的 Codex 登录文件，结束后删除测试中的 auth.json 副本，保留无凭据运行证据。

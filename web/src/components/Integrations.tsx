@@ -18,7 +18,13 @@ const names: Record<string, string> = {
   native: "原生工具",
   calls: "调用记录",
 };
-const originOf = (value: string) => { try { return new URL(value).origin; } catch { return ""; } };
+const originOf = (value: string) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return "";
+  }
+};
 const lines = (value: string) =>
   value
     .split(/\r?\n/)
@@ -70,6 +76,7 @@ function JsonField({
     <label>
       {label}
       <textarea
+        aria-label={label}
         required={!optional}
         rows={6}
         spellCheck={false}
@@ -123,7 +130,11 @@ export function Integrations({
         />
       ) : tab === "skills" ? (
         <>
-          <SkillImport request={request} project={project} onImported={() => setSkillRevision(v => v + 1)} />
+          <SkillImport
+            request={request}
+            project={project}
+            onImported={() => setSkillRevision((v) => v + 1)}
+          />
           <ResourceEditor
             key={`skills:${project?.id}`}
             request={request}
@@ -225,7 +236,12 @@ function SourceManager({
     url: "",
     protocol_version: "2026-07-28",
     command: '["node", "/work/server.mjs"]',
-    oauth_enabled: false, client_id: "", authorization_url: "", token_url: "", revocation_url: "", oauth_scopes: "",
+    oauth_enabled: false,
+    client_id: "",
+    authorization_url: "",
+    token_url: "",
+    revocation_url: "",
+    oauth_scopes: "",
   });
   const [draft, setDraft] = useDraft(
     `devdesk:integrations:${project?.id || "global"}:${kind}`,
@@ -260,17 +276,29 @@ function SourceManager({
       url: s.url || "",
       protocol_version: s.protocol_version || "2026-07-28",
       command: JSON.stringify(s.command || [], null, 2),
-      oauth_enabled: !!r.data.oauth, client_id: r.data.oauth?.client_id || "", authorization_url: r.data.oauth?.authorization_url || "", token_url: r.data.oauth?.token_url || "", revocation_url: r.data.oauth?.revocation_url || "", oauth_scopes: (r.data.oauth?.scopes || []).join("\n"),
+      oauth_enabled: !!r.data.oauth,
+      client_id: r.data.oauth?.client_id || "",
+      authorization_url: r.data.oauth?.authorization_url || "",
+      token_url: r.data.oauth?.token_url || "",
+      revocation_url: r.data.oauth?.revocation_url || "",
+      oauth_scopes: (r.data.oauth?.scopes || []).join("\n"),
     });
   };
   const routeConsumed = useRef(false);
   useEffect(() => {
-    if(routeConsumed.current || !sources.length) return;
+    if (routeConsumed.current || !sources.length) return;
     const target = new URLSearchParams(location.search).get("config_object");
-    const tool = catalog.find(r=>r.id === target && r.kind === "tool");
-    const row = sources.find(r=>r.kind === "integration" && (r.id===target || r.id===tool?.data.integration_ref));
-    if(row) { routeConsumed.current=true; choose(row); }
-  },[sources,catalog]);
+    const tool = catalog.find((r) => r.id === target && r.kind === "tool");
+    const row = sources.find(
+      (r) =>
+        r.kind === "integration" &&
+        (r.id === target || r.id === tool?.data.integration_ref),
+    );
+    if (row) {
+      routeConsumed.current = true;
+      choose(row);
+    }
+  }, [sources, catalog]);
   async function run(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -341,7 +369,21 @@ function SourceManager({
                       draft.scope === "project"
                         ? { kind: "project", project_id: project!.id }
                         : { kind: "global" },
-                    data: { source, description: draft.description, ...(draft.oauth_enabled ? { oauth: { client_id: draft.client_id, authorization_url: draft.authorization_url, token_url: draft.token_url, revocation_url: draft.revocation_url || null, scopes: lines(draft.oauth_scopes) } } : {}) },
+                    data: {
+                      source,
+                      description: draft.description,
+                      ...(draft.oauth_enabled
+                        ? {
+                            oauth: {
+                              client_id: draft.client_id,
+                              authorization_url: draft.authorization_url,
+                              token_url: draft.token_url,
+                              revocation_url: draft.revocation_url || null,
+                              scopes: lines(draft.oauth_scopes),
+                            },
+                          }
+                        : {}),
+                    },
                   },
                   selected,
                 );
@@ -430,15 +472,76 @@ function SourceManager({
                 )}
               </>
             )}
-            <label className="inline-control"><input type="checkbox" checked={draft.oauth_enabled || false} onChange={e => setDraft({...draft, oauth_enabled:e.target.checked})} />启用 OAuth 授权码 + PKCE</label>
-            {draft.oauth_enabled && <fieldset><legend>OAuth 公共客户端</legend>
-              <label>OAuth Client ID<input required value={draft.client_id} onChange={e=>setDraft({...draft,client_id:e.target.value})}/></label>
-              <label>授权端点<input type="url" required value={draft.authorization_url} onChange={e=>setDraft({...draft,authorization_url:e.target.value})}/></label>
-              <label>Token 端点<input type="url" required value={draft.token_url} onChange={e=>setDraft({...draft,token_url:e.target.value})}/></label>
-              <label>撤销端点（可选）<input type="url" value={draft.revocation_url} onChange={e=>setDraft({...draft,revocation_url:e.target.value})}/></label>
-              <label>可授权 scopes（每行一个）<textarea value={draft.oauth_scopes} onChange={e=>setDraft({...draft,oauth_scopes:e.target.value})}/></label>
-              <p>在服务端登记回调地址：{window.location.origin}/oauth/integrations/callback</p>
-            </fieldset>}
+            <label className="inline-control">
+              <input
+                type="checkbox"
+                checked={draft.oauth_enabled || false}
+                onChange={(e) =>
+                  setDraft({ ...draft, oauth_enabled: e.target.checked })
+                }
+              />
+              启用 OAuth 授权码 + PKCE
+            </label>
+            {draft.oauth_enabled && (
+              <fieldset>
+                <legend>OAuth 公共客户端</legend>
+                <label>
+                  OAuth Client ID
+                  <input
+                    required
+                    value={draft.client_id}
+                    onChange={(e) =>
+                      setDraft({ ...draft, client_id: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  授权端点
+                  <input
+                    type="url"
+                    required
+                    value={draft.authorization_url}
+                    onChange={(e) =>
+                      setDraft({ ...draft, authorization_url: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Token 端点
+                  <input
+                    type="url"
+                    required
+                    value={draft.token_url}
+                    onChange={(e) =>
+                      setDraft({ ...draft, token_url: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  撤销端点（可选）
+                  <input
+                    type="url"
+                    value={draft.revocation_url}
+                    onChange={(e) =>
+                      setDraft({ ...draft, revocation_url: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  可授权 scopes（每行一个）
+                  <textarea
+                    value={draft.oauth_scopes}
+                    onChange={(e) =>
+                      setDraft({ ...draft, oauth_scopes: e.target.value })
+                    }
+                  />
+                </label>
+                <p>
+                  在服务端登记回调地址：{window.location.origin}
+                  /oauth/integrations/callback
+                </p>
+              </fieldset>
+            )}
             <MarkdownField
               key={draft.selected || "new"}
               label="接入说明"
@@ -577,7 +680,8 @@ function BindingManager({
 }) {
   const fresh = () => ({
     selected: "",
-    name: "", scope: project ? "project" : "global",
+    name: "",
+    scope: project ? "project" : "global",
     harness_ref: "builtin-harness-codex-managed-v1",
     sandbox_ref: "builtin-permission-sandbox-docker-v1",
     auth_kind: "none",
@@ -606,7 +710,8 @@ function BindingManager({
     [selectedNames, setSelectedNames] = useState<string[]>([]),
     [effects, setEffects] = useState<Record<string, string>>({}),
     [discovery, setDiscovery] = useState<Row>(),
-    [oauthState, setOauthState] = useState(""), [oauthUrl, setOauthUrl] = useState("");
+    [oauthState, setOauthState] = useState(""),
+    [oauthUrl, setOauthUrl] = useState("");
   useEffect(() => {
     void request("query.permission_resources")
       .then(setPermissions)
@@ -629,10 +734,14 @@ function BindingManager({
     const b = r.data;
     setDraft({
       selected: r.id,
-      name: r.name, scope:r.scope.kind,
+      name: r.name,
+      scope: r.scope.kind,
       harness_ref: b.harness_ref,
       sandbox_ref: b.sandbox_ref,
-      auth_kind: b.auth?.kind === "oauth_pending" || b.auth?.kind === "oauth" ? "oauth" : (b.auth?.kind || "none"),
+      auth_kind:
+        b.auth?.kind === "oauth_pending" || b.auth?.kind === "oauth"
+          ? "oauth"
+          : b.auth?.kind || "none",
       credential_ref: b.auth?.credential_ref || "",
       header: b.auth?.header || "X-API-Key",
       account: b.auth?.account || "",
@@ -693,7 +802,16 @@ function BindingManager({
                         header: draft.header,
                       }
                     : draft.auth_kind === "oauth"
-                      ? { kind: draft.credential_ref ? "oauth" : "oauth_pending", ...(draft.credential_ref ? {credential_ref:draft.credential_ref} : {}), account: draft.account, scopes: lines(draft.scopes) }
+                      ? {
+                          kind: draft.credential_ref
+                            ? "oauth"
+                            : "oauth_pending",
+                          ...(draft.credential_ref
+                            ? { credential_ref: draft.credential_ref }
+                            : {}),
+                          account: draft.account,
+                          scopes: lines(draft.scopes),
+                        }
                       : {
                           kind: "bearer",
                           credential_ref: draft.credential_ref,
@@ -704,7 +822,10 @@ function BindingManager({
                 project,
                 {
                   name: draft.name,
-                  scope: draft.scope === "project" ? {kind:"project",project_id:project!.id} : {kind:"global"},
+                  scope:
+                    draft.scope === "project"
+                      ? { kind: "project", project_id: project!.id }
+                      : { kind: "global" },
                   data: {
                     integration_ref: source.id,
                     auth,
@@ -735,7 +856,17 @@ function BindingManager({
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </label>
-          <label>绑定范围<select value={draft.scope || "global"} disabled={!!selected} onChange={e=>setDraft({...draft,scope:e.target.value})}><option value="global">Global</option>{project && <option value="project">当前项目</option>}</select></label>
+          <label>
+            绑定范围
+            <select
+              value={draft.scope || "global"}
+              disabled={!!selected}
+              onChange={(e) => setDraft({ ...draft, scope: e.target.value })}
+            >
+              <option value="global">Global</option>
+              {project && <option value="project">当前项目</option>}
+            </select>
+          </label>
           <RevisionSelect
             label="接入 Harness"
             records={catalog.filter((r) => r.kind === "harness")}
@@ -746,8 +877,15 @@ function BindingManager({
           <RevisionSelect
             label="接入 Sandbox"
             records={
-              permissions.targets?.filter((r: Row) => r.kind === "sandbox") ||
-              []
+              permissions.targets
+                ?.filter((r: Row) => r.target.kind === "sandbox")
+                .map((r: Row) => ({
+                  id: r.target.revision_id,
+                  name: r.name,
+                  version: r.version,
+                  definition_id: r.target.revision_id,
+                  scope: { kind: "global" },
+                })) || []
             }
             value={draft.sandbox_ref}
             onChange={(sandbox_ref) => setDraft({ ...draft, sandbox_ref })}
@@ -808,6 +946,26 @@ function BindingManager({
               >
                 保存接入凭据
               </button>
+              {draft.credential_ref && (
+                <button
+                  type="button"
+                  disabled={busy || !secret}
+                  onClick={() =>
+                    void run(async () => {
+                      await command(
+                        request,
+                        "credentials.integration.configure",
+                        project,
+                        { reference: draft.credential_ref, secret },
+                      );
+                      setSecret("");
+                      setMessage("同一账户凭据已轮换，原引用继续有效。");
+                    })
+                  }
+                >
+                  轮换同一账户凭据
+                </button>
+              )}
               <button
                 type="button"
                 disabled={busy || !draft.credential_ref}
@@ -843,9 +1001,15 @@ function BindingManager({
           )}
           {draft.auth_kind === "oauth" && (
             <>
-              {!source.data.oauth && <p role="alert">请先在接入源配置 OAuth 公共客户端。</p>}
-              <p>先保存待授权绑定，再发起授权。授权完成后保存新修订并由项目采用。</p>
-              <p>授权状态：{draft.credential_ref ? "已取得凭据引用" : "等待授权"}</p>
+              {!source.data.oauth && (
+                <p role="alert">请先在接入源配置 OAuth 公共客户端。</p>
+              )}
+              <p>
+                先保存待授权绑定，再发起授权。授权完成后保存新修订并由项目采用。
+              </p>
+              <p>
+                授权状态：{draft.credential_ref ? "已取得凭据引用" : "等待授权"}
+              </p>
               <label>
                 OAuth 账户
                 <input
@@ -858,21 +1022,88 @@ function BindingManager({
               </label>
               <label>
                 OAuth scopes
-                <textarea value={draft.scopes} onChange={(e) => setDraft({ ...draft, scopes: e.target.value })} />
+                <textarea
+                  value={draft.scopes}
+                  onChange={(e) =>
+                    setDraft({ ...draft, scopes: e.target.value })
+                  }
+                />
               </label>
               <div className="actions">
-                <button type="button" disabled={busy || !selected || !source.data.oauth} onClick={()=>void run(async()=>{
-                  const flow=await command(request,"integration.oauth.start",project,{binding_ref:selected!.id,account:draft.account,scopes:lines(draft.scopes),redirect_uri:`${window.location.origin}/oauth/integrations/callback`});
-                  setOauthState(flow.state);setOauthUrl(flow.authorization_url);setMessage("请打开授权页面，完成后点击检查授权结果。");
-                })}>发起 OAuth 授权</button>
-                {oauthUrl && <a href={oauthUrl} target="_blank" rel="noreferrer">打开服务授权页面</a>}
-                <button type="button" disabled={busy || !oauthState} onClick={()=>void run(async()=>{
-                  const flow=await command(request,"integration.oauth.status",project,{state:oauthState});
-                  if(flow.status==="complete") {setDraft({...draft,credential_ref:flow.credential_ref,account:flow.account,scopes:flow.scopes.join("\n")});setMessage("授权已完成，请保存绑定新修订。");} else setMessage(`授权状态：${flow.status}`);
-                })}>检查授权结果</button>
-                <button type="button" disabled={busy || !selected?.data.auth?.credential_ref} onClick={()=>void run(async()=>{
-                  const result=await command(request,"integration.oauth.revoke",project,{binding_ref:selected!.id});setMessage(`本机授权已撤销；服务端：${result.remote_revocation}`);setDraft({...draft,credential_ref:""});
-                })}>撤销 OAuth 授权</button>
+                <button
+                  type="button"
+                  disabled={busy || !selected || !source.data.oauth}
+                  onClick={() =>
+                    void run(async () => {
+                      const flow = await command(
+                        request,
+                        "integration.oauth.start",
+                        project,
+                        {
+                          binding_ref: selected!.id,
+                          account: draft.account,
+                          scopes: lines(draft.scopes),
+                          redirect_uri: `${window.location.origin}/oauth/integrations/callback`,
+                        },
+                      );
+                      setOauthState(flow.state);
+                      setOauthUrl(flow.authorization_url);
+                      setMessage("请打开授权页面，完成后点击检查授权结果。");
+                    })
+                  }
+                >
+                  发起 OAuth 授权
+                </button>
+                {oauthUrl && (
+                  <a href={oauthUrl} target="_blank" rel="noreferrer">
+                    打开服务授权页面
+                  </a>
+                )}
+                <button
+                  type="button"
+                  disabled={busy || !oauthState}
+                  onClick={() =>
+                    void run(async () => {
+                      const flow = await command(
+                        request,
+                        "integration.oauth.status",
+                        project,
+                        { state: oauthState },
+                      );
+                      if (flow.status === "complete") {
+                        setDraft({
+                          ...draft,
+                          credential_ref: flow.credential_ref,
+                          account: flow.account,
+                          scopes: flow.scopes.join("\n"),
+                        });
+                        setMessage("授权已完成，请保存绑定新修订。");
+                      } else setMessage(`授权状态：${flow.status}`);
+                    })
+                  }
+                >
+                  检查授权结果
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !selected?.data.auth?.credential_ref}
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await command(
+                        request,
+                        "integration.oauth.revoke",
+                        project,
+                        { binding_ref: selected!.id },
+                      );
+                      setMessage(
+                        `本机授权已撤销；服务端：${result.remote_revocation}`,
+                      );
+                      setDraft({ ...draft, credential_ref: "" });
+                    })
+                  }
+                >
+                  撤销 OAuth 授权
+                </button>
               </div>
             </>
           )}
@@ -927,11 +1158,70 @@ function BindingManager({
               }
             />
           </label>
+          {selected && (
+            <label>
+              绑定历史修订
+              <select
+                value={selected.id}
+                onChange={(e) => {
+                  const row = sources.find((r) => r.id === e.target.value);
+                  if (row) choose(row);
+                }}
+              >
+                {sources
+                  .filter(
+                    (r) =>
+                      r.kind === "integration_binding" &&
+                      r.definition_id === selected.definition_id,
+                  )
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      v{r.version} · {r.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
           <div className="actions">
             <button className="primary" disabled={busy}>
               {selected ? "保存绑定新修订" : "创建接入绑定"}
             </button>
-            {selected && <><button type="button" onClick={()=>setDraft({...draft,selected:"",name:`${draft.name} · 副本`})}>复制接入绑定</button><button type="button" disabled={busy} onClick={()=>void run(async()=>{await command(request,"integration.retire",project,{},selected);await reload();setDraft(fresh());setMessage("绑定已停用新的选择。");})}>停用接入绑定</button></>}
+            {selected && (
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      selected: "",
+                      name: `${draft.name} · 副本`,
+                    })
+                  }
+                >
+                  复制接入绑定
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await command(
+                        request,
+                        "integration.retire",
+                        project,
+                        {},
+                        selected,
+                      );
+                      await reload();
+                      setDraft(fresh());
+                      setMessage("绑定已停用新的选择。");
+                    })
+                  }
+                >
+                  停用接入绑定
+                </button>
+              </>
+            )}
             {selected && project && (
               <button
                 type="button"
@@ -997,7 +1287,11 @@ function BindingManager({
       {discovery && (
         <div className="integration-content">
           <h3>发现的 MCP 工具</h3>
-          <p>新增：{discovery.data.diff?.added?.join(", ") || "无"} · 移除：{discovery.data.diff?.removed?.join(", ") || "无"} · 契约变化：{discovery.data.diff?.changed?.join(", ") || "无"}</p>
+          <p>
+            新增：{discovery.data.diff?.added?.join(", ") || "无"} · 移除：
+            {discovery.data.diff?.removed?.join(", ") || "无"} · 契约变化：
+            {discovery.data.diff?.changed?.join(", ") || "无"}
+          </p>
           {(discovery.data?.result?.tools || []).map((tool: Row) => (
             <article key={tool.name}>
               <label className="inline-control">
@@ -1048,7 +1342,7 @@ function BindingManager({
                   discovery_ref: discovery.id,
                   names: selectedNames,
                   effects,
-                  scope: source.scope,
+                  scope: discovery.scope,
                 });
                 await reload();
                 setMessage("工具已发布，请在绑定中选择允许的修订并保存。");
@@ -1057,6 +1351,49 @@ function BindingManager({
           >
             发布所选 MCP 工具
           </button>
+        </div>
+      )}
+      {selected && (
+        <div className="integration-content" aria-label="接入就绪状态">
+          <h3>接入状态</h3>
+          <p>
+            定义：已保存 · 认证：
+            {selected.data.auth.kind === "none"
+              ? "无需凭据"
+              : selected.data.auth.kind === "oauth_pending"
+                ? "等待授权"
+                : "请检查凭据"}{" "}
+            · 执行环境：
+            {permissions.targets?.find(
+              (t: Row) => t.target.revision_id === selected.data.harness_ref,
+            )?.materializations?.length
+              ? "已物化"
+              : "待准备"}
+          </p>
+          <button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await request("runtime.prepare_harness", {
+                  id: selected.data.harness_ref,
+                });
+                setPermissions(
+                  await request("query.permission_resources", {
+                    project_id: project?.id,
+                  }),
+                );
+                setMessage(
+                  "执行环境已准备；测试调用与 Agent 授权仍需分别确认。",
+                );
+              })
+            }
+          >
+            准备工具执行环境
+          </button>
+          <p>
+            实际调用结果可在“调用记录”查看；Capability 和项目选择决定 Agent
+            是否拥有此工具。
+          </p>
         </div>
       )}
       {selected && (
@@ -1097,7 +1434,9 @@ function HttpToolEditor({
     output: "",
     effect: "read_only",
     idempotency_header: "",
-    constraints: "{}", sensitive: "", required_auth:"",
+    constraints: "{}",
+    sensitive: "",
+    required_auth: "",
   });
   const [draft, setDraft] = useDraft(
     `devdesk:http-tool:${project?.id || "global"}:${source.id}`,
@@ -1107,7 +1446,11 @@ function HttpToolEditor({
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
-  const [preview,setPreview]=useState<Row[]>([]),[operations,setOperations]=useState<string[]>([]),[authScheme,setAuthScheme]=useState(""),[serverIndex,setServerIndex]=useState(0),[aliases,setAliases]=useState<Record<string,string>>({});
+  const [preview, setPreview] = useState<Row[]>([]),
+    [operations, setOperations] = useState<string[]>([]),
+    [authScheme, setAuthScheme] = useState(""),
+    [serverIndex, setServerIndex] = useState(0),
+    [aliases, setAliases] = useState<Record<string, string>>({});
   const tools = latest(
     catalog.filter(
       (r) => r.kind === "tool" && r.data.integration_ref === source.id,
@@ -1132,7 +1475,11 @@ function HttpToolEditor({
           : JSON.stringify(t.output_schema, null, 2),
       effect: t.effect,
       idempotency_header: h.idempotency_header || "",
-      constraints: JSON.stringify(t.constraints || {}, null, 2), sensitive:(t.sensitive_parameters||[]).join("\n"),required_auth:t.required_auth ? JSON.stringify(t.required_auth,null,2) : "",
+      constraints: JSON.stringify(t.constraints || {}, null, 2),
+      sensitive: (t.sensitive_parameters || []).join("\n"),
+      required_auth: t.required_auth
+        ? JSON.stringify(t.required_auth, null, 2)
+        : "",
     });
   };
   async function run(fn: () => Promise<void>) {
@@ -1174,7 +1521,11 @@ function HttpToolEditor({
                 ...(draft.output.trim()
                   ? { output_schema: JSON.parse(draft.output) }
                   : {}),
-                constraints: JSON.parse(draft.constraints), sensitive_parameters: lines(draft.sensitive || ""), ...(draft.required_auth ? {required_auth:JSON.parse(draft.required_auth)} : {}),
+                constraints: JSON.parse(draft.constraints),
+                sensitive_parameters: lines(draft.sensitive || ""),
+                ...(draft.required_auth
+                  ? { required_auth: JSON.parse(draft.required_auth) }
+                  : {}),
                 implementation: {
                   kind: "http_api",
                   method: draft.method,
@@ -1389,16 +1740,87 @@ function HttpToolEditor({
             value={draft.constraints}
             onChange={(constraints) => setDraft({ ...draft, constraints })}
           />
-          <label>敏感参数 Pointer（每行一个）<textarea value={draft.sensitive || ""} onChange={e=>setDraft({...draft,sensitive:e.target.value})}/></label>
-          <JsonField label="认证要求（可选 JSON）" value={draft.required_auth || ""} optional onChange={required_auth=>setDraft({...draft,required_auth})}/>
-          {selected && <label>工具历史修订<select value={selected.id} onChange={e=>{const row=catalog.find(r=>r.id===e.target.value);if(row)choose(row)}}>{catalog.filter(r=>r.kind==="tool"&&r.definition_id===selected.definition_id).map(r=><option key={r.id} value={r.id}>v{r.version} · {r.name}</option>)}</select></label>}
+          <label>
+            敏感参数 Pointer（每行一个）
+            <textarea
+              value={draft.sensitive || ""}
+              onChange={(e) =>
+                setDraft({ ...draft, sensitive: e.target.value })
+              }
+            />
+          </label>
+          <JsonField
+            label="认证要求（可选 JSON）"
+            value={draft.required_auth || ""}
+            optional
+            onChange={(required_auth) => setDraft({ ...draft, required_auth })}
+          />
+          {selected && (
+            <label>
+              工具历史修订
+              <select
+                value={selected.id}
+                onChange={(e) => {
+                  const row = catalog.find((r) => r.id === e.target.value);
+                  if (row) choose(row);
+                }}
+              >
+                {catalog
+                  .filter(
+                    (r) =>
+                      r.kind === "tool" &&
+                      r.definition_id === selected.definition_id,
+                  )
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      v{r.version} · {r.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
           <button
             className="primary"
             disabled={busy || !draft.description.trim()}
           >
             {selected ? "发布 HTTP 动作新修订" : "发布 HTTP 动作"}
           </button>
-          {selected && <div className="actions"><button type="button" onClick={()=>setDraft({...draft,selected:"",name:`${draft.name}_copy`})}>复制 HTTP 动作</button><button type="button" disabled={busy} onClick={()=>void run(async()=>{await command(request,"integration.retire",project,{},selected);await reload();setDraft(initial());setMessage("工具已停用新的选择，历史保留。");})}>停用 HTTP 动作</button></div>}
+          {selected && (
+            <div className="actions">
+              <button
+                type="button"
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    selected: "",
+                    name: `${draft.name}_copy`,
+                  })
+                }
+              >
+                复制 HTTP 动作
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await command(
+                      request,
+                      "integration.retire",
+                      project,
+                      {},
+                      selected,
+                    );
+                    await reload();
+                    setDraft(initial());
+                    setMessage("工具已停用新的选择，历史保留。");
+                  })
+                }
+              >
+                停用 HTTP 动作
+              </button>
+            </div>
+          )}
         </form>
       </div>
       <details className="integration-content">
@@ -1408,10 +1830,79 @@ function HttpToolEditor({
           value={openapi}
           onChange={setOpenapi}
         />
-        <label>OpenAPI server 索引<input type="number" min={0} value={serverIndex} onChange={e=>setServerIndex(Number(e.target.value))}/></label>
-        <label>OpenAPI 认证方案名称（存在 OR 时必选）<input value={authScheme} onChange={e=>setAuthScheme(e.target.value)} placeholder="securitySchemes 中的名称；none 表示明确的匿名分支"/></label>
-        <button disabled={busy || !openapi.trim()} onClick={()=>void run(async()=>{const r=await command(request,"integration.openapi.preview",project,{integration_ref:source.id,document:openapi,security_scheme:authScheme||undefined,server_index:serverIndex});setPreview(r.tools);setOperations([]);setAliases({});setMessage("预览已生成，请选择具体 operation 并确认名称。");})}>预览 OpenAPI 动作</button>
-        {preview.map(t=><article key={t.qualified_name}><label className="inline-control"><input type="checkbox" checked={operations.includes(t.qualified_name)} onChange={e=>setOperations(e.target.checked?[...operations,t.qualified_name]:operations.filter(n=>n!==t.qualified_name))}/>{t.qualified_name} · {t.implementation.method} {t.implementation.path}</label><label>导入工具名称 · {t.qualified_name}<input value={aliases[t.qualified_name]||t.qualified_name} onChange={e=>setAliases({...aliases,[t.qualified_name]:e.target.value})}/></label><details><summary>生成的调用契约</summary><pre>{JSON.stringify(t,null,2)}</pre></details></article>)}
+        <label>
+          OpenAPI server 索引
+          <input
+            type="number"
+            min={0}
+            value={serverIndex}
+            onChange={(e) => setServerIndex(Number(e.target.value))}
+          />
+        </label>
+        <label>
+          OpenAPI 认证方案名称（存在 OR 时必选）
+          <input
+            value={authScheme}
+            onChange={(e) => setAuthScheme(e.target.value)}
+            placeholder="securitySchemes 中的名称；none 表示明确的匿名分支"
+          />
+        </label>
+        <button
+          disabled={busy || !openapi.trim()}
+          onClick={() =>
+            void run(async () => {
+              const r = await command(
+                request,
+                "integration.openapi.preview",
+                project,
+                {
+                  integration_ref: source.id,
+                  document: openapi,
+                  security_scheme: authScheme || undefined,
+                  server_index: serverIndex,
+                },
+              );
+              setPreview(r.tools);
+              setOperations([]);
+              setAliases({});
+              setMessage("预览已生成，请选择具体 operation 并确认名称。");
+            })
+          }
+        >
+          预览 OpenAPI 动作
+        </button>
+        {preview.map((t) => (
+          <article key={t.qualified_name}>
+            <label className="inline-control">
+              <input
+                type="checkbox"
+                checked={operations.includes(t.qualified_name)}
+                onChange={(e) =>
+                  setOperations(
+                    e.target.checked
+                      ? [...operations, t.qualified_name]
+                      : operations.filter((n) => n !== t.qualified_name),
+                  )
+                }
+              />
+              {t.qualified_name} · {t.implementation.method}{" "}
+              {t.implementation.path}
+            </label>
+            <label>
+              导入工具名称 · {t.qualified_name}
+              <input
+                value={aliases[t.qualified_name] || t.qualified_name}
+                onChange={(e) =>
+                  setAliases({ ...aliases, [t.qualified_name]: e.target.value })
+                }
+              />
+            </label>
+            <details>
+              <summary>生成的调用契约</summary>
+              <pre>{JSON.stringify(t, null, 2)}</pre>
+            </details>
+          </article>
+        ))}
         <button
           disabled={busy || !operations.length}
           onClick={() =>
@@ -1422,7 +1913,11 @@ function HttpToolEditor({
                 project,
                 {
                   integration_ref: source.id,
-                  document: openapi, operations, aliases, security_scheme: authScheme || undefined, server_index:serverIndex,
+                  document: openapi,
+                  operations,
+                  aliases,
+                  security_scheme: authScheme || undefined,
+                  server_index: serverIndex,
                   scope: source.scope,
                 },
               );
@@ -1496,10 +1991,12 @@ function ToolTest({
 }
 function SkillImport({
   request,
-  project, onImported,
+  project,
+  onImported,
 }: {
   request: Request;
-  project?: Row; onImported:()=>void;
+  project?: Row;
+  onImported: () => void;
 }) {
   const [name, setName] = useState(""),
     [body, setBody] = useState(""),
@@ -1508,6 +2005,7 @@ function SkillImport({
     [commit, setCommit] = useState(""),
     [directory, setDirectory] = useState(""),
     [mode, setMode] = useState("markdown"),
+    [sourceRevision, setSourceRevision] = useState(""),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
@@ -1536,6 +2034,10 @@ function SkillImport({
                 ? { kind: "project", project_id: project.id }
                 : { kind: "global" },
               requires_tools: requires,
+              source_revision_id: sourceRevision || undefined,
+              ...(sourceRevision
+                ? { scope: catalog.find((r) => r.id === sourceRevision)?.scope }
+                : {}),
               ...(mode === "zip"
                 ? { zip_base64: zip }
                 : mode === "git"
@@ -1546,7 +2048,10 @@ function SkillImport({
               `Skill 已导入：${r.name}。可在 Capability 的 Skills 中选择。`,
             );
             setBody("");
-            setZip(""); onImported();
+            setZip("");
+            setSourceRevision("");
+            setCatalog(await loadCatalog(request, project));
+            onImported();
           } catch (e) {
             setError(String(e));
           } finally {
@@ -1562,6 +2067,28 @@ function SkillImport({
             onChange={(e) => setName(e.target.value)}
           />
         </label>
+        <RevisionSelect
+          label="更新已有 Skill 修订（可选）"
+          records={catalog.filter((r) => r.kind === "skill")}
+          value={sourceRevision}
+          onChange={async (value) => {
+            setSourceRevision(value);
+            const row = catalog.find((r) => r.id === value);
+            if (row) {
+              setName(row.name);
+              try {
+                const pkg = await request("skill.export", {
+                  id: value,
+                  project_id: project?.id,
+                });
+                setBody(pkg.body);
+                setRequires(pkg.requires_tools);
+              } catch (e) {
+                setError(String(e));
+              }
+            }
+          }}
+        />
         <label>
           Skill 来源
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
@@ -1663,12 +2190,16 @@ function CallHistory({
     [selected, setSelected] = useState<Row>(),
     [offset, setOffset] = useState(0),
     [total, setTotal] = useState(0),
-    [evidence,setEvidence]=useState(""),[effect,setEffect]=useState("unknown"),
+    [evidence, setEvidence] = useState(""),
+    [effect, setEffect] = useState("unknown"),
     [filters, setFilters] = useState({
       feature_id: "",
       task_id: "",
       agent_instance_id: "",
-      session_id: "",run_id:"", integration_ref:"",tool_ref:"",
+      session_id: "",
+      run_id: "",
+      integration_ref: "",
+      tool_ref: "",
     });
   const load = useCallback(async () => {
     const query: Row = {
@@ -1723,7 +2254,10 @@ function CallHistory({
                     feature_id: "Feature ID",
                     task_id: "Task ID",
                     agent_instance_id: "AgentID",
-                    session_id: "Session ID",run_id:"Run ID",integration_ref:"接入源修订 ID",tool_ref:"工具修订 ID",
+                    session_id: "Session ID",
+                    run_id: "Run ID",
+                    integration_ref: "接入源修订 ID",
+                    tool_ref: "工具修订 ID",
                   } as Row
                 )[key]
               }
@@ -1771,7 +2305,40 @@ function CallHistory({
                 <pre>{JSON.stringify(selected.data.invocation, null, 2)}</pre>
               </details>
               <h4>执行回执</h4>
-              {selected.data.receipt?.content?.some((c:Row)=>c.type==="resource_link"&&c.uri?.startsWith("devdesk-tool-artifact:")) && <button onClick={async()=>{try{const result=await command(request,"tool.call.artifact",project,{},selected);const bytes=Uint8Array.from(atob(result.base64),c=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:result.mime}));const link=document.createElement("a");link.href=url;link.download=`${selected.id}.bin`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setError(String(e));}}}>下载调用文件结果</button>}
+              {selected.data.receipt?.content?.some(
+                (c: Row) =>
+                  c.type === "resource_link" &&
+                  c.uri?.startsWith("devdesk-tool-artifact:"),
+              ) && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const result = await command(
+                        request,
+                        "tool.call.artifact",
+                        project,
+                        {},
+                        selected,
+                      );
+                      const bytes = Uint8Array.from(atob(result.base64), (c) =>
+                        c.charCodeAt(0),
+                      );
+                      const url = URL.createObjectURL(
+                        new Blob([bytes], { type: result.mime }),
+                      );
+                      const link = document.createElement("a");
+                      link.href = url;
+                      link.download = `${selected.id}.bin`;
+                      link.click();
+                      setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    } catch (e) {
+                      setError(String(e));
+                    }
+                  }}
+                >
+                  下载调用文件结果
+                </button>
+              )}
               <pre>
                 {JSON.stringify(
                   selected.data.receipt || { status: selected.data.status },
@@ -1809,11 +2376,40 @@ function CallHistory({
                 </button>
               )}
               {selected.data.status === "needs_reconciliation" && (
-                <fieldset><legend>核对未确认调用</legend>
-                  <p>系统不会自动重发。先检查执行器实际回执；没有回执时记录人工核对的来源。</p>
-                  <label>远端执行事实<select value={effect} onChange={e=>setEffect(e.target.value)}><option value="unknown">仍不确定</option><option value="not_applied">确认未执行</option><option value="applied">确认已执行</option></select></label>
-                  <label>核对证据<textarea value={evidence} onChange={e=>setEvidence(e.target.value)}/></label>
-                  <button disabled={!evidence.trim()} onClick={()=>void act("tool.call.reconcile",selected,{remote_effect:effect,evidence})}>核对调用事实</button>
+                <fieldset>
+                  <legend>核对未确认调用</legend>
+                  <p>
+                    系统不会自动重发。先检查执行器实际回执；没有回执时记录人工核对的来源。
+                  </p>
+                  <label>
+                    远端执行事实
+                    <select
+                      value={effect}
+                      onChange={(e) => setEffect(e.target.value)}
+                    >
+                      <option value="unknown">仍不确定</option>
+                      <option value="not_applied">确认未执行</option>
+                      <option value="applied">确认已执行</option>
+                    </select>
+                  </label>
+                  <label>
+                    核对证据
+                    <textarea
+                      value={evidence}
+                      onChange={(e) => setEvidence(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    disabled={!evidence.trim()}
+                    onClick={() =>
+                      void act("tool.call.reconcile", selected, {
+                        remote_effect: effect,
+                        evidence,
+                      })
+                    }
+                  >
+                    核对调用事实
+                  </button>
                 </fieldset>
               )}
             </article>

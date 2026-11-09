@@ -89,7 +89,21 @@ impl Workspace {
             return None;
         }
         Some((|| {
-            let local = params["local"] == true
+            let definition_write = [
+                "integration.create",
+                "integration.revise",
+                "integration.binding.create",
+                "integration.binding.revise",
+                "integration.tool.create",
+                "integration.tool.revise",
+                "integration.openapi.import",
+                "integration.openapi.preview",
+                "skill.import",
+                "skill.import_package",
+            ]
+            .contains(&method);
+            let local = (!definition_write
+                && (params["local"] == true || params["project_id"].is_string()))
                 || params["payload"]["scope"]["kind"] == "project"
                 || method == "integration.project.bind";
             let global = self.global.snapshot()?;
@@ -104,19 +118,35 @@ impl Workspace {
                 self.configuration.clone()
             };
             if method == "tool.call.artifact" {
-                let s=e.store.snapshot()?;let r=s.configuration(params["target"].as_str().unwrap_or(""))?;
-                require(r.kind == "tool_call" && configuration_visible(&s,r,e.store.project_id().as_deref()),"文件结果不属于当前作用域")?;
-                let receipt:ToolReceipt=serde_json::from_value(r.data["receipt"].clone()).map_err(|_|err("not_found","文件调用尚无回执"))?;
-                let (bytes,mime)=NativeTools::new(e.store.root())?.read_artifact(&r.id,&receipt)?;
-                use base64::Engine;return Ok(json!({"base64":base64::engine::general_purpose::STANDARD.encode(bytes),"mime":mime}));
+                let s = e.store.snapshot()?;
+                let r = s.configuration(params["target"].as_str().unwrap_or(""))?;
+                require(
+                    r.kind == "tool_call"
+                        && configuration_visible(&s, r, e.store.project_id().as_deref()),
+                    "文件结果不属于当前作用域",
+                )?;
+                let receipt: ToolReceipt = serde_json::from_value(r.data["receipt"].clone())
+                    .map_err(|_| err("not_found", "文件调用尚无回执"))?;
+                let (bytes, mime) =
+                    NativeTools::new(e.store.root())?.read_artifact(&r.id, &receipt)?;
+                use base64::Engine;
+                return Ok(
+                    json!({"base64":base64::engine::general_purpose::STANDARD.encode(bytes),"mime":mime}),
+                );
             }
             if method.starts_with("query.") || method == "skill.export" {
                 return e.query(method, params, self.global.concurrency()?);
             }
             if method == "credentials.integration.configure" {
                 let root = PathBuf::from(self.global.root());
-                let reference = credentials::CredentialVault::new(&root)?
-                    .configure_integration(&text(&params["payload"], "secret")?)?;
+                let vault = credentials::CredentialVault::new(&root)?;
+                let secret = text(&params["payload"], "secret")?;
+                let reference = if let Some(reference) = params["payload"]["reference"].as_str() {
+                    vault.write_integration(reference, &secret)?;
+                    reference.to_owned()
+                } else {
+                    vault.configure_integration(&secret)?
+                };
                 return Ok(json!({"reference":reference,"configured":true}));
             }
             if method == "credentials.integration.status" {
@@ -258,7 +288,12 @@ impl Workspace {
                         json!({"tools":tools,"servers":document["servers"],"security_schemes":document.pointer("/components/securitySchemes")}),
                     );
                 }
-                for tool in &mut tools { if let Some(alias) = c.payload["aliases"][&tool.qualified_name].as_str() { tool.qualified_name = alias.into(); tool.validate()?; } }
+                for tool in &mut tools {
+                    if let Some(alias) = c.payload["aliases"][&tool.qualified_name].as_str() {
+                        tool.qualified_name = alias.into();
+                        tool.validate()?;
+                    }
+                }
                 c.payload["tools"] = json!(tools);
                 return e.execute_resolved("integration.tools.publish", c, &fp);
             }
@@ -298,6 +333,20 @@ impl Workspace {
                             scripts_disabled: false,
                         }
                     };
+                    if c.payload["markdown"].is_string() {
+                        if let Some(previous) = c.payload["source_revision_id"].as_str() {
+                            if let Some(old) =
+                                e.store.snapshot()?.governance.iter().find(|r| {
+                                    r.kind == "skill_package" && r.definition_id == previous
+                                })
+                            {
+                                let original: SkillPackage = old.decode()?;
+                                package.files = original.files;
+                                package.scripts_disabled = original.scripts_disabled;
+                                package.source = format!("edited:{}", original.source);
+                            }
+                        }
+                    }
                     if let Some(dependencies) = c.payload.get("requires_tools") {
                         package.requires_tools = serde_json::from_value(dependencies.clone())
                             .map_err(|_| err("invalid_params", "无效工具依赖"))?;
@@ -390,6 +439,18 @@ impl Workspace {
                 let s = e.store.snapshot()?;
                 let discovery = s.configuration(&text(&c.payload, "discovery_ref")?)?;
                 require(discovery.kind == "integration_discovery", "需要发现记录")?;
+                let requested: Scope = serde_json::from_value(
+                    c.payload
+                        .get("scope")
+                        .cloned()
+                        .unwrap_or(json!(discovery.scope)),
+                )
+                .map_err(|_| err("invalid_params", "无效工具发布作用域"))?;
+                require(
+                    discovery.scope.visible_from(&requested),
+                    "不能将项目账户发现的目录发布到更广作用域",
+                )?;
+                c.payload["scope"] = json!(requested);
                 let b = s.configuration(&text(&discovery.data, "binding_ref")?)?;
                 let binding: IntegrationBinding = b.decode()?;
                 let names: Vec<String> = serde_json::from_value(c.payload["names"].clone())
@@ -405,7 +466,9 @@ impl Workspace {
                         .ok_or_else(|| err("invalid_params", "所选工具不在发现快照"))?;
                     let default = format!(
                         "mcp_{}_{}",
-                        &configuration_hash(&json!(s.configuration(&binding.integration_ref)?.definition_id))[..8],
+                        &configuration_hash(&json!(
+                            s.configuration(&binding.integration_ref)?.definition_id
+                        ))[..8],
                         name.chars()
                             .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
                                 c
@@ -457,4 +520,99 @@ impl Workspace {
 }
 fn serde_yaml_value(s: &str) -> Result<Value> {
     devdesk_adapters::integrations::parse_openapi_document(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn project_scoped_integrations_do_not_leak_and_global_creates_use_the_global_catalog() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let a = w
+            .dispatch(
+                "project.create",
+                json!({"command_id":id(),"payload":{"title":"A"}}),
+            )
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let b = w
+            .dispatch(
+                "project.create",
+                json!({"command_id":id(),"payload":{"title":"B"}}),
+            )
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        w.dispatch(
+            "project.open",
+            json!({"command_id":id(),"target":a,"payload":{}}),
+        )
+        .unwrap();
+        let source=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Project A service","scope":{"kind":"project","project_id":a},"data":{"source":{"kind":"http_api","base_url":"https://a.example.test"}}}})).unwrap();
+        let visible = w
+            .dispatch("query.integrations", json!({"project_id":a}))
+            .unwrap();
+        assert!(
+            visible["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == source["id"])
+        );
+        w.dispatch(
+            "project.open",
+            json!({"command_id":id(),"target":b,"payload":{}}),
+        )
+        .unwrap();
+        let hidden = w
+            .dispatch("query.integrations", json!({"project_id":b}))
+            .unwrap();
+        assert!(
+            !hidden["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == source["id"])
+        );
+        w.dispatch(
+            "project.open",
+            json!({"command_id":id(),"target":a,"payload":{}}),
+        )
+        .unwrap();
+        let shared=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Shared service","scope":{"kind":"global"},"data":{"source":{"kind":"http_api","base_url":"https://shared.example.test"}}}})).unwrap();
+        assert!(
+            w.global
+                .snapshot()
+                .unwrap()
+                .configuration(shared["id"].as_str().unwrap())
+                .is_ok()
+        );
+        w.dispatch(
+            "project.open",
+            json!({"command_id":id(),"target":b,"payload":{}}),
+        )
+        .unwrap();
+        let other = w
+            .dispatch("query.integrations", json!({"project_id":b}))
+            .unwrap();
+        assert!(
+            other["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == shared["id"])
+        );
+        assert!(
+            w.dispatch(
+                "integration.discover",
+                json!({"project_id":b,"command_id":id(),"payload":{"binding_ref":source["id"]}})
+            )
+            .is_err()
+        );
+    }
 }
