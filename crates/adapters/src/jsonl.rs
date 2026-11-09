@@ -220,6 +220,13 @@ impl JsonlProcess {
             .stderr(Stdio::null())
             .env_remove("OPENAI_API_KEY")
             .env_remove("DEEPSEEK_API_KEY")
+            .env_remove("ZAI_CODING_CN_API_KEY")
+            .env_remove("MINIMAX_CN_API_KEY")
+            .env_remove("ZAI_API_KEY")
+            .env_remove("MINIMAX_API_KEY")
+            .env_remove("OLLAMA_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .env_remove("ANTHROPIC_AUTH_TOKEN")
             .spawn()
             .map_err(|_| err("provider_unavailable", "无法启动协议 worker"))?;
         let mut stdin = child.stdin.take().unwrap();

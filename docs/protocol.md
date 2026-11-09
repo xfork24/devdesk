@@ -201,3 +201,13 @@ query.workspace 增加项目 summary、配置锁和流程实例投影；work_fil
 Agent 新建可提供 role_ref，省略模型与能力字段时填入 Sol High / Codex 默认组合；legacy role 指执行职责，缺少 role_ref 时解析当前默认 Role。直接 Session 不得单独覆盖 Role 修订，必须采用完整 Agent。Role 职责与 Agent 额外指令一起冻结到角色配置。
 
 `query.workspace.repository_ready` 只在已持久化当前项目的主干 worktree 时为 true；`execution_mode=live` 不代表仓库接入已完成。Web 根据该事实阻止接入中或失败项目的工程操作。
+
+## 模型服务商接口
+
+`query.model_providers` 返回服务商、Harness、DSH 路由、协议、端点、认证类型与固定目录候选。`models.list` 通过 `model_provider` 选择目录；Ollama 可提供 endpoint，并由 Host 查询本机服务，云路由使用固定版本的内嵌目录。候选不自动保存，返回值显式区分目录来源与未验证的推理。
+
+`credentials.configure/status/check/authorize` 增加 model_provider；省略时保持 DeepSeek 兼容语义。configure 保留 provider=dsh，api_key 仅用于 vault 写入，不进入普通查询。Ollama 状态 auth_kind=none，不支持存储或授权 key。
+
+`agent.connection.check` 和 `agent.model.verify` 接收 project_id、agent_revision_id。前者创建带冻结绑定的完整 Agent Session，从 DSH 镜像查询模型目录，返回 container_verified 和 inference_verified=false；后者通过既有 session.open/conversation.send 提交真实模型与工具验证，返回 Session/Turn/marker，完成状态从 query.session 读取。
+
+RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。旧缺字段绑定只按原有 Codex/DeepSeek 语义读取，新服务商缺快照必须拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。

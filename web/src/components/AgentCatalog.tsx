@@ -1,3 +1,4 @@
+import { DshModelFields, type ModelProvider } from "./DshProviderSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RoleManager } from "./RoleManager";
 import {
@@ -154,6 +155,7 @@ function ResourceEditor({
   installations: Row[];
   revision: number;
 }) {
+  const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [records, setRecords] = useState<Row[]>([]),
     [permissions, setPermissions] = useState<Row[]>([]),
     [permissionResources, setPermissionResources] = useState<Row>({
@@ -172,7 +174,7 @@ function ResourceEditor({
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
-    const [records, policy, capabilities, resources] = await Promise.all([
+    const [records, policy, capabilities, resources, modelProviders] = await Promise.all([
       loadCatalog(request, project),
       request("query.permissions"),
       request("query.capabilities", {
@@ -180,8 +182,10 @@ function ResourceEditor({
         project_id: project?.id,
       }),
       request("query.permission_resources", { project_id: project?.id }),
+      request("query.model_providers"),
     ]);
     setRecords(records);
+    setProviders(modelProviders.providers || []);
     if (kind === "tool")
       setDraft((current) =>
         current.data.implementation === "experience.lookup"
@@ -657,6 +661,21 @@ function ResourceEditor({
                 </details>
               </>
             )}
+            {kind === "agent" && old && <div className="full-width actions">
+              <button type="button" disabled={busy || !project} onClick={async () => {
+                setBusy(true); setError(""); setMessage("");
+                try { const result = await request("agent.connection.check", { project_id: project?.id, agent_revision_id: old.id });
+                  setMessage(result.container_verified ? `容器连接通过：${result.worker_endpoint}；模型${result.detail.model_present ? "已列出" : "未在目录列出"}，尚未验证推理。` : "容器连接未通过；请检查地址、网络或凭据。");
+                } catch (error) { setError(String(error)); } finally { setBusy(false); }
+              }}>检查 DSH 容器连接</button>
+              <button type="button" disabled={busy || !project} onClick={async () => {
+                setBusy(true); setError(""); setMessage("");
+                try { const result = await request("agent.model.verify", { project_id: project?.id, agent_revision_id: old.id });
+                  setMessage(`已提交实际模型验证。请在讨论页查看 Session ${result.session_id} 的终态与工具结果；提交不代表验证通过。`);
+                } catch (error) { setError(String(error)); } finally { setBusy(false); }
+              }}>实际模型与工具验证</button>
+              {!project && <p className="muted">打开项目后可验证完整 Agent；实际验证会调用所选模型。</p>}
+            </div>}
             {kind === "capability" && (
               <>
                 {select("Model 精确版本", "model", "model_ref", false, true)}
@@ -684,16 +703,17 @@ function ResourceEditor({
                 <label>
                   模型后端
                   <select
+                    aria-label="模型后端"
                     value={data.provider}
                     onChange={(e) =>
-                      patch({ provider: e.target.value, parameters: {} })
+                      patch({ provider: e.target.value, parameters: {}, endpoint: undefined, context_window: undefined, max_output_tokens: undefined, model: "" })
                     }
                   >
-                    <option value="openai">OpenAI</option>
-                    <option value="deepseek">DeepSeek</option>
+                    {providers.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
                   </select>
                 </label>
                 {field("模型标识", "model", true)}
+                {data.provider !== "openai" && <DshModelFields key={data.provider} request={request} data={{ ...data, provider: String(data.provider) }} patch={patch} providers={providers} />}
                 {data.provider === "openai" ? (
                   <label>
                     推理强度
@@ -720,8 +740,8 @@ function ResourceEditor({
                     最大输出 Tokens
                     <input
                       type="number"
-                      min={1024}
-                      max={131072}
+                      min={data.provider === "deepseek" ? 1024 : 1}
+                      max={data.max_output_tokens || 1000000}
                       value={data.parameters?.max_tokens || ""}
                       onChange={(e) =>
                         patch({
@@ -745,7 +765,7 @@ function ResourceEditor({
                       patch({
                         provider: e.target.value,
                         model_providers: [
-                          e.target.value === "codex" ? "openai" : "deepseek",
+                          ...(e.target.value === "codex" ? ["openai"] : providers.filter(p => p.harness === "dsh").map(p => p.id)),
                         ],
                       })
                     }
@@ -755,6 +775,7 @@ function ResourceEditor({
                   </select>
                 </label>
                 {field("固定运行版本", "runtime_version", true)}
+                <fieldset><legend>支持的模型服务商</legend>{providers.filter(p => p.harness === data.provider).map(p => <label key={p.id}><input type="checkbox" checked={(data.model_providers || []).includes(p.id)} onChange={event => patch({ model_providers: event.target.checked ? [...(data.model_providers || []), p.id] : (data.model_providers || []).filter((id: string) => id !== p.id) })} />{p.label}</label>)}</fieldset>
                 {field("构建配方摘要（可选）", "recipe_digest")}
                 <div className="full-width">
                   <h3>已登记安装</h3>

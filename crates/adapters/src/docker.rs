@@ -11,8 +11,12 @@ pub enum ContainerPurpose {
     Tests,
 }
 
+fn is_false(value: &bool) -> bool { !value }
+
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ContainerSpec {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub host_gateway: bool,
     #[serde(default)]
     pub permissions: Option<ExecutionPermissions>,
     #[serde(default)]
@@ -385,6 +389,15 @@ impl DockerSandbox {
         } else {
             None
         };
+        if spec.host_gateway {
+            require(spec.purpose == ContainerPurpose::Harness && spec.network, "宿主模型地址映射仅用于联网 Harness worker")?;
+            let context = std::env::var("DOCKER_HOST").ok().map(Ok).unwrap_or_else(|| {
+                let out = capture("docker", &["context".into(),"inspect".into(),"--format".into(),"{{.Endpoints.docker.Host}}".into()], Duration::from_secs(5))?;
+                require(out.code == 0 && !out.truncated, "无法核对 Docker daemon 地址")?;
+                Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+            })?;
+            require(context.starts_with("unix://"), "远程 Docker daemon 需要显式配置 worker 可达的 Ollama 地址")?;
+        }
         let mut args: Vec<String> = vec![
             "create",
             "--interactive",
@@ -462,6 +475,8 @@ impl DockerSandbox {
                 ]);
             }
         }
+        #[cfg(target_os = "linux")]
+        if spec.host_gateway { args.extend(["--add-host".into(),"host.docker.internal:host-gateway".into()]); }
         if let Some(file) = credential {
             args.extend(["--env-file".into(), file.to_string_lossy().into_owned()]);
         }
@@ -503,6 +518,13 @@ impl DockerSandbox {
             for name in [
                 "OPENAI_API_KEY",
                 "DEEPSEEK_API_KEY",
+                "ZAI_CODING_CN_API_KEY",
+                "MINIMAX_CN_API_KEY",
+                "ZAI_API_KEY",
+                "MINIMAX_API_KEY",
+                "OLLAMA_API_KEY",
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
                 "GH_TOKEN",
                 "GITHUB_TOKEN",
             ] {

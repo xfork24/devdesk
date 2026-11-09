@@ -69,7 +69,7 @@ fn verify_manifest(binary: &Path) -> Result<()> {
         .map_err(|_| err("credential_helper_unavailable", "凭据助手清单无效"))?;
     let actual = format!("{:x}", Sha256::digest(fs::read(binary).map_err(storage)?));
     require(
-        value["protocol"] == 1 && value["binary_sha256"].as_str() == Some(actual.as_str()),
+        matches!(value["protocol"].as_u64(), Some(1 | 2)) && value["binary_sha256"].as_str() == Some(actual.as_str()),
         "凭据助手内容与安装清单不一致，请显式修复安装",
     )
 }
@@ -149,6 +149,32 @@ pub(super) fn helper_path() -> Result<PathBuf> {
     verify(&installed)?;
     verify_manifest(&installed)?;
     Ok(installed)
+}
+pub(super) fn model_keys_available() -> bool {
+    helper_path().ok().and_then(|p| fs::read(p.parent()?.join("manifest.json")).ok())
+        .and_then(|b|serde_json::from_slice::<Value>(&b).ok()).is_some_and(|v|v["protocol"]==2)
+}
+
+/// Explicit CLI action. Publishes a verified bundled principal without opening Keychain.
+pub(super) fn update_bundled_helper() -> Result<()> {
+    let installed = helper_path()?;
+    let bundle = std::env::current_exe().map_err(storage)?.parent().unwrap().join("credential-helper").join(HELPER);
+    verify(&bundle)?;
+    verify_manifest(&bundle)?;
+    let manifest = fs::read(bundle.parent().unwrap().join("manifest.json")).map_err(storage)?;
+    let value: Value = serde_json::from_slice(&manifest).map_err(storage)?;
+    require(value["protocol"] == 2, "运行包没有支持多服务商的凭据助手")?;
+    let parent = installed.parent().unwrap();
+    let pending = parent.join(format!(".update-{}", id()));
+    let pending_manifest = parent.join(format!(".manifest-{}", id()));
+    fs::copy(&bundle, &pending).map_err(storage)?;
+    fs::set_permissions(&pending, fs::Permissions::from_mode(0o700)).map_err(storage)?;
+    verify(&pending)?;
+    fs::write(&pending_manifest, &manifest).map_err(storage)?;
+    fs::set_permissions(&pending_manifest, fs::Permissions::from_mode(0o600)).map_err(storage)?;
+    fs::rename(&pending, &installed).map_err(storage)?;
+    fs::rename(&pending_manifest, parent.join("manifest.json")).map_err(storage)?;
+    verify_manifest(&installed)
 }
 pub(super) fn call(
     operation: &str,

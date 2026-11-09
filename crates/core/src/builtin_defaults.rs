@@ -60,6 +60,7 @@ fn document(
     }
 }
 pub(crate) fn seed_defaults(s: &mut EngineeringState) {
+    seed(s, "builtin-harness-dsh-multi-provider-v1", "harness", "DeepSeek Harness 多模型服务商", json!({"provider":"dsh","runtime_version":DEFAULT_DSH_VERSION,"recipe_digest":default_dsh_recipe_digest(),"model_providers":["deepseek","zai-coding-cn","minimax-cn","ollama"],"capabilities":["structured-output","tool-calling","cancel","poll"]}));
     let capabilities = vec!["structured-output", "tool-calling", "cancel", "poll"];
     seed(
         s,

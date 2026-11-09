@@ -11,6 +11,16 @@ pub struct GlobalStore {
 }
 
 impl GlobalStore {
+    pub fn model_credential_reference(&self, provider: DshModelProvider) -> Result<Option<String>> {
+        if provider == DshModelProvider::Deepseek { return self.dsh_credential_reference(); }
+        Ok(setting(&*self.connection.lock().map_err(storage)?, &format!("credentials.dsh.{}", provider.as_str()))?
+            .and_then(|v|v.as_str().map(str::to_owned)))
+    }
+    pub fn set_model_credential_reference(&self, provider: DshModelProvider, reference: &str) -> Result<()> {
+        require(provider.requires_key(), "Ollama 本地连接无需凭据")?;
+        if provider == DshModelProvider::Deepseek { return self.set_dsh_credential_reference(reference); }
+        put_setting(&*self.connection.lock().map_err(storage)?, &format!("credentials.dsh.{}", provider.as_str()), &json!(reference))
+    }
     pub fn dsh_credential_reference(&self) -> Result<Option<String>> {
         Ok(setting(
             &*self.connection.lock().map_err(storage)?,

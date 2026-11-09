@@ -79,6 +79,7 @@ impl Workspace {
         record: &ConfigurationRecord,
     ) -> Result<RuntimeInstallation> {
         let harness: HarnessDefinition = record.decode()?;
+        let provider = match harness.provider.as_str() { "codex" => HarnessProvider::Codex, "dsh" => HarnessProvider::Dsh, _ => return Err(err("unsupported", "未知 Harness")) };
         let digest = harness
             .recipe_digest
             .as_ref()
@@ -101,21 +102,22 @@ impl Workspace {
             let installation = saved.data["installation_id"]
                 .as_str()
                 .ok_or_else(|| err("storage", "物化回执缺少安装"))?;
-            return self.ensure_runtime(HarnessProvider::Codex, Some(installation));
+            return self.ensure_runtime(provider, Some(installation));
         }
         require(
-            harness.provider == "codex"
-                && harness.runtime_version == DEFAULT_CODEX_VERSION
-                && *digest == default_codex_recipe_digest(),
+            match provider {
+                HarnessProvider::Codex => harness.runtime_version == DEFAULT_CODEX_VERSION && *digest == default_codex_recipe_digest(),
+                HarnessProvider::Dsh => harness.runtime_version == DEFAULT_DSH_VERSION && *digest == default_dsh_recipe_digest(),
+            },
             "当前程序无法构建此冻结配方；不能静默换版",
         )?;
-        let installation = self.ensure_runtime(HarnessProvider::Codex, None)?;
+        let installation = self.ensure_runtime(provider, None)?;
         require(
             installation
                 .key
                 .version
                 .starts_with(&format!("{}+docker.", harness.runtime_version)),
-            "实际安装与冻结 Codex 版本不符",
+            "实际安装与冻结 Harness 版本不符",
         )?;
         let data = json!({"harness_revision_id":record.id,"recipe_digest":digest,"installation_id":installation.id,"key":installation.key,"artifact":installation.artifact});
         store.transact(None, &mut |s| {

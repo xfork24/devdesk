@@ -541,9 +541,12 @@ export function RoleConversation({
             ))}
           <p className="muted">
             {detail.session.runtime_binding.installation.key.provider} ·{" "}
-            {detail.session.runtime_binding.model} · {detail.session.lifecycle}{" "}
+            {detail.session.runtime_binding.model_connection?.provider || detail.session.runtime_binding.agent_configuration?.model_provider || (detail.session.runtime_binding.installation.key.provider === "dsh" ? "deepseek" : "openai")} · {detail.session.runtime_binding.model} · {detail.session.lifecycle}{" "}
             · 原生会话 {detail.session.external_session || "尚未启动"}
           </p>
+          {detail.session.runtime_binding.model_connection && <p className="muted">
+            模型地址 <code>{detail.session.runtime_binding.model_connection.endpoint}</code> · 容器地址 <code>{detail.session.runtime_binding.model_connection.worker_endpoint}</code>
+          </p>}
           <details>
             <summary>本次会话的冻结权限</summary>
             {detail.permission_status ? (

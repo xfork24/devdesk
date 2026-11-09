@@ -7,7 +7,7 @@ Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检�
 宿主需要可用的 Git、已登录的 GitHub CLI，以及运行中的 Linux Docker Engine / Docker Desktop。macOS / Linux 的 DSH 凭据仍使用系统凭据库；Linux 需 `libsecret-tools` 与可用的桌面 Secret Service。系统软件安装与账号授权仍由用户完成，DevDesk 管理版本固定的 Harness 安装和镜像。
 
 1. 点击 **打开 GitHub 项目**，填写 `owner/repo`（也接受 GitHub HTTPS / SSH URL）、主分支和可选名称。DevDesk 自动保存仓库接入意图，后台检查权限与规则、克隆并建立 mainline worktree。同一仓库和分支再次打开时复用项目。接入成功前不能创建 Feature 或启动工程执行；失败原因及原操作核对入口显示在仓库状态中。
-2. 在设置中为所用供应商授权：Codex 点击 **网页登录**，DevDesk 自动发现可复用的同版本原生组件，或从固定的官方发行版下载并校验 SHA256，使用数据集独立的 `CODEX_HOME` 完成 OAuth；DSH 输入 DeepSeek 官方 API key，保存到系统凭据库。无需手动登记本机 Codex 或两套 Linux 镜像。
+2. 在设置中为所用供应商授权：Codex 点击 **网页登录**，DevDesk 自动发现可复用的同版本原生组件，或从固定的官方发行版下载并校验 SHA256，使用数据集独立的 `CODEX_HOME` 完成 OAuth；DSH 按模型服务商分别配置 DeepSeek 官方 key、智谱国内编程订阅 key 或 MiniMax 国内订阅 Key；本机 Ollama 免密。配置与容器访问见 [模型服务商](model-providers.md)。无需手动登记本机 Codex 或两套 Linux 镜像。
 3. “项目管理”已预填默认分阶段 Feature/Task 工作流及六个 Role→Agent 绑定，可直接保存或调整。默认 Model 为 GPT-6.1 Sol High，Harness 为固定 Codex，Docker 与 Permissions 已定义；各职责 Capability 使用对应的 Markdown Skill 和必要原生工具。运行环境与凭据在实际执行前核验，读取默认目录不触发安装。
 4. “工作流程”管理命名流程，在两列编辑器中维护阶段、Step、子流程、Role 和显式 Spec。“角色与 Agent”分别管理 Role/Capability/Agent；“基础组件”管理 Model/Harness/Tool/Skill；“规范”管理 Spec 和可选 Standard。所有项目绑定统一在“项目管理”保存，未选 Standard 仍执行规范和内核门禁。
 5. 在“执行与交付”创建 Feature。创建时即冻结治理配置；流程依次驱动需求讨论与交付评审、方案规划、固定 TaskGroup、Task TDD、Feature 收尾和主干接纳。角色讨论显示推荐组合，文档、上下文及测试分别在所属对象的页签查看。

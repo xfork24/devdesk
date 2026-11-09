@@ -172,7 +172,7 @@ impl CommandTests {
                 session.run_id == r.operation_id && session.id == r.environment,
                 "测试执行实例身份不符",
             )?;
-            let created = sandbox.create(&ContainerSpec {
+            let created = sandbox.create(&ContainerSpec { host_gateway: false,
                 permissions: Some(isolated_test_permissions()),
                 purpose: ContainerPurpose::Tests,
                 project_id: r.code.as_ref().unwrap().project.clone(),

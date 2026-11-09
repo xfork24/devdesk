@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useState } from "react";
+import { DshProviderSettings } from "./DshProviderSettings";
 
 type Provider = "codex" | "dsh";
 type Installation = {
@@ -6,7 +7,6 @@ type Installation = {
   key: { provider: Provider; version: string; os: string; arch: string };
   artifact: { canonical_path?: string; reference?: string; image_id?: string };
 };
-type CredentialStatus = { configured: boolean; storage: string; available?: boolean };
 type Props = {
   provider: Provider;
   installations: Installation[];
@@ -20,43 +20,9 @@ export function RuntimeSettings({
   request,
   refresh,
 }: Props) {
-  const [status, setStatus] = useState<CredentialStatus>();
-  const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [login, setLogin] = useState<{ loginId: string; authUrl: string }>();
-  useEffect(() => {
-    let active = true;
-    request("credentials.status")
-      .then((value: CredentialStatus) => {
-        if (active) setStatus(value);
-      })
-      .catch(() => {
-        if (active) setMessage("无法读取凭据状态");
-      });
-    return () => {
-      active = false;
-    };
-  }, [request]);
-
-  async function saveSecret(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setMessage("");
-    try {
-      const result: CredentialStatus = await request("credentials.configure", {
-        provider: "dsh",
-        api_key: secret,
-      });
-      setStatus(result);
-      setMessage("已保存到系统凭据库");
-    } catch {
-      setMessage("保存失败，请检查系统凭据库权限");
-    } finally {
-      setSecret("");
-      setBusy(false);
-    }
-  }
   return (
     <>
       <div className="setting-row">
@@ -194,43 +160,7 @@ export function RuntimeSettings({
           )}
         </div>
       </div>
-      <div className="setting-row">
-        <div>
-          <h3>DeepSeek 官方 API key</h3>
-          <p>
-            {status
-              ? status.configured
-                ? "已配置"
-                : "尚未配置"
-              : "正在读取配置状态…"}
-          </p>
-          <p className="muted">
-            保存在本机系统凭据库，不在历史或普通查询中显示。
-          </p>
-          {status?.available === false && <p role="alert">{status.storage === "macos_keychain" ? "凭据助手不可用；请安装同证书签名的共享助手。" : "系统凭据库不可用；Linux 请安装 libsecret-tools 并启动桌面 Secret Service。"}</p>}
-          {status?.configured && <div className="actions">
-            <button disabled={busy} onClick={async()=>{setBusy(true);setMessage("");try{await request("credentials.check");setMessage("已验证凭据可读取");}catch(error){setMessage(String(error));}finally{setBusy(false);}}}>检查凭据访问</button>
-            {status.storage === "macos_keychain" && <button disabled={busy} onClick={async()=>{setBusy(true);setMessage("请在系统窗口中授权；稳定签名构建通常只需一次");try{await request("credentials.authorize");setMessage("已授权并验证；后台访问不会弹窗");}catch(error){setMessage(String(error));}finally{setBusy(false);}}}>授权已保存的钥匙串凭据</button>}
-          </div>}
-          <form onSubmit={saveSecret}>
-            <label htmlFor="deepseek-api-key">配置或更换 API key</label>
-            <input
-              id="deepseek-api-key"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-              disabled={busy}
-              minLength={8}
-              required
-            />
-            <button type="submit" disabled={busy || secret.length < 8}>
-              保存密钥
-            </button>
-          </form>
-        </div>
-      </div>
+      <DshProviderSettings request={request} />
       <div className="setting-row">
         <div>
           <h3>共享运行时安装</h3>

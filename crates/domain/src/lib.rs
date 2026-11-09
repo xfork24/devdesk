@@ -12,6 +12,8 @@ mod execution;
 pub use execution::*;
 mod runtime;
 pub use runtime::*;
+mod model_provider;
+pub use model_provider::*;
 mod agents;
 pub use agents::*;
 mod conversation;

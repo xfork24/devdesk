@@ -10,7 +10,7 @@ impl Workspace {
     ) -> Result<String> {
         configuration_digest(
             &json!({"installation":b.installation,"adapter":b.adapter_version,"agent":agent,"agent_configuration":b.agent_configuration,
-            "model":b.model,"policy":b.tool_policy,"writable_paths":b.writable_paths,"read_only_paths":b.read_only_paths,"work_type":b.work_type,
+            "model":b.model,"model_connection":b.model_connection,"model_profile_digest":b.model_profile_digest,"policy":b.tool_policy,"writable_paths":b.writable_paths,"read_only_paths":b.read_only_paths,"work_type":b.work_type,
             "sandbox":"docker-worker/v1","credential_ref":b.credential_ref,"permissions":b.permissions}),
         )
     }
@@ -462,6 +462,8 @@ mod tests {
         )
         .unwrap();
         let binding = RuntimeBinding {
+            model_connection: None,
+            model_profile_digest: None,
             agent_configuration: None,
             permissions: Some(permissions),
             installation: RuntimeInstallation {

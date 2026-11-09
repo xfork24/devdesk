@@ -17,6 +17,9 @@ if [ -n "${DEVDESK_CODESIGN_CERTIFICATE_SHA1:-}" ]; then certificate="$DEVDESK_C
 [[ "$certificate" =~ ^[A-Fa-f0-9]{40}$ ]] || { echo 'Set DEVDESK_CODESIGN_CERTIFICATE_SHA1 to the signing certificate fingerprint.' >&2; exit 1; }
 export DEVDESK_ALLOWED_HOST_CERTIFICATE="$certificate"
 helper_dir="$HOME/Library/Application Support/DevDesk/credential-helper/v1"
+if [ "${1:-}" = --bundle ]; then
+  helper_dir="${2:?provide a private bundle output directory}"
+fi
 mkdir -p "$helper_dir"
 chmod 700 "$helper_dir"
 for attempt in {1..200}; do
@@ -38,7 +41,7 @@ PYVERIFY
     echo 'Reused the installed macOS credential helper.'
     exit 0
   fi
-  [ "${1:-}" = --update ] || { echo 'Credential helper implementation changed; explicit --update is required and may require one new OS authorization.' >&2; exit 1; }
+  [ "${1:-}" = --update ] || [ "${1:-}" = --bundle ] || { echo 'Credential helper implementation changed; explicit --update is required and may require one new OS authorization.' >&2; exit 1; }
 fi
 cargo build --release --locked -p devdesk-credential-helper
 ./scripts/platform/macos/sign-macos.sh target/release/devdesk-credential-helper dev.devdesk.credentials
@@ -47,7 +50,11 @@ chmod 700 "$helper_dir/.helper-pending"
 mv "$helper_dir/.helper-pending" "$helper_dir/devdesk-credential-helper"
 python3 - "$helper_dir" "$source_digest" "$certificate" <<'PY'
 import json,sys,pathlib,hashlib
-root=pathlib.Path(sys.argv[1]);value={'protocol':1,'source_digest':sys.argv[2],'certificate_sha1':sys.argv[3],'binary_sha256':hashlib.sha256((root/'devdesk-credential-helper').read_bytes()).hexdigest()}
+root=pathlib.Path(sys.argv[1]);value={'protocol':2,'source_digest':sys.argv[2],'certificate_sha1':sys.argv[3],'binary_sha256':hashlib.sha256((root/'devdesk-credential-helper').read_bytes()).hexdigest()}
 p=root/'.manifest-pending';p.write_text(json.dumps(value,indent=2)+'\n');p.replace(root/'manifest.json')
 PY
-echo 'Installed the shared macOS credential helper.'
+if [ "${1:-}" = --bundle ]; then
+  echo 'Built the bundled macOS credential helper; shared installation unchanged.'
+else
+  echo 'Installed the shared macOS credential helper.'
+fi

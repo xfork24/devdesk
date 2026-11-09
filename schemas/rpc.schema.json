@@ -333,6 +333,13 @@
           "minLength": 8,
           "maxLength": 4096,
           "writeOnly": true
+        },
+        "model_provider": {
+          "enum": [
+            "deepseek",
+            "zai-coding-cn",
+            "minimax-cn"
+          ]
         }
       },
       "additionalProperties": false
@@ -717,6 +724,23 @@
               "type": "null"
             }
           ]
+        },
+        "model_connection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelConnection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model_profile_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
         }
       },
       "required": [
@@ -2692,13 +2716,18 @@
       "type": "object",
       "properties": {
         "provider": {
-          "type": "string",
-          "minLength": 1
+          "enum": [
+            "openai",
+            "deepseek",
+            "zai-coding-cn",
+            "minimax-cn",
+            "ollama"
+          ]
         },
         "model": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 199
+          "maxLength": 160
         },
         "endpoint": {
           "type": [
@@ -2720,6 +2749,22 @@
           "items": {
             "type": "string"
           }
+        },
+        "context_window": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 2000000
+        },
+        "max_output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 1000000
         }
       },
       "required": [
@@ -4388,6 +4433,66 @@
         "role_agent_bindings"
       ],
       "additionalProperties": false
+    },
+    "ModelConnection": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "enum": [
+            "deepseek",
+            "zai-coding-cn",
+            "minimax-cn",
+            "ollama"
+          ]
+        },
+        "route": {
+          "enum": [
+            "deepseek-official",
+            "zai-coding-cn",
+            "minimax-cn",
+            "ollama"
+          ]
+        },
+        "protocol": {
+          "enum": [
+            "deepseek-native",
+            "openai-completions",
+            "anthropic-messages"
+          ]
+        },
+        "endpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "worker_endpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "host_gateway": {
+          "type": "boolean"
+        },
+        "context_window": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000000
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "provider",
+        "route",
+        "protocol",
+        "endpoint",
+        "worker_endpoint",
+        "host_gateway",
+        "context_window",
+        "max_output_tokens"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -4599,6 +4704,109 @@
         "properties": {
           "params": {
             "$ref": "#/$defs/Command"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "enum": [
+              "credentials.status",
+              "credentials.check",
+              "credentials.authorize"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "model_provider": {
+                "enum": [
+                  "deepseek",
+                  "zai-coding-cn",
+                  "minimax-cn",
+                  "ollama"
+                ]
+              },
+              "project_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "enum": [
+              "models.list"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "model_provider": {
+                "enum": [
+                  "deepseek",
+                  "zai-coding-cn",
+                  "minimax-cn",
+                  "ollama"
+                ]
+              },
+              "endpoint": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "project_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "enum": [
+              "agent.connection.check",
+              "agent.model.verify"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "agent_revision_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "project_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "agent_revision_id"
+            ],
+            "additionalProperties": false
           }
         }
       }

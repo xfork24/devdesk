@@ -14,6 +14,9 @@ use std::{collections::HashMap, sync::Arc};
 pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     let mut hash = Sha256::new();
     hash.update(include_bytes!("harness.rs"));
+    hash.update(include_bytes!("model_providers.rs"));
+    hash.update(include_bytes!("../../domain/src/model_provider.rs"));
+    hash.update(include_bytes!("../../../resources/configuration/dsh-model-catalog.json"));
     hash.update(include_bytes!("permissions.rs"));
     hash.update(include_bytes!("permission_profiles.rs"));
     hash.update(include_bytes!("../../domain/src/permission_profile.rs"));
@@ -258,6 +261,7 @@ impl RuntimeWorkers {
             "/work".into()
         };
         let provider = binding.installation.key.provider;
+        let model_connection = if provider == HarnessProvider::Dsh { Some(crate::model_providers::binding_model_connection(binding)?) } else { None };
         if let Some(p) = &binding.permissions {
             permissions::validate_execution_permissions(p, provider)?;
         }
@@ -335,21 +339,21 @@ impl RuntimeWorkers {
                 vec!["codex".into(), "app-server".into()]
             }
             HarnessProvider::Dsh => {
-                let reference = binding
-                    .credential_ref
-                    .as_deref()
-                    .ok_or_else(|| err("credentials_required", "DSH 缺少凭据引用"))?;
-                let mut key = CredentialVault::new(&self.root)?.read_reference(reference)?;
-                require(
-                    !key.contains(&b'\n') && !key.contains(&b'\r'),
-                    "凭据包含无效换行",
-                )?;
-                secrets.push(
-                    String::from_utf8(key.clone())
-                        .map_err(|_| err("credentials_required", "凭据编码无效"))?,
-                );
+                let connection = model_connection.as_ref().ok_or_else(||err("invalid_configuration","缺少 DSH 模型连接"))?;
+                let p = connection.provider;
+                let mut key = if p.requires_key() {
+                    let reference = binding.credential_ref.as_deref().ok_or_else(||err("credentials_required","DSH 缺少所选服务商凭据引用"))?;
+                    CredentialVault::new(&self.root)?.read_model_reference(p, reference)?
+                } else {
+                    require(binding.credential_ref.is_none(), "免密 Ollama 不应持有真实凭据")?;
+                    b"ollama".to_vec()
+                };
+                require(!key.contains(&b'\n') && !key.contains(&b'\r'), "凭据包含无效换行")?;
+                if p.requires_key() {
+                    secrets.push(String::from_utf8(key.clone()).map_err(|_|err("credentials_required","凭据编码无效"))?);
+                }
                 let path = meta.join("provider.env");
-                let mut bytes = b"DEEPSEEK_API_KEY=".to_vec();
+                let mut bytes = format!("{}=", p.api_key_env()).into_bytes();
                 bytes.extend_from_slice(&key);
                 bytes.push(b'\n');
                 write_private(&path, &bytes)?;
@@ -388,6 +392,9 @@ impl RuntimeWorkers {
                     }
                     write_private(&path, patch.as_bytes())?;
                 }
+                let mut patch = fs::read_to_string(&path).map_err(storage)?;
+                patch.push_str(&crate::model_providers::dsh_model_patch(connection, &binding.model)?);
+                write_private(&path, patch.as_bytes())?;
                 profile = Some(path);
                 vec![
                     "dsh".into(),
@@ -399,7 +406,7 @@ impl RuntimeWorkers {
             }
         };
         let sandbox = DockerSandbox::new(&root)?;
-        let created = sandbox.create(&ContainerSpec {
+        let created = sandbox.create(&ContainerSpec { host_gateway: model_connection.as_ref().is_some_and(|c|c.host_gateway),
             permissions: binding.permissions.clone(),
             purpose: ContainerPurpose::Harness,
             project_id: r.session.project_id.clone().unwrap(),
@@ -469,31 +476,10 @@ impl RuntimeWorkers {
                 }
                 HarnessProvider::Dsh => {
                     wire.rpc2();
-                    // The thinking model's reasoning and tool output share this
-                    // budget. 8K repeatedly exhausted real test-author turns.
-                    // Keep ordinary discussions bounded; formal engineering and
-                    // review envelopes also need room for reasoning. This file
-                    // and the LSM policy participate in the frozen
-                    // adapter build identity, so old executions cannot be retried
-                    // under the changed budget.
-                    let max_tokens = if r.execution.run_id.is_some()
-                        || binding.tool_policy != ToolPolicy::ReadOnly
-                    {
-                        32768
-                    } else {
-                        8192
-                    };
-                    let max_tokens = binding
-                        .agent_configuration
-                        .as_ref()
-                        .and_then(|a| a.model_parameters.get("max_tokens"))
-                        .and_then(Value::as_u64)
-                        .unwrap_or(max_tokens);
-                    require(
-                        (1024..=131072).contains(&max_tokens),
-                        "DSH max_tokens 超出允许范围",
-                    )?;
-                    wire.request("initialize",json!({"cwd":cwd,"provider":"deepseek-official","model":binding.model,"maxTokens":max_tokens,"approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
+                    let connection = model_connection.as_ref().ok_or_else(||err("invalid_configuration","缺少模型连接"))?;
+                    let parameters = binding.agent_configuration.as_ref().map(|a|a.model_parameters.clone()).unwrap_or_default();
+                    let max_tokens = connection.output_budget(r.execution.run_id.is_some() || binding.tool_policy != ToolPolicy::ReadOnly, &parameters)?;
+                    wire.request("initialize",json!({"cwd":cwd,"provider":connection.route,"model":binding.model,"maxTokens":max_tokens,"approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
                     let sid = r
                         .session
                         .external_session

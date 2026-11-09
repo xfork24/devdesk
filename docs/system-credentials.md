@@ -42,3 +42,7 @@ sudo apt-get install libsecret-tools gnome-keyring
 Codex 仍使用数据集专属官方 OAuth 文件和受控 Session 凭据。平台和绝对数据目录变化会改变系统凭据命名空间；换机器后重新配置本机凭据，不能把 macOS 引用当作 Linux 上的秘密。
 
 如果在 Host 运行期间覆盖了它的二进制文件，调用方签名校验会阻塞旧进程；重启新构建即可，不需要重新授权助手。开发时按正常流程停止、重建并启动 Host。
+
+## DSH 多服务商凭据
+
+DeepSeek、`zai-coding-cn`、`minimax-cn` 使用独立账号命名空间和当前引用，读取时校验数据集及服务商。旧 DeepSeek 引用继续有效，换 key 不覆盖旧执行的引用。Ollama 本地服务免密，不创建 vault 条目。macOS 新服务商需要协议版本 2 的助手，升级步骤见 [模型服务商](model-providers.md)；打包仅构建随包助手，不修改本机共享安装。

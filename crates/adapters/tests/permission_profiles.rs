@@ -458,6 +458,7 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
         .unwrap()
         .to_owned();
     let binding = RuntimeBinding {
+        model_connection: None, model_profile_digest: None,
         agent_configuration: None,
         permissions: None,
         installation: RuntimeInstallation {
@@ -910,7 +911,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
             .output()
             .unwrap();
         assert!(output.status.success());
-        let spec = ContainerSpec {
+        let spec = ContainerSpec { host_gateway: false,
             permissions: Some(plan),
             purpose: ContainerPurpose::Harness,
             project_id: id(),

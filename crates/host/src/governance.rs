@@ -267,29 +267,7 @@ impl Workspace {
         } else {
             e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,project.title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen{Some(feature)}else{None}})})?["id"].as_str().unwrap().into()
         };
-        require(
-            model.endpoint.is_none(),
-            "该 Harness 尚未提供自定义模型 endpoint 的执行映射",
-        )?;
-        require(
-            match harness.provider.as_str() {
-                "codex" => model.provider == "openai",
-                "dsh" => model.provider == "deepseek",
-                _ => false,
-            },
-            "当前运行适配器不支持此模型提供方，不能仅改名称后路由",
-        )?;
-        require(
-            model
-                .parameters
-                .keys()
-                .all(|k| match harness.provider.as_str() {
-                    "codex" => k == "reasoning_effort",
-                    "dsh" => k == "max_tokens",
-                    _ => false,
-                }),
-            "模型参数不受当前 Harness 支持，不能静默忽略",
-        )?;
+        resolve_model_connection(&model, &harness)?;
         require(
             !["managed", "latest", "default"].contains(&harness.runtime_version.as_str()),
             "Harness 必须选择精确运行版本",

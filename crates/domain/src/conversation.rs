@@ -23,6 +23,10 @@ pub enum SessionLifecycle {
 #[serde(deny_unknown_fields)]
 pub struct RuntimeBinding {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_connection: Option<ModelConnection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_profile_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_configuration: Option<AgentExecutionConfiguration>,
     #[serde(default)]
     pub permissions: Option<ExecutionPermissions>,

@@ -1,6 +1,8 @@
 # DeepSeek Harness 多模型服务商接入计划
 
-日期：2026-11-09。状态：待用户审核；本轮只编写计划，审核通过后实施。范围：通过 DevDesk 现有 DeepSeek Harness 接入智谱国内编程订阅、MiniMax 国内订阅和本机 Ollama，兼容现有 DeepSeek 官方 API key。
+日期：2026-11-09。状态：已批准实施；按阶段验证。范围：通过 DevDesk 现有 DeepSeek Harness 接入智谱国内编程订阅、MiniMax 国内订阅和本机 Ollama，兼容现有 DeepSeek 官方 API key。
+
+本轮验证约束：真实模型仅使用 Codex；DSH 只使用本地模拟端点，不读取真实 DSH key 或发送真实 DSH 推理请求。
 
 ## 一 目标与主要决定
 
@@ -29,7 +31,7 @@
 
 本地参考源码为 `/Users/hengliu/workspace/deepseek-harness`，读取时 HEAD 为 `5aeed699a011563980a9597f9fc8bc3ee2889066`。其中 `packages/llm/llm-pi-ai` 支持多服务商配置，生成目录包含 `zai-coding-cn`、`minimax-cn`，`packages/bundle/base/cordis.patch.yml` 装配了该插件。**本地源码能力不能直接作为固定发行包的能力证明**，实施第一阶段必须检查实际构建产物。
 
-本计划基于包含未提交 Permission 与配置改动的工作区。实施时保留已有改动，并核对 [Permission 运行时绑定计划](../permission-runtime-bindings/PLAN.md)、[配置与工作流契约](../role-capability-project-configuration/CONTRACT.md)及 [工具与技能接入计划](../tool-skill-integrations/PLAN.md)。本计划只验证 DSH 模型路由与既有原生工具，不扩大工具接入计划的实现及验收范围。
+本计划基于包含未提交 Permission 与配置改动的工作区。实施时保留已有改动，并核对 [Permission 运行时绑定计划](../permission-runtime-bindings/PLAN.md)、[配置与工作流契约](../role-capability-project-configuration/CONTRACT.md)及工具与技能接入计划。本计划只验证 DSH 模型路由与既有原生工具，不扩大工具接入计划的实现及验收范围。
 
 ## 三 服务商映射
 
@@ -162,6 +164,8 @@ Sandbox 禁网时启动前报告模型连接冲突；Harness 工具禁网不应�
 
 ### 真实调用
 
+2026-11-09 用户追加约束优先：本轮真实模型只使用 Codex；不向 DSH 模型服务商发起真实请求，不读取真实 DSH 凭据。DSH 仅允许固定进程与本地模拟端点的离线协议验证。以下 DSH 真实调用矩阵保留为后续待验范围，不作为本轮合入条件。
+
 保留 DeepSeek 与 Codex 回归；新增智谱、MiniMax、本地 Ollama、Ollama 订阅云模型各至少一个案例。新路由验证流式讨论、工具调用与结果消费、后继/恢复、取消/故障恢复，并通过完整 Agent 的正式工程入口验证输出和权限。本地模型和订阅云模型分别记录，不能互相替代。
 
 macOS、Ubuntu 分别验证 vault、DSH 容器和 Ollama 连通。只有具备对应环境、订阅和模型并完成调用的案例标为通过；缺失账号或平台列为待验，模拟通过不升级为真实验收通过。实际调用使用用户在设置页配置的凭据，报告仅保存构建身份、模型、配置修订和脱敏结果。
@@ -170,4 +174,4 @@ macOS、Ubuntu 分别验证 vault、DSH 容器和 Ollama 连通。只有具备�
 
 交付包含领域/RPC/Schema、存储兼容、凭据、DSH 装配、Docker Ollama 连通、Web、回归测试及用户文档。实施记录写入同目录 `EXECUTION.md`，计划目录只保留 Markdown 交付物。
 
-审核重点：复用 DSH 内置适配器；Model 承载连接配置并按服务商分开凭据；Ollama 通过本机服务使用本地与订阅云模型；Linux 首版采用显式可达地址，不内置 loopback 转发；先核验固定发行包再确定构建变化。用户确认后开始 M0–M5。
+审核重点：复用 DSH 内置适配器；Model 承载连接配置并按服务商分开凭据；Ollama 通过本机服务使用本地与订阅云模型；Linux 首版采用显式可达地址，不内置 loopback 转发；先核验固定发行包再确定构建变化。实施与验证结果按 M0–M5 记录在 EXECUTION.md。

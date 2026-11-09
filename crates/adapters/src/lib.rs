@@ -13,6 +13,7 @@ pub mod permissions;
 pub mod tests;
 pub use tests::CommandTests;
 pub mod harness;
+pub mod model_providers;
 pub use git::CliGit;
 mod jsonl;
 pub use harness::{CodexHarness, DshHarness, RoutingHarness, RuntimeWorkers};

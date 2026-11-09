@@ -68,6 +68,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
                 scope: Some(SessionScope::Project),
                 lifecycle: Some(SessionLifecycle::Prepared),
                 runtime_binding: Some(RuntimeBinding {
+                    model_connection: None, model_profile_digest: None,
                     agent_configuration: None,
                     permissions: None,
                     installation: RuntimeInstallation {

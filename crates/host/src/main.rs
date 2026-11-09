@@ -279,7 +279,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--port 4317]\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
+            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--port 4317]\n       devdesk-host --update-credential-helper (macOS bundle, explicit upgrade)\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
         );
         return Ok(());
     }
@@ -289,6 +289,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|i| args.get(i + 1))
             .cloned()
     };
+    if args.iter().any(|a| a == "--update-credential-helper") {
+        devdesk_adapters::credentials::CredentialVault::update_bundled_helper()?;
+        println!("credential_helper_updated; use the explicit settings authorization action if required");
+        return Ok(());
+    }
     if let Some(reference) = option("--authorize-credential") {
         let dataset =
             option("--data").ok_or("credential authorization requires an existing dataset")?;

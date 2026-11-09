@@ -536,33 +536,7 @@ pub(crate) fn validate_composition(
         "Harness 不支持该 Model 后端",
     )?;
 
-    require(
-        (harness.provider == "codex" && model.provider == "openai")
-            || (harness.provider == "dsh" && model.provider == "deepseek"),
-        "Model 协议不受此 Harness 支持",
-    )?;
-    require(
-        model.endpoint.is_none(),
-        "当前原生适配器不支持自定义 Model endpoint",
-    )?;
-    for (key, value) in &model.parameters {
-        require(
-            match harness.provider.as_str() {
-                "codex" => {
-                    key == "reasoning_effort"
-                        && value.as_str().is_some_and(|v| {
-                            ["minimal", "low", "medium", "high", "xhigh", "max"].contains(&v)
-                        })
-                }
-                "dsh" => {
-                    key == "max_tokens"
-                        && value.as_u64().is_some_and(|v| (1024..=131072).contains(&v))
-                }
-                _ => false,
-            },
-            format!("Model 参数 {key} 无法由此 Harness 精确执行"),
-        )?;
-    }
+    resolve_model_connection(&model, &harness)?;
 
     for tool in &a.tools {
         let record = reference(s, tool, "tool", scope)?;
@@ -825,6 +799,12 @@ impl Engine {
                         && binding.installation.key.provider.as_str() == harness.provider,
                     "执行绑定改变了 AgentID 的 Model/Harness",
                 )?;
+                let resolved = resolve_model_connection(&model, &harness)?;
+                if binding.model_connection.is_some() {
+                    require(binding.model_connection == resolved, "执行绑定改变了 Model 连接或容量")?;
+                } else {
+                    require(["openai", "deepseek"].contains(&model.provider.as_str()), "新服务商缺少冻结连接")?;
+                }
                 if let Some(old) = s
                     .governance
                     .iter()
@@ -1362,22 +1342,13 @@ impl Engine {
                 "capability" => crate::configuration::validate_capability(s, &data, &scope)?,
                 "model" => {
                     let m: ModelDefinition = decode(&data)?;
-                    require(
-                        !m.provider.is_empty() && !m.model.is_empty() && m.model.len() < 200,
-                        "无效 Model",
-                    )?;
-                    require(
-                        m.endpoint
-                            .as_ref()
-                            .is_none_or(|e| !e.contains('@') && !e.contains("api_key=")),
-                        "连接不能包含密钥",
-                    )?;
+                    validate_model_definition(&m)?;
                 }
                 "harness" => {
                     let h: HarnessDefinition = decode(&data)?;
                     require(
                         h.recipe_digest.as_ref().is_none_or(|digest| {
-                            h.provider == "codex"
+                            ["codex", "dsh"].contains(&h.provider.as_str())
                                 && digest.len() == 64
                                 && digest.bytes().all(|b| b.is_ascii_hexdigit())
                         }),

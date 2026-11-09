@@ -11,7 +11,7 @@ fn reject_outside_mounts_before_touching_docker() {
     let root = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
     let sandbox = DockerSandbox::new(root.path()).unwrap();
-    let spec = ContainerSpec {
+    let spec = ContainerSpec { host_gateway: false,
         permissions: None,
         purpose: ContainerPurpose::Tests,
         nested_sandbox: false,
@@ -60,7 +60,7 @@ fn real_container_ownership_idempotence_stop_and_cleanup() {
     fs::write(work.join(".git"), "gitdir: /private/host-secret\n").unwrap();
     let sandbox = DockerSandbox::new(root.path()).unwrap();
     let operation = id();
-    let spec=ContainerSpec { permissions: None,
+    let spec=ContainerSpec { host_gateway:false, permissions: None,
         purpose:ContainerPurpose::Tests,nested_sandbox:false,credential_env_file:None,profile_file:None,runner_file:None,profile_target:None,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:true,writable_subdirectories:vec![],read_only_subdirectories:vec![],network:false,command:vec!["sh".into(),"-c".into(),"test ! -s /work/.git && test ! -e /var/run/docker.sock && (! touch /outside 2>/dev/null) && printf real-container > /work/proof && sleep 30".into()]};
     let first = sandbox.create(&spec).unwrap();
     assert!(!first.running);
@@ -100,7 +100,7 @@ fn nested_sandbox_cannot_broaden_the_outer_test_directory_write_grant() {
     fs::write(state.join("codex/config.toml"),"default_permissions=\"devdesk\"\n[permissions.devdesk.filesystem]\n\":root\"=\"deny\"\n\":minimal\"=\"read\"\n\"/work\"=\"read\"\n\"/work/tests/allowed\"=\"write\"\n\"/state\"=\"deny\"\n[permissions.devdesk.network]\nenabled=false\n").unwrap();
     let operation = id();
     let sandbox = DockerSandbox::new(root.path()).unwrap();
-    let spec=ContainerSpec{ permissions: None,purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:false,writable_subdirectories:vec!["tests/allowed".into()],read_only_subdirectories:vec![],network:false,nested_sandbox:true,credential_env_file:None,profile_file:None,runner_file:None,profile_target:None,command:vec!["codex".into(),"sandbox".into(),"--".into(),"/bin/sh".into(),"-c".into(),"printf scope-ok > /work/tests/allowed/proof && (! touch /work/src/forbidden 2>/dev/null) && (! touch /work/forbidden 2>/dev/null)".into()]};
+    let spec=ContainerSpec{ host_gateway:false, permissions: None,purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:operation.clone(),image_id:support::image("codex"),worktree:work.clone(),state,writable:false,writable_subdirectories:vec!["tests/allowed".into()],read_only_subdirectories:vec![],network:false,nested_sandbox:true,credential_env_file:None,profile_file:None,runner_file:None,profile_target:None,command:vec!["codex".into(),"sandbox".into(),"--".into(),"/bin/sh".into(),"-c".into(),"printf scope-ok > /work/tests/allowed/proof && (! touch /work/src/forbidden 2>/dev/null) && (! touch /work/forbidden 2>/dev/null)".into()]};
     sandbox.create(&spec).unwrap();
     sandbox.start(&operation).unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
@@ -174,7 +174,7 @@ fn dsh_runner_masks_private_state_and_proc_without_expanding_docker_privileges()
         "-c",
         "test ! -e /state/canary && test ! -e /proc/1/environ && test ! -e /run/devdesk/runner && printf dsh-ok > /work/tests/allowed/proof && (! touch /work/forbidden 2>/dev/null)",
     ];
-    let spec = ContainerSpec {
+    let spec = ContainerSpec { host_gateway: false,
         permissions: None,
         purpose: ContainerPurpose::Harness,
         project_id: id(),

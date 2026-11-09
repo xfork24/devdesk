@@ -1,3 +1,5 @@
+#[path = "model_providers.rs"]
+mod model_providers;
 #[path = "github_projects.rs"]
 mod github_projects;
 #[path = "governance.rs"]
@@ -300,34 +302,39 @@ impl Workspace {
             )?
         };
         let adapter = harness::managed_adapter_identity(provider);
+        let agent_configuration: Option<AgentExecutionConfiguration> = command.payload.get("agent_configuration")
+            .map(|v| serde_json::from_value(v.clone()).map_err(|_| err("invalid_params", "无效 Agent 执行配置"))).transpose()?;
+        let model_connection = if provider == HarnessProvider::Dsh {
+            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration {
+                (state.configuration(&a.model_revision_id)?.decode()?, state.configuration(&a.harness_revision_id)?.decode()?)
+            } else {
+                (serde_json::from_value(json!({"provider":"deepseek","model":model})).map_err(|e|err("invalid_configuration",e.to_string()))?,
+                 serde_json::from_value(json!({"provider":"dsh","runtime_version":installation.key.version})).map_err(|e|err("invalid_configuration",e.to_string()))?)
+            };
+            require(m.model == model, "Model 修订与执行模型不一致")?;
+            let connection = resolve_model_connection(&m, &h)?;
+            require(resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled, "Sandbox 禁网，无法连接模型服务")?;
+            connection
+        } else { None };
         let credential_ref = match provider {
-            HarnessProvider::Codex => self.codex_auth.credential_reference()?,
+            HarnessProvider::Codex => Some(self.codex_auth.credential_reference()?),
             HarnessProvider::Dsh => {
-                let status = credentials::CredentialVault::new(Path::new(&self.global.root()))?
-                    .status_reference(
-                        provider,
-                        self.global.dsh_credential_reference()?.as_deref(),
-                    )?;
-                require(
-                    status.available,
-                    "系统凭据库不可用；Linux 请安装 libsecret-tools 并使用桌面 Secret Service",
-                )?;
-                require(status.configured, "请先配置 DeepSeek 官方 API key")?;
-                // Fail before creating an execution when this Host has no vault access.
-                credentials::CredentialVault::new(Path::new(&self.global.root()))?
-                    .verify_reference(&status.reference)?;
-                status.reference
+                let p = model_connection.as_ref().ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?.provider;
+                if p.requires_key() {
+                    let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
+                    let status = vault.status_model_reference(p, self.global.model_credential_reference(p)?.as_deref())?;
+                    require(status.available, "系统凭据库不可用，请检查共享凭据助手或 Secret Service")?;
+                    require(status.configured, format!("请先配置 {} 凭据", p.label()))?;
+                    vault.verify_model_reference(p, &status.reference)?;
+                    Some(status.reference)
+                } else { None }
             }
         };
+        let model_profile_digest = model_connection.as_ref().map(|c| devdesk_adapters::model_providers::dsh_model_patch(c, &model).and_then(|patch| configuration_digest(&json!(patch)))).transpose()?;
         let mut binding = RuntimeBinding {
-            agent_configuration: command
-                .payload
-                .get("agent_configuration")
-                .map(|v| {
-                    serde_json::from_value(v.clone())
-                        .map_err(|_| err("invalid_params", "无效 Agent 执行配置"))
-                })
-                .transpose()?,
+            model_connection,
+            model_profile_digest,
+            agent_configuration,
             permissions: Some(resolved_permissions),
             installation: installation.clone(),
             adapter_version: adapter,
@@ -337,7 +344,7 @@ impl Workspace {
             read_only_paths,
             work_type,
             configuration_digest: String::new(),
-            credential_ref: Some(credential_ref),
+            credential_ref,
         };
         binding.configuration_digest = Self::permission_runtime_digest(definition, &binding)?;
         command.payload["binding"] = json!(binding);
@@ -924,6 +931,7 @@ impl Workspace {
         Ok(())
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        if let Some(result) = self.model_provider_api(method, &params) { return result; }
         if method == "query.configuration_defaults" {
             return self
                 .configuration
@@ -1044,41 +1052,6 @@ impl Workspace {
                 ),
                 _ => Err(err("method_not_found", "未知 Codex 认证命令")),
             };
-        }
-        if method == "credentials.status" {
-            return Ok(json!(
-                credentials::CredentialVault::new(Path::new(&self.global.root()))?
-                    .status_reference(
-                        HarnessProvider::Dsh,
-                        self.global.dsh_credential_reference()?.as_deref()
-                    )?
-            ));
-        }
-        if ["credentials.authorize", "credentials.check"].contains(&method) {
-            let root = PathBuf::from(self.global.root());
-            let vault = credentials::CredentialVault::new(&root)?;
-            let status = vault.status_reference(
-                HarnessProvider::Dsh,
-                self.global.dsh_credential_reference()?.as_deref(),
-            )?;
-            require(status.configured, "请先保存 DeepSeek API key")?;
-            if method == "credentials.authorize" {
-                credentials::CredentialVault::request_authorization(&root, &status.reference)?;
-            }
-            vault.verify_reference(&status.reference)?;
-            return Ok(json!({"authorized":true,"storage":status.storage}));
-        }
-        if method == "credentials.configure" {
-            let provider: HarnessProvider = serde_json::from_value(params["provider"].clone())
-                .map_err(|_| err("invalid_params", "需要 provider"))?;
-            let secret = params["api_key"]
-                .as_str()
-                .ok_or_else(|| err("invalid_params", "需要 API key"))?;
-            let status = credentials::CredentialVault::new(Path::new(&self.global.root()))?
-                .configure(provider, secret)?;
-            self.global
-                .set_dsh_credential_reference(&status.reference)?;
-            return Ok(json!(status));
         }
         if method == "settings.update" {
             let n = params

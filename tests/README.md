@@ -71,3 +71,5 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 `tests/reporters/node-reporter.mjs` 是产品执行测试时使用的 Node 报告器，属于运行时资产：Rust `CommandTests` 将其嵌入并写入测试容器，解析结构化失败分类和汇总，并将内容摘要纳入执行器身份。它是产品运行时需要的测试支持资产，与测试用例分开放在 `reporters/`。
 
 原型脚本化执行用例已移除；当前 Rust 回归覆盖原生会话、Run 结构化结果、取消、停止证明、重启后的旧测试核对和历史只读迁移。Workflow 样本演练仅计算流程条件，不创建外部事实。
+
+DSH 多服务商离线验证：设置 DEVDESK_DSH_MOCK_IMAGE 为固定镜像 ID，运行 `cargo test -p devdesk-adapters --test model_providers -- --ignored --nocapture`。DSH 流式/工具/恢复由禁外网容器内的模拟端点提供；另一测试只查询模拟 Ollama 目录，不推理。`tests/live/probe_model_providers.py` 验证完整 Host 连接与冻结；仅传入 --codex-auth-source 时允许 Codex 真实模型验证，始终不发 DSH 真实推理请求。

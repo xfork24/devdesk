@@ -54,6 +54,13 @@ pub(crate) fn capture_command(
         // Docker and GitHub CLI use their own credential stores. Ambient model keys are not forwarded.
         .env_remove("OPENAI_API_KEY")
         .env_remove("DEEPSEEK_API_KEY")
+            .env_remove("ZAI_CODING_CN_API_KEY")
+            .env_remove("MINIMAX_CN_API_KEY")
+            .env_remove("ZAI_API_KEY")
+            .env_remove("MINIMAX_API_KEY")
+            .env_remove("OLLAMA_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .env_remove("ANTHROPIC_AUTH_TOKEN")
         .spawn()
         .map_err(|_| err("provider_unavailable", "无法启动外部进程"))?;
     let writer = if let Some(mut input) = input {

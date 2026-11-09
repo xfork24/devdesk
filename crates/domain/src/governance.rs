@@ -105,6 +105,10 @@ pub struct ModelDefinition {
     pub model: String,
     #[serde(default)]
     pub endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u64>,
     #[serde(default)]
     pub release: Option<String>,
     #[serde(default)]
