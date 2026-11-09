@@ -20,6 +20,7 @@ pub use integrations::{
 mod governance;
 mod live_merges;
 mod live_runs;
+mod model_approvals;
 mod permission_resources;
 mod permissions;
 pub use permission_resources::{insert_permission_profiles, permission_profile_export};
@@ -31,6 +32,7 @@ mod proposals;
 mod repositories;
 mod workflow_definition;
 mod workflow_runtime;
+mod workflow_prompts;
 // Compatibility names for existing adapters and contract fixtures.
 use devdesk_domain::*;
 pub use ports::{Git as GitPort, Harness as HarnessPort, TestRequest, Tests as TestRunnerPort};
@@ -606,6 +608,17 @@ impl Engine {
             for r in s.governance.iter_mut().filter(|r| r.kind=="tool_call" && r.data["status"]=="dispatched") { let mut d=r.data.clone();d["status"]=json!("needs_reconciliation");d["remote_effect"]=json!("unknown");governance::update_record(r,d); }
             configuration::migrate_capabilities(s);
             self.freeze_legacy_features(s);
+            // Reconcile persisted workflow references once after opening, including
+            // idle instances left waiting by an older evaluator.
+            for record in s.governance.iter_mut().filter(|r| {
+                r.kind == "workflow_instance"
+                    && r.data["status"] != "completed"
+                    && r.data["status"] != "cancelled"
+            }) {
+                let mut data = record.data.clone();
+                data["dirty"] = json!(true);
+                governance::update_record(record, data);
+            }
             for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Dispatched){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="restart_after_dispatch".into();op.revision+=1;}
             for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Prepared){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="startup_pending_intent_requires_reconcile".into();op.revision+=1;}
             for session in s.sessions.iter_mut().filter(|v|v.scope.is_some() && v.external_session.is_some() && !matches!(v.lifecycle,Some(SessionLifecycle::Closed|SessionLifecycle::RequiresSuccessor))){
@@ -663,6 +676,15 @@ impl Engine {
     }
     pub fn execute(&self, method: &str, c: Command) -> Result<Value> {
         self.execute_internal(method, c, None)
+    }
+    pub fn validate_attempt_cancellation(&self, owner: &str) -> Result<()> {
+        let s = self.store.snapshot()?;
+        let worktree = s.repository_worktrees.iter().find(|w| w.owner_id == owner)
+            .map(|w| w.path.as_str()).unwrap_or("");
+        if s.run_cancellation_pending(worktree) {
+            return Err(err("run_cancellation_pending", "等待旧 Run 取消确认后再启动"));
+        }
+        Ok(())
     }
     /// Trusted coordinator resolves configuration after checking the original request's replay key.
     /// RPC callers cannot provide this override.
@@ -1745,12 +1767,9 @@ impl Engine {
                     }),
                     "已有活动 Attempt；请等待评审或取消",
                 )?;
-                require(
-                    !s.runs.iter().any(|r| {
-                        r.worktree == worktree && r.status == Status::Running && r.cancel_requested
-                    }),
-                    "等待旧 Run 取消确认后再启动",
-                )?;
+                if s.run_cancellation_pending(&worktree) {
+                    return Err(err("run_cancellation_pending", "等待旧 Run 取消确认后再启动"));
+                }
                 let live = s.projects.iter().any(|p| {
                     p.id == s.feature(&fid).unwrap().project_id && p.execution_mode == "live"
                 });
@@ -2283,6 +2302,16 @@ impl Engine {
                     serde_json::from_value(p.get("items").cloned().unwrap_or(json!(["review"])))
                         .map_err(|_| err("invalid_params", "items 应为条目列表"))?;
                 require(!items.is_empty(), "必须选择豁免条目")?;
+                if items.iter().any(|item| item == "review")
+                    && (s.feature_configuration(&d.feature_id).is_some_and(|lock| lock.compiler_version >= 3)
+                        || d.evidence.iter().any(|id|s.runs.iter().find(|r|&r.id==id)
+                            .and_then(|r|r.result.as_ref()).is_some_and(|result|result["approval_required"]==true)))
+                {
+                    require(s.runs.iter().rev().find(|r|r.node==format!("review:{}",d.id))
+                        .is_some_and(|r|r.status==Status::Succeeded && r.result.as_ref().is_some_and(|result|
+                            result["approval_required"]==true && result["model_approve"].is_boolean())),
+                        "请等待模型完成内容评审并给出 Approve 结论后，再执行人类覆盖")?;
+                }
                 for item in &items {
                     require(
                         item == "review"
@@ -2616,7 +2645,7 @@ impl Engine {
         event(s, &did, "delivery.created", kind);
         Ok(did)
     }
-    fn check_merge_target(&self, s: &EngineeringState, d: &Delivery) -> Result<()> {
+    pub(crate) fn check_merge_target(&self, s: &EngineeringState, d: &Delivery) -> Result<()> {
         if let Some(mid) = &d.merge_id {
             let m = s.merge(mid)?;
             require(
@@ -2751,6 +2780,11 @@ impl Engine {
                 )]
             };
         for (spec, source) in &specification_checks {
+            // Content judgments use the configured model task and the exact Skill/Spec
+            // bodies. Legacy keyword probes are not quality gates for the new report contract.
+            if run.as_ref().and_then(|id|s.runs.iter().find(|r| &r.id==id))
+                .and_then(|r|r.result.as_ref()).is_some_and(|result|result["approval_required"]==true)
+            { continue; }
             for rule in &spec.rules {
                 let documents = d
                     .documents
@@ -2858,7 +2892,7 @@ impl Engine {
         }
         self.reconcile(s, d)
     }
-    fn reconcile(&self, s: &mut EngineeringState, d: &Delivery) -> Result<()> {
+    pub(crate) fn reconcile(&self, s: &mut EngineeringState, d: &Delivery) -> Result<()> {
         if !s.accepted(d) {
             return Ok(());
         }

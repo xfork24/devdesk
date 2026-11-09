@@ -125,6 +125,8 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 
 `proposal.extract` reads the last complete assistant JSON from a completed `turn_id`. `proposal.create` accepts human-edited `content` conforming to `ProposalContent`; both require an explicit source Turn and resolve a `target` and `expected_revision`. `proposal.revise` creates a new immutable draft revision. `proposal.adopt`/`proposal.reject` target the Proposal revision. Adoption is atomic, validates current target and immutable input documents, and invokes the existing formal object commands. `proposal.instantiate` materializes an accepted TaskPlan's stable keys and dependencies after the existing planning Review/Snapshot gate; the key-to-Task mapping is persisted and cannot be replaced. Proposal acceptance does not accept a Delivery or a Merge.
 
+在采纳步骤完成前，其上游讨论及子流程输出会重新核对同一讨论的有效提案，包括同身份、同目标的后继 Session；拒绝、失效或已有后继修订的提案不再作为当前输出。新提案改变输出时，原人工确认失效，必须确认新版本。采纳步骤完成后，已消费的提案、执行、交付及候选仍固定到原轮次；后续业务变更使用返工，重新生成受影响步骤的引用。重新打开项目会将未结束流程标为待核对，以恢复旧版本留下的等待状态。
+
 Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations, role definitions and Permission revisions live in global schema v5; engineering records and conversation projections currently use project schema v34. Sequential SQL upgrades preserve historical provenance and never fabricate native IDs. Historical prototype projects are read-only; active execution is native-only.
 
 ## 真实工程操作与证据
@@ -244,10 +246,20 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ### 冻结任务渲染器兼容
 
-新配置冻结使用 `agent-task/v2`，正式 Agent 执行的输出合同携带与协调器解析一致的 `output_schema`：检查项使用 `key`、`passed`、`evidence`，四个检查 key 各出现一次；文档任务明确 `document.kind=doc` 和正文类型。历史 `agent-task/v1` 定义、载荷、输出合同及摘要继续按原版本读取和验证，不自动重渲染；采用修正后的合同需要形成新配置冻结。输出校验和真实测试、独立评审门禁保持原有语义。
+新配置冻结使用 `agent-task/v3`，在 Ubuntu 已验证的类型化 `agent-task/v2` 合同上增加模型内容判断与人类 Approve；正式检查输出的 `schema` 与 `output_schema` 一致。文档任务保留 `document.kind=doc` 和正文类型。历史 `agent-task/v1`、`agent-task/v2` 及本地 v1 的版本化 Approve 合同继续按原载荷和摘要读取、验证，不自动重渲染。旧绑定中新追加的轮次采用当前明确版本化的输出合同；已准备或完成的轮次保留原输入和结论。真实测试与独立评审证据仍按原执行规则核对。
 
 候选评审的冻结输入另含 `candidate_provenance`：协调器通过 Git 端口读取确切候选的实际 parents，要求恰好一个且等于冻结 expected_target，并附 Merge 及对应已完成仓库操作回执。模型不需要访问隐藏的 Git 元数据来猜测父子关系；历史评审输入不回写，新的评审 Run 冻结当前实际证据。
 
 `Structured Task Plan` 与普通实现说明分别维护 doc 修订链。普通说明不能通过 supersedes 隐藏规划输入；历史跨链引用保持原记录，只在新 Attempt 的有效输入投影中区分两类文档。
 
 工具正常调度会核对 needs_reconciliation 调用迟到的实际持久化回执；未取得真实回执时保持未知状态，不自动重派写调用。
+
+### 模型内容校验与人类 Approve
+
+正式内容校验使用 `evidence-checks/v2`，结构见 `schemas/stage-answer.schema.json`。新请求要求 `approve`、`summary` 和四类 `checks`，每项为 `key`、布尔 `passed`、非空字符串 `evidence`。`approve` 必须与逐项结论一致。错误返回具体字段路径；旧冻结 v1 任务和结果仍可读取。
+
+业务提示词来自冻结 Workflow Step 的任务和 Agent 配方节点任务；兼容路径从冻结 `interaction.goal`、`parameters.agent_prompts` 读取，运行器不追加隐藏的阶段业务指令。模型读取当前 Skill/Spec、作者 Skill 及实际材料判断内容；章节、关键词探测不再作为新模型报告的内容质量门禁。
+
+有效报告的 Run 记录 `model_approve`、`approval_required`，模型拒绝与执行失败分开。校验和独立评审均进入 `waiting_confirmation`，即使步骤配置自动推进也等待人类决定。`workflow.step.confirm` 携带当前 `input_hash`；覆盖模型拒绝还需 `overwrite_model:true` 和非空 `reason`。不可变确认记录保留模型报告、Skill 修订、轮次、操作者、原结论与覆盖理由；独立评审覆盖另外写入 Review Override，原模型 Review 不改写。报告或输入改变会使旧确认失效。
+
+取消中的旧 Run 返回 `run_cancellation_pending`。该错误仅表示启动前等待，工作流保留 prepared 意图，待 Run 和旧 writer 均停止后继续。旧版本留下的同类 failed 意图会重新核对；不会把尚未停止的执行者标成已停止。

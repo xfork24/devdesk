@@ -106,6 +106,9 @@ export function WorkflowInstanceView({
   const [data, setData] = useState<Row>(),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState("");
+  const [overwriteReasons, setOverwriteReasons] = useState<
+    Record<string, string>
+  >({});
   const storageKey = `devdesk:runtime-stages:${projectId}:${record.id}`;
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
@@ -209,6 +212,9 @@ export function WorkflowInstanceView({
     );
   const renderStep = (step: Row, stage: Row) => {
     const definition = data?.plan.steps.find((s: Row) => s.key === step.key);
+    const action = data?.actions.find((a: Row) => a.id === step.id);
+    const approvals: Row[] = action?.model_approvals || [];
+    const modelRejected = approvals.some((report) => !report.approve);
     return (
       <article key={step.id} className={`workflow-node status-${step.status}`}>
         <ActionButton
@@ -233,6 +239,56 @@ export function WorkflowInstanceView({
           </span>
         </ActionButton>
         {step.reason && <p>{step.reason}</p>}
+        {approvals.length > 0 && (
+          <section aria-label="内容校验与 Approve">
+            <h4>模型 {modelRejected ? "Reject" : "Approve"}</h4>
+            {approvals.map((report) => (
+              <details
+                key={report.run_id}
+                open={step.status === "waiting_confirmation"}
+              >
+                <summary>
+                  {report.node} · {report.approve ? "Approve" : "Reject"}
+                </summary>
+                <p>{report.summary}</p>
+                <ul>
+                  {report.checks.map((check: Row) => (
+                    <li key={check.key}>
+                      <strong>
+                        {check.key} · {check.passed ? "通过" : "未通过"}
+                      </strong>
+                      <p>{check.evidence}</p>
+                    </li>
+                  ))}
+                </ul>
+                <p className="muted">Skill 修订：{report.skills.join("、")}</p>
+              </details>
+            ))}
+            {step.confirmation?.human_approve && (
+              <p>
+                人类已 Approve
+                {step.confirmation.overwrite_model
+                  ? `，覆盖理由：${step.confirmation.reason}`
+                  : ""}
+              </p>
+            )}
+            {modelRejected && step.status === "waiting_confirmation" && (
+              <label>
+                覆盖模型结论的理由
+                <textarea
+                  value={overwriteReasons[step.id] || ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setOverwriteReasons((old) => ({
+                      ...old,
+                      [step.id]: value,
+                    }));
+                  }}
+                />
+              </label>
+            )}
+          </section>
+        )}
         {step.outputs.session && (
           <ActionButton
             onClick={() => {
@@ -247,7 +303,13 @@ export function WorkflowInstanceView({
           (method: string) => (
             <ActionButton
               key={method}
-              disabled={busy || runtime.paused}
+              disabled={
+                busy ||
+                runtime.paused ||
+                (method === "workflow.step.confirm" &&
+                  modelRejected &&
+                  !overwriteReasons[step.id]?.trim())
+              }
               onClick={() => {
                 captureFeedback();
                 return command(
@@ -255,7 +317,15 @@ export function WorkflowInstanceView({
                   step.id,
                   step.revision,
                   method === "workflow.step.confirm"
-                    ? { input_hash: step.input_hash }
+                    ? {
+                        input_hash: step.input_hash,
+                        ...(modelRejected
+                          ? {
+                              overwrite_model: true,
+                              reason: overwriteReasons[step.id],
+                            }
+                          : {}),
+                      }
                     : method === "workflow.step.rework"
                       ? {
                           from_step:
@@ -267,7 +337,11 @@ export function WorkflowInstanceView({
               }}
             >
               {method.endsWith("confirm")
-                ? "确认结果后继续"
+                ? approvals.length
+                  ? modelRejected
+                    ? "覆盖模型结论并 Approve"
+                    : "人类 Approve"
+                  : "确认结果后继续"
                 : method.endsWith("retry")
                   ? "技术重试"
                   : `从${data?.plan.steps.find((definition: Row) => definition.key === data?.actions.find((action: Row) => action.id === step.id)?.rework_entries?.[0])?.name || "本步骤"}返工`}
@@ -278,9 +352,11 @@ export function WorkflowInstanceView({
           <>
             <p>
               职责 {definition?.participant_slot || "协调器"} ·{" "}
-              {definition?.advance_mode === "automatic"
-                ? "自动推进"
-                : "结果完成后等待人确认"}
+              {approvals.length
+                ? "模型给出内容判断后，等待人类 Approve"
+                : definition?.advance_mode === "automatic"
+                  ? "自动推进"
+                  : "结果完成后等待人确认"}
             </p>
             <p>{definition?.interaction.goal}</p>
             <details>

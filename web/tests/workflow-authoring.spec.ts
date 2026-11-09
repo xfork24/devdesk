@@ -582,7 +582,7 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
           "merge.review",
         ].includes(b.action),
       )
-      .every((b: any) => b.task?.renderer_version === "agent-task/v2"),
+      .every((b: any) => b.task?.renderer_version === "agent-task/v3"),
   ).toBe(true);
   expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
 });

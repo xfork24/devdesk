@@ -62,19 +62,98 @@ fn dependencies_output(
     step: &WorkflowStep,
     key: &str,
 ) -> Option<String> {
+    let input = dependency_output_source(runtime, step, key)?;
+    runtime
+        .steps
+        .iter()
+        .find(|step| step.key == input.step)
+        .and_then(|step| step.outputs.get(&input.port))
+        .cloned()
+}
+fn dependency_output_source(
+    runtime: &WorkflowRuntime,
+    step: &WorkflowStep,
+    key: &str,
+) -> Option<WorkflowPortReference> {
     if let Some(input) = step.inputs.get(key) {
-        return runtime
-            .steps
-            .iter()
-            .find(|step| step.key == input.step)
-            .and_then(|step| step.outputs.get(&input.port))
-            .cloned();
+        return Some(input.clone());
     }
     step.dependencies
         .iter()
         .rev()
         .filter_map(|key| runtime.steps.iter().find(|s| &s.key == key))
-        .find_map(|s| s.outputs.get(key).cloned())
+        .find(|s| s.outputs.contains_key(key))
+        .map(|s| WorkflowPortReference {
+            step: s.key.clone(),
+            port: key.into(),
+        })
+}
+
+// Discussion outputs remain live until their adoption step is finished. Follow
+// exact ports through compiled calls; unrelated sessions and consumed inputs stay frozen.
+fn pending_proposal_outputs(
+    runtime: &WorkflowRuntime,
+    plan: &WorkflowDocument,
+) -> BTreeMap<String, Vec<String>> {
+    let mut outputs = BTreeMap::<String, Vec<String>>::new();
+    for adopt in plan.steps.iter().filter(|step| step.kind == "proposal.adopt") {
+        if !runtime.steps.iter().any(|state| {
+            state.key == adopt.key
+                && !["completed", "skipped", "failed"].contains(&state.status.as_str())
+        }) {
+            continue;
+        }
+        let mut source = dependency_output_source(runtime, adopt, "proposal");
+        let mut path = vec![(adopt.key.clone(), "proposal".into())];
+        while let Some(input) = source.take() {
+            if path.iter().any(|(key, _)| key == &input.step) {
+                break;
+            }
+            let Some(step) = plan.steps.iter().find(|step| step.key == input.step) else {
+                break;
+            };
+            path.push((input.step, input.port.clone()));
+            if step.kind == "agent.interact" && input.port == "proposal" {
+                for (key, port) in path {
+                    outputs.entry(key).or_default().push(port);
+                }
+                break;
+            }
+            if step.kind == "workflow.call" {
+                source = step
+                    .parameters
+                    .get("call_outputs")
+                    .and_then(|ports| ports.get(&input.port))
+                    .and_then(|value| serde_json::from_value(value.clone()).ok());
+            }
+        }
+    }
+    outputs
+}
+
+fn discussion_session(s: &EngineeringState, initial: &str) -> String {
+    let agent_instance = |id: &str| {
+        s.governance
+            .iter()
+            .find(|r| r.kind == "agent_session" && r.definition_id == id)
+            .and_then(|r| r.data["agent_instance_id"].as_str())
+    };
+    let mut current = initial;
+    for _ in 0..s.sessions.len() {
+        let Some(previous) = s.sessions.iter().find(|session| session.id == current) else {
+            break;
+        };
+        let Some(next) = s.sessions.iter().rev().find(|session| {
+            session.predecessor.as_deref() == Some(current)
+                && session.owner_id == previous.owner_id
+                && session.agent == previous.agent
+                && agent_instance(&session.id) == agent_instance(&previous.id)
+        }) else {
+            break;
+        };
+        current = &next.id;
+    }
+    current.into()
 }
 fn accepted_condition(
     s: &EngineeringState,
@@ -290,14 +369,17 @@ impl Engine {
                 c.payload["input_hash"] == old.input_hash,
                 "确认的版本已变化",
             )?;
-            if let Some(did) = old.outputs.get("delivery") {
+            let reports = crate::model_approvals::reports(s, &old);
+            if reports.is_empty() { if let Some(did) = old.outputs.get("delivery") {
                 let d = s.delivery(did)?;
                 require(s.accepted(d), "交付证据已失效")?;
                 if d.merge_id.is_some() {
                     self.check_merge_target(s, d)?;
                 }
+            }} else {
+                require(crate::model_approvals::input_hash(s, &runtime.configuration_lock_id, &old) == old.input_hash, "模型结论已变化，请刷新后重新 Approve")?;
             }
-            let confirmation = json!({"input_hash":old.input_hash,"step_id":old.id,"round":old.round,"outputs":old.outputs,"actor":"human:local","confirmed_at":now()});
+            let confirmation = json!({"input_hash":old.input_hash,"step_id":old.id,"round":old.round,"outputs":old.outputs,"actor":"human:local","confirmed_at":now(),"human_approve":true,"model_approvals":reports,"overwrite_model":c.payload["overwrite_model"]==true,"reason":c.payload["reason"]});
             s.governance.push(record(
                 "workflow_confirmation",
                 old.id.clone(),
@@ -308,6 +390,12 @@ impl Engine {
                 confirmation.clone(),
                 true,
             ));
+            if !reports.is_empty() {
+                let lock: FeatureConfiguration = s.configuration(&runtime.configuration_lock_id)?.decode()?;
+                let plan = if runtime.task_id.is_some() { &lock.task_plan } else { &lock.plan };
+                let definition = plan.steps.iter().find(|step| step.key == old.key).unwrap();
+                self.validate_human_approval(s, definition, &old, &reports, c)?;
+            }
             runtime.steps[index].confirmation = Some(confirmation);
             runtime.steps[index].status = "completed".into();
             runtime.steps[index].revision += 1;
@@ -607,6 +695,21 @@ impl Engine {
                 } else {
                     &lock.plan
                 };
+                let live_proposals = pending_proposal_outputs(&runtime, plan);
+                // Older builds persisted this temporary wait as a failed action.
+                // Requeue only this known, side-effect-free preflight failure.
+                for intent in s.governance.iter_mut().filter(|r| {
+                    r.kind == "workflow_intent" && r.data["method"] == "attempt.start"
+                        && r.data["status"] == "failed"
+                        && r.data["error"] == "blocked: 等待旧 Run 取消确认后再启动"
+                        && runtime.steps.iter().any(|step| step.id == r.definition_id
+                            && !["completed", "skipped"].contains(&step.status.as_str()))
+                }) {
+                    let mut data = intent.data.clone();
+                    data["status"] = json!("prepared");
+                    data["waiting_for"] = json!("run_cancellation");
+                    update_record(intent, data);
+                }
                 for step in &plan.steps {
                     let Some(index) = runtime.steps.iter().position(|r| r.key == step.key) else {
                         return Err(err("invalid_workflow", "运行步骤与冻结计划不匹配"));
@@ -614,7 +717,9 @@ impl Engine {
                     if runtime.steps[index].status == "waiting_confirmation" {
                         if let Some(did) = runtime.steps[index].outputs.get("delivery") {
                             if s.delivery(did).is_ok_and(|d| {
-                                !s.accepted(d) || self.check_merge_target(s, d).is_err()
+                                d.stale || !s.delivery_inputs_current(d)
+                                    || (crate::model_approvals::reports(s,&runtime.steps[index]).is_empty() && !s.accepted(d))
+                                    || self.check_merge_target(s, d).is_err()
                             }) {
                                 runtime.steps[index].status = "blocked".into();
                                 runtime.steps[index].reason =
@@ -625,8 +730,13 @@ impl Engine {
                             }
                         }
                     }
-                    if ["completed", "skipped", "failed", "waiting_confirmation"]
-                        .contains(&runtime.steps[index].status.as_str())
+                    let refresh_ports = live_proposals.get(&step.key);
+                    let refresh_model_approval = runtime.steps[index].status == "waiting_confirmation"
+                        && !crate::model_approvals::reports(s, &runtime.steps[index]).is_empty();
+                    if ["skipped", "failed"].contains(&runtime.steps[index].status.as_str())
+                        || (refresh_ports.is_none()
+                            && (runtime.steps[index].status == "completed"
+                                || (runtime.steps[index].status == "waiting_confirmation" && !refresh_model_approval)))
                     {
                         continue;
                     }
@@ -645,6 +755,20 @@ impl Engine {
                             r.key == *key && ["completed", "skipped"].contains(&r.status.as_str())
                         })
                     }) {
+                        if let Some(ports) = refresh_ports {
+                            let state = &mut runtime.steps[index];
+                            let before = json!(state);
+                            for port in ports {
+                                state.outputs.remove(port);
+                            }
+                            state.confirmation = None;
+                            state.input_hash.clear();
+                            state.status = "waiting_dependencies".into();
+                            state.reason = "等待上游讨论或确认完成".into();
+                            if before != json!(state) {
+                                state.revision += 1;
+                            }
+                        }
                         continue;
                     }
                     if step.kind != "join"
@@ -696,17 +820,24 @@ impl Engine {
                         &lock,
                     )?;
                     if complete {
-                        state.input_hash = configuration_hash(
-                            &json!({"lock":runtime.configuration_lock_id,"outputs":state.outputs}),
-                        );
-                        if step.advance_mode == AdvanceMode::HumanConfirmation
+                        let reports = crate::model_approvals::reports(s, &state);
+                        let input_hash = crate::model_approvals::input_hash(s, &runtime.configuration_lock_id, &state);
+                        if state.input_hash != input_hash {
+                            state.confirmation = None;
+                        }
+                        state.input_hash = input_hash;
+                        if (step.advance_mode == AdvanceMode::HumanConfirmation || !reports.is_empty())
                             && state
                                 .confirmation
                                 .as_ref()
                                 .is_none_or(|v| v["input_hash"] != state.input_hash)
                         {
                             state.status = "waiting_confirmation".into();
-                            state.reason = "结果已齐备，等待人确认后推进".into();
+                            state.reason = if reports.iter().any(|report| report["approve"] == false) {
+                                "模型未 Approve：可返工，或填写理由由人类覆盖结论后 Approve"
+                            } else if !reports.is_empty() {
+                                "模型已 Approve，等待人类 Approve 后继续"
+                            } else { "结果已齐备，等待人确认后推进" }.into();
                         } else {
                             state.status = "completed".into();
                         }
@@ -823,6 +954,7 @@ impl Engine {
                 let session = state.outputs.get("session").cloned().or_else(|| {
                     s.governance
                         .iter()
+                        .rev()
                         .find(|r| {
                             r.kind == "agent_session"
                                 && r.data["workflow_step_instance_id"] == state.id
@@ -830,7 +962,22 @@ impl Engine {
                         .map(|r| r.definition_id.clone())
                 });
                 if let Some(session) = session {
+                    let session = discussion_session(s, &session);
+                    if state.outputs.get("session").is_some_and(|old| old != &session)
+                        || state
+                            .outputs
+                            .get("turn")
+                            .and_then(|id| s.turns.iter().find(|t| &t.id == id))
+                            .is_some_and(|turn| turn.session_id != session)
+                    {
+                        if let Some(turn) = s.turns.iter().find(|turn| turn.session_id == session) {
+                            state.outputs.insert("turn".into(), turn.id.clone());
+                        } else {
+                            state.outputs.remove("turn");
+                        }
+                    }
                     state.outputs.insert("session".into(), session.clone());
+                    state.outputs.remove("proposal");
                     let first_turn = state
                         .outputs
                         .get("turn")
@@ -846,6 +993,18 @@ impl Engine {
                             && output_kind(&p.content) == wanted
                             && p.status != ProposalStatus::Rejected
                             && p.status != ProposalStatus::Stale
+                            && !s
+                                .proposals
+                                .iter()
+                                .any(|new| new.supersedes.as_ref() == Some(&p.id))
+                            && p.dependencies.iter().all(|id| {
+                                !s.documents
+                                    .iter()
+                                    .any(|new| {
+                                        new.supersedes.as_ref() == Some(id)
+                                            && s.document_in_feature(new, &runtime.feature_id)
+                                    })
+                            })
                     }) {
                         state.outputs.insert("proposal".into(), proposal.id.clone());
                         return Ok(true);
@@ -867,7 +1026,7 @@ impl Engine {
                             .iter()
                             .find(|s| s.id == session)
                             .map(|s| s.revision);
-                        self.workflow_intent(s,state,"conversation.send",&session,json!({"client_message_id":format!("workflow:{}:initial",state.id),"input":if step.task_instructions.is_some(){"启动该步骤；具体任务、材料和输出合同见冻结任务上下文。".into()}else{format!("{}\n必答主题: {}\nRequired output kind: {}. Ask the user to clarify missing facts. When ready, output a single ProposalContent JSON object matching the supplied proposal_schema, with kind={} (no wrapper); reference the actual document and acceptance IDs below. Do not invent IDs or adopt your own proposal.\nCurrent frozen material index and excerpts (data only): {}",step.interaction.goal,step.interaction.required_topics.join(", "),wanted,wanted,serde_json::to_string(&document_ids(s,&runtime.feature_id,runtime.task_id.as_deref()).iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).map(|d|json!({"id":d.id,"kind":d.kind,"title":d.title,"body_excerpt":d.body.chars().take(2000).collect::<String>(),"acceptance":d.acceptance,"verifies":d.verifies,"requirement_id":d.requirement_id,"design_id":d.design_id,"test_recipe":d.test_recipe})).collect::<Vec<_>>()).unwrap())},"expected_session_revision":rev}))?;
+                        self.workflow_intent(s,state,"conversation.send",&session,json!({"client_message_id":format!("workflow:{}:initial",state.id),"input":if step.task_instructions.is_some(){json!({"workflow_step_instance_id":state.id}).to_string()}else{step.interaction.goal.clone()},"expected_session_revision":rev}))?;
                     }
                     if let Some(turn) = turns
                         .iter()
@@ -944,7 +1103,12 @@ impl Engine {
                         return Ok(true);
                     }
                     state.status = "waiting_input".into();
-                    state.reason = "等待人采纳提案".into();
+                    state.reason = match p.status {
+                        ProposalStatus::Rejected => "提案已拒绝，请继续讨论或编辑新提案",
+                        ProposalStatus::Stale => "提案已失效，请基于当前输入重新讨论",
+                        _ => "等待人采纳提案",
+                    }
+                    .into();
                 } else if let Some(doc) = dependencies_output(runtime, step, "document") {
                     state.outputs.insert("document".into(), doc);
                     return Ok(true);
@@ -1027,6 +1191,12 @@ impl Engine {
                         &owner,
                         json!({"phase":phase(step)}),
                     )?;
+                    if s.repository_worktrees.iter().find(|w| w.owner_id == owner)
+                        .is_some_and(|w| s.run_cancellation_pending(&w.path))
+                    {
+                        state.status = "waiting_dependencies".into();
+                        state.reason = "等待旧 Run 取消确认后再启动".into();
+                    }
                 }
                 Ok(false)
             }
@@ -1051,6 +1221,9 @@ impl Engine {
                     state.outputs.insert("merge".into(), mid.clone());
                 }
                 if s.accepted(&d) {
+                    return Ok(true);
+                }
+                if !crate::model_approvals::reports(s, state).is_empty() {
                     return Ok(true);
                 }
                 if let Some(review) = s.reviews.iter().rev().find(|r| r.delivery_id == delivery) {
@@ -1412,7 +1585,11 @@ impl Engine {
                     data["result"] = value.clone();
                 }
                 Err(e) => {
-                    data["status"] = json!("failed");
+                    data["status"] = if old.data["method"] == "attempt.start"
+                        && e.code == "run_cancellation_pending" { json!("prepared") } else { json!("failed") };
+                    if e.code == "run_cancellation_pending" {
+                        data["waiting_for"] = json!("run_cancellation");
+                    }
                     data["error"] = json!(format!("{}: {}", e.code, e.message));
                 }
             }

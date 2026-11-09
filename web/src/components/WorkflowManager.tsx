@@ -1167,7 +1167,9 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         />
                         <p className="muted">
                           此任务与 Role、所选 Skill、步骤 Spec 一起传给
-                          Agent。发布产生新修订，已有工程保持原冻结任务。
+                          Agent；业务提示词和内容检查要求在此配置。配方步骤还需配置下方各
+                          Agent
+                          节点的任务。发布产生新修订，已有工程保持原冻结任务。
                         </p>
                       </>
                     ) : null}

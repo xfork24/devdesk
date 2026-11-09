@@ -248,19 +248,6 @@ impl Engine {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StageCheck {
-    key: String,
-    passed: bool,
-    evidence: String,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StageAnswer {
-    summary: String,
-    checks: Vec<StageCheck>,
-}
 impl Engine {
     fn delivery_provenance(&self, s: &EngineeringState, d: &Delivery) -> Result<Vec<Value>> {
         let mut queue = d.source_deliveries.clone();
@@ -440,16 +427,7 @@ impl Engine {
                 };
                 let diff = self.git.diff(&code.context, &base, &code.revision)?;
                 let provenance = self.delivery_provenance(s, d)?;
-                let boundary = if d.task_id.is_some() {
-                    "This is a TASK boundary: assess only this TaskScope acceptance and its own Task TestRecipe. Feature TestPlan is context for later Feature closure, NOT required Task evidence. Other Tasks and independent Feature-level suites need not exist yet. A Task's own real Red, Green and verify must be present; do not demand Feature-wide Red/Green or code outside this Task."
-                } else if d.kind == "requirement" {
-                    "This is REQUIREMENT delivery only. Evaluate clarity, verifiable acceptance and failure paths. Design, TaskPlan, TestPlan, implementation and executable test results are deliberately not required yet."
-                } else if d.kind == "plan" {
-                    "This is SOLUTION PLANNING delivery. Evaluate adopted Requirement/Design/TaskPlan/TestPlan and recipes. Actual implementation and passing executable tests belong to later Task execution, not this boundary."
-                } else {
-                    "This is FEATURE CLOSURE or its mainline candidate: assess the full Feature test recipe and fixed accepted Task source deliveries. Feature closure does not require a new failing TDD Red; Red/Green belongs to each Task's original implementation."
-                };
-                let input=serde_json::to_string(&json!({"review_boundary":boundary,"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":diff},"frozen_inputs":d.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"specifications":frozen_specifications,"definitions":s.definitions.iter().filter(|v|if let Some(specs)=&frozen_specifications {specs.iter().any(|spec|spec.id==v.id)} else {v.id==r.binding.standard||v.family=="spec"}).collect::<Vec<_>>(),"code":code,"contract":"You are the independent Reviewer, not the author. Inspect the frozen Delivery, documents, actual Run evidence and code read-only. Assess only this delivery boundary: requirement and plan precede implementation, so absence of planned implementation is expected there. Return ONLY JSON {summary:string,checks:[{key:string,passed:boolean,evidence:string}]} with exactly four keys traceability, scope, tests, failure_paths. Base decisions on supplied facts and actual code where relevant. No files may be modified. Failed checks produce changes_requested; all checks passed produce pass. Never invent actual test/PR facts."})).map_err(|e|err("serialization",e.to_string()))?;
+                let input=serde_json::to_string(&json!({"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":diff},"frozen_inputs":d.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"specifications":frozen_specifications,"definitions":s.definitions.iter().filter(|v|if let Some(specs)=&frozen_specifications {specs.iter().any(|spec|spec.id==v.id)} else {v.id==r.binding.standard||v.family=="spec"}).collect::<Vec<_>>(),"code":code,"task":self.configured_run_prompt(s,r)?})).map_err(|e|err("serialization",e.to_string()))?;
                 let all_documents: std::collections::BTreeSet<Id> = d
                     .documents
                     .iter()
@@ -499,24 +477,7 @@ impl Engine {
                 context,
                 revision: self.live_code_revision(s, r)?,
             };
-            let contract = match r.node.as_str() {
-                "test_author" if a.phase == "closure" => {
-                    "Complete and correct the full Feature test suite ONLY within the frozen writable tests directories, preserving existing assertions and required behaviors. Address prior_review_findings; do not modify production code, weaken tests or bypass failures. Distinguish missing target module from transitive missing dependencies, syntax/runtime/import environment errors. Test a small loader helper with injected import errors and exact target module URL identity so only the intended missing target becomes an assertion. Feature closure does not fabricate a TDD Red: actual full-suite tests follow this stage. Use real filesystem tools. Return ONLY JSON {summary:string,completed:boolean}."
-                }
-                "test_author" => {
-                    "Author executable node:test tests ONLY in the frozen writable test directories for this Task's TestRecipe and acceptance criteria. Create behavior tests against the designed module exports, including invalid-input behavior. Missing implementation MUST fail an assert (use dynamic import caught by assert.fail, not an uncaught static module/import error); do not create implementation stubs or dependencies. Do not run tests: the coordinator performs actual Red. Do not inspect credentials or runtime state. Use actual filesystem tools to write files. Return ONLY JSON {summary:string,completed:boolean}; completed means files were authored, not that tests passed."
-                }
-                "implement" => {
-                    "Implement ONLY this Task's frozen scope and acceptance criteria in /work using actual file tools. The tests directory is immutable and must not be modified, removed or bypassed. Do not change other Task's modules or add dependency installation requirements. Match the adopted Design and independently authored tests. The coordinator runs Green and seals Git. Return ONLY JSON {summary:string,completed:boolean}; never claim a Delivery is accepted."
-                }
-                "docs" => {
-                    "Inspect the actual frozen code and inputs read-only. Write a concise implementation/usage document including exported interfaces, acceptance mapping, failure cases and test limitations. Do not modify files. Return ONLY JSON {summary:string,completed:boolean,document:{kind:doc,title:string,body:string}}. Do not claim acceptance or invent tests not present in the provided evidence."
-                }
-                _ => {
-                    "Validate the adopted planning materials for this stage. Read code only when useful. Do not modify files or claim a Delivery/Review is accepted. Check traceability, completeness, scope and failure paths. This is planning before implementation: absent planned code is expected; evaluate whether the adopted design and tests specify it adequately. Return ONLY JSON with summary:string and checks:[{key:string,passed:boolean,evidence:string}] for exactly these four keys: traceability, scope, tests, failure_paths. Do not produce revised documents; changes must be separately adopted as proposals."
-                }
-            };
-            let input=serde_json::to_string(&json!({"specifications":frozen_specifications,"authorization":{"run":r.id,"node":r.node,"phase":a.phase,"scope":a.scope,"role_revision":r.binding.agent,"tool_policy":session.runtime_binding.as_ref().map(|b|b.tool_policy)},"frozen_context":a.context_content,"prior_review_findings":s.reviews.iter().filter(|review|review.decision==Decision::ChangesRequested&&s.deliveries.iter().any(|d|d.id==review.delivery_id&&d.feature_id==a.feature_id&&d.task_id==a.task_id&&d.kind==a.phase)).map(|review|json!({"reason":review.reason,"checks":review.checks})).collect::<Vec<_>>(),"frozen_inputs":documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"stage_evidence":effective_runs(s,a).iter().filter(|run|run.status==Status::Succeeded).map(|run|json!({"node":run.node,"result":run.result})).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|d.id==r.binding.agent||d.id==r.binding.standard||r.binding.skills.contains(&d.id)||s.definitions.iter().find(|d|d.id==r.binding.standard).is_some_and(|standard|standard.slots.iter().any(|slot|slot.spec==d.id))||frozen_specifications.as_ref().is_some_and(|specs|specs.iter().any(|spec|spec.id==d.id))).collect::<Vec<_>>(),"code":code,"contract":contract})).map_err(|e|err("serialization",e.to_string()))?;
+            let input=serde_json::to_string(&json!({"specifications":frozen_specifications,"authorization":{"run":r.id,"node":r.node,"phase":a.phase,"scope":a.scope,"role_revision":r.binding.agent,"tool_policy":session.runtime_binding.as_ref().map(|b|b.tool_policy)},"frozen_context":a.context_content,"prior_review_findings":s.reviews.iter().filter(|review|review.decision==Decision::ChangesRequested&&s.deliveries.iter().any(|d|d.id==review.delivery_id&&d.feature_id==a.feature_id&&d.task_id==a.task_id&&d.kind==a.phase)).map(|review|json!({"reason":review.reason,"checks":review.checks})).collect::<Vec<_>>(),"frozen_inputs":documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"stage_evidence":effective_runs(s,a).iter().filter(|run|run.status==Status::Succeeded).map(|run|json!({"node":run.node,"result":run.result})).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|d.id==r.binding.agent||d.id==r.binding.standard||r.binding.skills.contains(&d.id)||s.definitions.iter().find(|d|d.id==r.binding.standard).is_some_and(|standard|standard.slots.iter().any(|slot|slot.spec==d.id))||frozen_specifications.as_ref().is_some_and(|specs|specs.iter().any(|spec|spec.id==d.id))).collect::<Vec<_>>(),"code":code,"task":self.configured_run_prompt(s,r)?})).map_err(|e|err("serialization",e.to_string()))?;
             self.enqueue_live_turn(r, session, &input, &documents, code)?;
             return Ok(None);
         };
@@ -639,28 +600,28 @@ impl Engine {
             output["code_revision"] = json!(revision);
             return Ok(Some(output));
         }
-        let answer = match serde_json::from_str::<StageAnswer>(clean) {
-            Ok(answer)
-                if !answer.summary.trim().is_empty()
-                    && answer.checks.len() == 4
-                    && ["traceability", "scope", "tests", "failure_paths"]
-                        .iter()
-                        .all(|key| answer.checks.iter().filter(|c| c.key == *key).count() == 1)
-                    && answer
-                        .checks
-                        .iter()
-                        .all(|c| !c.key.trim().is_empty() && !c.evidence.trim().is_empty()) =>
-            {
-                answer
-            }
-            _ => {
+        let answer = match parse_stage_answer(clean) {
+            Ok(answer) => answer,
+            Err(error) => {
                 return Ok(Some(
-                    json!({"status":"failed","failure_type":"adapter_contract","message":"原生轮次完成，但阶段结果不符合结构契约","turn_id":turn.id,"origin":"external"}),
+                    json!({"status":"failed","failure_type":"adapter_contract","message":error.message,"output_contract":STAGE_ANSWER_CONTRACT,"expected_schema":stage_answer_schema(),"turn_id":turn.id,"origin":"external"}),
                 ));
             }
         };
+        let input_context = serde_json::from_str::<Value>(&turn.input).unwrap_or(Value::Null);
+        let approval_required = input_context["output_contract"]["id"] == STAGE_ANSWER_CONTRACT;
+        if approval_required && answer.approve.is_none() {
+            return Ok(Some(json!({"status":"failed","failure_type":"adapter_contract",
+                "message":"正式交付输出 $.approve：必须给出模型 Approve 布尔结论", "turn_id":turn.id,"origin":"external"})));
+        }
         let passed = answer.checks.iter().all(|c| c.passed);
-        let mut output = json!({"status":if passed||r.node.starts_with("review:"){"succeeded"}else{"failed"},"failure_type":if passed||r.node.starts_with("review:"){Value::Null}else{json!("quality")},"summary":answer.summary,"checks":answer.checks.iter().map(|c|json!({"key":c.key,"passed":c.passed,"evidence":c.evidence})).collect::<Vec<_>>(),"turn_id":turn.id,"origin":"external"});
+        let mut output = json!({"status":if approval_required||passed||r.node.starts_with("review:"){"succeeded"}else{"failed"},"failure_type":if approval_required||passed||r.node.starts_with("review:"){Value::Null}else{json!("quality")},"summary":answer.summary,"checks":answer.checks.iter().map(|c|json!({"key":c.key,"passed":c.passed,"evidence":c.evidence})).collect::<Vec<_>>(),"turn_id":turn.id,"origin":"external"});
+        if approval_required {
+            output["model_approve"] = json!(passed);
+            output["approval_required"] = json!(true);
+            output["skill_refs"] = json!(input_context["quality_basis"]["skills"].as_array()
+                .map(|skills|skills.iter().filter_map(|skill|skill["id"].as_str()).collect::<Vec<_>>()));
+        }
         if r.node.starts_with("review:") {
             output["review_decision"] = json!(if passed { "pass" } else { "changes_requested" });
             output["review_delivery"] = json!(r.node.trim_start_matches("review:"));
@@ -675,6 +636,18 @@ impl Engine {
         documents: &[Id],
         code: FrozenCode,
     ) -> Result<()> {
+        let snapshot = self.store.snapshot()?;
+        let mut value: Value = serde_json::from_str(input)
+            .map_err(|e| err("serialization", e.to_string()))?;
+        if let Some(contract) = value.get("task").and_then(|task|task.get("output_contract")).cloned() {
+            value["output_contract"] = contract;
+        }
+        value["quality_basis"] = self.skill_quality_basis(&snapshot, run, documents)?;
+        if !["test_author", "implement", "docs"].contains(&run.node.as_str()) {
+            value["output_contract"] = stage_answer_output_contract();
+        }
+        let input = serde_json::to_string(&value).map_err(|e| err("serialization", e.to_string()))?;
+        let input = input.as_str();
         require(input.len() <= 512 * 1024, "正式运行输入超出协议限制")?;
         self.store.transact(None, &mut |s| {
             let current = s

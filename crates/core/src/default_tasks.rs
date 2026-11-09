@@ -9,6 +9,38 @@ macro_rules! task {
         ))
     };
 }
+pub(crate) fn legacy_goal(key: &str, task: bool) -> Option<&'static str> {
+    Some(match key {
+        "requirement_discussion" | "requirement_adopt" => task!("prd"),
+        "requirement_execute" => task!("attempt-requirement"),
+        "requirement_review" => task!("review-requirement"),
+        "design_discussion" | "design_adopt" => task!("design"),
+        "task_discussion" | "task_adopt" => task!("planning"),
+        "test_discussion" | "test_adopt" => task!("discussion-tests"),
+        "solution_execute" => task!("attempt-planning"),
+        "solution_review" => task!("review-plan"),
+        "implementation" => task!("attempt-implementation"),
+        "review" => task!("review-task"),
+        "closure" => task!("attempt-closure"),
+        "closure_review" => task!("review-feature"),
+        "merge_review" if task => task!("review-candidate-task"),
+        "merge_review" => task!("review-candidate-feature"),
+        _ => return None,
+    })
+}
+pub(crate) fn legacy_node_prompts(phase: &str) -> Value {
+    match phase {
+        "requirement_definition" => json!({"requirement_validate":task!("validate-requirement")}),
+        "solution_planning" => {
+            json!({"plan_validate":task!("validate-plan"),"test_plan_validate":task!("validate-tests")})
+        }
+        "implementation" => {
+            json!({"test_author":task!("author-task-tests"),"implement":task!("implement"),"docs":task!("docs")})
+        }
+        "closure" => json!({"test_author":task!("author-feature-tests"),"docs":task!("docs")}),
+        _ => json!({}),
+    }
+}
 fn phase(doc: &WorkflowDocument, step: &WorkflowStep, seen: &mut Vec<String>) -> String {
     if seen.contains(&step.key) {
         return String::new();
@@ -50,7 +82,7 @@ pub(crate) fn upgrade_document(
         if action_requires_task(&step.kind) {
             let p = phase(doc, step, &mut vec![]);
             let body = match step.kind.as_str() {
-                "agent.interact" if preserve_goal && !step.interaction.goal.trim().is_empty() => {
+                _ if preserve_goal && !step.interaction.goal.trim().is_empty() => {
                     step.interaction.goal.as_str()
                 }
                 "agent.interact" => match step.interaction.output_kind.as_str() {
@@ -90,18 +122,28 @@ pub(crate) fn upgrade_document(
                 _ => return Err(err("task_upgrade_required", "没有已验证的旧动作任务映射")),
             };
             step.task_instructions = Some(body.into());
+            let node_prompts = step
+                .parameters
+                .get("agent_prompts")
+                .cloned()
+                .unwrap_or(json!({}));
             for node in &mut step.execution_recipe {
                 node.task_instructions = if recipe_node_is_agent(&node.key) {
                     Some(
-                        match node.key.as_str() {
-                            "requirement_validate" => task!("validate-requirement"),
-                            "plan_validate" => task!("validate-plan"),
-                            "test_plan_validate" => task!("validate-tests"),
-                            "test_author" if p == "closure" => task!("author-feature-tests"),
-                            "test_author" => task!("author-task-tests"),
-                            "implement" => task!("implement"),
-                            "docs" => task!("docs"),
-                            _ => return Err(err("task_upgrade_required", "未知 Agent 配方节点")),
+                        match node_prompts[&node.key].as_str() {
+                            Some(prompt) => prompt,
+                            None => match node.key.as_str() {
+                                "requirement_validate" => task!("validate-requirement"),
+                                "plan_validate" => task!("validate-plan"),
+                                "test_plan_validate" => task!("validate-tests"),
+                                "test_author" if p == "closure" => task!("author-feature-tests"),
+                                "test_author" => task!("author-task-tests"),
+                                "implement" => task!("implement"),
+                                "docs" => task!("docs"),
+                                _ => {
+                                    return Err(err("task_upgrade_required", "未知 Agent 配方节点"));
+                                }
+                            },
                         }
                         .into(),
                     )
@@ -109,6 +151,7 @@ pub(crate) fn upgrade_document(
                     None
                 };
             }
+            step.parameters.remove("agent_prompts");
         }
         step.interaction.goal.clear();
     }
@@ -133,13 +176,20 @@ pub(crate) fn seed_task_workflows(s: &mut EngineeringState) {
             doc.subworkflow_refs
                 .insert("task".into(), DEFAULT_TASK_WORKFLOW_V3_ID.into());
         }
+        let previous = s
+            .governance
+            .iter()
+            .filter(|r| r.kind == "workflow" && r.definition_id == parent.definition_id)
+            .max_by_key(|r| r.version)
+            .map(|r| r.id.clone())
+            .unwrap_or(parent.id);
         let mut r = crate::governance::record(
             "workflow",
             parent.definition_id,
             parent.scope,
             parent.name,
-            3,
-            Some(parent.id),
+            4,
+            Some(previous),
             json!(doc),
             true,
         );

@@ -236,6 +236,10 @@ export function RoleConversation({
   const lastCompleted = detail?.turns.find(
     (t: Row) => t.status === "completed",
   );
+  const formalOutput = Boolean(
+    detail?.output_contract?.id &&
+    detail.output_contract.id !== "proposal-content/v1",
+  );
   const scopedRequest = useCallback(
     (method: string, params: Row = {}) =>
       request(method, {
@@ -940,7 +944,13 @@ export function RoleConversation({
               发送
             </ActionButton>
           </ActionForm>
-          <details hidden={global}>
+          {formalOutput && (
+            <p className="muted">
+              该会话用于正式执行或校验。请在“执行与交付”的对应步骤查看模型结论并执行人类
+              Approve。
+            </p>
+          )}
+          <details hidden={global || formalOutput}>
             <summary>结构化提案与采纳</summary>
             <p className="muted">
               请让 Agent 输出 ProposalContent

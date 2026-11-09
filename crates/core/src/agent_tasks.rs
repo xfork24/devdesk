@@ -23,7 +23,7 @@ fn definition(binding: &ConfigurationRecord) -> Result<WorkflowTaskDefinition> {
     task.decode_step()?;
     Ok(task)
 }
-fn binding_for_run<'a>(s: &'a EngineeringState, run: &Run) -> Option<&'a ConfigurationRecord> {
+pub(crate) fn binding_for_run<'a>(s: &'a EngineeringState, run: &Run) -> Option<&'a ConfigurationRecord> {
     let mut current = Some(run);
     let mut seen = vec![];
     while let Some(r) = current {
@@ -177,7 +177,7 @@ fn task_sections(def: &WorkflowTaskDefinition, node: Option<&str>) -> Result<Val
         })
         .transpose()?;
     Ok(
-        json!({"task":{"instructions":step.task_instructions.as_deref().ok_or_else(||err("task_contract_mismatch","步骤公共任务缺失"))?,"node_instructions":node_task,"required_topics":step.interaction.required_topics},"stage_context":def.stage,"output_contract":agent_task_output_contract_for_renderer(&step,node,&def.renderer_version)}),
+        json!({"task":{"instructions":step.task_instructions.as_deref().ok_or_else(||err("task_contract_mismatch","步骤公共任务缺失"))?,"node_instructions":node_task,"required_topics":step.interaction.required_topics},"stage_context":def.stage,"output_contract":agent_task_output_contract(&step,node)}),
     )
 }
 fn render(
@@ -253,10 +253,10 @@ fn render(
     }
     let mut content = json!({"renderer_version":def.renderer_version,
         "source":{"workflow_revision_id":def.workflow_revision_id,"path":def.path,"source_step":def.source_step,"feature_lock_id":binding.data["feature_lock_id"],"workflow_instance_id":binding.data["workflow_instance_id"],"step_instance_id":binding.data["step_instance_id"],"round":binding.data["round"],"recipe_node":node,"project_id":session.project_id,"feature_id":session.feature_id,"task_id":session.task_id,"session_id":session.id,"run_id":turn.run_id,"turn_id":turn.id},
-"specifications":specs,"input":if turn.run_id.is_some(){serde_json::from_str::<Value>(&turn.input).unwrap_or(json!(turn.input))}else{json!(turn.input)},
+"specifications":specs,"quality_basis":{"skills":base.skills,"specifications":specs},"input":if turn.run_id.is_some(){serde_json::from_str::<Value>(&turn.input).unwrap_or(json!(turn.input))}else{json!(turn.input)},
         "inputs":inputs,"materials":documents,"context":context,"historical_context":historical_context,"code_view":turn.code_view,
         "authorization":session.runtime_binding.as_ref().map(|b|json!({"permissions":b.permissions,"tool_policy":b.tool_policy,"work_type":b.work_type,"writable_paths":b.writable_paths,"read_only_paths":b.read_only_paths})),
-        "output_contract":agent_task_output_contract_for_renderer(&step,node,&def.renderer_version)});
+        "output_contract":agent_task_output_contract(&step,node)});
     content
         .as_object_mut()
         .unwrap()

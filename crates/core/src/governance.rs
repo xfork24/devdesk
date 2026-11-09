@@ -346,6 +346,10 @@ pub(crate) fn default_workflow(task: bool) -> WorkflowDocument {
         if !phase.is_empty() {
             params.insert("phase".into(), json!(phase));
         }
+        let prompts = crate::default_tasks::legacy_node_prompts(phase);
+        if prompts.as_object().is_some_and(|prompts| !prompts.is_empty()) {
+            params.insert("agent_prompts".into(), prompts);
+        }
         let recipe = if phase == "implementation" {
             vec![
                 ("test_author", AgentRole::Tester, vec![], true),
@@ -388,7 +392,7 @@ pub(crate) fn default_workflow(task: bool) -> WorkflowDocument {
                     "discussion"
                 }
                 .into(),
-                goal: format!("完成{name}，明确目标、约束和验收条件，产生可核验的结构化结果。"),
+                goal: crate::default_tasks::legacy_goal(key, task).unwrap_or(name).into(),
                 output_kind: phase.into(),
                 max_turns: 30,
                 ..Default::default()
@@ -2129,7 +2133,8 @@ impl Engine {
                                 } else {
                                     allowed
                                 };
-                            json!({"id":step.id,"rework_entries":rework_entries,"allowed":allowed})
+                            json!({"id":step.id,"rework_entries":rework_entries,"allowed":allowed,
+                                "model_approvals":crate::model_approvals::reports(&s, step)})
                         })
                         .collect();
                     let children: Vec<_> = s.governance.iter().filter(|child| child.kind == "workflow_instance"

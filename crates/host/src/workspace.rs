@@ -413,6 +413,7 @@ impl Workspace {
             .target
             .as_deref()
             .ok_or_else(|| err("invalid_params", "缺少 Attempt target"))?;
+        e.validate_attempt_cancellation(target)?;
         let task = state.tasks.iter().find(|t| t.id == target);
         let phase_value = command.payload["phase"]
             .as_str()

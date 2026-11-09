@@ -1,5 +1,16 @@
 //! Versioned runtime definitions and concrete execution instances.
 use crate::*;
+impl EngineeringState {
+    /// A cancellation is not complete until both the logical Run and its writer have stopped.
+    pub fn run_cancellation_pending(&self, worktree: &str) -> bool {
+        self.runs.iter().any(|run| {
+            run.worktree == worktree && run.cancel_requested
+                && (run.status == Status::Running
+                    || self.turns.iter().any(|t| t.run_id.as_ref() == Some(&run.id) && t.status.active())
+                    || self.executions.iter().any(|e| e.run_id.as_ref() == Some(&run.id) && !e.writer_revoked))
+        })
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
     pub repository: String,

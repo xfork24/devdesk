@@ -128,7 +128,7 @@ test("正式执行分别编辑公共和 Agent 节点任务，系统测试节点�
 }) => {
   await setup(page);
   await page.goto(
-    "/?tab=workflows&workflow_id=builtin-workflow-task-sol-high-v3",
+    "/?tab=workflows&workflow_id=builtin-workflow-task-sol-high-v4",
   );
   const editor = page.getByRole("region", { name: "Workflow 编辑器" });
   await editor.getByRole("button", { name: /TDD 与实现/ }).click();

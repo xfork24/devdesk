@@ -700,8 +700,12 @@ impl Engine {
                 .collect();
             let next = events.last().map_or(cursor, |e| e.sequence);
             let turns: Vec<_> = s.turns.iter().filter(|t| t.session_id == sid).collect();
+            let output_contract = s.governance.iter().find(|r| r.kind == "execution_task_binding" && r.definition_id == sid)
+                .and_then(|r| serde_json::from_value::<WorkflowTaskDefinition>(r.data["definition"].clone()).ok()
+                    .and_then(|definition| definition.decode_step().ok())
+                    .map(|step| agent_task_output_contract(&step, r.data["recipe_node"].as_str())));
             Ok(
-                json!({"session":session,"agent_instance_id":session_instance(&s,session),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
+                json!({"session":session,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

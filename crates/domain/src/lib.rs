@@ -4,6 +4,8 @@ mod configuration;
 pub use configuration::*;
 mod agent_task;
 pub use agent_task::*;
+mod stage_answer;
+pub use stage_answer::*;
 mod permission;
 pub use permission::*;
 mod permission_profile;
@@ -531,12 +533,25 @@ impl EngineeringState {
             .flat_map(|o| o.items.iter())
             .collect::<Vec<_>>();
         let review_ok = pass || waived.contains(&&"review".to_string());
+        let model_run = self.reviews.iter().rev().find(|r| r.delivery_id == d.id)
+            .and_then(|review| review.run_id.as_deref())
+            .and_then(|id| self.runs.iter().find(|run| run.id == id))
+            .filter(|run| run.result.as_ref().is_some_and(|result| result["approval_required"] == true));
+        let human_ok = model_run.is_none_or(|run| {
+            waived.contains(&&"review".to_string()) || self.governance.iter().any(|record| {
+                record.kind == "workflow_confirmation" && record.data["human_approve"] == true
+                    && record.data["outputs"]["delivery"] == d.id
+                    && record.data["model_approvals"].as_array().is_some_and(|reports| {
+                        reports.iter().any(|report| report["run_id"] == run.id)
+                    })
+            })
+        });
         let tests_ok = d.evidence.iter().all(|id| {
             self.runs.iter().find(|r| &r.id == id).is_some_and(|r| {
                 r.status == Status::Succeeded || waived.contains(&&format!("test:{id}"))
             })
         });
-        review_ok && tests_ok
+        review_ok && human_ok && tests_ok
     }
     pub fn planning_accepted(&self, fid: &str) -> bool {
         if self.feature_configuration(fid).is_some() {

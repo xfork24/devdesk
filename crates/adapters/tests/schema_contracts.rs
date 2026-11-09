@@ -47,6 +47,22 @@ fn all_published_schemas_and_definitions_resolve_offline() {
 }
 
 #[test]
+fn formal_stage_schema_agrees_with_model_approval_examples_and_rejects_wrong_checks() {
+    let example=stage_answer_example();
+    SCHEMAS.assert_valid("stage-answer.schema.json",&example);
+    let validator=jsonschema::validator_for(&stage_answer_output_contract()["schema"]).unwrap();
+    assert!(validator.is_valid(&example));
+    for key in ["approve","summary","checks"] {
+        let mut bad=example.clone();bad.as_object_mut().unwrap().remove(key);
+        assert!(!validator.is_valid(&bad),"{key}");
+    }
+    let mut bad=example.clone();bad["checks"][0]["evidence"]=json!(["untyped evidence"]);
+    assert!(!validator.is_valid(&bad));
+    let mut bad=example;bad["checks"][0]["key"]=json!("scope");
+    assert!(!validator.is_valid(&bad));
+}
+
+#[test]
 fn published_configuration_wrappers_accept_current_builtin_revisions() {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(SqliteStore::open(dir.path()).unwrap());

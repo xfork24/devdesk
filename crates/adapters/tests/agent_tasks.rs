@@ -427,8 +427,34 @@ fn every_agent_step_and_feature_recipe_dispatches_its_task_role_skills_and_specs
         schemas::SCHEMAS.assert_valid("agent-task.schema.json", &record["task"]);
         e.tick_conversations(4).unwrap();
         e.tick_conversations(4).unwrap();
+        let session_detail=e.query("query.session",&json!({"id":sid}),4).unwrap();
+        if key != "requirement_discussion" {
+            let error=command(&e,"proposal.extract",None,json!({"turn_id":sent["id"],"target":f})).unwrap_err();
+            assert!(error.message.contains("正式交付或评审结果不属于需求提案"));
+            assert_ne!(session_detail["output_contract"]["id"],"proposal-content/v1");
+        }
         let captured = port.calls.lock().unwrap().last().unwrap().clone();
         let frozen = captured.task.as_ref().unwrap();
+        assert!(!frozen.content["quality_basis"]["skills"].as_array().unwrap().is_empty());
+        if frozen.content["output_contract"]["id"] == STAGE_ANSWER_CONTRACT {
+            assert_eq!(frozen.content["output_contract"]["schema"]["properties"]["checks"]["items"]["properties"]["passed"]["type"], "boolean");
+            assert!(frozen.content["output_contract"]["required_fields"].as_array().unwrap().contains(&json!("approve")));
+            // Preserve upstream v1/v2 snapshots and the pre-rebase local v1 Approve variant.
+            let step=frozen.definition.decode_step().unwrap();
+            for renderer in [LEGACY_TASK_RENDERER,TYPED_TASK_RENDERER] {
+                let mut old_definition=frozen.definition.clone();old_definition.renderer_version=renderer.into();
+                let mut old_content=frozen.content.clone();old_content["renderer_version"]=json!(renderer);
+                old_content["output_contract"]=agent_task_output_contract_for_renderer(&step,node,renderer);
+                let old=FrozenAgentTask::new(old_definition.clone(),frozen.base.clone(),old_content.clone()).unwrap();
+                let bytes=serde_json::to_vec(&old).unwrap();
+                let restored:FrozenAgentTask=serde_json::from_slice(&bytes).unwrap();restored.validate().unwrap();
+                assert_eq!(serde_json::to_vec(&restored).unwrap(),bytes);
+                if renderer==LEGACY_TASK_RENDERER {
+                    old_content["output_contract"].as_object_mut().unwrap().extend(stage_answer_output_contract().as_object().unwrap().clone());
+                    FrozenAgentTask::new(old_definition,frozen.base.clone(),old_content).unwrap().validate().unwrap();
+                }
+            }
+        }
         let native = devdesk_adapters::harness::provider_turn_text(&captured).unwrap();
         assert_eq!(native, frozen.rendered_input);
         assert_eq!(
@@ -1214,12 +1240,17 @@ fn output_contract_describes_typed_evidence_checks_and_preserves_legacy_snapshot
     step.kind = "attempt.execute".into();
     let output = agent_task_output_contract(&step, Some("requirement_validate"));
     let validator = jsonschema::validator_for(&output["output_schema"]).unwrap();
-    let valid = json!({"summary":"verified","checks":[
+    let valid = json!({"approve":true,"summary":"verified","checks":[
         {"key":"traceability","passed":true,"evidence":"adopted PRD"},
         {"key":"scope","passed":true,"evidence":"one module"},
         {"key":"tests","passed":true,"evidence":"verifiable acceptance; implementation not required yet"},
         {"key":"failure_paths","passed":true,"evidence":"invalid input TypeError"}]});
     assert!(validator.is_valid(&valid));
+    assert_eq!(output["output_schema"],output["schema"]);
+    let historical=agent_task_output_contract_for_renderer(&step,Some("requirement_validate"),TYPED_TASK_RENDERER);
+    let mut old_valid=valid.clone();old_valid.as_object_mut().unwrap().remove("approve");
+    assert!(jsonschema::validator_for(&historical["output_schema"]).unwrap().is_valid(&old_valid));
+    assert!(!validator.is_valid(&old_valid));
     let mut wrong = valid.clone();
     wrong["checks"][0] = json!({"name":"traceability","status":"pass","evidence":["PRD"]});
     assert!(!validator.is_valid(&wrong));

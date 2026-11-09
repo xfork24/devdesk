@@ -579,7 +579,9 @@ fn recorded_native_stage_with_kind(
                 project_id: project.clone(),
                 session_id: sid.clone(),
                 client_message_id: id(),
-                input: "Validate frozen requirement".into(),
+                input: if serde_json::from_str::<Value>(answer).ok().is_some_and(|v| v.get("approve").is_some()) {
+                    json!({"output_contract":stage_answer_output_contract()}).to_string()
+                } else { "Validate frozen requirement".into() },
                 input_digest: "c".repeat(64),
                 input_snapshot: None,
                 code_view: None,
@@ -635,6 +637,162 @@ fn native_stage_answer() -> String {
     let checks = ["traceability", "scope", "tests", "failure_paths"]
         .map(|key| json!({"key":key,"passed":true,"evidence":"Explicit fixture input"}));
     json!({"summary":"Recorded native validation","checks":checks}).to_string()
+}
+fn approval_answer(approved: bool) -> String {
+    let mut value: Value = serde_json::from_str(&native_stage_answer()).unwrap();
+    value["approve"] = json!(approved);
+    if !approved { value["checks"][3]["passed"] = json!(false); value["checks"][3]["evidence"] = json!("PRD 未说明输入失败后的恢复行为，需要补充具体行为。"); }
+    value.to_string()
+}
+fn workflow_runtime(e: &Engine, feature: &str) -> WorkflowRuntime {
+    e.store.snapshot().unwrap().governance.iter().find(|r|r.kind=="workflow_instance"&&r.definition_id==feature).unwrap().decode().unwrap()
+}
+fn attach_validation(e: &Engine, run: &str) -> (String,String) {
+    let snapshot=e.store.snapshot().unwrap();
+    let attempt=snapshot.runs.iter().find(|r|r.id==run).unwrap().attempt_id.clone().unwrap();
+    let feature=snapshot.attempt(&attempt).unwrap().feature_id.clone();
+    e.store.transact(None,&mut |s| {
+        let record=s.governance.iter_mut().find(|r|r.kind=="workflow_instance"&&r.definition_id==feature).unwrap();
+        let mut runtime:WorkflowRuntime=record.decode()?;
+        for step in &mut runtime.steps {
+            if step.key=="requirement_execute" {step.outputs.insert("attempt".into(),attempt.clone());step.status="active".into();break;}
+            step.status="completed".into();
+        }
+        record.data=json!(runtime);record.content_hash=configuration_hash(&record.data);record.revision+=1;
+        Ok(Value::Null)
+    }).unwrap();
+    (feature,attempt)
+}
+fn submit_pending_delivery(e:&Engine) -> String {
+    e.evaluate_workflows().unwrap();
+    let intent=e.pending_workflow_intents().unwrap().into_iter().find(|r|r.data["method"]=="delivery.submit").unwrap();
+    let result=e.execute("delivery.submit",serde_json::from_value(intent.data["command"].clone()).unwrap());
+    e.observe_workflow_intent(&intent.id,&result).unwrap();
+    result.unwrap()["id"].as_str().unwrap().into()
+}
+fn confirm_step(e:&Engine,step:&WorkflowStepRuntime,overwrite:bool,reason:&str)->Result<Value> {
+    e.execute("workflow.step.confirm",Command{command_id:id(),target:Some(step.id.clone()),expected_revision:Some(step.revision),payload:json!({"input_hash":step.input_hash,"overwrite_model":overwrite,"reason":reason})})
+}
+
+#[test]
+fn model_content_approval_always_waits_for_a_human_and_rejection_can_be_overwritten() {
+    for approved in [true,false] {
+        let dir=tempfile::tempdir().unwrap();let e=engine(dir.path());
+        let run=recorded_native_stage(&e,&approval_answer(approved),true,false);
+        e.tick(4).unwrap();
+        let (feature,_)=attach_validation(&e,&run);
+        submit_pending_delivery(&e);
+        e.evaluate_workflows().unwrap();
+        let runtime=workflow_runtime(&e,&feature);
+        let step=runtime.steps.iter().find(|step|step.key=="requirement_execute").unwrap();
+        assert_eq!(step.status,"waiting_confirmation");
+        assert_eq!(runtime.steps.iter().find(|s|s.key=="requirement_review").unwrap().status,"pending");
+        let original=e.store.snapshot().unwrap().runs.iter().find(|r|r.id==run).unwrap().result.clone();
+        if !approved {
+            assert!(confirm_step(&e,step,false,"").is_err());
+            assert!(confirm_step(&e,step,true,"").is_err());
+        }
+        confirm_step(&e,step,!approved,"测试阶段确认接受当前范围，保留后续补充项").unwrap();
+        assert_eq!(workflow_runtime(&e,&feature).steps.iter().find(|s|s.key==step.key).unwrap().status,"completed");
+        let s=e.store.snapshot().unwrap();
+        assert_eq!(s.runs.iter().find(|r|r.id==run).unwrap().result,original);
+        let record=s.governance.iter().find(|r|r.kind=="workflow_confirmation"&&r.definition_id==step.id).unwrap();
+        assert_eq!(record.data["human_approve"],true);
+        assert_eq!(record.data["overwrite_model"],!approved);
+    }
+}
+
+fn recorded_review(e:&Engine, validation:&str, delivery:&str, approved:bool)->String {
+    let snapshot=e.store.snapshot().unwrap();
+    let source=snapshot.runs.iter().find(|r|r.id==validation).unwrap().clone();
+    let feature=snapshot.delivery(delivery).unwrap().feature_id.clone();
+    let mut reviewer=snapshot.sessions.iter().find(|session|session.id==source.session_id).unwrap().clone();
+    reviewer.id=id();reviewer.agent=default_configured_agent_id("reviewer");
+    reviewer.external_session=Some(format!("reviewer-{}",reviewer.id));
+    reviewer.runtime_binding.as_mut().unwrap().work_type=WorkType::Review;
+    let mut run=source.clone();run.id=id();run.node=format!("review:{delivery}");run.session_id=reviewer.id.clone();
+    run.binding.agent=reviewer.agent.clone();run.binding.skills=snapshot.definitions.iter().find(|d|d.id==reviewer.agent).unwrap().agent_profile.as_ref().unwrap().skill_revisions.clone();
+    run.status=Status::Running;run.finished=None;run.result=None;run.result_artifact=None;
+    let original_turn=snapshot.turns.iter().find(|turn|turn.run_id.as_ref()==Some(&source.id)).unwrap();
+    let mut turn=original_turn.clone();turn.id=id();turn.session_id=reviewer.id.clone();turn.run_id=Some(run.id.clone());turn.client_message_id=id();
+    let protocol=e.artifacts.seal(&feature,None,"protocol","Independent reviewer fixture with stop proof").unwrap();
+    e.store.transact(None,&mut |s| {
+        s.sessions.push(reviewer.clone());s.runs.push(run.clone());s.turns.push(turn.clone());s.artifacts.push(protocol.clone());
+        s.executions.push(RuntimeExecution{id:id(),session_id:reviewer.id.clone(),run_id:Some(run.id.clone()),operation_id:run.id.clone(),container_id:Some("fixture-reviewer".into()),image_digest:format!("sha256:{}","a".repeat(64)),status:Status::Released,writer_revoked:true,started:Some(1),finished:Some(2),protocol_artifact:Some(protocol.id.clone()),kind:RuntimeExecutionKind::Harness,permissions:None});
+        s.conversation_events.push(ConversationEvent{id:id(),session_id:reviewer.id.clone(),turn_id:turn.id.clone(),sequence:1,deduplication_key:id(),kind:ConversationEventKind::Assistant,content:approval_answer(approved),artifact_id:None,time:2,mode:MessageMode::Full,provider_item:None});
+        Ok(Value::Null)
+    }).unwrap();
+    run.id
+}
+
+#[test]
+fn independent_review_requires_human_approval_and_overwrite_keeps_the_model_rejection() {
+    for approved in [true,false] {
+        let dir=tempfile::tempdir().unwrap();let e=engine(dir.path());
+        let validation=recorded_native_stage(&e,&approval_answer(true),true,false);
+        e.tick(4).unwrap();let (feature,_)=attach_validation(&e,&validation);
+        let delivery=submit_pending_delivery(&e);e.evaluate_workflows().unwrap();
+        let state=workflow_runtime(&e,&feature);let gate=state.steps.iter().find(|s|s.key=="requirement_execute").unwrap();
+        confirm_step(&e,gate,false,"").unwrap();e.evaluate_workflows().unwrap();
+        assert!(e.execute("override.accept",Command{command_id:id(),target:Some(delivery.clone()),expected_revision:None,payload:json!({"items":["review"],"reason":"不能跳过尚未进行的模型评审"})}).unwrap_err().message.contains("模型完成内容评审"));
+        let review=recorded_review(&e,&validation,&delivery,approved);
+        let intent=e.pending_workflow_intents().unwrap().into_iter().find(|r|r.data["method"]=="review.request").unwrap();
+        e.observe_workflow_intent(&intent.id,&Ok(json!({"id":review}))).unwrap();
+        e.tick(4).unwrap();e.evaluate_workflows().unwrap();
+        let snapshot=e.store.snapshot().unwrap();
+        assert!(!snapshot.accepted(snapshot.delivery(&delivery).unwrap()));
+        assert_eq!(snapshot.reviews.iter().find(|r|r.run_id.as_ref()==Some(&review)).unwrap().decision,if approved{Decision::Pass}else{Decision::ChangesRequested});
+        let workflow=workflow_runtime(&e,&feature);let gate=workflow.steps.iter().find(|s|s.key=="requirement_review").unwrap();
+        assert_eq!(gate.status,"waiting_confirmation");
+        if !approved {assert!(confirm_step(&e,gate,false,"").is_err());}
+        confirm_step(&e,gate,!approved,"人类核对后接受该测试范围，记录模型指出的缺口").unwrap();
+        let snapshot=e.store.snapshot().unwrap();
+        assert!(snapshot.accepted(snapshot.delivery(&delivery).unwrap()));
+        assert_eq!(snapshot.runs.iter().find(|r|r.id==review).unwrap().result.as_ref().unwrap()["model_approve"],approved);
+        assert_eq!(snapshot.overrides.iter().filter(|o|o.delivery_id==delivery).count(),if approved{0}else{1});
+    }
+}
+
+#[test]
+fn cancellation_wait_is_requeued_until_the_old_writer_has_really_stopped() {
+    let dir=tempfile::tempdir().unwrap();let e=engine(dir.path());
+    let run=recorded_native_stage(&e,&native_stage_answer(),true,true);
+    let (feature,attempt)=attach_validation(&e,&run);
+    let old=workflow_runtime(&e,&feature).steps.iter().find(|s|s.key=="requirement_execute").unwrap().clone();
+    e.execute("workflow.step.rework",Command{command_id:id(),target:Some(old.id),expected_revision:Some(old.revision),payload:json!({"from_step":"requirement_execute"})}).unwrap();
+    e.store.transact(None,&mut |s| {
+        let f=s.feature(&feature)?.clone();
+        let worktree=RepositoryWorktree{id:id(),project_id:f.project_id.clone(),owner_id:feature.clone(),kind:WorktreeKind::Feature,branch:"fixture".into(),path:"fixture-readonly".into(),base:"a".repeat(40),operation_id:id()};
+        s.repository_operations.push(RepositoryOperation{id:worktree.operation_id.clone(),project_id:f.project_id,action:RepositoryAction::CreateWorktree{owner:feature.clone(),worktree_kind:WorktreeKind::Feature,base:worktree.base.clone()},status:RepositoryOperationStatus::Completed,receipt:Some(RepositoryReceipt::Worktree{worktree:worktree.clone()}),reason:String::new(),revision:1});
+        s.repository_worktrees.push(worktree);
+        Ok(Value::Null)
+    }).unwrap();
+    e.evaluate_workflows().unwrap();
+    let intent=e.pending_workflow_intents().unwrap().into_iter().find(|r|r.data["method"]=="attempt.start").unwrap();
+    assert_eq!(e.validate_attempt_cancellation(&feature).unwrap_err().code,"run_cancellation_pending");
+    let mut unsafe_state=e.store.snapshot().unwrap();
+    unsafe_state.runs.iter_mut().find(|r|r.id==run).unwrap().status=Status::Cancelled;
+    unsafe_state.executions.iter_mut().find(|execution|execution.run_id.as_ref()==Some(&run)).unwrap().writer_revoked=false;
+    assert!(unsafe_state.run_cancellation_pending("fixture-readonly"));
+    e.observe_workflow_intent(&intent.id,&Err(err("run_cancellation_pending","等待旧 Run 取消确认后再启动"))).unwrap();
+    assert_eq!(e.store.snapshot().unwrap().configuration(&intent.id).unwrap().data["status"],"prepared");
+    // Reproduce the durable failed-intent state left by the earlier build.
+    e.store.transact(None,&mut |s| {
+        let record=s.governance.iter_mut().find(|r|r.id==intent.id).unwrap();
+        record.data["status"]=json!("failed");record.data["error"]=json!("blocked: 等待旧 Run 取消确认后再启动");
+        record.content_hash=configuration_hash(&record.data);record.revision+=1;Ok(Value::Null)
+    }).unwrap();
+    e.evaluate_workflows().unwrap();
+    assert_eq!(e.store.snapshot().unwrap().configuration(&intent.id).unwrap().data["status"],"prepared");
+    e.tick(4).unwrap();
+    assert_eq!(e.store.snapshot().unwrap().runs.iter().find(|r|r.id==run).unwrap().status,Status::Cancelled);
+    assert!(e.validate_attempt_cancellation(&feature).is_ok());
+    e.evaluate_workflows().unwrap();
+    let runtime=workflow_runtime(&e,&feature);
+    let current=runtime.steps.iter().find(|s|s.key=="requirement_execute").unwrap();
+    assert_ne!(current.status,"blocked");
+    assert!(e.pending_workflow_intents().unwrap().iter().any(|r|r.id==intent.id));
+    assert_eq!(e.store.snapshot().unwrap().attempt(&attempt).unwrap().status,Status::Interrupted);
 }
 #[test]
 fn native_run_accepts_structured_output_after_writer_stop_and_protocol_export() {

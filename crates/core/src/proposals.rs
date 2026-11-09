@@ -252,6 +252,10 @@ impl Engine {
                     .find(|v| v.id == turn.session_id)
                     .unwrap()
                     .clone();
+                let formal_session = s.governance.iter().find(|r| r.kind == "execution_task_binding" && r.definition_id == session.id)
+                    .is_some_and(|r| r.data["definition"]["step"]["kind"] != "agent.interact");
+                require(turn.run_id.is_none() && !formal_session,
+                    "正式交付或评审结果不属于需求提案；请在工作流查看模型结论并执行人类 Approve")?;
                 let content: ProposalContent = if method == "proposal.extract" {
                     let text = s
                         .conversation_events
