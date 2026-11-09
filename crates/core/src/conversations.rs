@@ -485,8 +485,27 @@ impl Engine {
         while messages.iter().map(|e| e.content.len()).sum::<usize>() > 65536 {
             messages.remove(0);
         }
+        let specification_source = s
+            .governance
+            .iter()
+            .rev()
+            .find(|r| r.kind == "execution_specification" && r.definition_id == session.id)
+            .map(|r| r.data.clone());
+        let specifications: Vec<_> = s
+            .governance
+            .iter()
+            .rev()
+            .find(|r| r.kind == "execution_specification" && r.definition_id == session.id)
+            .into_iter()
+            .flat_map(|r| r.data["spec_refs"].as_array().into_iter().flatten())
+            .filter_map(|id| {
+                s.definitions
+                    .iter()
+                    .find(|d| Some(d.id.as_str()) == id.as_str())
+            })
+            .collect();
         let content =
-            serde_json::to_string(&json!({"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
+            serde_json::to_string(&json!({"specifications":specifications,"specification_source":specification_source,"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
                 .map_err(|e| err("serialization", e.to_string()))?;
         let mut documents = match &owner {
             MaterialOwner::Project { id } => s

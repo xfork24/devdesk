@@ -142,21 +142,27 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
         .iter()
         .filter(|d| d.agent_profile.is_some())
         .collect();
-    assert_eq!(roles.len(), 10);
+    assert_eq!(
+        roles.len(),
+        s.definitions
+            .iter()
+            .filter(|d| d.agent_profile.is_some())
+            .count()
+    );
     assert_eq!(
         restored
             .governance
             .iter()
             .filter(|record| record.kind == "role")
             .count(),
-        5
+        6
     );
     assert_eq!(
         roles
             .iter()
             .filter(|definition| definition.id.starts_with("builtin-agent-sol-high-"))
             .count(),
-        5
+        11
     );
     assert_ne!(
         roles
@@ -345,6 +351,7 @@ fn project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revisi
         .as_str()
         .unwrap()
         .to_string();
+    runtime::configure_project(&e, &project);
     let feature = call(
         "feature.create",
         None,
@@ -706,6 +713,7 @@ fn task_plan_validates_dependency_graph_and_cannot_skip_planning_review() {
         None,
         json!({"project_id":pid,"title":"F","source_requirement":req}),
     );
+    runtime::configure_project(&e, &pid);
     let fid = e.execute("feature.create", feature).unwrap()["id"]
         .as_str()
         .unwrap()

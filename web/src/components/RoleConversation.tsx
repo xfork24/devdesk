@@ -40,7 +40,7 @@ export function RoleConversation({
   const [owner, setOwner] = useState(initialOwner || project.id);
   const [catalog, setCatalog] = useState<Row[]>([]);
   const [instanceId, setInstanceId] = useState("");
-  const [agent, setAgent] = useState("builtin-agent-analyst-v1");
+  const [agent, setAgent] = useState("");
   const [editing, setEditing] = useState<Row>();
   const [sessions, setSessions] = useState<Row[]>([]);
   const [sessionId, setSessionId] = useState("");
@@ -91,14 +91,20 @@ export function RoleConversation({
   const recommendation = recommended
     ? featureLock?.data.agent_refs[recommended.participant_slot]
     : owner === project.id
-      ? projectConfiguration?.data.agent_refs.analyst
+      ? (Object.values(
+          projectConfiguration?.data.role_agent_bindings ||
+            projectConfiguration?.data.agent_refs ||
+            {},
+        ).find(
+          (id) => catalog.find((r) => r.id === id)?.data.role === "analyst",
+        ) as string | undefined)
       : undefined;
   const composite = catalog.find((r) => r.id === agent && r.kind === "agent");
   const [instanceScope, setInstanceScope] = useState("project");
   useEffect(() => {
     if (!featureLock || owner === project.id || sessionId) return;
     if (!Object.values(featureLock.data.agent_refs).includes(agent)) {
-      setAgent(recommendation || featureLock.data.agent_refs.analyst);
+      setAgent(recommendation || "");
       setInstanceId("");
     }
   }, [featureLock?.id, owner, recommendation, sessionId]);
@@ -132,7 +138,7 @@ export function RoleConversation({
     }
   }, [detail?.session.id]);
 
-  const choices:Row[] = [
+  const choices: Row[] = [
     ...agents,
     ...catalog
       .filter((r) => r.kind == "agent" && !agents.some((a) => a.id === r.id))
@@ -156,10 +162,7 @@ export function RoleConversation({
           owner === project.id ||
           Object.values(featureLock.data.agent_refs).includes(r.id)),
     );
-    const selected =
-      candidates.find((r) => r.id === recommendation) ||
-      candidates.find((r) => r.data.role === "analyst") ||
-      candidates[0];
+    const selected = candidates.find((r) => r.id === recommendation);
     if (selected) setAgent(selected.id);
   }, [catalog, owner, recommendation, sessionId, composite?.id]);
   const instances = catalog.filter(
@@ -288,7 +291,6 @@ export function RoleConversation({
         {
           agent,
           ...(instanceId ? { agent_instance_id: instanceId } : {}),
-
         },
       );
       await loadSessions();
@@ -373,7 +375,7 @@ export function RoleConversation({
           <p className="notice">
             {detail?.session
               ? "历史会话保留原运行绑定；请选择完整 Agent 组合开启新会话。"
-              : "请先在规范与身份中创建 Model、Harness 和完整 Agent 组合，再选择讨论实例。"}
+              : "请先在基础组件中准备资源，并在角色与 Agent 中组合所需能力，再选择讨论实例。"}
           </p>
         )}
         {composite && (

@@ -34,7 +34,11 @@ SSE 和轮询使用同一个数据库事实源。所有命令在 SQLite 短事�
 
 query.workspace 的 project_offset 与 Feature offset 独立；detail_pages 对 tasks/attempts/runs/deliveries/merges/documents/snapshots/artifacts/effects 指定页码（从0起）。每页默认50，Runs每页为5倍；detail.totals 为各集合数量。翻 Attempts/Merges 页时客户端将 runs 页码归零。事件与日志报告文件分段读取，不加载全部工程历史到浏览器。
 
-Standard 的 slots 结构为 `[{"purpose":"planning","spec":"固定Spec-ID"}, ...]`，同时具备 planning/implementation/merge 三个用途。Spec 仅解释内置 traceability、failure_paths、sections 规则；无任意脚本。定义版本、适用标准与实际逐项结果都留在 Review 历史。
+Workflow v2 使用 `Step.role_ref`（稳定 Role 身份）和 `spec_refs`（精确 Spec 修订）。项目配置 `role_agent_bindings` 固定每个 Role 的单个 AgentRevision；Agent 输入引用 RoleRevision/CapabilityRevision，服务端展开实际组件并拒绝不一致覆盖。`standard_ref` 可为 null；Standard v2 的 `baseline_rules` 使用动作选择器、必需 Spec 及非零 `min_matches` 校验覆盖，不改变 Step。逐 Step 审计快照及实际执行/评审保留 Spec 来源、检查方式和输出契约。Spec 的 Markdown 正文与内置 traceability、failure_paths、sections 自动检查分别保留，无任意检查脚本。
+
+`query.configuration_defaults` 返回可直接采用的分阶段 Feature/Task、Role→Agent 和组件精确引用；读取不创建项目配置、不安装运行时。`query.workflow_requirements`/`query.specification_audit` 可预览未保存 document 或已保存修订，递归返回 Role 需求、规范快照、基线判定和快照差异。`runtime.prepare_harness` 按明确 Harness 修订准备安装。历史 `query.default_configuration` 仅供已有 bundle 读取，不再是正常产品入口。
+
+v1 Standard 的 planning/implementation/merge slots 及已冻结编译器 1 继续按历史契约执行。新增子流程 `workflow.call` 支持声明输入/输出、递归引用和真实运行；入口条件/确认先于内部节点，深度最多 8、总展开节点最多 1000。
 
 Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执行输入包含冻结 Context 和继承 Snapshot；Reviewer 输入为目标 Delivery 的冻结文档、证据和报告正文。TestRequest 必须包含 operation_id、phase、candidate、test_definitions、environment、origin，可附 session_id、完整 definitions、code 和 runtime，适配器结果必须回传匹配的绑定。
 
@@ -75,7 +79,7 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 - `codex.auth.status({installation_id})`：只返回 authenticated/type/pending，不返回账户个人信息或令牌。
 - `codex.auth.cancel({installation_id,login_id})`：仅取消当前认证实例的原 login 请求。
 
-这些配置/认证接口使用专用参数而非工程 Command；安装的幂等范围为全局安装唯一键，认证派发未知时拒绝盲目重复登录。真实工程会话、消息、提案与执行 API 尚在实施中，不能据此认为 R3 已通过。
+这些配置/认证接口使用专用参数而非工程 Command；安装的幂等范围为全局安装唯一键，认证派发未知时拒绝盲目重复登录。工程会话、消息、提案与执行由后续原生协议承载，实际验收范围以对应计划的执行记录为准。
 
 ### Persistent role conversations (integration work in progress)
 
@@ -158,6 +162,8 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 `query.workflow_validation` / `query.workflow_preview` 接收 document 或 id，返回 valid/errors、document_hash、顺序及演练状态，不调用模型、Docker、Git、测试或 Merge。sample.outputs 和 sample.accepted 表示演练事实；通过预演不代表真实证据成立。动作及 DSL 结构见 schemas/rpc.schema.json，当前契约和 compiler_version 均为 1。
 
 `query.workflow_instance` / `query.workflow_actions` 返回运行记录、冻结计划/配置及可用动作。运行实例 ID、步骤 key、步骤实例 ID 和 round 分别表示不同概念；旧 round 的确认不能用于新 round。
+
+AgentID 经验是用于定位 Feature/Task 问题和恢复现场的历史上下文，不属于 Tool。Tool 管理与 Capability 新配置排除该项；旧修订的经验 Tool 引用仅兼容读取，不启用模型工具或经验目录挂载。
 
 `query.agent_experience` 必须携带 agent_instance_id；可组合 project_name、feature_name、from/to（UTC 毫秒，边界包含）、offset/limit。带 snapshot_id/source_project_id 才读取具体快照和证据引用。目录保留工作时间及捕获时间、历史名称、稳定 ID、实际组合和可用性；正文哈希失败不返回假成功。跨项目读取不切换活动工程或启动源 worker。
 

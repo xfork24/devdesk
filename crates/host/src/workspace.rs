@@ -302,10 +302,14 @@ impl Workspace {
             .as_deref()
             .ok_or_else(|| err("invalid_params", "缺少 Attempt target"))?;
         let task = state.tasks.iter().find(|t| t.id == target);
+        let phase_value = command.payload["phase"]
+            .as_str()
+            .unwrap_or("planning")
+            .to_owned();
         let phase = if task.is_some() {
             "implementation"
         } else {
-            command.payload["phase"].as_str().unwrap_or("planning")
+            phase_value.as_str()
         };
         let stage_roles: Vec<(&str, AgentRole, WorkType)> = match phase {
             "requirement_definition" => vec![(
@@ -348,7 +352,12 @@ impl Workspace {
             .into_iter()
             .map(|(n, r, w)| (n.into(), r, w))
             .collect();
-        if let Some(recipe) = e.workflow_recipe(&state, target, phase) {
+        if let Some(recipe) = e.workflow_recipe(
+            &state,
+            target,
+            phase,
+            command.payload["workflow_step_instance_id"].as_str(),
+        ) {
             stage_roles = recipe
                 .into_iter()
                 .map(|n| {
@@ -367,6 +376,11 @@ impl Workspace {
         }
         let feature = task.map_or(target, |t| t.feature_id.as_str());
         let frozen = state.feature_configuration(feature);
+        if command.payload["workflow_step_instance_id"].is_null() {
+            if let Some(id) = e.workflow_step_id(&state, target, "attempt.execute", Some(phase))? {
+                command.payload["workflow_step_instance_id"] = json!(id);
+            }
+        }
         let mut sessions = std::collections::BTreeMap::new();
         for (stage, role, work_type) in stage_roles {
             let key = match role {
@@ -377,7 +391,21 @@ impl Workspace {
                 AgentRole::Reviewer => "reviewer",
             };
             let root = format!("builtin-agent-{key}-v1");
-            let agent = if let Some(lock) = &frozen {
+            let explicit = e.workflow_agent_for(
+                &state,
+                target,
+                "attempt.execute",
+                Some(phase),
+                Some(&stage),
+                command.payload["workflow_step_instance_id"].as_str(),
+            )?;
+            let agent = if let Some(chosen) = &explicit {
+                state
+                    .definitions
+                    .iter()
+                    .find(|d| &d.id == chosen)
+                    .ok_or_else(|| err("not_found", "冻结 Agent 不存在"))?
+            } else if let Some(lock) = &frozen {
                 let chosen = lock
                     .agent_refs
                     .get(key)
@@ -478,7 +506,31 @@ impl Workspace {
             state.feature(owner)?.revision
         };
         let frozen = state.feature_configuration(&delivery.feature_id);
-        let agent = if let Some(lock) = &frozen {
+        let action = if delivery.merge_id.is_some() {
+            "merge.review"
+        } else {
+            "delivery.review"
+        };
+        if command.payload["workflow_step_instance_id"].is_null() {
+            if let Some(id) = e.workflow_step_id(&state, owner, action, None)? {
+                command.payload["workflow_step_instance_id"] = json!(id);
+            }
+        }
+        let explicit = e.workflow_agent_for(
+            &state,
+            owner,
+            action,
+            None,
+            None,
+            command.payload["workflow_step_instance_id"].as_str(),
+        )?;
+        let agent = if let Some(chosen) = &explicit {
+            state
+                .definitions
+                .iter()
+                .find(|d| &d.id == chosen)
+                .ok_or_else(|| err("not_found", "冻结 Reviewer 不存在"))?
+        } else if let Some(lock) = &frozen {
             let chosen = lock
                 .agent_refs
                 .get("reviewer")
@@ -549,9 +601,25 @@ impl Workspace {
             .iter()
             .find(|t| t.id == owner)
             .map_or(owner, |t| t.feature_id.as_str());
-        let agent = state
-            .feature_configuration(feature)
-            .and_then(|c| c.agent_refs.get("tester").cloned())
+        if command.payload["workflow_step_instance_id"].is_null() {
+            if let Some(id) = e.workflow_step_id(&state, owner, "merge.prepare", None)? {
+                command.payload["workflow_step_instance_id"] = json!(id);
+            }
+        }
+        let agent = e
+            .workflow_agent_for(
+                &state,
+                owner,
+                "merge.prepare",
+                None,
+                None,
+                command.payload["workflow_step_instance_id"].as_str(),
+            )?
+            .or_else(|| {
+                state
+                    .feature_configuration(feature)
+                    .and_then(|c| c.agent_refs.get("tester").cloned())
+            })
             .unwrap_or_else(|| "builtin-agent-tester-v1".into());
         let mut payload = json!({"agent":agent,"work_type":"discussion"});
         for key in [
@@ -634,8 +702,23 @@ impl Workspace {
             .ok_or_else(|| err("project_required", "请先创建或打开项目"))
     }
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
-        let shared = self.global.snapshot()?;
         let existing = e.store.snapshot()?;
+        // One global directory indexes legacy project-owned Role identities without changing their owner or revision.
+        self.global.transact(None, &mut |directory| {
+            for role in existing
+                .governance
+                .iter()
+                .filter(|r| r.kind == "role" || r.kind == "role_retirement")
+            {
+                if let Some(old) = directory.governance.iter().find(|r| r.id == role.id) {
+                    require(old.content_hash == role.content_hash, "Role 目录摘要冲突")?;
+                } else {
+                    directory.governance.push(role.clone());
+                }
+            }
+            Ok(Value::Null)
+        })?;
+        let shared = self.global.snapshot()?;
         if existing.projects.iter().any(|p| p.execution_mode != "live") {
             return Ok(());
         }
@@ -644,9 +727,13 @@ impl Workspace {
             .iter()
             .filter(|r| {
                 r.immutable
-                    && r.scope.visible_from(&Scope::Project {
-                        project_id: e.store.project_id().unwrap_or_default(),
-                    })
+                    && (r.kind == "role"
+                        || r.kind == "role_retirement"
+                        || devdesk_core::configuration_visible(
+                            &shared,
+                            r,
+                            e.store.project_id().as_deref(),
+                        ))
             })
             .all(|r| {
                 existing
@@ -673,14 +760,18 @@ impl Workspace {
                 .iter()
                 .all(|b| existing.sandboxes.iter().any(|v| v.id == b.id))
         {
-            return e.ensure_builtin_project_defaults();
+            return e.migrate_project_configuration();
         }
         e.store.transact(None, &mut |s| {
             for r in shared.governance.iter().filter(|r| {
                 r.immutable
-                    && r.scope.visible_from(&Scope::Project {
-                        project_id: e.store.project_id().unwrap_or_default(),
-                    })
+                    && (r.kind == "role"
+                        || r.kind == "role_retirement"
+                        || devdesk_core::configuration_visible(
+                            &shared,
+                            r,
+                            e.store.project_id().as_deref(),
+                        ))
             }) {
                 if let Some(old) = s.governance.iter().find(|v| v.id == r.id) {
                     require(old.content_hash == r.content_hash, "共享配置摘要冲突")?;
@@ -718,7 +809,7 @@ impl Workspace {
             }
             Ok(json!({"ok":true}))
         })?;
-        e.ensure_builtin_project_defaults()
+        e.migrate_project_configuration()
     }
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let root = PathBuf::from(self.global.root());
@@ -752,7 +843,7 @@ impl Workspace {
             .iter()
             .all(|p| p.execution_mode == "live")
         {
-            e.ensure_builtin_project_defaults()?;
+            e.migrate_project_configuration()?;
             // Re-evaluate native facts once on reopen before the idle-project filter.
             e.evaluate_workflows()?;
         }
@@ -769,6 +860,11 @@ impl Workspace {
         Ok(())
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        if method == "query.configuration_defaults" {
+            return self
+                .configuration
+                .configuration_defaults(params["project_id"].as_str());
+        }
         if method == "query.default_configuration" {
             let state = self.global.snapshot()?;
             let bundle = state
@@ -802,12 +898,25 @@ impl Workspace {
                 json!({"bundle":bundle,"records":state.governance.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"permissions":state.permissions.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"sandboxes":state.sandboxes.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"materializations":state.governance.iter().filter(|r|r.kind=="harness_materialization"&&r.definition_id==DEFAULT_HARNESS_ID).collect::<Vec<_>>() }),
             );
         }
-        if method == "runtime.prepare_defaults" {
-            let state = self.global.snapshot()?;
-            return Ok(json!(self.materialize_harness(
-                &self.configuration,
-                state.configuration(DEFAULT_HARNESS_ID)?
-            )?));
+        if method == "runtime.prepare_harness" {
+            let id = params["id"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要 Harness 修订"))?;
+            let engine = if self
+                .global
+                .snapshot()?
+                .governance
+                .iter()
+                .any(|r| r.id == id)
+            {
+                self.configuration.clone()
+            } else {
+                self.active_engine(params["project_id"].as_str())?
+            };
+            let state = engine.store.snapshot()?;
+            let harness = state.configuration(id)?;
+            require(harness.kind == "harness", "需要 Harness 修订")?;
+            return Ok(json!(self.materialize_harness(&engine, harness)?));
         }
         if method == "query.history" && params["scope"] == "global" {
             return self
@@ -1167,6 +1276,9 @@ impl Workspace {
                         .map(|p| p.execution_mode.as_str())
                         .unwrap_or("live")
                 );
+                let configuration_status = e.project_configuration_status()?;
+                result["configuration_ready"] = configuration_status["ready"].clone();
+                result["configuration_status"] = configuration_status;
                 result["active_project"] = json!(current);
                 result["project_data_root"] = if e.store.project_id().is_some() {
                     json!(e.store.root())
@@ -1362,7 +1474,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn cmd(
+    pub(super) fn cmd(
         w: &Workspace,
         method: &str,
         scope: Option<&str>,
@@ -1376,7 +1488,7 @@ mod tests {
         )
         .unwrap()
     }
-    fn create(w: &Workspace, title: &str) -> String {
+    pub(super) fn create(w: &Workspace, title: &str) -> String {
         cmd(
             w,
             "project.create",
@@ -1389,7 +1501,7 @@ mod tests {
             .unwrap()
             .into()
     }
-    fn select(w: &Workspace, id: &str) {
+    pub(super) fn select(w: &Workspace, id: &str) {
         cmd(
             w,
             "project.open",
@@ -1405,6 +1517,7 @@ mod tests {
         let w = Workspace::open(dir.path()).unwrap();
         let a = create(&w, "项目 A");
         let engine_a = w.active_engine(Some(&a)).unwrap();
+        crate::test_runtime::configure_project(&engine_a, &a);
         let fa = cmd(
             &w,
             "feature.create",
@@ -1418,6 +1531,7 @@ mod tests {
         let artifact = engine_a.store.snapshot().unwrap().artifacts[0].clone();
         let b = create(&w, "项目 B");
         let engine_b = w.active_engine(Some(&b)).unwrap();
+        crate::test_runtime::configure_project(&engine_b, &b);
         let fb = cmd(
             &w,
             "feature.create",
@@ -1600,7 +1714,39 @@ mod tests {
 
 #[cfg(test)]
 mod adapter_injection_tests {
+    use super::tests::{cmd, create, select};
     use super::*;
+    #[test]
+    fn legacy_experience_tool_is_hidden_in_global_and_project_catalogs() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let pid = create(&w, "Context catalog");
+        let e = w.active_engine(Some(&pid)).unwrap();
+        let mut legacy = e
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(DEFAULT_NATIVE_TOOL_ID)
+            .unwrap()
+            .clone();
+        legacy.id = "legacy-context-tool-v1".into();
+        legacy.definition_id = "legacy-context-tool".into();
+        legacy.data["implementation"] = json!("experience.lookup");
+        legacy.content_hash = configuration_hash(&legacy.data);
+        for store in [w.global.as_ref() as &dyn EngineeringStore, e.store.as_ref()] {
+            store
+                .transact(None, &mut |s| {
+                    s.governance.push(legacy.clone());
+                    Ok(json!({}))
+                })
+                .unwrap();
+        }
+        for local in [false, true] {
+            let catalog = w.dispatch("query.configurations", json!({"local":local,"project_id":pid,"kind":"tool","include_history":true,"include_deleted":true})).unwrap();
+            assert_eq!(catalog["total"], 1);
+            assert_eq!(catalog["records"][0]["id"], DEFAULT_NATIVE_TOOL_ID);
+        }
+    }
     #[test]
     fn injected_providers_are_shared_after_opening_another_project() {
         let dir = tempfile::tempdir().unwrap();
@@ -1655,6 +1801,177 @@ mod adapter_injection_tests {
         assert_eq!(
             engines[1].store.snapshot().unwrap().turns[0].status,
             TurnStatus::Queued
+        );
+    }
+    #[test]
+    fn project_owned_role_has_one_global_history_and_multiple_project_visibility() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let one = create(&w, "One");
+        let two = create(&w, "Two");
+        let other = create(&w, "Other");
+        let role=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"Shared specialist","scope":{"kind":"project","project_id":one},"data":{"execution_role":"analyst","instructions":"# Shared duty","visibility":{"kind":"projects","project_ids":[one,two]}}}})).unwrap();
+        for pid in [&one, &two, &other] {
+            select(&w, pid);
+            let roles = w
+                .dispatch(
+                    "query.roles",
+                    json!({"local":true,"project_id":pid,"limit":100}),
+                )
+                .unwrap();
+            assert_eq!(
+                roles["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r["id"] == role["id"]),
+                pid != &other
+            );
+        }
+        let revised=w.dispatch("role.revise",json!({"command_id":id(),"target":role["id"],"expected_revision":role["revision"],"payload":{"name":"Narrowed specialist","data":{"execution_role":"analyst","instructions":"# Shared duty v2","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
+        select(&w, &two);
+        let roles = w
+            .dispatch(
+                "query.roles",
+                json!({"local":true,"project_id":two,"include_history":true,"limit":100}),
+            )
+            .unwrap();
+        assert!(
+            !roles["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["definition_id"] == role["definition_id"])
+        );
+        let global = w.global.snapshot().unwrap();
+        assert_eq!(
+            global
+                .governance
+                .iter()
+                .filter(|r| r.kind == "role" && json!(r.definition_id) == role["definition_id"])
+                .count(),
+            2
+        );
+        assert_eq!(
+            global
+                .configuration(revised["id"].as_str().unwrap())
+                .unwrap()
+                .scope,
+            Scope::Project { project_id: one }
+        );
+    }
+    #[test]
+    fn composition_preserves_separate_harness_and_sandbox_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let pid = create(&w, "Permission references");
+        let create_resource = |method: &str, payload: Value| {
+            w.dispatch(method, json!({"command_id":id(),"payload":payload}))
+                .unwrap()
+        };
+        let harness = create_resource(
+            "harness.create",
+            json!({"name":"Explicit pinned Harness","data":{"provider":"codex","runtime_version":"0.167.0","model_providers":["openai"],"capabilities":[]}}),
+        );
+        let capability = create_resource(
+            "capability.create",
+            json!({"name":"Explicit capability","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":harness["id"],"tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[]}}),
+        );
+        let agent = create_resource(
+            "agent.create",
+            json!({"name":"Permission pair","data":{"role_ref":default_role_id("analyst"),"capability_ref":capability["id"],"permissions":["permission-read-only-v1","permission-container-full-access-v1"]}}),
+        );
+        let e = w.active_engine(Some(&pid)).unwrap();
+        w.sync_configuration(&e).unwrap();
+        let mut command = Command {
+            command_id: id(),
+            target: Some(pid),
+            expected_revision: Some(1),
+            payload: json!({"agent":agent["id"]}),
+        };
+        w.resolve_agent_composition(&e, &mut command).unwrap();
+        assert_eq!(
+            command.payload["permission_overrides"]["harness"]["permission"]["revision_id"],
+            "permission-read-only-v1"
+        );
+        assert_eq!(
+            command.payload["permission_overrides"]["sandbox"]["permission"]["revision_id"],
+            "permission-container-full-access-v1"
+        );
+    }
+    #[test]
+    fn visibility_narrowing_blocks_new_use_and_preserves_frozen_agent_instances() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let one = create(&w, "Visible");
+        let two = create(&w, "Frozen");
+        let e = w.active_engine(Some(&two)).unwrap();
+        crate::test_runtime::configure_project(&e, &two);
+        let feature = cmd(
+            &w,
+            "feature.create",
+            Some(&two),
+            None,
+            "frozen-feature",
+            json!({"project_id":two,"title":"Frozen before scope change"}),
+        );
+        let fid = feature["id"].as_str().unwrap();
+        let frozen = json!(
+            e.store
+                .snapshot()
+                .unwrap()
+                .feature_configuration(fid)
+                .unwrap()
+        );
+        w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"payload":{"name":"Narrow analyst","data":{"execution_role":"analyst","instructions":"# Narrow responsibility","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
+        w.sync_configuration(&e).unwrap();
+        assert_eq!(e.project_configuration_status().unwrap()["ready"], false);
+        let mut command = Command {
+            command_id: id(),
+            target: Some(two.clone()),
+            expected_revision: Some(2),
+            payload: json!({"agent":default_configured_agent_id("analyst")}),
+        };
+        assert!(w.resolve_agent_composition(&e, &mut command).is_err());
+        let payload = json!({"name":"Continuation instance","scope":{"kind":"project","project_id":two},"agent_revision_id":default_configured_agent_id("analyst")});
+        assert!(
+            e.execute(
+                "agent.instance.create",
+                Command {
+                    command_id: id(),
+                    target: None,
+                    expected_revision: None,
+                    payload: payload.clone()
+                }
+            )
+            .is_err()
+        );
+        let mut payload = payload;
+        payload["frozen_feature_id"] = json!(fid);
+        let instance = e
+            .execute(
+                "agent.instance.create",
+                Command {
+                    command_id: id(),
+                    target: None,
+                    expected_revision: None,
+                    payload,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            instance["data"]["agent_revision_id"],
+            default_configured_agent_id("analyst")
+        );
+        assert_eq!(
+            json!(
+                e.store
+                    .snapshot()
+                    .unwrap()
+                    .feature_configuration(fid)
+                    .unwrap()
+            ),
+            frozen
         );
     }
 }

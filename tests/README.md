@@ -6,6 +6,7 @@
 |---|---|---|
 | `crates/*/src/` 内的测试模块 | 领域类型、权限和配置规则、协议解析、进程与凭据边界、Host 查询等模块内回归 | `cargo test --workspace --locked` |
 | `crates/adapters/tests/` | 通过适配器验证存储、工作流、恢复、会话、运行安装、治理、权限及 Git/Docker/GitHub 资源 | 同上；依赖外部资源的用例部分标记 `#[ignore]`，需显式执行 |
+| `crates/adapters/tests/configuration_resources.rs` | Role/Capability/Agent 独立修订、默认阶段能力、项目绑定、逐轮冻结 Spec、基线与审计、子流程输入输出/失败返工、旧 Standard 分离迁移 | 随 Rust 默认测试执行 |
 | `crates/adapters/tests/schema_contracts.rs` | 所有发布 Schema 和引用的离线编译、当前配置与 Serde 数据契约、权限和不可变产物兼容、非法输入拒绝 | 随 Rust 默认测试执行；使用 Rust 测试依赖，不依赖 Python jsonschema |
 | `web/tests/` | Playwright 浏览器回归：工作台、项目接入、设置与权限、Workflow/Agent/Role 编辑和重载持久化 | Web 构建及 Host 就绪后，在 `web/` 执行 `npx playwright test` |
 | `tests/entrypoints/http_contract.py` | 独立 Host 进程的 HTTP、安全、生命周期和分库隔离契约 | 默认检查入口自动执行 debug 和 release/standalone 两次 |
@@ -50,7 +51,7 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 | `probe_merges.py` | PR 候选、过期目标拒绝、合并推进、Feature 收尾与主线交付 | `workflow` 组 |
 | `browser_accept.mjs` | 已评审主线候选的浏览器最终验收 | 由 `probe_merges.py --browser-final` 间接调用 |
 | `probe_recovery.py` | 原生取消、交互问题、输入已消费后的崩溃恢复 | `recovery` 组 |
-| `probe_workflow_workbench.py` | 原生 Workflow 与工程工作台闭环 | 显式 `workbench` 组 |
+| `probe_workflow_workbench.py` | v2 分阶段默认能力、PRD 可复用子流程、显式 Spec、Task TDD 与独立评审的原生闭环 | 显式 `workbench` 组 |
 | `probe_agent_composition.py` | 不可变 Model/Harness/Tool/Agent 组合的原生轮次 | 单独执行 |
 | `probe_agent_experience.py` | AgentID 经验隔离、跨项目查询与场景恢复 | 单独执行 |
 | `probe_installations.py` | 并发安装登记、Docker 镜像层复用 | 单独执行 |

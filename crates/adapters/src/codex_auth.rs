@@ -159,7 +159,15 @@ impl CodexAuthentication {
         if worker.is_none() {
             let mut command = ProcessCommand::new(canonical_path);
             command
-                .args(["app-server", "-c", "cli_auth_credentials_store=\"file\""])
+                .args([
+                    "app-server",
+                    "-c",
+                    "cli_auth_credentials_store=\"file\"",
+                    "-c",
+                    "features.plugins=false",
+                    "-c",
+                    "features.apps=false",
+                ])
                 .env("CODEX_HOME", &self.home)
                 .current_dir(&self.home);
             let mut process = JsonlProcess::spawn(command)?;

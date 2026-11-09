@@ -252,7 +252,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 34, "数据集版本比程序新")?;
+    require(version <= 35, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
@@ -542,6 +542,14 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
+    if version < 35 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/configuration/035_configuration_resources.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
     Ok(connection)
 }
 
@@ -658,7 +666,7 @@ fn save_table<T: Serialize>(
             .collect::<Vec<_>>();
         statement
             .execute(rusqlite::params_from_iter(values))
-            .map_err(storage)?;
+            .map_err(|e| err("storage", format!("{table} {}: {e}", v["id"])))?;
     }
     Ok(())
 }

@@ -107,7 +107,7 @@ impl Workspace {
                 command_id: format!("{}:create", c.command_id),
                 target: None,
                 expected_revision: None,
-                payload: json!({"title":c.payload["title"].as_str().filter(|v| !v.trim().is_empty()).unwrap_or(&repository),"repository":repository,"mainline":mainline,"use_builtin_defaults":true}),
+                payload: json!({"title":c.payload["title"].as_str().filter(|v| !v.trim().is_empty()).unwrap_or(&repository),"repository":repository,"mainline":mainline}),
             };
             let pid = self.global.reserve_project(&create)?;
             let e = self.load_project(&pid, true)?;

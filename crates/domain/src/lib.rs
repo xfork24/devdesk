@@ -1,3 +1,5 @@
+mod configuration;
+pub use configuration::*;
 mod permission;
 pub use permission::*;
 mod testing;
@@ -989,8 +991,15 @@ impl EngineeringState {
         Ok(())
     }
     pub fn validate_binding(&self, b: &BindingLock) -> Result<()> {
+        // Typed compositions also support free project discussions without a baseline.
+        // Formal v2 actions obtain required Specs from their independently validated frozen Step.
+        let explicit_specs = b.standard.is_empty()
+            && self
+                .governance
+                .iter()
+                .any(|r| r.kind == "agent" && r.id == b.agent);
         for (id, family) in std::iter::once((&b.agent, "agent"))
-            .chain(std::iter::once((&b.standard, "standard")))
+            .chain((!explicit_specs).then_some((&b.standard, "standard")))
             .chain(b.skills.iter().map(|x| (x, "skill")))
         {
             require(
@@ -1000,24 +1009,26 @@ impl EngineeringState {
                 "绑定必须引用存在的确定定义版本",
             )?;
         }
-        let standard = self
-            .definitions
-            .iter()
-            .find(|d| d.id == b.standard)
-            .ok_or_else(|| err("blocked", "Standard 缺失"))?;
-        require(
-            ["planning", "implementation", "merge"]
+        if !explicit_specs {
+            let standard = self
+                .definitions
                 .iter()
-                .all(|purpose| {
-                    standard.slots.iter().any(|slot| {
-                        &slot.purpose == purpose
-                            && self.definitions.iter().any(|d| {
-                                d.id == slot.spec && d.family == "spec" && !d.rules.is_empty()
-                            })
-                    })
-                }),
-            "Standard 必须提供规划、实现、Merge 的 Spec 用途 slot",
-        )?;
+                .find(|d| d.id == b.standard)
+                .ok_or_else(|| err("blocked", "Standard 缺失"))?;
+            require(
+                ["planning", "implementation", "merge"]
+                    .iter()
+                    .all(|purpose| {
+                        standard.slots.iter().any(|slot| {
+                            &slot.purpose == purpose
+                                && self.definitions.iter().any(|d| {
+                                    d.id == slot.spec && d.family == "spec" && !d.rules.is_empty()
+                                })
+                        })
+                    }),
+                "Standard 必须提供规划、实现、Merge 的 Spec 用途 slot",
+            )?;
+        }
         let harness = self
             .harnesses
             .iter()

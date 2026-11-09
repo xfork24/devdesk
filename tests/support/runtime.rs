@@ -1,6 +1,6 @@
 //! Test-only native port doubles. They never run Git, Docker, a model or a network request.
 #![allow(dead_code)]
-use devdesk_core::{Engine, ports};
+use devdesk_core::{Command, Engine, ports};
 use devdesk_domain::*;
 use serde_json::json;
 use std::sync::Arc;
@@ -121,4 +121,11 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
         })
         .unwrap();
     (sid, tid)
+}
+
+/// Tests explicitly opt into reference configuration; product creation never calls this helper.
+pub fn configure_project(e: &Engine, project: &str) {
+    let s = e.store.snapshot().unwrap();
+    let defaults = e.configuration_defaults(Some(project)).unwrap();
+    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
 }

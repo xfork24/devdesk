@@ -36,7 +36,7 @@ impl GlobalStore {
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
-        require(version <= 5, "全局配置库版本比程序新")?;
+        require(version <= 6, "全局配置库版本比程序新")?;
         if version == 0 {
             let tx = connection.transaction().map_err(storage)?;
             tx.execute_batch(include_str!("../../../sql/global/001_initial.sql"))
@@ -76,6 +76,14 @@ impl GlobalStore {
             let tx = connection.transaction().map_err(storage)?;
             tx.execute_batch(include_str!("../../../sql/global/005_governance.sql"))
                 .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 6 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!(
+                "../../../sql/global/006_configuration_resources.sql"
+            ))
+            .map_err(storage)?;
             tx.commit().map_err(storage)?;
         }
         let store = Self {

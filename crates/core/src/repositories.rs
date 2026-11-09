@@ -368,7 +368,6 @@ impl Engine {
                                         revision: head.clone(),
                                     });
                                 }
-                                self.attach_builtin_project_defaults(s, &operation.project_id)?;
                                 Some(worktree)
                             }
                             (

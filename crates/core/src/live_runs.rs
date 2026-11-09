@@ -90,6 +90,7 @@ impl Engine {
         owner: &str,
         phase: &str,
         map: &BTreeMap<String, Id>,
+        step_instance: Option<&str>,
     ) -> Result<()> {
         let stages: Vec<(&str, AgentRole, ToolPolicy)> = match phase {
             "requirement_definition" => vec![(
@@ -132,7 +133,7 @@ impl Engine {
             .into_iter()
             .map(|(n, r, p)| (n.into(), r, p))
             .collect();
-        if let Some(recipe) = self.workflow_recipe(s, owner, phase) {
+        if let Some(recipe) = self.workflow_recipe(s, owner, phase, step_instance) {
             stages = recipe
                 .into_iter()
                 .map(|n| {
@@ -149,6 +150,14 @@ impl Engine {
         }
         require(map.len() == stages.len(), "真实阶段 Session 映射不完整")?;
         for (node, role, policy) in stages {
+            let expected_agent = self.workflow_agent_for(
+                s,
+                owner,
+                "attempt.execute",
+                Some(phase),
+                Some(&node),
+                step_instance,
+            )?;
             let sid = map
                 .get(&node)
                 .ok_or_else(|| err("blocked", "缺少阶段 Session"))?;
@@ -165,6 +174,9 @@ impl Engine {
                 .ok_or_else(|| err("blocked", "阶段 Agent 无结构化角色"))?;
             require(
                 session.owner_id == owner
+                    && expected_agent
+                        .as_ref()
+                        .is_none_or(|agent| &session.agent == agent)
                     && profile.role == role
                     && session
                         .runtime_binding
@@ -309,6 +321,7 @@ impl Engine {
             ));
         }
         let Some(turn) = existing else {
+            let frozen_specifications = self.execution_specifications(s, r)?;
             if s.turns
                 .iter()
                 .any(|t| t.session_id == session.id && t.status.active())
@@ -343,7 +356,7 @@ impl Engine {
                 } else {
                     "This is FEATURE CLOSURE or its mainline candidate: assess the full Feature test recipe and fixed accepted Task source deliveries. Feature closure does not require a new failing TDD Red; Red/Green belongs to each Task's original implementation."
                 };
-                let input=serde_json::to_string(&json!({"review_boundary":boundary,"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":diff},"frozen_inputs":d.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|v|v.id==r.binding.standard||v.family=="spec").collect::<Vec<_>>(),"code":code,"contract":"You are the independent Reviewer, not the author. Inspect the frozen Delivery, documents, actual Run evidence and code read-only. Assess only this delivery boundary: requirement and plan precede implementation, so absence of planned implementation is expected there. Return ONLY JSON {summary:string,checks:[{key:string,passed:boolean,evidence:string}]} with exactly four keys traceability, scope, tests, failure_paths. Base decisions on supplied facts and actual code where relevant. No files may be modified. Failed checks produce changes_requested; all checks passed produce pass. Never invent actual test/PR facts."})).map_err(|e|err("serialization",e.to_string()))?;
+                let input=serde_json::to_string(&json!({"review_boundary":boundary,"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":diff},"frozen_inputs":d.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"specifications":frozen_specifications,"definitions":s.definitions.iter().filter(|v|if let Some(specs)=&frozen_specifications {specs.iter().any(|spec|spec.id==v.id)} else {v.id==r.binding.standard||v.family=="spec"}).collect::<Vec<_>>(),"code":code,"contract":"You are the independent Reviewer, not the author. Inspect the frozen Delivery, documents, actual Run evidence and code read-only. Assess only this delivery boundary: requirement and plan precede implementation, so absence of planned implementation is expected there. Return ONLY JSON {summary:string,checks:[{key:string,passed:boolean,evidence:string}]} with exactly four keys traceability, scope, tests, failure_paths. Base decisions on supplied facts and actual code where relevant. No files may be modified. Failed checks produce changes_requested; all checks passed produce pass. Never invent actual test/PR facts."})).map_err(|e|err("serialization",e.to_string()))?;
                 let all_documents: std::collections::BTreeSet<Id> = d
                     .documents
                     .iter()
@@ -410,7 +423,7 @@ impl Engine {
                     "Validate the adopted planning materials for this stage. Read code only when useful. Do not modify files or claim a Delivery/Review is accepted. Check traceability, completeness, scope and failure paths. This is planning before implementation: absent planned code is expected; evaluate whether the adopted design and tests specify it adequately. Return ONLY JSON with summary:string and checks:[{key:string,passed:boolean,evidence:string}] for exactly these four keys: traceability, scope, tests, failure_paths. Do not produce revised documents; changes must be separately adopted as proposals."
                 }
             };
-            let input=serde_json::to_string(&json!({"authorization":{"run":r.id,"node":r.node,"phase":a.phase,"scope":a.scope,"role_revision":r.binding.agent,"tool_policy":session.runtime_binding.as_ref().map(|b|b.tool_policy)},"frozen_context":a.context_content,"prior_review_findings":s.reviews.iter().filter(|review|review.decision==Decision::ChangesRequested&&s.deliveries.iter().any(|d|d.id==review.delivery_id&&d.feature_id==a.feature_id&&d.task_id==a.task_id&&d.kind==a.phase)).map(|review|json!({"reason":review.reason,"checks":review.checks})).collect::<Vec<_>>(),"frozen_inputs":documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"stage_evidence":effective_runs(s,a).iter().filter(|run|run.status==Status::Succeeded).map(|run|json!({"node":run.node,"result":run.result})).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|d.id==r.binding.agent||d.id==r.binding.standard||r.binding.skills.contains(&d.id)||s.definitions.iter().find(|d|d.id==r.binding.standard).is_some_and(|standard|standard.slots.iter().any(|slot|slot.spec==d.id))).collect::<Vec<_>>(),"code":code,"contract":contract})).map_err(|e|err("serialization",e.to_string()))?;
+            let input=serde_json::to_string(&json!({"specifications":frozen_specifications,"authorization":{"run":r.id,"node":r.node,"phase":a.phase,"scope":a.scope,"role_revision":r.binding.agent,"tool_policy":session.runtime_binding.as_ref().map(|b|b.tool_policy)},"frozen_context":a.context_content,"prior_review_findings":s.reviews.iter().filter(|review|review.decision==Decision::ChangesRequested&&s.deliveries.iter().any(|d|d.id==review.delivery_id&&d.feature_id==a.feature_id&&d.task_id==a.task_id&&d.kind==a.phase)).map(|review|json!({"reason":review.reason,"checks":review.checks})).collect::<Vec<_>>(),"frozen_inputs":documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"stage_evidence":effective_runs(s,a).iter().filter(|run|run.status==Status::Succeeded).map(|run|json!({"node":run.node,"result":run.result})).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|d.id==r.binding.agent||d.id==r.binding.standard||r.binding.skills.contains(&d.id)||s.definitions.iter().find(|d|d.id==r.binding.standard).is_some_and(|standard|standard.slots.iter().any(|slot|slot.spec==d.id))||frozen_specifications.as_ref().is_some_and(|specs|specs.iter().any(|spec|spec.id==d.id))).collect::<Vec<_>>(),"code":code,"contract":contract})).map_err(|e|err("serialization",e.to_string()))?;
             self.enqueue_live_turn(r, session, &input, &documents, code)?;
             return Ok(None);
         };

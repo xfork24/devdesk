@@ -191,6 +191,26 @@ impl Workspace {
             return Ok(());
         };
         let agent: AgentComposition = record.decode()?;
+        let owner = command.target.as_deref().unwrap_or("");
+        let feature = state
+            .tasks
+            .iter()
+            .find(|task| task.id == owner)
+            .map_or(owner, |task| task.feature_id.as_str());
+        let frozen = state
+            .feature_configuration(feature)
+            .is_some_and(|lock| lock.agent_refs.values().any(|id| id == &record.id));
+        require(
+            frozen
+                || (!devdesk_core::configuration_retired(&state, record)
+                    && devdesk_core::configuration_visible(
+                        &state,
+                        record,
+                        state.projects.first().map(|p| p.id.as_str()),
+                    )),
+            "Agent 及其 Role/Capability 不适用于此项目，已有 Feature 保留冻结配置",
+        )?;
+
         if let Some(role_ref) = &agent.role_ref {
             let role = state.configuration(role_ref)?;
             let retired = state
@@ -245,7 +265,7 @@ impl Workspace {
         }) {
             r.id.clone()
         } else {
-            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,project.title),"scope":scope,"agent_revision_id":agent_id})})?["id"].as_str().unwrap().into()
+            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,project.title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen{Some(feature)}else{None}})})?["id"].as_str().unwrap().into()
         };
         require(
             model.endpoint.is_none(),
@@ -308,7 +328,13 @@ impl Workspace {
                 .iter()
                 .find(|p| p.id == agent.permissions[0])
                 .ok_or_else(|| err("not_found", "Agent Permission 不存在"))?;
-            command.payload["permission_overrides"] = json!({"harness":{"permission":{"revision_id":permission.id}},"sandbox":{"permission":{"revision_id":permission.id}}});
+            let sandbox_id = agent.permissions.get(1).unwrap_or(&agent.permissions[0]);
+            let sandbox = state
+                .permissions
+                .iter()
+                .find(|p| &p.id == sandbox_id)
+                .ok_or_else(|| err("not_found", "Agent Sandbox Permission 不存在"))?;
+            command.payload["permission_overrides"] = json!({"harness":{"permission":{"revision_id":permission.id}},"sandbox":{"permission":{"revision_id":sandbox.id}}});
         }
         Ok(())
     }
@@ -324,6 +350,7 @@ impl Workspace {
             || method.starts_with("tool.")
             || method.starts_with("harness.")
             || method.starts_with("role.")
+            || method.starts_with("capability.")
             || method.starts_with("agent.instance.")
             || ([
                 "skill.create",
@@ -338,6 +365,10 @@ impl Workspace {
             || (["agent.create", "agent.revise"].contains(&method)
                 && params["payload"].get("data").is_some());
         let query = [
+            "query.workflow_requirements",
+            "query.specification_audit",
+            "query.capabilities",
+            "query.configuration_references",
             "query.configurations",
             "query.workflows",
             "query.workflow",
@@ -361,9 +392,10 @@ impl Workspace {
             let explicit_scope = params
                 .get("scope")
                 .or_else(|| params["payload"].get("scope"));
-            let local = explicit_scope.is_some_and(|s| s["kind"] == "project")
-                || (!target_global && target.is_some())
-                || params["local"] == true;
+            let local = !method.starts_with("role.")
+                && (explicit_scope.is_some_and(|s| s["kind"] == "project")
+                    || (!target_global && target.is_some())
+                    || params["local"] == true);
             let engine = if local {
                 let e = self.active_engine(params["project_id"].as_str())?;
                 self.sync_configuration(&e)?;
@@ -371,9 +403,53 @@ impl Workspace {
             } else {
                 self.configuration.clone()
             };
+            if ["role.create", "role.revise"].contains(&method) {
+                if let Some(owner) = params["payload"]["scope"]["project_id"].as_str() {
+                    require(self.global.project(owner)?.is_some(), "Role 所属项目不存在")?;
+                }
+                if let Some(value) = params["payload"]["data"].get("visibility") {
+                    let visibility: DefinitionVisibility = serde_json::from_value(value.clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?;
+                    visibility.validate()?;
+                    if let DefinitionVisibility::Projects { project_ids } = visibility {
+                        for id in project_ids {
+                            require(
+                                self.global.project(&id)?.is_some(),
+                                format!("项目不存在: {id}"),
+                            )?;
+                        }
+                    }
+                }
+            }
+            if ["role.delete", "configuration.retire"].contains(&method) {
+                if let Some(target) = target {
+                    let source = engine.store.snapshot()?.configuration(target)?.clone();
+                    let mut offset = 0;
+                    loop {
+                        let (projects, total) = self.global.projects(offset, 100)?;
+                        for project in &projects {
+                            let state = SqliteStore::read_project_snapshot(
+                                Path::new(&self.global.root()),
+                                &project.id,
+                            )?;
+                            let refs =
+                                devdesk_core::project_configuration_references(&state, &source);
+                            require(
+                                refs.is_empty(),
+                                format!("项目 {} 仍引用此定义，请先换绑", project.title),
+                            )?;
+                        }
+                        offset += projects.len();
+                        if offset >= total || projects.is_empty() {
+                            break;
+                        }
+                    }
+                }
+            }
             if query {
                 if local && ["query.workflows", "query.configurations"].contains(&method) {
                     let s = engine.store.snapshot()?;
+                    let directory = s.clone();
                     let mut records: Vec<_> = s
                         .governance
                         .into_iter()
@@ -399,6 +475,31 @@ impl Workspace {
                         }
                     }
                     records.retain(|r| {
+                        if r.is_legacy_experience_tool() {
+                            return false;
+                        }
+                        if !devdesk_core::configuration_visible(
+                            &directory,
+                            r,
+                            engine.store.project_id().as_deref(),
+                        ) {
+                            return false;
+                        }
+                        if params["include_deleted"] != true
+                            && devdesk_core::configuration_retired(&directory, r)
+                        {
+                            return false;
+                        }
+                        if params["include_history"] != true
+                            && directory.governance.iter().any(|n| {
+                                n.kind == r.kind
+                                    && n.definition_id == r.definition_id
+                                    && n.version > r.version
+                            })
+                        {
+                            return false;
+                        }
+
                         params
                             .get("scope")
                             .is_none_or(|scope| json!(r.scope) == *scope)

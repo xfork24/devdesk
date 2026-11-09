@@ -91,6 +91,8 @@ pub struct SessionReceipt {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnDispatch {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub specifications: Vec<devdesk_domain::Definition>,
     pub session: devdesk_domain::Session,
     pub turn: devdesk_domain::ConversationTurn,
 }

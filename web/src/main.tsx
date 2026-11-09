@@ -1,5 +1,4 @@
-import { RoleManager } from "./components/RoleManager";
-import { DefaultSuite } from "./components/DefaultSuite";
+import { ProjectManager } from "./components/ProjectManager";
 import React, {
   useState,
   useEffect,
@@ -191,6 +190,10 @@ function App() {
   const routeApplied = useRef(false);
   useEffect(() => {
     const params = new URLSearchParams();
+    for (const key of ["config_tab", "config_object", "workflow_id"]) {
+      const value = new URLSearchParams(location.search).get(key);
+      if (value) params.set(key, value);
+    }
     params.set("tab", tab);
     if (projectId) params.set("project_id", projectId);
     if (featureId) params.set("feature_id", featureId);
@@ -460,8 +463,10 @@ function App() {
         payload,
       });
       setToast("操作已保存");
-      if (method === "project.open_github") resetProjectView(result.id);
-      else await load(true);
+      if (method === "project.open_github") {
+        resetProjectView(result.id);
+        setTab("projects");
+      } else await load(true);
       return result;
     } catch (e) {
       setError(String(e));
@@ -675,8 +680,11 @@ function App() {
     ["overview", "工作总览", LayoutDashboard],
     ["execution", "执行与交付", Workflow],
     ["discussion", "角色讨论", FileText],
+    ["projects", "项目管理", Layers3],
     ["workflows", "工作流程", Workflow],
-    ["definitions", "规范与身份", Library],
+    ["actors", "角色与 Agent", Library],
+    ["specifications", "规范", Library],
+    ["components", "基础组件", Settings],
     ["history", "历史记录", History],
     ["settings", "设置", Settings],
   ] as const;
@@ -840,9 +848,6 @@ function App() {
             </div>
           )}
           <RuntimePreparationStatus request={rpc} />
-          {data && ["overview", "definitions", "workflows"].includes(tab) && (
-            <DefaultSuite key={`defaults:${roleRevision}`} request={rpc} />
-          )}
           {!project && data && (
             <div className="notice">
               打开 GitHub 仓库开始工作。
@@ -851,13 +856,23 @@ function App() {
           )}
           {project && !repositoryReady && tab !== "settings" && (
             <RepositorySettings
-              key={project.id}
+              key={`repository-status:${project.id}`}
               project={project}
               ready={repositoryReady}
               request={rpc}
               refresh={load}
             />
           )}
+          {project &&
+            repositoryReady &&
+            !data?.configuration_ready &&
+            tab !== "projects" && (
+              <div className="notice">
+                项目待配置：已提供默认 Workflow、Role Agent
+                和规范，可在项目管理中采用或调整。
+                <button onClick={() => setTab("projects")}>配置项目</button>
+              </div>
+            )}
           <div className="page-heading">
             <div>
               <span className="eyebrow">ENGINEERING WORKSPACE</span>
@@ -886,7 +901,9 @@ function App() {
                   </button>
                   <button
                     className="primary"
-                    disabled={!repositoryReady || busy}
+                    disabled={
+                      !repositoryReady || !data?.configuration_ready || busy
+                    }
                     onClick={createFeature}
                   >
                     <Plus size={16} /> 新 Feature
@@ -2295,136 +2312,41 @@ function App() {
           )}
           {tab === "workflows" && (
             <WorkflowManager
-              key={projectId || "global"}
+              key={`workflow-manager:${projectId || "global"}`}
               request={rpc}
               project={project}
               refresh={load}
             />
           )}
-          {data && tab === "definitions" && (
-            <>
-              <RoleManager
-                key={projectId || "global-roles"}
-                request={rpc}
-                project={project}
-                onChanged={() => {
-                  setRoleRevision((value) => value + 1);
-                  void load();
-                }}
-              />
+          {data &&
+            ["actors", "definitions", "specifications", "components"].includes(
+              tab,
+            ) && (
               <AgentCatalog
-                key={`agents:${projectId}:${roleRevision}`}
+                key={`${tab}:${projectId}`}
                 request={rpc}
                 project={project}
                 installations={data.runtime_installations || []}
+                group={
+                  tab === "specifications"
+                    ? "specifications"
+                    : tab === "components"
+                      ? "foundations"
+                      : "actors"
+                }
               />
-              <div className="notice">
-                定义修订不可变。克隆生成新版本，再显式用于 Project
-                默认配置；Feature 创建后始终保持自己的配置锁。
-              </div>
-              {["skill", "spec", "standard"].map((family) => (
-                <section className="panel" key={family}>
-                  <div className="panel-heading">
-                    <h2>
-                      {
-                        (
-                          {
-                            agent: "Agent 身份",
-                            skill: "Skills",
-                            spec: "Specs",
-                            standard: "Standards",
-                          } as RecordData
-                        )[family]
-                      }
-                    </h2>
-                  </div>
-                  {definitions
-                    .filter((d) => d.family === family)
-                    .map((d) => (
-                      <div className="document-row" key={d.id}>
-                        <Library size={18} />
-                        <div>
-                          <strong>
-                            {d.name}{" "}
-                            <span className="version">v{d.version}</span>
-                          </strong>
-                          <p>{d.body}</p>
-                          <code>
-                            {d.id}
-                            {d.slots.length > 0 &&
-                              ` · slots: ${d.slots.map((s: RecordData) => `${s.purpose}:${s.spec}`).join(", ")}`}
-                          </code>
-                        </div>
-                        <button
-                          onClick={() =>
-                            setView({
-                              title: "不可变定义版本",
-                              body: pretty(d),
-                            })
-                          }
-                        >
-                          版本详情
-                        </button>
-                        <button
-                          onClick={() =>
-                            show({
-                              title: "克隆为新定义版本",
-                              method: "definition.revise",
-                              target: d.id,
-                              fields: [
-                                { key: "name", label: "名称", value: d.name },
-                                {
-                                  key: "body",
-                                  label: "定义内容",
-                                  type: "textarea",
-                                  value: d.body,
-                                },
-                                ...(family === "spec"
-                                  ? ([
-                                      {
-                                        key: "rules",
-                                        label:
-                                          "内置规则（traceability / failure_paths / sections，逗号分隔）",
-                                        value: d.rules.join(","),
-                                      },
-                                    ] as Field[])
-                                  : []),
-                                ...(family === "standard"
-                                  ? ([
-                                      {
-                                        key: "slots",
-                                        label:
-                                          "用途 slots JSON（purpose / spec）",
-                                        type: "textarea",
-                                        value: pretty(d.slots),
-                                      },
-                                    ] as Field[])
-                                  : []),
-                              ],
-                            })
-                          }
-                        >
-                          克隆修订
-                        </button>
-                      </div>
-                    ))}
-                </section>
-              ))}
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>共享运行环境</h2>
-                </div>
-                <pre>
-                  {pretty({
-                    installations: data?.runtime_installations || [],
-                  })}
-                </pre>
-                <p className="muted">
-                  Agent 是身份，Harness 是运行时，Sandbox
-                  是执行环境。运行时在分配任务后自动准备并固定版本。
-                </p>
-              </section>
-            </>
+            )}
+          {data && tab === "projects" && (
+            <ProjectManager
+              key={`project-manager:${projectId || "global"}`}
+              request={rpc}
+              project={project}
+              refresh={load}
+              onOpen={async (id) => {
+                await command("project.open_github", id, {});
+                setTab("projects");
+              }}
+            />
           )}
           {data && tab === "history" && (
             <label>

@@ -340,7 +340,7 @@ fn codex_compiled_profile_allows_scoped_writes_and_denies_other_worktree_writes(
         read_only_subdirectories: vec![], network: true, nested_sandbox: true,
         command: vec!["codex".into(), "sandbox".into(), "--".into(), "node".into(), "-e".into(),
             "const fs=require('fs');fs.writeFileSync('/work/allowed/proof','native-scoped-ok');try{fs.writeFileSync('/work/prohibited','bad');process.exit(3)}catch{}".into()],
-        credential_env_file: None, profile_file: None, runner_file: None, profile_target: None, experience_directory: None,
+        credential_env_file: None, profile_file: None, runner_file: None, profile_target: None,
     };
     let sandbox = DockerSandbox::new(root.path()).unwrap();
     sandbox.create(&spec).unwrap();
@@ -409,7 +409,7 @@ fn full_access_container_writes_and_exposes_only_its_declared_trust_scope() {
         None,
     )
     .unwrap();
-    let spec=ContainerSpec {permissions:Some(plan),purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:id(),image_id:image,worktree:work.clone(),state:state.clone(),writable:true,writable_subdirectories:vec![],read_only_subdirectories:vec![],network:true,command:vec!["sh".into(),"-c".into(),"test -r /state/canary && printf '#!/bin/sh\nprintf executable' > /tmp/permission-probe && chmod +x /tmp/permission-probe && /tmp/permission-probe > /work/proof && test ! -e /var/run/docker.sock".into()],nested_sandbox:false,credential_env_file:None,profile_file:None,runner_file:None,profile_target:None,experience_directory:None};
+    let spec=ContainerSpec {permissions:Some(plan),purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:id(),image_id:image,worktree:work.clone(),state:state.clone(),writable:true,writable_subdirectories:vec![],read_only_subdirectories:vec![],network:true,command:vec!["sh".into(),"-c".into(),"test -r /state/canary && printf '#!/bin/sh\nprintf executable' > /tmp/permission-probe && chmod +x /tmp/permission-probe && /tmp/permission-probe > /work/proof && test ! -e /var/run/docker.sock".into()],nested_sandbox:false,credential_env_file:None,profile_file:None,runner_file:None,profile_target:None};
     let sandbox = DockerSandbox::new(root.path()).unwrap();
     let receipt = sandbox.create(&spec).unwrap();
     let inspect = std::process::Command::new("docker")
@@ -537,7 +537,6 @@ fn dsh_restricted_native_executor_hides_state_environment_and_tool_network() {
         profile_file: Some(profile),
         runner_file: Some(runner),
         profile_target: None,
-        experience_directory: None,
     };
     let sandbox = DockerSandbox::new(root.path()).unwrap();
     sandbox.create(&spec).unwrap();

@@ -366,7 +366,19 @@ impl Engine {
                     .iter()
                     .find(|s| s.id == session.id)
                     .unwrap();
+                let specifications = turn
+                    .input_snapshot
+                    .as_ref()
+                    .and_then(|id| snapshot.snapshots.iter().find(|s| &s.id == id))
+                    .map(|s| serde_json::from_str::<Value>(&s.content))
+                    .transpose()
+                    .map_err(|e| err("invalid_configuration", e.to_string()))?
+                    .and_then(|v| v.get("specifications").cloned())
+                    .unwrap_or(json!([]));
+                let specifications = serde_json::from_value(specifications)
+                    .map_err(|e| err("invalid_configuration", e.to_string()))?;
                 self.harness.dispatch_turn(&TurnDispatch {
+                    specifications,
                     session: updated.clone(),
                     turn: t.clone(),
                 })?;

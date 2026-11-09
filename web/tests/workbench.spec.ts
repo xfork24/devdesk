@@ -78,10 +78,21 @@ async function githubFixture(page: Page) {
           ...base,
           active_project: project,
           repository_ready: operation?.status === "completed",
+          configuration_ready: operation?.status === "completed",
           active_project_id: project?.id,
           projects: project ? [project] : [],
           total_projects: project ? 1 : 0,
           features: [],
+          configurations: project
+            ? [
+                {
+                  id: "configured-project",
+                  kind: "project_configuration",
+                  version: 1,
+                  data: { agent_refs: { analyst: "configured-analyst" } },
+                },
+              ]
+            : [],
           total_features: 0,
           detail: null,
           runtime_installations: [],
@@ -189,9 +200,11 @@ test("打开 GitHub 项目自动接入，完成前阻止工程操作，重载保
   const fixture = await githubFixture(page);
   await page.reload();
   await openGitHub(page);
+  await page.getByRole("button", { name: "工作总览", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "GitHub 仓库", exact: true }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "工作总览", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "新 Feature", exact: true }),
   ).toBeDisabled();
@@ -238,6 +251,7 @@ test("仓库输入错误保留表单，失败接入可核对重试", async ({ pa
   await expect(input).toHaveValue("invalid");
   await input.fill("fixture/repository");
   await confirm(page);
+  await page.getByRole("button", { name: "工作总览", exact: true }).click();
   fixture.fail();
   await expect(
     page.getByText("GitHub 账号没有仓库写权限", { exact: true }),
@@ -304,7 +318,9 @@ test("完整 Agent 无需手工登记安装，显示准备及失败原因", asyn
   ).toBeVisible();
 });
 
-test("未接入 GitHub 的后端项目不进入 Web 项目列表和工程内容", async ({ page }) => {
+test("未接入 GitHub 的后端项目不进入 Web 项目列表和工程内容", async ({
+  page,
+}) => {
   await ensureSetup(page);
   const response = await page.request.post("/rpc", {
     data: {
@@ -325,7 +341,7 @@ test("未接入 GitHub 的后端项目不进入 Web 项目列表和工程内容"
   await expect(
     page.getByRole("button", { name: "新 Feature", exact: true }),
   ).toBeDisabled();
-  for (const name of ["工作总览", "执行与交付", "规范与身份", "设置"]) {
+  for (const name of ["工作总览", "执行与交付", "角色与 Agent", "设置"]) {
     await page.getByRole("button", { name, exact: true }).click();
     await expect(page.locator("body")).not.toContainText(
       /Simulation mode|模拟项目|模拟场景|origin=simulated|sim-harness|模拟工程执行身份/,
@@ -461,14 +477,12 @@ test("Permission 原生配置预检、修订与重载保持绑定", async ({
 }, testInfo) => {
   await ensureSetup(page);
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  const panel = page
-    .locator(".setting-row")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "运行权限 Permission",
-        exact: true,
-      }),
-    });
+  const panel = page.locator(".setting-row").filter({
+    has: page.getByRole("heading", {
+      name: "运行权限 Permission",
+      exact: true,
+    }),
+  });
   await expect(panel.getByLabel("权限修订", { exact: true })).toHaveValue(
     "permission-container-full-access-v1",
   );
@@ -490,13 +504,11 @@ test("Permission 原生配置预检、修订与重载保持绑定", async ({
   await expect(panel.getByLabel("权限修订", { exact: true })).toHaveValue(
     "permission-read-only-v1",
   );
-  await panel
-    .getByLabel("权限字段覆盖", { exact: true })
-    .fill(
-      JSON.stringify({
-        network: { mode: "allowlist", destinations: ["example.com"] },
-      }),
-    );
+  await panel.getByLabel("权限字段覆盖", { exact: true }).fill(
+    JSON.stringify({
+      network: { mode: "allowlist", destinations: ["example.com"] },
+    }),
+  );
   await panel
     .getByRole("button", { name: "预览最终权限", exact: true })
     .click();
@@ -507,15 +519,13 @@ test("Permission 原生配置预检、修订与重载保持绑定", async ({
   ).toBeVisible();
   await panel.getByText("创建或修订可复用权限", { exact: true }).click();
   await panel.getByLabel("新权限名称", { exact: true }).fill("浏览器权限定义");
-  await panel
-    .getByLabel("新权限策略", { exact: true })
-    .fill(
-      JSON.stringify({
-        filesystem: { mode: "read_only" },
-        network: { mode: "enabled" },
-        tools: { mode: "all_available" },
-      }),
-    );
+  await panel.getByLabel("新权限策略", { exact: true }).fill(
+    JSON.stringify({
+      filesystem: { mode: "read_only" },
+      network: { mode: "enabled" },
+      tools: { mode: "all_available" },
+    }),
+  );
   await panel.getByRole("button", { name: "创建权限", exact: true }).click();
   await expect(
     panel

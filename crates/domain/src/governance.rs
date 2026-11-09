@@ -69,13 +69,26 @@ pub struct ConfigurationRecord {
     pub created_at: u64,
 }
 impl ConfigurationRecord {
+    /// Compatibility metadata only: experience is restored context, not an executable Tool.
+    pub fn is_legacy_experience_tool(&self) -> bool {
+        self.kind == "tool" && self.data["implementation"] == "experience.lookup"
+    }
     pub fn decode<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         serde_json::from_value(self.data.clone())
             .map_err(|e| err("invalid_configuration", format!("{}: {e}", self.id)))
     }
     pub fn is_definition(&self) -> bool {
         [
-            "model", "tool", "harness", "agent", "workflow", "standard", "skill", "spec", "role",
+            "model",
+            "tool",
+            "harness",
+            "agent",
+            "workflow",
+            "standard",
+            "skill",
+            "spec",
+            "role",
+            "capability",
         ]
         .contains(&self.kind.as_str())
     }
@@ -121,6 +134,8 @@ pub struct ToolDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentComposition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_ref: Option<Id>,
     pub role: AgentRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role_ref: Option<Id>,
@@ -139,6 +154,8 @@ pub struct AgentComposition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<DefinitionVisibility>,
     pub execution_role: AgentRole,
     pub instructions: String,
 }
@@ -190,6 +207,8 @@ pub enum WorkflowCondition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowStage {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     pub key: String,
     pub name: String,
 }
@@ -225,6 +244,12 @@ pub struct WorkflowPortReference {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowStep {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_ref: Option<Id>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spec_refs: Vec<Id>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subworkflow_ref: Option<Id>,
     pub key: String,
     pub name: String,
     pub stage: String,
@@ -261,6 +286,8 @@ fn three() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowRunNode {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_ref: Option<Id>,
     pub key: String,
     pub role: AgentRole,
     #[serde(default)]
@@ -271,6 +298,10 @@ pub struct WorkflowRunNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowDocument {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_ports: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub output_ports: BTreeMap<String, WorkflowPortReference>,
     pub schema_version: u64,
     pub process_kind: String,
     pub stages: Vec<WorkflowStage>,
@@ -293,10 +324,14 @@ pub fn workflow_action_catalog() -> Value {
         "resource.cleanup",
         "tasks.foreach",
         "branch",
-        "join"
+        "join",
+        "workflow.call"
     ])
 }
 pub fn validate_workflow(doc: &WorkflowDocument) -> Result<Vec<String>> {
+    if doc.schema_version == 2 {
+        return crate::configuration::validate_workflow_v2(doc);
+    }
     require(doc.schema_version == 1, "不支持的 Workflow Schema")?;
     require(
         ["project_intake", "feature", "task"].contains(&doc.process_kind.as_str()),
@@ -489,173 +524,11 @@ pub fn validate_workflow(doc: &WorkflowDocument) -> Result<Vec<String>> {
             )?;
         }
     }
-    let ancestors = |key: &str| -> BTreeSet<String> {
-        let mut found = BTreeSet::new();
-        let mut queue = vec![key.to_owned()];
-        while let Some(key) = queue.pop() {
-            if let Some(step) = doc.steps.iter().find(|s| s.key == key) {
-                for dep in &step.dependencies {
-                    if found.insert(dep.clone()) {
-                        queue.push(dep.clone());
-                    }
-                }
-            }
-        }
-        found
-    };
-    let has_ancestor = |step: &WorkflowStep, kind: &str, phase: Option<&str>| {
-        let all = ancestors(&step.key);
-        doc.steps.iter().any(|candidate| {
-            all.contains(&candidate.key)
-                && candidate.kind == kind
-                && phase.is_none_or(|p| {
-                    candidate.parameters.get("phase").and_then(Value::as_str) == Some(p)
-                })
-        })
-    };
-    for step in &doc.steps {
-        let all = ancestors(&step.key);
-        for (name, input) in &step.inputs {
-            let source = doc
-                .steps
-                .iter()
-                .find(|s| s.key == input.step)
-                .ok_or_else(|| {
-                    err(
-                        "invalid_workflow",
-                        format!("{}: 输入 {name} 引用未知步骤", step.key),
-                    )
-                })?;
-            let outputs: &[&str] = match source.kind.as_str() {
-                "agent.interact" => &["session", "proposal", "document"],
-                "proposal.adopt" => &["proposal", "document"],
-                "attempt.execute" => &["attempt", "delivery"],
-                "delivery.review" => &["delivery"],
-                "merge.prepare" | "merge.review" => &["merge", "delivery"],
-                "merge.apply" => &["merge"],
-                "snapshot.capture" => &["snapshot"],
-                "tasks.foreach" => &["group"],
-                _ => &[],
-            };
-            require(
-                all.contains(&input.step)
-                    && outputs.contains(&input.port.as_str())
-                    && name == &input.port,
-                format!("{}: 输入端口 {name} 缺失或来源不在依赖链上", step.key),
-            )?;
-        }
-        if let Some(input) = step.inputs.get("merge") {
-            if step.kind == "merge.apply" {
-                require(
-                    doc.steps
-                        .iter()
-                        .any(|s| s.key == input.step && s.kind == "merge.review"),
-                    "合入输入必须来自已完成的候选评审步骤",
-                )?;
-            }
-        }
-        let reviewed_phase = |phase: &str| {
-            doc.steps.iter().any(|review| {
-                review.kind == "delivery.review"
-                    && all.contains(&review.key)
-                    && doc.steps.iter().any(|producer| {
-                        ancestors(&review.key).contains(&producer.key)
-                            && producer.kind == "attempt.execute"
-                            && producer.parameters.get("phase").and_then(Value::as_str)
-                                == Some(phase)
-                    })
-            })
-        };
-        if doc.process_kind == "feature" {
-            if step.kind == "agent.interact"
-                && ["design", "task_plan", "test_plan"]
-                    .contains(&step.interaction.output_kind.as_str())
-            {
-                require(
-                    reviewed_phase("requirement_definition"),
-                    format!("{}: 方案讨论必须在需求交付评审之后", step.key),
-                )?;
-            }
-            if step.kind == "tasks.foreach" {
-                require(
-                    reviewed_phase("solution_planning"),
-                    "展开 Tasks 必须在方案交付评审之后",
-                )?;
-            }
-            if step.kind == "attempt.execute"
-                && step.parameters.get("phase").and_then(Value::as_str) == Some("closure")
-            {
-                require(
-                    has_ancestor(step, "tasks.foreach", None),
-                    "Feature 收尾必须在固定 Task 集合汇合之后",
-                )?;
-            }
-            if step.kind == "merge.prepare" {
-                require(
-                    reviewed_phase("closure"),
-                    "主干候选必须在 Feature 收尾评审之后",
-                )?;
-            }
-        } else if doc.process_kind == "task" && step.kind == "merge.prepare" {
-            require(
-                reviewed_phase("implementation"),
-                "Task 候选必须在实现交付评审之后",
-            )?;
-        }
-        if step.kind == "merge.apply" {
-            require(
-                has_ancestor(step, "merge.review", None),
-                format!("{}: 合入必须依赖候选评审", step.key),
-            )?;
-        }
-        if step.kind == "merge.review" {
-            require(
-                has_ancestor(step, "merge.prepare", None),
-                format!("{}: 评审必须依赖冻结候选", step.key),
-            )?;
-        }
-        if step.kind == "merge.prepare" {
-            require(
-                has_ancestor(step, "delivery.review", None),
-                format!("{}: 候选必须依赖交付评审", step.key),
-            )?;
-        }
-        if step.kind == "attempt.execute"
-            && step.parameters.get("phase").and_then(Value::as_str) == Some("solution_planning")
-        {
-            require(
-                has_ancestor(step, "attempt.execute", Some("requirement_definition"))
-                    && has_ancestor(step, "delivery.review", None),
-                "方案规划必须在需求交付评审之后",
-            )?;
-        }
-        if step.kind == "tasks.foreach" {
-            require(
-                has_ancestor(step, "attempt.execute", Some("solution_planning")),
-                "Task 展开必须依赖方案规划",
-            )?;
-        }
-        if step.kind == "branch" {
-            require(
-                doc.steps.iter().any(|s| s.dependencies.contains(&step.key)),
-                format!("{}: 分支没有出口", step.key),
-            )?;
-        }
-    }
-    if doc.process_kind == "feature" {
-        for phase in ["requirement_definition", "solution_planning", "closure"] {
-            require(
-                doc.steps.iter().any(|s| {
-                    s.kind == "attempt.execute"
-                        && s.parameters.get("phase").and_then(Value::as_str) == Some(phase)
-                }),
-                format!("缺少正式阶段 {phase}"),
-            )?;
-        }
-    }
+    crate::configuration::validate_workflow_ports(doc)?;
+    validate_workflow_semantics(doc)?;
     Ok(order)
 }
-fn validate_condition(c: &WorkflowCondition, keys: &BTreeSet<&str>) -> Result<()> {
+pub(crate) fn validate_condition(c: &WorkflowCondition, keys: &BTreeSet<&str>) -> Result<()> {
     match c {
         WorkflowCondition::All { conditions } | WorkflowCondition::Any { conditions } => {
             require(
@@ -699,6 +572,12 @@ pub fn topological(nodes: &[(String, Vec<String>)]) -> Result<Vec<String>> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureConfiguration {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub specification_snapshot: Vec<SpecificationBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline_check: Option<BaselineCheck>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub role_agent_bindings: BTreeMap<Id, Id>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub defaults_bundle_ref: Option<Id>,
     pub project_configuration_id: Id,
@@ -958,4 +837,171 @@ mod tests {
             assert!(rpc["$defs"][name].is_object(), "missing {name}");
         }
     }
+}
+
+/// Engineering gates are applied to the expanded executable graph for both contracts.
+pub fn validate_workflow_semantics(doc: &WorkflowDocument) -> Result<()> {
+    if doc.process_kind == "feature" {
+        for kind in [
+            "agent.interact",
+            "proposal.adopt",
+            "attempt.execute",
+            "delivery.review",
+            "tasks.foreach",
+            "merge.prepare",
+            "merge.apply",
+            "snapshot.capture",
+        ] {
+            require(
+                doc.steps.iter().any(|s| s.kind == kind),
+                format!("Feature 流程缺少必需动作 {kind}"),
+            )?;
+        }
+    }
+    if doc.process_kind == "task" {
+        require(
+            doc.steps.iter().any(|s| {
+                s.kind == "attempt.execute"
+                    && s.parameters.get("phase").and_then(Value::as_str) == Some("implementation")
+            }),
+            "Task 流程缺少正式实现步骤",
+        )?;
+    }
+
+    let ancestors = |key: &str| -> BTreeSet<String> {
+        let mut found = BTreeSet::new();
+        let mut queue = vec![key.to_owned()];
+        while let Some(key) = queue.pop() {
+            if let Some(step) = doc.steps.iter().find(|s| s.key == key) {
+                for dep in &step.dependencies {
+                    if found.insert(dep.clone()) {
+                        queue.push(dep.clone());
+                    }
+                }
+            }
+        }
+        found
+    };
+    let has_ancestor = |step: &WorkflowStep, kind: &str, phase: Option<&str>| {
+        let all = ancestors(&step.key);
+        doc.steps.iter().any(|candidate| {
+            all.contains(&candidate.key)
+                && candidate.kind == kind
+                && phase.is_none_or(|p| {
+                    candidate.parameters.get("phase").and_then(Value::as_str) == Some(p)
+                })
+        })
+    };
+    for step in &doc.steps {
+        let all = ancestors(&step.key);
+        if let Some(input) = step.inputs.get("merge") {
+            if step.kind == "merge.apply" {
+                require(
+                    doc.steps
+                        .iter()
+                        .any(|s| s.key == input.step && s.kind == "merge.review"),
+                    "合入输入必须来自已完成的候选评审步骤",
+                )?;
+            }
+        }
+        let reviewed_phase = |phase: &str| {
+            doc.steps.iter().any(|review| {
+                review.kind == "delivery.review"
+                    && all.contains(&review.key)
+                    && doc.steps.iter().any(|producer| {
+                        ancestors(&review.key).contains(&producer.key)
+                            && producer.kind == "attempt.execute"
+                            && producer.parameters.get("phase").and_then(Value::as_str)
+                                == Some(phase)
+                    })
+            })
+        };
+        if doc.process_kind == "feature" {
+            if step.kind == "agent.interact"
+                && ["design", "task_plan", "test_plan"]
+                    .contains(&step.interaction.output_kind.as_str())
+            {
+                require(
+                    reviewed_phase("requirement_definition"),
+                    format!("{}: 方案讨论必须在需求交付评审之后", step.key),
+                )?;
+            }
+            if step.kind == "tasks.foreach" {
+                require(
+                    reviewed_phase("solution_planning"),
+                    "展开 Tasks 必须在方案交付评审之后",
+                )?;
+            }
+            if step.kind == "attempt.execute"
+                && step.parameters.get("phase").and_then(Value::as_str) == Some("closure")
+            {
+                require(
+                    has_ancestor(step, "tasks.foreach", None),
+                    "Feature 收尾必须在固定 Task 集合汇合之后",
+                )?;
+            }
+            if step.kind == "merge.prepare" {
+                require(
+                    reviewed_phase("closure"),
+                    "主干候选必须在 Feature 收尾评审之后",
+                )?;
+            }
+        } else if doc.process_kind == "task" && step.kind == "merge.prepare" {
+            require(
+                reviewed_phase("implementation"),
+                "Task 候选必须在实现交付评审之后",
+            )?;
+        }
+        if step.kind == "merge.apply" {
+            require(
+                has_ancestor(step, "merge.review", None),
+                format!("{}: 合入必须依赖候选评审", step.key),
+            )?;
+        }
+        if step.kind == "merge.review" {
+            require(
+                has_ancestor(step, "merge.prepare", None),
+                format!("{}: 评审必须依赖冻结候选", step.key),
+            )?;
+        }
+        if step.kind == "merge.prepare" {
+            require(
+                has_ancestor(step, "delivery.review", None),
+                format!("{}: 候选必须依赖交付评审", step.key),
+            )?;
+        }
+        if step.kind == "attempt.execute"
+            && step.parameters.get("phase").and_then(Value::as_str) == Some("solution_planning")
+        {
+            require(
+                has_ancestor(step, "attempt.execute", Some("requirement_definition"))
+                    && has_ancestor(step, "delivery.review", None),
+                "方案规划必须在需求交付评审之后",
+            )?;
+        }
+        if step.kind == "tasks.foreach" {
+            require(
+                has_ancestor(step, "attempt.execute", Some("solution_planning")),
+                "Task 展开必须依赖方案规划",
+            )?;
+        }
+        if step.kind == "branch" {
+            require(
+                doc.steps.iter().any(|s| s.dependencies.contains(&step.key)),
+                format!("{}: 分支没有出口", step.key),
+            )?;
+        }
+    }
+    if doc.process_kind == "feature" {
+        for phase in ["requirement_definition", "solution_planning", "closure"] {
+            require(
+                doc.steps.iter().any(|s| {
+                    s.kind == "attempt.execute"
+                        && s.parameters.get("phase").and_then(Value::as_str) == Some(phase)
+                }),
+                format!("缺少正式阶段 {phase}"),
+            )?;
+        }
+    }
+    Ok(())
 }

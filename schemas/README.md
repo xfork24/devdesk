@@ -9,6 +9,7 @@
 | `permission.schema.json` | `Permission` 修订及权限继承、覆盖定义；保留自包含版本，供预设的独立校验使用。回归要求其与 RPC 中对应定义一致。 |
 | `permission-backend.schema.json` | `permissions/backends/manifest.json`：后端版本、平台、嵌套沙箱、AppArmor 和资产摘要。资产内容的 SHA-256 另由权限检查验证。 |
 | `model.schema.json`、`role.schema.json`、`tool.schema.json`、`agent-composition.schema.json`、`workflow.schema.json` | 对 RPC 共享配置定义的引用入口，避免重复维护。 |
+| `capability.schema.json`、`agent-input.schema.json`、`spec.schema.json`、`standard.schema.json`、`project-configuration.schema.json` | v2 独立能力、Agent 创建输入、Markdown 规范、可选质量基线与项目 Role→Agent 配置；共用 RPC 定义。 |
 | `workflow-action.schema.json` | Workflow 动作标识与契约版本；动作集合由领域编译器的回归核对。完整步骤结构由 `WorkflowStep` 定义。 |
 
 Schema 描述数据形状和可独立检查的约束。跨对象引用、职责兼容、工作流依赖、当前修订、执行来源和权限可执行性仍由 Rust 领域规则及适配器校验；通过 Schema 不代表通过业务门禁。`InteractionAnswer` 描述可提交给原生供应商的回答，迁移保留的 `legacy` 文本回答不能用于新的交互。
@@ -23,3 +24,5 @@ cargo test --workspace --locked
 ```
 
 `schema_contracts` 离线编译所有 Schema 和 `$defs`，验证相对引用、当前内置配置、Serde 默认值与序列化输出、权限预设、历史产物和关键非法输入。工作流回归校验实际生成的交付与快照文件。JSON Schema 验证器仅作为 Rust 测试依赖，不需要额外安装 Python 包或访问网络。
+
+Workflow v1 继续描述已冻结历史。v2 Step 使用稳定 Role 身份和精确 Spec 修订；可复用 `workflow.call` 经编译展开，Stage 的 `description` 是可选 Markdown 意图。Agent 输入只选择 Role/Capability，服务端展开执行兼容字段；不能伪造 Model/Harness/Tool/Skill 覆盖。Standard v2 按动作、阶段/交付上下文检查 Spec 覆盖，`standard_ref=null` 表示项目不选基线，不表示关闭工程门禁。

@@ -1,803 +1,894 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-type Row = Record<string, any>;
-type Props = {
-  request: (method: string, params?: Row) => Promise<any>;
+import { RoleManager } from "./RoleManager";
+import {
+  actionLabels,
+  dutyLabels,
+  latest,
+  loadCatalog,
+  MarkdownField,
+  MarkdownPreview,
+  RevisionSelect,
+  useDraft,
+  useGroupTab,
+  type Row,
+  type Request,
+} from "./configuration-ui";
+const labels: Record<string, string> = {
+  role: "Role",
+  capability: "Capability",
+  agent: "Agent",
+  model: "Model",
+  harness: "Harness",
+  tool: "Tool",
+  skill: "Skill",
+  spec: "Spec",
+  standard: "Standard",
+};
+function initial(kind: string): Row {
+  switch (kind) {
+    case "agent":
+      return {
+        role_ref: "",
+        capability_ref: "",
+        permissions: [
+          "permission-container-full-access-v1",
+          "permission-container-full-access-v1",
+        ],
+        approval: "never",
+      };
+    case "capability":
+      return { model_ref: "", harness_ref: "", tools: [], skills: [] };
+    case "model":
+      return {
+        provider: "openai",
+        model: "",
+        parameters: {},
+        capabilities: [],
+      };
+    case "harness":
+      return {
+        provider: "codex",
+        runtime_version: "",
+        capabilities: [],
+        model_providers: ["openai"],
+      };
+    case "tool":
+      return {
+        qualified_name: "",
+        implementation: "harness.native",
+        input_schema: { type: "object" },
+        output_schema: { type: "object" },
+        capabilities: [],
+      };
+    case "standard":
+      return { body: "", baseline_rules: [] };
+    case "spec":
+      return { body: "", rules: [], applicable_actions: [] };
+    default:
+      return { body: "", rules: [] };
+  }
+}
+export function AgentCatalog({
+  request,
+  project,
+  installations,
+  group = "actors",
+}: {
+  request: Request;
   project?: Row;
   installations: Row[];
-};
-const roles: Record<string, string> = {
-  analyst: "需求分析师",
-  architect: "架构师",
-  developer: "开发",
-  tester: "测试",
-  reviewer: "评审",
-};
-const split = (s: string) =>
-  s
-    .split(/[,，\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-export function AgentCatalog({ request, project, installations }: Props) {
-  const [modelChoices, setModelChoices] = useState<Row[]>([]),
-    [roleChoices, setRoleChoices] = useState<Row[]>([]);
+  group?: "actors" | "foundations" | "specifications";
+}) {
+  const kinds =
+    group === "actors"
+      ? ["role", "capability", "agent"]
+      : group === "foundations"
+        ? ["model", "harness", "tool", "skill"]
+        : ["spec", "standard"];
+  const [kind, setKind] = useGroupTab(group, kinds);
+  const [revision, setRevision] = useState(0);
+  return (
+    <>
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>
+            {group === "actors"
+              ? "角色与 Agent"
+              : group === "foundations"
+                ? "基础组件"
+                : "规范"}
+          </h2>
+        </div>
+        <div
+          className="configuration-tabs"
+          role="tablist"
+          aria-label="配置类别"
+        >
+          {kinds.map((id) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={id === kind}
+              onClick={() => setKind(id)}
+            >
+              {labels[id]}
+            </button>
+          ))}
+        </div>
+      </section>
+      {kind === "role" ? (
+        <RoleManager
+          key={`role:${project?.id}`}
+          request={request}
+          project={project}
+          onChanged={() => setRevision((v) => v + 1)}
+        />
+      ) : (
+        <ResourceEditor
+          key={`${kind}:${project?.id}`}
+          kind={kind}
+          request={request}
+          project={project}
+          installations={installations}
+          revision={revision}
+        />
+      )}
+    </>
+  );
+}
+function ResourceEditor({
+  kind,
+  request,
+  project,
+  installations,
+  revision,
+}: {
+  kind: string;
+  request: Request;
+  project?: Row;
+  installations: Row[];
+  revision: number;
+}) {
   const [records, setRecords] = useState<Row[]>([]),
     [permissions, setPermissions] = useState<Row[]>([]),
-    [skills, setSkills] = useState<Row[]>([]),
-    [kind, setKind] = useState("agent"),
-    [scope, setScope] = useState("global"),
-    [name, setName] = useState(""),
-    [old, setOld] = useState<Row>(),
     [error, setError] = useState(""),
+    [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("");
-  const [form, setForm] = useState<Row>({
-      role: "analyst",
-      instructions: "",
-      model_ref: "",
-      harness_ref: "",
-      skills: [],
-      tools: [],
-      permissions: [],
-      approval: "never",
-    }),
-    [instanceAgent, setInstanceAgent] = useState(""),
-    [instanceScope, setInstanceScope] = useState("project"),
-    [instanceName, setInstanceName] = useState("");
-  const [defaultAgentRefs, setDefaultAgentRefs] = useState<Row>({});
-  const [page, setPage] = useState(0),
-    [total, setTotal] = useState(0);
-  const generation = useRef(0);
+    [legacyCapabilities, setLegacyCapabilities] = useState<
+      Record<string, string>
+    >({});
+  const [draft, setDraft] = useDraft(
+    `devdesk:v2:resource:${project?.id || "global"}:${kind}`,
+    () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
+  );
   const load = useCallback(async () => {
-    const current = ++generation.current;
-    const [catalog, policy, definitions, roles, defaults] = await Promise.all([
-      request("query.configurations", {
-        local: !!project,
-        project_id: project?.id,
-        offset: page * 100,
-        limit: 100,
-      }),
+    const [records, policy, capabilities] = await Promise.all([
+      loadCatalog(request, project),
       request("query.permissions"),
-      request("query.workspace", { project_id: project?.id, limit: 1 }),
-      request("query.roles", {
+      request("query.capabilities", {
         local: !!project,
         project_id: project?.id,
-        limit: 100,
       }),
-      request("query.default_configuration"),
     ]);
-    if (current !== generation.current) return;
-    setRecords(catalog.records);
-    setRoleChoices(roles.records || []);
-    setDefaultAgentRefs(defaults.bundle?.data.agent_refs || {});
-    const analyst = catalog.records.find(
-      (row: Row) =>
-        row.id ===
-        (defaults.bundle?.data.agent_refs.analyst ||
-          "builtin-agent-sol-high-analyst-v1"),
-    );
-    if (analyst)
-      setForm((old) =>
-        old.model_ref === "" && old.harness_ref === ""
-          ? structuredClone(analyst.data)
-          : old,
+    setRecords(records);
+    if (kind === "tool")
+      setDraft((current) =>
+        current.data.implementation === "experience.lookup"
+          ? { selected: "", name: "", scope: "global", data: initial(kind) }
+          : current,
       );
-    setTotal(catalog.total);
-    setPermissions(policy.permissions);
-    setSkills(
-      (definitions.definitions || definitions).filter(
-        (d: Row) => d.family === "skill",
-      ),
-    );
-  }, [request, project?.id, page]);
+    setPermissions(policy.permissions || []);
+    setLegacyCapabilities(capabilities.agent_bindings || {});
+  }, [request, project?.id, revision]);
   useEffect(() => {
-    load().catch((e) => setError(String(e)));
+    let active = true;
+    void load().catch((e) => {
+      if (active) setError(String(e));
+    });
     return () => {
-      ++generation.current;
+      active = false;
     };
   }, [load]);
-  const update = (patch: Row) => setForm((old) => ({ ...old, ...patch }));
-  const chooseKind = (k: string) => {
-    setKind(k);
-    setOld(undefined);
-    setName("");
-    setForm(
-      k === "agent"
-        ? structuredClone(
-            records.find(
-              (row) =>
-                row.id ===
-                (defaultAgentRefs.analyst ||
-                  "builtin-agent-sol-high-analyst-v1"),
-            )?.data || {
-              role: "analyst",
-              instructions: "",
-              model_ref: "",
-              harness_ref: "",
-              skills: [],
-              tools: [],
-              permissions: [],
-              approval: "never",
-            },
-          )
-        : k === "model"
-          ? {
-              provider: "openai",
-              model: "",
-              release: "",
-              parameters: {},
-              capabilities: [],
-            }
-          : k === "harness"
-            ? {
-                provider: "codex",
-                runtime_version: "",
-                capabilities: [],
-                model_providers: ["openai"],
-              }
-            : ["skill", "spec", "standard"].includes(k)
-              ? {
-                  body: "",
-                  rules: k === "spec" ? ["traceability"] : [],
-                  slots: [],
-                }
-              : {
-                  qualified_name: "harness.native",
-                  implementation: "harness.native",
-                  input_schema: {},
-                  output_schema: {},
-                  capabilities: [],
-                },
-    );
+  const old = records.find((r) => r.id === draft.selected),
+    data = draft.data;
+  const patch = (value: Row) =>
+    setDraft((current) => ({
+      ...current,
+      data: { ...current.data, ...value },
+    }));
+  const options = (family: string) => records.filter((r) => r.kind === family);
+  const select = (
+    label: string,
+    family: string,
+    key: string,
+    multiple = false,
+    required = false,
+  ) => (
+    <RevisionSelect
+      label={label}
+      records={options(family)}
+      value={
+        family === "tool"
+          ? (data[key] || []).filter((id: string) =>
+              options("tool").some((row) => row.id === id),
+            )
+          : data[key] || (multiple ? [] : "")
+      }
+      multiple={multiple}
+      required={required}
+      onChange={(value) => patch({ [key]: value })}
+    />
+  );
+  const field = (label: string, key: string, required = false) => (
+    <label>
+      {label}
+      <input
+        required={required}
+        value={data[key] || ""}
+        onChange={(e) => patch({ [key]: e.target.value })}
+      />
+    </label>
+  );
+  const choose = (row: Row) => {
+    let value = structuredClone(row.data);
+    if (kind === "agent") {
+      const role = records.find((r) => r.id === value.role_ref);
+      value = {
+        role_ref: value.role_ref || "",
+        capability_ref:
+          value.capability_ref || legacyCapabilities[row.id] || "",
+        permissions: value.permissions,
+        approval: value.approval,
+        instructions:
+          role?.data.instructions === value.instructions
+            ? ""
+            : value.instructions,
+      };
+    }
+    if (kind === "standard" && !value.baseline_rules)
+      value = { body: value.body || "", baseline_rules: [] };
+    setDraft({
+      selected: row.id,
+      name: row.name,
+      scope: row.scope.kind,
+      data: value,
+    });
+    const params = new URLSearchParams(location.search);
+    params.set("config_object", row.id);
+    history.replaceState(null, "", `?${params}`);
+    setMessage("");
   };
-  async function act(fn: () => Promise<void>) {
+  const routeConsumed = useRef(false);
+  useEffect(() => {
+    if (routeConsumed.current || !records.length) return;
+    const selected = new URLSearchParams(location.search).get("config_object");
+    if (selected) {
+      const row = records.find((r) => r.id === selected && r.kind === kind);
+      if (row) {
+        routeConsumed.current = true;
+        if (draft.selected !== row.id) choose(row);
+      }
+    }
+  }, [records, kind]);
+  async function save(remove = false) {
     setBusy(true);
     setError("");
     try {
-      await fn();
+      let payload = structuredClone(data);
+      if (kind === "capability")
+        payload.tools = (payload.tools || []).filter((id: string) =>
+          options("tool").some((row) => row.id === id),
+        );
+      if (kind === "spec") delete payload.slots;
+      if (kind === "agent" && !payload.instructions)
+        delete payload.instructions;
+      if (kind === "harness" && !payload.recipe_digest)
+        delete payload.recipe_digest;
+      if (kind === "tool") {
+        if (payload.input_text !== undefined)
+          payload.input_schema = JSON.parse(payload.input_text);
+        if (payload.output_text !== undefined)
+          payload.output_schema = JSON.parse(payload.output_text);
+        delete payload.input_text;
+        delete payload.output_text;
+      }
+      const row = await request(
+        remove
+          ? "configuration.retire"
+          : `${kind}.${old ? "revise" : "create"}`,
+        {
+          project_id: project?.id,
+          command_id: crypto.randomUUID(),
+          target: old?.id,
+          expected_revision: old?.revision,
+          payload: remove
+            ? { reason: "用户删除定义" }
+            : {
+                name: draft.name,
+                scope:
+                  draft.scope === "project"
+                    ? { kind: "project", project_id: project!.id }
+                    : { kind: "global" },
+                data: payload,
+              },
+        },
+      );
+      if (remove)
+        setDraft({
+          selected: "",
+          name: "",
+          scope: "global",
+          data: initial(kind),
+        });
+      else {
+        setDraft((current) => ({ ...current, selected: row.id }));
+        const params = new URLSearchParams(location.search);
+        params.set("config_object", row.id);
+        history.replaceState(null, "", `?${params}`);
+      }
+      await load();
+      setMessage(
+        remove ? "已停用；历史保留。" : "新修订已保存，已有使用方保持原引用。",
+      );
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
   }
-  const options = (type: string) => records.filter((r) => r.kind === type);
-  const selectedModel = records.find((r) => r.id === form.model_ref),
-    selectedHarness = records.find((r) => r.id === form.harness_ref);
-  const multi = (key: string, label: string, rows: Row[]) => (
-    <label>
-      {label}
-      <select
-        multiple
-        value={form[key] || []}
-        onChange={(e) =>
-          update({
-            [key]: Array.from(e.target.selectedOptions).map((o) => o.value),
-          })
-        }
-      >
-        {rows.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.name} v{r.version}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  const role = records.find((r) => r.id === data.role_ref),
+    capability = records.find((r) => r.id === data.capability_ref);
+  const model = records.find((r) => r.id === data.model_ref),
+    harness = records.find((r) => r.id === data.harness_ref);
   return (
-    <section className="panel">
-      <h2>Agent 组合与实例</h2>
-      <p className="muted">
-        Agent = Model + Harness + Skills / Tools / Permission。AgentID
-        固定组合版本与经验范围。
-      </p>
-      <div className="actions">
-        {[
-          ["agent", "Agent"],
-          ["model", "Model"],
-          ["harness", "Harness"],
-          ["tool", "Tool"],
-          ["skill", "Skill"],
-          ["spec", "Spec"],
-          ["standard", "Standard"],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            className={kind === key ? "selected" : ""}
-            onClick={() => chooseKind(key)}
-          >
-            {label}
-          </button>
-        ))}
+    <section className="panel" aria-label={`${labels[kind]} 管理`}>
+      <div className="panel-heading">
+        <div>
+          <h2>{labels[kind]} 管理</h2>
+          <p>
+            {kind === "agent"
+              ? "给一个 Role 与一个 Capability 的组合命名。"
+              : kind === "capability"
+                ? "选择可复用的 Model、Harness、Tools 和 Skills。"
+                : kind === "standard"
+                  ? "可选质量基线检查规范覆盖，不改变 Step 的 Spec。"
+                  : "修订独立保存，修改后由使用方显式采用。"}
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            const params = new URLSearchParams(location.search);
+            params.delete("config_object");
+            history.replaceState(null, "", `?${params}`);
+            setDraft({
+              selected: "",
+              name: "",
+              scope: "global",
+              data: initial(kind),
+            });
+          }}
+        >
+          新建 {labels[kind]}
+        </button>
       </div>
-      <div className="workflow-list">
-        {records
-          .filter((r) => r.kind === kind)
-          .map((r) => (
+      <div className="configuration-layout">
+        <div className="configuration-list">
+          {latest(records.filter((r) => r.kind === kind)).map((row) => (
             <button
-              key={r.id}
-              onClick={() => {
-                setOld(r);
-                setName(r.name);
-                setScope(r.scope.kind);
-                setForm(structuredClone(r.data));
-              }}
+              key={row.id}
+              className={draft.selected === row.id ? "selected" : ""}
+              onClick={() => choose(row)}
             >
-              <strong>
-                {r.name} v{r.version}
-              </strong>
+              <strong>{row.name}</strong>
               <span>
-                {r.scope.kind} ·{" "}
-                {r.kind === "agent"
-                  ? `${roles[r.data.role]} · Model ${r.data.model_ref.slice(0, 8)} · Harness ${r.data.harness_ref.slice(0, 8)}`
-                  : r.data.model ||
-                    r.data.runtime_version ||
-                    r.data.qualified_name}
+                v{row.version} ·{" "}
+                {row.scope.kind === "global" ? "Global" : "项目"}
               </span>
             </button>
           ))}
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void act(async () => {
-            await request(`${kind}.${old ? "revise" : "create"}`, {
-              project_id: project?.id,
-              command_id: crypto.randomUUID(),
-              target: old?.id,
-              expected_revision: old?.revision,
-              payload: {
-                name,
-                scope:
-                  scope === "project"
-                    ? { kind: "project", project_id: project!.id }
-                    : { kind: "global" },
-                data: form,
-              },
-            });
-            setOld(undefined);
-            setMessage("已保存新的不可变修订；旧 AgentID 保持原组合。");
-            await load();
-          });
-        }}
-      >
-        <div className="form-grid">
-          <label>
-            名称
-            <input
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
-          <label>
-            定义 Scope
-            <select
-              disabled={!!old}
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
-            >
-              <option value="global">Global</option>
-              {project && <option value="project">当前 Project</option>}
-            </select>
-          </label>
-          {kind === "agent" && (
-            <>
-              <label>
-                Role 精确版本
-                <select
-                  required
-                  value={form.role_ref || ""}
-                  onChange={(event) => {
-                    const role = roleChoices.find(
-                      (role) => role.id === event.target.value,
-                    );
-                    const template = records.find(
-                      (row) =>
-                        row.kind === "agent" && row.data.role_ref === role?.id,
-                    );
-                    update(
-                      template
-                        ? structuredClone(template.data)
-                        : {
-                            role_ref: role?.id,
-                            role: role?.data.execution_role,
-                            instructions: role?.data.instructions,
-                          },
-                    );
-                  }}
-                >
-                  <option value="">选择 Role</option>
-                  {roleChoices.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name} v{role.version}
-                    </option>
-                  ))}
-                  {form.role_ref &&
-                    !roleChoices.some((role) => role.id === form.role_ref) && (
-                      <option value={form.role_ref}>
-                        已冻结 Role · {form.role_ref}
-                      </option>
-                    )}
-                </select>
-              </label>
-
-              <label>
-                职责
-                <select
-                  value={form.role}
-                  disabled={!!form.role_ref}
-                  onChange={(e) => {
-                    const template = records.find(
-                      (row) =>
-                        row.id ===
-                        `builtin-agent-sol-high-${e.target.value}-v1`,
-                    );
-                    update(
-                      template
-                        ? structuredClone(template.data)
-                        : { role: e.target.value },
-                    );
-                  }}
-                >
-                  {Object.entries(roles).map(([key, label]) => (
-                    <option key={key} value={key}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                指令
-                <textarea
-                  required
-                  value={form.instructions}
-                  onChange={(e) => update({ instructions: e.target.value })}
-                />
-              </label>
-              <label>
-                Model 精确版本
-                <select
-                  required
-                  value={form.model_ref}
-                  onChange={(e) => update({ model_ref: e.target.value })}
-                >
-                  <option value="">选择 Model</option>
-                  {options("model").map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} v{r.version} · {r.data.provider}/{r.data.model}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Harness 精确版本
-                <select
-                  required
-                  value={form.harness_ref}
-                  onChange={(e) => update({ harness_ref: e.target.value })}
-                >
-                  <option value="">选择 Harness</option>
-                  {options("harness").map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} v{r.version} · {r.data.provider}/
-                      {r.data.runtime_version}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {multi("skills", "Skills", skills)}
-              {multi("tools", "Tools（含显式原生工具组）", options("tool"))}
-              {["Harness Permission", "Sandbox Permission"].map(
-                (label, index) => (
-                  <label key={label}>
-                    {label}
-                    <select
-                      required
-                      value={
-                        form.permissions?.[index] || form.permissions?.[0] || ""
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <div className="form-grid">
+            <label>
+              名称
+              <input
+                required
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              />
+            </label>
+            <label>
+              定义范围
+              <select
+                disabled={!!old}
+                value={draft.scope}
+                onChange={(e) => setDraft({ ...draft, scope: e.target.value })}
+              >
+                <option value="global">Global</option>
+                {project && <option value="project">当前项目</option>}
+              </select>
+            </label>
+            {kind === "agent" && (
+              <>
+                {select("Role 精确版本", "role", "role_ref", false, true)}
+                {select(
+                  "Capability 精确版本",
+                  "capability",
+                  "capability_ref",
+                  false,
+                  true,
+                )}
+                {role && (
+                  <div className="notice">
+                    <strong>
+                      {role.name} · {dutyLabels[role.data.execution_role]}
+                    </strong>
+                    <MarkdownPreview text={role.data.instructions} />
+                  </div>
+                )}
+                {capability && (
+                  <div className="notice">
+                    Model：
+                    {records.find((r) => r.id === capability.data.model_ref)
+                      ?.name || "固定修订"}{" "}
+                    · Harness：
+                    {records.find((r) => r.id === capability.data.harness_ref)
+                      ?.name || "固定修订"}{" "}
+                    · Tools{" "}
+                    {
+                      capability.data.tools.filter((id: string) =>
+                        options("tool").some((row) => row.id === id),
+                      ).length
+                    }{" "}
+                    · Skills {capability.data.skills.length}
+                  </div>
+                )}
+                <details className="full-width">
+                  <summary>权限与兼容指令</summary>
+                  {[0, 1].map((index) => (
+                    <RevisionSelect
+                      key={index}
+                      label={
+                        index === 0
+                          ? "Harness Permission"
+                          : "Sandbox Permission"
                       }
-                      onChange={(e) => {
-                        const chosen = [
-                          form.permissions?.[0] || e.target.value,
-                          form.permissions?.[1] ||
-                            form.permissions?.[0] ||
-                            e.target.value,
-                        ];
-                        chosen[index] = e.target.value;
-                        update({ permissions: chosen });
+                      records={permissions.map((p) => ({
+                        ...p,
+                        kind: "permission",
+                        definition_id: p.identity,
+                      }))}
+                      value={
+                        data.permissions?.[index] || data.permissions?.[0] || ""
+                      }
+                      required
+                      onChange={(value) => {
+                        const values = [...(data.permissions || ["", ""])];
+                        values[index] = value;
+                        patch({ permissions: values });
                       }}
+                    />
+                  ))}
+                  <label>
+                    确认策略
+                    <select
+                      value={data.approval || "never"}
+                      onChange={(e) => patch({ approval: e.target.value })}
                     >
-                      <option value="">选择精确权限版本</option>
-                      {permissions.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} v{p.version}
-                        </option>
-                      ))}
+                      <option value="never">不额外询问</option>
+                      <option value="on_request">按请求确认</option>
                     </select>
                   </label>
-                ),
-              )}
-              <label>
-                审批策略
-                <select
-                  value={form.approval}
-                  onChange={(e) => update({ approval: e.target.value })}
-                >
-                  <option value="never">不请求审批</option>
-                  <option value="on_request">按需请求审批</option>
-                </select>
-              </label>
-              <p>
-                {selectedModel?.data.provider}/{selectedModel?.data.model} +{" "}
-                {selectedHarness?.data.provider}/
-                {selectedHarness?.data.runtime_version}
-              </p>
-            </>
-          )}
-          {kind === "model" && (
-            <>
-              {form.provider === "openai" && (
-                <>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(async () => {
-                        const result = await request("codex.auth.models");
-                        setModelChoices(result.models);
-                      })
-                    }
-                  >
-                    读取可用模型目录
-                  </button>
-                  <datalist id="composition-models">
-                    {modelChoices.map((m) => (
-                      <option key={m.model} value={m.model}>
-                        {m.displayName || m.model}
-                      </option>
-                    ))}
-                  </datalist>
-                </>
-              )}
-              <label>
-                模型提供方
-                <select
-                  value={form.provider}
-                  onChange={(e) => update({ provider: e.target.value })}
-                >
-                  <option value="openai">OpenAI</option>
-                  <option value="deepseek">DeepSeek</option>
-                </select>
-              </label>
-              <label>
-                模型标识
-                <input
-                  required
-                  list="composition-models"
-                  value={form.model}
-                  onChange={(e) => update({ model: e.target.value })}
-                />
-              </label>
-              <label>
-                发布标识
-                <input
-                  value={form.release || ""}
-                  onChange={(e) => update({ release: e.target.value })}
-                />
-              </label>
-              {form.provider === "openai" ? (
+                  <label>
+                    附加指令（可选）
+                    <textarea
+                      value={data.instructions || ""}
+                      onChange={(e) => patch({ instructions: e.target.value })}
+                    />
+                  </label>
+                </details>
+              </>
+            )}
+            {kind === "capability" && (
+              <>
+                {select("Model 精确版本", "model", "model_ref", false, true)}
+                {select(
+                  "Harness 精确版本",
+                  "harness",
+                  "harness_ref",
+                  false,
+                  true,
+                )}
+                {select("Tools", "tool", "tools", true, true)}
+                {select("Skills", "skill", "skills", true)}
+                {model && harness && (
+                  <p className="notice">
+                    {harness.data.model_providers?.length &&
+                    !harness.data.model_providers.includes(model.data.provider)
+                      ? "此 Harness 不支持选定模型后端，保存时会拒绝。"
+                      : `${model.name} / ${harness.name}`}
+                  </p>
+                )}
+              </>
+            )}
+            {kind === "model" && (
+              <>
                 <label>
-                  推理强度
+                  模型后端
                   <select
-                    value={form.parameters.reasoning_effort || ""}
+                    value={data.provider}
                     onChange={(e) =>
-                      update({
-                        parameters: e.target.value
-                          ? { reasoning_effort: e.target.value }
-                          : {},
+                      patch({ provider: e.target.value, parameters: {} })
+                    }
+                  >
+                    <option value="openai">OpenAI</option>
+                    <option value="deepseek">DeepSeek</option>
+                  </select>
+                </label>
+                {field("模型标识", "model", true)}
+                {data.provider === "openai" ? (
+                  <label>
+                    推理强度
+                    <select
+                      value={data.parameters?.reasoning_effort || ""}
+                      onChange={(e) =>
+                        patch({
+                          parameters: e.target.value
+                            ? { reasoning_effort: e.target.value }
+                            : {},
+                        })
+                      }
+                    >
+                      <option value="">模型默认</option>
+                      {["minimal", "low", "medium", "high", "xhigh", "max"].map(
+                        (v) => (
+                          <option key={v}>{v}</option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                ) : (
+                  <label>
+                    最大输出 Tokens
+                    <input
+                      type="number"
+                      min={1024}
+                      max={131072}
+                      value={data.parameters?.max_tokens || ""}
+                      onChange={(e) =>
+                        patch({
+                          parameters: e.target.value
+                            ? { max_tokens: Number(e.target.value) }
+                            : {},
+                        })
+                      }
+                    />
+                  </label>
+                )}
+              </>
+            )}
+            {kind === "harness" && (
+              <>
+                <label>
+                  运行时后端
+                  <select
+                    value={data.provider}
+                    onChange={(e) =>
+                      patch({
+                        provider: e.target.value,
+                        model_providers: [
+                          e.target.value === "codex" ? "openai" : "deepseek",
+                        ],
                       })
                     }
                   >
-                    <option value="">模型默认</option>
-                    {["low", "medium", "high", "xhigh"].map((x) => (
-                      <option key={x}>{x}</option>
+                    <option value="codex">Codex</option>
+                    <option value="dsh">DSH</option>
+                  </select>
+                </label>
+                {field("固定运行版本", "runtime_version", true)}
+                {field("构建配方摘要（可选）", "recipe_digest")}
+                <div className="full-width">
+                  <h3>已登记安装</h3>
+                  {installations
+                    .filter((r) => r.key?.provider === data.provider)
+                    .map((r) => (
+                      <p key={r.id}>
+                        {r.key.version} · {r.key.os}/{r.key.arch}
+                      </p>
+                    ))}
+                  {old && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          await request("runtime.prepare_harness", {
+                            id: old.id,
+                            project_id: project?.id,
+                          });
+                          setMessage("所选 Harness 已核验并准备。");
+                        } catch (e) {
+                          setError(String(e));
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      准备所选 Harness
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+            {kind === "tool" && (
+              <>
+                {field("工具标识", "qualified_name", true)}
+                <label>
+                  工具实现
+                  <select
+                    value={data.implementation}
+                    onChange={(e) => patch({ implementation: e.target.value })}
+                  >
+                    <option value="harness.native">Harness 原生工具</option>
+                  </select>
+                </label>
+                <label>
+                  输入 JSON Schema
+                  <textarea
+                    value={
+                      data.input_text ??
+                      JSON.stringify(data.input_schema, null, 2)
+                    }
+                    onChange={(e) => patch({ input_text: e.target.value })}
+                  />
+                </label>
+                <label>
+                  输出 JSON Schema
+                  <textarea
+                    value={
+                      data.output_text ??
+                      JSON.stringify(data.output_schema, null, 2)
+                    }
+                    onChange={(e) => patch({ output_text: e.target.value })}
+                  />
+                </label>
+              </>
+            )}
+            {["skill", "spec", "standard"].includes(kind) && (
+              <MarkdownField
+                key={draft.selected || "new"}
+                label="Markdown 正文"
+                value={data.body || ""}
+                required
+                onChange={(body) => patch({ body })}
+              />
+            )}
+            {kind === "spec" && (
+              <>
+                <label>
+                  适用动作
+                  <select
+                    multiple
+                    value={(data.applicable_actions || []).map(
+                      (a: Row) => a.kind,
+                    )}
+                    onChange={(e) =>
+                      patch({
+                        applicable_actions: Array.from(
+                          e.target.selectedOptions,
+                          (o) => ({ kind: o.value }),
+                        ),
+                      })
+                    }
+                  >
+                    {Object.entries(actionLabels).map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
                     ))}
                   </select>
                 </label>
-              ) : (
                 <label>
-                  最大输出 Tokens
-                  <input
-                    type="number"
-                    min={1024}
-                    max={131072}
-                    value={form.parameters.max_tokens || 8192}
-                    onChange={(e) =>
-                      update({
-                        parameters: { max_tokens: Number(e.target.value) },
-                      })
-                    }
-                  />
-                </label>
-              )}
-            </>
-          )}
-          {kind === "harness" && (
-            <>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void act(async () => {
-                    const runtime = await request("runtime.prepare", {
-                      provider: form.provider,
-                    });
-                    update({
-                      runtime_version: runtime.key.version,
-                      recipe_digest: undefined,
-                    });
-                    setMessage("已准备运行环境并填入精确版本。");
-                  })
-                }
-              >
-                准备 Harness 并选择精确版本
-              </button>
-              <label>
-                运行适配器
-                <select
-                  value={form.provider}
-                  onChange={(e) =>
-                    update({
-                      provider: e.target.value,
-                      model_providers: [
-                        e.target.value === "codex" ? "openai" : "deepseek",
-                      ],
-                    })
-                  }
-                >
-                  <option value="codex">Codex</option>
-                  <option value="dsh">DSH</option>
-                </select>
-              </label>
-              <label>
-                精确运行版本
-                <input
-                  required
-                  list="agent-runtime-versions"
-                  value={form.runtime_version}
-                  onChange={(e) =>
-                    update({
-                      runtime_version: e.target.value,
-                      recipe_digest: undefined,
-                    })
-                  }
-                />
-                <datalist id="agent-runtime-versions">
-                  {installations
-                    .filter((r) => r.key.provider === form.provider)
-                    .map((r) => (
-                      <option key={r.id} value={r.version || r.key.version} />
-                    ))}
-                </datalist>
-              </label>
-              <label>
-                能力（逗号分隔）
-                <input
-                  value={form.capabilities.join(", ")}
-                  onChange={(e) =>
-                    update({ capabilities: split(e.target.value) })
-                  }
-                />
-              </label>
-            </>
-          )}
-          {kind === "tool" && (
-            <>
-              <label>
-                限定名称
-                <input
-                  required
-                  value={form.qualified_name}
-                  onChange={(e) => update({ qualified_name: e.target.value })}
-                />
-              </label>
-              <label>
-                执行处理器
-                <select
-                  value={form.implementation}
-                  onChange={(e) => update({ implementation: e.target.value })}
-                >
-                  <option value="harness.native">Harness 原生工具组</option>
-                  <option value="experience.lookup">
-                    AgentID 经验检索（只读）
-                  </option>
-                </select>
-              </label>
-              <label>
-                所需能力
-                <input
-                  value={form.capabilities.join(", ")}
-                  onChange={(e) =>
-                    update({ capabilities: split(e.target.value) })
-                  }
-                />
-              </label>
-              <p className="muted">
-                工具契约使用协调器固定处理器；Skill 不会隐式授予工具权限。
-              </p>
-            </>
-          )}
-          {["skill", "spec", "standard"].includes(kind) && (
-            <>
-              <label>
-                定义正文
-                <textarea
-                  required
-                  value={form.body || ""}
-                  onChange={(e) => update({ body: e.target.value })}
-                />
-              </label>
-              {kind === "spec" && (
-                <label>
-                  检查规则
+                  自动检查规则
                   <select
                     multiple
-                    value={form.rules || []}
+                    value={data.rules || []}
                     onChange={(e) =>
-                      update({
-                        rules: Array.from(e.target.selectedOptions).map(
+                      patch({
+                        rules: Array.from(
+                          e.target.selectedOptions,
                           (o) => o.value,
                         ),
                       })
                     }
                   >
-                    {["traceability", "failure_paths", "sections"].map(
-                      (rule) => (
-                        <option key={rule}>{rule}</option>
-                      ),
-                    )}
+                    {[
+                      ["traceability", "需求追溯"],
+                      ["failure_paths", "失败路径"],
+                      ["sections", "文档章节"],
+                    ].map(([id, label]) => (
+                      <option key={id} value={id}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </label>
-              )}
-              {kind === "standard" &&
-                ["planning", "implementation", "merge"].map((purpose) => (
-                  <label key={purpose}>
-                    {purpose} Spec
-                    <select
+                <p className="muted full-width">
+                  Markdown 要求可交给人或 Agent
+                  评审，自动检查仅执行这里已支持的检查器。
+                </p>
+              </>
+            )}
+            {kind === "standard" && (
+              <div className="full-width">
+                <h3>覆盖规则</h3>
+                {(data.baseline_rules || []).map((rule: Row, index: number) => (
+                  <fieldset key={index}>
+                    <legend>规则 {index + 1}</legend>
+                    <label>
+                      标准动作
+                      <select
+                        value={rule.selector.kind}
+                        onChange={(e) => {
+                          const rules = structuredClone(data.baseline_rules);
+                          rules[index].selector.kind = e.target.value;
+                          patch({ baseline_rules: rules });
+                        }}
+                      >
+                        {Object.entries(actionLabels).map(([id, label]) => (
+                          <option key={id} value={id}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      阶段限定（可选）
+                      <select
+                        value={rule.selector.phase || ""}
+                        onChange={(e) => {
+                          const rules = structuredClone(data.baseline_rules);
+                          if (e.target.value)
+                            rules[index].selector.phase = e.target.value;
+                          else delete rules[index].selector.phase;
+                          patch({ baseline_rules: rules });
+                        }}
+                      >
+                        <option value="">全部阶段</option>
+                        {[
+                          "requirement_definition",
+                          "solution_planning",
+                          "implementation",
+                          "closure",
+                        ].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      交付类型限定（可选）
+                      <select
+                        value={rule.selector.delivery_kind || ""}
+                        onChange={(e) => {
+                          const rules = structuredClone(data.baseline_rules);
+                          if (e.target.value)
+                            rules[index].selector.delivery_kind =
+                              e.target.value;
+                          else delete rules[index].selector.delivery_kind;
+                          patch({ baseline_rules: rules });
+                        }}
+                      >
+                        <option value="">全部交付</option>
+                        {[
+                          "requirement",
+                          "plan",
+                          "implementation",
+                          "closure",
+                          "merge_candidate",
+                        ].map((value) => (
+                          <option key={value}>{value}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <RevisionSelect
+                      label={`规则 ${index + 1} 必需 Spec`}
+                      records={options("spec")}
+                      multiple
                       required
-                      value={
-                        (form.slots || []).find(
-                          (s: Row) => s.purpose === purpose,
-                        )?.spec || ""
-                      }
-                      onChange={(e) =>
-                        update({
-                          slots: [
-                            ...(form.slots || []).filter(
-                              (s: Row) => s.purpose !== purpose,
-                            ),
-                            { purpose, spec: e.target.value },
-                          ],
+                      value={rule.required_spec_refs}
+                      onChange={(value) => {
+                        const rules = structuredClone(data.baseline_rules);
+                        rules[index].required_spec_refs = value;
+                        patch({ baseline_rules: rules });
+                      }}
+                    />
+                    <label>
+                      最低匹配节点数
+                      <input
+                        type="number"
+                        min={1}
+                        required
+                        value={rule.min_matches}
+                        onChange={(e) => {
+                          const rules = structuredClone(data.baseline_rules);
+                          rules[index].min_matches = Number(e.target.value);
+                          patch({ baseline_rules: rules });
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        patch({
+                          baseline_rules: data.baseline_rules.filter(
+                            (_: Row, i: number) => i !== index,
+                          ),
                         })
                       }
                     >
-                      <option value="">选择精确 Spec 版本</option>
-                      {options("spec").map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name} v{r.version} · {r.scope.kind}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      删除规则 {index + 1}
+                    </button>
+                  </fieldset>
                 ))}
-            </>
-          )}
-        </div>
-        <div className="actions">
-          <button className="primary" disabled={busy}>
-            {old ? "保存为新版本" : "创建定义"}
-          </button>
-          {old && (
-            <button type="button" onClick={() => chooseKind(kind)}>
-              新建另一个定义
-            </button>
-          )}
-        </div>
-      </form>
-      <h3>创建 AgentID</h3>
-      <form
-        className="actions"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void act(async () => {
-            await request("agent.instance.create", {
-              project_id: project?.id,
-              command_id: crypto.randomUUID(),
-              payload: {
-                name: instanceName,
-                agent_revision_id: instanceAgent,
-                scope:
-                  instanceScope === "project" && project
-                    ? { kind: "project", project_id: project.id }
-                    : { kind: "global" },
-              },
-            });
-            await load();
-            setMessage("AgentID 已创建，组合与 Scope 已固定。");
-          });
-        }}
-      >
-        <label>
-          实例名称
-          <input
-            required
-            value={instanceName}
-            onChange={(e) => setInstanceName(e.target.value)}
-          />
-        </label>
-        <label>
-          完整 AgentRevision
-          <select
-            required
-            value={instanceAgent}
-            onChange={(e) => setInstanceAgent(e.target.value)}
-          >
-            <option value="">选择 Agent</option>
-            {options("agent").map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} v{r.version} · {r.scope.kind}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          经验范围
-          <select
-            value={project ? instanceScope : "global"}
-            onChange={(e) => setInstanceScope(e.target.value)}
-          >
-            <option value="global">Global · 跨项目积累</option>
-            {project && (
-              <option value="project">Project · 只在本项目积累</option>
+                <button
+                  type="button"
+                  onClick={() =>
+                    patch({
+                      baseline_rules: [
+                        ...(data.baseline_rules || []),
+                        {
+                          selector: { kind: "delivery.review" },
+                          required_spec_refs: [],
+                          min_matches: 1,
+                        },
+                      ],
+                    })
+                  }
+                >
+                  添加覆盖规则
+                </button>
+              </div>
             )}
-          </select>
-        </label>
-        <button disabled={busy}>创建实例</button>
-      </form>
-      <details>
-        <summary>实例及冻结组成</summary>
-        {options("agent_instance").map((r) => (
-          <article key={r.id}>
-            <strong>{r.name}</strong>
-            <p>
-              AgentID {r.id} · {r.scope.kind} · AgentRevision{" "}
-              {r.data.agent_revision_id}
-            </p>
-          </article>
-        ))}
-      </details>
-      <div className="actions">
-        <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-          上一页
-        </button>
-        <span>
-          配置目录 {page + 1} · 共 {total} 项
-        </span>
-        <button
-          disabled={(page + 1) * 100 >= total}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          下一页
-        </button>
+          </div>
+          <div className="actions">
+            <button
+              className="primary"
+              disabled={
+                busy ||
+                !draft.name.trim() ||
+                (["skill", "spec", "standard"].includes(kind) &&
+                  !data.body?.trim())
+              }
+            >
+              {old ? `保存 ${labels[kind]} 新版本` : `创建 ${labels[kind]}`}
+            </button>
+            {old && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void save(true)}
+              >
+                删除 {labels[kind]}
+              </button>
+            )}
+          </div>
+        </form>
       </div>
-      {message && (
-        <p role="status" className="notice">
-          {message}
-        </p>
-      )}
       {error && (
         <p role="alert" className="error">
           {error}
+        </p>
+      )}
+      {message && (
+        <p role="status" className="notice">
+          {message}
         </p>
       )}
     </section>

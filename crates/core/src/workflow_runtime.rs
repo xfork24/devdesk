@@ -50,6 +50,13 @@ fn owner_revision(s: &EngineeringState, owner: &str) -> Option<u64> {
                 .map(|x| x.revision)
         })
 }
+fn transition_step(state: &mut WorkflowStepRuntime, status: &str, reason: &str) {
+    if state.status != status || state.reason != reason {
+        state.status = status.into();
+        state.reason = reason.into();
+        state.revision += 1;
+    }
+}
 fn dependencies_output(
     runtime: &WorkflowRuntime,
     step: &WorkflowStep,
@@ -428,6 +435,13 @@ impl Engine {
                 &lock.plan
             };
             let source = c.payload["from_step"].as_str().unwrap_or(old.key.as_str());
+            let source = plan
+                .steps
+                .iter()
+                .find(|step| step.key == source && step.kind == "workflow.call")
+                .and_then(|step| step.parameters.get("call_entry"))
+                .and_then(Value::as_str)
+                .unwrap_or(source);
             require(
                 plan.steps.iter().any(|step| step.key == source),
                 "未知返工入口",
@@ -587,7 +601,7 @@ impl Engine {
                 }
                 let lock: FeatureConfiguration =
                     s.configuration(&runtime.configuration_lock_id)?.decode()?;
-                require(lock.compiler_version == 1, "运行器不支持此已冻结编译语义")?;
+                require([1,2].contains(&lock.compiler_version), "运行器不支持此已冻结编译语义")?;
                 let plan = if runtime.task_id.is_some() {
                     &lock.task_plan
                 } else {
@@ -619,6 +633,13 @@ impl Engine {
                     if s.workflow_paused(&runtime.owner_id) {
                         continue;
                     }
+                    let skipped_guard=step.parameters.get("call_guards").and_then(Value::as_array).is_some_and(|guards|guards.iter().any(|key|runtime.steps.iter().any(|r|Some(r.key.as_str())==key.as_str()&&r.status=="skipped")));
+                    if skipped_guard {transition_step(&mut runtime.steps[index],"skipped","父调用未进入");continue;}
+                    if step.kind=="workflow.call" {
+                        let blocked=runtime.steps.iter().find(|r|step.dependencies.contains(&r.key)&&r.status=="blocked").map(|r|format!("子流程 {} 阻塞：{}",r.key,r.reason));
+                        if let Some(reason)=blocked {transition_step(&mut runtime.steps[index],"blocked",&reason);continue;}
+                        if step.dependencies.iter().any(|key|runtime.steps.iter().any(|r|&r.key==key&&r.status=="failed")){transition_step(&mut runtime.steps[index],"failed","子流程失败，请显式返工");continue;}
+                    }
                     if !step.dependencies.iter().all(|key| {
                         runtime.steps.iter().any(|r| {
                             r.key == *key && ["completed", "skipped"].contains(&r.status.as_str())
@@ -634,15 +655,14 @@ impl Engine {
                                 .any(|r| r.key == *key && r.status == "skipped")
                         })
                     {
-                        runtime.steps[index].status = "skipped".into();
+                        transition_step(&mut runtime.steps[index],"skipped","上游分支未进入");
                         continue;
                     }
                     if !accepted_condition(s, &runtime, &step.condition) {
                         if step.kind == "branch" {
-                            runtime.steps[index].status = "skipped".into();
+                            transition_step(&mut runtime.steps[index],"skipped","分支条件不满足");
                         } else {
-                            runtime.steps[index].status = "blocked".into();
-                            runtime.steps[index].reason = "等待流程条件满足".into();
+                            transition_step(&mut runtime.steps[index],"blocked","等待流程条件满足");
                         }
                         continue;
                     }
@@ -663,6 +683,7 @@ impl Engine {
                     if let Some(failed) = effect {
                         state.status = "blocked".into();
                         state.reason = failed.data["error"].as_str().unwrap_or("操作未完成").into();
+                        if before!=json!(state){state.revision+=1;}
                         runtime.steps[index] = state;
                         continue;
                     }
@@ -907,7 +928,7 @@ impl Engine {
                         .as_ref()
                         .and_then(|slot| lock.agent_refs.get(slot))
                         .ok_or_else(|| err("configuration_required", "讨论步骤未绑定 Agent"))?;
-                    self.workflow_intent(s,state,"session.open",&owner,json!({"agent":slot,"work_type":if step.participant_slot.as_deref()==Some("architect"){"design"}else{"discussion"}}))?;
+                    self.workflow_intent(s,state,"session.open",&owner,json!({"agent":slot,"work_type":if lock.plan.binding_slots.get(step.participant_slot.as_deref().unwrap_or("")).or_else(||lock.task_plan.binding_slots.get(step.participant_slot.as_deref().unwrap_or(""))).is_some_and(|slot|slot.role==AgentRole::Architect){"design"}else{"discussion"}}))?;
                 }
                 Ok(false)
             }
@@ -1324,6 +1345,30 @@ impl Engine {
                     state.reason = "等待资源释放或清理重试".into();
                 }
                 Ok(!outstanding)
+            }
+            "workflow.call" => {
+                let outputs: BTreeMap<String, WorkflowPortReference> = serde_json::from_value(
+                    step.parameters
+                        .get("call_outputs")
+                        .cloned()
+                        .unwrap_or(json!({})),
+                )
+                .map_err(|e| err("invalid_workflow", e.to_string()))?;
+                for (port, source) in outputs {
+                    let Some(value) = runtime
+                        .steps
+                        .iter()
+                        .find(|s| s.key == source.step)
+                        .and_then(|s| s.outputs.get(&source.port))
+                        .cloned()
+                    else {
+                        state.status = "blocked".into();
+                        state.reason = format!("子流程输出未就绪: {port}");
+                        return Ok(false);
+                    };
+                    state.outputs.insert(port, value);
+                }
+                Ok(true)
             }
             "branch" | "join" => Ok(true),
             _ => Err(err("unsupported_workflow_action", &step.kind)),

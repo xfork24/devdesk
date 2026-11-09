@@ -8,8 +8,8 @@ Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检�
 
 1. 点击 **打开 GitHub 项目**，填写 `owner/repo`（也接受 GitHub HTTPS / SSH URL）、主分支和可选名称。DevDesk 自动保存仓库接入意图，后台检查权限与规则、克隆并建立 mainline worktree。同一仓库和分支再次打开时复用项目。接入成功前不能创建 Feature 或启动工程执行；失败原因及原操作核对入口显示在仓库状态中。
 2. 在设置中为所用供应商授权：Codex 点击 **网页登录**，DevDesk 自动发现可复用的同版本原生组件，或从固定的官方发行版下载并校验 SHA256，使用数据集独立的 `CODEX_HOME` 完成 OAuth；DSH 输入 DeepSeek 官方 API key，保存到系统凭据库。无需手动登记本机 Codex 或两套 Linux 镜像。
-3. 在“规范与身份”准备需要的 Harness，选择其精确构建，并创建 Model、Tool 和完整 Agent 组合。每个 Agent 固定 Model、Harness、Skills、Tools、Permission、职责和指令；实例 AgentID 独立选择 Global 或当前 Project。相同配方复用共享镜像。
-4. 在“工作流程”从内置 Feature / Task 模板创建、编辑和发布流程；在该页为当前 Project 单独绑定 Workflow、Standard 和五个职责的完整 Agent。发布与 Project 换绑是两个操作。
+3. “项目管理”已预填默认分阶段 Feature/Task 工作流及六个 Role→Agent 绑定，可直接保存或调整。默认 Model 为 GPT-6.1 Sol High，Harness 为固定 Codex，Docker 与 Permissions 已定义；各职责 Capability 使用对应的 Markdown Skill 和必要原生工具。运行环境与凭据在实际执行前核验，读取默认目录不触发安装。
+4. “工作流程”管理命名流程，在两列编辑器中维护阶段、Step、子流程、Role 和显式 Spec。“角色与 Agent”分别管理 Role/Capability/Agent；“基础组件”管理 Model/Harness/Tool/Skill；“规范”管理 Spec 和可选 Standard。所有项目绑定统一在“项目管理”保存，未选 Standard 仍执行规范和内核门禁。
 5. 在“执行与交付”创建 Feature。创建时即冻结治理配置；流程依次驱动需求讨论与交付评审、方案规划、固定 TaskGroup、Task TDD、Feature 收尾和主干接纳。角色讨论显示推荐组合，文档、上下文及测试分别在所属对象的页签查看。
 
 运行时构建配方与 DSH 权限后端随 Host 编译嵌入，发布程序无需源码目录、宿主 Node/npm 或 Rust 工具链即可准备运行时。构建上下文仅包含嵌入的固定文件，完成后清理。镜像 tag 包含配方摘要，登记时保存不可变镜像 ID、版本和平台；有显式固定安装偏好时必须核验原安装，不会静默替换。已有 Session、Attempt、Run 的安装与来源不变。

@@ -1,183 +1,285 @@
-import { useCallback, useEffect, useState } from "react";
-type Row = Record<string, any>;
-const duties: Record<string, string> = {
-  analyst: "需求分析",
-  architect: "架构设计",
-  developer: "开发实现",
-  tester: "测试验证",
-  reviewer: "独立评审",
-};
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  dutyLabels,
+  latest,
+  MarkdownField,
+  useDraft,
+  type Row,
+  type Request,
+} from "./configuration-ui";
 export function RoleManager({
   request,
   project,
   onChanged,
 }: {
-  request: (method: string, params?: Row) => Promise<any>;
+  request: Request;
   project?: Row;
   onChanged?: () => void;
 }) {
   const [rows, setRows] = useState<Row[]>([]),
-    [old, setOld] = useState<Row>(),
-    [name, setName] = useState(""),
-    [instructions, setInstructions] = useState(""),
-    [duty, setDuty] = useState("analyst"),
-    [scope, setScope] = useState("global"),
+    [projects, setProjects] = useState<Row[]>([]),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false);
+  const empty = () => ({
+    selected: "",
+    name: "",
+    instructions: "",
+    execution_role: "analyst",
+    visibility: { kind: "global", project_ids: [] as string[] },
+  });
+  const [draft, setDraft] = useDraft(
+    `devdesk:v2:roles:${project?.id || "global"}`,
+    empty,
+  );
   const load = useCallback(async () => {
-    const result = await request("query.roles", {
-      local: !!project,
-      project_id: project?.id,
-      limit: 100,
-    });
-    setRows(result.records || []);
+    const [roles, workspace] = await Promise.all([
+      request("query.roles", {
+        local: !!project,
+        project_id: project?.id,
+        limit: 100,
+        include_history: true,
+      }),
+      request("query.workspace", {
+        project_offset: 0,
+        limit: 100,
+      }),
+    ]);
+    setRows(roles.records || []);
+    setProjects(workspace.projects || []);
   }, [request, project?.id]);
   useEffect(() => {
-    void load().catch((error) => setError(String(error)));
+    let active = true;
+    void load().catch((e) => {
+      if (active) setError(String(e));
+    });
+    return () => {
+      active = false;
+    };
   }, [load]);
-  const reset = () => {
-    setOld(undefined);
-    setName("");
-    setInstructions("");
-    setDuty("analyst");
-    setScope("global");
-    setMessage("");
+  const choose = (row: Row) => {
+    setDraft({
+      selected: row.id,
+      name: row.name,
+      instructions: row.data.instructions,
+      execution_role: row.data.execution_role,
+      visibility: {
+        kind:
+          row.data.visibility?.kind ||
+          (row.scope.kind === "global" ? "global" : "projects"),
+        project_ids:
+          row.data.visibility?.project_ids ||
+          [row.scope.project_id].filter(Boolean),
+      },
+    });
+    const params = new URLSearchParams(location.search);
+    params.set("config_object", row.id);
+    history.replaceState(null, "", `?${params}`);
   };
-  const mutate = async (method: string, row: Row | undefined, payload: Row) => {
+  const routeConsumed = useRef(false);
+  useEffect(() => {
+    if (routeConsumed.current || !rows.length) return;
+    const id = new URLSearchParams(location.search).get("config_object");
+    const row = rows.find((r) => r.id === id);
+    if (row) {
+      routeConsumed.current = true;
+      if (draft.selected !== row.id) choose(row);
+    }
+  }, [rows]);
+  const old = rows.find((r) => r.id === draft.selected);
+  async function save(remove = false) {
     setBusy(true);
     setError("");
+    setMessage("");
     try {
-      await request(method, {
-        project_id: project?.id,
-        command_id: crypto.randomUUID(),
-        target: row?.id,
-        expected_revision: row?.revision,
-        payload,
-      });
-      reset();
-      setMessage(
-        method === "role.delete"
-          ? "角色已删除；历史版本、AgentID 和 Feature 配置保留。"
-          : "Role 已保存，并生成默认 Sol High / Codex Agent 与实例。已有 Feature 保持原版本。",
+      const role = await request(
+        remove ? "role.delete" : old ? "role.revise" : "role.create",
+        {
+          project_id: project?.id,
+          command_id: crypto.randomUUID(),
+          target: old?.id,
+          expected_revision: old?.revision,
+          payload: remove
+            ? {}
+            : {
+                name: draft.name,
+                scope: { kind: "global" },
+                data: {
+                  execution_role: draft.execution_role,
+                  instructions: draft.instructions,
+                  visibility:
+                    draft.visibility.kind === "global"
+                      ? { kind: "global" }
+                      : {
+                          kind: "projects",
+                          project_ids: draft.visibility.project_ids,
+                        },
+                },
+              },
+        },
       );
+      if (remove) setDraft(empty());
+      else {
+        setDraft((current) => ({ ...current, selected: role.id }));
+        const params = new URLSearchParams(location.search);
+        params.set("config_object", role.id);
+        history.replaceState(null, "", `?${params}`);
+      }
       await load();
       onChanged?.();
-    } catch (error) {
-      setError(String(error));
+      setMessage(
+        remove
+          ? "角色已停用，历史保留。"
+          : "Role 已保存；其他配置保持其已选修订。",
+      );
+    } catch (e) {
+      setError(String(e));
     } finally {
       setBusy(false);
     }
-  };
+  }
   return (
     <section className="panel role-manager" aria-label="角色管理">
       <div className="panel-heading">
         <div>
           <h2>角色 Role</h2>
-          <p>
-            Role 定义职责；Agent 绑定 Role 修订、Model、Harness
-            和能力。相同执行职责可以有多个自定义角色。
-          </p>
+          <p>定义职责和可见范围，再到 Agent tab 将角色与能力组合。</p>
         </div>
-        <button onClick={reset}>新增角色</button>
+        <button
+          onClick={() => {
+            const params = new URLSearchParams(location.search);
+            params.delete("config_object");
+            history.replaceState(null, "", `?${params}`);
+            setDraft(empty());
+          }}
+        >
+          新建 Role
+        </button>
       </div>
-      <div className="workflow-list">
-        {rows.map((row) => (
-          <article key={row.id}>
+      <div className="configuration-layout">
+        <div className="configuration-list">
+          {latest(rows).map((row) => (
             <button
-              className={old?.id === row.id ? "selected" : undefined}
+              key={row.id}
+              className={draft.selected === row.id ? "selected" : ""}
               onClick={() => {
-                setOld(row);
-                setName(row.name);
-                setInstructions(row.data.instructions);
-                setDuty(row.data.execution_role);
-                setScope(row.scope.kind);
+                choose(row);
                 setMessage("");
               }}
             >
               <strong>{row.name}</strong>
               <span>
-                {duties[row.data.execution_role]} · v{row.version} ·{" "}
-                {row.scope.kind}
+                {dutyLabels[row.data.execution_role]} · v{row.version}
               </span>
             </button>
-            <button
-              disabled={busy}
-              onClick={() => void mutate("role.delete", row, {})}
-            >
-              删除 {row.name}
-            </button>
-          </article>
-        ))}
-      </div>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void mutate(old ? "role.revise" : "role.create", old, {
-            name,
-            scope:
-              scope === "project"
-                ? { kind: "project", project_id: project!.id }
-                : { kind: "global" },
-            data: { execution_role: duty, instructions },
-          });
-        }}
-      >
-        <h3>{old ? `编辑 ${old.name} · 新修订` : "新建角色"}</h3>
-        <div className="form-grid">
+          ))}
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
           <label>
             Role 名称
             <input
               required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
-          </label>
-          <label>
-            执行职责
-            <select
-              value={duty}
-              disabled={old?.definition_id.startsWith("builtin-role-")}
-              onChange={(e) => setDuty(e.target.value)}
-            >
-              {Object.entries(duties).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
           </label>
           <label>
             Role Scope
             <select
-              value={scope}
-              disabled={!!old}
-              onChange={(e) => setScope(e.target.value)}
+              value={draft.visibility.kind}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  visibility: { kind: e.target.value, project_ids: [] },
+                })
+              }
             >
-              <option value="global">Global</option>
-              {project && <option value="project">当前 Project</option>}
+              <option value="global">Global · 所有项目</option>
+              <option value="projects">指定项目</option>
             </select>
           </label>
-          <label className="role-instructions">
-            Role 职责说明
-            <textarea
-              required
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-            />
-          </label>
-        </div>
-        <p>
-          每个新角色自动获得 GPT-6.1 Sol High、Codex
-          固定配方、Skills、Tools、Permission 和默认
-          AgentID。编辑内建默认角色会生成新套件版本；默认流程仍需保留五种工程执行职责。
-        </p>
-        <button disabled={busy} type="submit">
-          {old ? "保存 Role 新版本" : "创建 Role"}
-        </button>
-      </form>
+          {draft.visibility.kind === "projects" && (
+            <label>
+              可见项目
+              <select
+                multiple
+                required
+                value={draft.visibility.project_ids}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    visibility: {
+                      kind: "projects",
+                      project_ids: Array.from(
+                        e.target.selectedOptions,
+                        (o) => o.value,
+                      ),
+                    },
+                  })
+                }
+              >
+                {projects.map((row) => (
+                  <option value={row.id} key={row.id}>
+                    {row.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <MarkdownField
+            key={draft.selected || "new"}
+            label="Markdown 职责说明"
+            value={draft.instructions}
+            required
+            onChange={(instructions) => setDraft({ ...draft, instructions })}
+          />
+          <details>
+            <summary>执行职责兼容设置</summary>
+            <label>
+              执行职责
+              <select
+                value={draft.execution_role}
+                onChange={(e) =>
+                  setDraft({ ...draft, execution_role: e.target.value })
+                }
+              >
+                {Object.entries(dutyLabels).map(([id, label]) => (
+                  <option value={id} key={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p>用于动作和写入范围校验；Role 名称可以自由设置。</p>
+          </details>
+          <div className="actions">
+            <button
+              className="primary"
+              disabled={
+                busy || !draft.name.trim() || !draft.instructions.trim()
+              }
+            >
+              {old ? "保存 Role 新版本" : "创建 Role"}
+            </button>
+            {old && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void save(true)}
+              >
+                删除 Role
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
       {error && (
-        <p className="error" role="alert">
+        <p role="alert" className="error">
           {error}
         </p>
       )}

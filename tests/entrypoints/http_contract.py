@@ -94,11 +94,17 @@ def run():
             assert db_a.is_file()
             assert (dataset / 'global.sqlite3').is_file()
             assert not (dataset / 'engineering.sqlite3').exists()
+            def configure(project_id):
+                defaults = rpc('query.configuration_defaults', {})
+                workspace = rpc('query.workspace', {})
+                rpc('project.configuration.update', {'project_id':project_id,'command_id':'configure-'+project_id,'target':project_id,'expected_revision':workspace['active_project']['revision'],'payload':{'workflow_ref':defaults['workflow_ref'],'role_agent_bindings':defaults['role_agent_bindings']}})
+            configure(pid)
             feature_a = rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}})
             rpc('document.revise', {'project_id':pid,'command_id':'a-doc','target':feature_a['id'],'expected_revision':1,'payload':{'kind':'requirement','title':'A 需求','body':'A 的独立产物'}})
             view_a = rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})
             artifact_a = view_a['detail']['artifacts'][0]['id']
             project_b = rpc('project.create', {'command_id':'create-b','payload':{'title':'项目 B'}})['id']
+            configure(project_b)
             feature_b = rpc('feature.create', {'project_id':project_b,'command_id':'same-feature-id','payload':{'project_id':project_b,'title':'仅属于 B'}})
             assert feature_a != feature_b
             view_b = rpc('query.workspace', {'project_id':project_b})

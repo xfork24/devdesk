@@ -33,6 +33,8 @@ macOS Apple Silicon 输出 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz` 及 
 
 ## 使用与验证
 
+配置入口分为项目管理、工作流程、角色与 Agent、规范、基础组件。新项目页提供可直接采用的默认流程与六个职责 Agent；各职责引用独立 Capability 和 Markdown Skill/Spec，分别产出 PRD、Design Doc、Task Plan、测试、实现与评审。选择或调整后保存项目配置，再创建 Feature；Standard 为可选覆盖基线。[默认配置目录](resources/configuration/README.md)列出具体内容。
+
 [真实工程接入](docs/real-engineering.md)说明正常 Web 操作；[历史演示步骤](docs/plans/devdesk-prototype/demo.md)仅记录后端模拟夹具，不再对应当前 Web 入口。需要先完成规划的两个 Delivery/Review，再建立独立 Tasks；Task 完成后还有 Feature 自身收尾。
 
 ```bash

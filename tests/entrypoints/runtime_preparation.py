@@ -105,9 +105,9 @@ sys.exit(3)
         assert rpc('runtime.preparation_status')['result']['preparations'] == []
         assert rpc('query.runtime_installations')['result']['installations'] == []
         assert not (root / 'calls').exists()
-        defaults = rpc('query.default_configuration')['result']
-        assert len(defaults['bundle']['data']['role_refs']) == 5
-        model = next(row for row in defaults['records'] if row['id'] == defaults['bundle']['data']['model_ref'])
+        defaults = rpc('query.configuration_defaults')['result']
+        assert len(defaults['role_agent_bindings']) == 6
+        model = next(row for row in defaults['records'] if row['id'] == defaults['model_ref'])
         assert model['data']['model'] == 'gpt-6.1-sol' and model['data']['parameters']['reasoning_effort'] == 'high'
         opened = rpc('project.open_github', {'command_id':'github-open-fixture', 'payload':{'repository':'https://github.com/fixture/repository.git'}})
         assert 'result' in opened, opened
@@ -137,8 +137,8 @@ sys.exit(3)
 
         assert state['project']['execution_mode'] == 'live'
         configuration = rpc('query.project_configuration', {'project_id':github_id})['result']['configuration']
-        assert configuration['data']['defaults_bundle_ref'] == defaults['bundle']['id']
-        assert len(configuration['data']['agent_refs']) == 5
+        assert configuration is None, 'repository connection must leave configuration reviewable'
+        assert rpc('query.workspace')['result']['configuration_ready'] is False
         assert len(state['worktrees']) == 1 and state['worktrees'][0]['base'] == head
         assert rpc('project.open_github', {'command_id':'github-reopen-fixture','target':github_id,'payload':{}})['result']['id'] == github_id
         assert (root/'clones').read_text().splitlines() == ['clone']
@@ -147,29 +147,29 @@ sys.exit(3)
 
         # A backend-only fixture selects Codex for a discussion. It must prepare that
         # Harness before reporting missing credentials, without sending any model input.
-        pid = rpc('project.create', {'command_id':'preparation-fixture', 'payload':{'title':'Runtime preparation fixture','use_builtin_defaults':True}})['result']['id']
+        pid = rpc('project.create', {'command_id':'preparation-fixture', 'payload':{'title':'Runtime preparation fixture'}})['result']['id']
         revision = rpc('query.workspace')['result']['active_project']['revision']
-        agent_instance = defaults['bundle']['data']['agent_instance_refs']['analyst']
+        agent = defaults['role_agent_bindings']['builtin-role-analyst']
         def open_session(n):
             return rpc('session.open', {'project_id':pid,'command_id':'open-'+str(n),'target':pid,'expected_revision':revision,
-                'payload':{'agent_instance_id':agent_instance}})
+                'payload':{'agent':agent}})
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(open_session, range(4)))
         assert all(r.get('error',{}).get('data',{}).get('code') == 'authentication_required' for r in results), results
         installations = rpc('query.runtime_installations')['result']['installations']
         assert len(installations) == 1 and installations[0]['key']['provider'] == 'codex'
         assert rpc('runtime.prepare', {'provider':'codex'})['result']['id'] == installations[0]['id']
-        assert rpc('runtime.prepare_defaults')['result']['id'] == installations[0]['id']
-        assert rpc('runtime.prepare_defaults')['result']['id'] == installations[0]['id']
-        materialized = rpc('query.default_configuration')['result']['materializations']
+        assert rpc('runtime.prepare_harness', {'id':defaults['harness_ref']})['result']['id'] == installations[0]['id']
+        assert rpc('runtime.prepare_harness', {'id':defaults['harness_ref']})['result']['id'] == installations[0]['id']
+        materialized = rpc('query.configuration_defaults')['result']['materializations']
         assert len(materialized) == 1 and materialized[0]['data']['installation_id'] == installations[0]['id']
         # Losing the pinned image cannot silently materialize this revision again.
         image = installations[0]['artifact']['image_id']
         import hashlib
         pinned_file = root / hashlib.sha256(image.encode()).hexdigest()
         previous_image = pinned_file.read_bytes();pinned_file.unlink()
-        assert 'error' in rpc('runtime.prepare_defaults')
-        assert rpc('query.default_configuration')['result']['materializations'] == materialized
+        assert 'error' in rpc('runtime.prepare_harness', {'id':defaults['harness_ref']})
+        assert rpc('query.configuration_defaults')['result']['materializations'] == materialized
         pinned_file.write_bytes(previous_image)
         calls = [json.loads(line) for line in (root/'calls').read_text().splitlines()]
         assert sum(c[0] == 'build' for c in calls) == 1

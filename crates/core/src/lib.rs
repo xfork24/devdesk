@@ -1,6 +1,12 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
 mod advances;
 mod builtin_defaults;
+mod configuration;
+mod default_catalog;
+pub use configuration::{
+    project_configuration_references, retired as configuration_retired,
+    visible as configuration_visible,
+};
 mod conversation_runtime;
 mod conversations;
 mod effects;
@@ -9,8 +15,10 @@ mod live_merges;
 mod live_runs;
 mod permissions;
 pub mod ports;
+mod project_configuration;
 mod proposals;
 mod repositories;
+mod workflow_definition;
 mod workflow_runtime;
 // Compatibility names for existing adapters and contract fixtures.
 use devdesk_domain::*;
@@ -572,6 +580,7 @@ impl Engine {
         }
         self.store.transact(None, &mut |s| {
             seed_configuration(s);
+            configuration::migrate_capabilities(s);
             self.freeze_legacy_features(s);
             for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Dispatched){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="restart_after_dispatch".into();op.revision+=1;}
             for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Prepared){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="startup_pending_intent_requires_reconcile".into();op.revision+=1;}
@@ -824,9 +833,10 @@ impl Engine {
                     revision: 1,
                 });
 
-                if p["use_builtin_defaults"] == true {
-                    self.attach_builtin_project_defaults(s, &pid)?;
-                }
+                require(
+                    p["use_builtin_defaults"] != true,
+                    "请显式选择 Workflow 并配置项目角色，不再自动采用套件",
+                )?;
                 json!({"id":pid})
             }
             "project.update" => {
@@ -1744,6 +1754,7 @@ impl Engine {
                         tid.as_deref().unwrap_or(&fid),
                         &phase,
                         &live_sessions,
+                        p["workflow_step_instance_id"].as_str(),
                     )?;
                     let primary = match phase.as_str() {
                         "planning" => "design",
@@ -1842,9 +1853,13 @@ impl Engine {
                         ("verify", vec!["feature_tests", "docs"], false),
                     ],
                 };
-                let nodes: Vec<(String, Vec<String>, bool)> = if let Some(recipe) =
-                    self.workflow_recipe(s, tid.as_deref().unwrap_or(&fid), &phase)
-                {
+                let nodes: Vec<(String, Vec<String>, bool)> = if let Some(recipe) = self
+                    .workflow_recipe(
+                        s,
+                        tid.as_deref().unwrap_or(&fid),
+                        &phase,
+                        p["workflow_step_instance_id"].as_str(),
+                    ) {
                     recipe
                         .into_iter()
                         .map(|n| (n.key, n.dependencies, n.writes))
@@ -2665,53 +2680,64 @@ impl Engine {
                 .binding
                 .clone()
         };
-        let standard = s
-            .definitions
-            .iter()
-            .find(|x| x.id == lock.standard)
-            .ok_or_else(|| err("blocked", "Standard 锁缺失"))?;
-        let purpose = if d.merge_id.is_some() {
-            "merge"
-        } else if ["requirement", "plan"].contains(&d.kind.as_str()) {
-            "planning"
-        } else {
-            "implementation"
-        };
-        let slot = standard
-            .slots
-            .iter()
-            .find(|x| x.purpose == purpose)
-            .ok_or_else(|| err("blocked", "Standard 缺少对应用途 slot"))?;
-        let spec = s
-            .definitions
-            .iter()
-            .find(|x| x.id == slot.spec)
-            .ok_or_else(|| err("blocked", "Spec 锁缺失"))?;
-        for rule in &spec.rules {
-            let documents = d
-                .documents
-                .iter()
-                .filter_map(|id| s.documents.iter().find(|x| &x.id == id))
-                .collect::<Vec<_>>();
-            let passed = match rule.as_str() {
-                "traceability" => {
-                    documents.iter().any(|x| x.kind == "requirement")
-                        && documents
-                            .iter()
-                            .filter(|x| x.kind == "design")
-                            .all(|x| x.requirement_id.is_some())
-                }
-                "failure_paths" => documents
+        let specification_checks =
+            if let Some(specs) = self.delivery_specifications(s, d, run.as_deref())? {
+                specs
+            } else {
+                let standard = s
+                    .definitions
                     .iter()
-                    .any(|x| x.body.contains("错误") || x.body.contains("失败")),
-                "sections" => documents.iter().any(|x| x.body.contains("##")),
-                _ => false,
+                    .find(|x| x.id == lock.standard)
+                    .ok_or_else(|| err("blocked", "Standard 锁缺失"))?;
+                let purpose = if d.merge_id.is_some() {
+                    "merge"
+                } else if ["requirement", "plan"].contains(&d.kind.as_str()) {
+                    "planning"
+                } else {
+                    "implementation"
+                };
+                let slot = standard
+                    .slots
+                    .iter()
+                    .find(|x| x.purpose == purpose)
+                    .ok_or_else(|| err("blocked", "Standard 缺少对应用途 slot"))?;
+                let spec = s
+                    .definitions
+                    .iter()
+                    .find(|x| x.id == slot.spec)
+                    .ok_or_else(|| err("blocked", "Spec 锁缺失"))?;
+                vec![(
+                    spec.clone(),
+                    format!("standard={} slot={purpose}", standard.id),
+                )]
             };
-            checks.push(Check {
-                key: format!("spec:{}:v{}:{rule}", spec.name, spec.version),
-                passed,
-                evidence: format!("standard={} slot={purpose} spec={}", standard.id, spec.id),
-            });
+        for (spec, source) in &specification_checks {
+            for rule in &spec.rules {
+                let documents = d
+                    .documents
+                    .iter()
+                    .filter_map(|id| s.documents.iter().find(|x| &x.id == id))
+                    .collect::<Vec<_>>();
+                let passed = match rule.as_str() {
+                    "traceability" => {
+                        documents.iter().any(|x| x.kind == "requirement")
+                            && documents
+                                .iter()
+                                .filter(|x| x.kind == "design")
+                                .all(|x| x.requirement_id.is_some())
+                    }
+                    "failure_paths" => documents
+                        .iter()
+                        .any(|x| x.body.contains("错误") || x.body.contains("失败")),
+                    "sections" => documents.iter().any(|x| x.body.contains("##")),
+                    _ => false,
+                };
+                checks.push(Check {
+                    key: format!("spec:{}:v{}:{rule}", spec.name, spec.version),
+                    passed,
+                    evidence: format!("{source} spec={}", spec.id),
+                });
+            }
         }
         if let Some(run) = run.as_ref().and_then(|id| {
             s.runs
@@ -2753,7 +2779,16 @@ impl Engine {
             reason: reason.into(),
             assignment: Some(ReviewAssignment {
                 delivery: d.id.clone(),
-                spec: spec.id.clone(),
+                spec: specification_checks
+                    .first()
+                    .ok_or_else(|| err("blocked", "评审缺少规范"))?
+                    .0
+                    .id
+                    .clone(),
+                spec_refs: specification_checks
+                    .iter()
+                    .map(|(spec, _)| spec.id.clone())
+                    .collect(),
                 reviewer: if let Some(rid) = run.as_ref() {
                     let r = s.runs.iter().find(|r| &r.id == rid).unwrap();
                     Reviewer::Agent {
@@ -3540,6 +3575,12 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if let Some(result) = self.workflow_configuration_query(method, p) {
+            return result;
+        }
+        if let Some(result) = self.configuration_query(method, p) {
+            return result;
+        }
         if let Some(result) = self.governance_query(method, p) {
             return result;
         }

@@ -100,6 +100,7 @@ fn result_id(v: Value) -> String {
 
 fn new_feature(e: &Engine) -> String {
     let pid = result_id(call(e, "project.create", "", json!({"title":"测试项目"})));
+    runtime::configure_project(e, &pid);
     result_id(call(
         e,
         "feature.create",
@@ -276,10 +277,18 @@ fn project_databases_migrate_full_history_and_keep_the_legacy_source() {
         }
     }
     assert_eq!(events, before["events"].as_array().unwrap().len());
-    assert_eq!(
-        serde_json::to_value(global_state.definitions).unwrap(),
-        before["definitions"]
-    );
+    let migrated = serde_json::to_value(global_state.definitions).unwrap();
+    for original in before["definitions"].as_array().unwrap() {
+        assert_eq!(
+            migrated
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|d| d["id"] == original["id"]),
+            Some(original),
+            "migration must preserve every immutable source definition"
+        );
+    }
     let conn = rusqlite::Connection::open(dir.path().join("global.sqlite3")).unwrap();
     assert_eq!(conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('features','runs','projects','deliveries')",[],|r|r.get::<_,usize>(0)).unwrap(),0);
     assert_eq!(
@@ -468,7 +477,7 @@ fn recorded_native_stage_with_kind(
         e,
         "document.revise",
         &fid,
-        json!({"kind":"requirement","title":"Native scope","body":"Require observable native evidence"}),
+        json!({"kind":"requirement","title":"Native scope","body":"## Requirement\nRequire observable native evidence.\n## 错误与失败\nReport invalid inputs."}),
     );
     let state = e.store.snapshot().unwrap();
     let project = state.feature(&fid).unwrap().project_id.clone();
@@ -541,6 +550,9 @@ fn recorded_native_stage_with_kind(
                 paused: false,
                 revision: 1,
             });
+            let spec=s.feature_configuration(&fid).unwrap().plan.steps.iter().find(|step|step.kind=="attempt.execute"&&step.parameters.get("phase").and_then(Value::as_str)==Some("requirement_definition")).unwrap().spec_refs.clone();
+            let data=json!({"spec_refs":spec,"step":"fixture-requirement","workflow_step_instance_id":"fixture-step"});
+            s.governance.push(ConfigurationRecord{id:id(),kind:"execution_specification".into(),definition_id:aid.clone(),scope:Scope::Feature{project_id:project.clone(),feature_id:fid.clone()},name:"Explicit fixture Spec source".into(),version:1,supersedes:None,content_hash:configuration_hash(&data),data,immutable:true,revision:1,created_at:1});
             s.runs.push(Run {
                 id: rid.clone(),
                 attempt_id: Some(aid.clone()),
@@ -889,7 +901,7 @@ fn failed_workflow_review_waits_for_explicit_retry_and_preserves_its_binding() {
         .unwrap()
         .clone();
     reviewer.id = id();
-    reviewer.agent = "builtin-agent-reviewer-v1".into();
+    reviewer.agent = default_configured_agent_id("reviewer");
     reviewer.runtime_binding.as_mut().unwrap().work_type = WorkType::Review;
     reviewer.external_session = Some(format!("fixture-reviewer-{}", reviewer.id));
     e.store
@@ -1070,7 +1082,9 @@ fn failed_workflow_review_waits_for_explicit_retry_and_preserves_its_binding() {
     let state = e.store.snapshot().unwrap();
     assert_eq!(
         state.runs.iter().find(|r| r.id == retry).unwrap().status,
-        Status::Succeeded
+        Status::Succeeded,
+        "{:?}",
+        state.runs.iter().find(|r| r.id == retry).unwrap().result
     );
     assert_eq!(
         json!(state.runs.iter().find(|r| r.id == failed.id).unwrap()),

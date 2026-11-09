@@ -1,8 +1,8 @@
 # Role、Capability、Workflow 与项目配置重构
 
-日期：2026-11-09。状态：已按最新讨论更新为执行计划，待实施。本轮只更新计划与索引，产品实现从 P0 开始。
+日期：2026-11-09。状态：P0–P7 本轮实施与 macOS 验收完成；实际范围与平台边界见 [EXECUTION.md](EXECUTION.md) 和 [NATIVE.md](NATIVE.md)。
 
-本计划承接当前版本化配置、项目分库、Workflow 编译和原生执行机制，替代“内建默认套件”作为新项目配置入口。历史实现与验收仍以原计划为准；本文不表示这些改动已经实现。
+本计划承接当前版本化配置、项目分库、Workflow 编译和原生执行机制，替代“内建默认套件”作为新项目配置入口。历史实现与验收仍以原计划为准；下文保留实施基线与验收要求，实际完成情况以本轮执行记录为准。
 
 ## 1. 实施基线
 
@@ -276,3 +276,18 @@ Schema 回归须覆盖新增 Capability、Agent 依赖闭包、Role 多项目可
 - P5 将五组配置入口及页内 tab 落地，并验证所有可编辑页面的保存、重载、删除、引用过滤、跳转返回和草稿恢复。
 - P7 汇总实际检查命令、通过/失败、外部资源前提、未完成项和版本迁移结果。历史报告不能代替本次实现的验收；仅通过编译或展示页面不代表完成计划。
 - 最终交付包括产品代码、追加迁移、Schema/协议与操作说明、自动化回归、CONTRACT.md 和 EXECUTION.md。计划目录只保留 Markdown。
+
+## 12. 实施期间补充：可直接采用的默认配置与阶段能力
+
+2026-11-09 用户补充，优先于前文对“移除默认套件入口”的宽泛解释：保留完整、已存在、可直接采用的默认配置，但资源仍按独立领域对象管理。新项目页预填默认流程和 Role→Agent 映射，允许一键保存或逐项调整；不复活自动追随套件修订、编辑 Role 自动派生 Agent 等耦合。已有配置和执行锁保持精确修订。
+
+- 默认 Model 为 GPT-6.1 Sol High，Harness 为固定版本 Codex；默认 Sandbox 为 Docker。Tools、Skills、Harness/Sandbox Permissions 均有实际定义与精确引用。真实模型验收本轮只用 Codex；DSH 因账户欠费不调用模型。
+- 默认 Feature 和 Task Workflow 分阶段。Stage 用 Markdown 说明意图与交付物；执行 Step 明确 Role 和 Spec，项目预填这些 Role 对应的 Agent。
+- 能力按职责区分，不能所有 Agent 共用同一份泛化 Skill。提供需求分析、架构设计、项目管理、开发、测试和独立评审等 Role，以及各自 Capability 和命名 Agent。项目经理使用独立 Role 身份，当前映射 architect 执行职责以复用 TaskPlan 结构化提案协议，不混同架构师身份。
+- 需求分析 Skill 指导产出 PRD（底层 requirement 文档）：目标、用户场景、范围、约束、验收编号、失败路径、未决问题。
+- 架构设计 Skill 指导产出 Design Doc：关联 PRD、组件职责、接口/数据、方案取舍、安全与故障、验证及演进。
+- 项目管理 Skill 指导产出 Task Plan：从 PRD 和 Design 拆分可交付 Task，明确依赖、验收映射、范围、测试配方与汇合条件。
+- 测试 Skill 覆盖 Test Plan、独立测试、有效 assertion Red、Green、Feature 验收与候选验证；开发 Skill 覆盖 TDD 实现和说明文档；Reviewer Skill 覆盖独立评审及按当前交付阶段判定。
+- 阶段 Spec 按对应能力和阶段意图编写，明确必需 Markdown 交付内容、验收与失败条件。需求、设计、Task 拆分、测试设计、方案交付、Task 实现、Feature 收尾和候选合入各有精确 Spec。自动检查仅复用已有检查器；正文不冒充已经实现的自动化检查。
+- 必需 Tool 使用现有原生文件/命令工具，按所需能力引用；AgentID 经验作为检索、定位 Feature/Task 问题并恢复现场的历史上下文管理，不作为 Tool，不创建只有名称而没有执行处理器的工具。写范围继续由内核及 Permission 冻结并执行。
+- 默认 Skill/Spec/阶段说明作为仓库内 Markdown 资源维护并嵌入二进制，安装后不依赖源码目录。补充默认目录一致性、阶段输出/能力差异和真实 Codex 输入的回归。

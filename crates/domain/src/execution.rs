@@ -48,6 +48,8 @@ pub enum Reviewer {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewAssignment {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spec_refs: Vec<Id>,
     pub delivery: Id,
     pub spec: Id,
     pub reviewer: Reviewer,

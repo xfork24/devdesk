@@ -465,3 +465,56 @@ fn test_recipe_schema_rejects_the_same_unsafe_paths_as_the_domain() {
         );
     }
 }
+
+#[test]
+fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline() {
+    round_trip::<DefinitionVisibility>(
+        "DefinitionVisibility",
+        json!({"kind":"projects","project_ids":["one","two"]}),
+    );
+    round_trip::<CapabilityDefinition>(
+        "CapabilityDefinition",
+        json!({"model_ref":"model-v1","harness_ref":"harness-v1","tools":["native-v1"],"skills":["prd-v1"]}),
+    );
+    round_trip::<SpecificationDefinition>(
+        "SpecificationDefinition",
+        json!({"body":"# PRD\n\n## 验收","applicable_actions":[{"kind":"agent.interact","phase":"requirement"}],"rules":["sections"]}),
+    );
+    round_trip::<StandardDefinition>(
+        "StandardDefinition",
+        json!({"body":"# Baseline","baseline_rules":[{"selector":{"kind":"delivery.review","delivery_kind":"requirement"},"required_spec_refs":["prd-v1"],"min_matches":1}]}),
+    );
+    let project = json!({"schema_version":2,"workflow_ref":"workflow-v2","standard_ref":null,"role_agent_bindings":{"product":"analyst-v2"},"specification_snapshot":[],"baseline_check":null,"definition_hashes":{}});
+    SCHEMAS.assert_valid("project-configuration.schema.json", &project);
+    let dir = tempfile::tempdir().unwrap();
+    let e = Engine::new(
+        Arc::new(SqliteStore::open(dir.path()).unwrap()),
+        Arc::new(FileArtifacts::new(dir.path().into())),
+        runtime::adapters(),
+    );
+    e.bootstrap().unwrap();
+    let state = e.store.snapshot().unwrap();
+    for id in [DEFAULT_FEATURE_WORKFLOW_V2_ID, DEFAULT_TASK_WORKFLOW_V2_ID] {
+        let value = state.configuration(id).unwrap().data.clone();
+        SCHEMAS.assert_valid("workflow.schema.json", &value);
+        let doc: WorkflowDocument = serde_json::from_value(value).unwrap();
+        assert!(doc.stages.iter().all(|s| !s.description.is_empty()));
+    }
+    for role in [
+        "analyst",
+        "architect",
+        "project-manager",
+        "developer",
+        "tester",
+        "reviewer",
+    ] {
+        let agent = state
+            .configuration(&default_configured_agent_id(role))
+            .unwrap();
+        SCHEMAS.assert_valid("agent-composition.schema.json", &agent.data);
+        let cap = state
+            .configuration(agent.data["capability_ref"].as_str().unwrap())
+            .unwrap();
+        SCHEMAS.assert_valid("capability.schema.json", &cap.data);
+    }
+}

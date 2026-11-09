@@ -20,7 +20,8 @@
         "resource.cleanup",
         "tasks.foreach",
         "branch",
-        "join"
+        "join",
+        "workflow.call"
       ]
     },
     "contract_version": {

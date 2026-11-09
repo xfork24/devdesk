@@ -1,6 +1,6 @@
 # DevDesk v0.3 领域规范
 
-当前工程库 schema v34，全局库 v5。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
+当前工程库 schema v35，全局库 v6。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
 
 ## 归属与对象契约
 
@@ -15,9 +15,10 @@
 | Test | 引用 Requirement/Design 和可选 Task 的测试定义 | 定义先于 Task 实现冻结，TestRunner 请求实际携带测试定义、候选与环境并校验响应绑定；TestResult 在 Run.result | documents(kind=test)；示例“空列表返回表头” |
 | Doc | Feature/Task 的不可变说明修订 | document.revise 或原生执行产生；所属交付 Review | documents(kind=doc)；示例“使用及限制” |
 | Spec | 独立规范定义 ID、修订链 | definition.revise 克隆新版本，不回写旧版本 | definitions(family=spec)；例 Internal Design Spec v1/v2 |
-| Standard | 独立定义，slots 固定 Spec ID | 克隆修订；Attempt 锁定其 ID | definitions(family=standard)；例默认工程标准 |
+| Standard | 可选质量基线，按动作/阶段要求 Spec 覆盖 | 克隆修订，不注入或覆盖 Step Spec | governance_records(kind=standard)；旧 slots 仅供 v1 历史 |
 | Skill | 独立定义修订 | 克隆、绑定；不支持任意脚本 | definitions(family=skill)；例 TDD v1 |
-| AgentRevision | Model + Harness + 显式 Skills/Tools/Permission、职责与指令 | 整体发布不可变组合，不允许在 AgentID 会话中拆开覆盖 | governance_records(kind=agent)，投影 legacy AgentProfile 供执行器使用 |
+| Capability | 一个 Model、一个 Harness、多个 Tool/Skill 精确修订 | 独立命名、修订和停用；不随 Role 自动派生 | governance_records(kind=capability) |
+| AgentRevision | RoleRevision + CapabilityRevision，保留执行权限和兼容投影 | 整体发布不可变组合，不允许在 AgentID 会话中拆开覆盖 | governance_records(kind=agent)，投影 legacy AgentProfile 供执行器使用 |
 | AgentID | 实例身份，固定 AgentRevision 和独立 Scope | Global 跨项目经验；Project 仅本项目；同组合可有多个实例 | agent_instance / agent_session / agent_session_use |
 | Model / HarnessDefinition / ToolDefinition | 模型后端/参数、运行协议与精确构建、可执行能力契约 | 版本化；不支持的协议、参数或处理器拒绝派发 | governance_records(kind=model/harness/tool) |
 | Scope | Global / Project / Feature 值对象 | 定义可见性、绑定目标、实例范围和材料来源分别表达 | 类型化 kind 与 project_id / feature_id |
@@ -52,7 +53,7 @@
 8. 输入变化使未完成流程有关证据 stale；已完成历史保留，后续变更用关联的新 Feature/Task。定义修订不会更改旧锁。
 9. Git 候选使用已观察的精确版本。目标推进先登记意图、事务外执行 CAS，再核对本地与远端回执；command_id 幂等，未核验远端事实不能声明交付完成。
 10. 重启将未确认 running Run 标记 interrupted，保留原因，不透明续跑或自动成功。Queued 可继续调度，失败 Attempt 需明确重试或新 Attempt。
-11. StandardLock 由固定 Standard 及其具名用途（planning/implementation/merge）Spec slots 表达；ExecutionBindingLock 包含 Agent/Skills/Harness/Sandbox 确定版本。ReconstructionManifest 是 Snapshot 中固定引用的组合，不设管理服务。
+11. v2 的执行规范来自 Step.spec_refs；Standard 是可选覆盖基线。v1 StandardLock 的具名用途（planning/implementation/merge）Spec slots 保持历史读取与恢复；ExecutionBindingLock 包含 Agent/Skills/Harness/Sandbox 确定版本。ReconstructionManifest 是 Snapshot 中固定引用的组合，不设管理服务。
 12. SQLite 为唯一工程事实源，文件 manifest/报告不是第二套可写状态。
 
 ## 闭环例子
@@ -135,8 +136,12 @@ AgentID 经验索引以项目名、Feature 名和工作时间为主要筛选，�
 
 旧 live Feature 启动升级时建立 legacy_feature_lock，仅保存可证明的 Binding 和已记录 Session，不生成虚构 AgentID。治理配置禁止换绑，新执行需使用完整 Project 配置建立后继 Feature；原冻结执行及回执仍可读取和核对。
 
-## Role 与内建默认套件
+## Role、Capability 与默认配置
 
-RoleDefinition 定义名称、职责说明、执行职责和 Global/Project Scope，修订正文不可变。AgentComposition.role_ref 固定 RoleRevision，历史 role 枚举字段只作内核执行职责兼容。Role 修改产生新版本和默认 Agent/AgentID；role_retirement 表示用户删除，旧 Feature/实例历史继续可读。默认流程当前使用的角色需存在同职责替代者才能删除。
+Role 定义名称、Markdown 职责及 Global/多个项目可见范围，执行职责类型与用户定义身份分开。全局目录索引共享 Role 的一条修订历史，数据库归属不限制声明的多项目可见性。编辑 Role 只创建 Role 修订；被 Agent、Workflow 或项目引用时必须先显式换绑才可删除。停用保留历史，不生成替代资源。
 
-默认集合 defaults_bundle 包含全部精确引用。内建模型为 gpt-6.1-sol / high，Harness 为 Codex 0.167.0 的固定配方；Project 自动采用，Feature 锁定 defaults_bundle_ref。harness_materialization 保存配方到实际 RuntimeInstallation 的不可变关联；Sandbox 定义与物理执行实例分开，构建模板不声称已发生执行。
+Capability 固定 Model、Harness、Tools、Skills。命名 Agent 固定 RoleRevision 和 CapabilityRevision；项目以 Role 身份绑定单个 Agent。Workflow v2 Step 只声明 Role 和精确 Spec，配方内部节点也声明 Role；项目和 Feature 冻结完整依赖摘要。角色身份不相同的 Agent 不能仅凭执行职责相同替换。可选 Standard 校验规范落点、版本及最低匹配数量，不修改 Step 行为；审计快照按路径、动作、角色、规范与输出契约比较。
+
+默认目录提供分阶段 Feature/Task 工作流、六个职责 Agent、各自 Capability、Markdown Skill/Spec、GPT-6.1 Sol High、固定 Codex Harness 和 Docker 默认权限。架构师产出 Design Doc，独立项目经理 Role 负责 Task Plan；其底层执行职责复用 architect 协议。新项目页预填默认配置，用户保存后才用于新 Feature。默认资源是普通独立定义，不自动追随修订。完整目录见 [默认配置](../resources/configuration/README.md)。
+
+v1 配置及旧 defaults_bundle 只保留历史语义。升级按旧 Workflow/Standard 精确组合派生等价 v2 Spec 绑定，不覆盖原 Workflow；无法证明的映射留待配置。harness_materialization 保存固定配方到 RuntimeInstallation 的不可变关联，Sandbox 定义与实际 Docker 执行实例分开，默认条目不声称已经运行。
