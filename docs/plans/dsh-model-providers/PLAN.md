@@ -1,6 +1,6 @@
 # DeepSeek Harness 多模型服务商接入计划
 
-日期：2026-11-09。状态：已批准实施；按阶段验证。范围：通过 DevDesk 现有 DeepSeek Harness 接入智谱国内编程订阅、MiniMax 国内订阅和本机 Ollama，兼容现有 DeepSeek 官方 API key。
+日期：2026-11-09。状态：已实现并完成本轮验证，结果见 [实施记录](EXECUTION.md)。范围：通过 DevDesk 现有 DeepSeek Harness 接入智谱国内编程订阅、MiniMax 国内订阅和本机 Ollama，兼容现有 DeepSeek 官方 API key。
 
 本轮验证约束：真实模型仅使用 Codex；DSH 只使用本地模拟端点，不读取真实 DSH key 或发送真实 DSH 推理请求。
 

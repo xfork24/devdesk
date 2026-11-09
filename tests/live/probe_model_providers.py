@@ -43,12 +43,6 @@ def main():
     with tempfile.TemporaryDirectory(prefix='devdesk-model-acceptance-') as temporary:
         dataset = Path(temporary) / 'data'
         dataset.mkdir(mode=0o700)
-        if args.codex_auth_source:
-            home = dataset / 'credentials' / 'codex'
-            home.mkdir(parents=True, mode=0o700)
-            home.parent.chmod(0o700)
-            shutil.copyfile(args.codex_auth_source, home / 'auth.json')
-            (home / 'auth.json').chmod(0o600)
         server = ThreadingHTTPServer(('0.0.0.0', 0), Directory)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -76,6 +70,12 @@ def main():
 
         try:
             c = start()
+            if args.codex_auth_source:
+                home = dataset / 'credentials' / 'codex'
+                home.mkdir(parents=True, mode=0o700, exist_ok=True)
+                home.parent.chmod(0o700)
+                shutil.copyfile(args.codex_auth_source, home / 'auth.json')
+                (home / 'auth.json').chmod(0o600)
             assert len(c.rpc('query.model_providers')['providers']) == 5
             assert c.rpc('credentials.status', {'model_provider': 'ollama'})['auth_kind'] == 'none'
             project = c.command('project.create', payload={'title': 'Isolated provider acceptance'})['id']

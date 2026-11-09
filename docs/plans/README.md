@@ -4,7 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [DeepSeek Harness 多模型服务商接入](dsh-model-providers/PLAN.md) | [实施记录](dsh-model-providers/EXECUTION.md) | 实施中；M0–M4 与离线回归通过，真实模型仅用 Codex，DSH 不发真实推理请求 |
+| [DeepSeek Harness 多模型服务商接入](dsh-model-providers/PLAN.md) | [实施记录](dsh-model-providers/EXECUTION.md) | 已实现；阶段回归、固定 DSH 模拟协议与独立包真实 Codex 通过；DSH 真实订阅及 Ubuntu 宿主待验 |
 | [工具与技能接入](tool-skill-integrations/PLAN.md) | 接入设计与分阶段执行计划 | 待实施；独立接入页、HTTP API/MCP 可调用工具、Skill 资源、Capability 绑定、权限冻结与真实调用回执；原生工具组 Schema 表单先行修正 |
 | [Permission 资源与运行时版本绑定](permission-runtime-bindings/PLAN.md) | [实施记录](permission-runtime-bindings/EXECUTION.md) | 已实施；统一文件/UI、确切目标绑定与后继 Session 生效，macOS 自动化、双供应商原生边界和真实 Codex 改绑通过；Ubuntu、DSH 真实模型与完整崩溃矩阵待补验 |
 | [Role、Capability、Workflow 与项目配置重构](role-capability-project-configuration/PLAN.md) | [实施记录](role-capability-project-configuration/EXECUTION.md)、[契约](role-capability-project-configuration/CONTRACT.md) | 五组配置导航、Role/Capability/Agent、显式规范、可选基线、独立子流程及按阶段区分能力的默认配置；macOS 自动化与真实 Codex 工程闭环通过，Ubuntu 本轮未重跑 |
