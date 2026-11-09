@@ -210,6 +210,12 @@ fn render(
         .input_snapshot
         .as_ref()
         .and_then(|id| s.snapshots.iter().find(|v| &v.id == id));
+    let context = s.contexts.iter().find(|c| c.owner_id == session.owner_id);
+    let historical_context=snapshot.and_then(|snap|snap.inherited_from.as_ref())
+        .and_then(|id|s.snapshots.iter().find(|v|&v.id==id)).map(|snap| {
+            let excerpt=snap.content.chars().take(16384).collect::<String>();
+            json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":excerpt,"truncated":excerpt.len()<snap.content.len(),"original_bytes":snap.content.len(),"treatment":"historical material, not current task authority"})
+        });
     let documents = snapshot
         .map(|snap| {
             snap.documents
@@ -248,7 +254,7 @@ fn render(
     let mut content = json!({"renderer_version":TASK_RENDERER,
         "source":{"workflow_revision_id":def.workflow_revision_id,"path":def.path,"source_step":def.source_step,"feature_lock_id":binding.data["feature_lock_id"],"workflow_instance_id":binding.data["workflow_instance_id"],"step_instance_id":binding.data["step_instance_id"],"round":binding.data["round"],"recipe_node":node,"project_id":session.project_id,"feature_id":session.feature_id,"task_id":session.task_id,"session_id":session.id,"run_id":turn.run_id,"turn_id":turn.id},
 "specifications":specs,"input":if turn.run_id.is_some(){serde_json::from_str::<Value>(&turn.input).unwrap_or(json!(turn.input))}else{json!(turn.input)},
-        "inputs":inputs,"materials":documents,"code_view":turn.code_view,
+        "inputs":inputs,"materials":documents,"context":context,"historical_context":historical_context,"code_view":turn.code_view,
         "authorization":session.runtime_binding.as_ref().map(|b|json!({"permissions":b.permissions,"tool_policy":b.tool_policy,"work_type":b.work_type,"writable_paths":b.writable_paths,"read_only_paths":b.read_only_paths})),
         "output_contract":agent_task_output_contract(&step,node)});
     content
@@ -303,6 +309,14 @@ impl Engine {
             return Ok(());
         };
         let node = c.payload["workflow_recipe_node"].as_str();
+        if let Some(node) = node {
+            let step = def.decode_step()?;
+            require(
+                step.kind == "attempt.execute"
+                    && step.execution_recipe.iter().any(|n| n.key == node),
+                "配方节点不属于冻结步骤",
+            )?;
+        }
         if method == "session.open"
             && def.decode_step()?.kind == "attempt.execute"
             && node.is_none()
@@ -633,6 +647,13 @@ impl Engine {
             };
             let step = def.decode_step()?;
             let node = p["recipe_node"].as_str();
+            if let Some(node) = node {
+                require(
+                    step.kind == "attempt.execute"
+                        && step.execution_recipe.iter().any(|n| n.key == node),
+                    "预览配方节点不属于当前步骤",
+                )?;
+            }
             if step.kind == "attempt.execute" && node.is_none() {
                 return Ok(
                     json!({"definition":def,"definition_digest":task_content_hash(def),"recipe_nodes":step.execution_recipe,"scope_checked":false,"diagnostics":["选择 Agent 配方节点预览完整任务"]}),
