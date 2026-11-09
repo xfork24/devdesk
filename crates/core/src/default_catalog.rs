@@ -199,6 +199,7 @@ pub(crate) fn seed_stage_catalog(s: &mut EngineeringState) {
         let definition = s.configuration(&role_ref).unwrap().clone();
         let duty: RoleDefinition = definition.decode().unwrap();
         let composition = AgentComposition {
+            permission_selection: None,
             role: duty.execution_role,
             role_ref: Some(role_ref),
             capability_ref: Some(cap_id),

@@ -424,12 +424,7 @@ impl EngineeringState {
                 )?;
                 p.harness.policy.validate()?;
                 p.sandbox.policy.validate()?;
-                for r in [&p.harness.reference, &p.sandbox.reference] {
-                    require(
-                        self.permissions.iter().any(|d| d.id == r.revision_id),
-                        "冻结 Permission 修订缺失",
-                    )?;
-                }
+                validate_frozen_permissions(self, p)?;
             }
             match binding.tool_policy {
                 ToolPolicy::ReadOnly => {

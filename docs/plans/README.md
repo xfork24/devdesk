@@ -4,7 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [Permission 资源与运行时版本绑定](permission-runtime-bindings/PLAN.md) | 设计审核与分阶段实施计划 | 待实施；统一文件与 UI 权限资源、确切目标版本绑定、运行时解析及已有讨论的后继 Session 切换 |
+| [Permission 资源与运行时版本绑定](permission-runtime-bindings/PLAN.md) | [实施记录](permission-runtime-bindings/EXECUTION.md) | 已实施；统一文件/UI、确切目标绑定与后继 Session 生效，macOS 自动化、双供应商原生边界和真实 Codex 改绑通过；Ubuntu、DSH 真实模型与完整崩溃矩阵待补验 |
 | [Role、Capability、Workflow 与项目配置重构](role-capability-project-configuration/PLAN.md) | [实施记录](role-capability-project-configuration/EXECUTION.md)、[契约](role-capability-project-configuration/CONTRACT.md) | 五组配置导航、Role/Capability/Agent、显式规范、可选基线、独立子流程及按阶段区分能力的默认配置；macOS 自动化与真实 Codex 工程闭环通过，Ubuntu 本轮未重跑 |
 | [内建默认套件与 Role](builtin-defaults-and-roles/PLAN.md) | [执行记录](builtin-defaults-and-roles/EXECUTION.md) | 已实施的历史方案；后续入口与自动绑定重构见 Role、Capability、Workflow 与项目配置计划 |
 | [架构与实现基线 v0.3](devdesk-v0.3/PLAN.md) | [本轮执行记录](workflow-and-workbench/EXECUTION.md) | 当前领域、Web 工作台、存储与能力边界 |

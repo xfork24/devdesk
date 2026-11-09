@@ -301,10 +301,22 @@ export function RoleConversation({
     event.preventDefault();
     if (!detail || !input.trim()) return;
     await action(async () => {
-      await command("conversation.send", sessionId, detail.session.revision, {
-        client_message_id: crypto.randomUUID(),
-        input,
-      });
+      const result = await command(
+        "conversation.send",
+        sessionId,
+        detail.session.revision,
+        {
+          client_message_id: crypto.randomUUID(),
+          input,
+        },
+      );
+      if (
+        result.effective_session_id &&
+        result.effective_session_id !== sessionId
+      ) {
+        await loadSessions();
+        setSessionId(result.effective_session_id);
+      }
       setInput("");
     });
   }
@@ -505,6 +517,28 @@ export function RoleConversation({
       )}
       {detail && (
         <>
+          {detail.session.predecessor ? (
+            <p className="muted">
+              本次讨论继承了前序上下文。
+              <button
+                type="button"
+                onClick={() => setSessionId(detail.session.predecessor)}
+              >
+                查看前序讨论
+              </button>
+            </p>
+          ) : null}
+          {sessions
+            .filter((s) => s.predecessor === sessionId)
+            .map((s, index) => (
+              <button
+                type="button"
+                key={s.id}
+                onClick={() => setSessionId(s.id)}
+              >
+                查看后续讨论 {index + 1}
+              </button>
+            ))}
           <p className="muted">
             {detail.session.runtime_binding.installation.key.provider} ·{" "}
             {detail.session.runtime_binding.model} · {detail.session.lifecycle}{" "}
@@ -512,6 +546,45 @@ export function RoleConversation({
           </p>
           <details>
             <summary>本次会话的冻结权限</summary>
+            {detail.permission_status ? (
+              <div>
+                <p>
+                  权限状态：
+                  {(
+                    {
+                      adopted: "已采用当前绑定",
+                      pending: "当前工作结束后切换",
+                      ready_to_switch: "下一轮将切换到新绑定",
+                      legacy_fixed: "保留旧固定权限",
+                      unconfigured: "目标权限未就绪",
+                      needs_reconciliation: "权限切换需要核对停止回执",
+                    } as Record<string, string>
+                  )[detail.permission_status.status] ||
+                    detail.permission_status.status}
+                </p>
+                {detail.permission_status.reason ? (
+                  <p role="alert">{detail.permission_status.reason}</p>
+                ) : null}
+                {detail.permission_status.pending_command ? (
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      action(async () => {
+                        const result = await scopedRequest(
+                          "conversation.send",
+                          detail.permission_status.pending_command,
+                        );
+                        await loadSessions();
+                        setSessionId(result.effective_session_id || sessionId);
+                        setInput("");
+                      })
+                    }
+                  >
+                    恢复权限切换与原输入
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {detail.session.runtime_binding.permissions ? (
               <pre>
                 {JSON.stringify(

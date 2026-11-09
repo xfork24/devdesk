@@ -188,6 +188,24 @@ impl Engine {
             serde_json::from_value(current.data["role_agent_bindings"].clone())
                 .map_err(|e| err("invalid_configuration", e.to_string()))?;
         let resolved = bind(s, &mut result, &bindings, &scope)?;
+        for agent_id in resolved.values() {
+            let agent: AgentComposition = s.configuration(agent_id)?.decode()?;
+            if let Some(selection) = agent_permission_selection(s, agent_id, &agent) {
+                let lock = resolve_permission_lock(s, &agent.harness_ref, &selection)?;
+                let r = record(
+                    "feature_permission_lock",
+                    format!("{feature}:{agent_id}"),
+                    scope.clone(),
+                    "冻结权限绑定".into(),
+                    1,
+                    None,
+                    json!({"feature_id":feature,"agent_revision_id":agent_id,"lock":lock}),
+                    true,
+                );
+                result.hashes.insert(r.id.clone(), r.content_hash.clone());
+                s.governance.push(r);
+            }
+        }
         let config = FeatureConfiguration {
             defaults_bundle_ref: None,
             project_configuration_id: current.id.clone(),

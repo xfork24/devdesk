@@ -13,7 +13,11 @@ mod effects;
 mod governance;
 mod live_merges;
 mod live_runs;
+mod permission_resources;
 mod permissions;
+pub use permission_resources::{insert_permission_profiles, permission_profile_export};
+mod permission_switch;
+pub use permission_switch::permission_switch_id;
 pub mod ports;
 mod project_configuration;
 mod proposals;
@@ -407,6 +411,7 @@ pub fn seed_configuration(s: &mut EngineeringState) {
         }
     }
     governance::seed_governance(s);
+    permission_resources::seed_permission_resources(s);
 }
 
 impl Engine {
@@ -654,6 +659,7 @@ impl Engine {
                 "attempt.start",
                 "review.request",
                 "merge.request",
+                "permission.bindings.apply",
             ]
             .contains(&method),
             "该命令不支持绑定解析",
@@ -700,6 +706,9 @@ impl Engine {
         )?;
         require(c.payload.get("scenario").is_none(), "不再支持模拟场景参数")?;
         let p = &c.payload;
+        if let Some(result) = self.permission_resource_command(method, c, s)? {
+            return Ok(result);
+        }
         if let Some(result) = self.governance_command(method, c, s)? {
             event(s, target, method, &format!("command_id={}", c.command_id));
             return Ok(result);

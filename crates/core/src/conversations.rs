@@ -199,6 +199,16 @@ impl Engine {
                 }
             }
             "conversation.send" => {
+                if s.governance.iter().any(|r| {
+                    r.kind == "permission_switch"
+                        && r.definition_id == target
+                        && r.data["status"] != "adopted"
+                }) {
+                    return Err(err(
+                        "permission_switch_pending",
+                        "原会话正在切换，请恢复已有切换请求",
+                    ));
+                }
                 let session = s
                     .sessions
                     .iter()

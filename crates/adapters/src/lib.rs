@@ -8,6 +8,7 @@ pub mod experience;
 pub mod git;
 pub mod github;
 mod permission_catalog;
+pub mod permission_profiles;
 pub mod permissions;
 pub mod tests;
 pub use tests::CommandTests;
@@ -252,7 +253,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 35, "数据集版本比程序新")?;
+    require(version <= 36, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
@@ -546,6 +547,14 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
             "../../../sql/project/configuration/035_configuration_resources.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 36 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/configuration/036_permission_resources.sql"
         ))
         .map_err(storage)?;
         tx.commit().map_err(storage)?;

@@ -173,6 +173,7 @@ pub fn resolve_execution_permissions(
         || harness.policy.filesystem != FilesystemPermission::FullAccess
         || harness.policy.network != NetworkPermission::Enabled;
     let mut result = ExecutionPermissions {
+        binding_lock: None,
         harness: harness.clone(),
         sandbox,
         approval: config.approval,

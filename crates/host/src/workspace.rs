@@ -4,6 +4,8 @@ mod github_projects;
 mod governance;
 #[path = "permission_api.rs"]
 mod permission_api;
+#[path = "permission_resources.rs"]
+mod permission_resources;
 #[path = "runtime_setup.rs"]
 mod runtime_setup;
 // Project selection pins every request to one Engine and therefore one database.
@@ -192,7 +194,13 @@ impl Workspace {
             .transpose()?;
         let mut permission_configuration = self.global.permission_configuration()?;
         let composite = command.payload.get("agent_configuration").is_some();
-        if composite {
+        if composite
+            && state
+                .configuration(agent)?
+                .decode::<AgentComposition>()?
+                .permission_selection
+                .is_none()
+        {
             let a: AgentComposition = state.configuration(agent)?.decode()?;
             permission_configuration = PermissionConfiguration {
                 revision: 1,
@@ -215,34 +223,82 @@ impl Workspace {
                 approval: a.approval,
             };
         }
-        let resolved_permissions = permissions::resolve_execution_permissions(
-            &self.global.snapshot()?.permissions,
-            &permission_configuration,
-            provider,
-            ExecutionScope {
-                work_type,
-                writable_paths: writable_paths.clone(),
-                read_only_paths: read_only_paths.clone(),
-            },
-            if composite {
-                None
+        let versioned = if composite {
+            let a: AgentComposition = state.configuration(agent)?.decode()?;
+            if let Some(selection) = agent_permission_selection(&state, agent, &a) {
+                let lock = if engineering {
+                    let owner = command.target.as_deref().unwrap_or("");
+                    let feature = state
+                        .tasks
+                        .iter()
+                        .find(|t| t.id == owner)
+                        .map_or(owner, |t| t.feature_id.as_str());
+                    match frozen_permission_lock(&state, feature, agent) {
+                        Ok(lock) => Some(lock),
+                        Err(_) if a.permission_selection.is_none() => None,
+                        Err(e) => return Err(e),
+                    }
+                } else {
+                    Some(resolve_permission_lock(&state, &a.harness_ref, &selection)?)
+                };
+                if let Some(lock) = &lock {
+                    permission_profiles::verify_permission_installation(
+                        &state,
+                        lock,
+                        &installation,
+                    )?;
+                }
+                lock.as_ref()
+                    .map(|lock| {
+                        permission_profiles::compile_permission_profiles(
+                            &state,
+                            lock,
+                            Some(ExecutionScope {
+                                work_type,
+                                writable_paths: writable_paths.clone(),
+                                read_only_paths: read_only_paths.clone(),
+                            }),
+                        )
+                    })
+                    .transpose()?
             } else {
-                state
-                    .projects
-                    .first()
-                    .and_then(|p| p.permission_overrides.as_ref())
-            },
-            if composite {
                 None
-            } else {
-                profile.permission_overrides.as_ref()
-            },
-            if composite {
-                None
-            } else {
-                explicit_permissions.as_ref()
-            },
-        )?;
+            }
+        } else {
+            None
+        };
+        let resolved_permissions = if let Some(p) = versioned {
+            p
+        } else {
+            permissions::resolve_execution_permissions(
+                &self.global.snapshot()?.permissions,
+                &permission_configuration,
+                provider,
+                ExecutionScope {
+                    work_type,
+                    writable_paths: writable_paths.clone(),
+                    read_only_paths: read_only_paths.clone(),
+                },
+                if composite {
+                    None
+                } else {
+                    state
+                        .projects
+                        .first()
+                        .and_then(|p| p.permission_overrides.as_ref())
+                },
+                if composite {
+                    None
+                } else {
+                    profile.permission_overrides.as_ref()
+                },
+                if composite {
+                    None
+                } else {
+                    explicit_permissions.as_ref()
+                },
+            )?
+        };
         let adapter = harness::managed_adapter_identity(provider);
         let credential_ref = match provider {
             HarnessProvider::Codex => self.codex_auth.credential_reference()?,
@@ -263,15 +319,14 @@ impl Workspace {
                 status.reference
             }
         };
-        let digest = configuration_digest(
-            &json!({"installation":installation,"adapter":adapter,"agent":definition,"agent_configuration":command.payload["agent_configuration"],"model":model,"policy":policy,"writable_paths":writable_paths,"read_only_paths":read_only_paths,"work_type":work_type,"sandbox":"docker-worker/v1","credential_ref":credential_ref,"permissions":resolved_permissions}),
-        )?;
-        command.payload["binding"] = json!(RuntimeBinding {
+        let mut binding = RuntimeBinding {
             agent_configuration: command
                 .payload
                 .get("agent_configuration")
-                .map(|v| serde_json::from_value(v.clone())
-                    .map_err(|_| err("invalid_params", "无效 Agent 执行配置")))
+                .map(|v| {
+                    serde_json::from_value(v.clone())
+                        .map_err(|_| err("invalid_params", "无效 Agent 执行配置"))
+                })
                 .transpose()?,
             permissions: Some(resolved_permissions),
             installation: installation.clone(),
@@ -281,9 +336,11 @@ impl Workspace {
             writable_paths,
             read_only_paths,
             work_type,
-            configuration_digest: digest,
+            configuration_digest: String::new(),
             credential_ref: Some(credential_ref),
-        });
+        };
+        binding.configuration_digest = Self::permission_runtime_digest(definition, &binding)?;
+        command.payload["binding"] = json!(binding);
         e.execute_resolved("session.open", command, &fingerprint)
     }
     fn resolve_live_attempt(&self, e: &Engine, mut command: Command) -> Result<Value> {
@@ -655,6 +712,13 @@ impl Workspace {
         let global = Arc::new(GlobalStore::open(root)?);
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
+        global.reload_permission_presets(&Command {
+            command_id: id(),
+            target: None,
+            expected_revision: None,
+            payload: json!({}),
+        })?;
+        global.migrate_permission_selections()?;
         let workspace = Arc::new(Self {
             codex_auth: codex_auth::CodexAuthentication::new(root)?,
             global,
@@ -1162,6 +1226,11 @@ impl Workspace {
             }
         }
         if method == "conversation.send" {
+            let command: Command = serde_json::from_value(params.clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            if let Some(result) = self.send_permission_conversation(&e, command)? {
+                return Ok(result);
+            }
             let sid = params["target"]
                 .as_str()
                 .ok_or_else(|| err("invalid_params", "需要 Session target"))?;
@@ -1239,7 +1308,7 @@ impl Workspace {
             return self.open_conversation(&e, command);
         }
         if ["session.list", "session.read"].contains(&method) {
-            return e.query(
+            let mut result = e.query(
                 if method == "session.list" {
                     "query.sessions"
                 } else {
@@ -1247,11 +1316,22 @@ impl Workspace {
                 },
                 &params,
                 self.project_limit(&e, self.global.concurrency()?)?,
-            );
+            )?;
+            if method == "session.read" {
+                if let Some(sid) = params["id"].as_str() {
+                    result["permission_status"] = self.permission_session_status(&e, sid)?;
+                }
+            }
+            return Ok(result);
         }
         let global_limit = self.global.concurrency()?;
         if method.starts_with("query.") {
             let mut result = e.query(method, &params, self.project_limit(&e, global_limit)?)?;
+            if method == "query.session" {
+                if let Some(sid) = params["id"].as_str() {
+                    result["permission_status"] = self.permission_session_status(&e, sid)?;
+                }
+            }
             if method == "query.workspace" {
                 let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;
                 let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;

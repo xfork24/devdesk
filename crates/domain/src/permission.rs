@@ -195,6 +195,8 @@ pub struct PermissionEnforcementPlan {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionPermissions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_lock: Option<VersionedPermissionLock>,
     pub harness: ResolvedPermission,
     pub sandbox: ResolvedPermission,
     pub approval: ApprovalPolicy,
@@ -614,6 +616,7 @@ pub fn isolated_test_permissions() -> ExecutionPermissions {
         ],
     };
     ExecutionPermissions {
+        binding_lock: None,
         harness: resolved.clone(),
         sandbox: resolved,
         approval: ApprovalPolicy::Never,

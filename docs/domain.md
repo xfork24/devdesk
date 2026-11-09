@@ -1,6 +1,6 @@
 # DevDesk v0.3 领域规范
 
-当前工程库 schema v35，全局库 v6。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
+当前工程库 schema v36，全局库 v7。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
 
 ## 归属与对象契约
 
@@ -117,6 +117,8 @@ Feature closure 为 test_author → feature_tests → docs → verify；Delivery
 live 合入分别记录本地 CAS、远端精确 lease、PR merged 核对；只有三者一致才完成 Task/Feature。重启先遍历全局项目索引停止和核对原执行者，已消费结果未知的输入不重发。详见 [真实工程接入](real-engineering.md)。
 
 ## Permission 与执行范围
+
+Permission v2 通过统一 profile 表达完整文件、网络、工具与审批规则，Sandbox 仅接受文件和网络维度。PermissionProfile、VersionedPermissionBinding、目标活动分配和 SandboxDefinition 作为治理配置修订保存；活动分配追加修订，以 CAS 决定目标当前绑定。Agent 命名选择 follow_target 或 pinned，旧 Agent 只追加固定兼容投影，不改写历史。新 Feature 冻结确切权限闭包；新讨论冻结绑定，已有讨论在下一轮通过后继 Session 采用新权限。切换意图、停止回执和原命令保持幂等，原 RuntimeBinding 与原生线程身份不可原地替换。详见 [权限说明](../permissions/README.md)。
 
 Permission 是具有稳定身份及不可变修订的独立策略实体，描述文件、工具网络和工具调用权限。Harness 与 Sandbox 持有 PermissionBinding；项目、角色和本次执行的覆盖按顺序解析，省略字段继承、列表整体替换。定义修订、绑定版本和最终策略分别记录，旧运行不读取当前 latest 配置。
 

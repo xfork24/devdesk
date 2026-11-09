@@ -322,7 +322,9 @@ impl Workspace {
         command.payload["agent_instance_id"] = json!(instance);
         command.payload["model"] = json!(model.model);
         command.payload["provider"] = json!(harness.provider);
-        if !agent.permissions.is_empty() {
+        if agent_permission_selection(&state, &agent_id, &agent).is_none()
+            && !agent.permissions.is_empty()
+        {
             let permission = state
                 .permissions
                 .iter()
@@ -349,6 +351,7 @@ impl Workspace {
             || method.starts_with("model.")
             || method.starts_with("tool.")
             || method.starts_with("harness.")
+            || method.starts_with("sandbox.")
             || method.starts_with("role.")
             || method.starts_with("capability.")
             || method.starts_with("agent.instance.")

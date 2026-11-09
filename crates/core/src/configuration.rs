@@ -53,6 +53,7 @@ pub(crate) fn compose_capability(
     capability: &CapabilityDefinition,
 ) -> AgentComposition {
     AgentComposition {
+        permission_selection: None,
         capability_ref: None,
         role: AgentRole::Analyst,
         role_ref: None,

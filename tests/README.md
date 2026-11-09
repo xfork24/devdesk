@@ -62,6 +62,7 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 | `probe_nested_sandbox.py` | 使用无害凭据标记验证真实 Codex 子沙箱，不调用模型 | 单独执行 |
 | `probe_permissions.py` | 双供应商 Permission 的文件和网络限制 | 单独执行 |
 | `probe_permission_package.py` | 解包运行包的 Permission 资产、API 和持久化，不调用模型 | 单独执行 |
+| `probe_permission_runtime.py` | 临时独立数据集中的真实 Codex v2 改绑、后继会话、工具写入及受控 HTTP 收据；显式提供登录文件，测试后清理副本 | 单独执行 |
 | `probe_linux_credentials.mjs` | Linux Secret Service、浏览器凭据设置和 Host 重启 | 单独执行 |
 | `probe_oauth_recovery.mjs` | 原生 OAuth 开始/取消与本地响应丢失恢复，拦截授权导航 | 单独执行 |
 

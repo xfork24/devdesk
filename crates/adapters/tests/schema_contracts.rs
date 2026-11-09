@@ -284,6 +284,14 @@ fn standalone_permission_contract_matches_rpc_and_preserves_null_rejection() {
     {
         let mut value: Value =
             serde_json::from_slice(&std::fs::read(file.unwrap().path()).unwrap()).unwrap();
+        if value["schema_version"] == 2 {
+            SCHEMAS.assert_valid("permission-profile.schema.json", &value);
+            serde_json::from_value::<PermissionProfile>(value)
+                .unwrap()
+                .normalize()
+                .unwrap();
+            continue;
+        }
         value.as_object_mut().unwrap().remove("supersedes");
         SCHEMAS.assert_valid("permission.schema.json", &value);
         serde_json::from_value::<Permission>(value)

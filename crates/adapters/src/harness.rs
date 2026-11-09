@@ -15,6 +15,8 @@ pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     let mut hash = Sha256::new();
     hash.update(include_bytes!("harness.rs"));
     hash.update(include_bytes!("permissions.rs"));
+    hash.update(include_bytes!("permission_profiles.rs"));
+    hash.update(include_bytes!("../../domain/src/permission_profile.rs"));
     hash.update(include_bytes!(
         "../../../permissions/backends/manifest.json"
     ));
@@ -945,6 +947,19 @@ impl Worker {
                 | "item/fileChange/requestApproval"
                 | "approval/request"
         );
+        if is_approval
+            && self
+                .permissions
+                .as_ref()
+                .is_some_and(|p| p.approval == ApprovalPolicy::Never)
+        {
+            let result = if self.provider == HarnessProvider::Codex {
+                json!({"decision":"decline"})
+            } else {
+                json!({"outcome":"rejected"})
+            };
+            return self.wire.send(&json!({"id":f["id"],"result":result}));
+        }
         let scope = if self.provider == HarnessProvider::Codex {
             p["threadId"].as_str()
         } else {
@@ -1028,6 +1043,14 @@ impl Worker {
         Ok(())
     }
     fn answer(&mut self, i: &PendingInteraction) -> Result<()> {
+        if matches!(i.answer, Some(InteractionAnswer::ToolApproval { .. }))
+            && self
+                .permissions
+                .as_ref()
+                .is_some_and(|p| p.approval == ApprovalPolicy::Never)
+        {
+            return Err(err("permission_denied", "冻结 Permission 禁止审批授权"));
+        }
         let req = self
             .requests
             .get_mut(&i.external_request)

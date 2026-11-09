@@ -477,6 +477,7 @@ test("Permission 原生配置预检、修订与重载保持绑定", async ({
 }, testInfo) => {
   await ensureSetup(page);
   await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByText("旧权限配置兼容入口", { exact: true }).click();
   const panel = page.locator(".setting-row").filter({
     has: page.getByRole("heading", {
       name: "运行权限 Permission",
@@ -501,6 +502,7 @@ test("Permission 原生配置预检、修订与重载保持绑定", async ({
   await expect(panel.getByText(/权限已保存，后续会话使用新配置/)).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByText("旧权限配置兼容入口", { exact: true }).click();
   await expect(panel.getByLabel("权限修订", { exact: true })).toHaveValue(
     "permission-read-only-v1",
   );

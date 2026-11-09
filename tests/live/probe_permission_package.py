@@ -40,10 +40,10 @@ try:
         for name, entry in manifest['assets'].items():
             body = (package / 'permissions/backends' / name).read_bytes()
             assert hashlib.sha256(body).hexdigest() == entry['sha256']
-        for name in ['permission.schema.json', 'permission-backend.schema.json', 'rpc.schema.json']:
+        for name in ['permission.schema.json', 'permission-profile.schema.json', 'permission-binding.schema.json', 'sandbox.schema.json', 'permission-backend.schema.json', 'rpc.schema.json']:
             assert (package / 'schemas' / name).read_bytes() == (source / 'schemas' / name).read_bytes()
         presets = list((package / 'permissions/presets').glob('*.json'))
-        assert len(presets) == 6
+        assert len(presets) >= 9
         report['assets_verified'] = len(manifest['assets'])
         report['presets_verified'] = len(presets)
         dataset = root / 'isolated data'
@@ -67,6 +67,27 @@ try:
             return rpc(method, {'command_id': str(uuid.uuid4()), 'target': target,
                                 'expected_revision': revision, 'payload': payload})
         settings = rpc('query.permissions')
+        resources = rpc('query.permission_resources')
+        assert resources['profiles'] and resources['sources']
+        assert all(str(package.resolve()) in path for path in resources['sources'])
+        target = next(t['target'] for t in resources['targets'] if t['provider'] == 'codex' and t['supported'])
+        preview = rpc('permission.binding.preflight', {'target': target, 'permission_revision_id': 'permission-harness-read-only-v2-r1'})
+        assert preview['compatible'] and not preview['scope_checked']
+        applied = command('permission.bindings.apply', {'bindings': [{'target': target, 'permission_revision_id': 'permission-harness-read-only-v2-r1', 'expected_revision': 0}]})
+        assert applied['bindings'][0]['revision'] == 1
+        exported = rpc('permission.profile.export', {'id': 'permission-harness-read-only-v2-r1'})
+        assert len(exported['profiles']) == 1
+        command('permission.profile.import', exported)
+        report['v2_profiles_and_version_binding'] = True
+        runtime_preset = {**exported['profiles'][0], 'id': 'package-runtime-v2', 'identity': 'package-runtime-v2', 'name': 'Runtime package preset'}
+        preset_root = dataset / 'permissions/presets'
+        preset_root.mkdir(parents=True)
+        (preset_root / 'runtime.json').write_text(json.dumps(runtime_preset))
+        command('permission.profile.reload', {})
+        reloaded = rpc('query.permission_resources')
+        assert any(p['id'] == runtime_preset['id'] for p in reloaded['profiles'])
+        assert next(t for t in reloaded['targets'] if t['target'] == target)['active']['revision'] == 1
+        report['runtime_reload_without_restart'] = True
         config = settings['configuration']
         assert config['approval'] == 'never'
         for provider in ['codex', 'dsh']:
@@ -88,7 +109,7 @@ try:
         assert saved == rpc('permission.bind', binding)
         project = command('project.create', {'title': 'Standalone Permission schema'})['id']
         db = dataset / 'projects' / project / 'engineering.sqlite3'
-        expected_schema = max(int(path.name.split('_', 1)[0]) for path in (source / 'sql').glob('[0-9]*_*.sql'))
+        expected_schema = max(int(path.name.split('_', 1)[0]) for path in (source / 'sql/project').rglob('[0-9]*_*.sql'))
         with sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True) as conn:
             assert conn.execute('PRAGMA user_version').fetchone()[0] == expected_schema
         assert rpc('query.runtime_installations')['installations'] == []

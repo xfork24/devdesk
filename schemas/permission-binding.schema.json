@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk versioned permission binding",
+  "$ref": "#/$defs/VersionedPermissionBinding",
+  "$defs": {
+    "PermissionTargetRef": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "harness",
+            "sandbox"
+          ]
+        },
+        "revision_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "revision_id",
+        "content_hash"
+      ],
+      "additionalProperties": false
+    },
+    "PermissionSelection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "follow_target"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "pinned"
+            },
+            "binding_revision_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "mode",
+            "binding_revision_id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AgentPermissionSelection": {
+      "type": "object",
+      "properties": {
+        "sandbox_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "harness": {
+          "$ref": "#/$defs/PermissionSelection"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/PermissionSelection"
+        }
+      },
+      "required": [
+        "sandbox_ref",
+        "harness",
+        "sandbox"
+      ],
+      "additionalProperties": false
+    },
+    "VersionedPermissionBinding": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/PermissionTargetRef"
+        },
+        "permission_revision_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enforcement_contract": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "target",
+        "permission_revision_id",
+        "enforcement_contract"
+      ],
+      "additionalProperties": false
+    },
+    "BoundPermission": {
+      "type": "object",
+      "properties": {
+        "binding_revision_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "binding_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "binding": {
+          "$ref": "#/$defs/VersionedPermissionBinding"
+        },
+        "profile": {
+          "$ref": "permission-profile.schema.json"
+        },
+        "profile_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "binding_revision_id",
+        "binding_hash",
+        "binding",
+        "profile",
+        "profile_hash"
+      ],
+      "additionalProperties": false
+    },
+    "VersionedPermissionLock": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/BoundPermission"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/BoundPermission"
+        }
+      },
+      "required": [
+        "harness",
+        "sandbox"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

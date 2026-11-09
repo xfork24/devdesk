@@ -2422,6 +2422,9 @@
         },
         "enforcement": {
           "$ref": "#/$defs/PermissionEnforcementPlan"
+        },
+        "binding_lock": {
+          "$ref": "permission-binding.schema.json#/$defs/VersionedPermissionLock"
         }
       },
       "required": [
@@ -2861,6 +2864,9 @@
               "type": "null"
             }
           ]
+        },
+        "permission_selection": {
+          "$ref": "permission-binding.schema.json#/$defs/AgentPermissionSelection"
         }
       },
       "required": [
@@ -4499,7 +4505,13 @@
             "enum": [
               "permission.create",
               "permission.revise",
-              "permission.bind"
+              "permission.bind",
+              "permission.profile.create",
+              "permission.profile.revise",
+              "permission.profile.import",
+              "permission.profile.reload",
+              "permission.source.register",
+              "permission.bindings.apply"
             ]
           }
         }
@@ -4519,7 +4531,7 @@
       "if": {
         "properties": {
           "method": {
-            "pattern": "^(role|workflow|model|harness|tool|skill|spec|standard|configuration|experience|repository)\\."
+            "pattern": "^(role|workflow|model|harness|sandbox|tool|skill|spec|standard|configuration|experience|repository)\\."
           }
         }
       },

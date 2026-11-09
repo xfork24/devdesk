@@ -1,6 +1,9 @@
 use super::*;
 impl Workspace {
     pub(super) fn permission_api(&self, method: &str, params: &Value) -> Option<Result<Value>> {
+        if let Some(result) = self.permission_resource_api(method, params) {
+            return Some(result);
+        }
         if method == "query.permissions" {
             return Some((|| {
                 let shared = self.global.snapshot()?;

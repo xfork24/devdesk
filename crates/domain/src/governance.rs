@@ -89,6 +89,10 @@ impl ConfigurationRecord {
             "spec",
             "role",
             "capability",
+            "sandbox",
+            "permission_profile",
+            "permission_binding",
+            "permission_assignment",
         ]
         .contains(&self.kind.as_str())
     }
@@ -134,6 +138,8 @@ pub struct ToolDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentComposition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_selection: Option<AgentPermissionSelection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability_ref: Option<Id>,
     pub role: AgentRole,

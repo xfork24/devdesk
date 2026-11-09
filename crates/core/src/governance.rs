@@ -512,11 +512,21 @@ pub(crate) fn validate_composition(
         )?;
     }
     require(
-        !a.tools.is_empty() && (1..=2).contains(&a.permissions.len()),
+        !a.tools.is_empty()
+            && (a.permission_selection.is_some() || (1..=2).contains(&a.permissions.len())),
         "Agent 必须明确 Tools 及 Harness/Sandbox Permission",
     )?;
     let model: ModelDefinition = reference(s, &a.model_ref, "model", scope)?.decode()?;
     let harness: HarnessDefinition = reference(s, &a.harness_ref, "harness", scope)?.decode()?;
+    if let Some(selection) = &a.permission_selection {
+        let ht = permission_target(s, PermissionTargetKind::Harness, &a.harness_ref)?;
+        let st = permission_target(s, PermissionTargetKind::Sandbox, &selection.sandbox_ref)?;
+        for (target, choice) in [(ht, &selection.harness), (st, &selection.sandbox)] {
+            if matches!(choice, PermissionSelection::Pinned { .. }) {
+                resolve_bound_permission(s, target, choice)?;
+            }
+        }
+    }
     require(
         !model.model.trim().is_empty() && !model.provider.trim().is_empty(),
         "Model 后端与标识不能为空",
@@ -1271,6 +1281,7 @@ impl Engine {
             "standard",
             "role",
             "capability",
+            "sandbox",
         ]
         .contains(&family)
             && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
@@ -1310,6 +1321,20 @@ impl Engine {
                 crate::configuration::normalize_agent(s, &mut data, &scope)?;
             }
             match family {
+                "sandbox" => {
+                    let sandbox: SandboxDefinition = decode(&data)?;
+                    require(
+                        sandbox.provider == "docker"
+                            && sandbox.runtime_version == "1"
+                            && sandbox.enforcement == "docker-worker/v1"
+                            && !sandbox.platforms.is_empty()
+                            && sandbox
+                                .platforms
+                                .iter()
+                                .all(|v| ["linux/aarch64", "linux/x86_64"].contains(&v.as_str())),
+                        "不支持的 Sandbox 执行合同",
+                    )?;
+                }
                 "role" => {
                     let role: RoleDefinition = decode(&data)?;
                     require(

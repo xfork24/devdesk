@@ -2,6 +2,8 @@ mod configuration;
 pub use configuration::*;
 mod permission;
 pub use permission::*;
+mod permission_profile;
+pub use permission_profile::*;
 mod testing;
 pub use testing::*;
 mod repository;

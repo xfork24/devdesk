@@ -7,6 +7,8 @@
 | `rpc.schema.json` | Host JSON-RPC 请求封装，以及 domain/core 的共享类型定义。命令使用 `Command`，运行时登记、准备和设置等接口使用各自参数；`$defs` 同时描述冻结请求、运行实例和配置修订等数据。 |
 | `manifest.schema.json` | core 输出的不可变文件：Delivery 清单、带 `schema_version` 的工程 Snapshot 清单，以及直接序列化的 Project/会话 Snapshot。嵌套领域对象复用 RPC 定义。 |
 | `permission.schema.json` | `Permission` 修订及权限继承、覆盖定义；保留自包含版本，供预设的独立校验使用。回归要求其与 RPC 中对应定义一致。 |
+| `permission-profile.schema.json`、`permission-binding.schema.json` | v2 完整权限 profile、目标修订、命名选择、绑定与冻结闭包；文件和 UI 使用相同格式，v1 定义保留。 |
+| `sandbox.schema.json` | 确切 Sandbox 配置修订的 Docker 执行合同与可用平台；与运行安装和权限 profile 分别建模。 |
 | `permission-backend.schema.json` | `permissions/backends/manifest.json`：后端版本、平台、嵌套沙箱、AppArmor 和资产摘要。资产内容的 SHA-256 另由权限检查验证。 |
 | `model.schema.json`、`role.schema.json`、`tool.schema.json`、`agent-composition.schema.json`、`workflow.schema.json` | 对 RPC 共享配置定义的引用入口，避免重复维护。 |
 | `capability.schema.json`、`agent-input.schema.json`、`spec.schema.json`、`standard.schema.json`、`project-configuration.schema.json` | v2 独立能力、Agent 创建输入、Markdown 规范、可选质量基线与项目 Role→Agent 配置；共用 RPC 定义。 |

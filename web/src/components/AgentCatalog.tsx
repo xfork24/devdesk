@@ -35,6 +35,11 @@ function initial(kind: string): Row {
           "permission-container-full-access-v1",
         ],
         approval: "never",
+        permission_selection: {
+          sandbox_ref: "",
+          harness: { mode: "follow_target" },
+          sandbox: { mode: "follow_target" },
+        },
       };
     case "capability":
       return { model_ref: "", harness_ref: "", tools: [], skills: [] };
@@ -151,6 +156,11 @@ function ResourceEditor({
 }) {
   const [records, setRecords] = useState<Row[]>([]),
     [permissions, setPermissions] = useState<Row[]>([]),
+    [permissionResources, setPermissionResources] = useState<Row>({
+      targets: [],
+      bindings: [],
+      profiles: [],
+    }),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
@@ -162,13 +172,14 @@ function ResourceEditor({
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
-    const [records, policy, capabilities] = await Promise.all([
+    const [records, policy, capabilities, resources] = await Promise.all([
       loadCatalog(request, project),
       request("query.permissions"),
       request("query.capabilities", {
         local: !!project,
         project_id: project?.id,
       }),
+      request("query.permission_resources", { project_id: project?.id }),
     ]);
     setRecords(records);
     if (kind === "tool")
@@ -178,6 +189,23 @@ function ResourceEditor({
           : current,
       );
     setPermissions(policy.permissions || []);
+    setPermissionResources(resources);
+    setDraft((current) =>
+      !current.selected &&
+      current.data.permission_selection &&
+      !current.data.permission_selection.sandbox_ref
+        ? {
+            ...current,
+            data: {
+              ...current.data,
+              permission_selection: {
+                ...current.data.permission_selection,
+                sandbox_ref: resources.default_sandbox_ref,
+              },
+            },
+          }
+        : current,
+    );
     setLegacyCapabilities(capabilities.agent_bindings || {});
   }, [request, project?.id, revision]);
   useEffect(() => {
@@ -239,6 +267,9 @@ function ResourceEditor({
           value.capability_ref || legacyCapabilities[row.id] || "",
         permissions: value.permissions,
         approval: value.approval,
+        ...(value.permission_selection
+          ? { permission_selection: value.permission_selection }
+          : {}),
         instructions:
           role?.data.instructions === value.instructions
             ? ""
@@ -450,40 +481,166 @@ function ResourceEditor({
                 )}
                 <details className="full-width">
                   <summary>权限与兼容指令</summary>
-                  {[0, 1].map((index) => (
-                    <RevisionSelect
-                      key={index}
-                      label={
-                        index === 0
-                          ? "Harness Permission"
-                          : "Sandbox Permission"
-                      }
-                      records={permissions.map((p) => ({
-                        ...p,
-                        kind: "permission",
-                        definition_id: p.identity,
-                      }))}
-                      value={
-                        data.permissions?.[index] || data.permissions?.[0] || ""
-                      }
-                      required
-                      onChange={(value) => {
-                        const values = [...(data.permissions || ["", ""])];
-                        values[index] = value;
-                        patch({ permissions: values });
-                      }}
-                    />
-                  ))}
                   <label>
-                    确认策略
+                    权限绑定方式
                     <select
-                      value={data.approval || "never"}
-                      onChange={(e) => patch({ approval: e.target.value })}
+                      value={data.permission_selection ? "versioned" : "legacy"}
+                      onChange={(e) => {
+                        const next = { ...data };
+                        if (e.target.value === "versioned")
+                          next.permission_selection = {
+                            sandbox_ref:
+                              permissionResources.default_sandbox_ref,
+                            harness: { mode: "follow_target" },
+                            sandbox: { mode: "follow_target" },
+                          };
+                        else delete next.permission_selection;
+                        patch(next);
+                      }}
                     >
-                      <option value="never">不额外询问</option>
-                      <option value="on_request">按请求确认</option>
+                      <option value="versioned">按目标版本选择权限</option>
+                      <option value="legacy">保留旧固定权限</option>
                     </select>
                   </label>
+                  {data.permission_selection ? (
+                    <>
+                      <label>
+                        Sandbox 目标修订
+                        <select
+                          required
+                          value={data.permission_selection.sandbox_ref}
+                          onChange={(e) =>
+                            patch({
+                              permission_selection: {
+                                ...data.permission_selection,
+                                sandbox_ref: e.target.value,
+                              },
+                            })
+                          }
+                        >
+                          <option value="">选择 Sandbox</option>
+                          {permissionResources.targets
+                            .filter((t: Row) => t.target.kind === "sandbox")
+                            .map((t: Row) => (
+                              <option
+                                key={t.target.revision_id}
+                                value={t.target.revision_id}
+                              >
+                                {t.name} · v{t.version}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      {(["harness", "sandbox"] as const).map((layer) => {
+                        const choice = data.permission_selection[layer];
+                        const targetId =
+                          layer === "harness"
+                            ? capability?.data.harness_ref || data.harness_ref
+                            : data.permission_selection.sandbox_ref;
+                        const bindings = permissionResources.bindings.filter(
+                          (b: Row) => b.data.target.revision_id === targetId,
+                        );
+                        const update = (value: Row) =>
+                          patch({
+                            permission_selection: {
+                              ...data.permission_selection,
+                              [layer]: value,
+                            },
+                          });
+                        return (
+                          <div key={layer}>
+                            <label>
+                              {layer} 权限来源
+                              <select
+                                value={choice.mode}
+                                onChange={(e) =>
+                                  update(
+                                    e.target.value === "follow_target"
+                                      ? { mode: "follow_target" }
+                                      : {
+                                          mode: "pinned",
+                                          binding_revision_id:
+                                            bindings[0]?.id || "",
+                                        },
+                                  )
+                                }
+                              >
+                                <option value="follow_target">
+                                  追随目标活动绑定
+                                </option>
+                                <option value="pinned">固定绑定修订</option>
+                              </select>
+                            </label>
+                            {choice.mode === "pinned" ? (
+                              <label>
+                                {layer} 固定绑定
+                                <select
+                                  required
+                                  value={choice.binding_revision_id}
+                                  onChange={(e) =>
+                                    update({
+                                      mode: "pinned",
+                                      binding_revision_id: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="">选择绑定修订</option>
+                                  {bindings.map((b: Row) => (
+                                    <option key={b.id} value={b.id}>
+                                      {b.name} · v{b.version} · {b.id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ) : (
+                              <p className="muted">
+                                新讨论采用目标活动权限；已有工程配置保持冻结。
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <>
+                      {[0, 1].map((index) => (
+                        <RevisionSelect
+                          key={index}
+                          label={
+                            index === 0
+                              ? "Harness Permission"
+                              : "Sandbox Permission"
+                          }
+                          records={permissions.map((p) => ({
+                            ...p,
+                            kind: "permission",
+                            definition_id: p.identity,
+                          }))}
+                          value={
+                            data.permissions?.[index] ||
+                            data.permissions?.[0] ||
+                            ""
+                          }
+                          required
+                          onChange={(value) => {
+                            const values = [...(data.permissions || ["", ""])];
+                            values[index] = value;
+                            patch({ permissions: values });
+                          }}
+                        />
+                      ))}
+                      <label>
+                        确认策略
+                        <select
+                          value={data.approval || "never"}
+                          onChange={(e) => patch({ approval: e.target.value })}
+                        >
+                          <option value="never">不额外询问</option>
+                          <option value="on_request">按请求确认</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
                   <label>
                     附加指令（可选）
                     <textarea

@@ -1,5 +1,21 @@
 # 本地协议 v1
 
+## Permission 运行时资源
+
+`query.permission_resources` 返回 v2 profiles、绑定修订、确切目标版本、活动分配、来源与兼容投影。可携带 project_id 读取当前项目可见资源；省略时只读取全局目录。旧 `query.permissions` 保留 v1 数据。
+
+新增命令均使用 Command：`permission.profile.create/revise` 的 payload 为 identity（创建时）、name、target_kind、policy；revise 的 target 是原修订 ID，expected_revision 为原版本。`permission.profile.import` 接受 payload.profiles，批次原子；`permission.profile.reload` 重新读取登记的预设来源。`permission.source.register` 接受 payload.path，必须为存在的普通绝对目录；注册后需显式重新加载。
+
+`permission.profile.export({id})` 返回 `{profiles:[前序修订…,所选修订]}`，可直接重新导入。导入支持 v1 文件并保留其历史表示；v2 policy 的 null 和未知字段拒绝。
+
+`permission.bindings.apply` 的 payload.bindings 为非空数组，每项包含 target={kind,revision_id,content_hash}、permission_revision_id、expected_revision（该目标尚无分配时为 0）。执行合同由 Host 生成，客户端不能决定。一个批次必须属于同一全局或项目配置库作用域；全部校验通过后原子提交。返回各目标的新活动 revision 与 binding_revision_id；command_id 重放优先于版本校验。
+
+`permission.binding.preflight({target,permission_revision_id})` 只检查绑定兼容性，返回 scope_checked=false。完整预览输入 harness_ref、selection={sandbox_ref,harness,sandbox} 和可选 scope={work_type,writable_paths,read_only_paths}；selection 每层为 `{mode:"follow_target"}` 或 `{mode:"pinned",binding_revision_id}`。提供 Scope 时复用实际执行编译器；无 Scope 时不承诺具体工作范围可执行。
+
+AgentComposition 可携带 permission_selection，以命名字段替代旧 permissions 数组的执行权威。RuntimeBinding.permissions.binding_lock 保存两层确切 profile、绑定、目标、摘要和执行合同。旧对象不补写这些字段。
+
+`conversation.send` 对追随目标的讨论在接受新输入前检测改绑，无活动工作时持久化切换并创建后继 Session。返回值可增加 effective_session_id、predecessor，UI 跟随有效 Session；原 command_id 和 client_message_id 保持幂等。query.session/session.read 增加 permission_status，包含 frozen、desired、status、reason、pending_command；待恢复时可用 pending_command 原样重试 conversation.send。已有运行、排队输入、工程冻结与技术重试保留原权限，目标默认更新不改写它们。
+
 只监听 127.0.0.1。host 启动时生成随机本地会话；同源页面通过 HttpOnly、SameSite=Strict Cookie 使用。校验 Host 和有值的 Origin，缺失或错误凭据拒绝 RPC/SSE/Artifact。用户 human:local 身份由 host 装配，载荷中的 actor 无效。
 
 ## HTTP
