@@ -1,8 +1,0 @@
-$ python3 /tmp/devdesk-verify-final-archive.py
-Traceback (most recent call last):
-  File "/tmp/devdesk-verify-final-archive.py", line 7, in <module>
-    before,after=runtime_hashes(a),runtime_hashes(b);assert before==after,'runtime payload drifted'
-                                                            ^^^^^^^^^^^^^
-AssertionError: runtime payload drifted
-
-exit=1

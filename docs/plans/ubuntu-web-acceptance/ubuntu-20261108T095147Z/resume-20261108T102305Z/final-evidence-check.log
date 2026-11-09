@@ -1,4 +1,0 @@
-$ python3 /tmp/devdesk-final-evidence-check.py
-{"passed": true, "observed_at": 1794138290.7295446, "checks": {"full": {"passed": true, "steps": 19}, "verify-existing": {"passed": true, "steps": 6}, "plan_completed_items": 26, "original_files_unchanged": 92, "source_files_verified": 25, "local_markdown_links": 134, "valid_json_reports": 79, "archive_sha256": "40d3c1c210102d409bd959e50dd1f72e23da47334b29467a9034f28b7cb6eff8", "single_host_and_verified_runtime_files": 13, "format_and_syntax": {"passed": true, "commands_observed_exit_0": ["cargo fmt --all -- --check", "python3 -m py_compile scripts/doctor.py tests/live/client.py tests/live/check_live.py tests/live/probe_implementation.py tests/live/probe_nested_sandbox.py", "node --check tests/live/probe_linux_credentials.mjs", "node --check tests/live/probe_oauth_recovery.mjs", "git diff --check"], "execution": "direct tool results before documentation-only archive repack; code files unchanged since"}}}
-
-exit=0

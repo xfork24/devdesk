@@ -11,6 +11,11 @@ pub enum WorktreeKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RepositoryAction {
+    RefreshMainline {
+        context: GitContext,
+        expected: String,
+        revision: String,
+    },
     Candidate {
         merge: Id,
         context: GitContext,
@@ -65,6 +70,10 @@ pub struct GitHubRepositoryPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RepositoryReceipt {
+    MainlineRefreshed {
+        previous: String,
+        revision: String,
+    },
     Candidate {
         revision: String,
     },

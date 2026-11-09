@@ -41,6 +41,8 @@ pub struct ContainerSpec {
     pub runner_file: Option<PathBuf>,
     #[serde(default)]
     pub profile_target: Option<String>,
+    #[serde(default)]
+    pub experience_directory: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -576,6 +578,23 @@ impl DockerSandbox {
                 format!(
                     "type=bind,source={},target=/work/{relative},readonly",
                     path.display()
+                ),
+            ]);
+        }
+        if let Some(source) = &spec.experience_directory {
+            reject_symlink(source)?;
+            let source = fs::canonicalize(source).map_err(storage)?;
+            require(
+                spec.purpose == ContainerPurpose::Harness
+                    && source.starts_with(&self.root)
+                    && source.file_name().is_some_and(|n| n == "experience"),
+                "经验挂载必须属于当前执行目录",
+            )?;
+            args.extend([
+                "--mount".into(),
+                format!(
+                    "type=bind,source={},target=/experience,readonly",
+                    source.display()
                 ),
             ]);
         }

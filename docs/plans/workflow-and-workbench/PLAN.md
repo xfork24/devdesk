@@ -1,8 +1,8 @@
 # Workflow 领域与工程工作台调整实施计划
 
-创建日期：2026-11-08。更新日期：2026-11-09。状态：待实施。范围：Scope 与配置版本及绑定、Workflow 核心领域、Agent 实例身份与经验作用域、上下文检索和恢复、前端信息架构、数据迁移及验收。
+创建日期：2026-11-08。更新日期：2026-11-09。状态：已实施并完成本轮验收，实际结果及首版边界见 EXECUTION.md。范围：Scope 与配置版本及绑定、Workflow 核心领域、Agent/Model/Harness/Skill/Tool/Permission 组合与 AgentID、上下文检索和恢复、前端信息架构、数据迁移及验收。
 
-以 Workflow 统一驱动软件开发与人和 Agent 的交互，以 Feature 和 Task 组织全部执行及交付信息。Agent 实例由稳定 ID 标识，Agent 类型与 Harness 类型固定；全局定义的 Agent 按实例 ID 跨项目积累经验，项目内定义的 Agent 按实例 ID 在所属项目积累经验。项目名称、Feature 名称和时间是经验快照的主要筛选条件。
+以 Workflow 统一驱动软件开发与人和 Agent 的交互，以 Feature 和 Task 组织全部执行及交付信息。Agent 是 Model、Harness 和一组 Skills、Tools、Permission 的版本化组合，包含角色职责与行为指令；AgentID 唯一标识采用某个确定 AgentRevision 的实例。实例独立绑定 Global 或 Project Scope，分别跨项目或仅在所属项目积累经验。项目名称、Feature 名称和时间是经验快照的主要筛选条件，具体组合与实际模型信息保留在证据中。
 
 Scope 统一表达全局、Project 和 Feature 的边界。Workflow、Standard 等配置定义通过不可变修订独立演化，Project 可动态调整默认绑定；Feature 从创建时即冻结所采用的全部配置及依赖版本。Project 后续绑定变化只作用于之后创建的 Feature，已有 Feature 的未执行步骤、新 Task、新 Attempt 和新 Session 均沿用原配置。
 
@@ -16,22 +16,23 @@ Scope 统一表达全局、Project 和 Feature 的边界。Workflow、Standard �
 4. 文档以 Feature 组织，保留 Task 来源及引用。Context 和 Snapshot 绑定实际 Feature、Task 或已有项目讨论范围；Feature 与 Task 都能查看对应测试定义和执行结果。
 5. Workflow 是具有稳定身份和不可变修订的核心领域对象，定义阶段、参与者、能力需求、交互过程、产物契约、推进条件及异常路径。
 6. 每个步骤的推进方式可配置为自动推进或等待人确认；修改形成 Workflow 新修订，由 Project 调整默认绑定后用于后续 Feature。已有 Feature 的推进策略保持创建时版本。
-7. Agent 表示角色定义，实例 ID 唯一标识具体承担者。一个 ID 对应的 Agent 类型、Harness 类型和经验作用域固定；相同类型组合允许存在多个独立 ID。
-8. 全局 Agent 定义产生全局实例，其历史可跨项目检索；项目 Agent 定义产生项目实例，其历史限定在所属项目。历史始终按实例 ID 归属，不按角色名称或类型组合合并。
+7. Agent = Model + Harness + 一组定义好的 Skills/Tools/Permission，角色职责和行为指令属于 Agent 的配置。AgentID 唯一标识具体实例，固定到一个不可变 AgentRevision；相同组合允许有多个独立 AgentID。
+8. AgentID 的 Global/Project 绑定决定经验累积范围，独立于定义的保存位置。全局 Agent 定义可创建全局实例或项目实例；项目定义仅在其可见范围内创建项目实例。历史始终按 AgentID 归属，不按角色、Harness 或 Model 名称合并。
 9. 人和 Agent 都能渐进式读取实例历史：先获得索引和摘要，再展开某次工作的快照和原始证据；支持时间过滤、定位和场景恢复。
 10. Feature/Task worktree、TDD、独立评审、冻结输入和合入策略继续由领域内核约束。Workflow 配置通过这些约束校验。
 11. Scope 是统一的核心领域值对象；定义归属、绑定目标和运行事实归属分别使用有明确职责的 Scope 字段。配置定义的作用域与其使用目标分别记录。
 12. 所有可绑定的配置定义具有稳定身份和不可变版本，依赖精确引用；Project 默认绑定具有独立修订，Feature 创建时形成完整配置锁，之后禁止重新绑定。
 
-## 二 当前实现与改造入口
+## 二 实施前基线与改造入口
 
 | 入口 | 当前实现 | 改造目标 |
 |---|---|---|
 | `web/src/main.tsx` | 页面、选中 Feature、Task 过滤与详情集中在一个组件；执行页内部键为 `workflow` | 拆分页面与对象详情，建立稳定路由；执行页与工作流定义页使用不同标识 |
 | 工作总览 | 部分指标来自当前 Feature 已加载的详情页 | 按明确范围独立汇总，导航目标覆盖未加载的 Feature 和 Task |
-| `web/src/components/RoleConversation.tsx` | 按 owner 查询 Session，初始角色固定为需求分析师 | 选择稳定实例 ID，由当前工作流步骤推荐角色与 Harness，提供实例经验入口 |
-| `crates/domain/src/agents.rs` | AgentProfile 定义角色，Definition 修订链用于身份判断 | 保留角色定义与评审身份规则，新增定义作用域和独立的 AgentInstance |
+| `web/src/components/RoleConversation.tsx` | 按 owner 查询 Session，角色、Harness 与模型分开选择 | 按步骤选择完整 AgentRevision 与兼容 AgentID，展示 Model/Harness 组合和实例经验，取消同 ID 下临时换模型 |
+| `crates/domain/src/agents.rs` | AgentProfile 定义角色，Definition 修订链用于身份判断 | 将角色/指令作为 Agent 组合属性，增加 Model/Tool 定义及 AgentRevision/AgentInstance，保留作者与评审来源关系 |
 | `crates/domain/src/lib.rs` | Session 记录 Agent 修订和运行时锁，Snapshot 记录捕获来源 | 增加实例及工作流关联，保留原历史锁与来源，不把 Session ID 作为实例 ID |
+| `RuntimeBinding.model`、运行偏好及 `HarnessProvider` | 模型为运行绑定中的字符串，provider 主要标识 Codex/DSH Harness | 提升 Model 为独立版本化定义，区分模型提供方与 Harness 类型；Agent 组合整体绑定，运行时记录声明及实际 Model |
 | Project/Feature/Task 的 `BindingLock` 与 `binding.update` | 部分绑定可更新，执行级锁在后续阶段生成 | 新增 Scope、通用修订引用、Project 默认绑定修订与 Feature 创建时配置锁；已有 Feature/Task 配置更新须由 core 拒绝 |
 | `crates/core/src/lib.rs`、`live_runs.rs` | Attempt DAG、阶段角色及前置条件主要由代码匹配 phase 决定 | Workflow 决定步骤顺序与交互，受内核契约校验后生成冻结执行计划 |
 | `crates/core/src/conversations.rs`、`proposals.rs` | 讨论、提案、采纳和工程执行有明确边界 | 将交互与步骤关联，通过可追溯的产物满足工作流输入输出契约 |
@@ -51,13 +52,13 @@ Scope 统一表达全局、Project 和 Feature 的边界。Workflow、Standard �
 | `definition_scope` | 定义的所有权、维护位置与可见边界 | 全局定义可被项目引用；项目定义仅供该项目及其 Features 使用 |
 | `binding_target_scope` | 配置应用于谁 | Project 默认绑定可更新；Feature 配置锁创建后不可更改 |
 | `owner_scope` | WorkflowInstance、Snapshot 等具体事实的归属 | 实际运行和材料属于确定项目及 Feature，不能因引用全局定义而变成全局事实 |
-| Agent 实例的 `scope` | 实例身份及经验累积边界 | 继承 Agent 定义的全局或项目范围，与当前参与的 Feature 分别记录 |
+| Agent 实例的 `scope` | AgentID 的归属及经验累积边界 | 创建实例时独立选择 Global/Project，满足定义及完整依赖的可见范围；与当前参与的 Feature 分别记录 |
 
 全局 Workflow 在某个 Project 中使用时保留全局定义身份，其 WorkflowInstance 和 Feature 配置锁属于实际 Project/Feature。将全局定义复制并特化为项目定义时创建新定义身份，保存 `derived_from` 的精确修订；不改变原定义的 Scope 或版本历史。
 
 定义身份的 Scope 创建后固定。全局定义的依赖只能引用全局定义；项目定义可以引用全局或本项目定义，禁止引用其他项目定义。创建 Project 绑定及 Feature 锁时递归校验依赖闭包的作用域、内容与兼容性，拒绝循环或缺失引用。为历史读取追加复制共享修订时保留来源 Scope 和身份。
 
-首版 Agent、Workflow、Standard、Spec、Skill、Harness、Sandbox 和 Permission 的可复用定义支持 Global/Project Scope。Feature Scope 用于创建时配置锁和具体运行事实；Feature 应用这些定义时固定精确引用，不在创建后增加可变的局部治理覆盖。Scope 与既有 `TaskScope` 的验收范围、`ExecutionScope` 的运行授权分别命名和验证。
+首版 Agent、Model、Workflow、Standard、Spec、Skill、Tool、Harness、Sandbox 和 Permission 的可复用定义支持 Global/Project Scope。Feature Scope 用于创建时配置锁和具体运行事实；Feature 应用这些定义时固定精确引用，不在创建后增加可变的局部治理覆盖。Scope 与既有 `TaskScope` 的验收范围、`ExecutionScope` 的运行授权分别命名和验证。
 
 ### 稳定身份与不可变版本
 
@@ -65,11 +66,12 @@ Scope 统一表达全局、Project 和 Feature 的边界。Workflow、Standard �
 
 | 配置对象 | 必须固定的依赖 |
 |---|---|
-| Workflow | 子流程、步骤交互契约、绑定 slot 约束、默认角色/能力定义和所用模板的精确修订 |
+| Workflow | 子流程、步骤交互契约、角色/能力约束、默认完整 AgentRevision 和所用模板的精确修订 |
 | Standard | 所有用途 slot 的 Spec 修订及合成规则，生成可验证的 StandardLock |
-| Agent 定义 | 指令、Skill 引用、工作类型及角色配置修订；实例 ID 独立于定义修订 |
-| Harness/Sandbox | 能力、环境、Permission 绑定、安装配方或版本及内容约束 |
-| Skill/Spec/Permission 及其他可绑定模板 | 自身不可变内容及声明的全部精确依赖 |
+| Agent 定义 | ModelRevision、HarnessRevision、Skill/Tool/Permission 精确引用、角色与指令；AgentID 固定该组合修订 |
+| Model | 模型后端/提供方、连接定义版本、模型标识及可用版本证明、推理参数和能力声明 |
+| Harness/Sandbox | 模型接入及工具编排能力、环境、执行器权限边界、安装配方或版本及内容约束 |
+| Skill/Tool/Spec/Permission 及其他可绑定模板 | 自身不可变内容、工具调用契约、执行约束及声明的全部精确依赖 |
 
 定义发布新版本不更新其使用方。Standard v2 引用 Spec v1 时，发布 Spec v2 后 Standard v2 仍引用 Spec v1；采用新 Spec 须形成新的 Standard 修订。所有嵌套依赖同样固定，不允许 `latest`、浮动版本范围或当前项目默认值进入 Feature 配置锁。
 
@@ -77,9 +79,9 @@ Scope 统一表达全局、Project 和 Feature 的边界。Workflow、Standard �
 
 新增 `ProjectConfigurationRevision`，包含各配置 slot 的精确修订引用、来源和解析结果。Project 保存当前修订指针，可通过具有 expected_revision 的命令原子切换 Workflow、Standard 等默认绑定，并保留原修订。继承全局默认时，在生成 Project 配置修订时完成解析；全局默认变化不会修改现有 Project 配置修订。
 
-`feature.create` 使用明确的 Project 配置修订，允许在创建参数中选择其他合法的精确版本；完成作用域、依赖和兼容校验后，同事务保存 Feature 与 `FeatureConfigurationLock`。锁至少包含来源 Project 配置修订、WorkflowRevision、StandardLock、角色/Skill/Harness/Sandbox/Permission 的完整依赖图及摘要。创建即冻结，包括处于 draft 的 Feature。
+`feature.create` 使用明确的 Project 配置修订，允许在创建参数中选择其他合法的精确版本；完成作用域、依赖和兼容校验后，同事务保存 Feature 与 `FeatureConfigurationLock`。锁至少包含来源 Project 配置修订、WorkflowRevision、StandardLock、各参与 slot 的 AgentRevision、其 Model/Harness/Skill/Tool/Permission 组合闭包和 Sandbox 引用及摘要。创建即冻结，包括处于 draft 的 Feature。
 
-创建时已固定的运行定义可以在后续按相同版本配方准备实际安装，但实际能力及内容必须符合锁定约束。步骤可在冻结的角色及 Harness 类型约束内选择或创建实例 ID，选择事实另行保存；不得借新建实例、覆盖参数或读取偏好改变定义版本。
+创建时已固定的运行定义可以在后续按相同版本配方准备实际安装，但实际能力及内容必须符合锁定约束。步骤只选择或创建绑定该 slot 所锁定 AgentRevision 的 AgentID，选择事实另行保存；不能只验证角色/Harness 类型相同。需要多个组合参与时，在创建 Feature 前将各候选精确修订纳入定义和配置锁；不得借新实例、单独的 Model/Harness 覆盖或读取偏好改变组合。
 
 Task 从所属 Feature 的配置锁派生；即使 Task 在 Project 更新默认绑定后才创建，也使用原 Feature 的版本。Attempt、Run、Session、Review、Merge 和恢复执行引用这份治理配置，另冻结自身输入与实际运行实例。技术重试和新 Attempt 均不能采用新的 Project 默认绑定。
 
@@ -98,36 +100,74 @@ Task 从所属 Feature 的配置锁派生；即使 Task 在 Project 更新默认
 
 并发更新 Project 配置与创建 Feature 时校验创建命令指定的配置修订，冲突时拒绝并返回当前修订；同一 command_id 重放返回原创建结果，不重新解析默认值。被引用修订及必要材料保持可读取；停用定义可阻止新绑定，不删除旧锁所需内容。
 
-## 四 Agent 定义与实例
+## 四 Agent 组合与 AgentID
 
-### 定义作用域
+### 概念及职责
 
-`AgentDefinition` 沿用现有 Definition 和 AgentProfile 修订机制，使用统一 Scope 的 Global/Project 变体。Agent 类型由稳定的定义身份根及其角色类别确定；Feature 执行采用创建时配置锁中的角色修订，Session/Run 记录实际使用的该修订。独立项目级讨论在创建时固定当前适用的 Project 配置修订。
+Agent 是可复用的执行者配置，AgentRevision 固定其全部组成部分，AgentID 是该组合的具体实例身份。角色描述职责，Workflow 描述协作过程，二者分别进入 Agent 属性和步骤参与要求；Standard 管理工程标准，Sandbox 管理实际执行环境，不并入 Agent 身份。
 
-全局定义保存在全局配置库；项目定义保存在所属项目库。查询按 ID 解析归属，同名定义均显示作用域。全局配置同步不得覆盖项目定义，也不得把同名对象视为同一个定义。
+| 概念 | 定义及主要内容 |
+|---|---|
+| Model | 推理后端定义：提供方、连接版本、模型标识/版本、推理参数及能力；独立于 Harness 和其安装 |
+| Harness | 承载 Agent 的执行及编排运行时：模型协议接入、工具调用、会话、交互和恢复能力；同一 Harness 可支持多个 Model |
+| Skill | 可复用的方法、操作说明及领域知识，声明所需 Tool/能力；内容及依赖版本固定 |
+| Tool | 可调用操作的契约及实现绑定，具有名称空间、输入输出 Schema、版本和适用执行范围 |
+| Permission | 对文件、网络和工具调用等操作的授权策略；由相应 Harness/Sandbox 执行器落实 |
+| Agent | ModelRevision + HarnessRevision + Skill 集合 + Tool 绑定集合 + Permission 绑定，加上职责、指令和允许工作类型 |
+| AgentID | AgentInstance 的唯一 ID，固定采用一个 AgentRevision，并绑定 Global 或某个 Project Scope |
 
-### 实例身份
+Agent 与 Model/Harness/Skill/Tool/Permission 都使用稳定定义身份及不可变修订。替换组成部分或改变其参数均生成新的 AgentRevision，已有实例继续绑定原修订。即使同一个 Harness、同一种角色，只要 Model 或其他组成部分不同，就具有可区分的组合身份。
 
-`AgentInstance` 至少包含 `id`、`agent_type_ref`、`harness_type`、`scope`、显示名称、创建时间、生命周期和 revision。`scope` 继承创建它的 Agent 定义作用域，并在创建后固定。
+### Model 与 Harness 的边界
 
-| 定义范围 | 实例保存位置 | 经验范围 |
+ModelRevision 至少记录 `model_definition_id`、`revision_id`、`provider_kind`、`endpoint_revision_ref`、`provider_model_id`、供应商可提供的模型版本证明、推理参数和能力声明。连接定义不保存密钥正文，实际认证使用 credential_ref；凭据轮换不自动改变模型配置或授权范围。
+
+同名模型经过不同提供方/路由、不同模型发布版本或推理参数时，采用可区分的 ModelRevision。供应商只给出浮动别名时记录这一事实，实际回执中可观测的模型版本另行保存；配置版本冻结不能被描述为远端模型行为逐字可复现。
+
+HarnessRevision 保存运行时类型和版本、适配器/协议契约、支持的模型接入及工具和会话能力，RuntimeInstallation 只描述对应实际二进制或镜像。同一安装可以服务不同 AgentRevision，不因更换 Model 重复安装 Harness。代码中的 HarnessProvider 与模型提供方字段分开命名和迁移，不能用 Codex/DSH Harness 名称推断实际模型后端。
+
+派发前验证 Model 与 Harness 的协议、工具调用、结构化输出及交互需求兼容性。实际 RuntimeBinding 固定 AgentRevision、ModelRevision、HarnessRevision、模型参数和连接引用、安装摘要、适配器、已暴露工具及最终权限。选择新的 Model 必须采用新的 AgentRevision 和 AgentID，不允许在同一 ID 下通过会话参数或静默 fallback 换模型；模型不可用时显示实际阻塞。
+
+### Skill Tool 与 Permission 的组合
+
+Skill 的方法说明不安装 Tool，也不授予 Permission。Agent 明确声明所用 Skill 精确修订、Tool 集合及各工具的实现绑定、Permission 精确修订及解析规则。工具名称相同而提供方、Schema 或实现版本不同时保持不同的 ToolRevision，使用限定名称定位，避免调用重名工具。
+
+AgentRevision 保存组合内容、引用顺序和 `composition_hash`。指令或有序 Skill 装配的变化也形成新修订。发布时递归校验依赖 Scope、工具 Schema、所需能力和权限可执行性；缺少实现或执行器无法落实的规则返回错误，不以删除约束的方式通过校验。
+
+实际可用能力由 Agent 声明的 Tool 集合、Model/Harness 支持、工具已安装状态、冻结 Permission、ExecutionScope 和 Sandbox 约束共同决定。界面展示配置及收窄来源；Skill 或模型的工具请求不能扩大授权。Project/全局配置只在构建 AgentRevision 时提供默认值，不能在实例运行时重新覆盖组合。具体 Feature/worktree 路径及一次性运行审批属于冻结策略下的执行事实，按执行保存，不改写 AgentRevision。
+
+### Agent 定义与实例作用域
+
+Agent 定义的 definition_scope 控制维护位置和可见性，AgentID 的 scope 控制具体实例归属及经验范围，两者分别选择并验证：
+
+| Agent 定义范围 | 可创建的实例 Scope | 实例保存位置及经验范围 |
 |---|---|---|
-| 全局 | 全局配置库 | 该实例 ID 在所有参与项目中的工作 |
-| 项目内 | 所属项目库 | 该实例 ID 在所属项目中的工作 |
+| Global，且组合依赖均全局可见 | Global | 全局实例登记；按该 ID 跨参与项目积累经验 |
+| Global，且组合依赖均全局可见 | Project P | P 的实例登记；该 ID 仅在 P 内参与工作和积累经验 |
+| Project P | Project P | P 的实例登记；该 ID 仅在 P 内参与工作和积累经验 |
+| Project P | Global 或其他 Project | 拒绝，实例范围不能扩大定义及依赖的可见性 |
 
-实例 ID 采用可全局唯一定位的标识；用户可设置显示名称。相同 Agent 类型和 Harness 类型允许创建多个实例。修改角色说明形成同一类型下的新修订，由新的配置绑定采用；已有 Feature 的执行始终使用其锁定修订。同一全局实例可在不同 Feature 使用各自锁定的同类型修订，每条经验记录实际版本。修改 Agent 类型、Harness 类型或作用域须创建新实例，保留显式来源关系。
+定义和修订保存在其所属库，引用共享版本时保留只读副本和来源。创建实例时明确选择 Scope，不再由定义保存位置自动决定经验范围。实例 Scope 创建后固定；需要改变范围时创建新 AgentID，并保留明确来源。
 
-Harness 继续表示具体能力集合。实例固定 Harness 类型；Feature 配置锁固定能力定义、版本、模型及工具和权限配置，执行绑定再记录实际安装和能力证明。选择已有实例时，Harness 类型由实例确定并须匹配 Feature 锁；候选能力不足时返回原因，不自动改变该 ID 的 Harness 类型。
+### AgentRevision 与实例数据
 
-全局实例可以在多个项目建立独立 Session。各 Session 的上下文、代码视图、工具授权和写入范围继续属于各自项目。经验读取不共享可变 Context，也不赋予源项目工作目录的写入权限。
+`AgentRevision` 至少包含稳定 Agent 定义 ID、不可变修订 ID、角色/指令、ModelRevision、HarnessRevision、有序 Skill 引用、ToolBindings、PermissionBindings、允许工作类型、组合摘要和 Schema 版本。
 
-### 历史关联
+`AgentInstance` 至少包含 `agent_instance_id`、`agent_revision_id`、`scope`、显示名称、创建时间、生命周期、可选来源实例及乐观锁。AgentID 指该记录的唯一身份，不等于 Agent 定义 ID、AgentRevision ID、Session ID 或 Harness 原生会话 ID。
 
-Session、Turn、Run、Snapshot 来源及工作流参与记录增加 `agent_instance_id` 或稳定关联表。一个实例拥有多个 Session；Harness 外部会话 ID 另行保存。
+一个 AgentRevision 可以创建多个 AgentID，并分别指定 Global/Project 范围。同一个全局 AgentID 可以在多个 Feature/Project 工作，前提是它们的配置锁均允许其绑定的精确 AgentRevision；不能在不同 Feature 中用同一 ID 运行不同组合版本。组合升级需要新 AgentID，可以通过显式的快照引用继承旧经验，但不合并或重标原 ID 的历史。
 
-Feature 汇总快照可能包含多个角色，使用参与关系及来源 Session 标记贡献。继承或导入别人的快照保留来源，分别记录“本实例产生”和“本实例采用”，不将引用材料改写为自己的工作。
+同一实例可以拥有多个独立 Session。各 Session 的上下文、代码视图、工具授权和写入范围继续属于实际项目。全局经验读取不会共享可变 Context，也不赋予来源项目写入权。
 
-评审独立性继续验证现有 Agent 定义身份根及实际作者关系。新增实例 ID 不得成为同一作者绕过评审隔离的手段。
+### 存储 历史与表现归属
+
+现有 Definition 修订存储扩展为类型化 AgentRevision、ModelRevision 和 ToolRevision 等配置记录；Agent 配置只保存精确引用和组合内容，不再在 Session 创建时临时拼接 Model。Global/Project 的 `agent_instances` 分别保存相应 Scope 的实例，SQL 和 core 保证 agent_revision_id/scope 不变，项目内维护共享实例的只读引用。
+
+Session、Turn、Run、Snapshot 来源及参与记录保存 agent_instance_id、agent_revision_id、composition_hash 和实际 RuntimeBinding。经验按 AgentID 检索，项目名称、Feature 名称和时间仍为主要筛选。展示或比较工作表现时可按 AgentRevision、ModelRevision、HarnessRevision 和实际环境进一步区分，不能仅按角色或 Harness 汇总后宣称模型表现相同。
+
+Feature 汇总快照可以包含多个实例，通过参与关系及来源 Session 标记贡献。采用他人快照保留“来源实例产生/当前实例引用”的区别；Model 的声明版本、可观测实际版本及未知边界分别展示。
+
+评审独立性结合角色职责、定义来源链及实际作者/评审参与关系验证。更换 Model、新建 Agent 定义或 AgentID 不自动构成合格的独立评审者；迁移继续保留原有可证明的身份隔离事实。
 
 ## 五 Workflow 定义与运行实例
 
@@ -161,18 +201,18 @@ Stage 负责展示分组，Step 承担实际语义；步骤使用稳定 `key`，
 |---|---|
 | `key / stage_key / kind / contract_version` | 定位步骤、展示阶段和动作处理器；拒绝重复 key 与未知契约版本 |
 | `inputs / outputs` | 定义所需对象类型及来源端口；运行时绑定精确修订、代码和 Artifact 引用 |
-| `participant_slot / capabilities` | 指定角色及能力要求；实际实例 ID 在运行时分配并固化，符合 Scope 与 Feature 配置锁 |
+| `participant_slot / capabilities` | 指定角色及能力要求，绑定完整 AgentRevision；实际 AgentID 必须精确匹配该组合及允许的实例 Scope |
 | `interaction` | 讨论方式、目标、必答主题、工具和历史读取策略、输出 Schema、无进展/轮次上限及完成依据 |
 | `guards / completion` | 依赖完成、产物已采纳、有效 Review、测试证据、目标未变化等内置条件 |
 | `advance_mode` | 完成本步且条件满足后，自动进入后续步骤或等待人确认 |
 | `next / outcomes / rework_scope` | 正常分支、技术失败与业务退回路径，以及受影响步骤的重新执行范围 |
 | `execution_recipe / retry_policy` | 正式执行的受约束节点配方，以及允许的技术重试类别与上限 |
 
-绑定 slot 是有类型和能力约束的参数。例如 `architect` slot 可以设置精确默认 AgentRevision，Project 在创建配置修订时可选择满足该 slot 契约的其他可见修订；所有默认引用保持精确，参数在 Feature 创建前解析完毕。Project 可独立升级兼容角色或能力定义而不改写 Workflow 正文，生成的配置锁和编译计划体现实际差异。不可覆盖的固定引用必须通过 Workflow 新修订改变。
+绑定 slot 是有职责和能力约束的参数。例如 `architect` slot 可以设置精确默认 AgentRevision，Project 在创建配置修订时可选择满足该契约的其他完整 Agent 组合；所有引用保持精确，参数在 Feature 创建前解析完毕。Project 可通过选择新 AgentRevision 独立采用另一 Model/Harness/Skill/Tool/Permission 组合，而不改写兼容的 Workflow 正文；不得在 slot 内单独覆盖 Agent 的组成部分。不可覆盖的固定引用必须通过 Workflow 新修订改变。
 
 节点能力由动作目录提供，首版包括 `agent.interact`、`proposal.adopt`、`attempt.execute`、`delivery.review`、`merge.prepare`、`merge.apply`、`snapshot.capture`、`resource.cleanup`、条件分支、并行汇合及 `tasks.foreach`。目录描述每种动作的字段、输入输出、适用 owner、执行权限与结果条件；表单和内核消费同一契约。新动作语义需要新增处理器，已有动作的合法组合通过定义编辑完成。
 
-`agent.interact` 建立或选用符合绑定的 Session，注入步骤目标、冻结输入、自身实例 ID 和有限经验索引，支持多轮澄清与结构化 Proposal。聊天结束或 Agent 自称完成不满足工程门禁；采纳、Review 和测试结果通过正式命令及可核验事实成立。
+`agent.interact` 根据 AgentID 固定的完整 AgentRevision 建立或选用 Session，注入步骤目标、冻结输入、实例 ID 和有限经验索引，支持多轮澄清与结构化 Proposal。调用工具和经验读取均符合其 Tool/Permission 及实例 Scope。聊天结束或 Agent 自称完成不满足工程门禁；采纳、Review 和测试结果通过正式命令及可核验事实成立。
 
 ### 草稿与发布
 
@@ -197,20 +237,24 @@ SQLite 继续是唯一可写事实源。流程正文采用 JSON 保存完整结�
 | 表或记录集合 | 位置 | 关键字段与约束 |
 |---|---|---|
 | `workflow_definitions` | 定义 Scope 所属库 | 稳定 ID、Scope、名称、生命周期、派生来源；Scope 不可变 |
-| `workflow_drafts` | 同定义所属库 | draft_id、definition_id、base_revision_id、document JSON、edit_revision、验证摘要；只编辑草稿 |
+| `workflow_drafts` | 同定义所属库 | draft_id、definition_id、base_revision_id、document JSON、edit_revision、验证摘要、published_revision_id；发布后从新草稿继续编辑 |
 | `workflow_revisions` | 同定义所属库 | revision_id、definition_id、version、schema_version、document JSON、content_hash、published_at；唯一 `(definition_id, version)`，发布后禁止更新/删除正文 |
-| `definition_revision_imports` | 消费它的项目库 | 共享修订的只读本地副本、来源 Scope、摘要及依赖闭包；保留全局身份，不作为项目定义编辑 |
+| `definition_revision_imports` | 消费它的项目库 | 导入的本地修订引用、来源 Scope、摘要及依赖闭包；保留全局身份，不作为项目定义编辑 |
+| 配置定义/修订的 Model/Tool/Agent 类型记录 | 定义 Scope 所属库 | 共用版本记录的 kind 和类型化 configuration JSON，分别保存模型后端配置、工具契约、Agent 组合引用与 composition_hash；不复制为另一套可写正文 |
+| `agent_instances` | 实例绑定的 Scope 所属库 | agent_instance_id、agent_revision_id、scope、来源与生命周期；AgentRevision 和 Scope 不可变；全局定义可对应全局或项目实例 |
 | `project_configuration_revisions` | 项目库 | 不可变绑定图、内容摘要和前序修订；Project 原子更新 current_configuration_revision 指针 |
 | `feature_configuration_locks` | 项目库 | feature_id 唯一、来源 Project 配置修订、Workflow/Standard 引用、完整 lock JSON 和摘要；只插入 |
 | `compiled_workflow_plans` | 项目库 | plan_id、定义/配置摘要、编译及动作语义版本、plan JSON；内容不可变，可由多个相同配置的实例引用 |
 | `workflow_instances` | 项目库 | owner、parent_instance_id、workflow_revision_id、configuration_lock_id、plan_id、状态、乐观锁；每 Feature 唯一主流程 |
-| `workflow_step_instances` | 项目库 | instance_id、step_key、round、状态、input_lock、output_refs、时间及乐观锁；新轮次创建新记录 |
+| `workflow_step_instances` | 项目库 | instance_id、step_key、round、状态、input_lock、output_refs、时间及乐观锁；唯一 `(instance_id, step_key, round)`，新轮次创建新记录 |
 | `workflow_step_links` | 项目库 | 步骤到实际 Session/Proposal/Attempt/Run/Delivery/Review/Merge/Snapshot 的引用及用途；验证同项目和版本归属 |
 | `workflow_task_groups / members` | 项目库 | 来源 TaskPlan 修订、generation、成员摘要、确定 Task ID 与子流程 ID；一代成员集合不可原地改变 |
 | `workflow_confirmations` | 项目库 | 步骤轮次、计划/输入/产物摘要、目标、决定、主体及时间；保留原决定，失效另行记录 |
 | `workflow_action_intents` | 项目库 | 步骤轮次、确定 action_key、冻结命令、派发/核对状态与关联 operation；action_key 唯一 |
 
 依赖和引用可建立规范化索引用于查询与校验，由权威 JSON 同事务派生；索引不提供独立写入口。全局定义修订在解析时只读取一次并核验摘要，项目内保存所需精确副本，随后 Project 换绑和 Feature 创建只在各自项目事务中提交，不假设跨 SQLite 原子事务。
+
+导入时将共享 Workflow 定义和修订写入项目内同型表的只读副本，保留原 ID、Scope、正文和 hash，imports 表只登记来源关系。运行表的外键引用本地精确修订，避免跨数据库外键；项目编辑 API 不允许修改这些全局副本。其他配置依赖采用同样的本地镜像规则，副本可从来源重建且不能独立发布。
 
 SQL 同时保护不可变修订与锁的 update/delete 边界，不能只在 UI 禁用按钮。当前通用 `save_table` 使用 upsert，实施时对这些集合采用 insert-only 保存路径及内容一致性检查，避免正常持久化流程覆盖已发布版本。Runtime 状态的更新保留乐观锁和追加事件，接入现有 `EngineeringState`、加载/保存、迁移和备份恢复链。
 
@@ -232,7 +276,7 @@ SQL 同时保护不可变修订与锁的 update/delete 边界，不能只在 UI 
 
 ### 状态与调度
 
-步骤状态至少区分 pending、ready、active、waiting_input、waiting_confirmation、blocked、completed、failed 和 cancelled。状态语义区分工作未完成、推进待确认与工程门禁阻塞。
+步骤状态至少区分 pending、ready、active、waiting_input、waiting_confirmation、blocked、completed、skipped、failed 和 cancelled。状态语义区分工作未完成、推进待确认、未选择分支与工程门禁阻塞。互斥分支必须具有确定且无歧义的匹配规则；未选择分支标记 skipped，汇合只等待实际激活分支。空 Task 集合是否允许跳过必须由流程用途和 Standard 明确决定，不能将空集自动当成有效交付。
 
 调度读取工作流实例及权威工程事实；Run/Turn 完成、提案采纳、Review 和 Merge 接纳触发重新求值。直接工程命令同样校验工作流契约；前端只能提交命令，不能按 Feature.status 自行推进。
 
@@ -272,7 +316,7 @@ Review 退回生成明确关联的修复步骤轮次及新 Attempt，目标分�
 
 W3 将现有阶段匹配拆成两部分：固定动作语义留在处理器中，编排、角色选择和推进来自 CompiledWorkflowPlan。具体替换 `core/lib.rs` 的 phase DAG/规划前置/allowed_actions、`core/live_runs.rs` 的固定角色映射，以及 `host/workspace.rs` 选择内置角色 latest 的逻辑。派发时从步骤计划读取精确版本，旧 phase 入口仅做受同一门禁约束的兼容映射。
 
-`attempt.start`、`proposal.accept`、`review.request/submit`、`merge.request/apply` 等既有命令在关联流程时均验证对应步骤、输入锁和动作授权。独立只读浏览和不产生正式结果的补充讨论有明确上下文；一旦采纳为工程输入，就走正式关联和失效规则。不存在外部提交任意 `step.completed` 或 `set_status` 的入口。
+`attempt.start`、`proposal.adopt`、`review.request/submit`、`merge.request/apply` 等既有命令在关联流程时均验证对应步骤、输入锁和动作授权。独立只读浏览和不产生正式结果的补充讨论有明确上下文；一旦采纳为工程输入，就走正式关联和失效规则。不存在外部提交任意 `step.completed` 或 `set_status` 的入口。
 
 ## 六 默认 Feature 工作流
 
@@ -301,7 +345,7 @@ W3 将现有阶段匹配拆成两部分：固定动作语义留在处理器中�
 
 1. Project 选择 Feature 工作流及 Standard 的精确版本，并保存配置修订。可选的项目需求入口流程对每个需求建立独立实例，固定入口配置；产生 Feature 时显式解析当时的 Project 配置并校验版本。
 2. 创建 Feature，同事务固定配置锁、编译计划和唯一主流程，登记初始动作。worktree 的实际创建依照既有 RepositoryOperation 执行，不把定义发布视为工程启动。
-3. 需求步骤推荐需求分析师及符合锁定能力的 Harness，选择明确实例 ID，打开绑定该步骤的讨论。通过澄清形成 Proposal，人采纳后生成正式 Requirement 修订。
+3. 需求步骤要求需求分析职责并推荐满足条件的完整 Agent 组合，明确显示其 Model 和 Harness。选择绑定该 AgentRevision 的 AgentID，打开步骤讨论；通过澄清形成 Proposal，人采纳后生成正式 Requirement 修订。
 4. 执行 `requirement_definition` 契约的 Attempt，只依赖当前需求和必要代码认识，形成需求 Delivery；独立 Review 接受后才开放方案设计步骤。此阶段不要求 Design、TaskPlan 或 TestPlan 已存在。
 5. 架构师与测试角色在后续步骤中讨论并采纳 Design、TaskPlan 和 TestPlan。执行 `solution_planning` 契约的 Attempt，固定已接受需求、上述方案产物及验收映射，形成 plan Delivery 并进行 Review。
 6. core 依据兼容且仍有效的需求与规划交付，加上基线 Snapshot，将 Feature 接纳为 ready。需求与方案两个阶段可以属于不同 Attempt，引用同一明确 Requirement 修订，不要求在一个 planning Attempt 中反复生成。
@@ -385,11 +429,11 @@ Agent 在新讨论中获得自身 ID、作用域和有限摘要，并能通过�
 
 ### 角色讨论
 
-页面包括当前工作入口、实例选择、对话主体及可展开的经验面板。显示实例 ID、Agent/Harness 类型与作用域；类型与实例创建入口放在规范与身份，讨论页允许快捷选择或创建符合要求的实例。
+页面包括当前工作入口、Agent 组合及实例选择、对话主体和可展开的经验面板。显示 AgentID、Agent 名称及修订、角色职责、Model 后端/版本、Harness/版本和实例 Scope；Skill/Tool/Permission 在详情中渐进展开。定义与实例创建入口放在规范与身份，讨论页允许快捷创建绑定已有 AgentRevision 的实例并选择 Global/当前 Project。
 
 推荐由选定 Feature/Task 的工作流步骤、交互状态和能力需求决定，并返回理由。多个步骤并行时按当前对象列出候选，允许显式选择；已运行 Session 保持原实例和绑定，不因推荐更新而切换。
 
-Feature 创建前，按步骤显式设置、角色、项目和全局偏好解析配置，无配置时默认 Codex，并将结果纳入配置锁。Feature 内讨论及执行只读取这份锁；选定已有实例后固定其 Harness 类型，并验证所需能力。默认实例选择顺序为步骤已分配实例、对象已有合适实例、用户选择/新建，不凭名称合并。
+Feature 创建前，按 Workflow slot、Project 和全局默认选择完整 AgentRevision，并核对职责与组合能力；内置默认 Agent 采用 Codex Harness 和明确发布的 ModelRevision，缺失模型配置则显示待配置。Feature 内只从锁定组合选择精确匹配的 AgentID，不提供运行时独立 Model/Harness/Permission 覆盖。默认实例选择顺序为步骤已分配实例、对象已有兼容实例、用户选择/新建；同一组合的 Global 与 Project 实例可分别显示，经验不自动混合。
 
 经验面板始终突出项目名称、Feature 名称和时间筛选。选择结果可查看快照、插入有来源的经验引用、定位来源工作或恢复场景。对话显示当前步骤目标、期望产物及采纳后的下一步；正式执行产生的历史也进入同一实例履历。
 
@@ -425,13 +469,13 @@ Feature 创建前，按步骤显式设置、角色、项目和全局偏好解析
 | 分组 | 用户编辑的内容 |
 |---|---|
 | 基本信息 | 名称、动作类型、所属阶段、前置步骤、分支与子流程；稳定 key 由创建动作生成并保留 |
-| 参与者与能力 | 角色 slot、精确默认角色版本、Harness 能力和默认配置；显示 Scope，解释允许的 Project 覆盖 |
+| 参与者与能力 | 职责 slot、完整 AgentRevision 及 Model/Harness/Skill/Tool/Permission 预览；显示定义和实例的不同 Scope，解释 Project 可以替换整个 Agent 组合 |
 | 交互 | 头脑风暴/澄清/方案讨论方式、目标、必答主题、输出要求、允许工具、历史读取范围及无进展处理 |
 | 输入与产物 | 从上游端口选择输入，声明 Proposal/文档/交付等输出，显示验收条件映射 |
 | 条件与推进 | 类型化条件选择器，自动或待人确认，以及确认发生的具体边界 |
 | 失败与返工 | 技术重试范围及次数、Review 退回后回到的业务范围、需要停止等待处理的情况 |
 
-定义编辑角色类型和实例分配策略；实际承担工作的实例 ID 在运行时选择并记录。讨论表单不要求用户写原始 JSON，也不把业务条件表达为任意代码。高级只读定义视图可用于检查和导出；可编辑内容始终经过同一 Schema。
+定义编辑职责要求、默认 Agent 组合和实例分配策略；实际 AgentID 在运行时选择并记录，必须匹配锁定的精确 AgentRevision。讨论表单不要求用户写原始 JSON，也不把业务条件表达为任意代码。高级只读定义视图可用于检查和导出；可编辑内容始终经过同一 Schema。
 
 引用独立 Task 子流程版本时，点击“编辑子流程”建立其草稿；发布新子流程后，父流程草稿显式更新引用并发布，旧父流程版本不变。保存一次表单改变只修改同一份草稿文档，目录和预览从它派生，不独立维护节点或连线事实。
 
@@ -459,7 +503,11 @@ Feature/Task 详情展示实际阶段、当前步骤、分支、Task 汇合、�
 
 ### 规范与身份及历史记录
 
-规范与身份分别管理全局/项目 Agent 定义、Agent 实例、Harness 能力、Standard/Spec、Skill、Sandbox、Permission 和运行配置，统一显示 Scope、定义身份、具体版本和引用关系。Project 配置界面支持精确版本选择、默认绑定修订与差异预览；Feature 页面仅展示所用版本。实例详情链接自己的工作履历；定义修订与实例身份分别展示。
+规范与身份分别管理全局/项目 Agent、Model、Harness、Skill、Tool、Permission、Sandbox 和 Standard/Spec。Agent 编辑器依次选择职责/指令、Model、Harness、Skills、Tools 和 Permission，展示版本、兼容性、组合摘要及有效授权；保存产生新的 AgentRevision，不修改已有实例。
+
+实例创建选择精确 AgentRevision，再选择 Global 或当前 Project。界面显示允许的实例范围及经验累积边界；实例详情只读展示组成部分，修改定义提供创建新版本和新实例入口。模型列表显示提供方、模型/发布标识、推理参数与兼容 Harness；同 Harness 的不同模型 Agent 并列可辨，不只显示角色名称。
+
+Project 配置界面支持完整 AgentRevision 和其他配置的精确版本选择、默认绑定修订与差异预览；Feature 页面仅展示已锁定组合。实例详情链接自己的工作履历及实际 Model/环境信息，定义可见范围、实例范围与材料来源分别展示。
 
 历史记录提供工程事件及工作流推进、人工确认、定义发布、Project 绑定变更、Feature 配置冻结、实例关联、经验导入和恢复记录。角色经验是历史的特定投影，不建立第二套可修改的工程事实。
 
@@ -471,7 +519,7 @@ Feature/Task 详情展示实际阶段、当前步骤、分支、Task 汇合、�
 |---|---|
 | Scope 与版本 | 各类定义的作用域、稳定身份、精确修订、依赖及可见性查询和校验 |
 | 配置绑定 | Project 默认绑定查询与修订；创建 Feature 时解析及原子冻结；Feature 锁和依赖只读查询；拒绝创建后重新绑定 |
-| 定义与实例 | 全局/项目 Agent 定义查询与修订；实例创建、查询、归档；固定类型与作用域校验 |
+| 定义与实例 | Agent/Model/Harness/Skill/Tool/Permission 定义查询、修订及组合校验；AgentID 创建、查询、归档；固定 AgentRevision 与实例 Scope |
 | Workflow | 定义查询、修订、校验及 Project 精确默认选择；实例与步骤读取；按锁定版本确认、暂停/恢复 |
 | 建议与动作 | 返回当前对象的可处理步骤、推荐类型和实例、能力要求、理由及阻塞信息 |
 | 经验 | 按当前实例 ID 查询项目/Feature/时间维度、索引、摘要、快照与证据；读取范围和游标分页 |
@@ -480,44 +528,75 @@ Feature/Task 详情展示实际阶段、当前步骤、分支、Task 汇合、�
 
 工程命令携带 command_id、目标项目、expected_revision 和适用的 workflow_step_instance_id。创建 Feature 的命令明确 Project 配置修订，后续命令引用 Feature 配置锁。Host 解析身份和能力，core 验证权威条件，adapter 执行外部 I/O 并回传可核验结果。全局和项目命令使用各自明确的幂等范围。
 
-建议新增 `domain/scope.rs`、`domain/configuration.rs`、`domain/workflow.rs`、`domain/agent_instances.rs` 及 core 对应模块；经验检索抽象读端口，跨项目协调由 Host/adapter 实现。治理配置锁与需求验收 TaskScope、实际 ExecutionScope 分别验证。Web 拆出共享 RPC、路由、页面和 Feature/Task 详情组件，避免继续向 `main.tsx` 集中业务代码。
+### Workflow 操作契约
+
+| 目标接口 | 输入与返回要点 |
+|---|---|
+| `model.create/revise`、`tool.create/revise` | 明确 Scope、提供方/实现及配置、契约和精确依赖；返回独立修订，不改变已有 Agent |
+| `agent.create/revise` | 角色/指令及 Model/Harness/Skills/Tools/Permission 精确引用；返回完整 AgentRevision、composition_hash 和兼容性结果 |
+| `agent.instance.create` | 精确 AgentRevision 和独立选择的 Global/Project Scope；返回 AgentID，范围受定义及依赖可见性限制 |
+| `query.agent_instances / query.agent_revision` | 按实例 Scope、Agent 及角色定位；返回不可变组合与实际实例信息，区分同 Harness 不同 Model |
+| `workflow.create` | 显式 Global/Project Scope、名称、用途和可选模板修订；同事务返回 Workflow 及首份 draft |
+| `workflow.draft.create` | 已发布基线修订和目标定义；同 Scope 建新草稿，跨 Scope 走派生定义 |
+| `workflow.draft.update` | 目标 draft、expected_revision、结构化文档；返回新 edit_revision 和 document_hash |
+| `query.workflow_validation / query.workflow_preview` | 指定草稿 edit_revision/hash、目标配置和可选样本事实；返回节点级错误或不执行外部动作的预演结果 |
+| `workflow.publish` | 目标 draft、expected_revision 和变更说明；重新校验后返回不可变 revision_id/version/hash；重复命令返回原发布结果 |
+| `project.configuration.update` | Project 的 expected_revision、来源配置修订、精确 Workflow/Standard 及 slot 绑定；返回新的 Project 配置修订 |
+| `feature.create` | 当前 Project 配置修订及创建时显式绑定选择；返回 Feature、配置锁、计划及主流程实例 ID |
+| `query.workflows / query.workflow / query.workflow_draft` | Scope 与游标；读取列表、精确版本、草稿及采用关系，正文按需读取 |
+| `query.workflow_version_diff` | 两个精确版本或草稿 hash；返回结构、参与者、交互和推进条件差异 |
+| `query.workflow_instance / query.workflow_actions` | 固定 owner 和实例/轮次；返回图、状态、子流程、引用、可用动作和阻塞理由 |
+| `workflow.step.confirm` | 目标步骤轮次、expected_revision、计划与输入/输出摘要；绑定可信人类主体并核对陈旧确认 |
+| `workflow.pause/resume` | 目标实例及 revision；修改运行控制状态，不改变定义和配置锁 |
+| `workflow.step.retry/rework` | 技术重试或业务修复的明确目标、原因、版本；只允许计划和领域契约支持的路径 |
+| `query.project_workflow_summary` | 项目、Feature 和状态筛选；汇总不同版本的实例，返回可定位的待处理工作 |
+
+现有 `conversation.send`、`interaction.answer`、`proposal.adopt`、Review 和 Merge 命令保留各自语义；关联 Workflow 时携带或由目标对象解析步骤引用。人类专属动作处理器只能产生待办和等待状态，自动推进不允许冒充人提交回答或批准。组合采纳/确认命令在同项目事务内验证并写入各自决定。
+
+建议新增 `domain/scope.rs`、`domain/configuration.rs`、`domain/workflow.rs`、`domain/agent_instances.rs`；core 分别实现 WorkflowCompiler、WorkflowEvaluator、WorkflowActionDispatcher、版本依赖及有效性校验。adapter 提供版本/草稿的 insert-only 存储及动作读取，Host 负责 Scope 路由、精确共享定义导入、现有执行协调和 SSE；不让 HTTP 层直接设置步骤或业务终态。
+
+新增 `schemas/workflow.schema.json`、Agent 组合及 Model/Tool 定义 Schema 和对应动作目录/契约 Schema，补齐 `schemas/rpc.schema.json`。Schema、Rust 类型、UI 动作字段和契约版本有一致性校验；治理配置锁、AgentRevision、StageInputLock、验收 TaskScope 和实际 ExecutionScope 分别验证。经验检索通过读端口由 Host/adapter 跨项目协调，Web 拆出共享 typed RPC、路由、组合编辑器和 Feature/Task 详情组件。
 
 ## 十 迁移与兼容
 
 1. 顺序追加全局和项目 SQL 迁移，实施时使用最新空闲编号。保留现有数据，不修改已发布迁移。
 2. 已有共享配置定义按当前全局保存位置登记 Global Scope；项目内复制的共享修订保留其全局来源，不误判为项目特化。新增项目定义与 Scope 入口后按明确归属存储和解析。
-3. 新 Session 必须绑定明确实例 ID。旧 Session 缺少实例身份时保留 legacy；可按可证明的 predecessor 和相同类型绑定建立关联，否则每条独立会话链建立隔离的 legacy 实例映射。不依据相同角色/Harness 推断跨项目同一实例。
+3. 新 Session 必须绑定明确 AgentID 和完整 AgentRevision。旧 Session 按已冻结的实际 Model/Harness/Skill/Tool/Permission 建立可证明的 legacy 组合与实例关联；只有 predecessor 链、组合和作用域均可证明一致时才共用 AgentID，组合变化拆为不同实例并保存来源链。缺失 Model 提供方、工具或权限信息保持 legacy/unknown，不能从 Harness 名称或当前默认推断。无法证明的同角色/同 Harness 会话不合并为同一实例，旧 Session 和 Artifact 正文不改写。
 4. 迁移映射采用可追溯的附加记录；旧快照、Artifact 字节、哈希和已冻结输入不改写。无法确定时间或来源时显示未知，不用当前配置倒填。
 5. 为 Project 建立默认配置修订；为已有 Feature 按其可证明的持久化绑定、历史 Spec/运行锁和实际执行语义建立不可变 legacy 配置锁及 Workflow 映射，不读取当前 Project 默认来推测原配置。明确标记为升级时保留的有效配置，不伪称已记录原创建时完整配置。缺失条目保持 `legacy_unresolved`，禁止依赖该条目的新执行；补录只采用可证明的原事实。升级不改变推进方式或触发新的自动动作，需要新治理版本时建立后继 Feature。
 6. 保持真实/模拟来源、权限锁、资源清理和 Review 身份语义。旧 RPC 客户端仍通过相同 core 门禁；适配层解析 legacy 关联，不允许省略工作流引用绕过约束。
 7. 全局目录建立失败可以按项目 outbox 重建；项目库不可用不阻塞其他项目本地工作。重启核对活动执行、未完成确认和推进意图，未知消费结果不得自动重发。
 8. 审计 `binding.update`、`project.update`、`session.open`、正式执行和恢复入口：移除对已创建 Feature/Task 治理配置的更新及运行时重新读取最新偏好的路径。旧客户端请求明确返回配置已冻结错误；不通过兼容转换暗中重新绑定。项目默认变更本身不使旧 Feature 证据 stale。
+9. 迁移保留 legacy planning 与原 input_version 判断的历史语义，为旧事实明确登记原契约；新 StageInputLock 不从后来的可变对象反推。索引、共享定义副本和编译计划按固定摘要验证，旧运行不会因 Host 更新而重新编译为新语义。
+10. 保留旧权限和 runtime.model 字符串的原始含义，追加类型化关联而不重写历史。Project/Harness/Model 偏好改为后续 AgentRevision 的创建建议或完整 Agent 选择；旧会话入口单独传 model/provider/Permission 覆盖时，不得在 AgentID 下暗中生成新组合。
 
 ## 十一 实施阶段与完成条件
 
 | 阶段 | 交付范围 | 依赖 | 完成条件 |
 |---|---|---|---|
-| W0 Scope 及领域契约 | 固定 Scope、定义/修订/绑定/配置锁语义、身份边界、Workflow/步骤、初版流程、接口及 UI 草图 | 本计划 | 配置矩阵与依赖规则完整；需求讨论到正式执行无互相等待；保存 `CONTRACT.md` |
-| W1 Scope 版本与绑定持久化 | 通用修订及精确依赖、Global/Project 定义、Project 配置修订、Feature 创建时锁、实例及历史关联、迁移 | W0 | Project 可换绑；已有 Feature 及以后创建的 Task 不漂移；同 ID 身份不变，经验范围正确；依赖可独立演化 |
-| W2 Workflow 定义和实例 | 版本校验、内置种子、Feature/Task 父子流程、步骤状态、配置锁引用 | W0、W1 | 定义可按 Scope 解析并实例化；非法依赖/能力/契约被拒绝；Workflow 与 Standard 从创建起固定 |
-| W3 工作流驱动交互及执行 | 讨论/提案关联、正式 DAG 解析、冻结版本下的建议、自动/人工推进、重试与恢复 | W2 | 两个版本的 Feature 各按原策略完整推进；直接 RPC 同受约束；重复事件/重启不重复执行；所有旧锁保持不变 |
-| W4 经验检索和恢复 | 分作用域的历史目录、三项主要筛选、逐级读取、Agent 工具、引用导入和场景恢复 | W1，恢复绑定依赖 W3 | 全局实例跨项目按 ID 检索；项目实例仅本项目；Codex/DSH 可实际按需读取；来源与恢复语义完整 |
-| W5 工程工作台 | 导航、稳定地址、总览汇总、Feature/Task 详情、只读配置版本、文档/上下文/测试整合 | W2、W3，经验入口依赖 W4 | 卡片精确定位；刷新/返回保留地址；全部执行及交付按对象查看，Feature 显示原绑定和默认差异 |
-| W6 工作流及配置页面 | 定义 Scope/版本编辑、Project 默认换绑和历史、角色推荐与经验面板、身份入口 | W3、W4、W5 | 可修改定义并更新 Project 默认；新 Feature 生效，旧 Feature 无升级入口；按锁选择实例并检索经验 |
+| W0 Scope 及领域契约 | 固定 Agent 组合、Model/Tool、AgentID/Scope、定义/草稿/修订/锁、步骤动作、存储和 UI/API 契约 | 本计划 | 组合与实例范围分离；Model/Harness 及 Skill/Tool/Permission 职责明确；需求先于设计，确认先于合入；保存 `CONTRACT.md` |
+| W1 Scope 版本与绑定持久化 | Model/Tool/Agent 类型化修订、实例注册、全局/项目定义、insert-only 版本、Project 修订、Feature 锁及迁移 | W0 | 同 ID 组合与 Scope 不变；全局定义可建两种范围实例；发布幂等、数据库不可变约束、Project 换绑及历史归属正确 |
+| W2 Workflow 定义编译和实例 | 动作契约/Schema、内置种子、完整 Agent slot 解析及组合兼容性、编译计划、父子实例及 CRUD/API | W0、W1 | Model/Harness/Tool/Permission 与流程契约兼容；非法组合/图/Scope 被拒绝；旧 Feature 计划不重新解释 |
+| W3 工作流驱动交互及执行 | 求值器与 intent 派发、唤醒/调度、两段规划、StageInputLock、TaskGroup、Review/Merge、确认和返工恢复 | W2 | 需求到主干真实驱动；Task 汇合成员固定，人工确认先于合入；RPC/UI 同规则，重复/重启不重发未知输入 |
+| W4 经验检索和恢复 | 分实例 Scope 的历史目录、主要筛选、组合及实际 Model 记录、逐级读取、经验 Tool 和场景恢复 | W1，恢复绑定依赖 W3 | 同 Harness 不同 Model 的工作可区分；历史按 AgentID 隔离；全局/项目范围正确，Tool/Permission 实际生效 |
+| W5 工程工作台 | 导航、稳定地址、项目多流程汇总、Feature/Task 流程进度及证据、只读配置、文档/上下文/测试整合 | W2、W3，经验入口依赖 W4 | 卡片及步骤精确定位；刷新恢复地址；运行可处理待办且无法编辑绑定；不同版本 Feature 显示正确 |
+| W6 工作流及配置页面 | 流程编辑/预演/发布与 Project 绑定、Model/Tool 定义、Agent 组合编辑、实例 Scope 选择及经验页 | W3、W4、W5 | 完整组合可创建和修订；同 Harness 不同 Model 可辨；AgentID 绑定后不可拆开覆盖；流程发布/换绑及旧 Feature 冻结成立 |
 | W7 迁移与完整验收 | 历史升级、真实/模拟闭环、故障恢复、Web 验收和文档更新 | W1–W6 | 验收矩阵通过，报告明确实际平台与能力；证据保存于本目录 |
 
 按阶段串行落实关键依赖，每阶段完成后更新执行记录和证据索引。实现只修改相关模块，保留工作区中其他在途变更。
+
+W3 分三个可验收增量：先贯通需求讨论、采纳、需求交付/评审与方案规划；再贯通固定 TaskGroup、TDD 和 Task 合入；最后接入 Feature 收尾、合入前确认及恢复。每个增量先用直接领域命令与 HTTP 验证真实状态变化，再接同契约的页面，避免只完成编辑器而流程仍由旧硬编码推进。
 
 ## 十二 验收矩阵
 
 | 编号 | 场景 | 必须观察到的结果 |
 |---|---|---|
-| A1 | 同 Agent/Harness 类型创建两个实例 | ID 不同，各自检索只返回自己的工作；类型/作用域变更被拒绝 |
+| A1 | 同一完整 AgentRevision 创建两个实例 | AgentID 不同，经验独立；组成部分、AgentRevision 和实例 Scope 的原地变更被拒绝 |
 | A2 | 全局实例在两个项目参与多个 Feature | 同 ID 的履历覆盖两项目；项目名称、Feature 名称和时间可组合过滤，正文按需读取 |
-| A3 | 项目 Agent 与全局 Agent 同名 | 显示作用域与 ID，项目实例不读取或参与其他项目；名称不合并身份 |
+| A3 | 同名 Agent 定义和不同范围实例 | 分别显示定义 Scope、实例 Scope 和 AgentID；项目实例不读取或参与其他项目，名称不合并身份 |
 | A4 | 项目/Feature 改名、同名及时间边界 | 稳定 ID 保持关联，历史名称可定位；筛选、游标和时区边界一致 |
 | A5 | 真实 Harness 访问经验 | 先取索引再取快照和证据，记录工具调用与引用；当前实例身份及项目范围无法由模型参数伪造 |
-| A6 | 新 Feature 进入需求讨论 | Workflow 推荐需求分析师及匹配 Harness，说明理由；需求、方案和计划采纳衔接正式交付 |
+| A6 | 新 Feature 进入需求讨论 | Workflow 推荐有需求分析职责的完整 Agent 及匹配 AgentID，显示 Model/Harness 并说明理由；采纳衔接正式交付 |
 | A7 | 自动推进与人工推进 | 自动步骤满足全部门禁后只推进一次；人工步骤等待精确版本确认；必需 Review/回答仍实际发生 |
 | A8 | 修改推进方式并更新 Project 默认 | 新 Feature 采用新版本；旧 Feature 的待执行和等待确认步骤保持原策略；试图重新绑定被 core 拒绝 |
 | A9 | 输入变化、Review 退回、目标基线变化 | 旧确认/证据按规则失效；创建修复 Attempt 或新候选，无错误完成和无界自动重试 |
@@ -530,10 +609,32 @@ Feature/Task 详情展示实际阶段、当前步骤、分支、Task 汇合、�
 | A16 | 项目离线、归档或清理后的历史查询 | 摘要、来源和可用性可见；完整性边界明确，其他项目工作继续可用 |
 | A17 | Scope 与定义可见性 | 全局定义可绑定不同 Project，项目定义仅限所属项目；全局引用项目定义或跨项目依赖被拒绝；定义 Scope 和目标 Scope 分别保留，同名对象不覆盖 |
 | A18 | Workflow 与 Standard 默认换绑 | Project p1/p2 均可追溯，旧 Feature 锁定 w1/s1，新 Feature 锁定 w2/s2；draft Feature 也禁止修改 |
-| A19 | 嵌套配置独立演化 | 发布 Spec/Skill/Permission 等新修订不改变原 Standard/Agent/Harness 修订及已有 Project/Feature 引用；完整依赖可验证 |
+| A19 | 嵌套配置独立演化 | 发布 Model/Tool/Spec/Skill/Permission 新修订不改变原 Agent/Standard/Harness 组合及旧 AgentID/Feature；完整依赖可验证 |
 | A20 | 旧 Feature 后续 Task 与新执行 | Project 换绑后，新 Task、新 Attempt、新 Session、候选验证和恢复均使用旧 Feature 配置，禁止通过覆盖参数绕过 |
 | A21 | 并发换绑与 Feature 创建 | 创建校验指定 Project 配置修订，冲突无半成品；幂等重放返回原结果，Feature 与配置锁同事务提交 |
 | A22 | 停用版本与后继 Feature | 原修订及依赖仍能解析，已有工作不受新默认影响；后继 Feature 使用新锁并明确继承来源，旧证据不被重标 |
+| A23 | 前端创建及草稿编辑 | 从模板或空白创建；阶段、预览及表单保持一致；保存后刷新恢复，旧 edit_revision 更新不覆盖新内容 |
+| A24 | 发布与绑定分离 | 发布幂等且正文不可改写；单独换绑才影响新 Feature；发布/换绑任一失败不造成另一项的隐式改变 |
+| A25 | 子流程独立编辑 | Task 子流程新版本发布后，旧父流程引用不变；父流程显式采用新子流程才生成新定义及计划 |
+| A26 | 图与契约校验 | 缺失端口、无出口分支、循环/递归、错误汇合、不兼容角色/能力和绕过 TDD/Review 均被准确定位并拒绝发布/编译 |
+| A27 | 校验与预演 | 样本分支、等待与返工路径可解释；不调用模型、Git、Docker、测试或 Merge，不产生正式完成事实 |
+| A28 | SQLite 持久化与不可变性 | 草稿、版本、锁和步骤重读一致；update/delete/upsert 不能改写已发布内容；共享修订副本保持原 Scope/hash |
+| A29 | 编译计划及版本语义 | 同版本不同合法 slot 配置形成各自计划；Host 升级保留旧计划语义；未知动作版本阻塞而非静默切换 |
+| A30 | 分阶段规划与证据依赖 | 只有需求时可完成需求交付及 Review，再开始设计；Design 改变不重做未变需求 Review，Requirement 改变准确失效下游 |
+| A31 | Task 集合变更与汇合 | 汇合固定已采纳 TaskPlan 成员；临时任务不改变条件；重新规划产生新 generation，旧 writer 停止后激活新集合 |
+| A32 | 合入前确认 | 等待确认时目标分支尚未推进；确认绑定候选及基线；目标变化拒绝旧确认并重新验证，不能通过直接 merge.apply 绕过 |
+| A33 | 无浏览器时的唤醒与恢复 | 关闭页面或切换项目后自动步骤继续；等待输入不热轮询；回答后唤醒；重启从 intent 和原 operation 恢复 |
+| A34 | 重试与业务返工 | 技术 Run 重试与新步骤轮次分别记录；去重不重复创建对象；未知消费结果先核对，历史结果不覆盖 |
+| A35 | 运行 UI 与直接命令一致 | UI 所示动作和 RPC 实际门禁相同；运行图不可编辑；人类动作不会被自动执行或由模型伪造 |
+| A36 | 编辑后的不同版本完整闭环 | 同项目两个 Feature 使用不同讨论/推进定义，分别从需求到交付；新配置产生实际行为差异，旧 Feature 全程保留原配置 |
+| A37 | 同 Harness 的不同 Model | 形成可区分的 AgentRevision、composition_hash 和 AgentID；记录实际模型，不能通过会话覆盖或静默 fallback 混用 |
+| A38 | 定义 Scope 与实例 Scope 分离 | 全局 Agent 定义可分别创建 Global/Project 实例；项目定义创建 Global/其他项目实例被拒绝；历史按实例范围读取 |
+| A39 | Agent 组合升级 | Model、Harness、Skill、Tool、Permission 或指令变化形成新 AgentRevision；采用新版本创建新 AgentID，旧实例和 Feature 继续使用原组合 |
+| A40 | Model 与 Harness 兼容性 | 不支持的模型协议、工具调用或输出能力在派发前阻塞；已有安装可复用，实际执行仍记录各自组合 |
+| A41 | Skill Tool Permission 边界 | Skill 不自动安装/授权 Tool；工具集合、冻结策略、Sandbox 及执行范围共同约束；界面和执行记录显示收窄来源 |
+| A42 | 换模型与评审隔离 | 换 Model、新 Agent 或 AgentID 不自动满足独立 Review 要求；作者来源及实际参与关系继续校验 |
+| A43 | 旧组合迁移 | 只根据历史冻结值建立关联，组合变化的会话链拆分；缺失模型/权限保持 unknown，不猜测后端，不改原快照或哈希 |
+| A44 | 组合 UI 与历史追溯 | 可创建 Model/Tool/Agent 及选择实例 Scope；同 Harness 不同 Model 清晰可辨，历史显示实际版本；新默认不回写旧实例 |
 
 验证分层执行：domain/core 验证身份、状态、版本和门禁；adapter/Host 验证多库、索引、幂等和恢复；HTTP 契约验证接口和项目边界；Playwright 验证导航、筛选、编辑与对象完整流程。新增测试围绕真实业务约束，避免只复述组件实现。
 
@@ -541,6 +642,15 @@ Feature/Task 详情展示实际阶段、当前步骤、分支、Task 汇合、�
 
 ## 十三 交付物与范围
 
-本目录保存本计划、`CONTRACT.md`、`EXECUTION.md`、验收报告、截图及运行证据。同步更新领域、ADR、协议、Schema、使用说明及计划索引。阶段完成以行为及证据为准。
+本目录只保存本计划、`CONTRACT.md`、`EXECUTION.md` 及其他 Markdown 验收记录。日志、JSON、截图和临时测试文件写入临时目录，不作为计划交付物保存；源码回归测试保留在 crates、tests、web/tests。CONTRACT 包含 Agent/Model/Harness/Skill/Tool/Permission 组合与实例样例、动作目录和流程 JSON、SQL 约束、草稿/发布与运行状态机、API 字段和页面线框；实现时同步更新领域、ADR、协议、Schema、使用说明及计划索引。阶段完成以行为及证据为准。
 
 首版包含统一 Scope、配置独立版本与精确依赖、Project 动态默认绑定、Feature 创建时配置冻结、结构化工作流编辑及推进策略版本化、实际调度与交互约束、分作用域实例经验、跨项目只读查询、渐进式披露、场景恢复和完整工作台。跨账号经验共享、远程多租户、通用脚本/BPMN 编排与向量基础设施留待独立需求；已有 Feature 的治理配置重新绑定不属于本方案允许的操作。
+
+
+## 实现落点与首版约束
+
+实际实现采用 governance_records 类型化记录集合，步骤与边从同一 WorkflowDocument 派生，未另建可写图表。编译器 v1 使用五种规范职责 slot、有限动作目录及 Feature→Task 精确子流程引用；任意职责别名、任意深度子流程和自定义模型 endpoint 不属于首版执行能力，发布/派发时明确拒绝。经验工具采用实例专属只读目录，先索引后相关快照文件；不是任意数据库调用接口。
+
+旧 live Feature 升级时只锁定可以证明的原 Binding 和运行记录，不推断 Model/AgentID，不自动套入新 Workflow。新组合不完整的后续工作要求以当前 Project 配置创建后继 Feature。模拟兼容接口仍供源代码测试使用，Web 不显示模拟工程。
+
+版本化配置、编辑/预演/发布、绑定、运行、回执恢复及平台的最终验收边界统一以 EXECUTION.md 为准；当前真实实现基线另见 [devdesk-v0.3/PLAN.md](../devdesk-v0.3/PLAN.md)。

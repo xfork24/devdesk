@@ -1,3 +1,4 @@
+import { AgentExperience } from "./AgentExperience";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Row = Record<string, any>;
@@ -8,6 +9,8 @@ type Props = {
   tasks: Row[];
   agents: Row[];
   installations: Row[];
+  configurations?: Row[];
+  onLocateExperience?: (entry: Row) => void;
   initialOwner?: string;
   initialSession?: string;
   request: Request;
@@ -27,18 +30,18 @@ export function RoleConversation({
   tasks,
   agents,
   installations,
+  configurations = [],
+  onLocateExperience,
   initialOwner,
   initialSession,
   request,
   refresh,
 }: Props) {
   const [owner, setOwner] = useState(initialOwner || project.id);
+  const [catalog, setCatalog] = useState<Row[]>([]);
+  const [instanceId, setInstanceId] = useState("");
   const [agent, setAgent] = useState("builtin-agent-analyst-v1");
-  const [provider, setProvider] = useState("");
-  const [installation,setInstallation]=useState("");
-  const [model,setModel]=useState("");
-  const [models,setModels]=useState<Row[]>([]);
-  const [editing,setEditing]=useState<Row>();
+  const [editing, setEditing] = useState<Row>();
   const [sessions, setSessions] = useState<Row[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [detail, setDetail] = useState<Row>();
@@ -48,7 +51,7 @@ export function RoleConversation({
   const [error, setError] = useState("");
   const [proposalJson, setProposalJson] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [selections,setSelections]=useState<Record<string,string[]>>({});
+  const [selections, setSelections] = useState<Record<string, string[]>>({});
   const generation = useRef(0);
   const cursor = useRef(0);
   const listGeneration = useRef(0);
@@ -58,9 +61,133 @@ export function RoleConversation({
       : owner === feature?.id
         ? feature
         : tasks.find((t) => t.id === owner);
-  const roles = agents.filter(
-    (a) => a.agent_profile && !agents.some((d) => d.supersedes === a.id),
+  const featureLock = configurations.find(
+    (r) => r.kind === "feature_lock" && r.definition_id === feature?.id,
   );
+  const runtime = configurations.find(
+    (r) =>
+      r.kind === "workflow_instance" &&
+      r.definition_id === owner &&
+      r.data.status !== "cancelled",
+  );
+  const plan =
+    owner === feature?.id
+      ? featureLock?.data.plan
+      : featureLock?.data.task_plan;
+  const recommended = plan?.steps.find(
+    (step: Row) =>
+      step.participant_slot &&
+      runtime?.data.steps.some(
+        (s: Row) =>
+          s.key === step.key &&
+          ["active", "waiting_input", "waiting_confirmation"].includes(
+            s.status,
+          ),
+      ),
+  );
+  const projectConfiguration = configurations
+    .filter((r) => r.kind === "project_configuration")
+    .sort((a, b) => b.version - a.version)[0];
+  const recommendation = recommended
+    ? featureLock?.data.agent_refs[recommended.participant_slot]
+    : owner === project.id
+      ? projectConfiguration?.data.agent_refs.analyst
+      : undefined;
+  const composite = catalog.find((r) => r.id === agent && r.kind === "agent");
+  const [instanceScope, setInstanceScope] = useState("project");
+  useEffect(() => {
+    if (!featureLock || owner === project.id || sessionId) return;
+    if (!Object.values(featureLock.data.agent_refs).includes(agent)) {
+      setAgent(recommendation || featureLock.data.agent_refs.analyst);
+      setInstanceId("");
+    }
+  }, [featureLock?.id, owner, recommendation, sessionId]);
+  useEffect(() => {
+    let current = true;
+    if (
+      !agent ||
+      agent.startsWith("builtin-") ||
+      catalog.some((r) => r.id === agent)
+    )
+      return;
+    request("query.agent_revision", { id: agent, project_id: project.id })
+      .then((row) => {
+        if (current)
+          setCatalog((old) =>
+            old.some((r) => r.id === row.id) ? old : [...old, row],
+          );
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [agent, request, project.id]);
+  useEffect(() => {
+    if (detail?.session.id) {
+      setAgent(detail.session.agent);
+      setInstanceId(
+        detail.session.runtime_binding?.agent_configuration
+          ?.agent_instance_id || "",
+      );
+    }
+  }, [detail?.session.id]);
+
+  const choices:Row[] = [
+    ...agents,
+    ...catalog
+      .filter((r) => r.kind == "agent" && !agents.some((a) => a.id === r.id))
+      .map((r) => ({ ...r, agent_profile: { role: r.data.role } })),
+  ];
+  const roles = choices.filter(
+    (a) =>
+      a.agent_profile &&
+      (catalog.some((r) => r.id === a.id && r.kind === "agent") ||
+        detail?.session.agent === a.id) &&
+      (featureLock && owner !== project.id
+        ? Object.values(featureLock.data.agent_refs).includes(a.id)
+        : !choices.some((d) => d.supersedes === a.id)),
+  );
+  useEffect(() => {
+    if (sessionId || composite || !catalog.length) return;
+    const candidates = catalog.filter(
+      (r) =>
+        r.kind == "agent" &&
+        (!featureLock ||
+          owner === project.id ||
+          Object.values(featureLock.data.agent_refs).includes(r.id)),
+    );
+    const selected =
+      candidates.find((r) => r.id === recommendation) ||
+      candidates.find((r) => r.data.role === "analyst") ||
+      candidates[0];
+    if (selected) setAgent(selected.id);
+  }, [catalog, owner, recommendation, sessionId, composite?.id]);
+  const instances = catalog.filter(
+    (r) => r.kind === "agent_instance" && r.data.agent_revision_id === agent,
+  );
+  useEffect(() => {
+    let current = true;
+    request("query.configurations", {
+      local: true,
+      project_id: project.id,
+      limit: 100,
+    })
+      .then((d) => {
+        if (current) setCatalog(d.records);
+      })
+      .catch((e) => {
+        if (current) setError(String(e));
+      });
+    return () => {
+      current = false;
+    };
+  }, [request, project.id]);
+  useEffect(() => {
+    if (recommendation && !sessionId) {
+      setAgent(recommendation);
+      setInstanceId("");
+    }
+  }, [recommendation, owner]);
   const active = detail?.turns.find(
     (t: Row) => !["completed", "failed", "cancelled"].includes(t.status),
   );
@@ -96,7 +223,7 @@ export function RoleConversation({
     setEvents([]);
     cursor.current = 0;
     loadSessions().catch((e) => setError(String(e)));
-  }, [loadSessions,owner,initialOwner,initialSession]);
+  }, [loadSessions, owner, initialOwner, initialSession]);
   useEffect(() => {
     const current = ++generation.current;
     cursor.current = 0;
@@ -158,7 +285,11 @@ export function RoleConversation({
         "session.open",
         owner,
         selectedOwner.revision,
-        { agent, ...(provider ? { provider } : {}), ...(installation ? {installation_id:installation, provider:installations.find(r=>r.id===installation)?.key.provider}:{}), ...(model.trim()?{model:model.trim()}:{} ) },
+        {
+          agent,
+          ...(instanceId ? { agent_instance_id: instanceId } : {}),
+
+        },
       );
       await loadSessions();
       setSessionId(result.id);
@@ -226,7 +357,10 @@ export function RoleConversation({
           <select
             aria-label="讨论角色"
             value={agent}
-            onChange={(e) => setAgent(e.target.value)}
+            onChange={(e) => {
+              setAgent(e.target.value);
+              setInstanceId("");
+            }}
           >
             {roles.map((a) => (
               <option key={a.id} value={a.id}>
@@ -235,25 +369,117 @@ export function RoleConversation({
             ))}
           </select>
         </label>
-        <label>
-          Harness
-          <select
-            aria-label="讨论 Harness"
-            value={provider}
-            onChange={(e) => {setProvider(e.target.value);setInstallation("");setModel("");}}
-          >
-            <option value="">继承项目 / 全局偏好</option>
-            <option value="codex">Codex</option>
-            <option value="dsh">DeepSeek Harness</option>
-          </select>
-        </label>
-        <label>共享安装<select aria-label="讨论安装" value={installation} onChange={e=>setInstallation(e.target.value)}><option value="">自动准备 / 继承固定安装偏好</option>{installations.filter(r=>r.key.os==="linux"&&r.artifact.image_id&&(!provider||r.key.provider===provider)).map(r=><option key={r.id} value={r.id}>{r.key.provider} · {r.key.version} · {r.key.arch}</option>)}</select></label>
-        <label>模型<input aria-label="讨论模型" value={model} maxLength={160} onChange={e=>setModel(e.target.value)} list="discussion-models" placeholder="继承模型偏好"/><datalist id="discussion-models">{models.map(m=><option key={m.model} value={m.model}>{m.displayName||m.model}</option>)}</datalist></label>
-        <button disabled={busy} onClick={()=>action(async()=>{const value=await scopedRequest("codex.auth.models");setModels(value.models);})}>读取 Codex 模型目录</button>
-        <button disabled={busy || !selectedOwner} onClick={open}>
+        {!composite && (
+          <p className="notice">
+            {detail?.session
+              ? "历史会话保留原运行绑定；请选择完整 Agent 组合开启新会话。"
+              : "请先在规范与身份中创建 Model、Harness 和完整 Agent 组合，再选择讨论实例。"}
+          </p>
+        )}
+        {composite && (
+          <>
+            <label>
+              新实例经验范围
+              <select
+                value={instanceScope}
+                onChange={(e) => setInstanceScope(e.target.value)}
+              >
+                <option value="project">当前 Project</option>
+                {composite.scope.kind === "global" && (
+                  <option value="global">Global · 跨项目积累</option>
+                )}
+              </select>
+            </label>
+            <button
+              disabled={busy}
+              onClick={() =>
+                action(async () => {
+                  const instance = await command(
+                    "agent.instance.create",
+                    undefined,
+                    undefined,
+                    {
+                      name: `${composite.name} · ${instanceScope === "global" ? "Global" : project.title}`,
+                      agent_revision_id: agent,
+                      scope:
+                        instanceScope === "global"
+                          ? { kind: "global" }
+                          : { kind: "project", project_id: project.id },
+                    },
+                  );
+                  setCatalog((old) => [...old, instance]);
+                  setInstanceId(instance.id);
+                })
+              }
+            >
+              创建讨论实例
+            </button>
+            <label>
+              AgentID
+              <select
+                aria-label="AgentID"
+                value={instanceId}
+                onChange={(e) => setInstanceId(e.target.value)}
+              >
+                <option value="">复用兼容实例 / 新建 Project 实例</option>
+                {instances.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} · {r.scope.kind} · {r.id.slice(0, 8)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p>
+              Model{" "}
+              {catalog.find((r) => r.id === composite.data.model_ref)?.data
+                .model || composite.data.model_ref}{" "}
+              · Harness{" "}
+              {
+                catalog.find((r) => r.id === composite.data.harness_ref)?.data
+                  .provider
+              }{" "}
+              /{" "}
+              {
+                catalog.find((r) => r.id === composite.data.harness_ref)?.data
+                  .runtime_version
+              }{" "}
+              · Agent v{composite.version}
+            </p>
+            <details>
+              <summary>Skills / Tools / Permission 及定义 Scope</summary>
+              <pre>{JSON.stringify(composite, null, 2)}</pre>
+            </details>
+          </>
+        )}
+        <button disabled={busy || !selectedOwner || !composite} onClick={open}>
           开始 / 续用讨论
         </button>
       </div>
+      {recommended && (
+        <p className="notice">
+          工作流推荐：{recommended.name} ·{" "}
+          {roles.find((r) => r.id === recommendation)?.name}。目标：
+          {recommended.interaction.goal}；产物：
+          {recommended.interaction.output_kind}
+        </p>
+      )}
+      <AgentExperience
+        key={instanceId || detail?.session.id || owner}
+        request={request}
+        projectId={project.id}
+        instanceId={
+          instanceId ||
+          detail?.session.runtime_binding?.agent_configuration
+            ?.agent_instance_id ||
+          ""
+        }
+        owner={selectedOwner || project}
+        onRestored={(id) => {
+          void loadSessions();
+          setSessionId(id);
+        }}
+        onLocate={onLocateExperience}
+      />
       <label>
         已有会话
         <select
@@ -282,8 +508,40 @@ export function RoleConversation({
             {detail.session.runtime_binding.model} · {detail.session.lifecycle}{" "}
             · 原生会话 {detail.session.external_session || "尚未启动"}
           </p>
-          <details><summary>本次会话的冻结权限</summary>{detail.session.runtime_binding.permissions ? <pre>{JSON.stringify(detail.session.runtime_binding.permissions, null, 2)}</pre> : <p>旧版执行未保存标准 Permission 快照；继续使用原运行锁，执行保证以历史回执为准。</p>}</details>
-          {detail.executions.filter((e:Row)=>e.status==="cleanup_failed").map((e:Row)=><p key={e.id} className="notice">执行实例 {e.id} 已停止，清理失败。<button disabled={busy} onClick={()=>action(async()=>{await command("execution.retry_cleanup",e.id,undefined);})}>重试清理</button></p>)}
+          <details>
+            <summary>本次会话的冻结权限</summary>
+            {detail.session.runtime_binding.permissions ? (
+              <pre>
+                {JSON.stringify(
+                  detail.session.runtime_binding.permissions,
+                  null,
+                  2,
+                )}
+              </pre>
+            ) : (
+              <p>
+                旧版执行未保存标准 Permission
+                快照；继续使用原运行锁，执行保证以历史回执为准。
+              </p>
+            )}
+          </details>
+          {detail.executions
+            .filter((e: Row) => e.status === "cleanup_failed")
+            .map((e: Row) => (
+              <p key={e.id} className="notice">
+                执行实例 {e.id} 已停止，清理失败。
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    action(async () => {
+                      await command("execution.retry_cleanup", e.id, undefined);
+                    })
+                  }
+                >
+                  重试清理
+                </button>
+              </p>
+            ))}
           {detail.session.predecessor && (
             <p>
               继承自 {detail.session.predecessor}，上下文快照{" "}
@@ -332,8 +590,35 @@ export function RoleConversation({
                 {i.questions.map((q: Row) => (
                   <label key={q.id}>
                     {q.question}
-                    {q.detail&&<pre>{q.detail}</pre>}
-                    {q.options.length>0&&<select aria-label={q.question+"选项"} multiple={q.multi_select} value={q.multi_select?(selections[q.id]||[]):(selections[q.id]?.[0]||"")} onChange={e=>setSelections(old=>({...old,[q.id]:Array.from(e.target.selectedOptions).map(o=>o.value).filter(Boolean)}))}>{!q.multi_select&&<option value="">请选择或填写回答</option>}{q.options.map((option:string)=><option key={option} value={option}>{option}</option>)}</select>}
+                    {q.detail && <pre>{q.detail}</pre>}
+                    {q.options.length > 0 && (
+                      <select
+                        aria-label={q.question + "选项"}
+                        multiple={q.multi_select}
+                        value={
+                          q.multi_select
+                            ? selections[q.id] || []
+                            : selections[q.id]?.[0] || ""
+                        }
+                        onChange={(e) =>
+                          setSelections((old) => ({
+                            ...old,
+                            [q.id]: Array.from(e.target.selectedOptions)
+                              .map((o) => o.value)
+                              .filter(Boolean),
+                          }))
+                        }
+                      >
+                        {!q.multi_select && (
+                          <option value="">请选择或填写回答</option>
+                        )}
+                        {q.options.map((option: string) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <input
                       aria-label={q.question}
                       value={answers[q.id] || ""}
@@ -415,7 +700,9 @@ export function RoleConversation({
               disabled={
                 busy ||
                 !!active ||
-                ["implementation","testing","review"].includes(detail.session.runtime_binding.work_type) ||
+                ["implementation", "testing", "review"].includes(
+                  detail.session.runtime_binding.work_type,
+                ) ||
                 [
                   "needs_reconciliation",
                   "requires_successor",
@@ -459,13 +746,22 @@ export function RoleConversation({
                 disabled={busy || !lastCompleted || !proposalJson.trim()}
                 onClick={() =>
                   action(async () => {
-                    await command(editing?"proposal.revise":"proposal.create",editing?.id,editing?.revision,{
-                      turn_id:lastCompleted.id,target:owner,content:JSON.parse(proposalJson),
-                    });setEditing(undefined);setProposalJson("");
+                    await command(
+                      editing ? "proposal.revise" : "proposal.create",
+                      editing?.id,
+                      editing?.revision,
+                      {
+                        turn_id: lastCompleted.id,
+                        target: owner,
+                        content: JSON.parse(proposalJson),
+                      },
+                    );
+                    setEditing(undefined);
+                    setProposalJson("");
                   })
                 }
               >
-                {editing?"保存草稿的新修订":"保存编辑后的提案"}
+                {editing ? "保存草稿的新修订" : "保存编辑后的提案"}
               </button>
             </div>
             {detail.proposals.map((p: Row) => (
@@ -473,12 +769,41 @@ export function RoleConversation({
                 <h3>
                   {p.content.kind} · {p.status}
                 </h3>
-                <p className="muted">目标版本 {p.expected_revision} · 输入修订 {p.dependencies.join(", ") || "无"} · 来源 Turn {p.turn_id}</p>
-                {p.supersedes&&<details><summary>查看修订前内容</summary><pre>{JSON.stringify(detail.proposals.find((v:Row)=>v.id===p.supersedes)?.content||{id:p.supersedes},null,2)}</pre></details>}
+                <p className="muted">
+                  目标版本 {p.expected_revision} · 输入修订{" "}
+                  {p.dependencies.join(", ") || "无"} · 来源 Turn {p.turn_id}
+                </p>
+                {p.supersedes && (
+                  <details>
+                    <summary>查看修订前内容</summary>
+                    <pre>
+                      {JSON.stringify(
+                        detail.proposals.find((v: Row) => v.id === p.supersedes)
+                          ?.content || { id: p.supersedes },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </details>
+                )}
                 <pre>{JSON.stringify(p.content, null, 2)}</pre>
-                {["requirement","design","test_plan"].includes(p.content.kind)&&<p className="muted">采纳会生成文档新修订；工程输入变化会使相关执行与证据失效。</p>}
+                {["requirement", "design", "test_plan"].includes(
+                  p.content.kind,
+                ) && (
+                  <p className="muted">
+                    采纳会生成文档新修订；工程输入变化会使相关执行与证据失效。
+                  </p>
+                )}
                 <div className="actions">
-                  <button disabled={busy||p.status!=="draft"} onClick={()=>{setEditing({id:p.id,revision:p.revision});setProposalJson(JSON.stringify(p.content,null,2));}}>编辑为新修订</button>
+                  <button
+                    disabled={busy || p.status !== "draft"}
+                    onClick={() => {
+                      setEditing({ id: p.id, revision: p.revision });
+                      setProposalJson(JSON.stringify(p.content, null, 2));
+                    }}
+                  >
+                    编辑为新修订
+                  </button>
                   <button
                     disabled={busy || p.status !== "draft"}
                     onClick={() =>

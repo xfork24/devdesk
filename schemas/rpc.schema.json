@@ -698,6 +698,16 @@
               "type": "null"
             }
           ]
+        },
+        "agent_configuration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentExecutionConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2590,6 +2600,677 @@
         }
       },
       "additionalProperties": false
+    },
+    "Scope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "global"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "project_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "project"
+            },
+            "project_id": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "project_id",
+            "feature_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "feature"
+            },
+            "project_id": {
+              "type": "string"
+            },
+            "feature_id": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ModelDefinition": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "release": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "provider",
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "HarnessDefinition": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "dsh",
+            "simulation"
+          ]
+        },
+        "runtime_version": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "model_providers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "provider",
+        "runtime_version"
+      ],
+      "additionalProperties": false
+    },
+    "ToolDefinition": {
+      "type": "object",
+      "properties": {
+        "qualified_name": {
+          "type": "string"
+        },
+        "implementation": {
+          "enum": [
+            "harness.native",
+            "experience.lookup"
+          ]
+        },
+        "input_schema": {
+          "type": "object"
+        },
+        "output_schema": {
+          "type": "object"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "qualified_name",
+        "implementation",
+        "input_schema",
+        "output_schema"
+      ],
+      "additionalProperties": false
+    },
+    "AgentComposition": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "enum": [
+            "analyst",
+            "architect",
+            "developer",
+            "tester",
+            "reviewer"
+          ]
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_ref": {
+          "type": "string"
+        },
+        "harness_ref": {
+          "type": "string"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approval": {
+          "enum": [
+            "never",
+            "on_request"
+          ]
+        }
+      },
+      "required": [
+        "role",
+        "instructions",
+        "model_ref",
+        "harness_ref",
+        "tools",
+        "permissions"
+      ],
+      "additionalProperties": false
+    },
+    "AgentInstance": {
+      "type": "object",
+      "properties": {
+        "agent_revision_id": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "source_instance_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "agent_revision_id",
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowCondition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "always"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "enum": [
+                "all",
+                "any"
+              ]
+            },
+            "conditions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WorkflowCondition"
+              },
+              "minItems": 1,
+              "maxItems": 20
+            }
+          },
+          "required": [
+            "op",
+            "conditions"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "output_present"
+            },
+            "step": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "step"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "accepted"
+            },
+            "kind": {
+              "enum": [
+                "requirement",
+                "plan",
+                "implementation",
+                "closure",
+                "merge_candidate"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WorkflowPortReference": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowRunNode": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "analyst",
+            "architect",
+            "developer",
+            "tester",
+            "reviewer"
+          ]
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writes": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "role",
+        "dependencies",
+        "writes"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowStep": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "agent.interact",
+            "proposal.adopt",
+            "attempt.execute",
+            "delivery.review",
+            "merge.prepare",
+            "merge.review",
+            "merge.apply",
+            "snapshot.capture",
+            "resource.cleanup",
+            "tasks.foreach",
+            "branch",
+            "join"
+          ]
+        },
+        "contract_version": {
+          "const": 1
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "participant_slot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowPortReference"
+          }
+        },
+        "interaction": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string"
+            },
+            "goal": {
+              "type": "string"
+            },
+            "required_topics": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "output_kind": {
+              "type": "string"
+            },
+            "max_turns": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "mode",
+            "goal",
+            "required_topics",
+            "output_kind",
+            "max_turns"
+          ],
+          "additionalProperties": false
+        },
+        "advance_mode": {
+          "enum": [
+            "automatic",
+            "human_confirmation"
+          ]
+        },
+        "condition": {
+          "$ref": "#/$defs/WorkflowCondition"
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "execution_recipe": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkflowRunNode"
+          }
+        },
+        "rework_scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retry_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "stage",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowDocument": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "process_kind": {
+          "enum": [
+            "project_intake",
+            "feature",
+            "task"
+          ]
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "binding_slots": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "enum": [
+                  "analyst",
+                  "architect",
+                  "developer",
+                  "tester",
+                  "reviewer"
+                ]
+              },
+              "agent_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "role"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/WorkflowStep"
+          }
+        },
+        "subworkflow_refs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "process_kind",
+        "stages",
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "ConfigurationRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "definition_id": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "supersedes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "data": {},
+        "immutable": {
+          "type": "boolean"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "definition_id",
+        "scope",
+        "name",
+        "version",
+        "supersedes",
+        "content_hash",
+        "data",
+        "immutable",
+        "revision",
+        "created_at"
+      ],
+      "additionalProperties": false
+    },
+    "AgentExecutionConfiguration": {
+      "type": "object",
+      "properties": {
+        "agent_instance_id": {
+          "type": "string"
+        },
+        "agent_revision_id": {
+          "type": "string"
+        },
+        "composition_hash": {
+          "type": "string"
+        },
+        "model_revision_id": {
+          "type": "string"
+        },
+        "harness_revision_id": {
+          "type": "string"
+        },
+        "model_provider": {
+          "type": "string"
+        },
+        "model_parameters": {
+          "type": "object"
+        },
+        "tool_revisions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "agent_instance_id",
+        "agent_revision_id",
+        "composition_hash",
+        "model_revision_id",
+        "harness_revision_id",
+        "model_provider",
+        "model_parameters",
+        "tool_revisions"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -2693,6 +3374,22 @@
               "permission.revise",
               "permission.bind"
             ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/Command"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "pattern": "^(workflow|model|harness|tool|skill|spec|standard|configuration|experience|repository)\\."
           }
         }
       },

@@ -34,6 +34,9 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import "./style.css";
+import { WorkflowManager } from "./components/WorkflowManager";
+import { AgentCatalog } from "./components/AgentCatalog";
+import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
 import { RepositorySettings } from "./components/RepositorySettings";
 import { RoleConversation } from "./components/RoleConversation";
 import { RuntimePreferences } from "./components/RuntimePreferences";
@@ -112,7 +115,20 @@ async function rpc(method: string, params: RecordData = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++sequence, method, params }),
-    signal: AbortSignal.timeout(["session.open", "attempt.start", "review.request", "merge.request", "runtime.prepare", "codex.auth.start", "codex.auth.status", "codex.auth.models"].includes(method) ? 25 * 60 * 1000 : 30000),
+    signal: AbortSignal.timeout(
+      [
+        "session.open",
+        "attempt.start",
+        "review.request",
+        "merge.request",
+        "runtime.prepare",
+        "codex.auth.start",
+        "codex.auth.status",
+        "codex.auth.models",
+      ].includes(method)
+        ? 25 * 60 * 1000
+        : 30000,
+    ),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} · 本地服务连接失败`);
   const data = await res.json();
@@ -133,6 +149,11 @@ function Empty({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+const route = new URLSearchParams(location.search);
+const routeTab =
+  route.get("tab") === "workflow" || route.get("tab") === "documents"
+    ? "execution"
+    : route.get("tab") || "overview";
 function App() {
   const requestGeneration = useRef(0);
   const projectGeneration = useRef(0);
@@ -141,8 +162,8 @@ function App() {
   const [data, setData] = useState<RecordData>();
   const [caps, setCaps] = useState<RecordData>();
   const [projectId, setProjectId] = useState("");
-  const [featureId, setFeatureId] = useState("");
-  const [tab, setTab] = useState("overview");
+  const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
+  const [tab, setTab] = useState(routeTab);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [connection, setConnection] = useState("连接中");
@@ -150,56 +171,141 @@ function App() {
   const [busy, setBusy] = useState(false);
   const mutationInFlight = useRef(false);
   const [history, setHistory] = useState<RecordData[]>([]);
+  const [historyScope, setHistoryScope] = useState("project");
   const [historyPage, setHistoryPage] = useState(0);
   const [featurePage, setFeaturePage] = useState(0);
   const [projectPage, setProjectPage] = useState(0);
   const [view, setView] = useState<{ title: string; body: string }>();
   const [setupPath, setSetupPath] = useState("./data");
-  const [liveProvider,setLiveProvider]=useState("");
-  const [focusedSession,setFocusedSession]=useState<RecordData>();
-  const [taskFilter, setTaskFilter] = useState("");
+  const [liveProvider, setLiveProvider] = useState("");
+  const [focusedSession, setFocusedSession] = useState<RecordData>();
+  const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
+  const [executionTab, setExecutionTab] = useState(
+    route.get("detail") ||
+      (route.get("tab") === "documents" ? "documents" : "overview"),
+  );
+  const [workFilter, setWorkFilter] = useState(route.get("filter") || "");
+  const routeApplied = useRef(false);
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+    if (projectId) params.set("project_id", projectId);
+    if (featureId) params.set("feature_id", featureId);
+    if (taskFilter) params.set("task_id", taskFilter);
+    if (tab === "execution") params.set("detail", executionTab);
+    if (workFilter) params.set("filter", workFilter);
+    if (featurePage) params.set("page", String(featurePage));
+    const url = `?${params}`;
+    if (location.search !== url) window.history.pushState(null, "", url);
+  }, [
+    tab,
+    projectId,
+    featureId,
+    taskFilter,
+    executionTab,
+    workFilter,
+    featurePage,
+  ]);
+  useEffect(() => {
+    const pop = () => {
+      const p = new URLSearchParams(location.search);
+      const pid = p.get("project_id");
+      if (pid && pid !== projectId) {
+        void rpc("project.open_github", {
+          command_id: crypto.randomUUID(),
+          target: pid,
+          payload: {},
+        })
+          .then(() => {
+            ++requestGeneration.current;
+            setProjectId(pid);
+            setFeatureId(p.get("feature_id") || "");
+            setTaskFilter(p.get("task_id") || "");
+          })
+          .catch((e) => setError(String(e)));
+      }
+      setTab(p.get("tab") || "overview");
+      setFeatureId(p.get("feature_id") || "");
+      setTaskFilter(p.get("task_id") || "");
+      setExecutionTab(p.get("detail") || "overview");
+      setWorkFilter(p.get("filter") || "");
+      setFeaturePage(Number(p.get("page") || 0));
+    };
+    window.addEventListener("popstate", pop);
+    return () => window.removeEventListener("popstate", pop);
+  }, [projectId]);
   const [snapshotA, setSnapshotA] = useState("");
   const [snapshotB, setSnapshotB] = useState("");
-  const load = useCallback(async (afterCommand = false) => {
-    // A command refresh must settle before another form captures its revision.
-    // SSE refreshes during the mutation are covered by that final read.
-    if (mutationInFlight.current && !afterCommand) return;
-    const generation = ++requestGeneration.current;
-    try {
-      const c = await fetch("/capabilities").then((r) => r.json());
-      if (generation !== requestGeneration.current) return;
-      setCaps(c);
-      if (!c.setup_required) {
-        const active = c.active_project_id || "";
-        if (projectId !== active) {
-          ++projectGeneration.current;
-          setProjectId(active);
-          setFeatureId("");
-          setFeaturePage(0);
-          setDetailPages({});
-          setHistory([]);
-          setHistoryPage(0);
-          setSnapshotA("");
-          setSnapshotB("");
-          setData(undefined);
-          return;
-        }
-        const d = await rpc("query.workspace", {
-          project_id: projectId || undefined,
-          feature_id: featureId || undefined,
-          offset: featurePage * 50,
-          project_offset: projectPage * 50,
-          github_only: true,
-          limit: 50,
-          detail_pages: detailPages,
-        });
+  const load = useCallback(
+    async (afterCommand = false) => {
+      // A command refresh must settle before another form captures its revision.
+      // SSE refreshes during the mutation are covered by that final read.
+      if (mutationInFlight.current && !afterCommand) return;
+      const generation = ++requestGeneration.current;
+      try {
+        const c = await fetch("/capabilities").then((r) => r.json());
         if (generation !== requestGeneration.current) return;
-        setData(d);
+        setCaps(c);
+        if (!c.setup_required) {
+          let active = c.active_project_id || "";
+          if (!routeApplied.current) {
+            routeApplied.current = true;
+            const requested = route.get("project_id");
+            if (requested && requested !== active) {
+              await rpc("project.open_github", {
+                command_id: crypto.randomUUID(),
+                target: requested,
+                payload: {},
+              });
+              active = requested;
+            }
+          }
+
+          if (projectId !== active) {
+            ++projectGeneration.current;
+            setProjectId(active);
+            setFeatureId(
+              route.get("project_id") === active || !route.get("project_id")
+                ? route.get("feature_id") || ""
+                : "",
+            );
+            setFeaturePage(Number(route.get("page") || 0));
+            setDetailPages({});
+            setHistory([]);
+            setHistoryPage(0);
+            setSnapshotA("");
+            setSnapshotB("");
+            setData(undefined);
+            return;
+          }
+          const d = await rpc("query.workspace", {
+            project_id: projectId || undefined,
+            feature_id: featureId || undefined,
+            offset: featurePage * 50,
+            project_offset: projectPage * 50,
+            github_only: true,
+            limit: 50,
+            detail_pages: detailPages,
+            work_filter: workFilter,
+            task_id: taskFilter || undefined,
+          });
+          if (generation !== requestGeneration.current) return;
+          setData(d);
+        }
+      } catch (e) {
+        if (generation === requestGeneration.current) setError(String(e));
       }
-    } catch (e) {
-      if (generation === requestGeneration.current) setError(String(e));
-    }
-  }, [projectId, featureId, featurePage, projectPage, detailPages]);
+    },
+    [
+      projectId,
+      featureId,
+      featurePage,
+      projectPage,
+      detailPages,
+      workFilter,
+      taskFilter,
+    ],
+  );
   useEffect(() => {
     load();
   }, [load]);
@@ -228,6 +334,7 @@ function App() {
     if (tab === "history" && data)
       rpc("query.history", {
         project_id: projectId || undefined,
+        scope: historyScope,
         offset: historyPage * 50,
         limit: 50,
       })
@@ -240,7 +347,7 @@ function App() {
     return () => {
       current = false;
     };
-  }, [tab, historyPage, data, projectId]);
+  }, [tab, historyPage, historyScope, data, projectId]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 4000);
@@ -248,10 +355,16 @@ function App() {
   }, [toast]);
   const detail = data?.detail;
   const f = detail?.feature;
-  const projects: RecordData[] = (data?.projects || []).filter((p: RecordData) => p.workspace_definition?.repository);
+  const projects: RecordData[] = (data?.projects || []).filter(
+    (p: RecordData) => p.workspace_definition?.repository,
+  );
   const features: RecordData[] = data?.features || [];
-  const definitions: RecordData[] = (data?.definitions || []).filter((d: RecordData) => d.family !== "agent" || d.agent_profile);
-  const project = data?.active_project?.workspace_definition?.repository ? data.active_project : undefined;
+  const definitions: RecordData[] = (data?.definitions || []).filter(
+    (d: RecordData) => d.family !== "agent" || d.agent_profile,
+  );
+  const project = data?.active_project?.workspace_definition?.repository
+    ? data.active_project
+    : undefined;
   const repositoryReady = project?.execution_mode === "live";
   const projectOptions =
     project && !projects.some((p) => p.id === project.id)
@@ -355,7 +468,15 @@ function App() {
       setBusy(false);
     }
   };
-  const executionSelection = liveProvider ? {provider: liveProvider} : {};
+  const configurationLock = data?.configurations?.find(
+    (r: RecordData) => r.kind === "feature_lock" && r.definition_id === f?.id,
+  );
+  const legacyLock = data?.configurations?.find(
+    (r: RecordData) =>
+      r.kind === "legacy_feature_lock" && r.definition_id === f?.id,
+  );
+  const executionSelection =
+    !configurationLock && liveProvider ? { provider: liveProvider } : {};
   const begin = (target: string, phase?: string) => {
     show({
       title:
@@ -384,7 +505,13 @@ function App() {
     show({
       title: "创建 Feature",
       method: "feature.create",
-      payload: { project_id: project?.id },
+      payload: {
+        project_id: project?.id,
+        require_configuration: true,
+        configuration_revision_id: data?.configurations
+          ?.filter((r: RecordData) => r.kind === "project_configuration")
+          .sort((a: RecordData, b: RecordData) => b.version - a.version)[0]?.id,
+      },
       fields: [
         { key: "title", label: "Feature 名称" },
         { key: "predecessor", label: "关联前序 Feature ID", optional: true },
@@ -408,14 +535,23 @@ function App() {
         },
       ],
     });
-  const editBinding = (object: RecordData) => show({
-    title: "工程 Standard · 新 Attempt 使用新版本",
-    method: "binding.update",
-    target: object.id,
-    fields: [{key: "standard", label: "Standard 固定版本", type: "select",
-      value: object.binding.standard,
-      options: definitions.filter(d => d.family === "standard").map(d => ({value: d.id, label: `${d.name} v${d.version}`}))}],
-  });
+  const editBinding = (object: RecordData) =>
+    show({
+      title: "工程 Standard · 新 Attempt 使用新版本",
+      method: "binding.update",
+      target: object.id,
+      fields: [
+        {
+          key: "standard",
+          label: "Standard 固定版本",
+          type: "select",
+          value: object.binding.standard,
+          options: definitions
+            .filter((d) => d.family === "standard")
+            .map((d) => ({ value: d.id, label: `${d.name} v${d.version}` })),
+        },
+      ],
+    });
   const act = (
     id: string,
     method: string,
@@ -446,7 +582,8 @@ function App() {
         </div>
         <p className="muted">
           输入 v{d.input_version} · {d.documents.length} 文档 ·{" "}
-          {d.evidence.length} 证据 · {d.source_deliveries?.length||0} 个来源交付 · origin={d.origin}
+          {d.evidence.length} 证据 · {d.source_deliveries?.length || 0}{" "}
+          个来源交付 · origin={d.origin}
         </p>
         {d.candidate && <code>{d.candidate}</code>}
         <div className="actions">
@@ -459,7 +596,7 @@ function App() {
             冻结引用
           </button>
           {act(d.id, "review.request", "Agent 评审", () =>
-            command("review.request",d.id,executionSelection).catch(() => {}),
+            command("review.request", d.id, executionSelection).catch(() => {}),
           )}
           {act(d.id, "review.submit", "通过", () => review(d, "pass"))}
           {act(d.id, "review.submit", "退回", () =>
@@ -533,9 +670,9 @@ function App() {
   };
   const nav = [
     ["overview", "工作总览", LayoutDashboard],
+    ["execution", "执行与交付", Workflow],
     ["discussion", "角色讨论", FileText],
-    ["workflow", "执行与交付", Workflow],
-    ["documents", "文档与上下文", FileText],
+    ["workflows", "工作流程", Workflow],
     ["definitions", "规范与身份", Library],
     ["history", "历史记录", History],
     ["settings", "设置", Settings],
@@ -547,7 +684,7 @@ function App() {
           <div className="brand">
             <Layers3 />
             <strong>DevDesk</strong>
-            <span>PROTOTYPE 0.2</span>
+            <span>WORKBENCH 0.3</span>
           </div>
           <h1>为工程建立一个工作空间</h1>
           <p>选择本地 data 目录。工程状态、文档和执行历史将真实保存在这里。</p>
@@ -604,7 +741,7 @@ function App() {
           <strong>DevDesk</strong>
         </div>
         <div className="sidebar-caption">
-          软件工程工作台 <span>v0.2</span>
+          软件工程工作台 <span>v0.3</span>
         </div>
         <div className="project-selector">
           <span>当前项目</span>
@@ -643,7 +780,7 @@ function App() {
             >
               <Icon size={18} />
               {title}
-              {id === "workflow" &&
+              {id === "execution" &&
                 detail?.runs.filter((r: RecordData) => r.status === "running")
                   .length > 0 && (
                   <span className="nav-count">
@@ -660,9 +797,7 @@ function App() {
         <div className="sidebar-bottom">
           <div className="runtime-dot" />
           <div>
-            <strong>
-              {project ? "GitHub 项目" : "打开 GitHub 仓库"}
-            </strong>
+            <strong>{project ? "GitHub 项目" : "打开 GitHub 仓库"}</strong>
             <p>工程流程与角色讨论</p>
           </div>
         </div>
@@ -683,7 +818,11 @@ function App() {
               {connection}
             </span>
             <span className="repository-status">
-              {project ? (repositoryReady ? "GitHub 已接入" : "仓库接入中") : "尚未打开仓库"}
+              {project
+                ? repositoryReady
+                  ? "GitHub 已接入"
+                  : "仓库接入中"
+                : "尚未打开仓库"}
             </span>
           </div>
         </header>
@@ -698,8 +837,20 @@ function App() {
             </div>
           )}
           <RuntimePreparationStatus request={rpc} />
-          {!project && data && <div className="notice">打开 GitHub 仓库开始工作。<button onClick={createProject}>打开 GitHub 项目</button></div>}
-          {project && !repositoryReady && tab !== "settings" && <RepositorySettings key={project.id} project={project} request={rpc} refresh={load} />}
+          {!project && data && (
+            <div className="notice">
+              打开 GitHub 仓库开始工作。
+              <button onClick={createProject}>打开 GitHub 项目</button>
+            </div>
+          )}
+          {project && !repositoryReady && tab !== "settings" && (
+            <RepositorySettings
+              key={project.id}
+              project={project}
+              request={rpc}
+              refresh={load}
+            />
+          )}
           <div className="page-heading">
             <div>
               <span className="eyebrow">ENGINEERING WORKSPACE</span>
@@ -707,15 +858,17 @@ function App() {
               <p>
                 {tab === "overview"
                   ? "从需求到交付，每一次决定都有依据。"
-                  : tab === "workflow"
+                  : tab === "execution"
                     ? "运行、验证与评审，由领域规则驱动。"
                     : tab === "documents"
                       ? "可编辑的上下文，不可变的交付版本。"
-                      : tab === "definitions"
-                        ? "锁定规范与身份，为每次执行建立确定起点。"
-                        : tab === "history"
-                          ? "持久记录命令、执行边界与关键决定。"
-                          : "本地数据与执行能力。"}
+                      : tab === "workflows"
+                        ? "定义角色交互、开发步骤、门禁和推进策略。"
+                        : tab === "definitions"
+                          ? "锁定规范与身份，为每次执行建立确定起点。"
+                          : tab === "history"
+                            ? "持久记录命令、执行边界与关键决定。"
+                            : "本地数据与执行能力。"}
               </p>
             </div>
             <div className="actions">
@@ -741,32 +894,81 @@ function App() {
               <div className="metrics">
                 <Metric
                   title="项目 Features"
-                  value={data.total_features}
+                  value={data.summary?.features ?? data.total_features}
                   icon={<Layers3 />}
+                  onClick={() => {
+                    setTab("execution");
+                    setWorkFilter("");
+                    setFeatureId("");
+                    setTaskFilter("");
+                    setFeaturePage(0);
+                    setExecutionTab("overview");
+                  }}
                 />
                 <Metric
-                  title="当前 Task"
-                  value={detail?.tasks.length || 0}
+                  title="项目 Tasks"
+                  value={data.summary?.tasks || 0}
                   icon={<Workflow />}
+                  onClick={() => {
+                    setTab("execution");
+                    setWorkFilter("tasks");
+                    setFeatureId("");
+                    setTaskFilter("");
+                    setFeaturePage(0);
+                    setExecutionTab("overview");
+                  }}
                 />
                 <Metric
                   title="运行中"
-                  value={
-                    detail?.runs.filter(
-                      (r: RecordData) => r.status === "running",
-                    ).length || 0
-                  }
+                  value={data.summary?.running || 0}
                   icon={<Activity />}
+                  onClick={() => {
+                    setTab("execution");
+                    setWorkFilter("running");
+                    setFeatureId("");
+                    setTaskFilter("");
+                    setFeaturePage(0);
+                    setExecutionTab("execution");
+                  }}
                 />
                 <Metric
                   title="等待评审"
-                  value={
-                    detail?.deliveries.filter(
-                      (d: RecordData) =>
-                        !d.stale && !detail.accepted_deliveries.includes(d.id),
-                    ).length || 0
-                  }
+                  value={data.summary?.waiting_review || 0}
                   icon={<ShieldCheck />}
+                  onClick={() => {
+                    setTab("execution");
+                    setWorkFilter("waiting_review");
+                    setFeatureId("");
+                    setTaskFilter("");
+                    setFeaturePage(0);
+                    setExecutionTab("delivery");
+                  }}
+                />
+                <Metric
+                  title="等待人确认"
+                  value={data.summary?.waiting_confirmation || 0}
+                  icon={<Pause />}
+                  onClick={() => {
+                    setTab("execution");
+                    setWorkFilter("waiting_confirmation");
+                    setFeatureId("");
+                    setTaskFilter("");
+                    setFeaturePage(0);
+                    setExecutionTab("overview");
+                  }}
+                />
+                <Metric
+                  title="需要处理"
+                  value={data.summary?.blocked || 0}
+                  icon={<AlertTriangle />}
+                  onClick={() => {
+                    setTab("execution");
+                    setWorkFilter("blocked");
+                    setFeatureId("");
+                    setTaskFilter("");
+                    setFeaturePage(0);
+                    setExecutionTab("overview");
+                  }}
                 />
               </div>
               <div className="overview-grid">
@@ -891,7 +1093,7 @@ function App() {
                     {act(f.id, "binding.update", "配置绑定", () =>
                       editBinding(f),
                     )}
-                    <button onClick={() => setTab("workflow")}>
+                    <button onClick={() => setTab("execution")}>
                       进入执行工作台 <ArrowRight size={15} />
                     </button>
                   </div>
@@ -904,7 +1106,7 @@ function App() {
               )}
             </>
           )}
-          {data && repositoryReady && ["workflow", "documents"].includes(tab) && (
+          {data && repositoryReady && tab === "execution" && (
             <div className="feature-picker">
               <label>
                 当前 Feature
@@ -918,6 +1120,9 @@ function App() {
                   }}
                 >
                   <option value="">请选择 Feature</option>
+                  {f && !features.some((x) => x.id === f.id) && (
+                    <option value={f.id}>{f.title}</option>
+                  )}
                   {features.map((x) => (
                     <option key={x.id} value={x.id}>
                       {x.title}
@@ -937,776 +1142,1206 @@ function App() {
           )}
           {data && project && repositoryReady && tab === "discussion" && (
             <RoleConversation
-              key={project.id+ (focusedSession && focusedSession.project_id===project.id?focusedSession.id:"")}
-              initialOwner={focusedSession && focusedSession.project_id===project.id?focusedSession.owner_id:undefined}
-              initialSession={focusedSession && focusedSession.project_id===project.id?focusedSession.id:undefined}
+              key={
+                project.id +
+                (focusedSession && focusedSession.project_id === project.id
+                  ? focusedSession.id
+                  : "")
+              }
+              initialOwner={
+                focusedSession && focusedSession.project_id === project.id
+                  ? focusedSession.owner_id
+                  : featureId || undefined
+              }
+              initialSession={
+                focusedSession && focusedSession.project_id === project.id
+                  ? focusedSession.id
+                  : undefined
+              }
               project={project}
               feature={f}
               tasks={detail?.tasks || []}
               agents={definitions}
+              configurations={data.configurations || []}
+              onLocateExperience={async (entry) => {
+                if (entry.project_id !== projectId)
+                  await openProject(entry.project_id);
+                setFeatureId(entry.feature_id);
+                setTaskFilter(entry.task_id || "");
+                setExecutionTab("context");
+                setTab("execution");
+              }}
               installations={data.runtime_installations || []}
               request={rpc}
               refresh={load}
             />
           )}
-          {tab === "workflow" && f && repositoryReady && (
+          {tab === "execution" && f && repositoryReady && (
             <>
-              {detail.pending_interactions?.length>0&&<section className="notice"><h3>工程执行等待输入</h3>{detail.pending_interactions.map((i:RecordData)=><button key={i.id} onClick={()=>{const session=detail.sessions.find((s:RecordData)=>s.id===i.session_id);if(session){setFocusedSession(session);setTab("discussion");}}}>{i.kind==="tool_approval"?"处理工具审批":"回答 Agent 问题"} · {i.reason}</button>)}</section>}
-              <div className="panel toolbar">
-                <label>下一次工程执行的 Harness<select aria-label="工程 Harness" value={liveProvider} onChange={e=>setLiveProvider(e.target.value)}><option value="">继承角色 / 项目 / 全局偏好</option><option value="codex">Codex</option><option value="dsh">DeepSeek Harness</option></select></label>
-                <div className="actions">
-                  {detail.allowed_actions[f.id]?.attempt_phases?.includes(
-                    "planning",
-                  ) &&
-                    act(f.id, "attempt.start", "规划 Attempt", () =>
-                      begin(f.id, "planning"),
-                    )}
-                  {act(f.id, "task.create", "创建 Task", () =>
-                    show({
-                      title: "创建独立 Task",
-                      method: "task.create",
-                      target: f.id,
-                      fields: [
-                        { key: "title", label: "Task 名称" },
-                        {
-                          key: "acceptance_keys",
-                          label: "实现的验收条目标识（逗号分隔，留空继承全部）",
-                          optional: true,
-                        },
-                        {
-                          key: "dependencies",
-                          label: "依赖 Task ID（逗号分隔，可空）",
-                          optional: true,
-                        },
-                      ],
-                    }),
-                  )}
-                  {detail.allowed_actions[f.id]?.attempt_phases?.includes(
-                    "closure",
-                  ) &&
-                    act(f.id, "attempt.start", "收尾 Attempt", () =>
-                      begin(f.id, "closure"),
-                    )}
-                  {act(f.id, "merge.request", "Feature → mainline", () =>
-                    command("merge.request", f.id, executionSelection).catch(
-                      () => {},
-                    ),
-                  )}
-                  {act(f.id, "binding.update", "Feature 绑定", () =>
-                    editBinding(f),
-                  )}
+              {legacyLock && (
+                <p className="notice">
+                  历史 Feature 保留原配置及已记录的运行环境。缺失的 Model /
+                  AgentID 不作推断；新执行使用当前 Project 配置创建后继
+                  Feature。
+                </p>
+              )}
+              <div className="object-heading">
+                <div>
+                  <h2>
+                    {taskFilter
+                      ? detail.tasks.find(
+                          (t: RecordData) => t.id === taskFilter,
+                        )?.title || taskFilter
+                      : f.title}
+                  </h2>
+                  <p>
+                    {taskFilter ? "Task" : "Feature"} · {f.title} ·{" "}
+                    {configurationLock
+                      ? "配置已冻结"
+                      : "历史配置（保留原执行锁）"}
+                  </p>
                 </div>
-              </div>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>独立 Tasks</h2>
-                  <span className="muted">
-                    {"Git worktree · 独立角色会话与 Docker 实例"}
-                  </span>
-                </div>
-                {detail.tasks.length === 0 ? (
-                  <Empty>规划交付接受后，创建独立 Task。</Empty>
-                ) : (
-                  <div className="task-grid">
-                    {detail.tasks.map((t: RecordData) => (
-                      <article className="task-card" key={t.id}>
-                        <div className="row">
-                          <h3>{t.title}</h3>
-                          <Badge value={t.status} />
-                        </div>
-                        <p className="mono">{t.worktree}</p>
-                        <p className="muted">
-                          继承快照 {short(t.inherited_snapshot)} ·{" "}
-                          {t.dependencies.length} 个依赖
-                        </p>
-                        <p className="muted">
-                          验收范围：
-                          {t.scope?.acceptance?.join("、") ||
-                            "历史范围待补齐"}{" "}
-                          · 需求 {short(t.scope?.requirement)} · 设计{" "}
-                          {short(t.scope?.design)}
-                        </p>
-                        <div className="actions">
-                          {act(
-                            t.id,
-                            "attempt.start",
-                            "启动 Attempt",
-                            () => begin(t.id),
-                            true,
-                          )}
-                          {act(t.id, "merge.request", "申请 Merge", () =>
-                            command("merge.request", t.id, executionSelection).catch(
-                              () => {},
-                            ),
-                          )}
-                          {act(t.id, "task.replan", "更新规划范围", () =>
-                            show({
-                              title: "采用当前已接受规划",
-                              method: "task.replan",
-                              target: t.id,
-                              fields: [
-                                {
-                                  key: "acceptance_keys",
-                                  label:
-                                    "验收条目标识（逗号分隔，留空继承全部）",
-                                  optional: true,
-                                },
-                              ],
-                            }),
-                          )}
-                          {act(t.id, "binding.update", "绑定", () =>
-                            editBinding(t),
-                          )}
-                          <button
-                            onClick={() =>
-                              setTaskFilter(taskFilter === t.id ? "" : t.id)
-                            }
-                          >
-                            {taskFilter === t.id ? "显示全部" : "查看执行"}
-                          </button>
-                        </div>
-                        <button
-                          className="text-button"
-                          onClick={() =>
-                            setView({
-                              title: "Task · 绑定与继承",
-                              body: pretty(t),
-                            })
-                          }
-                        >
-                          查看锁定版本
-                        </button>
-                      </article>
-                    ))}
-                  </div>
-                )}
-                {pager("tasks")}
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>Attempts 与 Run DAG</h2>
-                  <button
-                    className="text-button"
-                    onClick={() => setTaskFilter("")}
+                <label>
+                  查看对象
+                  <select
+                    aria-label="执行对象"
+                    value={taskFilter}
+                    onChange={(e) => setTaskFilter(e.target.value)}
                   >
-                    Feature 自身 + 全部 Tasks
+                    <option value="">Feature · {f.title}</option>
+                    {detail.tasks.map((t: RecordData) => (
+                      <option key={t.id} value={t.id}>
+                        Task · {t.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="detail-tabs" role="tablist" aria-label="执行详情">
+                {[
+                  ["overview", "总览"],
+                  ["execution", "执行"],
+                  ["delivery", "交付与评审"],
+                  ["documents", "文档"],
+                  ["context", "上下文"],
+                  ["tests", "测试"],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={executionTab === key}
+                    onClick={() => setExecutionTab(key)}
+                  >
+                    {label}
                   </button>
-                </div>
-                {detail.attempts.filter(
-                  (a: RecordData) => !taskFilter || a.task_id === taskFilter,
-                ).length === 0 ? (
-                  <Empty>启动一个 Attempt，后端将异步调度 Run DAG。</Empty>
-                ) : (
-                  detail.attempts
-                    .filter(
-                      (a: RecordData) =>
-                        !taskFilter || a.task_id === taskFilter,
+                ))}
+              </div>
+              {executionTab === "overview" && (
+                <>
+                  <p className="notice">
+                    {f.title} ·{" "}
+                    {taskFilter
+                      ? "独立 Task 范围与继承基线"
+                      : "需求、规划、Task 执行到主干交付"}
+                    。文档、上下文和测试分别在上方页签中查看。
+                  </p>
+                  {data?.configurations
+                    ?.filter(
+                      (r: RecordData) =>
+                        r.kind === "workflow_instance" &&
+                        r.definition_id === (taskFilter || f.id) &&
+                        r.data.status !== "cancelled",
                     )
-                    .map((a: RecordData) => (
-                      <div className="attempt" key={a.id}>
-                        <div className="row">
-                          <div>
-                            <span className="eyebrow">
-                              {a.task_id
-                                ? detail.tasks.find(
-                                    (t: RecordData) => t.id === a.task_id,
-                                  )?.title
-                                : "FEATURE 自身执行"}
-                            </span>
-                            <h3>
-                              {labels[a.phase]} <code>{short(a.id)}</code>
-                            </h3>
+                    .map((r: RecordData) => (
+                      <WorkflowInstanceView
+                        key={r.id}
+                        record={r}
+                        projectId={projectId}
+                        request={rpc}
+                        refresh={load}
+                        onDiscussion={(id, owner) => {
+                          setFocusedSession({
+                            id,
+                            owner_id: owner,
+                            project_id: projectId,
+                          });
+                          setTab("discussion");
+                        }}
+                      />
+                    ))}
+                  {(configurationLock || legacyLock) && (
+                    <button
+                      onClick={() =>
+                        show({
+                          title: "基于当前 Project 配置创建后继 Feature",
+                          method: "feature.create",
+                          payload: {
+                            project_id: projectId,
+                            predecessor: f.id,
+                            require_configuration: true,
+                          },
+                          fields: [
+                            {
+                              key: "title",
+                              label: "后继 Feature 名称",
+                              value: f.title + " · 后继",
+                            },
+                          ],
+                        })
+                      }
+                    >
+                      创建后继 Feature
+                    </button>
+                  )}
+                </>
+              )}
+              {executionTab === "tests" && (
+                <section className="panel">
+                  <h2>测试定义与执行结果</h2>
+                  <p className="muted">
+                    定义修订、Red / Green、代码版本、环境及证据有效性分别保留。
+                  </p>
+                  {detail.documents
+                    .filter(
+                      (d: RecordData) =>
+                        d.kind === "test" &&
+                        (!taskFilter || !d.task_id || d.task_id === taskFilter),
+                    )
+                    .map((d: RecordData) => (
+                      <details key={d.id}>
+                        <summary>
+                          {d.title} v{d.version} ·{" "}
+                          {d.task_id ? "Task" : "Feature"} ·{" "}
+                          {d.verifies?.join("、")}
+                        </summary>
+                        <pre>{pretty(d.test_recipe || {})}</pre>
+                        <p>{d.body}</p>
+                      </details>
+                    ))}
+                  {detail.runs
+                    .filter(
+                      (r: RecordData) =>
+                        [
+                          "red",
+                          "green",
+                          "feature_tests",
+                          "merge_verify",
+                          "test_author",
+                          "verify",
+                        ].includes(r.node) &&
+                        (!taskFilter ||
+                          detail.attempts.some(
+                            (a: RecordData) =>
+                              a.id === r.attempt_id && a.task_id === taskFilter,
+                          ) ||
+                          detail.merges.some(
+                            (m: RecordData) =>
+                              m.id === r.merge_id && m.task_id === taskFilter,
+                          )),
+                    )
+                    .map((r: RecordData) => (
+                      <details key={r.id}>
+                        <summary>
+                          {labels[r.node] || r.node} ·{" "}
+                          {labels[r.status] || r.status} · {r.origin}
+                        </summary>
+                        <pre>{pretty(r)}</pre>
+                        {r.artifact_id && (
+                          <button onClick={() => openArtifact(r.artifact_id)}>
+                            读取证据
+                          </button>
+                        )}
+                      </details>
+                    ))}
+                </section>
+              )}
+            </>
+          )}
+          {tab === "execution" &&
+            f &&
+            repositoryReady &&
+            ["overview", "execution", "delivery"].includes(executionTab) && (
+              <>
+                {detail.pending_interactions?.length > 0 && (
+                  <section className="notice">
+                    <h3>工程执行等待输入</h3>
+                    {detail.pending_interactions.map((i: RecordData) => (
+                      <button
+                        key={i.id}
+                        onClick={() => {
+                          const session = detail.sessions.find(
+                            (s: RecordData) => s.id === i.session_id,
+                          );
+                          if (session) {
+                            setFocusedSession(session);
+                            setTab("discussion");
+                          }
+                        }}
+                      >
+                        {i.kind === "tool_approval"
+                          ? "处理工具审批"
+                          : "回答 Agent 问题"}{" "}
+                        · {i.reason}
+                      </button>
+                    ))}
+                  </section>
+                )}
+                <div className="panel toolbar">
+                  {!configurationLock && (
+                    <label>
+                      下一次工程执行的 Harness
+                      <select
+                        aria-label="工程 Harness"
+                        value={liveProvider}
+                        onChange={(e) => setLiveProvider(e.target.value)}
+                      >
+                        <option value="">继承角色 / 项目 / 全局偏好</option>
+                        <option value="codex">Codex</option>
+                        <option value="dsh">DeepSeek Harness</option>
+                      </select>
+                    </label>
+                  )}
+                  <div className="actions">
+                    {detail.allowed_actions[f.id]?.attempt_phases?.includes(
+                      "planning",
+                    ) &&
+                      act(f.id, "attempt.start", "规划 Attempt", () =>
+                        begin(f.id, "planning"),
+                      )}
+                    {act(f.id, "task.create", "创建 Task", () =>
+                      show({
+                        title: "创建独立 Task",
+                        method: "task.create",
+                        target: f.id,
+                        fields: [
+                          { key: "title", label: "Task 名称" },
+                          {
+                            key: "acceptance_keys",
+                            label:
+                              "实现的验收条目标识（逗号分隔，留空继承全部）",
+                            optional: true,
+                          },
+                          {
+                            key: "dependencies",
+                            label: "依赖 Task ID（逗号分隔，可空）",
+                            optional: true,
+                          },
+                        ],
+                      }),
+                    )}
+                    {detail.allowed_actions[f.id]?.attempt_phases?.includes(
+                      "closure",
+                    ) &&
+                      act(f.id, "attempt.start", "收尾 Attempt", () =>
+                        begin(f.id, "closure"),
+                      )}
+                    {act(f.id, "merge.request", "Feature → mainline", () =>
+                      command("merge.request", f.id, executionSelection).catch(
+                        () => {},
+                      ),
+                    )}
+                    {act(f.id, "binding.update", "Feature 绑定", () =>
+                      editBinding(f),
+                    )}
+                  </div>
+                </div>
+                <section
+                  className="panel"
+                  hidden={!["overview"].includes(executionTab)}
+                >
+                  <div className="panel-heading">
+                    <h2>独立 Tasks</h2>
+                    <span className="muted">
+                      {"Git worktree · 独立角色会话与 Docker 实例"}
+                    </span>
+                  </div>
+                  {detail.tasks.length === 0 ? (
+                    <Empty>规划交付接受后，创建独立 Task。</Empty>
+                  ) : (
+                    <div className="task-grid">
+                      {detail.tasks.map((t: RecordData) => (
+                        <article className="task-card" key={t.id}>
+                          <div className="row">
+                            <h3 title={t.title}>{t.title}</h3>
+                            <Badge value={t.status} />
                           </div>
+                          {t.title.length > 180 && (
+                            <details>
+                              <summary>完整任务说明</summary>
+                              <p>{t.title}</p>
+                            </details>
+                          )}
+                          <p className="mono">{t.worktree}</p>
+                          <p className="muted">
+                            继承快照 {short(t.inherited_snapshot)} ·{" "}
+                            {t.dependencies.length} 个依赖
+                          </p>
+                          <p className="muted">
+                            验收范围：
+                            {t.scope?.acceptance?.join("、") ||
+                              "历史范围待补齐"}{" "}
+                            · 需求 {short(t.scope?.requirement)} · 设计{" "}
+                            {short(t.scope?.design)}
+                          </p>
                           <div className="actions">
-                            <Badge value={a.status} />
-                            {a.paused && <Badge value="paused" />}
                             {act(
-                              a.id,
-                              "attempt.pause",
-                              a.paused ? "恢复派发" : "暂停派发",
-                              () =>
-                                command("attempt.pause", a.id, {
-                                  paused: !a.paused,
-                                }).catch(() => {}),
+                              t.id,
+                              "attempt.start",
+                              "启动 Attempt",
+                              () => begin(t.id),
+                              true,
                             )}
-                            {act(a.id, "attempt.cancel", "取消 Attempt", () =>
-                              command("attempt.cancel", a.id).catch(() => {}),
+                            {act(t.id, "merge.request", "申请 Merge", () =>
+                              command(
+                                "merge.request",
+                                t.id,
+                                executionSelection,
+                              ).catch(() => {}),
+                            )}
+                            {act(t.id, "task.replan", "更新规划范围", () =>
+                              show({
+                                title: "采用当前已接受规划",
+                                method: "task.replan",
+                                target: t.id,
+                                fields: [
+                                  {
+                                    key: "acceptance_keys",
+                                    label:
+                                      "验收条目标识（逗号分隔，留空继承全部）",
+                                    optional: true,
+                                  },
+                                ],
+                              }),
+                            )}
+                            {act(t.id, "binding.update", "绑定", () =>
+                              editBinding(t),
                             )}
                             <button
                               onClick={() =>
-                                setView({
-                                  title:
-                                    "Attempt 固定输入 / StandardLock / BindingLock",
-                                  body: pretty(a),
-                                })
+                                setTaskFilter(taskFilter === t.id ? "" : t.id)
                               }
                             >
-                              输入与锁
+                              {taskFilter === t.id ? "显示全部" : "查看执行"}
                             </button>
                           </div>
-                        </div>
-                        <div className="run-table">
-                          {detail.runs
-                            .filter((r: RecordData) => r.attempt_id === a.id)
-                            .slice()
-                            .reverse()
-                            .map((r: RecordData) => (
-                              <div className="run-row" key={r.id}>
-                                <span className={`run-dot ${r.status}`} />
-                                <div className="run-name">
-                                  <strong>{labels[r.node] || r.node}</strong>
-                                  <span>
-                                    {short(r.id)}
-                                    {r.retry_of &&
-                                      ` · retry_of ${short(r.retry_of)}`}
+                          <button
+                            className="text-button"
+                            onClick={() =>
+                              setView({
+                                title: "Task · 绑定与继承",
+                                body: pretty(t),
+                              })
+                            }
+                          >
+                            查看锁定版本
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                  {pager("tasks")}
+                </section>
+                <section
+                  className="panel"
+                  hidden={executionTab !== "execution"}
+                >
+                  <div className="panel-heading">
+                    <h2>Attempts 与 Run DAG</h2>
+                    <button
+                      className="text-button"
+                      onClick={() => setTaskFilter("")}
+                    >
+                      Feature 自身 + 全部 Tasks
+                    </button>
+                  </div>
+                  {detail.attempts.filter(
+                    (a: RecordData) => !taskFilter || a.task_id === taskFilter,
+                  ).length === 0 ? (
+                    <Empty>启动一个 Attempt，后端将异步调度 Run DAG。</Empty>
+                  ) : (
+                    detail.attempts
+                      .filter(
+                        (a: RecordData) =>
+                          !taskFilter || a.task_id === taskFilter,
+                      )
+                      .map((a: RecordData) => (
+                        <div className="attempt" key={a.id}>
+                          <div className="row">
+                            <div>
+                              <span className="eyebrow">
+                                {a.task_id
+                                  ? detail.tasks.find(
+                                      (t: RecordData) => t.id === a.task_id,
+                                    )?.title
+                                  : "FEATURE 自身执行"}
+                              </span>
+                              <h3>
+                                {labels[a.phase]} <code>{short(a.id)}</code>
+                              </h3>
+                            </div>
+                            <div className="actions">
+                              <Badge value={a.status} />
+                              {a.paused && <Badge value="paused" />}
+                              {act(
+                                a.id,
+                                "attempt.pause",
+                                a.paused ? "恢复派发" : "暂停派发",
+                                () =>
+                                  command("attempt.pause", a.id, {
+                                    paused: !a.paused,
+                                  }).catch(() => {}),
+                              )}
+                              {act(a.id, "attempt.cancel", "取消 Attempt", () =>
+                                command("attempt.cancel", a.id).catch(() => {}),
+                              )}
+                              <button
+                                onClick={() =>
+                                  setView({
+                                    title:
+                                      "Attempt 固定输入 / StandardLock / BindingLock",
+                                    body: pretty(a),
+                                  })
+                                }
+                              >
+                                输入与锁
+                              </button>
+                            </div>
+                          </div>
+                          <div className="run-table">
+                            {detail.runs
+                              .filter((r: RecordData) => r.attempt_id === a.id)
+                              .slice()
+                              .reverse()
+                              .map((r: RecordData) => (
+                                <div className="run-row" key={r.id}>
+                                  <span className={`run-dot ${r.status}`} />
+                                  <div className="run-name">
+                                    <strong>{labels[r.node] || r.node}</strong>
+                                    <span>
+                                      {short(r.id)}
+                                      {r.retry_of &&
+                                        ` · retry_of ${short(r.retry_of)}`}
+                                    </span>
+                                  </div>
+                                  <span className="run-deps">
+                                    {r.dependencies.length
+                                      ? `← ${r.dependencies.join(", ")}`
+                                      : "独立节点"}
+                                    {r.writes ? " · 写许可" : ""}
                                   </span>
-                                </div>
-                                <span className="run-deps">
-                                  {r.dependencies.length
-                                    ? `← ${r.dependencies.join(", ")}`
-                                    : "独立节点"}
-                                  {r.writes ? " · 写许可" : ""}
-                                </span>
-                                <Badge value={r.status} />
-                                <div className="actions">
-                                  {[
-                                    "failed",
-                                    "cancelled",
-                                    "interrupted",
-                                  ].includes(r.status) && (
-                                    <button
-                                      title="技术重试"
-                                      onClick={() =>
-                                        command("run.retry", r.id).catch(
-                                          () => {},
-                                        )
-                                      }
-                                    >
-                                      <RotateCcw size={13} /> 重试
-                                    </button>
-                                  )}
-                                  {["running", "queued"].includes(r.status) && (
-                                    <button
-                                      onClick={() =>
-                                        command("run.cancel", r.id).catch(
-                                          () => {},
-                                        )
-                                      }
-                                    >
-                                      取消
-                                    </button>
-                                  )}
-                                  {r.outcome === "hold" &&
-                                    ["running", "queued"].includes(
-                                      r.status,
-                                    ) && (
+                                  <Badge value={r.status} />
+                                  <div className="actions">
+                                    {[
+                                      "failed",
+                                      "cancelled",
+                                      "interrupted",
+                                    ].includes(r.status) && (
                                       <button
+                                        title="技术重试"
                                         onClick={() =>
-                                          command("run.continue", r.id).catch(
+                                          command("run.retry", r.id).catch(
                                             () => {},
                                           )
                                         }
                                       >
-                                        继续下一步
+                                        <RotateCcw size={13} /> 重试
                                       </button>
                                     )}
-                                  <button
-                                    onClick={() =>
-                                      setView({
-                                        title: "Run 日志 / 输出 / Session",
-                                        body: pretty({
-                                          run: r,
-                                          session: detail.sessions.find(
-                                            (x: RecordData) =>
-                                              x.id === r.session_id,
-                                          ),
-                                          resources: detail.resources.filter(
-                                            (x: RecordData) =>
-                                              x.run_id === r.id,
-                                          ),
-                                          blocked: detail.blocked_reasons[r.id],
-                                        }),
-                                      })
-                                    }
-                                  >
-                                    详情
-                                  </button>
-                                </div>
-                                {detail.blocked_reasons[r.id] && (
-                                  <div className="run-blocked">
-                                    {detail.blocked_reasons[r.id]}
+                                    {["running", "queued"].includes(
+                                      r.status,
+                                    ) && (
+                                      <button
+                                        onClick={() =>
+                                          command("run.cancel", r.id).catch(
+                                            () => {},
+                                          )
+                                        }
+                                      >
+                                        取消
+                                      </button>
+                                    )}
+                                    {r.outcome === "hold" &&
+                                      ["running", "queued"].includes(
+                                        r.status,
+                                      ) && (
+                                        <button
+                                          onClick={() =>
+                                            command("run.continue", r.id).catch(
+                                              () => {},
+                                            )
+                                          }
+                                        >
+                                          继续下一步
+                                        </button>
+                                      )}
+                                    <button
+                                      onClick={() =>
+                                        setView({
+                                          title: "Run 日志 / 输出 / Session",
+                                          body: pretty({
+                                            run: r,
+                                            session: detail.sessions.find(
+                                              (x: RecordData) =>
+                                                x.id === r.session_id,
+                                            ),
+                                            resources: detail.resources.filter(
+                                              (x: RecordData) =>
+                                                x.run_id === r.id,
+                                            ),
+                                            blocked:
+                                              detail.blocked_reasons[r.id],
+                                          }),
+                                        })
+                                      }
+                                    >
+                                      详情
+                                    </button>
                                   </div>
-                                )}
-                              </div>
-                            ))}
-                        </div>
-                        <div className="actions delivery-actions">
-                          {act(
-                            a.id,
-                            "delivery.submit",
-                            a.phase === "planning"
-                              ? "提交 Requirement"
-                              : "提交交付",
-                            () =>
-                              command("delivery.submit", a.id, {
-                                kind:
-                                  a.phase === "planning"
-                                    ? "requirement"
-                                    : a.phase,
-                              }).catch(() => {}),
-                            true,
-                          )}
-                          {a.phase === "planning" &&
-                            act(
+                                  {detail.blocked_reasons[r.id] && (
+                                    <div className="run-blocked">
+                                      {detail.blocked_reasons[r.id]}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                          <div className="actions delivery-actions">
+                            {act(
                               a.id,
                               "delivery.submit",
-                              "提交 Design / Task / Test 计划",
+                              a.phase === "planning"
+                                ? "提交 Requirement"
+                                : "提交交付",
                               () =>
                                 command("delivery.submit", a.id, {
-                                  kind: "plan",
+                                  kind:
+                                    a.phase === "planning"
+                                      ? "requirement"
+                                      : a.phase,
                                 }).catch(() => {}),
+                              true,
                             )}
+                            {a.phase === "planning" &&
+                              act(
+                                a.id,
+                                "delivery.submit",
+                                "提交 Design / Task / Test 计划",
+                                () =>
+                                  command("delivery.submit", a.id, {
+                                    kind: "plan",
+                                  }).catch(() => {}),
+                              )}
+                          </div>
                         </div>
-                      </div>
-                    ))
-                )}
-                {pager("attempts")}
-                {pager("runs")}
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>交付与 Review</h2>
-                  <span className="muted">冻结版本 · 逐项证据 · 人类例外</span>
-                </div>
-                {detail.deliveries.length === 0 ? (
-                  <Empty>执行结束后提交正式交付。</Empty>
-                ) : (
-                  detail.deliveries.map(deliveryCard)
-                )}
-                {pager("deliveries")}
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>Merge 候选</h2>
-                  <GitMerge size={18} />
-                </div>
-                {detail.merges.length === 0 ? (
-                  <Empty>接受交付后，申请候选并验证。</Empty>
-                ) : (
-                  detail.merges.map((m: RecordData) => (
-                    <article className="delivery" key={m.id}>
-                      <div className="row">
-                        <h3>
-                          {m.task_id ? "Task → Feature" : "Feature → mainline"}
-                        </h3>
-                        <Badge value={m.status} />
-                      </div>
-                      <div className="run-table">
-                        {detail.runs
-                          .filter((r: RecordData) => r.merge_id === m.id)
-                          .slice()
-                          .reverse()
-                          .map((r: RecordData) => (
-                            <RunControls
-                              key={r.id}
-                              run={r}
-                              perform={(method, payload) =>
-                                command(method, r.id, payload).catch(() => {})
-                              }
-                              inspect={() =>
-                                setView({
-                                  title: "Merge Run / Session / Resource",
-                                  body: pretty({
-                                    run: r,
-                                    session: detail.sessions.find(
-                                      (x: RecordData) => x.id === r.session_id,
-                                    ),
-                                    resources: detail.resources.filter(
-                                      (x: RecordData) => x.run_id === r.id,
-                                    ),
-                                  }),
-                                })
-                              }
-                            />
-                          ))}
-                      </div>
-                      <p className="mono">
-                        source {m.source}
-                        <br />
-                        expected target {m.expected_target}
-                        <br />
-                        candidate {m.candidate}
-                      </p>
-                      {m.change_request?.provider==="github"&&<p><a href={`https://github.com/${m.change_request.repository}/pull/${m.change_request.external_id}`} target="_blank" rel="noopener noreferrer">GitHub PR #{m.change_request.external_id}</a> · 本地 {m.committed_revision?"已接纳":"尚未接纳"} · 远端 {m.status==="completed"?"已核验 merged":m.committed_revision?"同步 / merged 核对中":"等待接纳"}</p>}
-                      {detail.merge_progress?.find((p:RecordData)=>p.merge===m.id)?.remote_operations?.filter((op:RecordData)=>op.status!=="completed").map((op:RecordData)=><p key={op.id} className="notice">{op.action.kind} · {op.status} · {op.reason}{op.status==="needs_reconciliation"&&<button onClick={()=>command("repository.reconcile",op.id,{},op.revision).catch(()=>{})}>核对远端操作</button>}</p>)}
-                      {detail.advances?.find(
-                        (intent: RecordData) => intent.id === m.id,
-                      )?.status === "needs_reconciliation" && (
-                        <p className="error">
-                          {
-                            detail.advances.find(
-                              (intent: RecordData) => intent.id === m.id,
-                            ).reason
+                      ))
+                  )}
+                  {pager("attempts")}
+                  {pager("runs")}
+                </section>
+                <section
+                  className="panel"
+                  hidden={!["delivery"].includes(executionTab)}
+                >
+                  <div className="panel-heading">
+                    <h2>交付与 Review</h2>
+                    <span className="muted">
+                      冻结版本 · 逐项证据 · 人类例外
+                    </span>
+                  </div>
+                  {detail.deliveries.length === 0 ? (
+                    <Empty>执行结束后提交正式交付。</Empty>
+                  ) : (
+                    detail.deliveries.map(deliveryCard)
+                  )}
+                  {pager("deliveries")}
+                </section>
+                <section
+                  className="panel"
+                  hidden={!["delivery"].includes(executionTab)}
+                >
+                  <div className="panel-heading">
+                    <h2>Merge 候选</h2>
+                    {project?.execution_mode === "live" && (
+                      <button
+                        disabled={busy}
+                        onClick={async () => {
+                          try {
+                            const policy = await rpc("github.diagnose", {
+                              repository:
+                                project.workspace_definition.repository,
+                              branch: project.workspace_definition.mainline,
+                            });
+                            if (!policy.head)
+                              throw new Error("远端主干版本不可用");
+                            await command(
+                              "repository.refresh",
+                              project.id,
+                              { revision: policy.head },
+                              project.revision,
+                            );
+                          } catch (error) {
+                            setError(String(error));
                           }
-                        </p>
-                      )}
-                      <div className="actions">
-                        {act(m.id, "merge.reconcile", "核对合入结果", () =>
-                          command("merge.reconcile", m.id).catch(() => {}),
-                        )}
-                        {act(
-                          m.id,
-                          "merge.apply",
-                          "接纳候选并同步 GitHub",
-                          () => command("merge.apply", m.id).catch(() => {}),
-                          true,
-                        )}
+                        }}
+                      >
+                        核对并快进主干
+                      </button>
+                    )}
+                    <GitMerge size={18} />
+                  </div>
+                  {detail.mainline_sync?.map((operation: RecordData) => (
+                    <p className="notice" key={operation.id}>
+                      主干同步 · {operation.status} · {operation.reason}
+                      {operation.status === "needs_reconciliation" && (
                         <button
+                          disabled={busy}
                           onClick={() =>
-                            setView({
-                              title: "Merge 固定源/目标与验证 Runs",
-                              body: pretty({
-                                merge: m,
-                                advance: detail.advances?.find(
-                                  (intent: RecordData) => intent.id === m.id,
-                                ),
-                                runs: detail.runs.filter(
-                                  (r: RecordData) => r.merge_id === m.id,
-                                ),
-                              }),
-                            })
+                            command(
+                              "repository.reconcile",
+                              operation.id,
+                              {},
+                              operation.revision,
+                            ).catch(() => {})
                           }
                         >
-                          候选与验证
+                          核对主干同步
                         </button>
-                        <span className="muted">
-                          {detail.allowed_actions[m.id]?.blocked.join(" · ")}
-                        </span>
-                      </div>
-                    </article>
-                  ))
-                )}
-                {pager("merges")}
-              </section>
-              <section className="panel" aria-label="外部操作核对">
-                <h2>外部操作与资源核对</h2>
-                {(detail.effects || []).map((effect: RecordData) => (
-                  <div className="document-row" key={effect.id}>
-                    <div>
-                      <strong>
-                        {effect.kind} · {short(effect.run_id)}
-                      </strong>
-                      <p>
-                        {effect.status} · {effect.reason}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() =>
-                        setView({
-                          title: "外部调用意图与回执",
-                          body: pretty(effect),
-                        })
-                      }
-                    >
-                      查看回执
-                    </button>
-                    {allowed(effect.id, "effect.reconcile") && (
-                      <button
-                        onClick={() =>
-                          command("effect.reconcile", effect.id).catch(() => {})
-                        }
-                      >
-                        核对外部结果
-                      </button>
-                    )}
-                    {allowed(effect.id, "effect.retry_cleanup") && (
-                      <button
-                        onClick={() =>
-                          command("effect.retry_cleanup", effect.id).catch(
-                            () => {},
+                      )}
+                    </p>
+                  ))}
+                  {detail.merges.length === 0 ? (
+                    <Empty>接受交付后，申请候选并验证。</Empty>
+                  ) : (
+                    detail.merges.map((m: RecordData) => (
+                      <article className="delivery" key={m.id}>
+                        <div className="row">
+                          <h3>
+                            {m.task_id
+                              ? "Task → Feature"
+                              : "Feature → mainline"}
+                          </h3>
+                          <Badge value={m.status} />
+                        </div>
+                        <div className="run-table">
+                          {detail.runs
+                            .filter((r: RecordData) => r.merge_id === m.id)
+                            .slice()
+                            .reverse()
+                            .map((r: RecordData) => (
+                              <RunControls
+                                key={r.id}
+                                run={r}
+                                perform={(method, payload) =>
+                                  command(method, r.id, payload).catch(() => {})
+                                }
+                                inspect={() =>
+                                  setView({
+                                    title: "Merge Run / Session / Resource",
+                                    body: pretty({
+                                      run: r,
+                                      session: detail.sessions.find(
+                                        (x: RecordData) =>
+                                          x.id === r.session_id,
+                                      ),
+                                      resources: detail.resources.filter(
+                                        (x: RecordData) => x.run_id === r.id,
+                                      ),
+                                    }),
+                                  })
+                                }
+                              />
+                            ))}
+                        </div>
+                        <p className="mono">
+                          source {m.source}
+                          <br />
+                          expected target {m.expected_target}
+                          <br />
+                          candidate {m.candidate}
+                        </p>
+                        {m.change_request?.provider === "github" && (
+                          <p>
+                            <a
+                              href={`https://github.com/${m.change_request.repository}/pull/${m.change_request.external_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              GitHub PR #{m.change_request.external_id}
+                            </a>{" "}
+                            · 本地{" "}
+                            {m.committed_revision ? "已接纳" : "尚未接纳"} ·
+                            远端{" "}
+                            {m.status === "completed"
+                              ? "已核验 merged"
+                              : m.committed_revision
+                                ? "同步 / merged 核对中"
+                                : "等待接纳"}
+                          </p>
+                        )}
+                        {detail.merge_progress
+                          ?.find((p: RecordData) => p.merge === m.id)
+                          ?.remote_operations?.filter(
+                            (op: RecordData) => op.status !== "completed",
                           )
-                        }
-                      >
-                        重试资源清理
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {pager("effects")}
-              </section>
-            </>
-          )}
-          {tab === "documents" && f && repositoryReady && (
-            <>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>需求 / 设计 / 测试 / 文档修订</h2>
-                  {act(f.id, "document.revise", "新建修订", () =>
-                    show({
-                      title: "保存不可变文档修订 · 旧证据将失效",
-                      method: "document.revise",
-                      target: f.id,
-                      fields: [
-                        {
-                          key: "kind",
-                          label: "类型",
-                          type: "select",
-                          options: ["requirement", "design", "test", "doc"].map(
-                            (value) => ({ value, label: labels[value] }),
-                          ),
-                        },
-                        { key: "title", label: "标题" },
-                        {
-                          key: "acceptance",
-                          label: "需求验收条目（每行：标识 | 可验证条件）",
-                          type: "textarea",
-                          optional: true,
-                        },
-                        {
-                          key: "verifies",
-                          label: "测试验证的验收条目标识（逗号分隔）",
-                          optional: true,
-                        },
-                        {
-                          key: "task_id",
-                          label: "Task ID（可空）",
-                          optional: true,
-                        },
-                        {
-                          key: "body",
-                          label: "Markdown 内容",
-                          type: "textarea",
-                        },
-                      ],
-                    }),
+                          .map((op: RecordData) => (
+                            <p key={op.id} className="notice">
+                              {op.action.kind} · {op.status} · {op.reason}
+                              {op.status === "needs_reconciliation" &&
+                                op.reason !== "superseded_target" && (
+                                  <button
+                                    onClick={() =>
+                                      command(
+                                        "repository.reconcile",
+                                        op.id,
+                                        {},
+                                        op.revision,
+                                      ).catch(() => {})
+                                    }
+                                  >
+                                    核对远端操作
+                                  </button>
+                                )}
+                            </p>
+                          ))}
+                        {detail.advances?.find(
+                          (intent: RecordData) => intent.id === m.id,
+                        )?.status === "needs_reconciliation" && (
+                          <p className="error">
+                            {
+                              detail.advances.find(
+                                (intent: RecordData) => intent.id === m.id,
+                              ).reason
+                            }
+                          </p>
+                        )}
+                        <div className="actions">
+                          {act(m.id, "merge.reconcile", "核对合入结果", () =>
+                            command("merge.reconcile", m.id).catch(() => {}),
+                          )}
+                          {act(
+                            m.id,
+                            "merge.apply",
+                            "接纳候选并同步 GitHub",
+                            () => command("merge.apply", m.id).catch(() => {}),
+                            true,
+                          )}
+                          <button
+                            onClick={() =>
+                              setView({
+                                title: "Merge 固定源/目标与验证 Runs",
+                                body: pretty({
+                                  merge: m,
+                                  advance: detail.advances?.find(
+                                    (intent: RecordData) => intent.id === m.id,
+                                  ),
+                                  runs: detail.runs.filter(
+                                    (r: RecordData) => r.merge_id === m.id,
+                                  ),
+                                }),
+                              })
+                            }
+                          >
+                            候选与验证
+                          </button>
+                          <span className="muted">
+                            {detail.allowed_actions[m.id]?.blocked.join(" · ")}
+                          </span>
+                        </div>
+                      </article>
+                    ))
                   )}
-                </div>
-                {detail.documents.length === 0 ? (
-                  <Empty>先输入需求，或启动规划生成可编辑建议。</Empty>
-                ) : (
-                  detail.documents.map((d: RecordData) => (
-                    <div className="document-row" key={d.id}>
-                      <FileText size={19} />
+                  {pager("merges")}
+                </section>
+                <section
+                  className="panel"
+                  hidden={executionTab !== "execution"}
+                  aria-label="外部操作核对"
+                >
+                  <h2>外部操作与资源核对</h2>
+                  {(detail.effects || []).map((effect: RecordData) => (
+                    <div className="document-row" key={effect.id}>
                       <div>
-                        <strong>{d.title}</strong>
+                        <strong>
+                          {effect.kind} · {short(effect.run_id)}
+                        </strong>
                         <p>
-                          {labels[d.kind]} v{d.version} · {d.origin} ·
-                          Requirement {short(d.requirement_id)} → Design{" "}
-                          {short(d.design_id)}
-                          {d.task_id && ` → Task ${short(d.task_id)}`}
-                          {d.verifies?.length > 0 &&
-                            ` · 验证 ${d.verifies.join("、")}`}
-                          {d.acceptance?.length > 0 &&
-                            ` · 验收条目 ${d.acceptance.map((c: RecordData) => c.key).join("、")}`}
+                          {effect.status} · {effect.reason}
                         </p>
                       </div>
                       <button
                         onClick={() =>
                           setView({
-                            title: `${d.title} · v${d.version}`,
-                            body: d.body + "\n\n---\n" + pretty(d),
+                            title: "外部调用意图与回执",
+                            body: pretty(effect),
                           })
                         }
                       >
-                        阅读
+                        查看回执
                       </button>
-                      {act(f.id, "document.revise", "修订", () =>
-                        show({
-                          title: "修订文档 · 旧证据将失效",
-                          method: "document.revise",
-                          target: f.id,
-                          payload: {
-                            kind: d.kind,
-                            task_id: d.task_id,
-                            title: d.title,
-                          },
-                          fields: [
-                            {
-                              key: "acceptance",
-                              label: "需求验收条目（每行：标识 | 可验证条件）",
-                              type: "textarea",
-                              optional: true,
-                              value: (d.acceptance || [])
-                                .map(
-                                  (c: RecordData) =>
-                                    `${c.key} | ${c.description}`,
-                                )
-                                .join("\n"),
-                            },
-                            {
-                              key: "verifies",
-                              label: "测试验证的验收条目标识（逗号分隔）",
-                              optional: true,
-                              value: (d.verifies || []).join(","),
-                            },
-                            {
-                              key: "body",
-                              label: "Markdown 内容",
-                              type: "textarea",
-                              value: d.body,
-                            },
-                          ],
-                        }),
+                      {allowed(effect.id, "effect.reconcile") && (
+                        <button
+                          onClick={() =>
+                            command("effect.reconcile", effect.id).catch(
+                              () => {},
+                            )
+                          }
+                        >
+                          核对外部结果
+                        </button>
+                      )}
+                      {allowed(effect.id, "effect.retry_cleanup") && (
+                        <button
+                          onClick={() =>
+                            command("effect.retry_cleanup", effect.id).catch(
+                              () => {},
+                            )
+                          }
+                        >
+                          重试资源清理
+                        </button>
                       )}
                     </div>
-                  ))
-                )}
-                {pager("documents")}
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>动态 Context 与不可变 Snapshot</h2>
-                  {act(f.id, "snapshot.save", "保存 Feature Snapshot", () =>
-                    command("snapshot.save", f.id).catch(() => {}),
+                  ))}
+                  {pager("effects")}
+                </section>
+              </>
+            )}
+          {tab === "execution" &&
+            ["documents", "context", "tests"].includes(executionTab) &&
+            f &&
+            repositoryReady && (
+              <>
+                <section
+                  className="panel"
+                  hidden={executionTab !== "documents"}
+                >
+                  <div className="panel-heading">
+                    <h2>需求 / 设计 / 测试 / 文档修订</h2>
+                    {act(f.id, "document.revise", "新建修订", () =>
+                      show({
+                        title: "保存不可变文档修订 · 旧证据将失效",
+                        method: "document.revise",
+                        target: f.id,
+                        fields: [
+                          {
+                            key: "kind",
+                            label: "类型",
+                            type: "select",
+                            options: [
+                              "requirement",
+                              "design",
+                              "test",
+                              "doc",
+                            ].map((value) => ({ value, label: labels[value] })),
+                          },
+                          { key: "title", label: "标题" },
+                          {
+                            key: "acceptance",
+                            label: "需求验收条目（每行：标识 | 可验证条件）",
+                            type: "textarea",
+                            optional: true,
+                          },
+                          {
+                            key: "verifies",
+                            label: "测试验证的验收条目标识（逗号分隔）",
+                            optional: true,
+                          },
+                          {
+                            key: "task_id",
+                            label: "Task ID（可空）",
+                            optional: true,
+                          },
+                          {
+                            key: "body",
+                            label: "Markdown 内容",
+                            type: "textarea",
+                          },
+                        ],
+                      }),
+                    )}
+                  </div>
+                  {detail.documents.length === 0 ? (
+                    <Empty>先输入需求，或启动规划生成可编辑建议。</Empty>
+                  ) : (
+                    detail.documents
+                      .filter(
+                        (d: RecordData) =>
+                          !taskFilter || !d.task_id || d.task_id === taskFilter,
+                      )
+                      .map((d: RecordData) => (
+                        <div className="document-row" key={d.id}>
+                          <FileText size={19} />
+                          <div>
+                            <strong>{d.title}</strong>
+                            <p>
+                              {labels[d.kind]} v{d.version} · {d.origin} ·
+                              Requirement {short(d.requirement_id)} → Design{" "}
+                              {short(d.design_id)}
+                              {d.task_id && ` → Task ${short(d.task_id)}`}
+                              {d.verifies?.length > 0 &&
+                                ` · 验证 ${d.verifies.join("、")}`}
+                              {d.acceptance?.length > 0 &&
+                                ` · 验收条目 ${d.acceptance.map((c: RecordData) => c.key).join("、")}`}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() =>
+                              setView({
+                                title: `${d.title} · v${d.version}`,
+                                body: d.body + "\n\n---\n" + pretty(d),
+                              })
+                            }
+                          >
+                            阅读
+                          </button>
+                          {act(f.id, "document.revise", "修订", () =>
+                            show({
+                              title: "修订文档 · 旧证据将失效",
+                              method: "document.revise",
+                              target: f.id,
+                              payload: {
+                                kind: d.kind,
+                                task_id: d.task_id,
+                                title: d.title,
+                              },
+                              fields: [
+                                {
+                                  key: "acceptance",
+                                  label:
+                                    "需求验收条目（每行：标识 | 可验证条件）",
+                                  type: "textarea",
+                                  optional: true,
+                                  value: (d.acceptance || [])
+                                    .map(
+                                      (c: RecordData) =>
+                                        `${c.key} | ${c.description}`,
+                                    )
+                                    .join("\n"),
+                                },
+                                {
+                                  key: "verifies",
+                                  label: "测试验证的验收条目标识（逗号分隔）",
+                                  optional: true,
+                                  value: (d.verifies || []).join(","),
+                                },
+                                {
+                                  key: "body",
+                                  label: "Markdown 内容",
+                                  type: "textarea",
+                                  value: d.body,
+                                },
+                              ],
+                            }),
+                          )}
+                        </div>
+                      ))
                   )}
-                </div>
-                {detail.contexts.map((c: RecordData) => (
-                  <div className="document-row" key={c.id}>
-                    <Terminal size={18} />
-                    <div>
-                      <strong>
-                        {c.owner_id === f.id
-                          ? "Feature Context"
-                          : `Task Context · ${short(c.owner_id)}`}
-                      </strong>
-                      <p>
-                        revision {c.revision} · {c.content.slice(0, 100)}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() =>
-                        show({
-                          title: "更新独立 Context",
-                          method: "context.update",
-                          target: c.id,
-                          fields: [
-                            {
-                              key: "content",
-                              label: "上下文内容",
-                              type: "textarea",
-                              value: c.content,
-                            },
-                          ],
-                        })
-                      }
-                    >
-                      编辑
-                    </button>
-                    <button
-                      onClick={() =>
-                        command("snapshot.save", c.owner_id).catch(() => {})
-                      }
-                    >
-                      保存 Snapshot
-                    </button>
+                  {pager("documents")}
+                </section>
+                <section className="panel" hidden={executionTab !== "context"}>
+                  <div className="panel-heading">
+                    <h2>动态 Context 与不可变 Snapshot</h2>
+                    {act(f.id, "snapshot.save", "保存 Feature Snapshot", () =>
+                      command("snapshot.save", f.id).catch(() => {}),
+                    )}
                   </div>
-                ))}
-                {detail.snapshots.map((s: RecordData) => (
-                  <div className="document-row" key={s.id}>
-                    <Copy size={18} />
-                    <div>
-                      <strong>
-                        {s.kind} Snapshot · {short(s.id)}
-                      </strong>
-                      <p>
-                        {s.task_id ? "Task" : "Feature"} · {s.documents.length}{" "}
-                        个固定文档 · inherited {short(s.inherited_from)}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() =>
-                        setView({
-                          title: "不可变 Snapshot / 重建引用",
-                          body: pretty(s),
-                        })
-                      }
-                    >
-                      查看
-                    </button>
-                  </div>
-                ))}
-                {pager("tasks")}
-                {pager("snapshots")}
-                {detail.snapshots.length > 1 && (
-                  <div className="snapshot-compare">
-                    <label>
-                      快照 A
-                      <select
-                        value={snapshotA}
-                        onChange={(e) => setSnapshotA(e.target.value)}
+                  {detail.contexts
+                    .filter(
+                      (c: RecordData) =>
+                        !taskFilter || c.owner_id === taskFilter,
+                    )
+                    .map((c: RecordData) => (
+                      <div className="document-row" key={c.id}>
+                        <Terminal size={18} />
+                        <div>
+                          <strong>
+                            {c.owner_id === f.id
+                              ? "Feature Context"
+                              : `Task Context · ${short(c.owner_id)}`}
+                          </strong>
+                          <p>
+                            revision {c.revision} · {c.content.slice(0, 100)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
+                            show({
+                              title: "更新独立 Context",
+                              method: "context.update",
+                              target: c.id,
+                              fields: [
+                                {
+                                  key: "content",
+                                  label: "上下文内容",
+                                  type: "textarea",
+                                  value: c.content,
+                                },
+                              ],
+                            })
+                          }
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() =>
+                            command("snapshot.save", c.owner_id).catch(() => {})
+                          }
+                        >
+                          保存 Snapshot
+                        </button>
+                      </div>
+                    ))}
+                  {detail.snapshots
+                    .filter(
+                      (s: RecordData) =>
+                        !taskFilter || s.task_id === taskFilter,
+                    )
+                    .map((s: RecordData) => (
+                      <div className="document-row" key={s.id}>
+                        <Copy size={18} />
+                        <div>
+                          <strong>
+                            {s.kind} Snapshot · {short(s.id)}
+                          </strong>
+                          <p>
+                            {s.task_id ? "Task" : "Feature"} ·{" "}
+                            {s.documents.length} 个固定文档 · inherited{" "}
+                            {short(s.inherited_from)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
+                            setView({
+                              title: "不可变 Snapshot / 重建引用",
+                              body: pretty(s),
+                            })
+                          }
+                        >
+                          查看
+                        </button>
+                      </div>
+                    ))}
+                  {pager("tasks")}
+                  {pager("snapshots")}
+                  {detail.snapshots.length > 1 && (
+                    <div className="snapshot-compare">
+                      <label>
+                        快照 A
+                        <select
+                          value={snapshotA}
+                          onChange={(e) => setSnapshotA(e.target.value)}
+                        >
+                          <option value="">请选择</option>
+                          {detail.snapshots
+                            .filter(
+                              (s: RecordData) =>
+                                !taskFilter || s.task_id === taskFilter,
+                            )
+                            .map((s: RecordData) => (
+                              <option value={s.id} key={s.id}>
+                                {s.kind} · {short(s.id)}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <label>
+                        快照 B
+                        <select
+                          value={snapshotB}
+                          onChange={(e) => setSnapshotB(e.target.value)}
+                        >
+                          <option value="">请选择</option>
+                          {detail.snapshots
+                            .filter(
+                              (s: RecordData) =>
+                                !taskFilter || s.task_id === taskFilter,
+                            )
+                            .map((s: RecordData) => (
+                              <option value={s.id} key={s.id}>
+                                {s.kind} · {short(s.id)}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <button
+                        disabled={!snapshotA || !snapshotB}
+                        onClick={() =>
+                          setView({
+                            title: "Snapshot 比较",
+                            body: pretty({
+                              A: detail.snapshots.find(
+                                (s: RecordData) => s.id === snapshotA,
+                              ),
+                              B: detail.snapshots.find(
+                                (s: RecordData) => s.id === snapshotB,
+                              ),
+                            }),
+                          })
+                        }
                       >
-                        <option value="">请选择</option>
-                        {detail.snapshots.map((s: RecordData) => (
-                          <option value={s.id} key={s.id}>
-                            {s.kind} · {short(s.id)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      快照 B
-                      <select
-                        value={snapshotB}
-                        onChange={(e) => setSnapshotB(e.target.value)}
-                      >
-                        <option value="">请选择</option>
-                        {detail.snapshots.map((s: RecordData) => (
-                          <option value={s.id} key={s.id}>
-                            {s.kind} · {short(s.id)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      disabled={!snapshotA || !snapshotB}
-                      onClick={() =>
-                        setView({
-                          title: "Snapshot 比较",
-                          body: pretty({
-                            A: detail.snapshots.find(
-                              (s: RecordData) => s.id === snapshotA,
-                            ),
-                            B: detail.snapshots.find(
-                              (s: RecordData) => s.id === snapshotB,
-                            ),
-                          }),
-                        })
-                      }
-                    >
-                      比较
-                    </button>
-                  </div>
-                )}
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>Artifact 文件与报告</h2>
-                  <span className="muted">已封存 · SHA256 校验</span>
-                </div>
-                {detail.artifacts.map((a: RecordData) => (
-                  <div className="document-row" key={a.id}>
-                    <FileText size={16} />
-                    <div>
-                      <strong>{a.relative_path}</strong>
-                      <p>SHA256 {a.sha256}</p>
+                        比较
+                      </button>
                     </div>
-                    <button onClick={() => openArtifact(a.id)}>打开</button>
+                  )}
+                </section>
+                <section className="panel">
+                  <div className="panel-heading">
+                    <h2>Artifact 文件与报告</h2>
+                    <span className="muted">已封存 · SHA256 校验</span>
                   </div>
-                ))}
-                {pager("artifacts")}
-              </section>
-            </>
+                  {detail.artifacts.map((a: RecordData) => (
+                    <div className="document-row" key={a.id}>
+                      <FileText size={16} />
+                      <div>
+                        <strong>{a.relative_path}</strong>
+                        <p>SHA256 {a.sha256}</p>
+                      </div>
+                      <button onClick={() => openArtifact(a.id)}>打开</button>
+                    </div>
+                  ))}
+                  {pager("artifacts")}
+                </section>
+              </>
+            )}
+          {tab === "execution" && !f && (
+            <section className="panel">
+              <h2>Feature 工作队列{workFilter ? ` · ${workFilter}` : ""}</h2>
+              {features.map((feature) => (
+                <button
+                  className="feature-row"
+                  key={feature.id}
+                  onClick={() => setFeatureId(feature.id)}
+                >
+                  {feature.title} · {labels[feature.status] || feature.status}
+                </button>
+              ))}
+              <Pagination
+                page={featurePage}
+                setPage={setFeaturePage}
+                hasMore={(featurePage + 1) * 50 < (data?.total_features || 0)}
+              />
+            </section>
           )}
-          {["workflow", "documents"].includes(tab) && !f && (
-            <Empty>选择一个 Feature 后查看工作内容。</Empty>
+          {tab === "workflows" && (
+            <WorkflowManager
+              key={projectId || "global"}
+              request={rpc}
+              project={project}
+              refresh={load}
+            />
           )}
           {data && tab === "definitions" && (
             <>
+              <AgentCatalog
+                request={rpc}
+                project={project}
+                installations={data.runtime_installations || []}
+              />
               <div className="notice">
-                定义修订不可变。克隆生成新版本，再显式绑定到 Project、Feature 或
-                Task；旧 Attempt 的锁保持原版本。
+                定义修订不可变。克隆生成新版本，再显式用于 Project
+                默认配置；Feature 创建后始终保持自己的配置锁。
               </div>
-              {["agent", "skill", "spec", "standard"].map((family) => (
+              {["skill", "spec", "standard"].map((family) => (
                 <section className="panel" key={family}>
                   <div className="panel-heading">
                     <h2>
@@ -1810,7 +2445,22 @@ function App() {
               </section>
             </>
           )}
-          {data && repositoryReady && tab === "history" && (
+          {data && tab === "history" && (
+            <label>
+              历史范围
+              <select
+                value={historyScope}
+                onChange={(e) => {
+                  setHistoryScope(e.target.value);
+                  setHistoryPage(0);
+                }}
+              >
+                <option value="project">当前项目</option>
+                <option value="global">Global 配置与发布</option>
+              </select>
+            </label>
+          )}
+          {data && tab === "history" && (
             <section className="panel">
               <div className="panel-heading">
                 <h2>持久化事件</h2>
@@ -1891,8 +2541,20 @@ function App() {
                     refresh={load}
                   />
                 )}
-                {project&&<RuntimePreferences key={project.id} project={project} installations={data.runtime_installations||[]} request={rpc} refresh={load}/>}
-                <PermissionSettings request={rpc} project={project ?? undefined} refresh={load} />
+                {project && (
+                  <RuntimePreferences
+                    key={project.id}
+                    project={project}
+                    installations={data.runtime_installations || []}
+                    request={rpc}
+                    refresh={load}
+                  />
+                )}
+                <PermissionSettings
+                  request={rpc}
+                  project={project ?? undefined}
+                  refresh={load}
+                />
                 <RuntimeSettings
                   provider={data.default_harness || "codex"}
                   installations={data.runtime_installations || []}
@@ -1933,7 +2595,7 @@ function App() {
                       </p>
                     </div>
                     <div className="actions">
-                      <button onClick={() => editBinding(project)}>
+                      <button onClick={() => setTab("workflows")}>
                         默认绑定
                       </button>
                       <button
@@ -2017,13 +2679,13 @@ function App() {
                 ))}
               </section>
               <div className="notice">
-                Web UI 通过本地 Rust Host 运行。真实工程需配置 Harness、Docker 和 GitHub；平台验收记录见文档。
+                Web UI 通过本地 Rust Host 运行。真实工程需配置 Harness、Docker
+                和 GitHub；平台验收记录见文档。
               </div>
             </>
           )}
           <footer>
-            DevDesk 0.2{" "}
-            <span>本地工程内核 · 持久化历史 · GitHub 工程接入</span>
+            DevDesk 0.2 <span>本地工程内核 · 持久化历史 · GitHub 工程接入</span>
           </footer>
         </main>
       </div>
@@ -2083,19 +2745,21 @@ function Metric({
   title,
   value,
   icon,
+  onClick,
 }: {
   title: string;
   value: number;
   icon: React.ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <article className="metric">
+    <button className="metric" onClick={onClick}>
       <div>
         <span>{title}</span>
         <strong>{value.toString().padStart(2, "0")}</strong>
       </div>
       <div className="metric-icon">{icon}</div>
-    </article>
+    </button>
   );
 }
 function Pagination({

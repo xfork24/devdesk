@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+import os
 """Real application repository registration and feature worktree creation; no remote writes."""
 import argparse,http.cookiejar,json,time,urllib.request,uuid,subprocess
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--output',type=Path,default=Path('docs/plans/real-engineering-integration/R4-repository.json'));p.add_argument('--reports',type=Path,default=Path('docs/plans/real-engineering-integration'));p.add_argument('--github-repo',default='xfork24/devdesk-integration-test');a=p.parse_args();a.output=a.reports/a.output.name if a.output.parent==Path('docs/plans/real-engineering-integration') else a.output
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--output',type=Path,default=Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live'))/'R4-repository.json');p.add_argument('--reports',type=Path,default=Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live')));p.add_argument('--github-repo',default='xfork24/devdesk-integration-test');a=p.parse_args();a.output=a.reports/a.output.name if a.output.parent==Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live')) else a.output
 c=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));c.open(a.url+'/').close()
 def rpc(method,params=None):
  request=urllib.request.Request(a.url+'/rpc',data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params or {}}).encode(),headers={'Content-Type':'application/json'});result=json.load(c.open(request,timeout=40))

@@ -92,6 +92,19 @@ impl Engine {
         map: &BTreeMap<String, Id>,
     ) -> Result<()> {
         let stages: Vec<(&str, AgentRole, ToolPolicy)> = match phase {
+            "requirement_definition" => vec![(
+                "requirement_validate",
+                AgentRole::Analyst,
+                ToolPolicy::ReadOnly,
+            )],
+            "solution_planning" => vec![
+                ("plan_validate", AgentRole::Architect, ToolPolicy::ReadOnly),
+                (
+                    "test_plan_validate",
+                    AgentRole::Tester,
+                    ToolPolicy::ReadOnly,
+                ),
+            ],
             "planning" => vec![
                 ("research", AgentRole::Analyst, ToolPolicy::ReadOnly),
                 ("requirement", AgentRole::Analyst, ToolPolicy::ReadOnly),
@@ -115,10 +128,29 @@ impl Engine {
             ],
             _ => return Err(err("blocked", "未知真实 Attempt 阶段")),
         };
+        let mut stages: Vec<(String, AgentRole, ToolPolicy)> = stages
+            .into_iter()
+            .map(|(n, r, p)| (n.into(), r, p))
+            .collect();
+        if let Some(recipe) = self.workflow_recipe(s, owner, phase) {
+            stages = recipe
+                .into_iter()
+                .map(|n| {
+                    let policy = if n.key == "test_author" {
+                        ToolPolicy::TestWrite
+                    } else if n.key == "implement" {
+                        ToolPolicy::TaskWrite
+                    } else {
+                        ToolPolicy::ReadOnly
+                    };
+                    (n.key, n.role, policy)
+                })
+                .collect();
+        }
         require(map.len() == stages.len(), "真实阶段 Session 映射不完整")?;
         for (node, role, policy) in stages {
             let sid = map
-                .get(node)
+                .get(&node)
                 .ok_or_else(|| err("blocked", "缺少阶段 Session"))?;
             let session = s
                 .sessions
@@ -302,7 +334,16 @@ impl Engine {
                 };
                 let diff = self.git.diff(&code.context, &base, &code.revision)?;
                 let provenance = self.delivery_provenance(s, d)?;
-                let input=serde_json::to_string(&json!({"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":diff},"frozen_inputs":d.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|v|v.id==r.binding.standard||v.family=="spec").collect::<Vec<_>>(),"code":code,"contract":"You are the independent Reviewer, not the author. Inspect the frozen Delivery, documents, actual Run evidence and code read-only. Assess only this delivery boundary: requirement and plan precede implementation, so absence of planned implementation is expected there. Return ONLY JSON {summary:string,checks:[{key:string,passed:boolean,evidence:string}]} with exactly four keys traceability, scope, tests, failure_paths. Base decisions on supplied facts and actual code where relevant. No files may be modified. Failed checks produce changes_requested; all checks passed produce pass. Never invent actual test/PR facts."})).map_err(|e|err("serialization",e.to_string()))?;
+                let boundary = if d.task_id.is_some() {
+                    "This is a TASK boundary: assess only this TaskScope acceptance and its own Task TestRecipe. Feature TestPlan is context for later Feature closure, NOT required Task evidence. Other Tasks and independent Feature-level suites need not exist yet. A Task's own real Red, Green and verify must be present; do not demand Feature-wide Red/Green or code outside this Task."
+                } else if d.kind == "requirement" {
+                    "This is REQUIREMENT delivery only. Evaluate clarity, verifiable acceptance and failure paths. Design, TaskPlan, TestPlan, implementation and executable test results are deliberately not required yet."
+                } else if d.kind == "plan" {
+                    "This is SOLUTION PLANNING delivery. Evaluate adopted Requirement/Design/TaskPlan/TestPlan and recipes. Actual implementation and passing executable tests belong to later Task execution, not this boundary."
+                } else {
+                    "This is FEATURE CLOSURE or its mainline candidate: assess the full Feature test recipe and fixed accepted Task source deliveries. Feature closure does not require a new failing TDD Red; Red/Green belongs to each Task's original implementation."
+                };
+                let input=serde_json::to_string(&json!({"review_boundary":boundary,"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":diff},"frozen_inputs":d.documents.iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).collect::<Vec<_>>(),"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|v|v.id==r.binding.standard||v.family=="spec").collect::<Vec<_>>(),"code":code,"contract":"You are the independent Reviewer, not the author. Inspect the frozen Delivery, documents, actual Run evidence and code read-only. Assess only this delivery boundary: requirement and plan precede implementation, so absence of planned implementation is expected there. Return ONLY JSON {summary:string,checks:[{key:string,passed:boolean,evidence:string}]} with exactly four keys traceability, scope, tests, failure_paths. Base decisions on supplied facts and actual code where relevant. No files may be modified. Failed checks produce changes_requested; all checks passed produce pass. Never invent actual test/PR facts."})).map_err(|e|err("serialization",e.to_string()))?;
                 let all_documents: std::collections::BTreeSet<Id> = d
                     .documents
                     .iter()
@@ -331,7 +372,13 @@ impl Engine {
             )?;
             let documents = self.live_documents(s, r)?;
             require(
-                ["requirement", "design", "test"].iter().all(|kind| {
+                (if a.phase == "requirement_definition" {
+                    vec!["requirement"]
+                } else {
+                    vec!["requirement", "design", "test"]
+                })
+                .iter()
+                .all(|kind| {
                     documents
                         .iter()
                         .any(|id| s.documents.iter().any(|d| &d.id == id && d.kind == *kind))
@@ -1088,7 +1135,7 @@ impl Engine {
         if let Some(aid) = &old.attempt_id {
             let a = s.attempt(aid)?;
             require(
-                a.input_version == s.feature(&a.feature_id)?.input_version
+                s.attempt_inputs_current(&a)
                     && ![Status::Accepted, Status::Rejected, Status::Cancelled].contains(&a.status),
                 "Attempt 已终结或输入变化，请新建执行",
             )?;

@@ -133,3 +133,38 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 `project.update` 的 payload 可包含 `permission_overrides`；Agent profile 同名字段通过 `agent.revise` 创建新角色修订。`session.open` payload 支持本次 `permission_overrides`，客户端不能提供解析后的 binding。字段含义见 `schemas/permission.schema.json` 和 `schemas/rpc.schema.json`。
 
 `query.session` 的 RuntimeBinding 与各 RuntimeExecution 返回冻结权限；旧历史的缺失值保持 null，不伪造既有执行保证。独立测试的策略明确标记无模型连接，Sandbox 禁网与 Harness 工具禁网不会混为一谈。
+
+## v0.3 Workflow 与 Agent 组合接口
+
+仍使用 JSON-RPC v1 和 Command 信封。配置的 id 是精确修订 ID，definition_id 是跨修订稳定身份；version 不等于用于 CAS 的 revision。Scope 为 `{kind:"global"}` 或 `{kind:"project",project_id}`；Feature Scope 由内核建立锁和运行事实。
+
+| 接口 | 主要参数及结果 |
+|---|---|
+| model/tool/harness/skill/spec/standard/agent.create | payload.name/scope/data；返回不可变 ConfigurationRecord。Agent 的 data 固定 model_ref/harness_ref/skills/tools/permissions、职责及指令 |
+| 上述类型 .revise | target 为旧修订，expected_revision；追加新版本，旧 AgentID 不变。agent 的旧无 data 接口仅为兼容 |
+| agent.instance.create | payload.agent_revision_id/name/scope；返回固定组合及经验范围的 AgentID |
+| configuration.retire | 精确修订 target、expected_revision、payload.reason；停止新绑定，保留历史 |
+| workflow.create | payload.name/scope；template_ref 或 document；返回可编辑草稿 |
+| workflow.draft.create | base_revision_id，可选新 Scope/name；同范围编辑形成同定义的新草稿，跨范围为派生定义 |
+| workflow.draft.update | 草稿 target、expected_revision、payload.document；冲突不覆盖本地内容，已发布草稿不能再编辑 |
+| workflow.publish | 草稿 target 及 revision；校验并追加不可变 Workflow 修订，幂等返回原结果，不自动换绑 Project |
+| project.configuration.update | Project target/revision，workflow_ref、standard_ref、agent_refs、可选 source_configuration_id；追加默认绑定，只影响后续 Feature |
+| feature.create | 指定 project_id/title，可选 configuration_revision_id/predecessor；live Project 必须有默认配置；Feature 与配置锁原子提交 |
+| workflow.pause / resume | 运行实例 target、revision；控制后续调度 |
+| workflow.step.confirm | 步骤实例 target、revision 和 input_hash；结果齐备且确认依据仍有效才推进 |
+| workflow.step.retry / rework | 步骤实例 target/revision；retry 受技术次数限制，rework 可指定 from_step 并生成新轮次 |
+| experience.restore | 当前 owner target/revision，agent_instance_id、snapshot_id、source_project_id；验证完整性，导入有来源上下文并开启新 Session |
+
+`query.configurations`、`query.agent_instances`、`query.workflows` 支持 offset/limit 和 Scope；活动项目查询使用 local:true/project_id，可见 Global 发布版本及本项目定义。`query.workflow`、`query.workflow_draft`、`query.agent_revision` 按精确 id 读取，不依赖列表当前页。
+
+`query.workflow_validation` / `query.workflow_preview` 接收 document 或 id，返回 valid/errors、document_hash、顺序及演练状态，不调用模型、Docker、Git、测试或 Merge。sample.outputs 和 sample.accepted 表示演练事实；通过预演不代表真实证据成立。动作及 DSL 结构见 schemas/rpc.schema.json，当前契约和 compiler_version 均为 1。
+
+`query.workflow_instance` / `query.workflow_actions` 返回运行记录、冻结计划/配置及可用动作。运行实例 ID、步骤 key、步骤实例 ID 和 round 分别表示不同概念；旧 round 的确认不能用于新 round。
+
+`query.agent_experience` 必须携带 agent_instance_id；可组合 project_name、feature_name、from/to（UTC 毫秒，边界包含）、offset/limit。带 snapshot_id/source_project_id 才读取具体快照和证据引用。目录保留工作时间及捕获时间、历史名称、稳定 ID、实际组合和可用性；正文哈希失败不返回假成功。跨项目读取不切换活动工程或启动源 worker。
+
+完整 Agent 会话只提交 agent 或 agent_instance_id，不允许附加独立 model/provider/installation_id/permission_overrides。Host 解析精确安装、组合和权限并写 RuntimeBinding.agent_configuration；不支持的映射在派发前拒绝。
+
+query.workspace 增加项目 summary、配置锁和流程实例投影；work_filter 可选择 tasks/running/waiting_review/waiting_confirmation/blocked，task_id 可定位分页外 Task。地址和前端筛选不是业务权限；直接 RPC 同样经过内核门禁。query.history 可通过 scope:"global" 读取全局配置与发布事件，默认工程历史仍按活动项目隔离。
+
+`repository.refresh` 使用 Project target/revision 和 payload.revision（已观察的远端精确 SHA）。命令只写 RefreshMainline 意图；适配器核对仓库、所属干净 worktree、旧本地头及远端 SHA 后执行 `merge --ff-only`，回执才更新主干事实。存在未核对的接纳或在途仓库操作时拒绝同步。旧主干候选及其确认失效，需从候选准备返工；旧 operation 保留并标记 superseded_target。`query.workspace.detail.mainline_sync` 返回近期同步状态，失败可按原 ID 使用 repository.reconcile，不重新解释旧候选。

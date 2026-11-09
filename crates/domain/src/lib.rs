@@ -12,6 +12,8 @@ mod agents;
 pub use agents::*;
 mod conversation;
 pub use conversation::*;
+mod governance;
+pub use governance::*;
 // Pure domain model: no I/O or adapter dependencies.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -58,7 +60,7 @@ pub fn err(code: &str, message: impl Into<String>) -> Error {
         message: message.into(),
     }
 }
-pub fn require(ok: bool, message: &str) -> Result<()> {
+pub fn require(ok: bool, message: impl Into<String>) -> Result<()> {
     if ok {
         Ok(())
     } else {
@@ -401,6 +403,8 @@ pub struct Event {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EngineeringState {
     #[serde(default)]
+    pub governance: Vec<ConfigurationRecord>,
+    #[serde(default)]
     pub permissions: Vec<Permission>,
     #[serde(default)]
     pub turns: Vec<ConversationTurn>,
@@ -494,11 +498,7 @@ impl EngineeringState {
         result
     }
     pub fn accepted(&self, d: &Delivery) -> bool {
-        if d.stale
-            || self
-                .feature(&d.feature_id)
-                .is_ok_and(|f| f.input_version != d.input_version)
-        {
+        if d.stale || !self.delivery_inputs_current(d) {
             return false;
         }
         let pass = self
@@ -522,6 +522,27 @@ impl EngineeringState {
         review_ok && tests_ok
     }
     pub fn planning_accepted(&self, fid: &str) -> bool {
+        if self.feature_configuration(fid).is_some() {
+            return self.deliveries.iter().any(|plan| {
+                plan.feature_id == fid
+                    && plan.kind == "plan"
+                    && self.accepted(plan)
+                    && self.deliveries.iter().any(|req| {
+                        req.feature_id == fid
+                            && req.kind == "requirement"
+                            && self.accepted(req)
+                            && req
+                                .documents
+                                .iter()
+                                .filter(|id| {
+                                    self.documents
+                                        .iter()
+                                        .any(|d| &d.id == *id && d.kind == "requirement")
+                                })
+                                .all(|id| plan.documents.contains(id))
+                    })
+            });
+        }
         self.feature(fid).is_ok_and(|f| {
             self.attempts.iter().any(|a| {
                 a.feature_id == fid
@@ -558,6 +579,10 @@ impl EngineeringState {
             require(
                 if a.phase == "planning" {
                     ["requirement", "plan"].contains(&d.kind.as_str())
+                } else if a.phase == "requirement_definition" {
+                    d.kind == "requirement"
+                } else if a.phase == "solution_planning" {
+                    d.kind == "plan"
                 } else {
                     d.kind == a.phase
                 },
@@ -576,9 +601,9 @@ impl EngineeringState {
         }
         if d.origin == Origin::External && d.kind == "closure" {
             let completed: Vec<_> = self
-                .tasks
-                .iter()
-                .filter(|t| t.feature_id == d.feature_id && t.status == Status::Completed)
+                .required_tasks(&d.feature_id)
+                .into_iter()
+                .filter(|t| t.status == Status::Completed)
                 .collect();
             require(
                 !completed.is_empty() && d.source_deliveries.len() == completed.len(),

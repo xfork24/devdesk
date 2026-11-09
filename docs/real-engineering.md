@@ -8,7 +8,9 @@ Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检�
 
 1. 点击 **打开 GitHub 项目**，填写 `owner/repo`（也接受 GitHub HTTPS / SSH URL）、主分支和可选名称。DevDesk 自动保存仓库接入意图，后台检查权限与规则、克隆并建立 mainline worktree。同一仓库和分支再次打开时复用项目。接入成功前不能创建 Feature 或启动工程执行；失败原因及原操作核对入口显示在仓库状态中。
 2. 在设置中为所用供应商授权：Codex 点击 **网页登录**，DevDesk 自动发现可复用的同版本原生组件，或从固定的官方发行版下载并校验 SHA256，使用数据集独立的 `CODEX_HOME` 完成 OAuth；DSH 输入 DeepSeek 官方 API key，保存到系统凭据库。无需手动登记本机 Codex 或两套 Linux 镜像。
-3. 设置全局、项目或角色 Harness 偏好，然后开始讨论或工程执行。首次选中某 Harness 时才准备其 Docker 镜像；未使用的 Harness 不下载、不构建。准备进度和失败原因显示在 Web，失败后再次执行可重试。相同配方使用共享镜像，不按项目、角色复制。
+3. 在“规范与身份”准备需要的 Harness，选择其精确构建，并创建 Model、Tool 和完整 Agent 组合。每个 Agent 固定 Model、Harness、Skills、Tools、Permission、职责和指令；实例 AgentID 独立选择 Global 或当前 Project。相同配方复用共享镜像。
+4. 在“工作流程”从内置 Feature / Task 模板创建、编辑和发布流程；在该页为当前 Project 单独绑定 Workflow、Standard 和五个职责的完整 Agent。发布与 Project 换绑是两个操作。
+5. 在“执行与交付”创建 Feature。创建时即冻结治理配置；流程依次驱动需求讨论与交付评审、方案规划、固定 TaskGroup、Task TDD、Feature 收尾和主干接纳。角色讨论显示推荐组合，文档、上下文及测试分别在所属对象的页签查看。
 
 运行时构建配方与 DSH 权限后端随 Host 编译嵌入，发布程序无需源码目录、宿主 Node/npm 或 Rust 工具链即可准备运行时。构建上下文仅包含嵌入的固定文件，完成后清理。镜像 tag 包含配方摘要，登记时保存不可变镜像 ID、版本和平台；有显式固定安装偏好时必须核验原安装，不会静默替换。已有 Session、Attempt、Run 的安装与来源不变。
 
@@ -16,7 +18,7 @@ Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检�
 
 Docker 未安装或未启动时显示环境阻塞，仓库权限或策略不兼容时保留原接入操作，供核对后重试。不会回退模拟执行，也不会修改 GitHub 规则。旧模拟项目不进入正常 Web 项目列表，仍可由后端离线回归读取。
 
-优先级为显式选择 → 角色偏好 → 项目偏好 → 全局默认。配置变化影响后续会话；运行中的 Session、Attempt、Run 保留原角色修订、安装、模型、权限、凭据引用和适配器构建。技术重试沿用原锁，构建不兼容时明确阻塞，不能静默换配置。
+新原生 Session 必须使用完整 Agent 及其 AgentID，不能另外覆盖 Model、Harness 或 Permission。Harness 偏好只作配置建议，不改写已发布组合。Project 默认调整只影响后来创建的 Feature；已有 Feature 后续 Task、Session、Attempt 和候选继续使用创建时的配置锁。技术重试沿用原锁，构建不兼容时明确阻塞。
 
 ## 对象与工作流程
 
@@ -38,7 +40,10 @@ flowchart LR
   Closure --> Main[主干候选 → 同样的 PR 接纳流程]
 ```
 
-- RuntimeInstallation 是共享安装；Agent Definition 是不可变角色修订；Session 是具体范围和绑定下的会话；RuntimeExecution 是一次实际 worker/测试容器生命周期。讨论 Turn 不伪造工程 Run。
+- RuntimeInstallation 是共享安装；AgentRevision 是完整不可变组合，AgentID 是固定组合及 Scope 的实例；Session 是实例在具体工作范围下的会话；RuntimeExecution 是一次实际 worker/测试容器生命周期。讨论 Turn 不伪造工程 Run。
+- 工作流运行图展示冻结定义，编辑在“工作流程”页面进行。每步可自动推进或等待人确认；默认主干候选完成测试和 Review 后等待确认，随后才应用接纳。
+- AgentID 经验先按项目名称、Feature 名称、时间筛选索引，再读取具体快照。Global 实例可跨项目读取自己的经验，Project 实例仅限所属项目；场景恢复创建带来源的新 Session。
+- 远端主干前进时，精确 lease 阻止旧候选接纳。在“交付与评审 → Merge 候选”使用“核对并快进主干”，记录冻结远端 SHA 的同步操作；仅允许干净主干 worktree 快进。旧候选及确认失效，从候选准备返工后重新测试、Review 和确认。未知接纳结果须先按原 operation 核对。
 - Project 可先保存 Requirement；Feature 固定来源需求修订。Proposal 由完成轮次提取或显式编辑，采纳使用正式领域命令，检查目标版本、输入修订、归属、验收映射和依赖图。
 - Requirement Delivery Review 通过后才派发设计阶段；计划 Delivery Review 通过后生成 initial Snapshot，TaskPlan 的稳定 key 才能实例化为真实 Task/worktree。
 - Tester 仅写冻结的 `tests/<suite>/` 目录；Developer 可以修改所属 Task worktree，测试目录只读。缺失目标模块与依赖/语法/环境错误分别处理，只有实际断言失败能满足 Red。

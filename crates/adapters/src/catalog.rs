@@ -36,7 +36,7 @@ impl GlobalStore {
         let version: u32 = connection
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
-        require(version <= 4, "全局配置库版本比程序新")?;
+        require(version <= 5, "全局配置库版本比程序新")?;
         if version == 0 {
             let tx = connection.transaction().map_err(storage)?;
             tx.execute_batch(include_str!("../../../sql/global/001_initial.sql"))
@@ -70,6 +70,12 @@ impl GlobalStore {
                 ],
             )
             .map_err(storage)?;
+            tx.commit().map_err(storage)?;
+        }
+        if version < 5 {
+            let tx = connection.transaction().map_err(storage)?;
+            tx.execute_batch(include_str!("../../../sql/global/005_governance.sql"))
+                .map_err(storage)?;
             tx.commit().map_err(storage)?;
         }
         let store = Self {
@@ -357,6 +363,7 @@ impl GlobalStore {
 
     fn configuration(conn: &Connection) -> Result<EngineeringState> {
         Ok(EngineeringState {
+            governance: load_table(conn, "governance_records")?,
             permissions: load_table(conn, "permissions")?,
             definitions: load_table(conn, "definitions")?,
             harnesses: load_table(conn, "harnesses")?,
@@ -371,6 +378,12 @@ impl GlobalStore {
         s: &EngineeringState,
         before: &EngineeringState,
     ) -> Result<()> {
+        save_table(
+            conn,
+            "governance_records",
+            &s.governance,
+            &before.governance,
+        )?;
         save_table(conn, "permissions", &s.permissions, &before.permissions)?;
         save_table(conn, "definitions", &s.definitions, &before.definitions)?;
         save_table(conn, "harnesses", &s.harnesses, &before.harnesses)?;
@@ -520,6 +533,7 @@ impl GlobalStore {
         {
             if ![
                 "permissions",
+                "governance",
                 "definitions",
                 "harnesses",
                 "sandboxes",
@@ -534,6 +548,15 @@ impl GlobalStore {
                 )?;
             }
         }
+        require(
+            source.governance.iter().all(|r| {
+                matches!(r.scope, Scope::Global)
+                    || r.scope
+                        .project()
+                        .is_some_and(|pid| source.projects.iter().any(|p| p.id == pid))
+            }),
+            "迁移存在无法归属的配置记录；旧库保持不变",
+        )?;
         let runtime = self.root.join("runtime.json");
         let concurrency = if runtime.exists() {
             let v: Value = serde_json::from_str(&fs::read_to_string(runtime).map_err(storage)?)
@@ -619,12 +642,14 @@ impl EngineeringStore for GlobalStore {
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;
+        state.validate_governance(&before)?;
         state.validate_conversations(&before)?;
         validate_permission_revisions(&state.permissions, &before.permissions)?;
         let value = serde_json::to_value(&state).map_err(storage)?;
         require(
             value.as_object().unwrap().iter().all(|(key, items)| {
                 [
+                    "governance",
                     "permissions",
                     "definitions",
                     "harnesses",
@@ -709,6 +734,7 @@ fn state_ids(state: &EngineeringState) -> Result<HashSet<String>> {
         .filter(|(k, _)| {
             ![
                 "permissions",
+                "governance",
                 "definitions",
                 "harnesses",
                 "sandboxes",
@@ -724,6 +750,11 @@ fn project_state(source: &EngineeringState, pid: &str) -> EngineeringState {
     let mut s = source.clone();
     s.events.clear();
     s.projects.retain(|p| p.id == pid);
+    s.governance.retain(|r| {
+        r.scope.visible_from(&Scope::Project {
+            project_id: pid.into(),
+        })
+    });
     s.repository_operations.retain(|op| op.project_id == pid);
     s.repository_worktrees.retain(|w| w.project_id == pid);
     s.features.retain(|f| f.project_id == pid);

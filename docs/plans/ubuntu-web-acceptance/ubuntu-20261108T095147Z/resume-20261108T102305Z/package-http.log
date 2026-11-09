@@ -1,4 +1,0 @@
-$ python3 tests/http_contract.py /tmp/devdesk-ubuntu-policy-package-pyjtdslc/devdesk-0.2.0-x86_64-unknown-linux-gnu/devdesk-host
-PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE shutdown, restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors
-
-exit=0

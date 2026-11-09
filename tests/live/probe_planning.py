@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+import os
 """Resumeable real role discussion -> adopted plan -> native planning Runs/Reviews -> two worktrees."""
 from client import Client
 import argparse,json,time
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--provider',default='codex',choices=['codex','dsh']);p.add_argument('--output',type=Path,default=Path('docs/plans/real-engineering-integration/R5-planning.json'));p.add_argument('--reports',type=Path,default=Path('docs/plans/real-engineering-integration'));p.add_argument('--case-prefix',default='');a=p.parse_args();a.output=a.reports/a.output.name if a.output.parent==Path('docs/plans/real-engineering-integration') else a.output;assert len(a.case_prefix)<33 and all(ch.isalnum() or ch in '-_' for ch in a.case_prefix)
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--provider',default='codex',choices=['codex','dsh']);p.add_argument('--output',type=Path,default=Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live'))/'R5-planning.json');p.add_argument('--reports',type=Path,default=Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live')));p.add_argument('--case-prefix',default='');a=p.parse_args();a.output=a.reports/a.output.name if a.output.parent==Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live')) else a.output;assert len(a.case_prefix)<33 and all(ch.isalnum() or ch in '-_' for ch in a.case_prefix)
 source=json.loads((a.reports/'R4-repository.json').read_text());project=source['project_id'];feature=source['feature_id'];c=Client(a.url);c.open(project)
 report=json.loads(a.output.read_text()) if a.output.exists() else {'project_id':project,'feature_id':feature,'proposals':{},'passed':False,'case_prefix':a.case_prefix}
 def save(stage):report['stage']=stage;a.output.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n');print(stage,flush=True)

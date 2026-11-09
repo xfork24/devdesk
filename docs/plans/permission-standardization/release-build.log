@@ -1,4 +1,0 @@
-   Compiling devdesk-adapters v0.2.0 (/Users/hengliu/workspace/devdesk/crates/adapters)
-   Compiling devdesk-host v0.2.0 (/Users/hengliu/workspace/devdesk/crates/host)
-    Finished `release` profile [optimized] target(s) in 21.25s
-target/release/devdesk-host: replacing existing signature

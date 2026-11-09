@@ -1,3 +1,0 @@
-$ bash -c cd web && npx playwright install chromium
-
-exit=0

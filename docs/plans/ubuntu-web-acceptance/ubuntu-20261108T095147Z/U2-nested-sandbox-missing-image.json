@@ -1,8 +1,0 @@
-{
-  "passed": false,
-  "inference_tested": false,
-  "credential_canary_only": true,
-  "seccomp": "moby-default + nested namespace/mount syscalls",
-  "stage": "image_resolution",
-  "failure_type": "AssertionError"
-}

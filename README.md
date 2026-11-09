@@ -19,7 +19,7 @@
 
 Host 程序嵌入 Web 文件；macOS 的真实 DSH 凭据另使用运行包内的一份共享助手，运行时不需要 Node、开发服务器或源码目录。只监听 loopback。必须使用打印的 `127.0.0.1` 地址，Host 校验会拒绝其他主机名。
 
-原型曾在 Linux Ubuntu 24.04 x86_64 与 macOS Apple Silicon 上完成后端/Web 验收；本轮真实工程接入已在 macOS 通过，Ubuntu 24.04.5 / x86_64 也已通过双 Harness Web 工程闭环、Linux 系统凭据、安装复用、取消/崩溃恢复和独立运行包验收，AppArmor Docker 宿主使用经批准的专用策略；见 [Ubuntu 续验报告](docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)。macOS 构建前需安装 Xcode Command Line Tools（`xcode-select --install`）；两平台使用相同命令。平台证据与限制见[验收记录](docs/acceptance.md)。
+原型曾在 Linux Ubuntu 24.04 x86_64 与 macOS Apple Silicon 上完成后端/Web 验收；早期真实工程接入已在 macOS 通过，Ubuntu 24.04.5 / x86_64 也已通过双 Harness Web 工程闭环、Linux 系统凭据、安装复用、取消/崩溃恢复和独立运行包验收，AppArmor Docker 宿主使用经批准的专用策略；见 [Ubuntu 续验报告](docs/plans/ubuntu-web-acceptance/ubuntu-20261108T095147Z/resume-20261108T102305Z/acceptance.md)。macOS 构建前需安装 Xcode Command Line Tools（`xcode-select --install`）；两平台使用相同命令。平台证据与限制见[验收记录](docs/acceptance.md)。
 
 生成包含可执行程序、说明和验收文档的本机运行包：
 
@@ -47,7 +47,8 @@ npm --prefix web ci
 
 ## 文档
 
-- [架构设计 v0.2](docs/plans/devdesk-v0.2/PLAN.md)、[修订后的实施计划](docs/plans/devdesk-prototype/PLAN.md)
+- [当前架构与实现基线 v0.3](docs/plans/devdesk-v0.3/PLAN.md)、[Workflow 与工作台执行记录](docs/plans/workflow-and-workbench/EXECUTION.md)
+- [历史架构设计 v0.2](docs/plans/devdesk-v0.2/PLAN.md)、[原型实施计划](docs/plans/devdesk-prototype/PLAN.md)
 - [领域规范](docs/domain.md)、[协议](docs/protocol.md)、[架构与 ADR](docs/design.md)
 - [真实工程接入与副作用边界](docs/real-engineering.md)、[接入实施计划](docs/plans/real-engineering-integration/PLAN.md)
 - [验收与限制](docs/acceptance.md)、[计划与验收索引](docs/plans/README.md)

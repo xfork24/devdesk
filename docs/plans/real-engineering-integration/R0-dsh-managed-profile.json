@@ -1,8 +1,0 @@
-{
-  "handshake": true,
-  "inference_tested": false,
-  "server": {
-    "name": "deepseek-harness-sdk-runtime",
-    "version": "0.0.1"
-  }
-}

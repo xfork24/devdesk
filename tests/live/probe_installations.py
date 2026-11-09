@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
+import os
 """Real concurrent registration and Docker layer reuse, independent of model output."""
 from client import Client
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import argparse,json,sqlite3,subprocess
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--root',type=Path,required=True);p.add_argument('--reports',type=Path,default=Path('docs/plans/real-engineering-integration'));a=p.parse_args();c=Client(a.url);r={'passed':False,'installations':[]}
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--root',type=Path,required=True);p.add_argument('--reports',type=Path,default=Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live')));a=p.parse_args();c=Client(a.url);r={'passed':False,'installations':[]}
 try:
  rows=c.rpc('query.runtime_installations')['installations'];images=[x for x in rows if x['artifact']['kind']=='docker_image'];assert {x['key']['provider']for x in images}=={'codex','dsh'}
  layers=[]

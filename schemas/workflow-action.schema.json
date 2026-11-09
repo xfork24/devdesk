@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk finite Workflow action contract v1",
+  "type": "object",
+  "required": [
+    "kind",
+    "contract_version"
+  ],
+  "properties": {
+    "kind": {
+      "enum": [
+        "agent.interact",
+        "proposal.adopt",
+        "attempt.execute",
+        "delivery.review",
+        "merge.prepare",
+        "merge.review",
+        "merge.apply",
+        "snapshot.capture",
+        "resource.cleanup",
+        "tasks.foreach",
+        "branch",
+        "join"
+      ]
+    },
+    "contract_version": {
+      "const": 1
+    }
+  },
+  "additionalProperties": false
+}

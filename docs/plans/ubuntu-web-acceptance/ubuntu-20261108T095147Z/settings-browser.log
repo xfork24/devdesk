@@ -1,4 +1,0 @@
-$ node /tmp/devdesk-ubuntu-settings.mjs
-{"passed":true,"source":"actual Chromium settings UI","operations":["registered-native-codex","default-codex-dsh-codex"]}
-
-exit=0

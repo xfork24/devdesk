@@ -3,12 +3,14 @@ mod advances;
 mod conversation_runtime;
 mod conversations;
 mod effects;
+mod governance;
 mod live_merges;
 mod live_runs;
 mod permissions;
 pub mod ports;
 mod proposals;
 mod repositories;
+mod workflow_runtime;
 // Compatibility names for existing adapters and contract fixtures.
 use devdesk_domain::*;
 pub use ports::{
@@ -455,6 +457,7 @@ pub fn seed_configuration(s: &mut EngineeringState) {
             });
         }
     }
+    governance::seed_governance(s);
 }
 
 impl Engine {
@@ -578,7 +581,12 @@ impl Engine {
             capture: SnapshotCapture {
                 attempt: None,
                 runs: vec![],
-                sessions: vec![],
+                sessions: s
+                    .sessions
+                    .iter()
+                    .filter(|session| session.owner_id == project)
+                    .map(|session| session.id.clone())
+                    .collect(),
                 resources: vec![],
                 captured_at: Some(now()),
                 reason: opt(p, "reason").unwrap_or_else(|| "Project discussion context".into()),
@@ -593,6 +601,7 @@ impl Engine {
         artifact.origin = Origin::Human;
         s.artifacts.push(artifact);
         s.snapshots.push(snapshot);
+        self.index_experience(s, &sid)?;
         Ok(json!({"id":sid}))
     }
     /// Assemble an engine through the same contracts for all provider implementations.
@@ -615,6 +624,7 @@ impl Engine {
     pub fn bootstrap(&self) -> Result<()> {
         self.store.transact(None, &mut |s| {
             seed_configuration(s);
+            self.freeze_legacy_features(s);
             for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Dispatched){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="restart_after_dispatch".into();op.revision+=1;}
             for op in s.repository_operations.iter_mut().filter(|op|op.status==RepositoryOperationStatus::Prepared){op.status=RepositoryOperationStatus::NeedsReconciliation;op.reason="startup_pending_intent_requires_reconcile".into();op.revision+=1;}
             for session in s.sessions.iter_mut().filter(|v|v.scope.is_some() && v.external_session.is_some() && !matches!(v.lifecycle,Some(SessionLifecycle::Closed|SessionLifecycle::RequiresSuccessor))){
@@ -706,7 +716,11 @@ impl Engine {
         let fingerprint = original_fingerprint
             .map(str::to_owned)
             .unwrap_or_else(|| command_fingerprint(method, &c));
-        let mut action = |s: &mut EngineeringState| self.apply_command(method, &c, s);
+        let mut action = |s: &mut EngineeringState| {
+            let result = self.apply_command(method, &c, s)?;
+            self.governance_after_command(method, &c, s, &result)?;
+            Ok(result)
+        };
         let result = self
             .store
             .transact(Some((&c.command_id, &fingerprint)), &mut action)?;
@@ -714,6 +728,7 @@ impl Engine {
         Ok(result)
     }
     fn apply_command(&self, method: &str, c: &Command, s: &mut EngineeringState) -> Result<Value> {
+        self.enforce_workflow_action(s, method, c)?;
         if let Some(target) = &c.target {
             if let Some(actual) = revision(s, target) {
                 if c.expected_revision != Some(actual) {
@@ -726,6 +741,10 @@ impl Engine {
         }
         let target = c.target.as_deref().unwrap_or("");
         let p = &c.payload;
+        if let Some(result) = self.governance_command(method, c, s)? {
+            event(s, target, method, &format!("command_id={}", c.command_id));
+            return Ok(result);
+        }
         if let Some(result) = self.permission_command(method, c, s) {
             return result;
         }
@@ -1028,6 +1047,7 @@ impl Engine {
                 if live {
                     self.enqueue_worktree(s, &pid, &fid, WorktreeKind::Feature, &base);
                 }
+                self.freeze_feature_configuration(s, &fid, p)?;
                 json!({"id":fid})
             }
             "document.revise" => {
@@ -1151,8 +1171,11 @@ impl Engine {
                         .filter(|t| t.feature_id == fid && t.status == Status::Completed)
                         .map(|t| t.id.clone())
                         .collect::<Vec<_>>();
+                    let preserve_requirement =
+                        s.feature_configuration(&fid).is_some() && kind != "requirement";
                     for d in s.deliveries.iter_mut().filter(|d| {
                         d.feature_id == fid
+                            && !(preserve_requirement && d.kind == "requirement")
                             && d.task_id.as_ref().is_none_or(|id| !completed.contains(id))
                             && (global_input
                                 || (task_id.is_some() && d.task_id == task_id)
@@ -1163,6 +1186,7 @@ impl Engine {
                     }
                     for a in s.attempts.iter_mut().filter(|a| {
                         a.feature_id == fid
+                            && !(preserve_requirement && a.phase == "requirement_definition")
                             && (global_input
                                 || (task_id.is_some() && a.task_id == task_id)
                                 || a.phase == "closure")
@@ -1180,6 +1204,7 @@ impl Engine {
                         .iter()
                         .filter(|a| {
                             a.feature_id == fid
+                                && !(preserve_requirement && a.phase == "requirement_definition")
                                 && (global_input
                                     || (task_id.is_some() && a.task_id == task_id)
                                     || a.phase == "closure")
@@ -1285,6 +1310,16 @@ impl Engine {
                 json!({"id":did})
             }
             "binding.update" => {
+                let fid = s
+                    .tasks
+                    .iter()
+                    .find(|t| t.id == target)
+                    .map(|t| t.feature_id.as_str())
+                    .unwrap_or(target);
+                require(
+                    s.feature_configuration(fid).is_none(),
+                    "Feature 创建时的配置已冻结；请创建关联后继 Feature",
+                )?;
                 let b: BindingLock = serde_json::from_value(p.clone())
                     .map_err(|e| err("invalid_params", e.to_string()))?;
                 s.validate_binding(&b)?;
@@ -1717,7 +1752,13 @@ impl Engine {
                             }
                         });
                         require(
-                            ["planning", "closure"].contains(&phase.as_str()),
+                            [
+                                "planning",
+                                "requirement_definition",
+                                "solution_planning",
+                                "closure",
+                            ]
+                            .contains(&phase.as_str()),
                             "未知 Feature 阶段",
                         )?;
                         if phase == "planning" {
@@ -1728,14 +1769,28 @@ impl Engine {
                         }
                         if phase == "closure" {
                             require(s.planning_accepted(&f.id), "当前输入规划尚未接受")?;
-                            let ts = s
-                                .tasks
-                                .iter()
-                                .filter(|t| t.feature_id == f.id)
-                                .collect::<Vec<_>>();
+                            let ts = s.required_tasks(&f.id);
                             require(
                                 !ts.is_empty() && ts.iter().all(|t| t.status == Status::Completed),
                                 "全部必需 Task 完成后才能收尾",
+                            )?;
+                        }
+                        if phase == "requirement_definition" {
+                            require(
+                                document_ids(s, &f.id, None).iter().any(|id| {
+                                    s.documents
+                                        .iter()
+                                        .any(|d| &d.id == id && d.kind == "requirement")
+                                }),
+                                "请先采纳需求",
+                            )?;
+                        }
+                        if phase == "solution_planning" {
+                            require(
+                                s.deliveries.iter().any(|d| {
+                                    d.feature_id == f.id && d.kind == "requirement" && s.accepted(d)
+                                }),
+                                "需求交付评审通过后才能执行方案规划",
                             )?;
                         }
                         (
@@ -1752,7 +1807,8 @@ impl Engine {
                             && a.task_id == tid
                             && [Status::Running, Status::Prepared, Status::WaitingReview]
                                 .contains(&a.status)
-                            && a.input_version == s.feature(&fid).unwrap().input_version
+                            && s.attempt_inputs_current(a)
+                            && a.phase == phase
                     }),
                     "已有活动 Attempt；请等待评审或取消",
                 )?;
@@ -1771,7 +1827,7 @@ impl Engine {
                 } else {
                     std::collections::BTreeMap::new()
                 };
-                if live && phase == "planning" {
+                if live && ["planning", "solution_planning"].contains(&phase.as_str()) {
                     let docs = document_ids(s, &fid, None);
                     require(
                         ["requirement", "design", "test"].iter().all(|kind| {
@@ -1809,6 +1865,8 @@ impl Engine {
                     )?;
                     let primary = match phase.as_str() {
                         "planning" => "design",
+                        "requirement_definition" => "requirement_validate",
+                        "solution_planning" => "plan_validate",
                         "implementation" => "implement",
                         _ => "docs",
                     };
@@ -1878,7 +1936,12 @@ impl Engine {
                 } else {
                     Some(baseline)
                 };
-                let nodes: Vec<(&str, Vec<&str>, bool)> = match phase.as_str() {
+                let builtin_nodes: Vec<(&str, Vec<&str>, bool)> = match phase.as_str() {
+                    "requirement_definition" => vec![("requirement_validate", vec![], false)],
+                    "solution_planning" => vec![
+                        ("plan_validate", vec![], false),
+                        ("test_plan_validate", vec!["plan_validate"], false),
+                    ],
                     "planning" => vec![
                         ("research", vec![], false),
                         ("requirement", vec!["research"], true),
@@ -1913,6 +1976,25 @@ impl Engine {
                         ("verify", vec!["feature_tests", "docs"], false),
                     ],
                 };
+                let nodes: Vec<(String, Vec<String>, bool)> = if let Some(recipe) =
+                    self.workflow_recipe(s, tid.as_deref().unwrap_or(&fid), &phase)
+                {
+                    recipe
+                        .into_iter()
+                        .map(|n| (n.key, n.dependencies, n.writes))
+                        .collect()
+                } else {
+                    builtin_nodes
+                        .into_iter()
+                        .map(|(key, deps, writes)| {
+                            (
+                                key.into(),
+                                deps.into_iter().map(str::to_owned).collect(),
+                                writes,
+                            )
+                        })
+                        .collect()
+                };
                 valid_dag(
                     &nodes
                         .iter()
@@ -1924,21 +2006,28 @@ impl Engine {
                         self.add_live_run(
                             s,
                             &aid,
-                            node,
+                            &node,
                             deps.iter().map(|s| s.to_string()).collect(),
                             writes && phase != "planning",
                         )?;
                         continue;
                     }
+                    let role = match node.as_str() {
+                        "requirement_validate" => "analyst",
+                        "plan_validate" => "architect",
+                        "implement" | "docs" => "developer",
+                        _ => "tester",
+                    };
+                    let node_binding = self.workflow_simulation_binding(s, &fid, role, &b);
                     self.add_run(
                         s,
                         Some(&aid),
                         None,
-                        node,
+                        &node,
                         deps.iter().map(|s| s.to_string()).collect(),
                         writes,
                         &worktree,
-                        &b,
+                        &node_binding,
                         None,
                         opt(p, "scenario").as_deref().unwrap_or("success"),
                     );
@@ -1955,7 +2044,9 @@ impl Engine {
                     if live {
                         f.binding = b.clone();
                     }
-                    f.status = if phase == "planning" {
+                    f.status = if ["planning", "requirement_definition", "solution_planning"]
+                        .contains(&phase.as_str())
+                    {
                         Status::Planning
                     } else {
                         Status::Validating
@@ -2094,7 +2185,7 @@ impl Engine {
                 let _owner_binding = if let Some(aid) = &old.attempt_id {
                     let a = s.attempt(aid)?.clone();
                     require(
-                        a.input_version == s.feature(&a.feature_id)?.input_version,
+                        s.attempt_inputs_current(&a),
                         "输入已改变，必须创建新 Attempt",
                     )?;
                     require(
@@ -2157,16 +2248,22 @@ impl Engine {
                     "执行尚未结束",
                 )?;
                 require(
-                    a.input_version == s.feature(&a.feature_id)?.input_version,
+                    s.attempt_inputs_current(&a),
                     "Attempt 输入已失效，需新 Attempt",
                 )?;
-                let kind = if a.phase == "planning" {
+                let kind = if a.phase == "requirement_definition" {
+                    "requirement".into()
+                } else if a.phase == "solution_planning" {
+                    "plan".into()
+                } else if a.phase == "planning" {
                     opt(p, "kind").unwrap_or_else(|| "requirement".into())
                 } else {
                     a.phase.clone()
                 };
                 require(
                     (a.phase == "planning" && ["requirement", "plan"].contains(&kind.as_str()))
+                        || (a.phase == "requirement_definition" && kind == "requirement")
+                        || (a.phase == "solution_planning" && kind == "plan")
                         || kind == a.phase,
                     "无效交付边界",
                 )?;
@@ -2180,13 +2277,15 @@ impl Engine {
                     .into_iter()
                     .filter(|r| {
                         kind != "requirement"
+                            || a.phase == "requirement_definition"
                             || ["research", "requirement"].contains(&r.node.as_str())
                     })
                     .collect();
                 if kind == "plan" {
                     require(
                         s.deliveries.iter().any(|d| {
-                            d.attempt_id.as_deref() == Some(&a.id)
+                            (d.attempt_id.as_deref() == Some(&a.id)
+                                || (a.phase == "solution_planning" && d.feature_id == a.feature_id))
                                 && d.kind == "requirement"
                                 && s.accepted(d)
                         }),
@@ -2351,6 +2450,7 @@ impl Engine {
                     .ok_or_else(|| err("blocked", "缺少独立 Reviewer 身份"))?
                     .id
                     .clone();
+                b = self.workflow_simulation_binding(s, &d.feature_id, "reviewer", &b);
                 let rid = self.add_run(
                     s,
                     d.attempt_id.as_deref(),
@@ -2375,7 +2475,7 @@ impl Engine {
                     )?;
                 }
                 require(
-                    !d.stale && d.input_version == s.feature(&d.feature_id)?.input_version,
+                    !d.stale && s.delivery_inputs_current(&d),
                     "失效证据不能 Override",
                 )?;
                 self.check_merge_target(s, &d)?;
@@ -2588,6 +2688,9 @@ impl Engine {
                         current.receipt = None;
                         current.reason = "explicit_retry_after_confirmed_not_applied".into();
                         current.revision += 1;
+                        let merge = s.merges.iter_mut().find(|merge| merge.id == m.id).unwrap();
+                        merge.status = Status::Accepted;
+                        merge.revision += 1;
                     }
                 } else {
                     s.advances.push(MergeAdvance {
@@ -2875,9 +2978,9 @@ impl Engine {
         let source_deliveries: Vec<Id> = if let Some(mid) = mid {
             vec![s.merge(mid)?.source_delivery.clone()]
         } else if kind == "closure" {
-            s.tasks
-                .iter()
-                .filter(|t| t.feature_id == fid && t.status == Status::Completed)
+            s.required_tasks(fid)
+                .into_iter()
+                .filter(|t| t.status == Status::Completed)
                 .filter_map(|t| {
                     s.merges
                         .iter()
@@ -2964,7 +3067,7 @@ impl Engine {
             )?;
         }
         require(
-            !d.stale && d.input_version == s.feature(&d.feature_id)?.input_version,
+            !d.stale && s.delivery_inputs_current(&d),
             "交付已失效，需重新交付",
         )?;
         self.check_merge_target(s, d)?;
@@ -3171,7 +3274,11 @@ impl Engine {
         if a.status == Status::Accepted {
             return Ok(());
         }
-        let required = if a.phase == "planning" {
+        let required = if a.phase == "requirement_definition" {
+            vec!["requirement"]
+        } else if a.phase == "solution_planning" {
+            vec!["plan"]
+        } else if a.phase == "planning" {
             vec!["requirement", "plan"]
         } else {
             vec![a.phase.as_str()]
@@ -3195,7 +3302,7 @@ impl Engine {
             s,
             &a.feature_id,
             a.task_id.as_deref(),
-            if a.phase == "planning" {
+            if ["planning", "solution_planning"].contains(&a.phase.as_str()) {
                 "initial"
             } else {
                 "final"
@@ -3213,8 +3320,10 @@ impl Engine {
                 .iter_mut()
                 .find(|x| x.id == a.feature_id)
                 .unwrap();
-            f.status = if a.phase == "planning" {
+            f.status = if ["planning", "solution_planning"].contains(&a.phase.as_str()) {
                 Status::Ready
+            } else if a.phase == "requirement_definition" {
+                Status::Planning
             } else {
                 Status::Accepted
             };
@@ -3268,7 +3377,18 @@ impl Engine {
         let capture = SnapshotCapture {
             attempt: capture_attempt.clone(),
             runs: captured_runs.iter().map(|r| r.id.clone()).collect(),
-            sessions: captured_runs.iter().map(|r| r.session_id.clone()).collect(),
+            sessions: captured_runs
+                .iter()
+                .map(|r| r.session_id.clone())
+                .chain(
+                    s.sessions
+                        .iter()
+                        .filter(|session| session.owner_id == owner)
+                        .map(|session| session.id.clone()),
+                )
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
             resources: s
                 .resources
                 .iter()
@@ -3317,6 +3437,7 @@ impl Engine {
             delivery_id: delivery,
             inherited_from: inherited,
         });
+        self.index_experience(s, &sid)?;
         let mode = s
             .projects
             .iter()
@@ -3378,7 +3499,7 @@ impl Engine {
                 )?;
                 let invalid = if let Some(aid) = &r.attempt_id {
                     let a = s.attempt(aid)?;
-                    a.input_version != s.feature(&a.feature_id)?.input_version
+                    !s.attempt_inputs_current(&a)
                         || (!r.node.starts_with("review:")
                             && [Status::Cancelled, Status::Interrupted, Status::Rejected]
                                 .contains(&a.status))
@@ -3855,6 +3976,20 @@ impl Engine {
         Ok(Some(output))
     }
     fn blocked(&self, s: &EngineeringState, r: &Run, limit: usize) -> Option<String> {
+        let owner = r
+            .attempt_id
+            .as_ref()
+            .and_then(|id| s.attempt(id).ok())
+            .map(|a| a.task_id.as_deref().unwrap_or(&a.feature_id))
+            .or_else(|| {
+                r.merge_id
+                    .as_ref()
+                    .and_then(|id| s.merge(id).ok())
+                    .map(|m| m.task_id.as_deref().unwrap_or(&m.feature_id))
+            });
+        if owner.is_some_and(|owner| s.workflow_paused(owner)) {
+            return Some("工作流已暂停".into());
+        }
         let (fid, paused) = if let Some(aid) = &r.attempt_id {
             let a = s.attempt(aid).ok()?;
             let reviewer = r.node.starts_with("review:");
@@ -3970,7 +4105,7 @@ impl Engine {
         let body = text(document, "body")?;
         let title = text(document, "title")?;
         let a = s.attempt(aid)?.clone();
-        if a.input_version != s.feature(&a.feature_id)?.input_version {
+        if !s.attempt_inputs_current(&a) {
             return Ok(());
         }
         if kind == "requirement"
@@ -4082,6 +4217,9 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if let Some(result) = self.governance_query(method, p) {
+            return result;
+        }
         if let Some(result) = self.conversation_query(method, p) {
             return result;
         }
@@ -4131,14 +4269,112 @@ impl Engine {
                     .features
                     .iter()
                     .filter(|f| pid.as_ref().is_none_or(|id| &f.project_id == id))
+                    .filter(|f| match p["work_filter"].as_str().unwrap_or("") {
+                        "tasks" => s.tasks.iter().any(|t| t.feature_id == f.id),
+                        "running" => s.runs.iter().any(|r| {
+                            r.status == Status::Running
+                                && r.attempt_id.as_ref().is_some_and(|id| {
+                                    s.attempt(id).is_ok_and(|a| a.feature_id == f.id)
+                                })
+                        }),
+                        "waiting_review" => s.deliveries.iter().any(|d| {
+                            d.feature_id == f.id
+                                && !d.stale
+                                && s.delivery_inputs_current(d)
+                                && !s.reviews.iter().any(|r| {
+                                    r.delivery_id == d.id
+                                        && [Decision::Pass, Decision::ChangesRequested]
+                                            .contains(&r.decision)
+                                })
+                                && !s.accepted(d)
+                        }),
+                        "waiting_confirmation" | "blocked" => s
+                            .governance
+                            .iter()
+                            .filter(|r| {
+                                r.kind == "workflow_instance"
+                                    && r.data["status"] != "cancelled"
+                                    && r.data["feature_id"] == f.id
+                            })
+                            .filter_map(|r| r.decode::<WorkflowRuntime>().ok())
+                            .flat_map(|r| r.steps)
+                            .any(|step| {
+                                if p["work_filter"] == "waiting_confirmation" {
+                                    step.status == "waiting_confirmation"
+                                } else {
+                                    ["blocked", "failed"].contains(&step.status.as_str())
+                                }
+                            }),
+                        _ => true,
+                    })
                     .collect::<Vec<_>>();
                 let detail = if let Some(fid) = &fid {
-                    Some(self.feature_detail(&s, fid, limit, global_limit, &p["detail_pages"])?)
+                    {
+                        let mut detail =
+                            self.feature_detail(&s, fid, limit, global_limit, &p["detail_pages"])?;
+                        if let Some(tid) = p["task_id"].as_str() {
+                            let t = s.task(tid)?;
+                            require(t.feature_id == *fid, "Task 不属于当前 Feature")?;
+                            if !detail["tasks"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .any(|r| r["id"] == tid)
+                            {
+                                detail["tasks"].as_array_mut().unwrap().push(json!(t));
+                            }
+                            detail["attempts"] = json!(
+                                s.attempts
+                                    .iter()
+                                    .filter(|a| a.task_id.as_deref() == Some(tid))
+                                    .rev()
+                                    .take(limit)
+                                    .collect::<Vec<_>>()
+                            );
+                            let docs = document_ids(&s, fid, Some(tid));
+                            detail["documents"] = json!(
+                                s.documents
+                                    .iter()
+                                    .filter(|d| docs.contains(&d.id))
+                                    .rev()
+                                    .take(limit)
+                                    .collect::<Vec<_>>()
+                            );
+                            detail["snapshots"] = json!(
+                                s.snapshots
+                                    .iter()
+                                    .filter(|snap| snap.task_id.as_deref() == Some(tid))
+                                    .rev()
+                                    .take(limit)
+                                    .collect::<Vec<_>>()
+                            );
+                            detail["contexts"] = json!(
+                                s.contexts
+                                    .iter()
+                                    .filter(|context| context.owner_id == tid)
+                                    .collect::<Vec<_>>()
+                            );
+                            detail["runs"] = json!(
+                                s.runs
+                                    .iter()
+                                    .filter(|r| r.attempt_id.as_ref().is_some_and(|id| s
+                                        .attempt(id)
+                                        .is_ok_and(|a| a.task_id.as_deref() == Some(tid)))
+                                        || r.merge_id.as_ref().is_some_and(|id| s
+                                            .merge(id)
+                                            .is_ok_and(|m| m.task_id.as_deref() == Some(tid))))
+                                    .rev()
+                                    .take(limit * 5)
+                                    .collect::<Vec<_>>()
+                            );
+                        }
+                        Some(detail)
+                    }
                 } else {
                     None
                 };
                 Ok(
-                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"total_projects":s.projects.len(),"definitions":s.definitions,"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"simulation","global_concurrency":global_limit}),
+                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":s.runs.iter().filter(|r|r.status==Status::Running).count(),"waiting_review":s.deliveries.iter().filter(|d|!d.stale&&s.delivery_inputs_current(d)&&!s.reviews.iter().any(|r|r.delivery_id==d.id&&[Decision::Pass,Decision::ChangesRequested].contains(&r.decision))&&!s.accepted(d)).count(),"waiting_confirmation":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|step.status=="waiting_confirmation").count(),"blocked":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|["blocked","failed"].contains(&step.status.as_str())).count()},"configurations":s.governance.iter().filter(|r|["feature_lock","legacy_feature_lock","workflow_instance","project_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),"total_projects":s.projects.len(),"definitions":s.definitions,"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"simulation","global_concurrency":global_limit}),
                 )
             }
             "query.history" => {
@@ -4265,7 +4501,7 @@ impl Engine {
             .map(|r| (r.id.clone(), self.blocked(s, r, global_limit)))
             .collect::<std::collections::BTreeMap<_, _>>();
         Ok(
-            json!({"advances":s.advances.iter().filter(|advance|s.merges.iter().any(|m|m.id==advance.id&&m.feature_id==fid)).rev().take(limit).collect::<Vec<_>>(),"effects":effects.iter().skip(page_offset("effects")).take(limit).collect::<Vec<_>>(),"totals":{"effects":effects.len(),"tasks":s.tasks.iter().filter(|x|x.feature_id==fid).count(),"attempts":s.attempts.iter().filter(|x|x.feature_id==fid).count(),"merges":s.merges.iter().filter(|x|x.feature_id==fid).count(),"deliveries":s.deliveries.iter().filter(|x|x.feature_id==fid).count(),"documents":s.documents.iter().filter(|x|s.document_in_feature(x,fid)).count(),"snapshots":s.snapshots.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).count(),"artifacts":s.artifacts.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).count(),"runs":s.runs.iter().filter(|r|r.attempt_id.as_deref().is_some_and(|id|ids.contains(&id))||r.merge_id.as_deref().is_some_and(|id|mids.contains(&id))).count()},"feature":f,"tasks":tasks,"attempts":attempts,"runs":runs,"documents":s.documents.iter().filter(|d|s.document_in_feature(d,fid)).rev().skip(page_offset("documents")).take(limit).collect::<Vec<_>>(),"deliveries":deliveries,"reviews":s.reviews.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).rev().take(limit).collect::<Vec<_>>(),"overrides":s.overrides.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).collect::<Vec<_>>(),"merges":merges,"snapshots":s.snapshots.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).rev().skip(page_offset("snapshots")).take(limit).collect::<Vec<_>>(),"contexts":s.contexts.iter().filter(|x|x.owner_id==fid||tasks.iter().any(|t|t.id==x.owner_id)).collect::<Vec<_>>(),"artifacts":s.artifacts.iter().filter(|a|a.feature_id.as_deref()==Some(fid)).rev().skip(page_offset("artifacts")).take(limit).collect::<Vec<_>>(),"sessions":s.sessions.iter().filter(|x|x.feature_id.as_deref()==Some(fid)||runs.iter().any(|r|r.session_id==x.id)).collect::<Vec<_>>(),"pending_interactions":s.interactions.iter().filter(|i|i.status==InteractionStatus::Pending&&s.sessions.iter().any(|session|session.id==i.session_id&&session.feature_id.as_deref()==Some(fid))).collect::<Vec<_>>(),"merge_progress":merges.iter().map(|m|json!({"merge":m.id,"local":s.advances.iter().find(|a|a.id==m.id),"remote_operations":s.repository_operations.iter().filter(|op|match &op.action{RepositoryAction::PublishRef{merge,..}|RepositoryAction::PullRequest{merge,..}=>merge==&m.id,_=>false}).collect::<Vec<_>>()})).collect::<Vec<_>>(),"resources":s.resources.iter().filter(|x|runs.iter().any(|r|r.id==x.run_id)).collect::<Vec<_>>(),"heads":s.heads.iter().filter(|h|h.project_id==f.project_id).collect::<Vec<_>>(),"allowed_actions":actions,"blocked_reasons":blocked,"accepted_deliveries":deliveries.iter().filter(|d|s.accepted(d)).map(|d|&d.id).collect::<Vec<_>>()}),
+            json!({"mainline_sync":s.repository_operations.iter().filter(|op| matches!(op.action, RepositoryAction::RefreshMainline { .. })).rev().take(3).collect::<Vec<_>>(),"advances":s.advances.iter().filter(|advance|s.merges.iter().any(|m|m.id==advance.id&&m.feature_id==fid)).rev().take(limit).collect::<Vec<_>>(),"effects":effects.iter().skip(page_offset("effects")).take(limit).collect::<Vec<_>>(),"totals":{"effects":effects.len(),"tasks":s.tasks.iter().filter(|x|x.feature_id==fid).count(),"attempts":s.attempts.iter().filter(|x|x.feature_id==fid).count(),"merges":s.merges.iter().filter(|x|x.feature_id==fid).count(),"deliveries":s.deliveries.iter().filter(|x|x.feature_id==fid).count(),"documents":s.documents.iter().filter(|x|s.document_in_feature(x,fid)).count(),"snapshots":s.snapshots.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).count(),"artifacts":s.artifacts.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).count(),"runs":s.runs.iter().filter(|r|r.attempt_id.as_deref().is_some_and(|id|ids.contains(&id))||r.merge_id.as_deref().is_some_and(|id|mids.contains(&id))).count()},"feature":f,"tasks":tasks,"attempts":attempts,"runs":runs,"documents":s.documents.iter().filter(|d|s.document_in_feature(d,fid)).rev().skip(page_offset("documents")).take(limit).collect::<Vec<_>>(),"deliveries":deliveries,"reviews":s.reviews.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).rev().take(limit).collect::<Vec<_>>(),"overrides":s.overrides.iter().filter(|r|dids.contains(&r.delivery_id.as_str())).collect::<Vec<_>>(),"merges":merges,"snapshots":s.snapshots.iter().filter(|x|x.feature_id.as_deref()==Some(fid)).rev().skip(page_offset("snapshots")).take(limit).collect::<Vec<_>>(),"contexts":s.contexts.iter().filter(|x|x.owner_id==fid||tasks.iter().any(|t|t.id==x.owner_id)).collect::<Vec<_>>(),"artifacts":s.artifacts.iter().filter(|a|a.feature_id.as_deref()==Some(fid)).rev().skip(page_offset("artifacts")).take(limit).collect::<Vec<_>>(),"sessions":s.sessions.iter().filter(|x|x.feature_id.as_deref()==Some(fid)||runs.iter().any(|r|r.session_id==x.id)).collect::<Vec<_>>(),"pending_interactions":s.interactions.iter().filter(|i|i.status==InteractionStatus::Pending&&s.sessions.iter().any(|session|session.id==i.session_id&&session.feature_id.as_deref()==Some(fid))).collect::<Vec<_>>(),"merge_progress":merges.iter().map(|m|json!({"merge":m.id,"local":s.advances.iter().find(|a|a.id==m.id),"remote_operations":s.repository_operations.iter().filter(|op|match &op.action{RepositoryAction::PublishRef{merge,..}|RepositoryAction::PullRequest{merge,..}=>merge==&m.id,_=>false}).collect::<Vec<_>>()})).collect::<Vec<_>>(),"resources":s.resources.iter().filter(|x|runs.iter().any(|r|r.id==x.run_id)).collect::<Vec<_>>(),"heads":s.heads.iter().filter(|h|h.project_id==f.project_id).collect::<Vec<_>>(),"allowed_actions":actions,"blocked_reasons":blocked,"accepted_deliveries":deliveries.iter().filter(|d|s.accepted(d)).map(|d|&d.id).collect::<Vec<_>>()}),
         )
     }
     fn actions(&self, s: &EngineeringState, target: &str) -> Value {
@@ -4377,6 +4613,104 @@ impl Engine {
             } else {
                 blocked.push("候选验证/Review 未完成或目标已变化");
             }
+        }
+        let owner = s
+            .attempts
+            .iter()
+            .find(|a| a.id == target)
+            .map(|a| a.task_id.as_deref().unwrap_or(&a.feature_id))
+            .or_else(|| {
+                s.deliveries
+                    .iter()
+                    .find(|d| d.id == target)
+                    .map(|d| d.task_id.as_deref().unwrap_or(&d.feature_id))
+            })
+            .or_else(|| {
+                s.merges
+                    .iter()
+                    .find(|m| m.id == target)
+                    .map(|m| m.task_id.as_deref().unwrap_or(&m.feature_id))
+            })
+            .unwrap_or(target);
+        let feature = s
+            .tasks
+            .iter()
+            .find(|t| t.id == owner)
+            .map_or(owner, |t| t.feature_id.as_str());
+        if s.governance
+            .iter()
+            .any(|r| r.kind == "legacy_feature_lock" && r.definition_id == feature)
+        {
+            allowed.retain(|method| {
+                ![
+                    "binding.update",
+                    "attempt.start",
+                    "merge.request",
+                    "review.request",
+                    "task.create",
+                ]
+                .contains(method)
+            });
+            blocked.push("历史 Feature 已保留原配置；新执行请使用完整版本化配置创建后继 Feature");
+        }
+        if let Some(lock) = s.feature_configuration(feature) {
+            allowed.retain(|method| *method != "binding.update");
+            let runtime = s
+                .governance
+                .iter()
+                .rev()
+                .find(|r| {
+                    r.kind == "workflow_instance"
+                        && r.definition_id == owner
+                        && r.data["status"] != "cancelled"
+                })
+                .and_then(|r| r.decode::<WorkflowRuntime>().ok());
+            let phases: Vec<_> = runtime
+                .as_ref()
+                .map(|r| {
+                    let plan = if r.task_id.is_some() {
+                        &lock.task_plan
+                    } else {
+                        &lock.plan
+                    };
+                    plan.steps
+                        .iter()
+                        .filter(|step| {
+                            step.kind == "attempt.execute"
+                                && r.steps.iter().any(|s| {
+                                    s.key == step.key
+                                        && !["completed", "failed", "skipped"]
+                                            .contains(&s.status.as_str())
+                                })
+                                && step.dependencies.iter().all(|dep| {
+                                    r.steps.iter().any(|s| {
+                                        s.key == *dep
+                                            && ["completed", "skipped"].contains(&s.status.as_str())
+                                    })
+                                })
+                        })
+                        .filter_map(|s| {
+                            s.parameters
+                                .get("phase")
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if !phases.is_empty() && !allowed.contains(&"attempt.start") {
+                allowed.push("attempt.start");
+            }
+            allowed.retain(|method| {
+                let c = Command {
+                    command_id: "preview".into(),
+                    target: Some(target.into()),
+                    expected_revision: None,
+                    payload: json!({"phase":phases.first()}),
+                };
+                self.enforce_workflow_action(s, method, &c).is_ok()
+            });
+            return json!({"allowed":allowed,"blocked":blocked,"attempt_phases":phases});
         }
         json!({"allowed":allowed,"blocked":blocked,"attempt_phases":if let Some(f)=s.features.iter().find(|f|f.id==target){if !s.planning_accepted(&f.id){vec!["planning"]}else if s.tasks.iter().any(|t|t.feature_id==f.id)&&s.tasks.iter().filter(|t|t.feature_id==f.id).all(|t|t.status==Status::Completed){vec!["closure"]}else{vec![]}}else{vec!["implementation"]}})
     }

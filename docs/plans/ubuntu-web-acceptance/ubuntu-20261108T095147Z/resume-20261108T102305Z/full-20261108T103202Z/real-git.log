@@ -1,9 +1,0 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
-     Running tests/git_resources.rs (target/debug/deps/git_resources-1fc577d435e74043)
-
-running 2 tests
-test dirty_targets_and_foreign_contexts_are_rejected_without_modifying_refs ... ok
-test actual_worktrees_single_parent_candidate_cas_and_recovery ... ok
-
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
-

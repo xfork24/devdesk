@@ -194,6 +194,7 @@ impl CommandTests {
                 profile_file: Some(reporter),
                 runner_file: None,
                 profile_target: Some("/run/devdesk/test-reporter.mjs".into()),
+                experience_directory: None,
             })?;
             require(
                 created.status == "created",

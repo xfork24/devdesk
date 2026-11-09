@@ -1,5 +1,7 @@
 # 架构与 ADR
 
+当前实现基线为 [DevDesk v0.3](plans/devdesk-v0.3/PLAN.md)，工程库 v34、全局库 v5。下文保留既有架构决策；旧 BindingLock/单阶段 planning 行为仅适用于历史兼容，新 Feature 使用配置锁及 Workflow 驱动。
+
 ## 模块
 
 - domain：类型、不可变版本、DAG、绑定、来源与验收规则；无 I/O。
@@ -101,3 +103,11 @@ Host 在创建 Session/Run 时解析目标绑定、项目、角色与本次覆�
 策略资产位于 `permissions/`，manifest 固定后端、平台及文件摘要，构建和运行预检校验所用资产。默认外层 Docker 隔离不要求嵌套 AppArmor 策略；只有选择内层受限执行器时才使用对应 seccomp/AppArmor。DSH 工具过滤器读取同一只读策略，原生 FullAccess 不继续挂载禁网 wrapper。容器临时空间的 exec/noexec 必须显式设置。
 
 审批、隔离和资源额度与访问规则分别建模。模型连接与工具网络属于不同主体；Sandbox 禁网会影响整个运行时，不能用它实现仅工具禁网。当前不提供强制域名代理，网络 allowlist 明确不支持。全权限不提供同容器凭据隔离；凭据代理不属于本轮。实现与平台证据见 [执行报告](plans/permission-standardization/EXECUTION.md)。
+
+## ADR：Workflow 及版本化治理
+
+Workflow 是核心领域对象，组合交互契约与已有执行处理器。Global/Project 定义采用不可变修订；Project 默认可换绑，Feature 创建时保存完整依赖、编译计划和语义版本。AgentRevision 固定 Model/Harness/Skills/Tools/Permission，AgentID 的经验 Scope 单独选择。
+
+持久化选择 governance_records 的类型化记录集合，避免草稿文档与可写图表形成两套事实。core 求值及记录幂等 intent，Host 在事务外解析真实运行时、派发并接纳结果；前端不设置完成状态。自动推进、人工确认、固定 TaskGroup 和返工轮次共用同一门禁。
+
+经验目录是项目事实的只读、可重建投影；原生 Agent 只挂载自身 ID 的冻结经验文件。跨项目引用作为有来源的历史材料导入新会话，不回写当前 Feature 的配置、文档或代码。

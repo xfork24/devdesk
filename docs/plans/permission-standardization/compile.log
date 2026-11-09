@@ -1,5 +1,0 @@
-    Checking devdesk-domain v0.2.0 (/Users/hengliu/workspace/devdesk/crates/domain)
-    Checking devdesk-core v0.2.0 (/Users/hengliu/workspace/devdesk/crates/core)
-    Checking devdesk-adapters v0.2.0 (/Users/hengliu/workspace/devdesk/crates/adapters)
-    Checking devdesk-host v0.2.0 (/Users/hengliu/workspace/devdesk/crates/host)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.74s

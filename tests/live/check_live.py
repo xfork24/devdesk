@@ -5,14 +5,15 @@ No credential provisioning, implicit repository creation, or skipped success.
 from client import Client
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-import argparse,hashlib,json,os,platform,re,subprocess,sys,time,uuid
+import argparse,hashlib,json,os,platform,re,subprocess,sys,time,uuid,tempfile,shutil
 p=argparse.ArgumentParser();p.add_argument('--providers',default='codex,dsh');p.add_argument('--root',type=Path,required=True);p.add_argument('--github-repo',required=True);p.add_argument('--groups',default='git,docker,harness,github,web,workflow,recovery');p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--reports',type=Path);p.add_argument('--mode',choices=['full','verify-existing'],default='full');p.add_argument('--allow-host-restart',action='store_true');p.add_argument('--resume',action='store_true',help='explicitly resume a failed full report after correcting the failed stage; preserve original report and logs');a=p.parse_args()
 assert re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+',a.github_repo),'explicit owner/test-repo required'
 project_root=Path(__file__).resolve().parents[2];os.chdir(project_root);a.root=a.root.resolve();assert a.root!=project_root and (a.root/'.devdesk-dataset').is_file(),'root must be a dedicated initialized dataset'
 assert a.github_repo!='xfork24/devdesk','never use the DevDesk source repository'
 providers=a.providers.split(',');assert providers and set(providers)<=set(['codex','dsh'])
-groups=a.groups.split(',');assert groups and set(groups)<=set(['git','docker','harness','github','web','workflow','recovery'])
-reports=a.reports or (project_root/'docs/plans/real-engineering-integration' if a.mode=='verify-existing' else project_root/'docs/plans/real-engineering-integration'/('live-'+uuid.uuid4().hex[:10]));reports=reports.resolve();reports.mkdir(parents=True,exist_ok=True)
+groups=a.groups.split(',');assert groups and set(groups)<=set(['git','docker','harness','github','web','workflow','recovery','workbench'])
+reports=a.reports or Path(tempfile.mkdtemp(prefix='devdesk-live-'));reports=reports.resolve();reports.mkdir(parents=True,exist_ok=True)
+assert not reports.is_relative_to(project_root/'docs/plans'),'Intermediate evidence must use a temporary directory; only Markdown execution reports belong under docs/plans'
 r={'passed':False,'mode':a.mode,'platform':platform.platform(),'machine':platform.machine(),'providers':providers,'groups':groups,'root':str(a.root),'github_repository':a.github_repo,'steps':[],'started':time.time()};output=reports/('live-check-'+a.mode+'-'+'-'.join(groups)+'.json');previous={};resume_id=uuid.uuid4().hex[:10] if a.resume else None
 if a.resume:
  assert a.mode=='full' and output.is_file(),'--resume requires an existing failed full report'
@@ -48,6 +49,7 @@ def read(name):
 try:
  view=c.rpc('query.workspace');assert Path(view['data_root']).resolve()==a.root,'HTTP host uses a different dataset'
  if a.mode=='full':
+  if 'workbench' in groups:step('native-workbench',lambda:run('native-workbench',['python3','tests/live/probe_workflow_workbench.py','--url',a.url,'--github-repo',a.github_repo,'--report',str(reports/'NATIVE.md')]))
   if 'git' in groups:step('real-git',lambda:run('real-git',['cargo','test','--locked','-p','devdesk-adapters','--test','git_resources']))
   if 'docker' in groups:step('real-docker',lambda:run('real-docker',['cargo','test','--locked','-p','devdesk-adapters','--test','command_tests','--test','docker_resources','--','--include-ignored']))
   if 'harness' in groups:
@@ -138,5 +140,15 @@ try:
    return {'requirement':'R5-browser-proposal.json','final_acceptance':'R7-browser-final.json','scope':'recorded real Chromium actions, backend facts and screenshots; not a new UI run'}
   step('browser-evidence',web)
  if 'recovery' in groups:step('recovery-evidence',lambda:read('R8-recovery.json'))
- r['passed']=True;r['finished']=time.time();save();print(json.dumps({'passed':True,'mode':a.mode,'report':str(output)}))
+ r['passed']=True;r['finished']=time.time();save();print(json.dumps({'passed':True,'mode':a.mode,'report':str(project_root/'docs/plans/real-engineering-integration/LIVE-EXECUTION.md')}))
 except Exception as e:r['error']=str(e);r['finished']=time.time();save();raise
+
+finally:
+ summary=project_root/'docs/plans/real-engineering-integration/LIVE-EXECUTION.md'
+ lines=['# 真实验收执行记录','',f"模式：{r['mode']}；平台：{r['platform']}；组：{', '.join(groups)}；通过：{r['passed']}。",'']
+ for row in r['steps']:lines.append(f"- {row['name']}: {'通过' if row['passed'] else '未通过'}"+(f" · {row['error']}" if row.get('error') else ''))
+ if r.get('error'):lines+=['',r['error']]
+ native=reports/'NATIVE.md'
+ if native.exists():lines+=['',native.read_text()]
+ summary.parent.mkdir(parents=True,exist_ok=True);summary.write_text('\n'.join(lines)+'\n')
+ if a.reports is None:shutil.rmtree(reports)

@@ -830,6 +830,65 @@ impl CliGit {
             branch: branch.into(),
         })
     }
+    fn refresh_mainline(
+        &self,
+        c: &GitContext,
+        expected: &str,
+        revision: &str,
+        operation: &str,
+    ) -> Result<RepositoryReceipt> {
+        let _lock = self.writer.lock().map_err(storage)?;
+        let repo = self.context(c)?;
+        require(
+            valid_oid(expected)
+                && valid_oid(revision)
+                && c.target.owner == c.project
+                && c.target.branch == c.workspace.mainline,
+            "主干同步定位或 SHA 不符",
+        )?;
+        self.inspect_unlocked(&c.project, &c.workspace.repository, &c.workspace.mainline)?;
+        let path = PathBuf::from(&c.target.worktree);
+        require(
+            path == self
+                .project(&c.project)?
+                .join("execution/worktrees/mainlines")
+                .join(&c.project),
+            "主干同步 worktree 越界",
+        )?;
+        self.verify_worktree(&repo, &path, &c.target.branch)?;
+        require(
+            self.output(&path, &["status", "--porcelain"])?.is_empty(),
+            "主干工作区存在未提交修改",
+        )?;
+        self.operation(
+            &c.project,
+            operation,
+            &json!({"kind":"refresh_mainline","context":c,"expected":expected,"revision":revision}),
+        )?;
+        let head = self.oid(&path, "HEAD")?;
+        require(head == expected || head == revision, "主干在同步前已变化")?;
+        if head != revision {
+            require(
+                self.remote_head(&repo, &c.target.branch)?.as_deref() == Some(revision),
+                "远端主干已再次变化，请重新观察后同步",
+            )?;
+            self.output(&repo, &["fetch", "--no-tags", "origin", revision])?;
+            require(
+                self.oid(&repo, "FETCH_HEAD")? == revision,
+                "抓取回执与冻结 SHA 不符",
+            )?;
+            self.output(&path, &["merge", "--ff-only", revision])?;
+        }
+        require(
+            self.oid(&path, "HEAD")? == revision
+                && self.output(&path, &["status", "--porcelain"])?.is_empty(),
+            "主干快进回执未确认",
+        )?;
+        Ok(RepositoryReceipt::MainlineRefreshed {
+            previous: expected.into(),
+            revision: revision.into(),
+        })
+    }
     fn candidate_unlocked(
         &self,
         c: &GitContext,
@@ -903,6 +962,11 @@ impl ports::Git for CliGit {
             operation_id: op.id.clone(),
         };
         match &op.action {
+            RepositoryAction::RefreshMainline {
+                context,
+                expected,
+                revision,
+            } => self.refresh_mainline(context, expected, revision, &op.id),
             RepositoryAction::Candidate {
                 context,
                 source,
@@ -1023,13 +1087,13 @@ impl ports::Git for CliGit {
     }
     fn preflight_advance(&self, c: &GitContext, expected: &str) -> Result<()> {
         let _lock = self.writer.lock().map_err(storage)?;
-        let repo = self.context(c)?;
+        self.context(c)?;
         self.inspect_unlocked(&c.project, &c.workspace.repository, &c.workspace.mainline)?;
         let policy = crate::github::GitHubPullRequests
             .diagnose(&c.workspace.repository, &c.target.branch)?;
         require(policy.compatible, "GitHub 规则不兼容，禁止本地 CAS")?;
         require(
-            self.remote_head(&repo, &c.target.branch)?.as_deref() == Some(expected),
+            policy.head.as_deref() == Some(expected),
             "远端目标已变化，禁止先行本地 CAS",
         )
     }

@@ -47,6 +47,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
                 scope: Some(SessionScope::Project),
                 lifecycle: Some(SessionLifecycle::Prepared),
                 runtime_binding: Some(RuntimeBinding {
+                    agent_configuration: None,
                     permissions: None,
                     installation: RuntimeInstallation {
                         id: "fixture-runtime".into(),

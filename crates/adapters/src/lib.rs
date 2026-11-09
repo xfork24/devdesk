@@ -4,6 +4,7 @@ pub mod credentials;
 #[cfg(target_os = "macos")]
 mod credentials_macos;
 pub mod docker;
+pub mod experience;
 pub mod git;
 pub mod github;
 mod permission_catalog;
@@ -75,6 +76,22 @@ impl SqliteStore {
         )?;
         Ok(store)
     }
+    pub fn read_project_snapshot(data_root: &Path, project_id: &str) -> Result<EngineeringState> {
+        let root = Self::project_path(data_root, project_id)?;
+        let conn = Connection::open_with_flags(
+            root.join("engineering.sqlite3"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(storage)?;
+        conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;")
+            .map_err(storage)?;
+        let state = Self::load(&conn)?;
+        require(
+            state.projects.iter().all(|p| p.id == project_id),
+            "历史项目身份不符",
+        )?;
+        Ok(state)
+    }
     pub fn project_path(data_root: &Path, project_id: &str) -> Result<PathBuf> {
         require(uuid::Uuid::parse_str(project_id).is_ok(), "无效项目 ID")?;
         let parent = data_root.join("projects");
@@ -95,6 +112,7 @@ impl SqliteStore {
     }
     fn load(conn: &Connection) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
+        s.governance = load_table(conn, "governance_records")?;
         s.permissions = load_table(conn, "permissions")?;
         s.turns = load_table(conn, "turns")?;
         s.conversation_events = load_table(conn, "conversation_events")?;
@@ -128,6 +146,12 @@ impl SqliteStore {
         Ok(s)
     }
     fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
+        save_table(
+            conn,
+            "governance_records",
+            &s.governance,
+            &before.governance,
+        )?;
         save_table(conn, "permissions", &s.permissions, &before.permissions)?;
         save_table(conn, "turns", &s.turns, &before.turns)?;
         save_table(
@@ -230,7 +254,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 33, "数据集版本比程序新")?;
+    require(version <= 34, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!("../../../sql/001_initial.sql"))
@@ -454,6 +478,12 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
             .map_err(storage)?;
         tx.commit().map_err(storage)?;
     }
+    if version < 34 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/034_governance.sql"))
+            .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
     Ok(connection)
 }
 
@@ -579,6 +609,7 @@ impl EngineeringStore for SqliteStore {
         // Idle projects must not deserialize their complete protocol history on every tick.
         let conn = self.connection.lock().map_err(storage)?;
         conn.query_row("SELECT
+          EXISTS(SELECT 1 FROM governance_records instance WHERE instance.kind='workflow_instance' AND json_extract(instance.data,'$.paused')=0 AND json_extract(instance.data,'$.status') NOT IN ('cancelled','completed') AND NOT EXISTS(SELECT 1 FROM governance_records parent WHERE parent.kind='workflow_instance' AND parent.definition_id=json_extract(instance.scope,'$.feature_id') AND json_extract(parent.data,'$.paused')=1) AND (json_extract(instance.data,'$.dirty')=1 OR EXISTS(SELECT 1 FROM governance_records intent,json_each(instance.data,'$.steps') step WHERE intent.kind='workflow_intent' AND intent.definition_id=json_extract(step.value,'$.id') AND json_extract(intent.data,'$.status')='prepared' AND json_extract(step.value,'$.status') NOT IN ('completed','skipped')))) OR
           EXISTS(SELECT 1 FROM runs WHERE status IN ('queued','running')) OR
           EXISTS(SELECT 1 FROM effects WHERE status IN ('pending','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM advances WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
@@ -621,6 +652,7 @@ impl EngineeringStore for SqliteStore {
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;
+        state.validate_governance(&before)?;
         state.validate_conversations(&before)?;
         validate_permission_revisions(&state.permissions, &before.permissions)?;
         if let Some(id) = &self.project_id {

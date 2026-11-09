@@ -1,4 +1,0 @@
-$ ./scripts/install-linux-sandbox-policy.sh --check
-3af35216df62da5ff6bfbe54b47506b219f26ccc99c944d84b826d66870cdb2c  containers/security/devdesk-harness-v1.apparmor
-
-exit=0

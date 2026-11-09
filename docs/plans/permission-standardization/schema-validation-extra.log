@@ -1,2 +1,0 @@
-PASS RPC schema Draft202012 validation; jsonschema 4.26.0
-snapshot definitions ['Permission', 'PermissionPolicy', 'PermissionRef', 'PermissionPatch', 'PermissionBinding', 'PermissionOverrides', 'ResolvedPermission', 'PermissionEnforcementPlan', 'ExecutionPermissions', 'PermissionConfiguration', 'NativePermissionOptions']

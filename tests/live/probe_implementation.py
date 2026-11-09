@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+import os
 """Native Task DAG -> actual Docker Red/Green -> immutable Delivery + independent native Review."""
 from client import Client
 from pathlib import Path
 import argparse,json,subprocess
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--output',type=Path,default=Path('docs/plans/real-engineering-integration/R6-implementation.json'));p.add_argument('--reports',type=Path,default=Path('docs/plans/real-engineering-integration'));a=p.parse_args();a.output=a.reports/a.output.name if a.output.parent==Path('docs/plans/real-engineering-integration') else a.output
+p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:51751');p.add_argument('--output',type=Path,default=Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live'))/'R6-implementation.json');p.add_argument('--reports',type=Path,default=Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live')));a=p.parse_args();a.output=a.reports/a.output.name if a.output.parent==Path(os.environ.get('DEVDESK_LIVE_REPORTS','/tmp/devdesk-live')) else a.output
 source=json.loads((a.reports/'R5-planning.json').read_text());assert source['passed'];c=Client(a.url);c.open(source['project_id']);fid=source['feature_id']
 r=json.loads(a.output.read_text()) if a.output.exists() else {'project_id':source['project_id'],'feature_id':fid,'tasks':{},'passed':False}
 if 'failure' in r:

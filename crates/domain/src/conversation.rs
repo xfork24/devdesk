@@ -22,6 +22,8 @@ pub enum SessionLifecycle {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeBinding {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_configuration: Option<AgentExecutionConfiguration>,
     #[serde(default)]
     pub permissions: Option<ExecutionPermissions>,
     pub installation: RuntimeInstallation,

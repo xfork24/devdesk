@@ -2813,6 +2813,7 @@ fn project_databases_migrate_full_history_and_keep_the_legacy_source() {
     }
     for (table, rows) in before.as_object().unwrap() {
         if ![
+            "governance",
             "permissions",
             "definitions",
             "harnesses",

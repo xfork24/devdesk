@@ -110,7 +110,8 @@ impl Engine {
                                 .is_ok_and(|root| root == identity)
                     })
                     .filter(|v| {
-                        v.project_id.as_ref() == Some(&project)
+                        p["force_new"] != true
+                            && v.project_id.as_ref() == Some(&project)
                             && v.scope == Some(scope)
                             && !matches!(
                                 v.lifecycle,
@@ -120,6 +121,13 @@ impl Engine {
                             )
                             && v.owner_id == target
                             && v.agent == agent
+                            && opt(p, "agent_instance_id").is_none_or(|instance| {
+                                s.governance.iter().any(|r| {
+                                    r.kind == "agent_session"
+                                        && r.definition_id == v.id
+                                        && r.data["agent_instance_id"] == instance
+                                })
+                            })
                             && v.runtime_binding.as_ref() == Some(&binding)
                             && snapshot
                                 .as_ref()
@@ -138,6 +146,13 @@ impl Engine {
                             .find(|v| {
                                 v.scope == Some(scope)
                                     && v.owner_id == target
+                                    && opt(p, "agent_instance_id").is_none_or(|instance| {
+                                        s.governance.iter().any(|r| {
+                                            r.kind == "agent_session"
+                                                && r.definition_id == v.id
+                                                && r.data["agent_instance_id"] == instance
+                                        })
+                                    })
                                     && s.agent_identity(&v.agent).is_ok_and(|id| id == identity)
                             })
                             .cloned()
@@ -471,7 +486,7 @@ impl Engine {
             messages.remove(0);
         }
         let content =
-            serde_json::to_string(&json!({"source_session":session.id,"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
+            serde_json::to_string(&json!({"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
                 .map_err(|e| err("serialization", e.to_string()))?;
         let mut documents = match &owner {
             MaterialOwner::Project { id } => s
@@ -538,6 +553,7 @@ impl Engine {
         let id = snapshot.id.clone();
         s.artifacts.push(artifact);
         s.snapshots.push(snapshot);
+        self.index_experience(s, &id)?;
         Ok(id)
     }
     pub(crate) fn conversation_query(&self, method: &str, p: &Value) -> Option<Result<Value>> {

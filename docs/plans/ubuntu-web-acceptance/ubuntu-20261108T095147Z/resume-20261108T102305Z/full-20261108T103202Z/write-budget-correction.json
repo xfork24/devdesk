@@ -1,8 +1,0 @@
-{
-  "new_host": 2173386,
-  "old_binding_retry_rejected": "run.retry: blocked: \u51bb\u7ed3\u9002\u914d\u5668\u6784\u5efa\u5df2\u66f4\u65b0\uff0c\u4e0d\u80fd\u5728\u6280\u672f\u91cd\u8bd5\u65f6\u66f4\u6362\u914d\u7f6e\uff0c\u8bf7\u65b0\u5efa Attempt",
-  "new_attempt": "98c6dd1b-5733-4cb1-b13e-084433c35810",
-  "write_budget": 32768,
-  "readonly_budget": 8192,
-  "prior_attempt": "7ec0a484-96f8-40a9-aeae-79d293b2c6a1"
-}

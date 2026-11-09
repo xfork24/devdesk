@@ -1,8 +1,0 @@
-{
-  "passed": true,
-  "source": "actual standalone Host restart and HTTP cookie rotation",
-  "stale_cookie_status": 401,
-  "fresh_client_status": 200,
-  "server_authentication_not_relaxed": true,
-  "executors_released": true
-}

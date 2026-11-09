@@ -1,3 +1,0 @@
-PASS all actual persisted 41 RuntimeBinding and 68 ExecutionPermissions, including credential-free tests; configuration and Permission revisions
-PASS final four-turn model-tested binary SHA matches the packaged binary
-PASS dedicated verification Host stopped

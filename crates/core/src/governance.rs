@@ -1,0 +1,1836 @@
+//! Configuration commands, immutable publication and workflow runtime coordination.
+use crate::*;
+use std::collections::BTreeMap;
+
+pub(crate) fn record(
+    kind: &str,
+    definition_id: Id,
+    scope: Scope,
+    name: String,
+    version: u64,
+    supersedes: Option<Id>,
+    data: Value,
+    immutable: bool,
+) -> ConfigurationRecord {
+    ConfigurationRecord {
+        id: id(),
+        kind: kind.into(),
+        definition_id,
+        scope,
+        name,
+        version,
+        supersedes,
+        content_hash: configuration_hash(&data),
+        data,
+        immutable,
+        revision: 1,
+        created_at: now(),
+    }
+}
+pub(crate) fn update_record(r: &mut ConfigurationRecord, data: Value) {
+    if r.data != data {
+        r.content_hash = configuration_hash(&data);
+        r.data = data;
+        r.revision += 1;
+    }
+}
+fn decode<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T> {
+    serde_json::from_value(v.clone()).map_err(|e| err("invalid_params", e.to_string()))
+}
+fn role_key(role: AgentRole) -> &'static str {
+    match role {
+        AgentRole::Analyst => "analyst",
+        AgentRole::Architect => "architect",
+        AgentRole::Developer => "developer",
+        AgentRole::Tester => "tester",
+        AgentRole::Reviewer => "reviewer",
+    }
+}
+
+pub(crate) fn default_workflow(task: bool) -> WorkflowDocument {
+    let stages = if task {
+        vec![("implementation", "Task 执行"), ("delivery", "Task 交付")]
+    } else {
+        vec![
+            ("planning", "Feature 规划"),
+            ("development", "Task 并行开发"),
+            ("delivery", "Feature 收尾与交付"),
+        ]
+    };
+    let mut doc = WorkflowDocument {
+        schema_version: 1,
+        process_kind: if task { "task" } else { "feature" }.into(),
+        stages: stages
+            .into_iter()
+            .map(|(key, name)| WorkflowStage {
+                key: key.into(),
+                name: name.into(),
+            })
+            .collect(),
+        binding_slots: BTreeMap::new(),
+        steps: vec![],
+        subworkflow_refs: BTreeMap::new(),
+    };
+    for role in [
+        AgentRole::Analyst,
+        AgentRole::Architect,
+        AgentRole::Developer,
+        AgentRole::Tester,
+        AgentRole::Reviewer,
+    ] {
+        doc.binding_slots.insert(
+            role_key(role).into(),
+            WorkflowSlot {
+                role,
+                agent_ref: None,
+                capabilities: vec![],
+            },
+        );
+    }
+    let specs: Vec<(&str, &str, &str, &str, Option<&str>, &str, bool)> = if task {
+        vec![
+            (
+                "implementation",
+                "TDD 与实现",
+                "implementation",
+                "attempt.execute",
+                Some("developer"),
+                "implementation",
+                false,
+            ),
+            (
+                "review",
+                "Task 交付评审",
+                "delivery",
+                "delivery.review",
+                Some("reviewer"),
+                "implementation",
+                false,
+            ),
+            (
+                "merge_prepare",
+                "准备 Task 合入候选",
+                "delivery",
+                "merge.prepare",
+                Some("tester"),
+                "",
+                false,
+            ),
+            (
+                "merge_review",
+                "Task 候选评审",
+                "delivery",
+                "merge.review",
+                Some("reviewer"),
+                "",
+                false,
+            ),
+            (
+                "merge_apply",
+                "应用 Task 合入",
+                "delivery",
+                "merge.apply",
+                None,
+                "",
+                false,
+            ),
+            (
+                "snapshot",
+                "Task 最终快照",
+                "delivery",
+                "snapshot.capture",
+                None,
+                "",
+                false,
+            ),
+        ]
+    } else {
+        vec![
+            (
+                "initial_snapshot",
+                "建立初始上下文快照",
+                "planning",
+                "snapshot.capture",
+                None,
+                "",
+                false,
+            ),
+            (
+                "requirement_discussion",
+                "需求头脑风暴",
+                "planning",
+                "agent.interact",
+                Some("analyst"),
+                "requirement",
+                false,
+            ),
+            (
+                "requirement_adopt",
+                "采纳需求",
+                "planning",
+                "proposal.adopt",
+                Some("analyst"),
+                "requirement",
+                false,
+            ),
+            (
+                "requirement_execute",
+                "需求正式交付",
+                "planning",
+                "attempt.execute",
+                Some("analyst"),
+                "requirement_definition",
+                false,
+            ),
+            (
+                "requirement_review",
+                "需求评审",
+                "planning",
+                "delivery.review",
+                Some("reviewer"),
+                "requirement",
+                false,
+            ),
+            (
+                "design_discussion",
+                "讨论方案设计",
+                "planning",
+                "agent.interact",
+                Some("architect"),
+                "design",
+                false,
+            ),
+            (
+                "design_adopt",
+                "采纳设计",
+                "planning",
+                "proposal.adopt",
+                Some("architect"),
+                "design",
+                false,
+            ),
+            (
+                "task_discussion",
+                "讨论 Task 与 Test 计划",
+                "planning",
+                "agent.interact",
+                Some("architect"),
+                "task_plan",
+                false,
+            ),
+            (
+                "task_adopt",
+                "采纳 Task 与 Test 计划",
+                "planning",
+                "proposal.adopt",
+                Some("architect"),
+                "task_plan",
+                false,
+            ),
+            (
+                "test_discussion",
+                "讨论 Feature 测试计划",
+                "planning",
+                "agent.interact",
+                Some("tester"),
+                "test_plan",
+                false,
+            ),
+            (
+                "test_adopt",
+                "采纳 Feature 测试计划",
+                "planning",
+                "proposal.adopt",
+                Some("tester"),
+                "test_plan",
+                false,
+            ),
+            (
+                "solution_execute",
+                "方案规划交付",
+                "planning",
+                "attempt.execute",
+                Some("architect"),
+                "solution_planning",
+                false,
+            ),
+            (
+                "solution_review",
+                "方案规划评审",
+                "planning",
+                "delivery.review",
+                Some("reviewer"),
+                "plan",
+                false,
+            ),
+            (
+                "tasks",
+                "并行 Task 子流程",
+                "development",
+                "tasks.foreach",
+                None,
+                "",
+                false,
+            ),
+            (
+                "closure",
+                "Feature 完整测试与文档",
+                "delivery",
+                "attempt.execute",
+                Some("tester"),
+                "closure",
+                false,
+            ),
+            (
+                "closure_review",
+                "Feature 交付评审",
+                "delivery",
+                "delivery.review",
+                Some("reviewer"),
+                "closure",
+                false,
+            ),
+            (
+                "merge_prepare",
+                "准备主干候选",
+                "delivery",
+                "merge.prepare",
+                Some("tester"),
+                "",
+                false,
+            ),
+            (
+                "merge_review",
+                "主干候选评审并确认",
+                "delivery",
+                "merge.review",
+                Some("reviewer"),
+                "",
+                true,
+            ),
+            (
+                "merge_apply",
+                "应用主干合入",
+                "delivery",
+                "merge.apply",
+                None,
+                "",
+                false,
+            ),
+            (
+                "snapshot",
+                "Feature 最终快照",
+                "delivery",
+                "snapshot.capture",
+                None,
+                "",
+                false,
+            ),
+            (
+                "cleanup",
+                "资源处置",
+                "delivery",
+                "resource.cleanup",
+                None,
+                "",
+                false,
+            ),
+        ]
+    };
+    let mut previous = None;
+    for (key, name, stage, kind, slot, phase, manual) in specs {
+        let mut params = BTreeMap::new();
+        if !phase.is_empty() {
+            params.insert("phase".into(), json!(phase));
+        }
+        let recipe = if phase == "implementation" {
+            vec![
+                ("test_author", AgentRole::Tester, vec![], true),
+                ("red", AgentRole::Tester, vec!["test_author"], false),
+                ("implement", AgentRole::Developer, vec!["red"], true),
+                ("green", AgentRole::Tester, vec!["implement"], false),
+                ("docs", AgentRole::Developer, vec!["implement"], false),
+                ("verify", AgentRole::Tester, vec!["green", "docs"], false),
+            ]
+            .into_iter()
+            .map(|(key, role, deps, writes)| WorkflowRunNode {
+                key: key.into(),
+                role,
+                dependencies: deps.into_iter().map(str::to_owned).collect(),
+                writes,
+            })
+            .collect()
+        } else {
+            vec![]
+        };
+        doc.steps.push(WorkflowStep {
+            key: key.into(),
+            name: name.into(),
+            stage: stage.into(),
+            kind: kind.into(),
+            contract_version: 1,
+            dependencies: previous.iter().cloned().collect(),
+            participant_slot: slot.map(str::to_owned),
+            inputs: BTreeMap::new(),
+            interaction: InteractionContract {
+                mode: if phase == "requirement" {
+                    "brainstorm"
+                } else {
+                    "discussion"
+                }
+                .into(),
+                goal: format!("完成{name}，明确目标、约束和验收条件，产生可核验的结构化结果。"),
+                output_kind: phase.into(),
+                max_turns: 30,
+                ..Default::default()
+            },
+            advance_mode: if manual {
+                AdvanceMode::HumanConfirmation
+            } else {
+                AdvanceMode::Automatic
+            },
+            condition: WorkflowCondition::Always,
+            parameters: params,
+            execution_recipe: recipe,
+            rework_scope: vec![],
+            retry_limit: 3,
+        });
+        previous = Some(key.to_owned());
+    }
+    if !task {
+        doc.subworkflow_refs
+            .insert("task".into(), "builtin-workflow-task-v1".into());
+    }
+    doc
+}
+
+pub(crate) fn seed_governance(s: &mut EngineeringState) {
+    for (task, key, name) in [
+        (true, "builtin-workflow-task-v1", "标准 Task 开发流程"),
+        (
+            false,
+            "builtin-workflow-feature-v1",
+            "标准 Feature 开发流程",
+        ),
+    ] {
+        if !s.governance.iter().any(|r| r.id == key) {
+            let mut r = record(
+                "workflow",
+                key.trim_end_matches("-v1").into(),
+                Scope::Global,
+                name.into(),
+                1,
+                None,
+                json!(default_workflow(task)),
+                true,
+            );
+            r.id = key.into();
+            s.governance.push(r);
+        }
+    }
+}
+
+fn check_scope(s: &EngineeringState, scope: &Scope, store_project: Option<&str>) -> Result<()> {
+    match scope {
+        Scope::Global => require(store_project.is_none(), "全局定义必须由全局配置入口编辑"),
+        Scope::Project { project_id } => require(
+            store_project.is_none_or(|p| p == project_id)
+                && s.projects.iter().any(|p| &p.id == project_id),
+            "配置 Project 作用域不匹配",
+        ),
+        Scope::Feature { .. } => Err(err("invalid_scope", "不能直接创建 Feature 局部可变定义")),
+    }
+}
+fn reference<'a>(
+    s: &'a EngineeringState,
+    id: &str,
+    kind: &str,
+    scope: &Scope,
+) -> Result<&'a ConfigurationRecord> {
+    let r = s.configuration(id)?;
+    require(
+        !s.governance
+            .iter()
+            .any(|t| t.kind == "configuration_retirement" && t.definition_id == id),
+        "该版本已停用，不能新绑定；已有 Feature 保持原配置",
+    )?;
+    require(
+        r.kind == kind && r.immutable && r.scope.visible_from(scope),
+        format!("{id}: 类型或 Scope 不兼容"),
+    )?;
+    Ok(r)
+}
+fn validate_composition(s: &EngineeringState, a: &AgentComposition, scope: &Scope) -> Result<()> {
+    require(!a.instructions.trim().is_empty(), "Agent 指令不能为空")?;
+    require(
+        !a.tools.is_empty() && (1..=2).contains(&a.permissions.len()),
+        "Agent 必须明确 Tools 及 Harness/Sandbox Permission",
+    )?;
+    let model: ModelDefinition = reference(s, &a.model_ref, "model", scope)?.decode()?;
+    let harness: HarnessDefinition = reference(s, &a.harness_ref, "harness", scope)?.decode()?;
+    require(
+        !model.model.trim().is_empty() && !model.provider.trim().is_empty(),
+        "Model 后端与标识不能为空",
+    )?;
+    require(
+        harness.model_providers.is_empty() || harness.model_providers.contains(&model.provider),
+        "Harness 不支持该 Model 后端",
+    )?;
+    if harness.provider != "simulation" {
+        require(
+            (harness.provider == "codex" && model.provider == "openai")
+                || (harness.provider == "dsh" && model.provider == "deepseek"),
+            "Model 协议不受此 Harness 支持",
+        )?;
+        require(
+            model.endpoint.is_none(),
+            "当前原生适配器不支持自定义 Model endpoint",
+        )?;
+        for (key, value) in &model.parameters {
+            require(
+                match harness.provider.as_str() {
+                    "codex" => {
+                        key == "reasoning_effort"
+                            && value.as_str().is_some_and(|v| {
+                                ["minimal", "low", "medium", "high", "xhigh", "max"].contains(&v)
+                            })
+                    }
+                    "dsh" => {
+                        key == "max_tokens"
+                            && value.as_u64().is_some_and(|v| (1024..=131072).contains(&v))
+                    }
+                    _ => false,
+                },
+                format!("Model 参数 {key} 无法由此 Harness 精确执行"),
+            )?;
+        }
+    }
+    for tool in &a.tools {
+        let t: ToolDefinition = reference(s, tool, "tool", scope)?.decode()?;
+        require(
+            ["harness.native", "experience.lookup"].contains(&t.implementation.as_str()),
+            "Tool 尚无可执行处理器",
+        )?;
+        require(
+            t.capabilities
+                .iter()
+                .all(|c| harness.capabilities.contains(c)),
+            "Harness 不支持 Tool 所需能力",
+        )?;
+    }
+    require(
+        a.tools
+            .iter()
+            .filter_map(|id| s.configuration(id).ok())
+            .filter_map(|r| r.decode::<ToolDefinition>().ok())
+            .any(|t| t.implementation == "harness.native"),
+        "当前 Harness 必须显式声明原生 Tool 集合",
+    )?;
+    for skill in &a.skills {
+        require(
+            s.definitions
+                .iter()
+                .any(|d| &d.id == skill && d.family == "skill")
+                || s.governance
+                    .iter()
+                    .any(|r| &r.id == skill && r.kind == "skill" && r.scope.visible_from(scope)),
+            "Skill 修订不存在",
+        )?;
+    }
+    for permission in &a.permissions {
+        require(
+            s.permissions.iter().any(|p| &p.id == permission),
+            "Permission 修订不存在",
+        )?;
+    }
+    Ok(())
+}
+fn install_agent_profile(s: &mut EngineeringState, r: &ConfigurationRecord, a: &AgentComposition) {
+    if s.definitions.iter().any(|d| d.id == r.id) {
+        return;
+    }
+    let policy = match a.role {
+        AgentRole::Developer => ToolPolicy::TaskWrite,
+        AgentRole::Tester => ToolPolicy::TestWrite,
+        _ => ToolPolicy::ReadOnly,
+    };
+    let mut work = vec![WorkType::Discussion];
+    match a.role {
+        AgentRole::Architect => work.push(WorkType::Design),
+        AgentRole::Developer => work.push(WorkType::Implementation),
+        AgentRole::Tester => work.push(WorkType::Testing),
+        AgentRole::Reviewer => work.push(WorkType::Review),
+        _ => {}
+    }
+    s.definitions.push(Definition {
+        id: r.id.clone(),
+        family: "agent".into(),
+        name: r.name.clone(),
+        version: r.version,
+        supersedes: r.supersedes.clone(),
+        body: a.instructions.clone(),
+        slots: vec![],
+        rules: vec![],
+        agent_profile: Some(AgentProfile {
+            role: a.role,
+            skill_revisions: a.skills.clone(),
+            tool_policy: policy,
+            allowed_work: work,
+            output_schemas: match a.role {
+                AgentRole::Analyst => vec!["requirement/v1".into(), "feature/v1".into()],
+                AgentRole::Architect => vec!["design/v1".into(), "task_plan/v1".into()],
+                AgentRole::Tester => vec!["test_plan/v1".into(), "test_result/v1".into()],
+                AgentRole::Reviewer => vec!["review/v1".into()],
+                AgentRole::Developer => vec!["implementation/v1".into()],
+            },
+            permission_overrides: None,
+        }),
+    });
+}
+
+impl Engine {
+    pub(crate) fn freeze_legacy_features(&self, s: &mut EngineeringState) {
+        let features: Vec<_> = s
+            .features
+            .iter()
+            .filter(|f| {
+                s.feature_configuration(&f.id).is_none()
+                    && s.projects
+                        .iter()
+                        .any(|p| p.id == f.project_id && p.execution_mode == "live")
+                    && !s
+                        .governance
+                        .iter()
+                        .any(|r| r.kind == "legacy_feature_lock" && r.definition_id == f.id)
+            })
+            .cloned()
+            .collect();
+        for f in features {
+            let sessions:Vec<_>=s.sessions.iter().filter(|session|session.feature_id.as_deref()==Some(&f.id)||session.owner_id==f.id||s.tasks.iter().any(|t|t.id==session.owner_id&&t.feature_id==f.id)).map(|session|json!({"session":session.id,"agent":session.agent,"runtime_binding":session.runtime_binding})).collect();
+            s.governance.push(record("legacy_feature_lock",f.id.clone(),Scope::Feature{project_id:f.project_id,feature_id:f.id},"历史 Feature 配置".into(),1,None,json!({"binding":f.binding,"known_sessions":sessions,"agent_instance_id":null,"model":"unknown unless present in a recorded runtime_binding","policy":"Do not infer AgentID or route new work using latest preferences; create a successor Feature"}),true));
+        }
+    }
+
+    pub(crate) fn workflow_simulation_binding(
+        &self,
+        s: &EngineeringState,
+        feature: &str,
+        role: &str,
+        base: &BindingLock,
+    ) -> BindingLock {
+        let mut binding = base.clone();
+        if let Some(agent) = s
+            .feature_configuration(feature)
+            .and_then(|lock| lock.agent_refs.get(role).cloned())
+        {
+            binding.agent = agent.clone();
+            binding.skills = s
+                .definitions
+                .iter()
+                .find(|d| d.id == agent)
+                .and_then(|d| d.agent_profile.as_ref())
+                .map(|p| p.skill_revisions.clone())
+                .unwrap_or_default();
+        }
+        binding
+    }
+
+    pub(crate) fn index_experience(
+        &self,
+        s: &mut EngineeringState,
+        snapshot_id: &str,
+    ) -> Result<()> {
+        let snap = s
+            .snapshots
+            .iter()
+            .find(|snap| snap.id == snapshot_id)
+            .ok_or_else(|| err("not_found", "Snapshot 不存在"))?
+            .clone();
+        let feature = snap
+            .feature_id
+            .as_ref()
+            .and_then(|id| s.features.iter().find(|f| &f.id == id));
+        let pid = feature
+            .map(|f| f.project_id.clone())
+            .or(snap.project_id.clone())
+            .ok_or_else(|| err("invalid_scope", "Snapshot 缺少项目归属"))?;
+        let project = s
+            .projects
+            .iter()
+            .find(|p| p.id == pid)
+            .ok_or_else(|| err("not_found", "Project 不存在"))?
+            .clone();
+        let feature_name = feature.map(|f| f.title.clone());
+        for session_id in &snap.capture.sessions {
+            let link = s
+                .governance
+                .iter()
+                .find(|r| r.kind == "agent_session" && r.definition_id == *session_id)
+                .cloned();
+            if let Some(link) = link {
+                if !s.governance.iter().any(|r| {
+                    r.kind == "experience"
+                        && r.definition_id == snapshot_id
+                        && r.data["session_id"] == *session_id
+                }) {
+                    let work = s
+                        .turns
+                        .iter()
+                        .rev()
+                        .find(|t| t.session_id == *session_id)
+                        .and_then(|t| t.finished.or(t.started));
+                    s.governance.push(record("experience",snapshot_id.into(),Scope::Project{project_id:pid.clone()},feature_name.clone().unwrap_or(project.title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project.title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn workflow_recipe(
+        &self,
+        s: &EngineeringState,
+        owner: &str,
+        phase: &str,
+    ) -> Option<Vec<WorkflowRunNode>> {
+        let task = s.tasks.iter().find(|t| t.id == owner);
+        let feature = task.map_or(owner, |t| t.feature_id.as_str());
+        let lock = s.feature_configuration(feature)?;
+        let doc = if task.is_some() {
+            &lock.task_plan
+        } else {
+            &lock.plan
+        };
+        doc.steps
+            .iter()
+            .find(|step| {
+                step.kind == "attempt.execute"
+                    && step.parameters.get("phase").and_then(Value::as_str) == Some(phase)
+            })
+            .filter(|step| !step.execution_recipe.is_empty())
+            .map(|step| step.execution_recipe.clone())
+    }
+    pub(crate) fn governance_after_command(
+        &self,
+        method: &str,
+        c: &Command,
+        s: &mut EngineeringState,
+        result: &Value,
+    ) -> Result<()> {
+        if method == "session.open" {
+            if let Some(instance_id) = opt(&c.payload, "agent_instance_id") {
+                let instance_record = s.configuration(&instance_id)?.clone();
+                require(instance_record.kind == "agent_instance", "无效 AgentID")?;
+                let instance: AgentInstance = instance_record.decode()?;
+                let session_id = text(result, "id")?;
+                let session = s
+                    .sessions
+                    .iter()
+                    .find(|v| v.id == session_id)
+                    .ok_or_else(|| err("not_found", "Session 不存在"))?;
+                let project = session
+                    .project_id
+                    .clone()
+                    .ok_or_else(|| err("invalid_scope", "Session 缺少项目"))?;
+                require(
+                    instance.scope.visible_from(&Scope::Project {
+                        project_id: project.clone(),
+                    }),
+                    "AgentID 不能用于其他项目",
+                )?;
+                require(
+                    session.agent == instance.agent_revision_id,
+                    "AgentID 与 AgentRevision 不匹配",
+                )?;
+                let agent: AgentComposition =
+                    s.configuration(&instance.agent_revision_id)?.decode()?;
+                let model: ModelDefinition = s.configuration(&agent.model_ref)?.decode()?;
+                let harness: HarnessDefinition = s.configuration(&agent.harness_ref)?.decode()?;
+                let binding = session
+                    .runtime_binding
+                    .as_ref()
+                    .ok_or_else(|| err("blocked", "Agent Session 缺少冻结绑定"))?;
+                require(
+                    binding.model == model.model
+                        && binding.installation.key.provider.as_str() == harness.provider,
+                    "执行绑定改变了 AgentID 的 Model/Harness",
+                )?;
+                if let Some(old) = s
+                    .governance
+                    .iter()
+                    .find(|r| r.kind == "agent_session" && r.definition_id == session_id)
+                {
+                    require(
+                        old.data["agent_instance_id"] == instance_id,
+                        "不能将 Session 重新归属其他 AgentID",
+                    )?;
+                } else {
+                    s.governance.push(record("agent_session",session_id,Scope::Project{project_id:project},instance_record.name,1,None,json!({"agent_instance_id":instance_id,"agent_revision_id":instance.agent_revision_id,"composition_hash":s.configuration(&instance.agent_revision_id)?.content_hash,"model_ref":agent.model_ref,"harness_ref":agent.harness_ref,"binding":binding,"workflow_step_instance_id":c.payload["workflow_step_instance_id"]}),true));
+                }
+            }
+        }
+        if method == "session.open" {
+            if let (Some(step), Some(session)) = (
+                c.payload["workflow_step_instance_id"].as_str(),
+                result["id"].as_str(),
+            ) {
+                if !s.governance.iter().any(|r| {
+                    r.kind == "agent_session_use"
+                        && r.definition_id == session
+                        && r.data["step_id"] == step
+                }) {
+                    let scope = s
+                        .configuration(c.payload["agent_instance_id"].as_str().unwrap_or(""))
+                        .ok()
+                        .map(|r| r.scope.clone())
+                        .unwrap_or(Scope::Global);
+                    s.governance.push(record("agent_session_use",session.into(),scope,"步骤会话关联".into(),1,None,json!({"step_id":step,"agent_instance_id":c.payload["agent_instance_id"],"agent_revision_id":c.payload["agent"]}),true));
+                }
+            }
+        }
+        if ["document.revise", "proposal.adopt"].contains(&method) {
+            let docid = if method == "document.revise" {
+                result["id"].as_str()
+            } else {
+                result["objects"]
+                    .as_array()
+                    .and_then(|ids| ids.first())
+                    .and_then(Value::as_str)
+            };
+            if let Some(doc) = docid
+                .and_then(|id| s.documents.iter().find(|d| d.id == id))
+                .cloned()
+            {
+                let feature = s
+                    .features
+                    .iter()
+                    .find(|f| s.document_in_feature(&doc, &f.id))
+                    .map(|f| f.id.clone());
+                if let Some(feature) = feature {
+                    let default_source = if doc.task_id.is_some() {
+                        "implementation"
+                    } else {
+                        match doc.kind.as_str() {
+                            "requirement" => "requirement_execute",
+                            "design" => "task_discussion",
+                            "test" => "solution_execute",
+                            "doc" if doc.title == "Structured Task Plan" => "solution_execute",
+                            _ => "",
+                        }
+                    };
+                    let owner = doc.task_id.as_deref().unwrap_or(&feature);
+                    let runtime = s
+                        .governance
+                        .iter()
+                        .rev()
+                        .find(|r| {
+                            r.kind == "workflow_instance"
+                                && r.definition_id == owner
+                                && r.data["status"] != "cancelled"
+                        })
+                        .and_then(|r| r.decode::<WorkflowRuntime>().ok());
+                    if let Some(runtime) = runtime {
+                        let lock: FeatureConfiguration =
+                            s.configuration(&runtime.configuration_lock_id)?.decode()?;
+                        let plan = if runtime.task_id.is_some() {
+                            &lock.task_plan
+                        } else {
+                            &lock.plan
+                        };
+                        let source = plan
+                            .steps
+                            .iter()
+                            .find(|step| {
+                                if doc.task_id.is_some() {
+                                    step.kind == "attempt.execute"
+                                } else {
+                                    match doc.kind.as_str() {
+                                        "requirement" => {
+                                            step.kind == "attempt.execute"
+                                                && step.parameters.get("phase")
+                                                    == Some(&json!("requirement_definition"))
+                                        }
+                                        "design" => {
+                                            step.kind == "agent.interact"
+                                                && step.interaction.output_kind == "task_plan"
+                                        }
+                                        "test" => {
+                                            step.kind == "attempt.execute"
+                                                && step.parameters.get("phase")
+                                                    == Some(&json!("solution_planning"))
+                                        }
+                                        "doc" if doc.title == "Structured Task Plan" => {
+                                            step.kind == "attempt.execute"
+                                                && step.parameters.get("phase")
+                                                    == Some(&json!("solution_planning"))
+                                        }
+                                        _ => false,
+                                    }
+                                }
+                            })
+                            .map(|step| step.key.as_str())
+                            .unwrap_or(default_source);
+                        if let Some(step) = runtime
+                            .steps
+                            .iter()
+                            .find(|step| step.key == source && step.status != "pending")
+                        {
+                            self.workflow_control(
+                                "workflow.step.rework",
+                                &Command {
+                                    command_id: format!("{}:input-rework", c.command_id),
+                                    target: Some(step.id.clone()),
+                                    expected_revision: Some(step.revision),
+                                    payload: json!({"from_step":source}),
+                                },
+                                s,
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+        if method == "attempt.start" {
+            if let Some(aid) = result["id"].as_str() {
+                let attempt = s.attempt(aid)?.clone();
+                if s.feature_configuration(&attempt.feature_id).is_some() {
+                    s.governance.push(record("stage_input_lock",aid.into(),Scope::Feature{project_id:s.feature(&attempt.feature_id)?.project_id.clone(),feature_id:attempt.feature_id.clone()},attempt.phase.clone(),1,None,json!({"phase":attempt.phase,"documents":attempt.documents,"context":attempt.context_content,"binding":attempt.binding,"workflow_step_instance_id":c.payload["workflow_step_instance_id"]}),true));
+                }
+            }
+        }
+        if let Some(step_id) = opt(&c.payload, "workflow_step_instance_id") {
+            let field = match method {
+                "session.open" => Some("session"),
+                "conversation.send" => Some("turn"),
+                "proposal.extract" => Some("proposal"),
+                "attempt.start" => Some("attempt"),
+                "delivery.submit" => Some("delivery"),
+                "review.request" => Some("review_run"),
+                "merge.request" | "merge.apply" => Some("merge"),
+                "snapshot.save" => Some("snapshot"),
+                _ => None,
+            };
+            if let (Some(field), Some(id)) = (field, result["id"].as_str()) {
+                if let Some(r) = s.governance.iter_mut().find(|r| {
+                    r.kind == "workflow_instance"
+                        && r.data["steps"]
+                            .as_array()
+                            .is_some_and(|steps| steps.iter().any(|x| x["id"] == step_id))
+                }) {
+                    let mut runtime: WorkflowRuntime = r.decode()?;
+                    if let Some(step) = runtime.steps.iter_mut().find(|x| x.id == step_id) {
+                        step.outputs.insert(field.into(), id.into());
+                        step.revision += 1;
+                        runtime.dirty = true;
+                    }
+                    update_record(r, json!(runtime));
+                }
+            }
+        }
+        for r in s
+            .governance
+            .iter_mut()
+            .filter(|r| r.kind == "workflow_instance")
+        {
+            if method != "workflow.pause" && method != "workflow.resume" {
+                r.data["dirty"] = json!(true);
+                r.content_hash = configuration_hash(&r.data);
+            }
+        }
+        Ok(())
+    }
+    pub(crate) fn freeze_feature_configuration(
+        &self,
+        s: &mut EngineeringState,
+        feature: &str,
+        p: &Value,
+    ) -> Result<()> {
+        let f = s.feature(feature)?.clone();
+        let current = s
+            .governance
+            .iter()
+            .filter(|r| r.kind == "project_configuration" && r.definition_id == f.project_id)
+            .max_by_key(|r| r.version)
+            .cloned();
+        let Some(current) = current else {
+            require(
+                p["require_configuration"] != true
+                    && !s
+                        .projects
+                        .iter()
+                        .any(|p| p.id == f.project_id && p.execution_mode == "live"),
+                "请先为 Project 选择 Workflow、Standard 和 Agent 组合",
+            )?;
+            return Ok(());
+        };
+        if let Some(expected) = opt(p, "configuration_revision_id") {
+            require(
+                expected == current.id,
+                "Project 默认配置已变化，请刷新创建表单",
+            )?;
+        }
+        let wf = reference(
+            s,
+            &text(&current.data, "workflow_ref")?,
+            "workflow",
+            &Scope::Project {
+                project_id: f.project_id.clone(),
+            },
+        )?
+        .clone();
+        let mut plan: WorkflowDocument = wf.decode()?;
+        validate_workflow(&plan)?;
+        let scope = Scope::Feature {
+            project_id: f.project_id.clone(),
+            feature_id: feature.into(),
+        };
+        let mut agents: BTreeMap<String, String> = decode(&current.data["agent_refs"])?;
+        let mut hashes = BTreeMap::new();
+        hashes.insert(wf.id.clone(), wf.content_hash.clone());
+        for (key, slot) in &mut plan.binding_slots {
+            let ar = agents
+                .get(key)
+                .cloned()
+                .or_else(|| slot.agent_ref.clone())
+                .ok_or_else(|| err("configuration_required", format!("未绑定 Agent: {key}")))?;
+            let r = reference(s, &ar, "agent", &scope)?;
+            let a: AgentComposition = r.decode()?;
+            validate_composition(s, &a, &scope)?;
+            require(a.role == slot.role, "Agent 职责与步骤不符")?;
+            let harness: HarnessDefinition = s.configuration(&a.harness_ref)?.decode()?;
+            let model: ModelDefinition = s.configuration(&a.model_ref)?.decode()?;
+            require(
+                slot.capabilities
+                    .iter()
+                    .all(|c| harness.capabilities.contains(c) || model.capabilities.contains(c)),
+                format!("角色 {key} 的完整 Agent 不满足流程能力要求"),
+            )?;
+            for reference in std::iter::once(&ar)
+                .chain(std::iter::once(&a.model_ref))
+                .chain(std::iter::once(&a.harness_ref))
+                .chain(a.tools.iter())
+            {
+                let r = s.configuration(reference)?;
+                hashes.insert(r.id.clone(), r.content_hash.clone());
+            }
+            for reference in a.skills.iter().chain(a.permissions.iter()) {
+                let value = s
+                    .definitions
+                    .iter()
+                    .find(|d| &d.id == reference)
+                    .map(|d| json!(d))
+                    .or_else(|| {
+                        s.permissions
+                            .iter()
+                            .find(|d| &d.id == reference)
+                            .map(|d| json!(d))
+                    })
+                    .or_else(|| {
+                        s.governance
+                            .iter()
+                            .find(|d| &d.id == reference)
+                            .map(|d| json!(d))
+                    })
+                    .ok_or_else(|| err("not_found", "Agent 依赖不存在"))?;
+                hashes.insert(reference.clone(), configuration_hash(&value));
+            }
+            slot.agent_ref = Some(ar.clone());
+            agents.insert(key.clone(), ar);
+        }
+        let task_ref = plan
+            .subworkflow_refs
+            .get("task")
+            .ok_or_else(|| err("invalid_workflow", "Feature 流程缺少 Task 子流程"))?;
+        let task_revision = reference(s, task_ref, "workflow", &scope)?;
+        let mut task_plan: WorkflowDocument = task_revision.decode()?;
+        validate_workflow(&task_plan)?;
+        require(
+            task_plan.process_kind == "task",
+            "Task 子流程必须引用 Task 用途的发布版本",
+        )?;
+        hashes.insert(task_ref.clone(), task_revision.content_hash.clone());
+        for (key, slot) in &mut task_plan.binding_slots {
+            slot.agent_ref = agents.get(key).cloned().or_else(|| slot.agent_ref.clone());
+        }
+        let standard = text(&current.data, "standard_ref")?;
+        if let Some(r) = s.governance.iter().find(|r| r.id == standard) {
+            reference(s, &standard, "standard", &scope)?;
+            hashes.insert(r.id.clone(), r.content_hash.clone());
+        }
+        let std = s
+            .definitions
+            .iter()
+            .find(|d| d.id == standard && d.family == "standard")
+            .ok_or_else(|| err("not_found", "Standard 不存在"))?;
+        hashes.insert(
+            std.id.clone(),
+            s.governance
+                .iter()
+                .find(|r| r.id == std.id)
+                .map(|r| r.content_hash.clone())
+                .unwrap_or(configuration_hash(std)),
+        );
+        for spec in &std.slots {
+            let d = s
+                .definitions
+                .iter()
+                .find(|d| d.id == spec.spec)
+                .ok_or_else(|| err("not_found", "Spec 不存在"))?;
+            hashes.insert(
+                d.id.clone(),
+                s.governance
+                    .iter()
+                    .find(|r| r.id == d.id)
+                    .map(|r| r.content_hash.clone())
+                    .unwrap_or(configuration_hash(d)),
+            );
+        }
+        let config = FeatureConfiguration {
+            project_configuration_id: current.id,
+            workflow_ref: wf.id,
+            standard_ref: standard.clone(),
+            agent_refs: agents,
+            definition_hashes: hashes,
+            plan,
+            task_plan,
+            compiler_version: 1,
+        };
+        let lock = record(
+            "feature_lock",
+            feature.into(),
+            scope.clone(),
+            format!("{} 配置锁", f.title),
+            1,
+            None,
+            json!(config),
+            true,
+        );
+        let lock_id = lock.id.clone();
+        s.governance.push(lock);
+        let runtime = WorkflowRuntime {
+            owner_id: feature.into(),
+            feature_id: feature.into(),
+            task_id: None,
+            parent_id: None,
+            configuration_lock_id: lock_id,
+            workflow_ref: config.workflow_ref.clone(),
+            status: "active".into(),
+            paused: false,
+            dirty: true,
+            steps: config
+                .plan
+                .steps
+                .iter()
+                .map(|step| WorkflowStepRuntime {
+                    id: id(),
+                    key: step.key.clone(),
+                    round: 1,
+                    status: "pending".into(),
+                    input_hash: String::new(),
+                    outputs: BTreeMap::new(),
+                    reason: String::new(),
+                    revision: 1,
+                    confirmation: None,
+                })
+                .collect(),
+            task_members: vec![],
+            task_plan_revision: None,
+            generation: 1,
+        };
+        s.governance.push(record(
+            "workflow_instance",
+            feature.into(),
+            scope,
+            f.title,
+            1,
+            None,
+            json!(runtime),
+            false,
+        ));
+        let f = s.features.iter_mut().find(|f| f.id == feature).unwrap();
+        f.binding.standard = standard;
+        if let Some(agent) = config.agent_refs.get("developer") {
+            f.binding.agent = agent.clone();
+            f.binding.skills = s
+                .definitions
+                .iter()
+                .find(|d| &d.id == agent)
+                .and_then(|d| d.agent_profile.as_ref())
+                .map(|p| p.skill_revisions.clone())
+                .unwrap_or_default();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn governance_command(
+        &self,
+        method: &str,
+        c: &Command,
+        s: &mut EngineeringState,
+    ) -> Result<Option<Value>> {
+        let p = &c.payload;
+        let target = c.target.as_deref().unwrap_or("");
+        if [
+            "workflow.pause",
+            "workflow.resume",
+            "workflow.step.confirm",
+            "workflow.step.retry",
+            "workflow.step.rework",
+        ]
+        .contains(&method)
+        {
+            return self.workflow_control(method, c, s).map(Some);
+        }
+        let family = method.split('.').next().unwrap_or("");
+        let config_create = ["model", "tool", "harness", "skill", "spec", "standard"]
+            .contains(&family)
+            && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
+            || (["agent.create", "agent.revise"].contains(&method) && p.get("data").is_some());
+        if config_create {
+            let old = if method.ends_with(".revise") {
+                Some(s.configuration(target)?.clone())
+            } else {
+                None
+            };
+            let scope = old
+                .as_ref()
+                .map(|r| r.scope.clone())
+                .unwrap_or(decode(p.get("scope").unwrap_or(&json!({"kind":"global"})))?);
+            check_scope(s, &scope, self.store.project_id().as_deref())?;
+            if let Some(r) = &old {
+                require(
+                    r.kind == family && c.expected_revision == Some(r.revision),
+                    "配置修订冲突或类型错误",
+                )?;
+            }
+            let data = p
+                .get("data")
+                .cloned()
+                .ok_or_else(|| err("invalid_params", "缺少配置正文"))?;
+            match family {
+                "model" => {
+                    let m: ModelDefinition = decode(&data)?;
+                    require(
+                        !m.provider.is_empty() && !m.model.is_empty() && m.model.len() < 200,
+                        "无效 Model",
+                    )?;
+                    require(
+                        m.endpoint
+                            .as_ref()
+                            .is_none_or(|e| !e.contains('@') && !e.contains("api_key=")),
+                        "连接不能包含密钥",
+                    )?;
+                }
+                "harness" => {
+                    let h: HarnessDefinition = decode(&data)?;
+                    require(
+                        ["codex", "dsh", "simulation"].contains(&h.provider.as_str())
+                            && !h.runtime_version.is_empty(),
+                        "无效 Harness 或运行版本",
+                    )?;
+                }
+                "tool" => {
+                    let t: ToolDefinition = decode(&data)?;
+                    require(
+                        !t.qualified_name.is_empty()
+                            && t.input_schema.is_object()
+                            && t.output_schema.is_object(),
+                        "无效 Tool 契约",
+                    )?;
+                }
+                "agent" => validate_composition(s, &decode(&data)?, &scope)?,
+                "standard" if data.get("standard_ref").is_some() => {
+                    let sid = text(&data, "standard_ref")?;
+                    require(
+                        s.definitions
+                            .iter()
+                            .any(|d| d.id == sid && d.family == "standard"),
+                        "Standard 修订不存在",
+                    )?;
+                }
+                _ => {}
+            }
+            let definition_id = old
+                .as_ref()
+                .map(|r| r.definition_id.clone())
+                .unwrap_or_else(id);
+            let version = s
+                .governance
+                .iter()
+                .filter(|r| r.kind == family && r.definition_id == definition_id)
+                .map(|r| r.version)
+                .max()
+                .unwrap_or(0)
+                + 1;
+            let name = opt(p, "name")
+                .or_else(|| old.as_ref().map(|r| r.name.clone()))
+                .ok_or_else(|| err("invalid_params", "需要名称"))?;
+            let r = record(
+                family,
+                definition_id,
+                scope,
+                name,
+                version,
+                old.map(|r| r.id),
+                data,
+                true,
+            );
+            if family == "agent" {
+                install_agent_profile(s, &r, &r.decode()?);
+            }
+            if ["skill", "spec", "standard"].contains(&family) {
+                let source = r.data["standard_ref"]
+                    .as_str()
+                    .and_then(|id| s.definitions.iter().find(|d| d.id == id))
+                    .cloned();
+                let body = source
+                    .as_ref()
+                    .map(|d| d.body.clone())
+                    .or_else(|| r.data["body"].as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                let slots: Vec<SpecSlot> = source.as_ref().map(|d| d.slots.clone()).unwrap_or(
+                    r.data
+                        .get("slots")
+                        .map(decode)
+                        .transpose()?
+                        .unwrap_or_default(),
+                );
+                let rules: Vec<String> = source.as_ref().map(|d| d.rules.clone()).unwrap_or(
+                    r.data
+                        .get("rules")
+                        .map(decode)
+                        .transpose()?
+                        .unwrap_or_default(),
+                );
+                require(!body.trim().is_empty(), "Skill/Spec/Standard 正文不能为空")?;
+                if family == "spec" {
+                    require(
+                        !rules.is_empty()
+                            && rules.iter().all(|r| {
+                                ["traceability", "failure_paths", "sections"].contains(&r.as_str())
+                            }),
+                        "Spec 需要已有检查器支持的规则",
+                    )?;
+                }
+                if family == "standard" {
+                    for purpose in ["planning", "implementation", "merge"] {
+                        let slot =
+                            slots.iter().find(|s| s.purpose == purpose).ok_or_else(|| {
+                                err("invalid_standard", format!("缺少 {purpose} slot"))
+                            })?;
+                        require(
+                            s.definitions
+                                .iter()
+                                .any(|d| d.id == slot.spec && d.family == "spec"),
+                            "Spec 修订不存在",
+                        )?;
+                        if s.governance.iter().any(|r| r.id == slot.spec) {
+                            reference(s, &slot.spec, "spec", &r.scope)?;
+                        }
+                    }
+                }
+                s.definitions.push(Definition {
+                    id: r.id.clone(),
+                    family: family.into(),
+                    name: r.name.clone(),
+                    version: r.version,
+                    supersedes: r.supersedes.clone(),
+                    body,
+                    slots,
+                    rules,
+                    agent_profile: None,
+                });
+            }
+
+            let result = json!(r);
+            s.governance.push(r);
+            return Ok(Some(result));
+        }
+        let result = match method {
+            "configuration.retire" => {
+                let source = s.configuration(target)?.clone();
+                check_scope(s, &source.scope, self.store.project_id().as_deref())?;
+                require(source.is_definition(), "只能停用定义修订")?;
+                require(c.expected_revision == Some(source.revision), "版本冲突")?;
+                let r = record(
+                    "configuration_retirement",
+                    target.into(),
+                    source.scope,
+                    source.name,
+                    1,
+                    None,
+                    json!({"reason":text(p,"reason")?}),
+                    true,
+                );
+                s.governance.push(r);
+                json!({"id":target,"retired":true})
+            }
+            "workflow.create" => {
+                let scope: Scope = decode(p.get("scope").unwrap_or(&json!({"kind":"global"})))?;
+                check_scope(s, &scope, self.store.project_id().as_deref())?;
+                let document = if let Some(source) = opt(p, "template_ref") {
+                    reference(s, &source, "workflow", &scope)?.data.clone()
+                } else {
+                    p.get("document")
+                        .cloned()
+                        .unwrap_or_else(|| json!(default_workflow(false)))
+                };
+                let document: WorkflowDocument = decode(&document)?;
+                let definition_id = id();
+                let r = record(
+                    "workflow_draft",
+                    definition_id,
+                    scope,
+                    text(p, "name")?,
+                    1,
+                    None,
+                    json!({"document":document,"base_revision_id":null,"published_revision_id":null}),
+                    false,
+                );
+                let result = json!(r);
+                s.governance.push(r);
+                result
+            }
+            "workflow.draft.create" => {
+                let source = s.configuration(&text(p, "base_revision_id")?)?.clone();
+                require(source.kind == "workflow", "需要已发布流程版本")?;
+                let scope: Scope = p
+                    .get("scope")
+                    .map(decode)
+                    .transpose()?
+                    .unwrap_or(source.scope.clone());
+                check_scope(s, &scope, self.store.project_id().as_deref())?;
+                require(source.scope.visible_from(&scope), "流程来源不可见")?;
+                let definition_id = if scope == source.scope {
+                    source.definition_id.clone()
+                } else {
+                    id()
+                };
+                let r = record(
+                    "workflow_draft",
+                    definition_id,
+                    scope,
+                    opt(p, "name").unwrap_or(source.name),
+                    source.version + 1,
+                    None,
+                    json!({"document":source.data,"base_revision_id":source.id,"published_revision_id":null}),
+                    false,
+                );
+                let result = json!(r);
+                s.governance.push(r);
+                result
+            }
+            "workflow.draft.update" => {
+                let old = s.configuration(target)?.clone();
+                check_scope(s, &old.scope, self.store.project_id().as_deref())?;
+                require(
+                    old.kind == "workflow_draft" && old.data["published_revision_id"].is_null(),
+                    "只能编辑未发布草稿",
+                )?;
+                require(
+                    c.expected_revision == Some(old.revision),
+                    "草稿已被修改，请重新读取合并",
+                )?;
+                let mut data = old.data;
+                let document: WorkflowDocument = decode(
+                    p.get("document")
+                        .ok_or_else(|| err("invalid_params", "需要流程正文"))?,
+                )?;
+                data["document"] = json!(document);
+                let r = s.governance.iter_mut().find(|r| r.id == target).unwrap();
+                if let Some(name) = opt(p, "name") {
+                    r.name = name;
+                }
+                update_record(r, data);
+                json!(r)
+            }
+            "workflow.publish" => {
+                let draft = s.configuration(target)?.clone();
+                check_scope(s, &draft.scope, self.store.project_id().as_deref())?;
+                require(
+                    draft.kind == "workflow_draft" && c.expected_revision == Some(draft.revision),
+                    "草稿版本冲突",
+                )?;
+                if let Some(published) = draft.data["published_revision_id"].as_str() {
+                    return Ok(Some(json!(s.configuration(published)?)));
+                }
+                let doc: WorkflowDocument = decode(&draft.data["document"])?;
+                validate_workflow(&doc)?;
+                for (key, r) in &doc.subworkflow_refs {
+                    require(
+                        doc.process_kind == "feature" && key == "task",
+                        "当前编译器只支持 Feature 的 Task 子流程引用",
+                    )?;
+                    let child: WorkflowDocument =
+                        reference(s, r, "workflow", &draft.scope)?.decode()?;
+                    require(child.process_kind == "task", "Task 引用用途不匹配")?;
+                }
+                for slot in doc.binding_slots.values() {
+                    if let Some(a) = &slot.agent_ref {
+                        let a: AgentComposition =
+                            reference(s, a, "agent", &draft.scope)?.decode()?;
+                        require(a.role == slot.role, "Agent 职责不匹配")?;
+                    }
+                }
+                let version = s
+                    .governance
+                    .iter()
+                    .filter(|r| r.kind == "workflow" && r.definition_id == draft.definition_id)
+                    .map(|r| r.version)
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
+                let r = record(
+                    "workflow",
+                    draft.definition_id,
+                    draft.scope,
+                    draft.name,
+                    version,
+                    draft.data["base_revision_id"].as_str().map(str::to_owned),
+                    json!(doc),
+                    true,
+                );
+                let result = json!(r);
+                let mut data = draft.data;
+                data["published_revision_id"] = json!(r.id);
+                s.governance.push(r);
+                update_record(
+                    s.governance.iter_mut().find(|r| r.id == target).unwrap(),
+                    data,
+                );
+                result
+            }
+            "agent.instance.create" => {
+                let scope: Scope = decode(&p["scope"])?;
+                check_scope(s, &scope, self.store.project_id().as_deref())?;
+                require(
+                    !matches!(scope, Scope::Feature { .. }),
+                    "实例只能绑定 Global 或 Project",
+                )?;
+                let agent = reference(s, &text(p, "agent_revision_id")?, "agent", &scope)?;
+                let data = AgentInstance {
+                    agent_revision_id: agent.id.clone(),
+                    scope: scope.clone(),
+                    source_instance_id: opt(p, "source_instance_id"),
+                };
+                let r = record(
+                    "agent_instance",
+                    id(),
+                    scope,
+                    text(p, "name")?,
+                    1,
+                    None,
+                    json!(data),
+                    true,
+                );
+                let result = json!(r);
+                s.governance.push(r);
+                result
+            }
+            "project.configuration.update" => {
+                let project = s
+                    .projects
+                    .iter()
+                    .find(|x| x.id == target)
+                    .ok_or_else(|| err("not_found", "Project 不存在"))?
+                    .clone();
+                let scope = Scope::Project {
+                    project_id: target.into(),
+                };
+                let wf = reference(s, &text(p, "workflow_ref")?, "workflow", &scope)?.clone();
+                let doc: WorkflowDocument = wf.decode()?;
+                require(doc.process_kind == "feature", "项目默认需要 Feature 流程")?;
+                validate_workflow(&doc)?;
+                let standard = text(p, "standard_ref")?;
+                if s.governance.iter().any(|r| r.id == standard) {
+                    reference(s, &standard, "standard", &scope)?;
+                }
+                require(
+                    s.definitions
+                        .iter()
+                        .any(|d| d.id == standard && d.family == "standard"),
+                    "Standard 修订不存在",
+                )?;
+                let agents: BTreeMap<String, String> = p
+                    .get("agent_refs")
+                    .map(decode)
+                    .transpose()?
+                    .unwrap_or_default();
+                for (key, slot) in &doc.binding_slots {
+                    let ar = agents.get(key).or(slot.agent_ref.as_ref()).ok_or_else(|| {
+                        err(
+                            "configuration_required",
+                            format!("角色 {key} 尚未选择完整 Agent"),
+                        )
+                    })?;
+                    let a: AgentComposition = reference(s, ar, "agent", &scope)?.decode()?;
+                    require(a.role == slot.role, "Agent 职责不匹配")?;
+                    validate_composition(s, &a, &scope)?;
+                }
+                let previous = s
+                    .governance
+                    .iter()
+                    .filter(|r| r.kind == "project_configuration" && r.definition_id == target)
+                    .max_by_key(|r| r.version)
+                    .cloned();
+                if let Some(expected) = opt(p, "source_configuration_id") {
+                    require(
+                        previous.as_ref().is_some_and(|r| r.id == expected),
+                        "Project 默认配置已改变",
+                    )?;
+                }
+                let r = record(
+                    "project_configuration",
+                    target.into(),
+                    scope,
+                    format!("{} 默认配置", project.title),
+                    previous.as_ref().map_or(1, |r| r.version + 1),
+                    previous.map(|r| r.id),
+                    json!({"workflow_ref":wf.id,"standard_ref":standard,"agent_refs":agents}),
+                    true,
+                );
+                let result = json!(r);
+                s.governance.push(r);
+                let p = s.projects.iter_mut().find(|x| x.id == target).unwrap();
+                p.revision += 1;
+                result
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(result))
+    }
+
+    pub(crate) fn governance_query(&self, method: &str, p: &Value) -> Option<Result<Value>> {
+        if ![
+            "query.configurations",
+            "query.agent_instances",
+            "query.agent_revision",
+            "query.workflows",
+            "query.workflow",
+            "query.workflow_draft",
+            "query.workflow_validation",
+            "query.workflow_preview",
+            "query.workflow_version_diff",
+            "query.workflow_instance",
+            "query.workflow_actions",
+            "query.project_configuration",
+            "query.project_workflow_summary",
+        ]
+        .contains(&method)
+        {
+            return None;
+        }
+        Some((|| {
+            let s = self.store.snapshot()?;
+            let offset = p["offset"].as_u64().unwrap_or(0) as usize;
+            let limit = p["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
+            if ["query.workflow_validation", "query.workflow_preview"].contains(&method) {
+                let doc: WorkflowDocument = if let Some(document) = p.get("document") {
+                    decode(document)?
+                } else {
+                    let r = s.configuration(&text(p, "id")?)?;
+                    decode(if r.kind == "workflow_draft" {
+                        &r.data["document"]
+                    } else {
+                        &r.data
+                    })?
+                };
+                return Ok(match validate_workflow(&doc) {
+                    Ok(order) => {
+                        fn condition(c: &WorkflowCondition, p: &Value) -> bool {
+                            match c {
+                                WorkflowCondition::Always => true,
+                                WorkflowCondition::All { conditions } => {
+                                    conditions.iter().all(|c| condition(c, p))
+                                }
+                                WorkflowCondition::Any { conditions } => {
+                                    conditions.iter().any(|c| condition(c, p))
+                                }
+                                WorkflowCondition::OutputPresent { step } => p["outputs"]
+                                    .as_array()
+                                    .is_some_and(|outputs| outputs.contains(&json!(step))),
+                                WorkflowCondition::Accepted { kind } => p["accepted"]
+                                    .as_array()
+                                    .is_some_and(|outputs| outputs.contains(&json!(kind))),
+                            }
+                        }
+                        let mut states: BTreeMap<String, String> = BTreeMap::new();
+                        let mut simulation = vec![];
+                        for key in &order {
+                            let step = doc.steps.iter().find(|s| &s.key == key).unwrap();
+                            let ready = step.dependencies.iter().all(|dep| {
+                                states
+                                    .get(dep)
+                                    .is_some_and(|s| ["completed", "skipped"].contains(&s.as_str()))
+                            });
+                            let state = if step.kind != "join"
+                                && step.dependencies.iter().any(|dep| {
+                                    states.get(dep).is_some_and(|state| state == "skipped")
+                                }) {
+                                "skipped"
+                            } else if !ready {
+                                "waiting_dependencies"
+                            } else if !condition(&step.condition, &p["sample"]) {
+                                if step.kind == "branch" {
+                                    "skipped"
+                                } else {
+                                    "waiting_condition"
+                                }
+                            } else if p["sample"]["outputs"]
+                                .as_array()
+                                .is_some_and(|outputs| outputs.contains(&json!(key)))
+                            {
+                                if step.advance_mode == AdvanceMode::HumanConfirmation {
+                                    "waiting_confirmation"
+                                } else {
+                                    "completed"
+                                }
+                            } else if ["agent.interact", "proposal.adopt"]
+                                .contains(&step.kind.as_str())
+                            {
+                                "waiting_input"
+                            } else {
+                                "ready"
+                            };
+                            states.insert(key.clone(), state.into());
+                            simulation.push(json!({"key":key,"state":state,"role":step.participant_slot,"condition":step.condition,"reason":if state=="waiting_dependencies"{"前置结果尚未满足"}else if state=="waiting_confirmation"{"样本结果完成，等待精确输入确认"}else if state=="waiting_condition"{"样本条件不满足"}else{"仅作演练，不生成工程事实"},"rework_entries":step.rework_scope}));
+                        }
+                        json!({"valid":true,"document_hash":configuration_hash(&doc),"order":order,"preview":doc.steps,"simulation":simulation,"external_actions":false})
+                    }
+                    Err(e) => json!({"valid":false,"errors":[e],"external_actions":false}),
+                });
+            }
+            if method == "query.workflow_version_diff" {
+                let a = s.configuration(&text(p, "a")?)?;
+                let b = s.configuration(&text(p, "b")?)?;
+                return Ok(json!({"a":a,"b":b,"changed":a.content_hash!=b.content_hash}));
+            }
+            if [
+                "query.workflow",
+                "query.workflow_draft",
+                "query.agent_revision",
+                "query.workflow_instance",
+                "query.workflow_actions",
+            ]
+            .contains(&method)
+            {
+                let r = s.configuration(&text(p, "id")?)?;
+                require(
+                    match method {
+                        "query.workflow" => {
+                            ["workflow", "workflow_draft"].contains(&r.kind.as_str())
+                        }
+                        "query.workflow_draft" => r.kind == "workflow_draft",
+                        "query.agent_revision" => r.kind == "agent",
+                        _ => r.kind == "workflow_instance",
+                    },
+                    "配置类型与查询不匹配",
+                )?;
+                if ["query.workflow_instance", "query.workflow_actions"].contains(&method) {
+                    let runtime: WorkflowRuntime = r.decode()?;
+                    let lock: FeatureConfiguration =
+                        s.configuration(&runtime.configuration_lock_id)?.decode()?;
+                    let plan = if runtime.task_id.is_some() {
+                        &lock.task_plan
+                    } else {
+                        &lock.plan
+                    };
+                    let actions: Vec<_> = runtime
+                        .steps
+                        .iter()
+                        .map(|step| {
+                            let definition = plan
+                                .steps
+                                .iter()
+                                .find(|definition| definition.key == step.key)
+                                .unwrap();
+                            let rework_entries = if !definition.rework_scope.is_empty() {
+                                definition.rework_scope.clone()
+                            } else if definition.kind == "merge.apply" {
+                                plan.steps
+                                    .iter()
+                                    .filter(|definition| definition.kind == "merge.prepare")
+                                    .map(|definition| definition.key.clone())
+                                    .collect()
+                            } else if ["delivery.review", "merge.review"]
+                                .contains(&definition.kind.as_str())
+                            {
+                                definition.dependencies.clone()
+                            } else {
+                                vec![definition.key.clone()]
+                            };
+                            let quality_decision = step.outputs.get("delivery").is_some_and(|id| {
+                                s.reviews.iter().any(|review| {
+                                    &review.delivery_id == id
+                                        && [Decision::Pass, Decision::ChangesRequested]
+                                            .contains(&review.decision)
+                                })
+                            });
+                            let proved_not_applied = step.outputs.get("merge").is_some_and(|id| {
+                                s.advances.iter().any(|advance| {
+                                    &advance.id == id && advance.status == AdvanceStatus::NotApplied
+                                })
+                            });
+                            let retry_allowed = !quality_decision
+                                && (definition.kind != "merge.apply" || proved_not_applied)
+                                && s.governance
+                                    .iter()
+                                    .filter(|r| {
+                                        r.kind == "workflow_retry" && r.definition_id == step.id
+                                    })
+                                    .count()
+                                    < definition.retry_limit as usize;
+                            let allowed = match step.status.as_str() {
+                                "waiting_confirmation" => {
+                                    vec!["workflow.step.confirm", "workflow.step.rework"]
+                                }
+                                "failed" | "blocked" if retry_allowed => {
+                                    vec!["workflow.step.retry", "workflow.step.rework"]
+                                }
+                                "failed" | "blocked" | "completed" => vec!["workflow.step.rework"],
+                                _ => vec![],
+                            };
+                            let allowed =
+                                if ["completed", "cancelled"].contains(&runtime.status.as_str()) {
+                                    vec![]
+                                } else {
+                                    allowed
+                                };
+                            json!({"id":step.id,"rework_entries":rework_entries,"allowed":allowed})
+                        })
+                        .collect();
+                    return Ok(
+                        json!({"record":r,"plan":plan,"configuration":lock,"actions":actions}),
+                    );
+                }
+                return Ok(json!(r));
+            }
+            if method == "query.project_configuration" {
+                return Ok(
+                    json!({"configuration":s.governance.iter().filter(|r|r.kind=="project_configuration"&&p["project_id"].as_str().is_none_or(|pid|r.definition_id==pid)).max_by_key(|r|r.version),"standards":s.definitions.iter().filter(|d|d.family=="standard").collect::<Vec<_>>()}),
+                );
+            }
+            let rows: Vec<_> = s
+                .governance
+                .iter()
+                .rev()
+                .filter(|r| match method {
+                    "query.workflows" => ["workflow", "workflow_draft"].contains(&r.kind.as_str()),
+                    "query.agent_instances" => r.kind == "agent_instance",
+                    "query.project_workflow_summary" => r.kind == "workflow_instance",
+                    _ => p["kind"]
+                        .as_str()
+                        .map_or(r.is_definition() || r.kind == "agent_instance", |kind| {
+                            r.kind == kind
+                        }),
+                })
+                .filter(|r| {
+                    p.get("scope")
+                        .is_none_or(|scope| serde_json::to_value(&r.scope).unwrap() == *scope)
+                })
+                .collect();
+            Ok(
+                json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len(),"action_catalog":workflow_action_catalog()}),
+            )
+        })())
+    }
+}

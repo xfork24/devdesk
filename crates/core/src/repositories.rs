@@ -9,6 +9,83 @@ impl Engine {
     ) -> Result<Option<Value>> {
         let target = c.target.as_deref().unwrap_or("");
         Ok(Some(match method {
+            "repository.refresh" => {
+                let project = s
+                    .projects
+                    .iter()
+                    .find(|p| p.id == target)
+                    .ok_or_else(|| err("not_found", "Project 不存在"))?;
+                require(
+                    project.execution_mode == "live"
+                        && c.expected_revision == Some(project.revision),
+                    "需要当前真实 Project revision",
+                )?;
+                require(
+                    !s.advances.iter().any(|a| {
+                        ![AdvanceStatus::Applied, AdvanceStatus::NotApplied].contains(&a.status)
+                    }),
+                    "先核对在途接纳操作",
+                )?;
+                require(
+                    !s.repository_operations.iter().any(|op| {
+                        [
+                            RepositoryOperationStatus::Prepared,
+                            RepositoryOperationStatus::Dispatched,
+                            RepositoryOperationStatus::Observed,
+                        ]
+                        .contains(&op.status)
+                    }),
+                    "先等待在途仓库操作结束",
+                )?;
+                let workspace = project
+                    .workspace_definition
+                    .clone()
+                    .ok_or_else(|| err("blocked", "仓库定位缺失"))?;
+                let worktree = s
+                    .repository_worktrees
+                    .iter()
+                    .find(|w| w.kind == WorktreeKind::Mainline && w.owner_id == target)
+                    .ok_or_else(|| err("blocked", "主干 worktree 缺失"))?;
+                let location = CodeLocation {
+                    owner: target.into(),
+                    branch: worktree.branch.clone(),
+                    worktree: worktree.path.clone(),
+                };
+                let expected = s
+                    .heads
+                    .iter()
+                    .find(|h| h.id == format!("main:{target}"))
+                    .ok_or_else(|| err("blocked", "主干版本缺失"))?
+                    .revision
+                    .clone();
+                let revision = text(&c.payload, "revision")?;
+                require(
+                    revision.len() == 40 && revision.bytes().all(|c| c.is_ascii_hexdigit()),
+                    "需要已观察的远端精确 SHA",
+                )?;
+                let op = RepositoryOperation {
+                    id: id(),
+                    project_id: target.into(),
+                    action: RepositoryAction::RefreshMainline {
+                        context: GitContext {
+                            project: target.into(),
+                            workspace,
+                            source: location.clone(),
+                            target: location,
+                            origin: Origin::External,
+                        },
+                        expected,
+                        revision,
+                    },
+                    status: RepositoryOperationStatus::Prepared,
+                    receipt: None,
+                    reason: String::new(),
+                    revision: 1,
+                };
+                let operation_id = op.id.clone();
+                s.repository_operations.push(op);
+                json!({"id":operation_id,"operation_id":operation_id})
+            }
             "repository.connect" => {
                 let project = s
                     .projects
@@ -66,6 +143,10 @@ impl Engine {
                     c.expected_revision == Some(op.revision)
                         && op.status == RepositoryOperationStatus::NeedsReconciliation,
                     "仓库操作无需核对或 revision 已变化",
+                )?;
+                require(
+                    op.reason != "superseded_target",
+                    "目标已快进，该旧候选不再重放，请重新准备候选",
                 )?;
                 op.reason = "reconcile_requested".into();
                 op.revision += 1;
@@ -168,6 +249,78 @@ impl Engine {
                             return Ok(json!({"ok":true}));
                         }
                         let worktree = match (&operation.action, receipt) {
+                            (
+                                RepositoryAction::RefreshMainline {
+                                    context,
+                                    expected,
+                                    revision,
+                                },
+                                RepositoryReceipt::MainlineRefreshed {
+                                    previous,
+                                    revision: observed,
+                                },
+                            ) => {
+                                require(
+                                    context.project == operation.project_id
+                                        && previous == expected
+                                        && observed == revision,
+                                    "主干同步回执不匹配",
+                                )?;
+                                let head = s
+                                    .heads
+                                    .iter_mut()
+                                    .find(|h| h.id == format!("main:{}", operation.project_id))
+                                    .ok_or_else(|| err("blocked", "主干版本缺失"))?;
+                                require(
+                                    head.revision == *expected || head.revision == *revision,
+                                    "同步期间主干事实已变化",
+                                )?;
+                                head.revision = revision.clone();
+                                let mut superseded = vec![];
+                                for merge in s.merges.iter_mut().filter(|m| {
+                                    m.target == format!("main:{}", operation.project_id)
+                                        && m.expected_target != *revision
+                                        && m.status != Status::Completed
+                                }) {
+                                    merge.status = Status::Interrupted;
+                                    merge.revision += 1;
+                                    superseded.push(merge.id.clone());
+                                }
+                                for delivery in s.deliveries.iter_mut().filter(|d| {
+                                    d.merge_id
+                                        .as_ref()
+                                        .is_some_and(|id| superseded.contains(id))
+                                }) {
+                                    delivery.stale = true;
+                                }
+                                for op in &mut s.repository_operations {
+                                    let merge = match &op.action {
+                                        RepositoryAction::Candidate { merge, .. }
+                                        | RepositoryAction::PublishRef { merge, .. }
+                                        | RepositoryAction::PullRequest { merge, .. } => {
+                                            Some(merge)
+                                        }
+                                        _ => None,
+                                    };
+                                    if op.status != RepositoryOperationStatus::Completed
+                                        && merge.is_some_and(|id| superseded.contains(id))
+                                    {
+                                        op.status = RepositoryOperationStatus::NeedsReconciliation;
+                                        op.reason = "superseded_target".into();
+                                        op.revision += 1;
+                                    }
+                                }
+                                for r in s.governance.iter_mut().filter(|r| {
+                                    r.kind == "workflow_instance"
+                                        && r.data["status"] != "completed"
+                                        && r.data["status"] != "cancelled"
+                                }) {
+                                    r.data["dirty"] = json!(true);
+                                    r.content_hash = configuration_hash(&r.data);
+                                    r.revision += 1;
+                                }
+                                None
+                            }
                             (
                                 RepositoryAction::Connect {
                                     repository,
@@ -353,18 +506,13 @@ impl Engine {
                             .find(|op| op.id == operation.id)
                             .unwrap();
                         op.status = RepositoryOperationStatus::NeedsReconciliation;
-                        op.reason = if matches!(operation.action, RepositoryAction::Connect { .. })
-                        {
-                            format!("{} · {}", error.code, error.message)
-                        } else {
-                            error.code.clone()
-                        };
+                        op.reason = format!("{} · {}", error.code, error.message);
                         op.revision += 1;
                         event(
                             s,
                             &operation.id,
                             "repository.needs_reconciliation",
-                            &error.code,
+                            &format!("{} · {}", error.code, error.message),
                         );
                     }
                 }
@@ -378,7 +526,7 @@ impl Engine {
                         .find(|op| op.id == operation.id)
                         .unwrap();
                     op.status = RepositoryOperationStatus::NeedsReconciliation;
-                    op.reason = error.code.clone();
+                    op.reason = format!("{} · {}", error.code, error.message);
                     op.revision += 1;
                     Ok(json!({"ok":true}))
                 })?;

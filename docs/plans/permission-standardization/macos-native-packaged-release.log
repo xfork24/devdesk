@@ -1,4 +1,0 @@
-codex native local write + tool network passed
-dsh native local write + tool network passed
-codex read-only + tool-network-disabled model turn passed
-dsh read-only + tool-network-disabled model turn passed

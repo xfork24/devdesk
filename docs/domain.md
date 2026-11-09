@@ -1,6 +1,6 @@
-# DevDesk v0.2 领域规范
+# DevDesk v0.3 领域规范
 
-当前工程库 schema v33，全局库 v4。原始设计、真实接入与 Permission 计划共同约束领域模型。Project 明确使用 simulation 或 live；旧模拟记录保留原身份。应用代码中的对象是类型化结构，下面的 ID 均为稳定 UUID；逻辑分支名除外。
+当前工程库 schema v34，全局库 v5。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。Project 明确使用 simulation 或 live；旧模拟记录保留原身份。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
 
 ## 归属与对象契约
 
@@ -17,7 +17,13 @@
 | Spec | 独立规范定义 ID、修订链 | definition.revise 克隆新版本，不回写旧版本 | definitions(family=spec)；例 Internal Design Spec v1/v2 |
 | Standard | 独立定义，slots 固定 Spec ID | 克隆修订；Attempt 锁定其 ID | definitions(family=standard)；例默认工程标准 |
 | Skill | 独立定义修订 | 克隆、绑定；不支持任意脚本 | definitions(family=skill)；例 TDD v1 |
-| Agent | 身份定义，非执行环境 | 克隆、绑定；工程与评审身份分开 | definitions(family=agent)；例工程 Agent/评审 Agent |
+| AgentRevision | Model + Harness + 显式 Skills/Tools/Permission、职责与指令 | 整体发布不可变组合，不允许在 AgentID 会话中拆开覆盖 | governance_records(kind=agent)，投影 legacy AgentProfile 供执行器使用 |
+| AgentID | 实例身份，固定 AgentRevision 和独立 Scope | Global 跨项目经验；Project 仅本项目；同组合可有多个实例 | agent_instance / agent_session / agent_session_use |
+| Model / HarnessDefinition / ToolDefinition | 模型后端/参数、运行协议与精确构建、可执行能力契约 | 版本化；不支持的协议、参数或处理器拒绝派发 | governance_records(kind=model/harness/tool) |
+| Scope | Global / Project / Feature 值对象 | 定义可见性、绑定目标、实例范围和材料来源分别表达 | 类型化 kind 与 project_id / feature_id |
+| Workflow | 可编辑草稿、不可变版本、有限动作/端口/角色契约 | 创建、保存、校验、预演、发布；Project 单独采用 | workflow_draft / workflow |
+| ProjectConfigurationRevision / FeatureConfigurationLock | 动态默认与创建时精确闭包 | Project 追加换绑；Feature 包括 draft 禁止换绑 | project_configuration / feature_lock |
+| WorkflowInstance / TaskGroup | 冻结编译计划、步骤轮次、固定 Task 成员 | intent 派发、确认、暂停、有限重试和新轮次返工 | workflow_instance / workflow_intent / workflow_task_group / workflow_step_history |
 | Attempt | 属于 Feature 或 Task，固定输入、绑定、文档和 Context 内容/修订 | running→waiting_review→accepted/rejected；可 failed/cancelled/interrupted；attempt.start/pause/cancel | attempts 表；例某 Task 第一次实现 |
 | Run | 仅属于一个 Attempt 或 Merge，节点与执行 ID 分离 | queued→running→succeeded/failed/cancelled/interrupted；run.retry 新 Run 带 retry_of | runs 表及分段 Artifact；run.started/finished/interrupted；例 green 节点第二次执行 |
 | Session | Project/Feature/Task 范围的角色会话，引用冻结 RuntimeBinding 和可选 Snapshot | 同范围角色连续讨论复用；Run 可关联既有 Session；不同范围隔离 | sessions 表；例评审会话 |
@@ -38,10 +44,10 @@
 
 1. 技术失败仅 Run 重试；范围、输入、身份锁变化和 Review 退回后的修订必须新 Attempt。DAG 依赖按节点的最后一次执行判断，不能沿用已替代执行。
 2. 全局额度默认 4，Project 默认 2；同逻辑 worktree 写入互斥。暂停不强杀在途 Run。取消确认前保留许可。
-3. Requirement 和 Design/Task/Test 计划分别正式交付，两个 Review 接受后保存 initial Snapshot，Feature ready。Task 独立 Context、绑定与 Attempts。
+3. 新流程先执行 requirement_definition 和需求 Review，再讨论 Design/TaskPlan/TestPlan，执行 solution_planning 并评审计划；之后 Feature ready。设计变化保留未变需求评审。旧 planning 为历史兼容。
 4. Task Red→implement→Green→verify；Red 是预期断言失败，不是技术失败；测试定义、候选与顺序须一致。模拟断言质量失败可经显式 Override 接受。
 5. Delivery 引用确定证据；Review 不改变来源。Agent 评审为独立 Run/Session，只有 core 可以执行门禁。
-6. Task accepted 后申请候选 Merge，候选验证 Delivery 经 Review 后 apply。所有 Task 完成后才允许 Feature closure Attempt；之后相同 Merge 流程进入 mainline。
+6. Task accepted 后申请候选 Merge，候选验证 Delivery 经 Review 后 apply。当前 TaskPlan generation 的固定成员全部完成后才允许 Feature closure Attempt；之后相同 Merge 流程进入 mainline。
 7. Override 可豁免质量，不可豁免 stale、权限、来源、引用不完整或目标竞态。旧 Review/TestResult 不覆盖。
 8. 输入变化使未完成流程有关证据 stale；已完成历史保留，后续变更用关联的新 Feature/Task。定义修订不会更改旧锁。
 9. 模拟 Git 候选使用 sim-rev-*。目标检查、推进、Merge 完成及事件必须单事务；command_id 幂等。不得产生真实代码已合入声明。
@@ -118,3 +124,13 @@ RuntimeBinding 与 RuntimeExecution 保存冻结的 ExecutionPermissions，包�
 Permission 不替代业务门禁。正式工程的所属 worktree、测试写范围、受保护测试目录和只读 Review 代码视图继续由 ExecutionScope 约束；运行时审批不能接受交付或 Review。Never 表示不询问，不把拒绝的请求变为允许。
 
 新配置默认采用容器内全权限；旧数据迁移保留 legacy 策略，未保存标准快照的旧执行保持 unknown。全权限以整个容器为信任范围，受限配置声明的状态/凭据不可见保证必须有对应执行器和验证。具体支持范围见 [Permission 说明](../permissions/README.md)。
+
+## Workflow 与配置的持久化补充
+
+配置及运行控制使用 governance_records 类型化记录集合，正文由 Rust 类型解码，不单独维护可写节点/边表。Scope、definition_id、version、content_hash 和 revision 均为独立字段。SQL trigger 阻止发布内容、历史、身份及 AgentID 绑定被 update/delete/upsert 改写。草稿和运行投影可以更新。
+
+首版编译器使用五个规范职责 slot 和有限动作目录，Feature 可引用精确 Task 子流程；不支持任意职责别名或无限子流程递归。配置发布、Project 默认换绑、Feature 创建为独立操作。Feature 配置闭包及 compiler_version 随创建一起冻结，新 Task/Attempt/Session 沿用该锁。
+
+AgentID 经验索引以项目名、Feature 名和工作时间为主要筛选，保留捕获名称和稳定 ID。跨库读取只读且不切换工程；原生工具挂载自身实例的只读经验目录。恢复创建带来源的后继上下文及新 Session，不能覆盖当前代码、正式材料或配置。
+
+旧 live Feature 启动升级时建立 legacy_feature_lock，仅保存可证明的 Binding 和已记录 Session，不生成虚构 AgentID。治理配置禁止换绑，新执行需使用完整 Project 配置建立后继 Feature；原冻结执行及回执仍可读取和核对。
