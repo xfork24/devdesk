@@ -30,3 +30,6 @@ cargo test --workspace --locked
 Workflow v1 继续描述已冻结历史。v2 Step 使用稳定 Role 身份和精确 Spec 修订；可复用 `workflow.call` 经编译展开，Stage 的 `description` 是可选 Markdown 意图。Agent 输入只选择 Role/Capability，服务端展开执行兼容字段；不能伪造 Model/Harness/Tool/Skill 覆盖。Standard v2 按动作、阶段/交付上下文检查 Spec 覆盖，`standard_ref=null` 表示项目不选基线，不表示关闭工程门禁。
 
 模型接入：RPC 的 ModelDefinition 支持服务商标识及可选容量；RuntimeBinding 支持 ModelConnection/profile 摘要。凭据和目录参数按 model_provider 区分，Agent 连接检查与实际模型验证分开。执行校验及兼容规则见 [模型服务商说明](../docs/model-providers.md)。
+
+
+Workflow v3 使用可选读取、按执行者强制的 task_instructions，动作合同 v2 仅用于 Agent 动作。v1/v2 不接受此字段。agent-task.schema.json 描述持久化 FrozenAgentTask、基础上下文与任务定义；摘要/来源/Spec 对应关系由领域层验证。任务 UTF-8 字节限制由 Rust 精确执行，JSON Schema maxLength 只提供字符数量上界。query.workflow_task_preview 与 query.execution_task 的选择参数纳入 RPC Schema。

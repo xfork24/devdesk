@@ -1,8 +1,10 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
 mod advances;
+mod agent_tasks;
 mod builtin_defaults;
 mod configuration;
 mod default_catalog;
+mod default_tasks;
 pub use configuration::{
     project_configuration_references, retired as configuration_retired,
     visible as configuration_visible,
@@ -412,6 +414,7 @@ pub fn seed_configuration(s: &mut EngineeringState) {
     }
     governance::seed_governance(s);
     permission_resources::seed_permission_resources(s);
+    default_tasks::seed_task_workflows(s);
 }
 
 impl Engine {
@@ -3584,6 +3587,9 @@ impl Engine {
         Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if let Some(result) = self.task_query(method, p) {
+            return result;
+        }
         if let Some(result) = self.workflow_configuration_query(method, p) {
             return result;
         }

@@ -40,7 +40,7 @@ try:
         for name, entry in manifest['assets'].items():
             body = (package / 'permissions/backends' / name).read_bytes()
             assert hashlib.sha256(body).hexdigest() == entry['sha256']
-        for name in ['permission.schema.json', 'permission-profile.schema.json', 'permission-binding.schema.json', 'sandbox.schema.json', 'permission-backend.schema.json', 'rpc.schema.json']:
+        for name in ['permission.schema.json', 'permission-profile.schema.json', 'permission-binding.schema.json', 'sandbox.schema.json', 'permission-backend.schema.json', 'rpc.schema.json', 'agent-task.schema.json']:
             assert (package / 'schemas' / name).read_bytes() == (source / 'schemas' / name).read_bytes()
         presets = list((package / 'permissions/presets').glob('*.json'))
         assert len(presets) >= 9
@@ -108,6 +108,24 @@ try:
         saved = rpc('permission.bind', binding)
         assert saved == rpc('permission.bind', binding)
         project = command('project.create', {'title': 'Standalone Permission schema'})['id']
+        defaults = rpc('query.configuration_defaults')
+        workflow = rpc('query.workflow', {'id': defaults['workflow_ref']})
+        assert workflow['data']['schema_version'] == 3
+        document = json.loads(json.dumps(workflow['data']))
+        step = next(s for s in document['steps'] if s['kind'] == 'agent.interact')
+        assert step['task_instructions'].startswith('#')
+        original_task = step['task_instructions']
+        changed_task = '# Package task\n\n原文 {{literal}}, `code`\n'
+        step['task_instructions'] = changed_task
+        draft = command('workflow.create', {'name': 'Standalone task instructions', 'document': document})
+        published = command('workflow.publish', {}, draft['id'], draft['revision'])
+        assert next(s for s in published['data']['steps'] if s['key'] == step['key'])['task_instructions'] == changed_task
+        assert next(s for s in rpc('query.workflow', {'id': workflow['id']})['data']['steps'] if s['key'] == step['key'])['task_instructions'] == original_task
+        preview = rpc('query.workflow_task_preview', {'project_id': project, 'id': published['id'], 'path': step['key'], 'agent_revision_id': defaults['role_agent_bindings'][step['role_ref']]})
+        assert preview['task']['instructions'] == changed_task
+        assert preview['base_context']['skills'] and preview['specifications']
+        assert preview['scope_checked'] is False
+        report['workflow_v3_embedded_tasks_edit_publish_preview'] = True
         db = dataset / 'projects' / project / 'engineering.sqlite3'
         expected_schema = max(int(path.name.split('_', 1)[0]) for path in (source / 'sql/project').rglob('[0-9]*_*.sql'))
         with sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True) as conn:

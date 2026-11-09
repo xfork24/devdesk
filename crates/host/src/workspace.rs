@@ -1,9 +1,9 @@
-#[path = "model_providers.rs"]
-mod model_providers;
 #[path = "github_projects.rs"]
 mod github_projects;
 #[path = "governance.rs"]
 mod governance;
+#[path = "model_providers.rs"]
+mod model_providers;
 #[path = "permission_api.rs"]
 mod permission_api;
 #[path = "permission_resources.rs"]
@@ -302,35 +302,73 @@ impl Workspace {
             )?
         };
         let adapter = harness::managed_adapter_identity(provider);
-        let agent_configuration: Option<AgentExecutionConfiguration> = command.payload.get("agent_configuration")
-            .map(|v| serde_json::from_value(v.clone()).map_err(|_| err("invalid_params", "无效 Agent 执行配置"))).transpose()?;
+        let agent_configuration: Option<AgentExecutionConfiguration> = command
+            .payload
+            .get("agent_configuration")
+            .map(|v| {
+                serde_json::from_value(v.clone())
+                    .map_err(|_| err("invalid_params", "无效 Agent 执行配置"))
+            })
+            .transpose()?;
         let model_connection = if provider == HarnessProvider::Dsh {
-            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration {
-                (state.configuration(&a.model_revision_id)?.decode()?, state.configuration(&a.harness_revision_id)?.decode()?)
+            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration
+            {
+                (
+                    state.configuration(&a.model_revision_id)?.decode()?,
+                    state.configuration(&a.harness_revision_id)?.decode()?,
+                )
             } else {
-                (serde_json::from_value(json!({"provider":"deepseek","model":model})).map_err(|e|err("invalid_configuration",e.to_string()))?,
-                 serde_json::from_value(json!({"provider":"dsh","runtime_version":installation.key.version})).map_err(|e|err("invalid_configuration",e.to_string()))?)
+                (
+                    serde_json::from_value(json!({"provider":"deepseek","model":model}))
+                        .map_err(|e| err("invalid_configuration", e.to_string()))?,
+                    serde_json::from_value(
+                        json!({"provider":"dsh","runtime_version":installation.key.version}),
+                    )
+                    .map_err(|e| err("invalid_configuration", e.to_string()))?,
+                )
             };
             require(m.model == model, "Model 修订与执行模型不一致")?;
             let connection = resolve_model_connection(&m, &h)?;
-            require(resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled, "Sandbox 禁网，无法连接模型服务")?;
+            require(
+                resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled,
+                "Sandbox 禁网，无法连接模型服务",
+            )?;
             connection
-        } else { None };
+        } else {
+            None
+        };
         let credential_ref = match provider {
             HarnessProvider::Codex => Some(self.codex_auth.credential_reference()?),
             HarnessProvider::Dsh => {
-                let p = model_connection.as_ref().ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?.provider;
+                let p = model_connection
+                    .as_ref()
+                    .ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?
+                    .provider;
                 if p.requires_key() {
                     let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
-                    let status = vault.status_model_reference(p, self.global.model_credential_reference(p)?.as_deref())?;
-                    require(status.available, "系统凭据库不可用，请检查共享凭据助手或 Secret Service")?;
+                    let status = vault.status_model_reference(
+                        p,
+                        self.global.model_credential_reference(p)?.as_deref(),
+                    )?;
+                    require(
+                        status.available,
+                        "系统凭据库不可用，请检查共享凭据助手或 Secret Service",
+                    )?;
                     require(status.configured, format!("请先配置 {} 凭据", p.label()))?;
                     vault.verify_model_reference(p, &status.reference)?;
                     Some(status.reference)
-                } else { None }
+                } else {
+                    None
+                }
             }
         };
-        let model_profile_digest = model_connection.as_ref().map(|c| devdesk_adapters::model_providers::dsh_model_patch(c, &model).and_then(|patch| configuration_digest(&json!(patch)))).transpose()?;
+        let model_profile_digest = model_connection
+            .as_ref()
+            .map(|c| {
+                devdesk_adapters::model_providers::dsh_model_patch(c, &model)
+                    .and_then(|patch| configuration_digest(&json!(patch)))
+            })
+            .transpose()?;
         let mut binding = RuntimeBinding {
             model_connection,
             model_profile_digest,
@@ -523,6 +561,7 @@ impl Workspace {
             };
             let mut payload =
                 json!({"agent":agent.id,"work_type":work_type,"writable_paths":paths});
+            payload["workflow_recipe_node"] = json!(stage);
             for name in [
                 "provider",
                 "installation_id",
@@ -931,7 +970,9 @@ impl Workspace {
         Ok(())
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
-        if let Some(result) = self.model_provider_api(method, &params) { return result; }
+        if let Some(result) = self.model_provider_api(method, &params) {
+            return result;
+        }
         if method == "query.configuration_defaults" {
             return self
                 .configuration

@@ -254,6 +254,12 @@ pub struct WorkflowPortReference {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowStep {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::agent_task::supplied_task"
+    )]
+    pub task_instructions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role_ref: Option<Id>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -296,6 +302,12 @@ fn three() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowRunNode {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::agent_task::supplied_task"
+    )]
+    pub task_instructions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role_ref: Option<Id>,
     pub key: String,
@@ -339,6 +351,10 @@ pub fn workflow_action_catalog() -> Value {
     ])
 }
 pub fn validate_workflow(doc: &WorkflowDocument) -> Result<Vec<String>> {
+    if doc.schema_version == 3 {
+        return validate_workflow_v3(doc);
+    }
+    validate_workflow_tasks(doc)?;
     if doc.schema_version == 2 {
         return crate::configuration::validate_workflow_v2(doc);
     }
@@ -837,7 +853,10 @@ mod tests {
             action["properties"]["kind"]["enum"],
             workflow_action_catalog()
         );
-        assert_eq!(action["properties"]["contract_version"]["const"], 1);
+        assert_eq!(
+            action["properties"]["contract_version"]["enum"],
+            json!([1, 2])
+        );
         for name in [
             "WorkflowDocument",
             "AgentComposition",

@@ -14,3 +14,19 @@
 各 Capability 使用 GPT-6.1 Sol High、固定 Codex Harness、工程上下文 Skill、对应的专用 Skill，以及已有 `harness.native` 工具。AgentID 经验属于检索、定位 Feature/Task 问题与恢复现场的历史上下文，不是 Tool；应用保留经验查询与恢复入口。工具实际由原生 Harness 提供，工具名称不构成授权。Agent 固定默认 Harness/Sandbox Permissions，实际运行使用 Docker；默认镜像配方不是执行证据。
 
 Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审、候选汇合和快照归档。阶段描述取自对应 Spec Markdown。讨论正文是 Markdown，requirement/design/task_plan/test_plan 仍通过已有结构化提案协议保存 ID、验收及测试配方。标准基线可选，Step 的显式 Spec 是实际执行规范来源。
+
+
+## 默认 Step 任务
+
+`tasks/` 的 22 份 Markdown 在编译时嵌入，播种为新的 Feature/Task Workflow v3 修订。用户在 Workflow UI 编辑任务，发布后正文属于该修订；修改源码资源不会改写已有修订或 Feature 锁。任务没有模板插值；Role 是职责，Skill 是方法，Spec 是判准，阶段描述是背景，均独立保留来源。旧 v2 默认仍可明确采用。
+
+| 原业务提示入口 | 新任务文件 | 保留的系统合同 |
+|---|---|---|
+| workflow_runtime 讨论 goal | prd / design / planning / discussion-tests / feature | ProposalContent、主题、轮数、显式采纳 |
+| requirement_validate / plan_validate / test_plan_validate | validate-requirement / validate-plan / validate-tests；对应 attempt 公共任务 | evidence-checks/v1、只读范围 |
+| Task / Feature 测试编写 | author-task-tests / author-feature-tests | 冻结测试写范围、真实测试执行与封存 |
+| 实现与文档 | implement / docs；attempt-implementation / attempt-closure | work-summary/v1 / implementation-document/v1、代码写范围与协调器 Git |
+| 阶段交付评审 | review-requirement / review-plan / review-task / review-feature | 独立评审身份、四类 checks 与真实证据 |
+| 候选评审 | review-candidate-task / review-candidate-feature | 候选来源、只读代码与合入门禁 |
+
+新 v3 路径只传这些已冻结正文和受控材料，不再从 live_runs 的旧分支追加业务提示。旧字符串继续服务旧编译锁；系统测试和 merge.prepare 不调用 Agent。

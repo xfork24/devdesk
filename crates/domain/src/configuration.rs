@@ -102,6 +102,8 @@ pub struct StandardDefinition {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpecificationBinding {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<WorkflowTaskDefinition>,
     pub path: String,
     pub step: String,
     pub action: String,

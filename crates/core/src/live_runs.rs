@@ -321,6 +321,70 @@ impl Engine {
             ));
         }
         let Some(turn) = existing else {
+            if self.run_uses_task(s, r)? {
+                let (documents, code, input) = if r.node.starts_with("review:") {
+                    let d = s.delivery(r.node.trim_start_matches("review:"))?;
+                    let code = FrozenCode {
+                        context: git_context(s, &d.feature_id, d.task_id.as_deref())?,
+                        revision: d
+                            .candidate
+                            .clone()
+                            .ok_or_else(|| err("blocked", "评审缺少冻结代码"))?,
+                    };
+                    let base = if let Some(mid) = &d.merge_id {
+                        s.merge(mid)?.expected_target.clone()
+                    } else {
+                        s.attempt(d.attempt_id.as_deref().unwrap())?
+                            .source_base
+                            .clone()
+                            .ok_or_else(|| err("blocked", "评审缺少基线"))?
+                    };
+                    let provenance = self.delivery_provenance(s, d)?;
+                    let documents = d
+                        .documents
+                        .iter()
+                        .cloned()
+                        .chain(provenance.iter().flat_map(|p| {
+                            p["delivery"]["documents"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|id| id.as_str().map(str::to_owned))
+                        }))
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>();
+                    let input = json!({"delivery":d,"source_provenance":provenance,"diff":{"base":base,"candidate":code.revision,"text":self.git.diff(&code.context,&base,&code.revision)?},"evidence":d.evidence.iter().filter_map(|id|s.runs.iter().find(|r|&r.id==id)).collect::<Vec<_>>()});
+                    (documents, code, input)
+                } else {
+                    let a = s.attempt(
+                        r.attempt_id
+                            .as_deref()
+                            .ok_or_else(|| err("blocked", "任务 Run 缺少 Attempt"))?,
+                    )?;
+                    let documents = self.live_documents(s, r)?;
+                    let code = FrozenCode {
+                        context: a
+                            .git_context
+                            .clone()
+                            .ok_or_else(|| err("blocked", "任务缺少冻结代码上下文"))?,
+                        revision: self.live_code_revision(s, r)?,
+                    };
+                    let input = json!({"authorization":{"run":r.id,"node":r.node,"phase":a.phase,"scope":a.scope},"frozen_context":a.context_content,
+                        "prior_review_findings":s.reviews.iter().filter(|review|review.decision==Decision::ChangesRequested&&s.deliveries.iter().any(|d|d.id==review.delivery_id&&d.feature_id==a.feature_id&&d.task_id==a.task_id&&d.kind==a.phase)).map(|review|json!({"reason":review.reason,"checks":review.checks})).collect::<Vec<_>>(),
+                        "stage_evidence":effective_runs(s,a).iter().filter(|run|run.status==Status::Succeeded).map(|run|json!({"node":run.node,"result":run.result})).collect::<Vec<_>>()});
+                    (documents, code, input)
+                };
+                self.enqueue_live_turn(
+                    r,
+                    session,
+                    &serde_json::to_string(&input)
+                        .map_err(|e| err("serialization", e.to_string()))?,
+                    &documents,
+                    code,
+                )?;
+                return Ok(None);
+            }
             let frozen_specifications = self.execution_specifications(s, r)?;
             if s.turns
                 .iter()
@@ -656,7 +720,7 @@ impl Engine {
             s.conversation_events.push(ConversationEvent {
                 id: id(),
                 session_id: session.id.clone(),
-                turn_id: tid,
+                turn_id: tid.clone(),
                 sequence,
                 deduplication_key: format!("run-input:{}", run.id),
                 kind: ConversationEventKind::User,
@@ -677,6 +741,7 @@ impl Engine {
                 "run.input_prepared",
                 "Native role input persisted before dispatch",
             );
+            self.freeze_turn_task(s, &tid)?;
             Ok(json!({"ok":true}))
         })?;
         Ok(())

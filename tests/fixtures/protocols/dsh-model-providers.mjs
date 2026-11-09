@@ -26,6 +26,11 @@ for (const test of cases) {
       assert.equal(anthropic ? request.headers["x-api-key"] : request.headers.authorization, anthropic ? "FAKE_DSH_TEST_VALUE" : `Bearer ${test.provider === "ollama" ? "ollama" : "FAKE_DSH_TEST_VALUE"}`);
       calls++;
       const history = JSON.stringify(body.messages);
+      if (test.task_payload) {
+        assert(history.includes(JSON.stringify(test.task_payload).slice(1, -1)), "frozen task and Spec must reach the native model request verbatim");
+        const strings = value => typeof value === "string" ? [value] : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+        assert(strings(body).some(text => text.includes(test.persona)), "frozen Role/Skill persona must reach the native system request verbatim");
+      }
       if (history.includes("tool_result") || body.messages.some(m => m.role === "tool")) {
         toolResults++;
         assert(history.includes(marker), "native tool result must reach the model");
@@ -71,7 +76,7 @@ for (const test of cases) {
   await mkdir(home, { recursive: true });
   const endpoint = `http://127.0.0.1:${server.address().port}${test.provider === "minimax-cn" ? "/anthropic" : "/v1"}`;
   const patch = test.patch.replaceAll(test.endpoint, endpoint) + "\n- id: sandbox-policy\n  config:\n    mode: danger-full-access\n    workspaceRoot: /tmp\n- id: approval\n  config:\n    policy: never\n- id: session-telemetry-otel\n  disabled: true\n- id: session-log-deepseek\n  disabled: true\n- id: agent-instructions\n  disabled: true\n";
-  await writeFile(`${home}/patch.yaml`, patch);
+  await writeFile(`${home}/patch.yaml`, patch + (test.persona ? `\n- id: system-prompt\n  config:\n    personaPrefix: ${JSON.stringify(test.persona)}\n` : ""));
   let serial = 0, pending = new Map(), events = [];
   const launch = () => {
     child = spawn("dsh", ["--profile", "sdk", "--patch", `${home}/patch.yaml`], { env: { ...process.env, DSH_HOME: home, [test.env]: test.provider === "ollama" ? "ollama" : "FAKE_DSH_TEST_VALUE" }, stdio: ["pipe", "pipe", "pipe"] });
@@ -94,7 +99,7 @@ for (const test of cases) {
   const session = `mock-${test.provider}`;
   try {
     launch(); await initialize();
-    await rpc("session/prompt", { sessionId: session, contentBlocks: [{ type: "text", text: "Run the fixture tool, then print its marker." }] });
+    await rpc("session/prompt", { sessionId: session, contentBlocks: [{ type: "text", text: test.task_payload || "Run the fixture tool, then print its marker." }] });
     await rpc("session/wait", { sessionId: session });
     const ends = events.filter(e => e.method === "session.event" && e.params.event.type === "turn/end");
     if (ends.at(-1)?.params.event.data.reason.kind !== "completed") console.error(test.provider, "calls", calls, JSON.stringify(ends.at(-1)?.params.event.data).replaceAll("FAKE_DSH_TEST_VALUE", "[redacted]"));
@@ -110,7 +115,7 @@ for (const test of cases) {
     const resumedEnds = events.filter(e => e.method === "session.event" && e.params.event.type === "turn/end");
     assert.equal(resumedEnds.at(-1)?.params.event.data.reason.kind, "completed");
     await rpc("shutdown", {}); child.stdin.end();
-    reports.push({ provider: test.provider, calls, tool_result_consumed: true, native_resume: true, thinking_replayed: test.provider === "minimax-cn" ? replayedThinking : null });
+    reports.push({ provider: test.provider, calls, tool_result_consumed: true, native_resume: true, frozen_task_delivered: !!test.task_payload, thinking_replayed: test.provider === "minimax-cn" ? replayedThinking : null });
   } finally {
     child?.kill("SIGTERM"); server.close(); clearTimeout(deadline);
   }

@@ -603,6 +603,18 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
   const lock = state.configurations.find(
     (r: any) => r.kind === "feature_lock" && r.definition_id === f.id,
   );
-  expect(lock.data.compiler_version).toBe(2);
+  expect(lock.data.compiler_version).toBe(3);
+  expect(
+    lock.data.specification_snapshot
+      .filter((b: any) =>
+        [
+          "agent.interact",
+          "attempt.execute",
+          "delivery.review",
+          "merge.review",
+        ].includes(b.action),
+      )
+      .every((b: any) => b.task?.renderer_version === "agent-task/v1"),
+  ).toBe(true);
   expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
 });

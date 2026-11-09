@@ -60,7 +60,13 @@ fn document(
     }
 }
 pub(crate) fn seed_defaults(s: &mut EngineeringState) {
-    seed(s, "builtin-harness-dsh-multi-provider-v1", "harness", "DeepSeek Harness 多模型服务商", json!({"provider":"dsh","runtime_version":DEFAULT_DSH_VERSION,"recipe_digest":default_dsh_recipe_digest(),"model_providers":["deepseek","zai-coding-cn","minimax-cn","ollama"],"capabilities":["structured-output","tool-calling","cancel","poll"]}));
+    seed(
+        s,
+        "builtin-harness-dsh-multi-provider-v1",
+        "harness",
+        "DeepSeek Harness 多模型服务商",
+        json!({"provider":"dsh","runtime_version":DEFAULT_DSH_VERSION,"recipe_digest":default_dsh_recipe_digest(),"model_providers":["deepseek","zai-coding-cn","minimax-cn","ollama"],"capabilities":["structured-output","tool-calling","cancel","poll"]}),
+    );
     let capabilities = vec!["structured-output", "tool-calling", "cancel", "poll"];
     seed(
         s,
@@ -353,8 +359,8 @@ impl Engine {
             .unwrap_or(Scope::Global);
         let mut roles = serde_json::Map::new();
         let mut ids = vec![
-            DEFAULT_FEATURE_WORKFLOW_V2_ID.to_owned(),
-            DEFAULT_TASK_WORKFLOW_V2_ID.to_owned(),
+            DEFAULT_FEATURE_WORKFLOW_V3_ID.to_owned(),
+            DEFAULT_TASK_WORKFLOW_V3_ID.to_owned(),
             DEFAULT_MODEL_ID.to_owned(),
             DEFAULT_HARNESS_ID.to_owned(),
             DEFAULT_CAPABILITY_ID.to_owned(),
@@ -374,7 +380,7 @@ impl Engine {
             roles.insert(r.definition_id.clone(), json!(agent));
             ids.push(agent);
         }
-        crate::governance::reference(&s, DEFAULT_FEATURE_WORKFLOW_V2_ID, "workflow", &scope)?;
+        crate::governance::reference(&s, DEFAULT_FEATURE_WORKFLOW_V3_ID, "workflow", &scope)?;
         fn collect(value: &Value, ids: &mut Vec<String>) {
             match value {
                 Value::String(id) => {
@@ -408,7 +414,7 @@ impl Engine {
         }
 
         Ok(
-            json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_V2_ID,"task_workflow_ref":DEFAULT_TASK_WORKFLOW_V2_ID,"role_agent_bindings":roles,"standard_ref":null,"capability_ref":DEFAULT_CAPABILITY_ID,"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"sandbox_ref":DEFAULT_SANDBOX_ID,"permission_refs":["permission-container-full-access-v1","permission-container-full-access-v1"],"records":s.governance.iter().filter(|r|ids.contains(&r.id)||ids.contains(&r.definition_id)).collect::<Vec<_>>(),"permissions":s.permissions.iter().filter(|p|ids.contains(&p.id)).collect::<Vec<_>>(),"sandboxes":s.sandboxes.iter().filter(|b|b.id==DEFAULT_SANDBOX_ID).collect::<Vec<_>>(),"materializations":s.governance.iter().filter(|r|r.kind=="harness_materialization"&&r.definition_id==DEFAULT_HARNESS_ID).collect::<Vec<_>>() }),
+            json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_V3_ID,"task_workflow_ref":DEFAULT_TASK_WORKFLOW_V3_ID,"role_agent_bindings":roles,"standard_ref":null,"capability_ref":DEFAULT_CAPABILITY_ID,"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"sandbox_ref":DEFAULT_SANDBOX_ID,"permission_refs":["permission-container-full-access-v1","permission-container-full-access-v1"],"records":s.governance.iter().filter(|r|ids.contains(&r.id)||ids.contains(&r.definition_id)).collect::<Vec<_>>(),"permissions":s.permissions.iter().filter(|p|ids.contains(&p.id)).collect::<Vec<_>>(),"sandboxes":s.sandboxes.iter().filter(|b|b.id==DEFAULT_SANDBOX_ID).collect::<Vec<_>>(),"materializations":s.governance.iter().filter(|r|r.kind=="harness_materialization"&&r.definition_id==DEFAULT_HARNESS_ID).collect::<Vec<_>>() }),
         )
     }
 }

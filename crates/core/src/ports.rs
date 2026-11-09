@@ -70,6 +70,8 @@ pub trait Harness: Send + Sync {
 pub type CodeView = devdesk_domain::FrozenCode;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStart {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_base: Option<devdesk_domain::AgentTaskBase>,
     #[serde(default)]
     pub code_view: Option<CodeView>,
     pub session: devdesk_domain::Session,
@@ -91,6 +93,8 @@ pub struct SessionReceipt {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnDispatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<devdesk_domain::FrozenAgentTask>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub specifications: Vec<devdesk_domain::Definition>,
     pub session: devdesk_domain::Session,

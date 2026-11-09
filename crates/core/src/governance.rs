@@ -357,6 +357,7 @@ pub(crate) fn default_workflow(task: bool) -> WorkflowDocument {
             ]
             .into_iter()
             .map(|(key, role, deps, writes)| WorkflowRunNode {
+                task_instructions: None,
                 role_ref: None,
                 key: key.into(),
                 role,
@@ -368,6 +369,7 @@ pub(crate) fn default_workflow(task: bool) -> WorkflowDocument {
             vec![]
         };
         doc.steps.push(WorkflowStep {
+            task_instructions: None,
             role_ref: None,
             spec_refs: vec![],
             subworkflow_ref: None,
@@ -761,6 +763,10 @@ impl Engine {
         result: &Value,
     ) -> Result<()> {
         self.freeze_action_specifications(s, method, c, result)?;
+        self.freeze_action_tasks(s, method, c, result)?;
+        if method == "conversation.send" {
+            self.freeze_turn_task(s, &text(result, "id")?)?;
+        }
         if method == "session.open" {
             if let Some(instance_id) = opt(&c.payload, "agent_instance_id") {
                 let instance_record = s.configuration(&instance_id)?.clone();
@@ -801,9 +807,15 @@ impl Engine {
                 )?;
                 let resolved = resolve_model_connection(&model, &harness)?;
                 if binding.model_connection.is_some() {
-                    require(binding.model_connection == resolved, "执行绑定改变了 Model 连接或容量")?;
+                    require(
+                        binding.model_connection == resolved,
+                        "执行绑定改变了 Model 连接或容量",
+                    )?;
                 } else {
-                    require(["openai", "deepseek"].contains(&model.provider.as_str()), "新服务商缺少冻结连接")?;
+                    require(
+                        ["openai", "deepseek"].contains(&model.provider.as_str()),
+                        "新服务商缺少冻结连接",
+                    )?;
                 }
                 if let Some(old) = s
                     .governance
@@ -1569,6 +1581,42 @@ impl Engine {
                 s.governance.push(r);
                 result
             }
+            "workflow.task_upgrade" => {
+                let source = s.configuration(target)?.clone();
+                require(
+                    ["workflow", "workflow_draft"].contains(&source.kind.as_str()),
+                    "需要 Workflow 来源",
+                )?;
+                check_scope(s, &source.scope, self.store.project_id().as_deref())?;
+                require(
+                    c.expected_revision == Some(source.revision),
+                    "来源修订已改变",
+                )?;
+                let doc: WorkflowDocument = decode(if source.kind == "workflow_draft" {
+                    &source.data["document"]
+                } else {
+                    &source.data
+                })?;
+                let (document, diagnostics) = crate::default_tasks::upgrade_draft(&doc)?;
+                let base = if source.kind == "workflow_draft" {
+                    source.data["base_revision_id"].clone()
+                } else {
+                    json!(source.id)
+                };
+                let r = record(
+                    "workflow_draft",
+                    source.definition_id,
+                    source.scope,
+                    source.name,
+                    source.version + 1,
+                    None,
+                    json!({"document":document,"base_revision_id":base,"published_revision_id":null,"task_upgrade_source":source.id,"task_upgrade_diagnostics":diagnostics}),
+                    false,
+                );
+                let result = json!(r);
+                s.governance.push(r);
+                result
+            }
             "workflow.draft.create" => {
                 let source = s.configuration(&text(p, "base_revision_id")?)?.clone();
                 require(source.kind == "workflow", "需要已发布流程版本")?;
@@ -1634,7 +1682,7 @@ impl Engine {
                 }
                 let doc: WorkflowDocument = decode(&draft.data["document"])?;
                 validate_workflow(&doc)?;
-                if doc.schema_version == 2 {
+                if doc.schema_version >= 2 {
                     let mut proposed = draft.clone();
                     proposed.data = json!(doc);
                     crate::workflow_definition::compile(s, &proposed, None, &draft.scope)?;
@@ -1740,7 +1788,7 @@ impl Engine {
                 };
                 let wf = reference(s, &text(p, "workflow_ref")?, "workflow", &scope)?.clone();
                 let doc: WorkflowDocument = wf.decode()?;
-                if doc.schema_version == 2 {
+                if doc.schema_version >= 2 {
                     return self.update_project_configuration_v2(s, c, &wf).map(Some);
                 }
                 require(doc.process_kind == "feature", "项目默认需要 Feature 流程")?;
@@ -2074,7 +2122,7 @@ impl Engine {
                 })
                 .collect();
             Ok(
-                json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len(),"action_catalog":workflow_action_catalog()}),
+                json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len(),"action_catalog":workflow_action_catalog(),"action_contracts":workflow_action_contracts()}),
             )
         })())
     }

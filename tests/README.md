@@ -75,3 +75,10 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 DSH 多服务商离线验证：设置 DEVDESK_DSH_MOCK_IMAGE 为固定镜像 ID，运行 `cargo test -p devdesk-adapters --test model_providers -- --ignored --nocapture`。DSH 流式/工具/恢复由禁外网容器内的模拟端点提供；另一测试只查询模拟 Ollama 目录，不推理。`tests/live/probe_model_providers.py` 验证完整 Host 连接与冻结；仅传入 --codex-auth-source 时允许 Codex 真实模型验证，始终不发 DSH 真实推理请求。
 
 macOS 源码启动兼容回归：在已配置同证书签名助手的开发机执行 `python3 tests/entrypoints/credential_helper_startup.py --launch`。兼容/拒绝检查使用隔离的助手副本，实际启动只打开空工作空间，不读取凭据、不调用模型，也不替换共享助手。
+
+
+Workflow 任务专项：`cargo test -p devdesk-adapters --test agent_tasks --locked` 覆盖所有 Agent 类别的记录端口派发、v3 校验、Markdown 原文、冻结恢复、正式 Run/重试、权限后继、子流程身份和伪造拒绝。原基线夹具显式选择 v2，专项夹具选择 v3。
+
+`DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --test agent_tasks frozen_task_reaches_native --locked -- --ignored --nocapture` 使用固定 DSH SDK、Docker --network=none 和本地模型响应，核对原生请求中的完整任务/Spec 与基础 Role/Skill、工具结果及恢复；不声称真实 DSH 模型推理。`probe_workflow_tasks.py --binary … --auth-file … --output …` 在临时私有数据集中用真实 Codex 执行两个任务，核对实际工具输出和受控 HTTP 回执，只复制显式提供的登录文件，不读取原项目库。探针输出不含凭据。
+
+`web/tests/workflow-tasks.spec.ts` 验证浏览器编辑、保存、发布、上下文预览及公共/配方任务持久化。独立发布包探针 probe_permission_package.py 同时验证嵌入的默认 v3 任务、编辑发布、只读预览和项目 schema v37，不调用模型。

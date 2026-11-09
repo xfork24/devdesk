@@ -297,6 +297,7 @@ pub struct RuntimeExecution {
 
 impl EngineeringState {
     pub fn validate_conversations(&self, before: &Self) -> Result<()> {
+        self.validate_agent_tasks(before)?;
         self.validate_material_owners()?;
         self.validate_repositories(before)?;
         use std::collections::HashSet;

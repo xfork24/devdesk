@@ -254,7 +254,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 36, "数据集版本比程序新")?;
+    require(version <= 37, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
@@ -556,6 +556,14 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
             "../../../sql/project/configuration/036_permission_resources.sql"
+        ))
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+    }
+    if version < 37 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!(
+            "../../../sql/project/configuration/037_workflow_tasks.sql"
         ))
         .map_err(storage)?;
         tx.commit().map_err(storage)?;

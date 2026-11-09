@@ -346,6 +346,7 @@ impl Workspace {
             || (["agent.create", "agent.revise"].contains(&method)
                 && params["payload"].get("data").is_some());
         let query = [
+            "query.workflow_task_preview",
             "query.workflow_requirements",
             "query.specification_audit",
             "query.capabilities",
@@ -374,7 +375,8 @@ impl Workspace {
                 .get("scope")
                 .or_else(|| params["payload"].get("scope"));
             let local = !method.starts_with("role.")
-                && (explicit_scope.is_some_and(|s| s["kind"] == "project")
+                && ((method == "query.workflow_task_preview" && params["project_id"].is_string())
+                    || explicit_scope.is_some_and(|s| s["kind"] == "project")
                     || (!target_global && target.is_some())
                     || params["local"] == true);
             let engine = if local {
@@ -489,7 +491,7 @@ impl Workspace {
                     let offset = params["offset"].as_u64().unwrap_or(0) as usize;
                     let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
                     return Ok(
-                        json!({"records":records.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":records.len(),"action_catalog":workflow_action_catalog()}),
+                        json!({"records":records.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":records.len(),"action_catalog":workflow_action_catalog(),"action_contracts":workflow_action_contracts()}),
                     );
                 }
                 engine.query(method, params, self.global.concurrency()?)

@@ -1,5 +1,17 @@
 # 本地协议 v1
 
+## Workflow Step 任务合同
+
+新建默认 Workflow 使用 Schema/编译器 v3。`agent.interact`、`attempt.execute`、`delivery.review`、`merge.review` 使用动作合同 v2，要求非空 `task_instructions`；其余动作保持合同 v1 且拒绝 Agent 任务字段。正式配方的六类 Agent 节点另有必填任务，测试执行器节点不接受任务。`merge.prepare` 是系统执行，Role/Spec 仍有身份和验收用途。旧 v1/v2 和 compiler 1/2 保持历史合同。
+
+任务是无插值 Markdown：单字段最多 32 KiB UTF-8，展开任务总量最多 1 MiB，冻结任务与基础 Role/Agent/Skill 上下文合计最多 512 KiB；超限拒绝，不截断任务。v3 的旧 `interaction.goal` 必须为空。`workflow.task_upgrade` 使用草稿 target/revision 显式创建 v3 草稿，复制旧讨论 goal、映射已知阶段任务；未知映射返回 diagnostics 和待补草稿，不能发布缺任务的流程。原修订、项目采用和已有 Feature 锁不变。
+
+`query.workflow_task_preview` 接收 document 或确切 id、完整 path，可选 recipe_node、agent_revision_id、project_id。传 project_id 时只读取该活动项目的绑定，避免跨项目读取。返回公共/节点任务、阶段、可解析的 Role/Agent/Skill/Spec、输出合同和具体缺口；scope_checked=false。无实际运行授权，不安装运行时或调用模型。`query.execution_task` 必须指定 turn_id 或 run_id 之一，并可固定 project_id；返回持久化 FrozenAgentTask、摘要和来源。尚未准备输入的 Run 返回 task=null/status=not_prepared/executor；旧轮次返回 legacy=true。
+
+Feature 锁的 specification_snapshot 带版本化 WorkflowTaskDefinition。步骤启动产生不可变 execution_task_binding；接受输入或正式 Run 入队产生 execution_task 及 agent-task Artifact。每轮冻结来源包括 Workflow 修订、完整路径、步骤实例、round、配方节点、Run/Turn，以及当时输入和授权。派发使用此快照，Role/Agent 有效正文及有序 Skill 只装配一次；Codex 和 DSH 编码同一 rendered_input。快照摘要、正文与闭包的对应关系均校验。普通 conversation.send 拒绝客户端伪造任务字段。
+
+后续用户输入沿用该步骤任务定义；不同 v3 步骤默认独立 Session。技术重试保留原任务与业务输入，只更新执行身份。权限后继复制任务/Spec 关联并重新冻结权限，活动步骤的 session 输出跟随后继；旧执行记录不变。发布新 Workflow 只影响显式新采用的配置，已有 Feature 不在线改绑。任务不能扩大 Permission、执行范围或绕过真实测试、独立评审与合入门禁。
+
 ## Permission 运行时资源
 
 `query.permission_resources` 返回 v2 profiles、绑定修订、确切目标版本、活动分配、来源与兼容投影。可携带 project_id 读取当前项目可见资源；省略时只读取全局目录。旧 `query.permissions` 保留 v1 数据。
@@ -175,7 +187,7 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 
 `query.configurations`、`query.agent_instances`、`query.workflows` 支持 offset/limit 和 Scope；活动项目查询使用 local:true/project_id，可见 Global 发布版本及本项目定义。`query.workflow`、`query.workflow_draft`、`query.agent_revision` 按精确 id 读取，不依赖列表当前页。
 
-`query.workflow_validation` / `query.workflow_preview` 接收 document 或 id，返回 valid/errors、document_hash、顺序及演练状态，不调用模型、Docker、Git、测试或 Merge。sample.outputs 和 sample.accepted 表示演练事实；通过预演不代表真实证据成立。动作及 DSL 结构见 schemas/rpc.schema.json，当前契约和 compiler_version 均为 1。
+`query.workflow_validation` / `query.workflow_preview` 接收 document 或 id，返回 valid/errors、document_hash、顺序及演练状态，不调用模型、Docker、Git、测试或 Merge。sample.outputs 和 sample.accepted 表示演练事实；通过预演不代表真实证据成立。动作及 DSL 结构见 schemas/rpc.schema.json，v1/v2/v3 契约与 compiler_version 按冻结修订解释；新默认使用 v3。
 
 `query.workflow_instance` / `query.workflow_actions` 返回运行记录、冻结计划/配置及可用动作。运行实例 ID、步骤 key、步骤实例 ID 和 round 分别表示不同概念；旧 round 的确认不能用于新 round。
 

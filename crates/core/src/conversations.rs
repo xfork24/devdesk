@@ -72,6 +72,11 @@ impl Engine {
                     binding.work_type != WorkType::Implementation || scope == SessionScope::Task,
                     "代码实施必须使用 Task Session",
                 )?;
+                let task_open = p["workflow_step_instance_id"].is_string()
+                    && feature
+                        .as_ref()
+                        .and_then(|id| s.feature_configuration(id))
+                        .is_some_and(|l| l.compiler_version >= 3);
                 let mut snapshot = opt(p, "snapshot_id");
                 if let Some(id) = &snapshot {
                     let snap = s
@@ -111,6 +116,7 @@ impl Engine {
                     })
                     .filter(|v| {
                         p["force_new"] != true
+                            && !task_open
                             && v.project_id.as_ref() == Some(&project)
                             && v.scope == Some(scope)
                             && !matches!(
@@ -137,7 +143,7 @@ impl Engine {
                 {
                     json!({"id":existing.id,"reused":true,"revision":existing.revision})
                 } else {
-                    if predecessor.is_none() {
+                    if predecessor.is_none() && !task_open {
                         let identity = s.agent_identity(&agent)?;
                         if let Some(previous) = s
                             .sessions
@@ -199,6 +205,15 @@ impl Engine {
                 }
             }
             "conversation.send" => {
+                if ["task", "frozen_task", "task_instructions", "task_source"]
+                    .iter()
+                    .any(|key| p.get(key).is_some())
+                {
+                    return Err(err(
+                        "invalid_params",
+                        "任务指令与来源只能从冻结 Workflow 解析",
+                    ));
+                }
                 if s.governance.iter().any(|r| {
                     r.kind == "permission_switch"
                         && r.definition_id == target

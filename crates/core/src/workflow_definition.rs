@@ -64,7 +64,7 @@ pub(crate) fn explicit_document(
     doc: &WorkflowDocument,
     standard: Option<&str>,
 ) -> Result<WorkflowDocument> {
-    if doc.schema_version == 2 {
+    if doc.schema_version >= 2 {
         return Ok(doc.clone());
     }
     let mut result = doc.clone();
@@ -170,6 +170,7 @@ struct Builder<'a> {
     stages: Vec<WorkflowStage>,
     steps: Vec<WorkflowStep>,
     stack: Vec<Id>,
+    task_mode: bool,
 }
 impl Builder<'_> {
     fn expand(
@@ -181,6 +182,14 @@ impl Builder<'_> {
     ) -> Result<BTreeMap<String, WorkflowPortReference>> {
         require(self.stack.len() <= 8, "子流程深度超过 8")?;
         validate_workflow(doc)?;
+        if self.task_mode != (doc.schema_version == 3)
+            && doc.steps.iter().any(|s| action_requires_task(&s.kind))
+        {
+            return Err(err(
+                "invalid_workflow",
+                "包含 Agent 的子流程需要与主流程使用相同任务合同，请先显式升级并选择确切修订",
+            ));
+        }
         let keys: BTreeMap<String, String> = doc
             .steps
             .iter()
@@ -327,7 +336,19 @@ impl Builder<'_> {
                 }
                 checks.insert(spec.clone(), definition.rules.clone());
             }
-            self.specs.push(SpecificationBinding{path:path.clone(),step:step.key.clone(),action:step.kind.clone(),phase,delivery_kind:delivery,role_ref:step.role_ref.clone(),spec_refs:step.spec_refs.clone(),checks,output_contract:json!({"interaction":step.interaction,"inputs":step.inputs,"parameters":step.parameters,"dependencies":step.dependencies,"condition":step.condition,"advance_mode":step.advance_mode,"execution_recipe":step.execution_recipe,"subworkflow_ref":step.subworkflow_ref,"stage":doc.stages.iter().find(|s|s.key==original.stage),"workflow_outputs":doc.output_ports})});
+            let task = if self.task_mode && action_requires_task(&step.kind) {
+                Some(WorkflowTaskDefinition {
+                    renderer_version: TASK_RENDERER.into(),
+                    workflow_revision_id: self.stack.last().cloned().unwrap(),
+                    source_step: original.key.clone(),
+                    path: path.clone(),
+                    step: json!(step),
+                    stage: json!(doc.stages.iter().find(|s| s.key == original.stage)),
+                })
+            } else {
+                None
+            };
+            self.specs.push(SpecificationBinding{task,path:path.clone(),step:step.key.clone(),action:step.kind.clone(),phase,delivery_kind:delivery,role_ref:step.role_ref.clone(),spec_refs:step.spec_refs.clone(),checks,output_contract:json!({"interaction":step.interaction,"inputs":step.inputs,"parameters":step.parameters,"dependencies":step.dependencies,"condition":step.condition,"advance_mode":step.advance_mode,"execution_recipe":step.execution_recipe,"subworkflow_ref":step.subworkflow_ref,"stage":doc.stages.iter().find(|s|s.key==original.stage),"workflow_outputs":doc.output_ports})});
             if step.kind == "workflow.call" {
                 let child = reference(
                     self.s,
@@ -339,7 +360,10 @@ impl Builder<'_> {
                 )?;
                 require(!self.stack.contains(&child.id), "子流程引用存在环")?;
                 let child_doc: WorkflowDocument = child.decode()?;
-                require(child_doc.schema_version == 2, "请先将子流程保存为 v2")?;
+                require(
+                    matches!(child_doc.schema_version, 2 | 3),
+                    "请先将子流程保存为 v2/v3",
+                )?;
                 for required in &child_doc.input_ports {
                     require(
                         step.inputs.contains_key(required),
@@ -411,7 +435,7 @@ pub(crate) fn compile(
 ) -> Result<Compilation> {
     let source: WorkflowDocument = wf.decode()?;
     require(
-        source.schema_version == 2,
+        matches!(source.schema_version, 2 | 3),
         "请选择 v2 Workflow；旧配置继续使用其冻结契约",
     )?;
     let mut b = Builder {
@@ -423,6 +447,7 @@ pub(crate) fn compile(
         stages: vec![],
         steps: vec![],
         stack: vec![wf.id.clone()],
+        task_mode: source.schema_version == 3,
     };
     let input_bindings = source
         .input_ports
@@ -442,7 +467,7 @@ pub(crate) fn compile(
     plan.steps = std::mem::take(&mut b.steps);
     plan.stages = std::mem::take(&mut b.stages);
     let mut task_plan = WorkflowDocument {
-        schema_version: 2,
+        schema_version: source.schema_version,
         process_kind: "task".into(),
         stages: vec![],
         steps: vec![],
@@ -455,7 +480,7 @@ pub(crate) fn compile(
         let r = reference(s, task, "workflow", scope)?;
         let doc: WorkflowDocument = r.decode()?;
         require(
-            doc.schema_version == 2 && doc.process_kind == "task",
+            matches!(doc.schema_version, 2 | 3) && doc.process_kind == "task",
             "Task 子流程用途或版本不匹配",
         )?;
         b.hashes.insert(r.id.clone(), r.content_hash.clone());
@@ -473,12 +498,34 @@ pub(crate) fn compile(
         task_plan.stages = std::mem::take(&mut b.stages);
         for binding in &mut b.specs[before..] {
             binding.path = format!("tasks/{}", binding.path);
+            if let Some(task) = &mut binding.task {
+                task.path = binding.path.clone();
+            }
         }
     } else if source.process_kind == "feature"
         && source.steps.iter().any(|s| s.kind == "tasks.foreach")
     {
         return Err(err("invalid_workflow", "缺少 Task 子流程"));
     }
+    validate_workflow_tasks(&plan)?;
+    validate_workflow_tasks(&task_plan)?;
+    let task_bytes: usize = plan
+        .steps
+        .iter()
+        .chain(&task_plan.steps)
+        .map(|step| {
+            step.task_instructions.as_ref().map_or(0, String::len)
+                + step
+                    .execution_recipe
+                    .iter()
+                    .map(|n| n.task_instructions.as_ref().map_or(0, String::len))
+                    .sum::<usize>()
+        })
+        .sum();
+    require(
+        task_bytes <= TASK_WORKFLOW_LIMIT,
+        "Feature 与 Task 展开任务正文合计超过 1 MiB",
+    )?;
     for document in [&mut plan, &mut task_plan] {
         document.binding_slots = b
             .roles
@@ -556,7 +603,7 @@ pub(crate) fn import_legacy_workflow_with_roles(
         )?;
         let original = s.configuration(source)?.clone();
         let doc: WorkflowDocument = original.decode()?;
-        if doc.schema_version == 2 {
+        if doc.schema_version >= 2 {
             return Ok(source.into());
         }
         let key = if roles.is_empty() {
@@ -625,6 +672,7 @@ pub(crate) fn import_legacy_workflow_with_roles(
                 };
                 for (key, role, deps, writes) in nodes {
                     step.execution_recipe.push(WorkflowRunNode {
+                        task_instructions: None,
                         key: key.into(),
                         role,
                         role_ref: Some(

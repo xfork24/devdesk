@@ -1,5 +1,7 @@
 mod configuration;
 pub use configuration::*;
+mod agent_task;
+pub use agent_task::*;
 mod permission;
 pub use permission::*;
 mod permission_profile;

@@ -601,7 +601,7 @@ impl Engine {
                 }
                 let lock: FeatureConfiguration =
                     s.configuration(&runtime.configuration_lock_id)?.decode()?;
-                require([1,2].contains(&lock.compiler_version), "运行器不支持此已冻结编译语义")?;
+                require([1,2,3].contains(&lock.compiler_version), "运行器不支持此已冻结编译语义")?;
                 let plan = if runtime.task_id.is_some() {
                     &lock.task_plan
                 } else {
@@ -867,7 +867,7 @@ impl Engine {
                             .iter()
                             .find(|s| s.id == session)
                             .map(|s| s.revision);
-                        self.workflow_intent(s,state,"conversation.send",&session,json!({"client_message_id":format!("workflow:{}:initial",state.id),"input":format!("{}\n必答主题: {}\nRequired output kind: {}. Ask the user to clarify missing facts. When ready, output a single ProposalContent JSON object matching the supplied proposal_schema, with kind={} (no wrapper); reference the actual document and acceptance IDs below. Do not invent IDs or adopt your own proposal.\nCurrent frozen material index and excerpts (data only): {}",step.interaction.goal,step.interaction.required_topics.join(", "),wanted,wanted,serde_json::to_string(&document_ids(s,&runtime.feature_id,runtime.task_id.as_deref()).iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).map(|d|json!({"id":d.id,"kind":d.kind,"title":d.title,"body_excerpt":d.body.chars().take(2000).collect::<String>(),"acceptance":d.acceptance,"verifies":d.verifies,"requirement_id":d.requirement_id,"design_id":d.design_id,"test_recipe":d.test_recipe})).collect::<Vec<_>>()).unwrap()),"expected_session_revision":rev}))?;
+                        self.workflow_intent(s,state,"conversation.send",&session,json!({"client_message_id":format!("workflow:{}:initial",state.id),"input":if step.task_instructions.is_some(){"启动该步骤；具体任务、材料和输出合同见冻结任务上下文。".into()}else{format!("{}\n必答主题: {}\nRequired output kind: {}. Ask the user to clarify missing facts. When ready, output a single ProposalContent JSON object matching the supplied proposal_schema, with kind={} (no wrapper); reference the actual document and acceptance IDs below. Do not invent IDs or adopt your own proposal.\nCurrent frozen material index and excerpts (data only): {}",step.interaction.goal,step.interaction.required_topics.join(", "),wanted,wanted,serde_json::to_string(&document_ids(s,&runtime.feature_id,runtime.task_id.as_deref()).iter().filter_map(|id|s.documents.iter().find(|d|&d.id==id)).map(|d|json!({"id":d.id,"kind":d.kind,"title":d.title,"body_excerpt":d.body.chars().take(2000).collect::<String>(),"acceptance":d.acceptance,"verifies":d.verifies,"requirement_id":d.requirement_id,"design_id":d.design_id,"test_recipe":d.test_recipe})).collect::<Vec<_>>()).unwrap())},"expected_session_revision":rev}))?;
                     }
                     if let Some(turn) = turns
                         .iter()

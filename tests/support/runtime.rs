@@ -68,7 +68,8 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
                 scope: Some(SessionScope::Project),
                 lifecycle: Some(SessionLifecycle::Prepared),
                 runtime_binding: Some(RuntimeBinding {
-                    model_connection: None, model_profile_digest: None,
+                    model_connection: None,
+                    model_profile_digest: None,
                     agent_configuration: None,
                     permissions: None,
                     installation: RuntimeInstallation {
@@ -128,5 +129,5 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
 pub fn configure_project(e: &Engine, project: &str) {
     let s = e.store.snapshot().unwrap();
     let defaults = e.configuration_defaults(Some(project)).unwrap();
-    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
+    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_V2_ID,"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
 }

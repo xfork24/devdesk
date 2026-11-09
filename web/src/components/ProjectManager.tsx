@@ -113,7 +113,7 @@ export function ProjectManager({
   const workflows = records.filter(
     (r) =>
       r.kind === "workflow" &&
-      r.data.schema_version === 2 &&
+      r.data.schema_version >= 2 &&
       r.data.process_kind === "feature",
   );
   const standards = records.filter(

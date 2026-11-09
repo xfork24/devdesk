@@ -1,6 +1,6 @@
 # DevDesk v0.3 领域规范
 
-当前工程库 schema v36，全局库 v7。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
+当前工程库 schema v37，全局库 v7。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
 
 ## 归属与对象契约
 
@@ -147,3 +147,12 @@ Capability 固定 Model、Harness、Tools、Skills。命名 Agent 固定 RoleRev
 默认目录提供分阶段 Feature/Task 工作流、六个职责 Agent、各自 Capability、Markdown Skill/Spec、GPT-6.1 Sol High、固定 Codex Harness 和 Docker 默认权限。架构师产出 Design Doc，独立项目经理 Role 负责 Task Plan；其底层执行职责复用 architect 协议。新项目页预填默认配置，用户保存后才用于新 Feature。默认资源是普通独立定义，不自动追随修订。完整目录见 [默认配置](../resources/configuration/README.md)。
 
 v1 配置及旧 defaults_bundle 只保留历史语义。升级按旧 Workflow/Standard 精确组合派生等价 v2 Spec 绑定，不覆盖原 Workflow；无法证明的映射留待配置。harness_materialization 保存固定配方到 RuntimeInstallation 的不可变关联，Sandbox 定义与实际 Docker 执行实例分开，默认条目不声称已经运行。
+
+
+## Workflow 任务冻结
+
+Workflow v3 为每个实际 Agent Step 声明 Markdown task_instructions；attempt.execute 同时声明公共任务与 Agent 配方节点任务。系统节点没有任务编辑入口。具体合同、限制与查询见 [任务协议](protocol.md#workflow-step-任务合同)。
+
+WorkflowTaskDefinition 随路径进入 Feature 编译闭包，AgentTaskBase 固定有效 AgentRevision、声明顺序的 Skill 和 Role 来源。execution_task_binding 关联步骤/轮次/节点，execution_task 按 Turn 唯一、同时引用 agent-task Artifact。FrozenAgentTask 使用 agent-task/v1 渲染器，分别保存定义、基础上下文、规范输入及总摘要；Markdown 原文不变，摘要用规范 JSON 对象键序。领域层核对正文、输出合同、Spec 顺序、来源、Artifact 哈希与不可变历史，不以最新 Workflow 重新解释排队输入。
+
+项目迁移 037 追加任务唯一索引与步骤索引，全局库仍为 v7。旧 Workflow/Feature/RuntimeBinding/清单不补写任务字段；旧兼容执行提示继续保留。新默认任务在编译时嵌入，运行时读写已导入 Workflow 修订。

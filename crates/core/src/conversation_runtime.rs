@@ -275,6 +275,7 @@ impl Engine {
             })?;
             let result = (|| -> Result<()> {
                 let request = SessionStart {
+                    task_base: self.frozen_turn_task(&snapshot, &turn.id)?.map(|t| t.base),
                     code_view: turn.code_view.clone(),
                     session: session.clone(),
                     agent: snapshot
@@ -378,6 +379,7 @@ impl Engine {
                 let specifications = serde_json::from_value(specifications)
                     .map_err(|e| err("invalid_configuration", e.to_string()))?;
                 self.harness.dispatch_turn(&TurnDispatch {
+                    task: self.frozen_turn_task(&snapshot, &turn.id)?,
                     specifications,
                     session: updated.clone(),
                     turn: t.clone(),

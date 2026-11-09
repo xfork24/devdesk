@@ -3074,6 +3074,12 @@
               "type": "null"
             }
           ]
+        },
+        "task_instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768,
+          "pattern": "\\S"
         }
       },
       "required": [
@@ -3113,7 +3119,10 @@
           ]
         },
         "contract_version": {
-          "const": 1
+          "enum": [
+            1,
+            2
+          ]
         },
         "dependencies": {
           "type": "array",
@@ -3216,6 +3225,12 @@
               "type": "null"
             }
           ]
+        },
+        "task_instructions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768,
+          "pattern": "\\S"
         }
       },
       "required": [
@@ -3244,15 +3259,10 @@
               },
               "interaction": {
                 "required": [
-                  "goal",
                   "output_kind",
                   "max_turns"
                 ],
                 "properties": {
-                  "goal": {
-                    "type": "string",
-                    "pattern": "\\S"
-                  },
                   "max_turns": {
                     "type": "integer",
                     "minimum": 1,
@@ -3295,6 +3305,33 @@
               }
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "agent.interact"
+              },
+              "contract_version": {
+                "const": 1
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "interaction": {
+                "required": [
+                  "goal"
+                ],
+                "properties": {
+                  "goal": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -3304,7 +3341,8 @@
         "schema_version": {
           "enum": [
             1,
-            2
+            2,
+            3
           ]
         },
         "process_kind": {
@@ -3372,7 +3410,7 @@
         },
         "steps": {
           "type": "array",
-          "maxItems": 200,
+          "maxItems": 1000,
           "items": {
             "$ref": "#/$defs/WorkflowStep"
           },
@@ -3410,7 +3448,10 @@
           "if": {
             "properties": {
               "schema_version": {
-                "const": 2
+                "enum": [
+                  2,
+                  3
+                ]
               }
             }
           },
@@ -3470,6 +3511,134 @@
                       }
                     }
                   ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schema_version": {
+                "const": 3
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "steps": {
+                "items": {
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "agent.interact",
+                              "attempt.execute",
+                              "delivery.review",
+                              "merge.review"
+                            ]
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "task_instructions",
+                          "contract_version"
+                        ],
+                        "properties": {
+                          "contract_version": {
+                            "const": 2
+                          }
+                        }
+                      },
+                      "else": {
+                        "properties": {
+                          "contract_version": {
+                            "const": 1
+                          }
+                        },
+                        "not": {
+                          "required": [
+                            "task_instructions"
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "interaction": {
+                          "properties": {
+                            "goal": {
+                              "const": ""
+                            }
+                          }
+                        },
+                        "execution_recipe": {
+                          "items": {
+                            "allOf": [
+                              {
+                                "if": {
+                                  "properties": {
+                                    "key": {
+                                      "enum": [
+                                        "requirement_validate",
+                                        "plan_validate",
+                                        "test_plan_validate",
+                                        "test_author",
+                                        "implement",
+                                        "docs"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "then": {
+                                  "required": [
+                                    "task_instructions"
+                                  ]
+                                },
+                                "else": {
+                                  "not": {
+                                    "required": [
+                                      "task_instructions"
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "steps": {
+                "items": {
+                  "properties": {
+                    "contract_version": {
+                      "const": 1
+                    },
+                    "execution_recipe": {
+                      "items": {
+                        "not": {
+                          "required": [
+                            "task_instructions"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "task_instructions"
+                    ]
+                  }
                 }
               }
             }
@@ -4340,7 +4509,10 @@
             }
           }
         },
-        "output_contract": {}
+        "output_contract": {},
+        "task": {
+          "$ref": "#/$defs/WorkflowTaskDefinition"
+        }
       },
       "required": [
         "path",
@@ -4491,6 +4663,188 @@
         "host_gateway",
         "context_window",
         "max_output_tokens"
+      ],
+      "additionalProperties": false
+    },
+    "TaskDefinitionResource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "family": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "supersedes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "type": "string"
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "purpose": {
+                "type": "string"
+              },
+              "spec": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "purpose",
+              "spec"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "agent_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "family",
+        "name",
+        "version",
+        "supersedes",
+        "body",
+        "slots",
+        "rules"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowTaskDefinition": {
+      "type": "object",
+      "properties": {
+        "renderer_version": {
+          "const": "agent-task/v1"
+        },
+        "workflow_revision_id": {
+          "type": "string"
+        },
+        "source_step": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "step": {
+          "$ref": "#/$defs/WorkflowStep"
+        },
+        "stage": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "renderer_version",
+        "workflow_revision_id",
+        "source_step",
+        "path",
+        "step",
+        "stage"
+      ],
+      "additionalProperties": false
+    },
+    "AgentTaskBase": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/TaskDefinitionResource"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskDefinitionResource"
+          }
+        },
+        "role": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "agent",
+        "skills",
+        "role"
+      ],
+      "additionalProperties": false
+    },
+    "FrozenAgentTask": {
+      "type": "object",
+      "properties": {
+        "renderer_version": {
+          "const": "agent-task/v1"
+        },
+        "definition": {
+          "$ref": "#/$defs/WorkflowTaskDefinition"
+        },
+        "definition_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "base": {
+          "$ref": "#/$defs/AgentTaskBase"
+        },
+        "base_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "content": {
+          "type": "object"
+        },
+        "rendered_input": {
+          "type": "string"
+        },
+        "input_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "renderer_version",
+        "definition",
+        "definition_digest",
+        "base",
+        "base_digest",
+        "content",
+        "rendered_input",
+        "input_digest",
+        "digest"
       ],
       "additionalProperties": false
     }
@@ -4807,6 +5161,100 @@
               "agent_revision_id"
             ],
             "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "query.workflow_task_preview"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "project_id": {
+                "type": "string"
+              },
+              "document": {
+                "$ref": "#/$defs/WorkflowDocument"
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "recipe_node": {
+                "type": "string"
+              },
+              "agent_revision_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false,
+            "anyOf": [
+              {
+                "required": [
+                  "id"
+                ]
+              },
+              {
+                "required": [
+                  "document"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "query.execution_task"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "properties": {
+              "project_id": {
+                "type": "string"
+              },
+              "turn_id": {
+                "type": "string"
+              },
+              "run_id": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "required": [
+                  "turn_id"
+                ]
+              },
+              {
+                "required": [
+                  "run_id"
+                ]
+              }
+            ]
           }
         }
       }

@@ -197,6 +197,7 @@ impl Engine {
             let opened=self.apply_command("session.open",&open,s)?;
             self.governance_after_command("session.open",&open,s,&opened)?;
             let next=opened["id"].as_str().ok_or_else(||err("invalid_configuration","缺少后继 Session"))?.to_owned();
+            self.inherit_task_binding(s,sid,&next)?;
             let old=s.sessions.iter_mut().find(|v|v.id==sid).unwrap();
             old.lifecycle=Some(SessionLifecycle::RequiresSuccessor);old.revision+=1;
             let send=Command {command_id:c.command_id.clone(),target:Some(next.clone()),expected_revision:Some(1),payload:c.payload.clone()};

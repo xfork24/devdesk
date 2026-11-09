@@ -4,6 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [Workflow Step 任务指令改造](workflow-step-task-instructions/PLAN.md) | 设计审核与分阶段实施计划 | 待实施；每个 Agent Step 和配方节点的可编辑任务、统一组装预览、逐轮冻结与派发，保留系统执行合同 |
 | [DeepSeek Harness 多模型服务商接入](dsh-model-providers/PLAN.md) | [实施记录](dsh-model-providers/EXECUTION.md) | 已实现；阶段回归、固定 DSH 模拟协议与独立包真实 Codex 通过；DSH 真实订阅及 Ubuntu 宿主待验 |
 | [工具与技能接入](tool-skill-integrations/PLAN.md) | 接入设计与分阶段执行计划 | 待实施；独立接入页、HTTP API/MCP 可调用工具、Skill 资源、Capability 绑定、权限冻结与真实调用回执；原生工具组 Schema 表单先行修正 |
 | [Permission 资源与运行时版本绑定](permission-runtime-bindings/PLAN.md) | [实施记录](permission-runtime-bindings/EXECUTION.md) | 已实施；统一文件/UI、确切目标绑定与后继 Session 生效，macOS 自动化、双供应商原生边界和真实 Codex 改绑通过；Ubuntu、DSH 真实模型与完整崩溃矩阵待补验 |

@@ -218,7 +218,7 @@ impl Engine {
             definition_hashes: result.hashes,
             plan: result.plan,
             task_plan: result.task_plan,
-            compiler_version: 2,
+            compiler_version: if wf.data["schema_version"] == 3 { 3 } else { 2 },
         };
         let lock = record(
             "feature_lock",
@@ -400,6 +400,13 @@ impl Engine {
             } else {
                 s.configuration(&text(p, "id")?)?.clone()
             };
+            if p.get("document").is_some() {
+                wf.id = p["id"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("draft-preview")
+                    .into();
+            }
             if wf.kind == "workflow_draft" {
                 wf.data = wf.data["document"].clone();
             }
