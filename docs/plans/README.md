@@ -4,7 +4,8 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [内建默认套件与 Role](builtin-defaults-and-roles/PLAN.md) | [执行记录](builtin-defaults-and-roles/EXECUTION.md) | Sol High / Codex 完整默认配置、Role CRUD 与全新数据初始化 |
+| [Role、Capability、Workflow 与项目配置重构](role-capability-project-configuration/PLAN.md) | 执行计划已更新，待实施 | 五组配置导航、Step 绑定 Role/Spec、项目单 Agent 绑定、可选 Standard 基线、自动规范审计、独立子流程及取消默认套件 |
+| [内建默认套件与 Role](builtin-defaults-and-roles/PLAN.md) | [执行记录](builtin-defaults-and-roles/EXECUTION.md) | 已实施的历史方案；后续入口与自动绑定重构见 Role、Capability、Workflow 与项目配置计划 |
 | [架构与实现基线 v0.3](devdesk-v0.3/PLAN.md) | [本轮执行记录](workflow-and-workbench/EXECUTION.md) | 当前领域、Web 工作台、存储与能力边界 |
 | [架构设计 v0.2](devdesk-v0.2/PLAN.md) | 实施证据见下面各计划 | 原始领域与架构设计基线 |
 | [原型实施](devdesk-prototype/PLAN.md) | [F0–F5 与平台报告索引](devdesk-prototype/README.md) | 原型 Linux/macOS 验收记录 |
