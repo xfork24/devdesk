@@ -45,19 +45,17 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     kind: "tool",
     include_history: true,
   });
-  expect(tools.records.map((row: any) => row.data.implementation)).toEqual([
-    "harness.native",
-  ]);
+  expect(tools.records.filter((row:any)=>row.data.implementation === "harness.native")).toHaveLength(1);
   for (const row of defaults.records.filter((row: any) =>
     ["capability", "agent"].includes(row.kind),
   ))
     expect(row.data.tools).toEqual(["builtin-tool-codex-native-v1"]);
-  await page.getByRole("button", { name: "基础组件", exact: true }).click();
-  await page.getByRole("tab", { name: "Tool", exact: true }).click();
+  await page.getByRole("button", { name: "工具与技能接入", exact: true }).click();
+  await page.getByRole("tab", { name: "原生工具", exact: true }).click();
   await expect(page.getByText("AgentID 经验检索", { exact: true })).toHaveCount(
     0,
   );
-  await expect(page.getByLabel("工具实现").locator("option")).toHaveCount(1);
+  await expect(page.getByRole("region", {name:"原生工具目录"})).toBeVisible();
   const before = await rpc(page, "query.configurations", {
     kind: "agent",
     include_history: true,
@@ -99,59 +97,14 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     role.getByRole("button", { name: new RegExp(name + " v2") }),
   ).toHaveCount(0);
 });
-test("原生工具组隐藏 Schema 且旧源码草稿不影响保存", async ({ page }) => {
+test("原生工具目录不编辑 Schema，旧 Tool 链接跳转到独立目录", async ({page})=>{
   await setup(page);
-  await page.getByRole("button", { name: "基础组件", exact: true }).click();
-  await page.getByRole("tab", { name: "Tool", exact: true }).click();
-  await page.getByRole("button", { name: "新建 Tool", exact: true }).click();
-  await expect(
-    page.getByRole("note", { name: "原生工具组说明" }),
-  ).toBeVisible();
-  await expect(
-    page.getByLabel("输入 JSON Schema", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByLabel("输出 JSON Schema", { exact: true }),
-  ).toHaveCount(0);
-  const name = "Native Tool " + crypto.randomUUID().slice(0, 6);
-  await page.getByLabel("名称", { exact: true }).fill(name);
-  await page.getByLabel("工具标识", { exact: true }).fill("fixture.native");
-  // Previous UI versions could persist incomplete JSON source buffers in local drafts.
-  await expect
-    .poll(async () =>
-      page.evaluate(() =>
-        localStorage.getItem("devdesk:v2:resource:global:tool"),
-      ),
-    )
-    .toContain(name);
-  await page.evaluate(() => {
-    const key = "devdesk:v2:resource:global:tool";
-    const saved = JSON.parse(localStorage.getItem(key)!);
-    saved.value.data.input_text = "{unfinished input";
-    saved.value.data.output_text = "{unfinished output";
-    localStorage.setItem(key, JSON.stringify(saved));
-  });
-  await page.reload();
-  await expect(page.getByLabel("名称", { exact: true })).toHaveValue(name);
-  const created = page.waitForRequest(
-    (r) =>
-      r.url().endsWith("/rpc") && r.postDataJSON()?.method === "tool.create",
-  );
-  await page.getByRole("button", { name: "创建 Tool", exact: true }).click();
-  const payload = (await created).postDataJSON().params.payload.data;
-  expect(payload.input_schema).toEqual({ type: "object" });
-  expect(payload.output_schema).toEqual({ type: "object" });
-  expect(payload).not.toHaveProperty("input_text");
-  expect(payload).not.toHaveProperty("output_text");
-  await expect(page.getByRole("status")).toHaveText(/已保存/);
-  await expect(
-    page.getByLabel("输入 JSON Schema", { exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByLabel("输出 JSON Schema", { exact: true }),
-  ).toHaveCount(0);
-  await page.getByRole("button", { name: "删除 Tool", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText(/已停用/);
+  await page.goto("/?tab=components&config_tab=tool&config_object=builtin-tool-codex-native-v1");
+  await expect(page.getByRole("region",{name:"原生工具目录"})).toBeVisible();
+  await expect(page.getByRole("note",{name:"原生工具组说明"})).toBeVisible();
+  await expect(page.getByLabel("输入 JSON Schema",{exact:true})).toHaveCount(0);
+  await expect(page.getByLabel("输出 JSON Schema",{exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"新建 Tool",exact:true})).toHaveCount(0);
 });
 
 test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保留草稿", async ({
@@ -289,12 +242,13 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
   for (const [nav, kind] of [
     ["规范", "Spec"],
     ["规范", "Standard"],
-    ["基础组件", "Skill"],
+    ["工具与技能接入", "Skills"],
   ]) {
     await page.getByRole("button", { name: nav, exact: true }).click();
     await page.getByRole("tab", { name: kind, exact: true }).click();
+    const resourceKind = kind === "Skills" ? "Skill" : kind;
     await page
-      .getByRole("button", { name: `新建 ${kind}`, exact: true })
+      .getByRole("button", { name: `新建 ${resourceKind}`, exact: true })
       .click();
     const field = page.getByRole("group", {
       name: "Markdown 正文",
@@ -328,7 +282,7 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
         .selectOption("builtin-spec-stage-implementation-v1");
     }
     await page
-      .getByRole("button", { name: `创建 ${kind}`, exact: true })
+      .getByRole("button", { name: `创建 ${resourceKind}`, exact: true })
       .click();
     await expect(page.getByRole("status")).toHaveText(/已保存/);
     await page.reload();

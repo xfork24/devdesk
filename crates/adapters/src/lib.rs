@@ -7,6 +7,7 @@ pub mod docker;
 pub mod experience;
 pub mod git;
 pub mod github;
+pub mod integration_oauth;
 pub mod integrations;
 mod permission_catalog;
 pub mod permission_profiles;

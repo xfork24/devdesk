@@ -24,7 +24,11 @@ fn validate(r: &Request) -> bool {
         && ["status", "store", "read", "check", "authorize"].contains(&r.operation.as_str())
         && if r.operation == "store" {
             r.secret.as_ref().is_some_and(|s| {
-                (1..=65536).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_graphic())
+                if r.account.starts_with("integration-key-") {
+                    (1..=65536).contains(&s.len()) && !s.contains(['\n', '\r', '\0'])
+                } else {
+                    (8..=4096).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_graphic())
+                }
             })
         } else {
             r.secret.is_none()
@@ -111,7 +115,12 @@ fn run() -> Value {
             return json!({"ok":false,"code":"credential_helper_caller","message":"Expected the matching signed DevDesk Host"});
         }
         let mut input = Vec::new();
-        if std::io::stdin().take(8193).read_to_end(&mut input).is_err() || input.len() > 8192 {
+        if std::io::stdin()
+            .take(393217)
+            .read_to_end(&mut input)
+            .is_err()
+            || input.len() > 393216
+        {
             return json!({"ok":false,"code":"invalid_params"});
         }
         let request = serde_json::from_slice::<Request>(&input);

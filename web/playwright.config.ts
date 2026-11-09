@@ -5,6 +5,7 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Inv
 if (profile !== "debug" && profile !== "release") {
   throw new Error("DEVDESK_E2E_PROFILE must be debug or release");
 }
+const port = Number(process.env.DEVDESK_E2E_PORT || "4318");
 export default defineConfig({
   testDir: "./tests",
   workers: 1,

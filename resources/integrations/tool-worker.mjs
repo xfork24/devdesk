@@ -10,7 +10,8 @@ const { source, binding } = request;
 const max = binding.max_result_bytes || 1048576;
 const timeout = binding.timeout_ms || 30000;
 let effect = 'not_applied';
-const secrets = [request.secret, request.oauth?.client_secret, request.oauth?.code, request.oauth?.verifier].filter(x => typeof x === 'string' && x);
+const secrets = [request.secret, ...Object.entries(request.action==='oauth' ? request.arguments?.form || {} : {}).filter(([k]) => /token|code|verifier|secret/.test(k)).map(([,v])=>v)].filter(x => typeof x === 'string' && x);
+for(const path of request.tool?.sensitive_parameters || []) { const value=pointer(request.arguments,path); if(typeof value==='string'&&value)secrets.push(value); }
 function clean(value) {
   if (typeof value === 'string') return secrets.reduce((s, secret) => s.split(secret).join('[redacted]'), value);
   if (Array.isArray(value)) return value.map(clean);
@@ -20,7 +21,7 @@ function clean(value) {
 function fail(code, message) { const e = new Error(message); e.code = code; throw e; }
 function privateAddress(ip) {
   const s = ip.toLowerCase();
-  if (s.startsWith('::ffff:')) return privateAddress(s.slice(7));
+  if (s.startsWith('::ffff:')) { const tail=s.slice(7); if(tail.includes('.')) return privateAddress(tail); const parts=tail.split(':'); if(parts.length!==2)return true; const n=parseInt(parts[0],16)*65536+parseInt(parts[1],16); return privateAddress([n>>>24,(n>>>16)&255,(n>>>8)&255,n&255].join('.')); }
   if (s.includes(':')) return s === '::1' || s === '::' || /^(fc|fd|fe8|fe9|fea|feb|ff)/.test(s);
   const a = s.split('.').map(Number);
   return a[0] === 0 || a[0] === 10 || a[0] === 127 || a[0] >= 224 || a[0] === 169 && a[1] === 254 || a[0] === 172 && a[1] >= 16 && a[1] <= 31 || a[0] === 192 && [0,168].includes(a[1]) || a[0] === 100 && a[1] >= 64 && a[1] <= 127;
@@ -59,6 +60,13 @@ function pointer(value, path) {
 }
 function sseFrames(buffer) {
   return buffer.toString('utf8').split(/\r?\n\r?\n/).map(frame=>frame.split(/\r?\n/).filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trimStart()).join('\n')).filter(Boolean).map(data=>JSON.parse(data));
+}
+async function oauth() {
+  const fields=request.arguments.form;
+  const res=await transport(request.arguments.endpoint,'POST',{'Content-Type':'application/x-www-form-urlencoded',Accept:'application/json'},new URLSearchParams(fields).toString());
+  if(res.status<200||res.status>=300)fail('oauth_exchange_failed','Authorization server rejected the exchange');
+  if(!res.body.length)return {};
+  try{return JSON.parse(res.body.toString());}catch{fail('oauth_invalid_response','Authorization server did not return JSON');}
 }
 async function api() {
   const { tool, arguments:args } = request;
@@ -104,7 +112,7 @@ async function mcp() {
   let counter=1,session,child;const waiting=new Map();let lines='';
   const callbacks=[];
   const accept = message => {
-    if(message.method && message.id!=null){callbacks.push(message);return;}
+    if(message.method && message.id!=null){callbacks.push(message);if(child)child.stdin.write(JSON.stringify({jsonrpc:'2.0',id:message.id,error:{code:-32601,message:'DevDesk does not support server-initiated interactions'}})+'\n');return;}
     if(waiting.has(message.id)){const {resolve,reject,timer}=waiting.get(message.id);clearTimeout(timer);waiting.delete(message.id);message.error?reject(Object.assign(new Error(message.error.message||'MCP protocol error'),{code:'mcp_protocol',detail:message.error})):resolve(message.result);}
   };
   if(source.transport==='stdio') {
@@ -141,9 +149,9 @@ async function mcp() {
     if(request.action==='discover')return {tools,protocol_version:source.protocol_version};
     const tool=tools.find(t=>t.name===request.tool.implementation.name);
     if(!tool)fail('mcp_tool_missing','Pinned remote tool has disappeared');
-    const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
+    const canonical=v=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}':JSON.stringify(v);
     const { createHash }=await import('node:crypto');
-    const digest=createHash('sha256').update(JSON.stringify(canonical(tool))).digest('hex');
+    const digest=createHash('sha256').update(canonical(tool)).digest('hex');
     if(digest!==request.tool.implementation.descriptor_hash)fail('mcp_descriptor_drift','Remote tool contract changed; discover and publish a new revision');
     effect=request.tool.effect==='read_only'?'not_applied':'unknown';
     const result=await rpc('tools/call',{name:tool.name,arguments:request.arguments});
@@ -154,8 +162,8 @@ async function mcp() {
   }finally{if(child){child.kill('SIGTERM');setTimeout(()=>child.kill('SIGKILL'),250).unref();}}
 }
 try {
-  const result=source.kind==='http_api'?await api():source.kind==='mcp'?await mcp():fail('unsupported','Integration has no executable transport');
-  process.stdout.write(JSON.stringify(request.action==='discover'?result:{...result,invocation_id:request.invocation_id,origin:'external'})+'\n');
+  const result=request.action==='oauth'?await oauth():source.kind==='http_api'?await api():source.kind==='mcp'?await mcp():fail('unsupported','Integration has no executable transport');
+  process.stdout.write(JSON.stringify(['discover','oauth'].includes(request.action)?result:{...result,invocation_id:request.invocation_id,origin:'external'})+'\n');
 }catch(error){
   process.stdout.write(JSON.stringify({invocation_id:request.invocation_id,success:false,content:[{type:'text',text:clean(String(error.message))}],remote_effect:effect,error:{code:error.code||'transport_error'},origin:'external'})+'\n');
 }

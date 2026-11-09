@@ -1,5 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "DevDesk ToolDefinition v1",
+  "title": "DevDesk ToolDefinition v1/v2",
   "$ref": "rpc.schema.json#/$defs/ToolDefinition"
 }

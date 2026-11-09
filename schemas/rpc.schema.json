@@ -2813,36 +2813,15 @@
       "additionalProperties": false
     },
     "ToolDefinition": {
-      "type": "object",
-      "description": "Executable tool contract. AgentID experience is searchable/restorable Feature/Task context, not a Tool. Legacy experience.lookup records remain readable for immutable history only; new writes reject this implementation.",
-      "properties": {
-        "qualified_name": {
-          "type": "string",
-          "minLength": 1
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LegacyToolDefinition"
         },
-        "implementation": {
-          "type": "string"
-        },
-        "input_schema": {
-          "type": "object"
-        },
-        "output_schema": {
-          "type": "object"
-        },
-        "capabilities": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+        {
+          "$ref": "#/$defs/ExternalTool"
         }
-      },
-      "required": [
-        "qualified_name",
-        "implementation",
-        "input_schema",
-        "output_schema"
       ],
-      "additionalProperties": false
+      "description": "Legacy v1 native contracts remain readable; v2 external actions use an actual executable HTTP/MCP contract. Native tools are managed by their Harness."
     },
     "AgentComposition": {
       "type": "object",
@@ -3565,6 +3544,16 @@
           "items": {
             "type": "string"
           }
+        },
+        "integration_lock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegrationLock"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -4493,6 +4482,913 @@
         "max_output_tokens"
       ],
       "additionalProperties": false
+    },
+    "IntegrationSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "http_api"
+            },
+            "base_url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "base_url"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "mcp"
+            },
+            "transport": {
+              "enum": [
+                "stdio",
+                "streamable_http"
+              ]
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "protocol_version": {
+              "enum": [
+                "2025-11-25",
+                "2026-07-28"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "transport"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "skill_package"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "OAuthConfig": {
+      "type": "object",
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "authorization_url": {
+          "type": "string"
+        },
+        "token_url": {
+          "type": "string"
+        },
+        "revocation_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "client_id",
+        "authorization_url",
+        "token_url"
+      ],
+      "additionalProperties": false
+    },
+    "IntegrationDefinition": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/IntegrationSource"
+        },
+        "description": {
+          "type": "string"
+        },
+        "oauth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OAuthConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "IntegrationAuth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "none"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "bearer"
+            },
+            "credential_ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "credential_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "api_key"
+            },
+            "credential_ref": {
+              "type": "string"
+            },
+            "header": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "credential_ref",
+            "header"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "oauth_pending"
+            },
+            "account": {
+              "type": "string"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "account",
+            "scopes"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "oauth"
+            },
+            "credential_ref": {
+              "type": "string"
+            },
+            "account": {
+              "type": "string"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "credential_ref",
+            "account",
+            "scopes"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "IntegrationBinding": {
+      "type": "object",
+      "properties": {
+        "integration_ref": {
+          "type": "string"
+        },
+        "auth": {
+          "$ref": "#/$defs/IntegrationAuth"
+        },
+        "harness_ref": {
+          "type": "string"
+        },
+        "sandbox_ref": {
+          "type": "string"
+        },
+        "allowed_origins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allow_private_network": {
+          "type": "boolean"
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 120000
+        },
+        "max_result_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 8388608
+        }
+      },
+      "required": [
+        "integration_ref",
+        "harness_ref",
+        "sandbox_ref"
+      ],
+      "additionalProperties": false
+    },
+    "HttpParameter": {
+      "type": "object",
+      "properties": {
+        "pointer": {
+          "type": "string"
+        },
+        "location": {
+          "enum": [
+            "path",
+            "query",
+            "header"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pointer",
+        "location",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ToolImplementation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "http_api"
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "HEAD"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HttpParameter"
+              }
+            },
+            "body_pointer": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "idempotency_header": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "method",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "mcp"
+            },
+            "name": {
+              "type": "string"
+            },
+            "descriptor_hash": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "descriptor_hash"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ToolAuthRequirement": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "none"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "bearer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "api_key"
+            },
+            "header": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "header"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "oauth"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "scopes"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ExternalTool": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "qualified_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "integration_ref": {
+          "type": "string"
+        },
+        "implementation": {
+          "$ref": "#/$defs/ToolImplementation"
+        },
+        "input_schema": {
+          "type": "object"
+        },
+        "output_schema": {
+          "anyOf": [
+            {
+              "type": [
+                "object",
+                "boolean"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effect": {
+          "enum": [
+            "read_only",
+            "write",
+            "destructive",
+            "unknown"
+          ]
+        },
+        "constraints": {
+          "type": "object"
+        },
+        "sensitive_parameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "required_auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolAuthRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "qualified_name",
+        "description",
+        "integration_ref",
+        "implementation",
+        "input_schema",
+        "effect"
+      ],
+      "additionalProperties": false
+    },
+    "LegacyToolDefinition": {
+      "type": "object",
+      "description": "Executable tool contract. AgentID experience is searchable/restorable Feature/Task context, not a Tool. Legacy experience.lookup records remain readable for immutable history only; new writes reject this implementation.",
+      "properties": {
+        "qualified_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "implementation": {
+          "type": "string"
+        },
+        "input_schema": {
+          "type": "object"
+        },
+        "output_schema": {
+          "type": "object"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "qualified_name",
+        "implementation",
+        "input_schema",
+        "output_schema"
+      ],
+      "additionalProperties": false
+    },
+    "SkillFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "SkillPackage": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkillFile"
+          }
+        },
+        "requires_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "type": "string"
+        },
+        "scripts_disabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "body",
+        "description"
+      ],
+      "additionalProperties": false
+    },
+    "BoundTool": {
+      "type": "object",
+      "properties": {
+        "revision_id": {
+          "type": "string"
+        },
+        "content_hash": {
+          "type": "string"
+        },
+        "definition": {
+          "$ref": "#/$defs/ExternalTool"
+        },
+        "integration": {
+          "$ref": "#/$defs/IntegrationDefinition"
+        },
+        "integration_hash": {
+          "type": "string"
+        },
+        "binding_ref": {
+          "type": "string"
+        },
+        "binding": {
+          "$ref": "#/$defs/IntegrationBinding"
+        },
+        "binding_hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision_id",
+        "content_hash",
+        "definition",
+        "integration",
+        "integration_hash",
+        "binding_ref",
+        "binding",
+        "binding_hash"
+      ],
+      "additionalProperties": false
+    },
+    "IntegrationLock": {
+      "type": "object",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BoundTool"
+          }
+        },
+        "skills": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SkillPackage"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ToolInvocation": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "feature_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "request_id": {},
+        "call_id": {
+          "type": "string"
+        },
+        "tool": {
+          "$ref": "#/$defs/BoundTool"
+        },
+        "arguments": {},
+        "permissions": {
+          "$ref": "#/$defs/ExecutionPermissions"
+        },
+        "image_id": {
+          "type": "string"
+        },
+        "worktree": {
+          "type": "string"
+        },
+        "input_hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "call_id",
+        "tool",
+        "arguments",
+        "permissions",
+        "image_id",
+        "worktree",
+        "input_hash"
+      ],
+      "additionalProperties": false
+    },
+    "ToolReceipt": {
+      "type": "object",
+      "properties": {
+        "invocation_id": {
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "content": {
+          "type": "array",
+          "items": {}
+        },
+        "structured_content": {},
+        "remote_effect": {
+          "enum": [
+            "not_applied",
+            "applied",
+            "unknown"
+          ]
+        },
+        "error": {},
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        }
+      },
+      "required": [
+        "invocation_id",
+        "success",
+        "content",
+        "remote_effect",
+        "origin"
+      ],
+      "additionalProperties": false
+    },
+    "FeatureConfiguration": {
+      "type": "object",
+      "properties": {
+        "integration_locks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/IntegrationLock"
+          }
+        },
+        "specification_snapshot": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpecificationBinding"
+          }
+        },
+        "baseline_check": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BaselineCheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role_agent_bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "defaults_bundle_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project_configuration_id": {
+          "type": "string"
+        },
+        "workflow_ref": {
+          "type": "string"
+        },
+        "standard_ref": {
+          "type": "string"
+        },
+        "agent_refs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "definition_hashes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "plan": {
+          "$ref": "#/$defs/WorkflowDocument"
+        },
+        "task_plan": {
+          "$ref": "#/$defs/WorkflowDocument"
+        },
+        "compiler_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "project_configuration_id",
+        "workflow_ref",
+        "standard_ref",
+        "agent_refs",
+        "definition_hashes",
+        "plan",
+        "task_plan",
+        "compiler_version"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -4807,6 +5703,25 @@
               "agent_revision_id"
             ],
             "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "pattern": "^(integration\\.(create|revise|retire|disable|binding\\.(create|revise)|tool\\.(create|revise)|tools\\.publish|project\\.bind|discover|publish_tools|test|openapi\\.(preview|import))|skill\\.import(_package)?|tool\\.call\\.(cancel|reconcile|approve))$"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/Command"
           }
         }
       }

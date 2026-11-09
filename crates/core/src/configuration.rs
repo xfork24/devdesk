@@ -123,6 +123,25 @@ pub(crate) fn validate_capability(s: &EngineeringState, data: &Value, scope: &Sc
         }),
         "AgentID 经验属于上下文，请从 Capability 的 Tools 中移除",
     )?;
+    for skill in &cap.skills {
+        if let Some(r) = s
+            .governance
+            .iter()
+            .find(|r| r.kind == "skill_package" && r.definition_id == *skill)
+        {
+            let package: SkillPackage = r.decode()?;
+            for dependency in &package.requires_tools {
+                require(
+                    cap.tools.iter().any(|id| {
+                        id == dependency
+                            || s.configuration(id)
+                                .is_ok_and(|r| r.definition_id == *dependency)
+                    }),
+                    format!("Skill 缺少工具依赖: {dependency}"),
+                )?;
+            }
+        }
+    }
     validate_composition(s, &compose_capability(s, &cap), scope)
 }
 fn references_value(value: &Value, ids: &[&str]) -> bool {
@@ -145,7 +164,16 @@ pub(crate) fn references(s: &EngineeringState, source: &ConfigurationRecord) -> 
     }
     s.governance
         .iter()
-        .filter(|r| r.id != source.id && (r.is_definition() || r.kind == "project_configuration"))
+        .filter(|r| {
+            r.id != source.id
+                && (r.is_definition()
+                    || [
+                        "project_configuration",
+                        "integration_project_configuration",
+                        "skill_package",
+                    ]
+                    .contains(&r.kind.as_str()))
+        })
         .filter(|r| {
             !s.governance.iter().any(|next| {
                 next.kind == r.kind

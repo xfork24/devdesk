@@ -89,7 +89,7 @@ export function AgentCatalog({
     group === "actors"
       ? ["role", "capability", "agent"]
       : group === "foundations"
-        ? ["model", "harness", "tool", "skill"]
+        ? ["model", "harness"]
         : ["spec", "standard"];
   const [kind, setKind] = useGroupTab(group, kinds);
   const [revision, setRevision] = useState(0);
@@ -142,7 +142,7 @@ export function AgentCatalog({
     </>
   );
 }
-function ResourceEditor({
+export function ResourceEditor({
   kind,
   request,
   project,

@@ -37,11 +37,29 @@ pub struct IntegrationDefinition {
     pub source: IntegrationSource,
     #[serde(default)]
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthConfig {
+    pub client_id: String,
+    pub authorization_url: String,
+    pub token_url: String,
+    #[serde(default)]
+    pub revocation_url: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum IntegrationAuth {
     None,
+    #[serde(rename = "oauth_pending")]
+    OAuthPending {
+        account: String,
+        scopes: Vec<String>,
+    },
     Bearer {
         credential_ref: String,
     },
@@ -49,6 +67,7 @@ pub enum IntegrationAuth {
         credential_ref: String,
         header: String,
     },
+    #[serde(rename = "oauth")]
     OAuth {
         credential_ref: String,
         account: String,
@@ -63,7 +82,7 @@ impl Default for IntegrationAuth {
 impl IntegrationAuth {
     pub fn credential_ref(&self) -> Option<&str> {
         match self {
-            Self::None => None,
+            Self::None | Self::OAuthPending { .. } => None,
             Self::Bearer { credential_ref }
             | Self::ApiKey { credential_ref, .. }
             | Self::OAuth { credential_ref, .. } => Some(credential_ref),
@@ -132,6 +151,35 @@ pub struct ExternalTool {
     pub constraints: BTreeMap<String, Value>,
     #[serde(default)]
     pub sensitive_parameters: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_auth: Option<ToolAuthRequirement>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ToolAuthRequirement {
+    None,
+    Bearer,
+    ApiKey { header: String },
+    #[serde(rename = "oauth")]
+    OAuth { scopes: Vec<String> },
+}
+impl ToolAuthRequirement {
+    pub fn satisfied_by(&self, auth: &IntegrationAuth) -> bool {
+        match (self, auth) {
+            (Self::None, _) => true,
+            (Self::Bearer, IntegrationAuth::Bearer { .. } | IntegrationAuth::OAuth { .. }) => true,
+            (Self::ApiKey { header: a }, IntegrationAuth::ApiKey { header: b, .. }) => {
+                a.eq_ignore_ascii_case(b)
+            }
+            (
+                Self::OAuth { scopes },
+                IntegrationAuth::OAuth {
+                    scopes: granted, ..
+                },
+            ) => scopes.iter().all(|s| granted.contains(s)),
+            _ => false,
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -286,7 +334,8 @@ impl SkillPackage {
         let mut size = self.body.len();
         for f in &self.files {
             require(
-                !f.path.starts_with('/')
+                !f.path.contains('\0')
+                    && !f.path.starts_with('/')
                     && !f.path.contains('\\')
                     && f.path
                         .split('/')

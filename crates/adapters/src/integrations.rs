@@ -21,37 +21,78 @@ fn operation(id: &str) -> String {
 }
 fn validate_schema_tree(v: &Value, depth: usize) -> Result<()> {
     require(depth < 48, "Schema 嵌套过深")?;
-    match v {
-        Value::Object(map) => {
-            for (key, value) in map {
-                if ["$ref", "$dynamicRef"].contains(&key.as_str()) {
-                    require(
-                        value.as_str().is_some_and(|s| s.starts_with('#')),
-                        "仅允许包内 Schema 引用",
-                    )?;
-                }
-                if key == "$schema" {
-                    require(
-                        value.as_str().is_some_and(|s| {
-                            [
-                                "https://json-schema.org/draft/2020-12/schema",
-                                "http://json-schema.org/draft-07/schema#",
-                                "https://json-schema.org/draft-07/schema#",
-                            ]
-                            .contains(&s)
-                        }),
-                        "不支持的 JSON Schema 方言",
-                    )?;
-                }
-                validate_schema_tree(value, depth + 1)?;
+    if let Some(map) = v.as_object() {
+        for key in ["$ref", "$dynamicRef"] {
+            if let Some(reference) = map.get(key) {
+                require(
+                    reference.as_str().is_some_and(|s| s.starts_with('#')),
+                    "仅允许包内 Schema 引用",
+                )?;
             }
         }
-        Value::Array(a) => {
-            for value in a {
-                validate_schema_tree(value, depth + 1)?;
+        if let Some(dialect) = map.get("$schema") {
+            require(
+                dialect.as_str().is_some_and(|s| {
+                    [
+                        "https://json-schema.org/draft/2020-12/schema",
+                        "http://json-schema.org/draft-07/schema#",
+                        "https://json-schema.org/draft-07/schema#",
+                    ]
+                    .contains(&s)
+                }),
+                "不支持的 JSON Schema 方言",
+            )?;
+        }
+        // Only schema locations contain keywords. Defaults, examples and property names are data.
+        for key in [
+            "properties",
+            "patternProperties",
+            "$defs",
+            "definitions",
+            "dependentSchemas",
+        ] {
+            if let Some(children) = map.get(key).and_then(Value::as_object) {
+                for child in children.values() {
+                    validate_schema_tree(child, depth + 1)?;
+                }
             }
         }
-        _ => {}
+        for key in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+            if let Some(children) = map.get(key).and_then(Value::as_array) {
+                for child in children {
+                    validate_schema_tree(child, depth + 1)?;
+                }
+            }
+        }
+        for key in [
+            "items",
+            "additionalItems",
+            "additionalProperties",
+            "unevaluatedProperties",
+            "unevaluatedItems",
+            "propertyNames",
+            "contains",
+            "not",
+            "if",
+            "then",
+            "else",
+            "contentSchema",
+        ] {
+            if let Some(child) = map.get(key) {
+                if let Some(children) = child.as_array() {
+                    for child in children {
+                        validate_schema_tree(child, depth + 1)?;
+                    }
+                } else {
+                    validate_schema_tree(child, depth + 1)?;
+                }
+            }
+        }
+        if let Some(deps) = map.get("dependencies").and_then(Value::as_object) {
+            for child in deps.values().filter(|v| v.is_object() || v.is_boolean()) {
+                validate_schema_tree(child, depth + 1)?;
+            }
+        }
     }
     Ok(())
 }
@@ -109,7 +150,13 @@ impl NativeTools {
             r.kind == "integration_disabled" && identities.contains(&r.definition_id.as_str())
         }))
     }
-    fn secret(&self, b: &IntegrationBinding) -> Result<Option<String>> {
+    fn secret(
+        &self,
+        b: &IntegrationBinding,
+        source: &IntegrationDefinition,
+        image: &str,
+        permissions: &ExecutionPermissions,
+    ) -> Result<Option<String>> {
         let Some(key) = b.auth.credential_ref() else {
             return Ok(None);
         };
@@ -118,9 +165,26 @@ impl NativeTools {
             .ancestors()
             .find(|p| p.join("global.sqlite3").is_file())
             .unwrap_or(&self.root);
-        crate::credentials::CredentialVault::new(root)?
-            .read_integration(key)
-            .map(Some)
+        let vault = crate::credentials::CredentialVault::new(root)?;
+        if let IntegrationAuth::OAuth {
+            account, scopes, ..
+        } = &b.auth
+        {
+            let config = source
+                .oauth
+                .as_ref()
+                .ok_or_else(|| err("oauth_configuration", "接入源未配置 OAuth"))?;
+            return crate::integration_oauth::access_token(
+                key,
+                config,
+                account,
+                scopes,
+                &vault,
+                |endpoint, form| self.oauth_request(endpoint, form, b, image, permissions),
+            )
+            .map(Some);
+        }
+        vault.read_integration(key).map(Some)
     }
     fn run(
         &self,
@@ -137,6 +201,13 @@ impl NativeTools {
         require(
             image.starts_with("sha256:") && image.len() == 71,
             "Tool Executor 需要确切 Docker 镜像身份",
+        )?;
+        require(
+            !matches!(
+                permissions.harness.policy.filesystem,
+                FilesystemPermission::Scoped { .. }
+            ),
+            "当前工具执行器无法完整执行自定义 Harness 文件规则，请选用完整或只读 profile",
         )?;
         let dir = self.directory(id);
         fs::create_dir_all(&dir).map_err(storage)?;
@@ -195,11 +266,13 @@ impl NativeTools {
             credential_env_file: None,
             profile_file: None,
             runner_file: None,
+            skill_directory: None,
+            sensitive_output: action == "oauth",
             profile_target: None,
         };
         let docker = DockerSandbox::new(&self.root)?;
         docker.create(&spec)?;
-        let request = json!({"invocation_id":id,"action":action,"source":source.source,"binding":binding,"tool":tool,"arguments":arguments,"secret":self.secret(binding)?});
+        let request = json!({"invocation_id":id,"action":action,"source":source.source,"binding":binding,"tool":tool,"arguments":arguments,"secret":if action=="oauth"{None}else{self.secret(binding,source,image,permissions)?}});
         let output = crate::process::capture_command(
             docker.attach_command(&spec.operation_id)?,
             Duration::from_millis(binding.timeout_ms + 5000),
@@ -213,6 +286,55 @@ impl NativeTools {
         });
         let _ = docker.remove(&spec.operation_id);
         value
+    }
+    pub fn oauth_request(
+        &self,
+        endpoint: &str,
+        form: Value,
+        binding: &IntegrationBinding,
+        image: &str,
+        permissions: &ExecutionPermissions,
+    ) -> Result<Value> {
+        require(
+            !endpoint.contains(['@', '#', '\n', '\r']),
+            "无效 OAuth endpoint",
+        )?;
+        let (scheme, rest) = endpoint
+            .split_once("://")
+            .ok_or_else(|| err("oauth_endpoint", "OAuth endpoint 缺少 scheme"))?;
+        require(["https", "http"].contains(&scheme), "OAuth 只支持 HTTP(S)")?;
+        let origin = format!("{scheme}://{}", rest.split('/').next().unwrap_or(""));
+        let mut b = binding.clone();
+        b.auth = IntegrationAuth::None;
+        b.allowed_origins = vec![origin.clone()];
+        let source = IntegrationDefinition {
+            source: IntegrationSource::HttpApi { base_url: origin },
+            description: "OAuth exchange".into(),
+            oauth: None,
+        };
+        let result = self.run(
+            &id(),
+            &source,
+            &b,
+            image,
+            permissions,
+            "",
+            "oauth",
+            None,
+            json!({"endpoint":endpoint,"form":form}),
+        )?;
+        require(
+            result.get("success") != Some(&json!(false)),
+            "OAuth 协议交换失败",
+        )?;
+        Ok(result)
+    }
+    pub fn read_artifact(&self, id: &str, receipt: &ToolReceipt) -> Result<(Vec<u8>, String)> {
+        require(receipt.invocation_id == id, "文件回执不属于该调用")?;
+        let link = receipt.content.iter().find(|c|c["type"] == "resource_link" && c["uri"] == format!("devdesk-tool-artifact:{id}")).ok_or_else(||err("not_found", "调用没有文件结果"))?;
+        let bytes = fs::read(self.directory(id).join("result.bin")).map_err(storage)?;
+        require(link["sha256"] == format!("{:x}",Sha256::digest(&bytes)) && link["size"].as_u64() == Some(bytes.len() as u64), "文件结果摘要不符")?;
+        Ok((bytes,link["mimeType"].as_str().unwrap_or("application/octet-stream").into()))
     }
     fn execute(&self, i: &ToolInvocation) -> Result<ToolReceipt> {
         require(!self.revoked(&i.tool)?, "接入已紧急停用")?;
@@ -281,7 +403,61 @@ impl ports::ToolExecutor for NativeTools {
         })
     }
     fn start(&self, i: &ToolInvocation) -> Result<()> {
+        require(
+            i.tool.binding.allowed_tools.contains(&i.tool.revision_id),
+            "工具修订不在绑定授权中",
+        )?;
+        require(
+            i.tool
+                .definition
+                .required_auth
+                .as_ref()
+                .is_none_or(|a| a.satisfied_by(&i.tool.binding.auth)),
+            "绑定认证不满足工具方案",
+        )?;
+        require(
+            i.input_hash == configuration_hash(&i.arguments),
+            "调用输入摘要不符",
+        )?;
+        self.validate_arguments(&i.tool.definition.input_schema, &i.arguments)?;
         require(!self.revoked(&i.tool)?, "接入已紧急停用")?;
+        let directory = self.directory(&i.id);
+        fs::create_dir_all(&directory).map_err(storage)?;
+        let identity = directory.join("input-hash");
+        let fingerprint = configuration_hash(&json!([
+            i.input_hash,
+            i.tool,
+            i.permissions,
+            i.image_id,
+            i.worktree
+        ]));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&identity)
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(fingerprint.as_bytes()).map_err(storage)?;
+                file.sync_all().map_err(storage)?;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                require(
+                    fs::read_to_string(&identity).map_err(storage)? == fingerprint,
+                    "调用 ID 被不同的输入或授权复用",
+                )?;
+                if self.jobs.lock().map_err(storage)?.contains_key(&i.id)
+                    || directory.join("receipt.json").is_file()
+                {
+                    return Ok(());
+                }
+                return Err(err(
+                    "needs_reconciliation",
+                    "已存在执行意图且无回执，禁止重新派发",
+                ));
+            }
+            Err(e) => return Err(storage(e)),
+        }
         let mut jobs = self.jobs.lock().map_err(storage)?;
         if jobs.contains_key(&i.id) {
             return Ok(());
@@ -311,7 +487,10 @@ impl ports::ToolExecutor for NativeTools {
             let dir = root.join("tool-executions").join(operation(&invocation.id));
             let _ = fs::create_dir_all(&dir);
             if let Ok(bytes) = serde_json::to_vec(&receipt) {
-                let _ = fs::write(dir.join("receipt.json"), bytes);
+                let temporary = dir.join("receipt.tmp");
+                if fs::write(&temporary, bytes).is_ok() {
+                    let _ = fs::rename(temporary, dir.join("receipt.json"));
+                }
             }
             if let Ok(mut slot) = job.lock() {
                 *slot = Some(Ok(receipt));
@@ -389,6 +568,14 @@ pub fn import_openapi(
     integration: &str,
     selected: &[String],
 ) -> Result<Vec<ExternalTool>> {
+    import_openapi_with_auth(value, integration, selected, None)
+}
+pub fn import_openapi_with_auth(
+    value: &Value,
+    integration: &str,
+    selected: &[String],
+    security_scheme: Option<&str>,
+) -> Result<Vec<ExternalTool>> {
     require(
         value["openapi"]
             .as_str()
@@ -432,6 +619,80 @@ pub fn import_openapi(
                 continue;
             }
             require(
+                op.get("servers").is_none() && item.get("servers").is_none(),
+                "operation/path servers 需要独立接入源，不能忽略覆盖地址",
+            )?;
+            let security = op.get("security").or(value.get("security"));
+            let mut alternatives = vec![];
+            if let Some(requirements) = security {
+                for requirement in requirements
+                    .as_array()
+                    .ok_or_else(|| err("openapi_security", "security 必须为数组"))?
+                {
+                    let scheme = requirement
+                        .as_object()
+                        .ok_or_else(|| err("openapi_security", "无效 Security Requirement"))?;
+                    require(
+                        scheme.len() <= 1,
+                        "首版不支持 Security Requirement 的多方案 AND 组合",
+                    )?;
+                    if scheme.is_empty() {
+                        alternatives.push(("none".to_owned(), ToolAuthRequirement::None));
+                        continue;
+                    }
+                    let (name, scopes) = scheme.iter().next().unwrap();
+                    let def = &value["components"]["securitySchemes"][name];
+                    let auth = match (def["type"].as_str(), def["scheme"].as_str()) {
+                        (Some("http"), Some("bearer")) => ToolAuthRequirement::Bearer,
+                        (Some("apiKey"), _) if def["in"] == "header" => {
+                            ToolAuthRequirement::ApiKey {
+                                header: text(def, "name")?,
+                            }
+                        }
+                        (Some("oauth2"), _)
+                            if def.pointer("/flows/authorizationCode").is_some() =>
+                        {
+                            ToolAuthRequirement::OAuth {
+                                scopes: serde_json::from_value(scopes.clone())
+                                    .map_err(|_| err("openapi_security", "无效 OAuth scopes"))?,
+                            }
+                        }
+                        _ => {
+                            return Err(err(
+                                "openapi_security",
+                                format!(
+                                    "认证方案 {name} 尚不支持；需要 Bearer、Header API key 或授权码 OAuth"
+                                ),
+                            ));
+                        }
+                    };
+                    alternatives.push((name.clone(), auth));
+                }
+            }
+            let required_auth = if alternatives.is_empty() {
+                Some(ToolAuthRequirement::None)
+            } else if let Some(selected) = security_scheme {
+                Some(
+                    alternatives
+                        .iter()
+                        .find(|(name, _)| name == selected)
+                        .ok_or_else(|| {
+                            err(
+                                "openapi_security",
+                                "所选认证方案不满足此 operation 的 OR 组合",
+                            )
+                        })?
+                        .1
+                        .clone(),
+                )
+            } else {
+                require(
+                    alternatives.len() == 1,
+                    "operation 存在替代认证方案，请明确选择 security_scheme",
+                )?;
+                Some(alternatives.remove(0).1)
+            };
+            require(
                 !item.get("$ref").is_some(),
                 "path 外部引用需要导入时显式展开",
             )?;
@@ -459,6 +720,13 @@ pub fn import_openapi(
                 )?;
                 let schema = p.get("schema").cloned().unwrap_or(json!({"type":"string"}));
                 require(schema["type"] != "object", "对象参数需要显式受支持映射")?;
+                require(
+                    schema["type"] != "array"
+                        || (location == "query"
+                            && p.get("explode").is_none_or(|v| v == true)
+                            && p.get("style").is_none_or(|v| v == "form")),
+                    "数组仅支持 query form explode=true",
+                )?;
                 require(!properties.contains_key(&key), "参数同名，需要显式改名映射")?;
                 properties.insert(key.clone(), schema);
                 let needed = p["required"] == true || location == "path";
@@ -534,6 +802,7 @@ pub fn import_openapi(
                 .into(),
                 constraints: Default::default(),
                 sensitive_parameters: vec![],
+                required_auth,
             };
             tool.validate()?;
             result.push(tool);
@@ -589,7 +858,7 @@ pub fn import_skill_zip(bytes: &[u8]) -> Result<Vec<SkillPackage>> {
         }
     }
     let body = body.ok_or_else(|| err("skill_package", "包缺少根目录 SKILL.md"))?;
-    let (description, body) = parse_skill_markdown(&body)?;
+    let (description, _) = parse_skill_markdown(&body)?;
     let package = SkillPackage {
         body,
         description,
@@ -616,6 +885,148 @@ pub fn parse_skill_markdown(text: &str) -> Result<(String, String)> {
     } else {
         Ok(("Imported Markdown skill".into(), text.into()))
     }
+}
+
+/// Public HTTPS Git import at an exact commit, without checking out or executing repository code.
+pub fn import_skill_git(
+    root: &Path,
+    url: &str,
+    commit: &str,
+    directory: &str,
+) -> Result<SkillPackage> {
+    require(
+        url.starts_with("https://")
+            && !url.contains(['\n', '\r', '@'])
+            && commit.len() == 40
+            && commit.bytes().all(|c| c.is_ascii_hexdigit()),
+        "Git Skill 需要公开 HTTPS 来源和确切 40 位 commit",
+    )?;
+    require(
+        !directory.starts_with('/') && directory.split('/').all(|p| p != ".." && p != "."),
+        "Skill 子目录无效",
+    )?;
+    let path = root.join("skill-imports").join(id());
+    fs::create_dir_all(&path).map_err(storage)?;
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = Cleanup(path.clone());
+    let git = |args: Vec<String>| -> Result<Vec<u8>> {
+        let mut cmd = std::process::Command::new("git");
+        cmd.current_dir(&path)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .args([
+                "-c",
+                "credential.helper=",
+                "-c",
+                "http.followRedirects=false",
+                "-c",
+                "protocol.file.allow=never",
+                "-c",
+                "core.hooksPath=/dev/null",
+            ])
+            .args(args);
+        let out = crate::process::capture_command(cmd, Duration::from_secs(30), None)?;
+        require(
+            out.code == 0 && !out.truncated,
+            "Git Skill 导入失败或输出超限",
+        )?;
+        Ok(out.stdout)
+    };
+    git(vec!["init".into(), "--quiet".into()])?;
+    git(vec![
+        "fetch".into(),
+        "--quiet".into(),
+        "--depth=1".into(),
+        "--filter=blob:none".into(),
+        url.into(),
+        commit.into(),
+    ])?;
+    let actual =
+        String::from_utf8(git(vec!["rev-parse".into(), "FETCH_HEAD".into()])?).map_err(storage)?;
+    require(
+        actual.trim().eq_ignore_ascii_case(commit),
+        "Git 返回的 commit 与指定来源不同",
+    )?;
+    let listing = git(vec![
+        "ls-tree".into(),
+        "-r".into(),
+        "-z".into(),
+        commit.into(),
+        "--".into(),
+        if directory.is_empty() {
+            ".".into()
+        } else {
+            directory.into()
+        },
+    ])?;
+    let mut body = None;
+    let mut files = vec![];
+    let mut total = 0;
+    let mut scripts = false;
+    for entry in listing.split(|b| *b == 0).filter(|e| !e.is_empty()) {
+        let text = std::str::from_utf8(entry).map_err(storage)?;
+        let (meta, name) = text
+            .split_once('\t')
+            .ok_or_else(|| err("skill_git", "无效文件目录"))?;
+        let parts: Vec<_> = meta.split_whitespace().collect();
+        require(
+            parts.len() == 3 && parts[1] == "blob" && ["100644", "100755"].contains(&parts[0]),
+            "Skill 不接受符号链接或子模块",
+        )?;
+        let relative = if directory.is_empty() {
+            name
+        } else {
+            name.strip_prefix(&format!("{}/", directory.trim_end_matches('/')))
+                .ok_or_else(|| err("skill_git", "文件不在所选目录"))?
+        };
+        if relative.starts_with("scripts/") {
+            scripts = true;
+            continue;
+        }
+        let size = String::from_utf8(git(vec!["cat-file".into(), "-s".into(), parts[2].into()])?)
+            .map_err(storage)?
+            .trim()
+            .parse::<usize>()
+            .map_err(storage)?;
+        total += size;
+        require(
+            size <= 1_048_576 && total <= 2_097_152 && files.len() < 128,
+            "Skill 文件或材料总量超限",
+        )?;
+        let content = String::from_utf8(git(vec![
+            "cat-file".into(),
+            "blob".into(),
+            parts[2].into(),
+        ])?)
+        .map_err(|_| err("skill_git", "Skill 材料需要 UTF-8 文本"))?;
+        if relative.eq_ignore_ascii_case("SKILL.md") {
+            require(body.is_none(), "Skill 主文档重复")?;
+            body = Some(content);
+        } else {
+            files.push(SkillFile {
+                path: relative.into(),
+                content,
+            });
+        }
+    }
+    let body = body.ok_or_else(|| err("skill_git", "所选目录缺少 SKILL.md"))?;
+    let (description, _) = parse_skill_markdown(&body)?;
+    let package = SkillPackage {
+        body,
+        description,
+        files,
+        requires_tools: vec![],
+        source: format!("git:{url}@{}:{directory}", commit.to_lowercase()),
+        scripts_disabled: scripts,
+    };
+    package.validate()?;
+    Ok(package)
 }
 
 pub fn parse_openapi_document(text: &str) -> Result<Value> {

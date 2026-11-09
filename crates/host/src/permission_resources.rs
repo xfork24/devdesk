@@ -81,11 +81,32 @@ impl Workspace {
             &lock,
             &binding.installation,
         )?;
-        if Some(&lock)
-            == binding
-                .permissions
-                .as_ref()
-                .and_then(|p| p.binding_lock.as_ref())
+        let integrations = devdesk_core::integration_feature_lock(
+            &s,
+            &session.agent,
+            session.feature_id.as_deref(),
+        )
+        .map(Ok)
+        .unwrap_or_else(|| {
+            devdesk_core::freeze_integrations(&s, &a, session.project_id.as_deref())
+        })?;
+        let integrations_unchanged = binding
+            .agent_configuration
+            .as_ref()
+            .and_then(|c| c.integration_lock.as_ref())
+            .is_some_and(|frozen| frozen == &integrations)
+            || (integrations == IntegrationLock::default()
+                && binding
+                    .agent_configuration
+                    .as_ref()
+                    .and_then(|c| c.integration_lock.as_ref())
+                    .is_none());
+        if integrations_unchanged
+            && Some(&lock)
+                == binding
+                    .permissions
+                    .as_ref()
+                    .and_then(|p| p.binding_lock.as_ref())
         {
             return e.execute("conversation.send", c).map(Some);
         }
@@ -100,6 +121,9 @@ impl Workspace {
         )?;
         let mut next = binding.clone();
         next.permissions = Some(permissions);
+        if let Some(config) = &mut next.agent_configuration {
+            config.integration_lock = Some(integrations);
+        }
         next.configuration_digest = Self::permission_runtime_digest(
             s.definitions
                 .iter()

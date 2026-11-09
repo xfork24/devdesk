@@ -8,8 +8,8 @@
 |---|---|---|
 | P0 | 契约与协议检查通过 | domain 11 项通过；实际固定 Docker Codex 接受 dynamicTools，无模型调用；协议回执 `/tmp/devdesk-tools-p0-codex-protocol.json` |
 | P1 | 首批资源回归通过 | tool_integrations 4 项通过；版本、作用域、实际 Schema 校验、项目绑定/锁、Skill 依赖与路径隔离；实际调用与重启恢复继续在 P2/P3 验证 |
-| P2 | 待实施 | HTTP 与受控执行 |
-| P3 | 待实施 | MCP 两版本、两传输 |
+| P2 | 首批真实执行回归通过 | Docker HTTP 调用、参数/输出验证、重复调用不重发、私网授权拒绝通过；无模型调用 |
+| P3 | 协议与传输回归通过 | 本地真实 MCP 服务：2025-11-25/2026-07-28 × stdio/Streamable HTTP，分页发现、调用、未选修订拒绝和描述漂移拒绝通过；无模型调用 |
 | P4 | 待实施 | Skill 包与资源 |
 | P5 | 待实施 | 独立接入页面 |
 | P6 | 待实施 | OAuth 与凭据生命周期 |

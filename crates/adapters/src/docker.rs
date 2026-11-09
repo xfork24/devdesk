@@ -45,6 +45,10 @@ pub struct ContainerSpec {
     pub runner_file: Option<PathBuf>,
     #[serde(default)]
     pub profile_target: Option<String>,
+    #[serde(default)]
+    pub skill_directory: Option<PathBuf>,
+    #[serde(default)]
+    pub sensitive_output: bool,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -597,6 +601,26 @@ impl DockerSandbox {
                 "--mount".into(),
                 format!(
                     "type=bind,source={},target=/work/{relative},readonly",
+                    path.display()
+                ),
+            ]);
+        }
+        if spec.sensitive_output {
+            args.extend(["--log-driver".into(), "none".into()]);
+        }
+        if let Some(path) = &spec.skill_directory {
+            reject_symlink(path)?;
+            let path = fs::canonicalize(path).map_err(storage)?;
+            require(
+                path.starts_with(&self.root)
+                    && path.is_dir()
+                    && path.file_name().is_some_and(|n| n == "selected-skills"),
+                "Skill 材料必须属于当前执行根",
+            )?;
+            args.extend([
+                "--mount".into(),
+                format!(
+                    "type=bind,source={},target=/skills,readonly",
                     path.display()
                 ),
             ]);

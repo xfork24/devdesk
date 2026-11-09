@@ -125,6 +125,7 @@ pub enum ConversationObservation {
         call: String,
         tool: String,
         arguments: Value,
+        worktree: String,
     },
     Admitted {
         turn: Id,

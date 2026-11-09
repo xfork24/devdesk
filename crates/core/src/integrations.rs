@@ -7,12 +7,14 @@ fn decode<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T> {
     serde_json::from_value(v.clone()).map_err(|e| err("invalid_configuration", e.to_string()))
 }
 fn live(s: &EngineeringState, r: &ConfigurationRecord) -> Result<()> {
+    enabled(s, r)?;
+    require(!crate::configuration::retired(s, r), "接入已停用新的选择")
+}
+fn enabled(s: &EngineeringState, r: &ConfigurationRecord) -> Result<()> {
     require(
-        !crate::configuration::retired(s, r)
-            && !s
-                .governance
-                .iter()
-                .any(|v| v.kind == "integration_disabled" && v.definition_id == r.definition_id),
+        !s.governance
+            .iter()
+            .any(|v| v.kind == "integration_disabled" && v.definition_id == r.definition_id),
         "接入已停用",
     )
 }
@@ -66,9 +68,19 @@ pub fn freeze_integrations(
         live(s, binding)?;
         let b: IntegrationBinding = binding.decode()?;
         require(
+            !matches!(b.auth, IntegrationAuth::OAuthPending { .. }),
+            "接入 OAuth 授权尚未完成",
+        )?;
+        require(
+            tool.required_auth
+                .as_ref()
+                .is_none_or(|auth| auth.satisfied_by(&b.auth)),
+            "绑定认证不满足工具所需方案或 scope",
+        )?;
+        require(
             b.integration_ref == source.id
                 && b.harness_ref == a.harness_ref
-                && b.allowed_tools.contains(&tool.qualified_name),
+                && b.allowed_tools.contains(&r.id),
             "接入绑定不适用于该工具或 Harness",
         )?;
         lock.tools.push(BoundTool {
@@ -131,6 +143,7 @@ impl Engine {
             call,
             tool,
             arguments,
+            worktree,
         } = observation
         else {
             return Ok(());
@@ -196,7 +209,7 @@ impl Engine {
             arguments: arguments.clone(),
             permissions,
             image_id: image,
-            worktree: String::new(),
+            worktree: worktree.clone(),
             input_hash,
         };
         self.insert_tool_invocation(s, &invocation)?;
@@ -214,9 +227,17 @@ impl Engine {
             )?;
             return Ok(json!(old));
         }
-        live(s, s.configuration(&i.tool.revision_id)?)?;
-        live(s, s.configuration(&i.tool.definition.integration_ref)?)?;
-        live(s, s.configuration(&i.tool.binding_ref)?)?;
+        enabled(s, s.configuration(&i.tool.revision_id)?)?;
+        enabled(s, s.configuration(&i.tool.definition.integration_ref)?)?;
+        enabled(s, s.configuration(&i.tool.binding_ref)?)?;
+        require(
+            i.tool
+                .definition
+                .required_auth
+                .as_ref()
+                .is_none_or(|auth| auth.satisfied_by(&i.tool.binding.auth)),
+            "绑定认证不满足工具所需方案或 scope",
+        )?;
         self.executor()?
             .validate_arguments(&i.tool.definition.input_schema, &i.arguments)?;
         for (pointer, value) in &i.tool.definition.constraints {
@@ -226,10 +247,7 @@ impl Engine {
             )?;
         }
         require(
-            i.tool
-                .binding
-                .allowed_tools
-                .contains(&i.tool.definition.qualified_name),
+            i.tool.binding.allowed_tools.contains(&i.tool.revision_id),
             "动作不在绑定授权中",
         )?;
         require(
@@ -247,8 +265,8 @@ impl Engine {
         let allowed = match &i.permissions.harness.policy.tools {
             ToolPermission::AllAvailable => true,
             ToolPermission::Restricted { allow, deny } => {
-                !deny.contains(&i.tool.definition.qualified_name)
-                    && (allow.is_empty() || allow.contains(&i.tool.definition.qualified_name))
+                !deny.contains(&i.tool.revision_id)
+                    && (allow.is_empty() || allow.contains(&i.tool.revision_id))
             }
         };
         require(allowed, "Permission 未允许该工具")?;
@@ -290,13 +308,17 @@ impl Engine {
     }
     pub fn record_tool_discovery(
         &self,
-        c: &Command,
+        _c: &Command,
         binding_ref: &str,
         result: Value,
     ) -> Result<Value> {
-        let fp = command_fingerprint("integration.discover", c);
-        self.store.transact(Some((&c.command_id, &fp)), &mut |s| {
+        self.store.transact(None, &mut |s| {
             let b = s.configuration(binding_ref)?.clone();
+            let previous = latest(s, "integration_discovery", binding_ref).map(|r|r.data["result"]["tools"].as_array().cloned().unwrap_or_default()).unwrap_or_default();
+            let current = result["tools"].as_array().cloned().unwrap_or_default();
+            let added:Vec<_> = current.iter().filter(|v|!previous.iter().any(|p|p["name"] == v["name"])).map(|v|v["name"].clone()).collect();
+            let removed:Vec<_> = previous.iter().filter(|v|!current.iter().any(|p|p["name"] == v["name"])).map(|v|v["name"].clone()).collect();
+            let changed:Vec<_> = current.iter().filter(|v|previous.iter().any(|p|p["name"] == v["name"] && configuration_hash(p) != configuration_hash(v))).map(|v|v["name"].clone()).collect();
             let r = record(
                 "integration_discovery",
                 binding_ref.into(),
@@ -304,13 +326,86 @@ impl Engine {
                 "工具发现".into(),
                 latest(s, "integration_discovery", binding_ref).map_or(1, |r| r.version + 1),
                 None,
-                json!({"binding_ref":binding_ref,"result":result,"captured_at":now()}),
+                json!({"binding_ref":binding_ref,"result":result,"diff":{"added":added,"removed":removed,"changed":changed},"captured_at":now()}),
                 true,
             );
             let value = json!(r);
             s.governance.push(r);
             Ok(value)
         })
+    }
+    /// Persist an external operation before any discovery or Git import I/O.
+    pub fn prepare_integration_operation(
+        &self,
+        method: &str,
+        c: &Command,
+        input: Value,
+    ) -> Result<Value> {
+        let fp = command_fingerprint(method, c);
+        self.store.transact(Some((&c.command_id, &fp)), &mut |s| {
+            let mut r = record(
+                "integration_operation",
+                c.command_id.clone(),
+                self.store
+                    .project_id()
+                    .map(|project_id| Scope::Project { project_id })
+                    .unwrap_or(Scope::Global),
+                method.into(),
+                1,
+                None,
+                json!({"status":"prepared", "input":input, "created_at":now()}),
+                false,
+            );
+            r.id = format!(
+                "integration-op-{}",
+                &configuration_hash(&json!([c.command_id, self.store.root()]))[..32]
+            );
+            let value = json!(r);
+            s.governance.push(r);
+            Ok(value)
+        })
+    }
+    pub fn finish_integration_operation(&self, key: &str, result: &Result<Value>) -> Result<()> {
+        self.store.transact(None, &mut |s| {
+            let r = s
+                .governance
+                .iter_mut()
+                .find(|r| r.id == key && r.kind == "integration_operation")
+                .ok_or_else(|| err("not_found", "接入操作意图缺失"))?;
+            let mut data = r.data.clone();
+            match result {
+                Ok(result) => {
+                    data["status"] = json!("succeeded");
+                    data["result"] = result.clone();
+                }
+                Err(error) => {
+                    data["status"] = json!("failed");
+                    data["error"] = json!({"code":error.code,"message":error.message});
+                }
+            }
+            data["finished_at"] = json!(now());
+            update_record(r, data);
+            Ok(json!({}))
+        })?;
+        Ok(())
+    }
+    pub fn recover_tool_receipts(&self) -> Result<()> {
+        let Some(executor) = &self.tool_executor else {
+            return Ok(());
+        };
+        for r in self
+            .store
+            .snapshot()?
+            .governance
+            .iter()
+            .filter(|r| r.kind == "tool_call" && r.data["status"] == "needs_reconciliation")
+        {
+            let i: ToolInvocation = decode(&r.data["invocation"])?;
+            if let Ok(Some(receipt)) = executor.poll(&i) {
+                self.accept_tool_receipt(&r.id, &receipt)?;
+            }
+        }
+        Ok(())
     }
     pub fn drive_tool_calls(&self) -> Result<()> {
         let Some(executor) = &self.tool_executor else {
@@ -323,8 +418,15 @@ impl Engine {
             .into_iter()
             .filter(|r| {
                 r.kind == "tool_call"
-                    && ["prepared", "dispatched", "succeeded", "failed", "cancelled"]
-                        .contains(&r.data["status"].as_str().unwrap_or(""))
+                    && [
+                        "awaiting_approval",
+                        "prepared",
+                        "dispatched",
+                        "succeeded",
+                        "failed",
+                        "cancelled",
+                    ]
+                    .contains(&r.data["status"].as_str().unwrap_or(""))
             })
             .collect();
         for r in calls {
@@ -343,7 +445,16 @@ impl Engine {
                             .find(|s| &s.id == sid)
                             .ok_or_else(|| err("not_found", "调用 Session 缺失"))?;
                         let receipt: ToolReceipt = decode(&r.data["receipt"])?;
-                        if self
+                        let active = state
+                            .executions
+                            .iter()
+                            .any(|e| e.session_id == *sid && !e.writer_revoked);
+                        if !active {
+                            self.tool_record_update(&r.id, |d| {
+                                d["reply_sent"] = json!(true);
+                                d["reply_status"] = json!("worker_unavailable");
+                            })?;
+                        } else if self
                             .harness
                             .answer_tool_call(session, request, &receipt)
                             .is_ok()
@@ -357,11 +468,30 @@ impl Engine {
                 continue;
             }
             if r.data["cancel_requested"] == true {
+                if r.data["status"] != "dispatched" {
+                    let receipt = ToolReceipt {
+                        invocation_id: invocation.id.clone(),
+                        success: false,
+                        content: vec![
+                            json!({"type":"text", "text":"Tool call cancelled before dispatch"}),
+                        ],
+                        structured_content: None,
+                        remote_effect: "not_applied".into(),
+                        error: Some(json!({"code":"cancelled"})),
+                        origin: Origin::External,
+                    };
+                    self.accept_tool_receipt(&r.id, &receipt)?;
+                    self.tool_record_update(&r.id, |d| d["status"] = json!("cancelled"))?;
+                    continue;
+                }
                 executor.cancel(&invocation)?;
                 self.tool_record_update(&r.id, |d| {
                     d["status"] = json!("needs_reconciliation");
                     d["remote_effect"] = json!("unknown");
                 })?;
+                continue;
+            }
+            if r.data["status"] == "awaiting_approval" {
                 continue;
             }
             if r.data["status"] == "prepared" {
@@ -370,6 +500,13 @@ impl Engine {
                     d["dispatched_at"] = json!(now());
                 })?;
                 if let Err(error) = executor.start(&invocation) {
+                    if error.code == "needs_reconciliation" {
+                        self.tool_record_update(&r.id, |d| {
+                            d["status"] = json!("needs_reconciliation");
+                            d["remote_effect"] = json!("unknown");
+                        })?;
+                        continue;
+                    }
                     let receipt = ToolReceipt {
                         invocation_id: invocation.id.clone(),
                         success: false,
@@ -450,14 +587,18 @@ impl Engine {
             )?;
             let mut rows = vec![];
             for (index, tool) in tools.iter().enumerate() {
+                let source = s.configuration(tool["integration_ref"].as_str().unwrap_or(""))?;
+                let old = s.governance.iter().filter(|r|r.kind == "tool" && r.data["schema_version"] == 2 && r.data["qualified_name"] == tool["qualified_name"])
+                    .filter(|r|r.data["integration_ref"].as_str().and_then(|id|s.configuration(id).ok()).is_some_and(|previous|previous.definition_id == source.definition_id))
+                    .max_by_key(|r|r.version).cloned();
                 let next = Command {
                     command_id: format!("{}:{index}", c.command_id),
-                    target: None,
-                    expected_revision: None,
+                    target: old.as_ref().map(|r|r.id.clone()),
+                    expected_revision: old.as_ref().map(|r|r.revision),
                     payload: json!({"name":tool["qualified_name"],"scope":p.get("scope").cloned().unwrap_or(json!({"kind":"global"})),"data":tool}),
                 };
                 rows.push(
-                    self.integration_command("integration.tool.create", &next, s)?
+                    self.integration_command(if old.is_some() { "integration.tool.revise" } else { "integration.tool.create" }, &next, s)?
                         .unwrap(),
                 );
             }
@@ -546,6 +687,20 @@ impl Engine {
                 data["reconciliation"] =
                     json!({"effect":effect,"evidence":text(p,"evidence")?,"time":now()});
                 data["remote_effect"] = json!(effect);
+                if effect != "unknown" {
+                    data["status"] = json!("failed");
+                    data["receipt"] = json!(ToolReceipt {
+                        invocation_id: s.governance[index].id.clone(),
+                        success: false,
+                        content: vec![
+                            json!({"type":"text", "text":"An operator reconciled this uncertain call. No automatic retry was performed."})
+                        ],
+                        structured_content: None,
+                        remote_effect: effect,
+                        error: Some(json!({"code":"human_reconciled"})),
+                        origin: Origin::Human
+                    });
+                }
             } else {
                 require(
                     !["succeeded", "failed", "cancelled"]
@@ -660,6 +815,32 @@ impl Engine {
         match family {
             "integration" => {
                 let def: IntegrationDefinition = decode(&data)?;
+                if let Some(oauth) = &def.oauth {
+                    require(
+                        !oauth.client_id.trim().is_empty() && oauth.client_id.len() <= 1024,
+                        "OAuth client_id 无效",
+                    )?;
+                    for endpoint in std::iter::once(&oauth.authorization_url)
+                        .chain(std::iter::once(&oauth.token_url))
+                        .chain(oauth.revocation_url.iter())
+                    {
+                        require(
+                            (endpoint.starts_with("https://")
+                                || endpoint.starts_with("http://127.0.0.1:")
+                                || endpoint.starts_with("http://localhost:")
+                                || endpoint.starts_with("http://host.docker.internal:"))
+                                && !endpoint.contains(['@', '#', '\n', '\r']),
+                            "OAuth endpoint 需要 HTTPS 或本机测试服务",
+                        )?;
+                    }
+                    require(
+                        oauth
+                            .scopes
+                            .iter()
+                            .all(|s| !s.is_empty() && !s.chars().any(char::is_whitespace)),
+                        "OAuth scope 不能含空格",
+                    )?;
+                }
                 match def.source {
                     IntegrationSource::HttpApi { base_url } => require(
                         base_url.starts_with("https://") || base_url.starts_with("http://"),
@@ -711,14 +892,28 @@ impl Engine {
                 )?;
                 if let IntegrationAuth::ApiKey { header, .. } = &b.auth {
                     require(
-                        !["host", "cookie", "content-length", "connection"]
+                        !header.is_empty()
+                            && header
+                                .bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                            && ![
+                                "host",
+                                "cookie",
+                                "content-length",
+                                "connection",
+                                "authorization",
+                                "proxy-authorization",
+                                "transfer-encoding",
+                            ]
                             .contains(&header.to_lowercase().as_str()),
                         "无效认证 Header",
                     )?;
                 }
                 if let Some(key) = b.auth.credential_ref() {
                     require(
-                        key.starts_with("integration-secret:") && !key.contains(['\n', '\r']),
+                        key.strip_prefix("integration-secret:").is_some_and(|v| {
+                            v.len() == 36 && v.bytes().all(|c| c.is_ascii_hexdigit() || c == b'-')
+                        }),
                         "需要系统凭据引用",
                     )?;
                 }
@@ -811,6 +1006,7 @@ impl Engine {
                         "integration_discovery",
                         "integration_disabled",
                         "skill_package",
+                        "integration_operation",
                     ]
                     .contains(&r.kind.as_str()),
                 })
@@ -828,11 +1024,40 @@ impl Engine {
                         "feature_id",
                         "task_id",
                         "agent_instance_id",
+                        "run_id",
                     ]
                     .iter()
                     .all(|key| p.get(*key).is_none_or(|v| r.data["invocation"][key] == *v))
                 })
+                .filter(|r| {
+                    p.get("tool_ref")
+                        .is_none_or(|v| r.data["invocation"]["tool"]["revision_id"] == *v)
+                })
+                .filter(|r| {
+                    p.get("integration_ref").is_none_or(|v| {
+                        r.data["invocation"]["tool"]["definition"]["integration_ref"] == *v
+                    })
+                })
                 .rev()
+                .map(|r| {
+                    let mut r = r.clone();
+                    if r.kind == "tool_call" {
+                        let pointers: Vec<String> = serde_json::from_value(
+                            r.data["invocation"]["tool"]["definition"]["sensitive_parameters"]
+                                .clone(),
+                        )
+                        .unwrap_or_default();
+                        for pointer in pointers {
+                            if let Some(value) =
+                                r.data["invocation"]["arguments"].pointer_mut(&pointer)
+                            {
+                                *value = json!("[redacted]");
+                            }
+                        }
+                        // Query projections do not expose raw remote error bodies or system credentials.
+                    }
+                    r
+                })
                 .collect();
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let limit = p["limit"].as_u64().unwrap_or(100).min(100) as usize;

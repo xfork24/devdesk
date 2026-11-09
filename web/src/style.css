@@ -1238,3 +1238,9 @@ pre { overflow: auto; max-width: 100%; }
 .workflow-editor-v2 .workflow-step-form fieldset {min-width:0;border:1px solid #dde4ee;border-radius:8px;padding:14px;}
 .workflow-editor-v2 .workflow-step-form textarea {min-height:95px;}
 @media(max-width:760px){.workflow-editor.workflow-editor-v2{grid-template-columns:1fr;}}
+
+.integration-content {padding:20px;min-width:0;}.integration-content > label,.integration-content form > label{display:flex;flex-direction:column;gap:6px;margin:12px 0;}
+.integration-content article {border:1px solid #dce2ec;border-radius:8px;padding:14px;margin:10px 0;min-width:0;}
+.integration-content pre,.configuration-layout pre{overflow:auto;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;}
+.inline-control{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;}.inline-control input[type=checkbox]{width:auto;}
+.integration-parameter{border-bottom:1px solid #e2e7ef;padding:8px 0 14px;}.integration-content dd{overflow-wrap:anywhere;}

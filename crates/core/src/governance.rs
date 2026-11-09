@@ -1421,6 +1421,15 @@ impl Engine {
             if family == "agent" {
                 install_agent_profile(s, &r, &r.decode()?);
             }
+            if family == "skill" {
+                if let Some(previous) = r.supersedes.as_ref().and_then(|key|s.governance.iter().find(|p|p.kind == "skill_package" && p.definition_id == *key)) {
+                    let mut package: SkillPackage = previous.decode()?;
+                    package.body = r.data["body"].as_str().unwrap_or("").into();
+                    package.source = format!("edited:{}", package.source);
+                    package.validate()?;
+                    s.governance.push(record("skill_package",r.id.clone(),r.scope.clone(),r.name.clone(),1,None,json!(package),true));
+                }
+            }
             if ["skill", "spec", "standard"].contains(&family) {
                 let source = r.data["standard_ref"]
                     .as_str()

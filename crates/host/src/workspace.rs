@@ -725,6 +725,7 @@ impl Workspace {
         let global = Arc::new(GlobalStore::open(root)?);
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
+        configuration.recover_tool_receipts()?;
         global.reload_permission_presets(&Command {
             command_id: id(),
             target: None,
@@ -914,6 +915,7 @@ impl Workspace {
         }
         self.sync_configuration(&e)?;
         e.bootstrap()?;
+        e.recover_tool_receipts()?;
         if e.store
             .snapshot()?
             .projects
