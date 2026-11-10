@@ -551,6 +551,30 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         )
         .unwrap();
     assert_eq!(plan.roles.len(), 6);
+    for key in [
+        "design",
+        "design_review",
+        "planning",
+        "plan_review",
+        "release_recipe",
+    ] {
+        let consumer = plan
+            .document
+            .steps
+            .iter()
+            .find(|step| step.key == key)
+            .unwrap();
+        let InputBinding::Source { source } = &consumer.inputs["engineering_constraints"] else {
+            panic!("execution constraints must be an explicitly shared delivery")
+        };
+        assert_eq!(source.step, "engineering_constraints");
+        assert_eq!(source.pointer, "/inputs");
+        assert!(
+            plan.document
+                .ancestors(consumer)
+                .contains(source.step.as_str())
+        );
+    }
     let feature_test_author = plan
         .document
         .steps
