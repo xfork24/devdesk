@@ -1067,11 +1067,7 @@ impl ports::Git for CliGit {
             }
         }
     }
-    fn execution_revision(&self, a: &Attempt, _: &str) -> Result<String> {
-        let c = a
-            .git_context
-            .as_ref()
-            .ok_or_else(|| err("blocked", "缺少冻结代码定位"))?;
+    fn workspace_revision(&self, c: &GitContext) -> Result<String> {
         let repo = self.context(c)?;
         self.oid(&repo, &format!("refs/heads/{}", c.source.branch))
     }
@@ -1094,6 +1090,10 @@ impl ports::Git for CliGit {
     fn preflight_advance(&self, c: &GitContext, expected: &str) -> Result<()> {
         let _lock = self.writer.lock().map_err(storage)?;
         self.context(c)?;
+        if c.target.branch != c.workspace.mainline {
+            self.target_clean(c, expected)?;
+            return Ok(());
+        }
         self.inspect_unlocked(&c.project, &c.workspace.repository, &c.workspace.mainline)?;
         let policy = crate::github::GitHubPullRequests
             .diagnose(&c.workspace.repository, &c.target.branch)?;

@@ -1,3 +1,6 @@
+#[path = "../../../tests/support/defaults.rs"]
+mod default_fixture;
+use default_fixture::*;
 #[path = "../../../tests/support/permissions.rs"]
 mod permission_fixture;
 use devdesk_adapters::{FileArtifacts, SqliteStore};
@@ -46,25 +49,6 @@ fn all_published_schemas_and_definitions_resolve_offline() {
             }
         }
     }
-}
-
-#[test]
-fn formal_stage_schema_agrees_with_model_approval_examples_and_rejects_wrong_checks() {
-    let example = stage_answer_example();
-    SCHEMAS.assert_valid("stage-answer.schema.json", &example);
-    let validator = jsonschema::validator_for(&stage_answer_output_contract()["schema"]).unwrap();
-    assert!(validator.is_valid(&example));
-    for key in ["approve", "summary", "checks"] {
-        let mut bad = example.clone();
-        bad.as_object_mut().unwrap().remove(key);
-        assert!(!validator.is_valid(&bad), "{key}");
-    }
-    let mut bad = example.clone();
-    bad["checks"][0]["evidence"] = json!(["untyped evidence"]);
-    assert!(!validator.is_valid(&bad));
-    let mut bad = example;
-    bad["checks"][0]["key"] = json!("scope");
-    assert!(!validator.is_valid(&bad));
 }
 
 #[test]
@@ -120,13 +104,9 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
         "RuntimeBinding",
         json!({"installation":installation,"adapter_version":"fixture/v1","model":"fixture-model","model_parameters":{"reasoning_effort":"ultra"},"tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)}),
     );
-    round_trip::<HarnessPreference>(
-        "HarnessPreference",
-        json!({"provider":"codex","model_ref":"model-revision","harness_ref":"harness-revision"}),
-    );
     round_trip::<AgentProfile>(
         "AgentProfile",
-        json!({"role":"analyst","skill_revisions":[],"tool_policy":"read_only","allowed_work":["discussion"],"output_schemas":["proposal"]}),
+        json!({"role":"analyst","skill_revisions":[],"tool_policy":"read_only"}),
     );
     round_trip::<RuntimeExecution>(
         "RuntimeExecution",
@@ -160,21 +140,10 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
         "AgentInstance",
         json!({"agent_revision_id":"agent-1","scope":{"kind":"global"}}),
     );
-    round_trip::<WorkflowRunNode>("WorkflowRunNode", json!({"key":"red","role":"tester"}));
-    let workflow = json!({"schema_version":3,"process_kind":"subworkflow","stages":[{"key":"setup","name":"Setup"}],"steps":[{"key":"finish","name":"Finish","stage":"setup","kind":"join","interaction":{}}]});
-    validate_workflow(&serde_json::from_value(workflow.clone()).unwrap()).unwrap();
-    round_trip::<WorkflowDocument>("WorkflowDocument", workflow);
-    // The 100-turn cap applies to agent.interact only; other actions may leave interaction unused.
-    round_trip::<WorkflowStep>(
-        "WorkflowStep",
-        json!({"key":"finish","name":"Finish","stage":"setup","kind":"join","interaction":{"max_turns":101}}),
-    );
-    let invalid = json!({"key":"discuss","name":"Discuss","stage":"setup","kind":"agent.interact","participant_slot":"analyst","interaction":{"goal":"Clarify","output_kind":"requirement","max_turns":101}});
-    assert!(
-        !SCHEMAS
-            .validator(&definition("WorkflowStep"))
-            .is_valid(&invalid)
-    );
+    let workflow = json!({"schema_version":4,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"finish","name":"Finish","stage":"work","executor":{"type":"control"}}]});
+    let doc: WorkflowDefinition = serde_json::from_value(workflow.clone()).unwrap();
+    doc.validate().unwrap();
+    round_trip::<WorkflowDefinition>("WorkflowDefinition", workflow);
 }
 
 #[test]
@@ -203,6 +172,12 @@ fn test_request_schema_covers_frozen_code_documents_and_execution_instances() {
         "FrozenCode",
         json!({"context":context,"revision":"a".repeat(40)}),
     );
+    let recipe = TestRecipe {
+        runner: TestRunner::NodeTest,
+        files: vec!["tests/example.test.mjs".into()],
+        image: format!("sha256:{}", "a".repeat(64)),
+        timeout_seconds: 30,
+    };
     let document = Document {
         id: "test-1".into(),
         feature_id: Some("feature-1".into()),
@@ -213,23 +188,14 @@ fn test_request_schema_covers_frozen_code_documents_and_execution_instances() {
         body: "Run native tests".into(),
         version: 1,
         supersedes: None,
-        requirement_id: None,
-        design_id: None,
+        input_refs: vec![],
         origin: Origin::Human,
-        acceptance: vec![],
-        verifies: vec![],
         artifact_id: None,
-        test_recipe: Some(TestRecipe {
-            runner: TestRunner::NodeTest,
-            files: vec!["tests/example.test.mjs".into()],
-            image: format!("sha256:{}", "a".repeat(64)),
-            timeout_seconds: 30,
-        }),
     };
     round_trip::<Document>("Document", json!(document));
     let instance = ExecutionInstance {
         id: "instance-1".into(),
-        run_id: "run-1".into(),
+        operation_id: "operation-1".into(),
         harness: Harness {
             permission: None,
             id: "harness-1".into(),
@@ -256,14 +222,16 @@ fn test_request_schema_covers_frozen_code_documents_and_execution_instances() {
     };
     round_trip::<ExecutionInstance>("ExecutionInstance", json!(instance));
     let request = TestRequest {
+        expect_assertion_failure: false,
+        recipe: Some(recipe.clone()),
         operation_id: "operation-1".into(),
         session_id: Some("session-1".into()),
-        phase: "green".into(),
+
         candidate: "a".repeat(40),
-        test_definitions: vec![document.id.clone()],
+
         environment: "docker".into(),
         origin: Origin::External,
-        definitions: vec![document],
+
         code: Some(context),
         runtime: Some(instance),
     };
@@ -367,7 +335,9 @@ fn rpc_request_dispatch_validates_the_current_parameter_contracts() {
         "workflow.create",
         "execution.retry_cleanup",
         "permission.bindings.apply",
-        "merge.capture_snapshot",
+        "permission.source.select",
+        "permission.profile.reload",
+        "workflow.step.rework",
     ] {
         assert!(
             validator.is_valid(
@@ -460,15 +430,15 @@ fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline(
         "CapabilityDefinition",
         json!({"model_ref":"model-v1","harness_ref":"harness-v1","tools":["native-v1"],"skills":["prd-v1"]}),
     );
-    round_trip::<SpecificationDefinition>(
-        "SpecificationDefinition",
-        json!({"body":"# PRD\n\n## 验收","applicable_actions":[{"kind":"agent.interact","phase":"requirement"}],"rules":["sections"]}),
+    round_trip::<ConfiguredSpecification>(
+        "ConfiguredSpecification",
+        json!({"schema_version":3,"body":"# 内容规范","applicable_to":[],"checks":[]}),
     );
-    round_trip::<StandardDefinition>(
-        "StandardDefinition",
-        json!({"body":"# Baseline","baseline_rules":[{"selector":{"kind":"delivery.review","delivery_kind":"requirement"},"required_spec_refs":["prd-v1"],"min_matches":1}]}),
+    round_trip::<ConfiguredStandard>(
+        "ConfiguredStandard",
+        json!({"schema_version":3,"body":"# Baseline","baseline_rules":[{"selector":{"tags":["content"]},"required_spec_refs":["spec-v1"],"min_matches":1}]}),
     );
-    let project = json!({"schema_version":2,"workflow_ref":"workflow-v2","standard_ref":null,"role_agent_bindings":{"product":"analyst-v2"},"specification_snapshot":[],"baseline_check":null,"definition_hashes":{}});
+    let project = json!({"schema_version":3,"workflow_ref":"workflow-v4","standard_ref":null,"role_agent_bindings":{"product":"analyst-v2"},"specification_snapshot":[],"baseline_check":null});
     SCHEMAS.assert_valid("project-configuration.schema.json", &project);
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(
@@ -478,10 +448,11 @@ fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline(
     );
     e.bootstrap().unwrap();
     let state = e.store.snapshot().unwrap();
-    for id in [DEFAULT_FEATURE_WORKFLOW_V3_ID, DEFAULT_TASK_WORKFLOW_V3_ID] {
+    for row in state.governance.iter().filter(|r| r.kind == "workflow") {
+        let id = &row.id;
         let value = state.configuration(id).unwrap().data.clone();
         SCHEMAS.assert_valid("workflow.schema.json", &value);
-        let doc: WorkflowDocument = serde_json::from_value(value).unwrap();
+        let doc: WorkflowDefinition = serde_json::from_value(value).unwrap();
         assert!(doc.stages.iter().all(|s| !s.description.is_empty()));
     }
     for role in [

@@ -1,0 +1,58 @@
+{
+  "template_key": "governance.builtin-tool-tasks-complete-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-tasks-complete-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-tasks-complete",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "完成明确任务",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "tasks.complete",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "operation_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "status": {
+            "const": "completed"
+          },
+          "operation_id": {
+            "type": "string"
+          }
+        }
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

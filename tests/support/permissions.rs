@@ -1,6 +1,9 @@
 //! Complete v2 grants for offline contract tests; no v1 defaults or override chain.
 #![allow(dead_code)]
 use devdesk_domain::*;
+#[path = "defaults.rs"]
+mod defaults;
+use defaults::*;
 use serde_json::json;
 
 pub fn prepare(

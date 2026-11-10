@@ -618,16 +618,6 @@ main {
 .task-card > .text-button {
   margin-top: 9px;
 }
-.attempt {
-  padding: 19px 21px;
-  border-bottom: 1px solid #e8ebf1;
-}
-.attempt h3 {
-  font-size: 15px;
-}
-.attempt code {
-  margin-left: 8px;
-}
 .run-table {
   margin-top: 17px;
   border: 1px solid #e6eaf0;
@@ -812,6 +802,7 @@ main {
 .tool-call-details pre { overflow:auto; max-width:100%; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 .tool-call-details dd { overflow-wrap:anywhere; }
 .repository-connection-summary { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px; }
+.repository-settings > .panel-heading { border-bottom:0; }
 .setting-row {
   display: flex;
   align-items: center;
@@ -1322,4 +1313,13 @@ pre { overflow: auto; max-width: 100%; }
 .project-role-bindings select { min-width:0; width:100%; }
 .template-reset-dialog { max-width: 620px; width: calc(100% - 48px); max-height: 85vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 24px; color: inherit; background: var(--surface, #fff); }
 .template-reset-dialog::backdrop { background: rgb(15 23 42 / 45%); }
+.directory-picker { width: min(640px, calc(100% - 32px)); max-height: 85vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 24px; color: inherit; background: var(--surface, #fff); }
+.directory-picker::backdrop { background: rgb(15 23 42 / 45%); }
+.directory-picker fieldset { min-width: 0; }
+.directory-picker-locations { display: flex; flex-wrap: wrap; gap: 8px; }
+.directory-picker-path, .permission-source-path { overflow-wrap: anywhere; }
+.directory-picker-list { list-style: none; padding: 0; max-height: 35vh; overflow-y: auto; }
+.directory-picker-list button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.directory-picker button svg { vertical-align: middle; flex-shrink: 0; }
+.directory-picker .actions { justify-content: flex-end; margin-top: 20px; }
 .template-reset-dialog .actions { justify-content: flex-end; margin-top: 20px; }

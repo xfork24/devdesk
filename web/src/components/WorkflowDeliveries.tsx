@@ -1,268 +1,344 @@
+import { useEffect, useRef, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { RevisionSelect, type Row } from "./configuration-ui";
 
-function ports(step: Row, records: Row[]): string[] {
-  switch (step.kind) {
-    case "agent.interact":
-      return ["proposal"];
-    case "proposal.adopt":
-      return ["document"];
-    case "attempt.execute":
-    case "delivery.review":
-      return ["delivery"];
-    case "merge.prepare":
-    case "merge.review":
-      return ["merge", "delivery"];
-    case "merge.apply":
-      return ["merge"];
-    case "snapshot.capture":
-      return ["snapshot"];
-    case "workflow.call":
-      return Object.keys(
-        records.find((r) => r.id === step.subworkflow_ref)?.data.output_ports ||
-          {},
-      );
-    default:
-      return [];
-  }
-}
-function rename(rows: Row, previous: string, next: string): Row {
-  if (next !== previous && next in rows) return rows;
-  return Object.fromEntries(
-    Object.entries(rows).map(([key, value]) => [
-      key === previous ? next : key,
-      value,
-    ]),
+export function JsonField({
+  label,
+  value,
+  onChange,
+  readOnly = false,
+}: {
+  label: string;
+  value: unknown;
+  onChange: (value: any) => void;
+  readOnly?: boolean;
+}) {
+  const encoded = JSON.stringify(value, null, 2);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const [text, setText] = useState(encoded),
+    [error, setError] = useState("");
+  useEffect(() => {
+    setText(encoded);
+    setError("");
+    field.current?.setCustomValidity("");
+  }, [encoded]);
+  return (
+    <label>
+      {label}
+      <textarea
+        ref={field}
+        value={text}
+        readOnly={readOnly}
+        aria-invalid={!!error}
+        onChange={(event) => {
+          setText(event.target.value);
+          try {
+            JSON.parse(event.target.value);
+            event.currentTarget.setCustomValidity("");
+            setError("");
+          } catch {
+            event.currentTarget.setCustomValidity("请输入有效的 JSON。");
+            setError("请输入有效的 JSON。");
+          }
+        }}
+        onBlur={() => {
+          if (readOnly) return;
+          try {
+            onChange(JSON.parse(text));
+          } catch {
+            setError("请输入有效的 JSON。");
+          }
+        }}
+      />
+      {error ? <span role="alert">{error}</span> : null}
+    </label>
   );
 }
+
+export function SourceSelect({
+  document,
+  step,
+  value,
+  onChange,
+  label,
+}: {
+  document: Row;
+  step: Row;
+  value: Row;
+  onChange: (value: Row) => void;
+  label: string;
+}) {
+  const sources = [
+    ...Object.keys(document.inputs || {}).map((port) => ({
+      step: "$input",
+      port,
+      name: `流程输入 / ${port}`,
+    })),
+    ...document.steps
+      .filter((source: Row) => source.key !== step.key)
+      .flatMap((source: Row) =>
+        Object.keys(source.outputs || {}).map((port) => ({
+          step: source.key,
+          port,
+          name: `${source.name} / ${port}`,
+        })),
+      ),
+  ];
+  return (
+    <label>
+      {label}
+      <ActionSelect
+        aria-label={label}
+        value={value?.step ? `${value.step}:${value.port}` : ""}
+        onChange={(event) => {
+          const source = sources.find(
+            (source) => `${source.step}:${source.port}` === event.target.value,
+          );
+          if (source) onChange({ step: source.step, port: source.port });
+        }}
+      >
+        <option value="">请选择来源</option>
+        {sources.map((source) => (
+          <option
+            key={`${source.step}:${source.port}`}
+            value={`${source.step}:${source.port}`}
+          >
+            {source.name}
+          </option>
+        ))}
+      </ActionSelect>
+    </label>
+  );
+}
+
 export function WorkflowDeliveries({
   document,
   step,
   records,
   onChange,
+  onRenameOutput,
 }: {
   document: Row;
   step: Row;
   records: Row[];
   onChange: (patch: Row) => void;
+  onRenameOutput: (previous: string, next: string) => void;
 }) {
-  const types = records.filter((r) => r.kind === "delivery_type");
-  const outputs = step.delivery_outputs || {};
-  const inputs = step.delivery_inputs || {};
-  const availablePorts = ports(step, records);
-  const references = document.steps
-    .filter((source: Row) => source.key !== step.key)
-    .flatMap((source: Row) =>
-      Object.entries(source.delivery_outputs || {}).map(
-        ([key, declaration]) => ({
-          step: source.key,
-          port: key,
-          declaration: declaration as Row,
-          name: source.name,
-        }),
-      ),
-    );
+  const types = records.filter((row) => row.kind === "delivery_type");
+  const inputs = step.inputs || {},
+    outputs = step.outputs || {};
+  const nextKey = (rows: Row, prefix: string) => {
+    let index = 1;
+    while (`${prefix}_${index}` in rows) index++;
+    return `${prefix}_${index}`;
+  };
   return (
     <fieldset className="full-width">
-      <legend>Delivery 产出与引用</legend>
-      <p>
-        在 Delivery 子 tab
-        定义交付物类型，在这里选择当前步骤的产出和需要引用的前序交付物。
-      </p>
-      {Object.entries(outputs).map(([name, value], index) => {
-        const declaration = value as Row;
-        const patch = (change: Row) =>
-          onChange({
-            delivery_outputs: {
-              ...outputs,
-              [name]: { ...declaration, ...change },
-            },
-          });
+      <legend>输入与输出</legend>
+      {Object.entries(inputs).map(([name, binding]) => {
+        const input = binding as Row;
+        const replace = (value: Row) =>
+          onChange({ inputs: { ...inputs, [name]: value } });
         return (
-          <fieldset key={index}>
-            <legend>产出交付物 {index + 1}</legend>
+          <fieldset key={name}>
+            <legend>输入 · {name}</legend>
             <label>
-              产出名称
+              输入名称
               <input
-                value={name}
-                onChange={(event) =>
+                defaultValue={name}
+                onBlur={(event) => {
+                  event.target.setCustomValidity("");
+                  const next = event.target.value.trim();
+                  if (next === name) return;
+                  if (!/^[A-Za-z0-9_-]{1,80}$/.test(next) || next in inputs) {
+                    event.target.setCustomValidity(
+                      "输入名称需唯一，使用字母、数字、下划线或连字符。",
+                    );
+                    event.target.reportValidity();
+                    return;
+                  }
                   onChange({
-                    delivery_outputs: rename(outputs, name, event.target.value),
-                  })
-                }
-              />
-            </label>
-            <RevisionSelect
-              label="Delivery 类型修订"
-              records={types}
-              value={declaration.delivery_ref}
-              onChange={(value) => patch({ delivery_ref: value })}
-            />
-            <label>
-              产出来源
-              <ActionSelect
-                value={declaration.source_port}
-                onChange={(event) => patch({ source_port: event.target.value })}
-              >
-                <option value="">选择本步骤产出</option>
-                {availablePorts.map((port) => (
-                  <option key={port} value={port}>
-                    {port}
-                  </option>
-                ))}
-              </ActionSelect>
-            </label>
-            <ActionButton
-              type="button"
-              onClick={() =>
-                onChange({
-                  delivery_outputs: Object.fromEntries(
-                    Object.entries(outputs).filter(([key]) => key !== name),
-                  ),
-                })
-              }
-            >
-              移除产出
-            </ActionButton>
-          </fieldset>
-        );
-      })}
-      <ActionButton
-        type="button"
-        disabled={!availablePorts.length}
-        onClick={() => {
-          let name = "delivery_1";
-          let next = 1;
-          while (name in outputs) name = `delivery_${++next}`;
-          onChange({
-            delivery_outputs: {
-              ...outputs,
-              [name]: { delivery_ref: "", source_port: availablePorts[0] },
-            },
-          });
-        }}
-      >
-        添加交付物产出
-      </ActionButton>
-      {Object.entries(inputs).map(([name, value], index) => {
-        const declaration = value as Row;
-        return (
-          <fieldset key={index}>
-            <legend>引用交付物 {index + 1}</legend>
-            <label>
-              引用名称
-              <input
-                value={name}
-                onChange={(event) =>
-                  onChange({
-                    delivery_inputs: rename(inputs, name, event.target.value),
-                  })
-                }
-              />
-            </label>
-            <label>
-              前序交付物
-              <ActionSelect
-                value={JSON.stringify({
-                  step: declaration.source?.step,
-                  port: declaration.source?.port,
-                })}
-                onChange={(event) => {
-                  if (!event.target.value) return;
-                  const source = JSON.parse(event.target.value);
-                  const reference = references.find(
-                    (r: Row) =>
-                      r.step === source.step && r.port === source.port,
-                  );
-                  onChange({
-                    delivery_inputs: {
-                      ...inputs,
-                      [name]: {
-                        source,
-                        delivery_ref:
-                          reference?.declaration.delivery_ref ||
-                          declaration.delivery_ref,
-                      },
-                    },
-                    dependencies: [
-                      ...new Set([
-                        ...(step.dependencies || []),
-                        ...(source.step === "$input" ? [] : [source.step]),
+                    inputs: Object.fromEntries(
+                      Object.entries(inputs).map(([key, value]) => [
+                        key === name ? next : key,
+                        value,
                       ]),
-                    ],
+                    ),
+                    access: {
+                      ...step.access,
+                      workspace_input:
+                        step.access?.workspace_input === name
+                          ? next
+                          : step.access?.workspace_input,
+                    },
                   });
                 }}
+              />
+            </label>
+            <label>
+              输入方式
+              <ActionSelect
+                value={input.type}
+                onChange={(event) =>
+                  replace(
+                    event.target.value === "constant"
+                      ? { type: "constant", value: "" }
+                      : { type: "source", source: { step: "", port: "" } },
+                  )
+                }
               >
-                <option value="">选择前序阶段的交付物</option>
-                {references.map((reference: Row) => (
-                  <option
-                    key={`${reference.step}:${reference.port}`}
-                    value={JSON.stringify({
-                      step: reference.step,
-                      port: reference.port,
-                    })}
-                  >
-                    {reference.name} / {reference.port} ·{" "}
-                    {types.find(
-                      (t) => t.id === reference.declaration.delivery_ref,
-                    )?.name || reference.declaration.delivery_ref}
-                  </option>
-                ))}
-                {(document.input_ports || []).map((port: string) => (
-                  <option
-                    key={`input:${port}`}
-                    value={JSON.stringify({ step: "$input", port })}
-                  >
-                    子流程输入 / {port}
-                  </option>
-                ))}
+                <option value="source">引用材料</option>
+                <option value="constant">固定值</option>
               </ActionSelect>
             </label>
-            {declaration.source?.step === "$input" && (
-              <RevisionSelect
-                label="引用 Delivery 类型修订"
-                records={types}
-                value={declaration.delivery_ref}
-                onChange={(value) =>
+            {input.type === "constant" ? (
+              <JsonField
+                label={`固定值 · ${name}`}
+                value={input.value}
+                onChange={(value) => replace({ type: "constant", value })}
+              />
+            ) : (
+              <SourceSelect
+                document={document}
+                step={step}
+                value={input.source}
+                label={`材料来源 · ${name}`}
+                onChange={(source) => {
+                  const dependencies =
+                    source.step === "$input"
+                      ? step.dependencies
+                      : [
+                          ...new Set([
+                            ...(step.dependencies || []),
+                            source.step,
+                          ]),
+                        ];
                   onChange({
-                    delivery_inputs: {
-                      ...inputs,
-                      [name]: { ...declaration, delivery_ref: value },
-                    },
-                  })
-                }
+                    inputs: { ...inputs, [name]: { type: "source", source } },
+                    dependencies,
+                  });
+                }}
               />
             )}
             <ActionButton
               type="button"
               onClick={() =>
                 onChange({
-                  delivery_inputs: Object.fromEntries(
+                  inputs: Object.fromEntries(
                     Object.entries(inputs).filter(([key]) => key !== name),
                   ),
                 })
               }
             >
-              移除引用
+              移除输入 {name}
             </ActionButton>
           </fieldset>
         );
       })}
       <ActionButton
         type="button"
-        onClick={() => {
-          let name = "material_1";
-          let next = 1;
-          while (name in inputs) name = `material_${++next}`;
+        onClick={() =>
           onChange({
-            delivery_inputs: {
+            inputs: {
               ...inputs,
-              [name]: { delivery_ref: "", source: { step: "", port: "" } },
+              [nextKey(inputs, "input")]: {
+                type: "source",
+                source: { step: "", port: "" },
+              },
             },
-          });
-        }}
+          })
+        }
       >
-        引用前序交付物
+        添加输入
+      </ActionButton>
+      {Object.entries(outputs).map(([name, declaration]) => {
+        const output = declaration as Row;
+        return (
+          <fieldset key={name}>
+            <legend>输出 · {name}</legend>
+            <label>
+              输出名称
+              <input
+                defaultValue={name}
+                onBlur={(event) =>
+                  onRenameOutput(name, event.target.value.trim())
+                }
+              />
+            </label>
+            <RevisionSelect
+              label={`交付类型 · ${name}`}
+              records={types}
+              required
+              value={output.delivery_ref || ""}
+              onChange={(delivery_ref) =>
+                onChange({
+                  outputs: { ...outputs, [name]: { ...output, delivery_ref } },
+                })
+              }
+            />
+            <label>
+              <input
+                type="checkbox"
+                checked={output.required !== false}
+                onChange={(event) =>
+                  onChange({
+                    outputs: {
+                      ...outputs,
+                      [name]: { ...output, required: event.target.checked },
+                    },
+                  })
+                }
+              />
+              必须产出
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={!!output.content_checks}
+                onChange={(event) =>
+                  onChange({
+                    outputs: {
+                      ...outputs,
+                      [name]: {
+                        ...output,
+                        content_checks: event.target.checked,
+                      },
+                    },
+                  })
+                }
+              />
+              按 Spec 的内容检查项提交判断报告
+            </label>
+            <ActionButton
+              type="button"
+              onClick={() =>
+                onChange({
+                  outputs: Object.fromEntries(
+                    Object.entries(outputs).filter(([key]) => key !== name),
+                  ),
+                })
+              }
+            >
+              移除输出 {name}
+            </ActionButton>
+          </fieldset>
+        );
+      })}
+      <ActionButton
+        type="button"
+        onClick={() =>
+          onChange({
+            outputs: {
+              ...outputs,
+              [nextKey(outputs, "output")]: {
+                delivery_ref: "",
+                required: true,
+              },
+            },
+          })
+        }
+      >
+        添加输出
       </ActionButton>
     </fieldset>
   );

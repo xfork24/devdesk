@@ -169,7 +169,7 @@ fn full_access_container_writes_and_exposes_only_its_declared_trust_scope() {
     assert!(output.status.success());
     let image = String::from_utf8(output.stdout).unwrap().trim().to_owned();
     let mut scope = scope();
-    scope.work_type = WorkType::Implementation;
+    scope.work_type = WorkType::Workflow;
     scope.writable_paths = vec![".".into()];
     let plan = permission_fixture::compile(
         HarnessProvider::Codex,
@@ -214,4 +214,99 @@ fn full_access_container_writes_and_exposes_only_its_declared_trust_scope() {
     sandbox.remove(&spec.operation_id).unwrap();
     assert_eq!(exit, 0, "{logs}");
     assert_eq!(proof.unwrap(), "executable");
+}
+
+#[test]
+#[ignore = "requires actual Docker and pinned Codex image; no model call"]
+fn outer_scoped_mounts_accept_user_defined_directory_names() {
+    use devdesk_adapters::docker::{ContainerPurpose, ContainerSpec, DockerSandbox};
+    use std::{
+        fs, thread,
+        time::{Duration, Instant},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let work = root.path().join("work");
+    let state = root.path().join("state");
+    fs::create_dir_all(work.join("quality/checks")).unwrap();
+    fs::create_dir_all(&state).unwrap();
+    let image = std::process::Command::new("docker")
+        .args([
+            "image",
+            "inspect",
+            "devdesk/codex:0.167.0",
+            "--format",
+            "{{.Id}} ",
+        ])
+        .output()
+        .unwrap();
+    assert!(image.status.success());
+    let spec=ContainerSpec{host_gateway:false,permissions:None,purpose:ContainerPurpose::Harness,project_id:id(),session_id:id(),operation_id:id(),image_id:String::from_utf8(image.stdout).unwrap().trim().into(),worktree:work.clone(),state,writable:false,writable_subdirectories:vec!["quality/checks".into()],read_only_subdirectories:vec![],network:false,nested_sandbox:false,command:vec!["node".into(),"-e".into(),"const fs=require('fs');fs.writeFileSync('/work/quality/checks/proof','arbitrary-path');try{fs.writeFileSync('/work/prohibited','bad');process.exit(3)}catch{}".into()],credential_env_file:None,profile_file:None,runner_file:None,skill_directory:None,sensitive_output:false,profile_target:None};
+    let sandbox = DockerSandbox::new(root.path()).unwrap();
+    sandbox.create(&spec).unwrap();
+    sandbox.start(&spec.operation_id).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while sandbox
+        .inspect(&spec.operation_id)
+        .unwrap()
+        .is_some_and(|r| r.running)
+        && Instant::now() < deadline
+    {
+        thread::sleep(Duration::from_millis(50));
+    }
+    let logs = sandbox.logs(&spec.operation_id).unwrap();
+    let exit = sandbox
+        .inspect(&spec.operation_id)
+        .unwrap()
+        .unwrap()
+        .exit_code;
+    sandbox.stop(&spec.operation_id).unwrap();
+    sandbox.remove(&spec.operation_id).unwrap();
+    assert_eq!(exit, 0, "{logs}");
+    assert_eq!(
+        fs::read_to_string(work.join("quality/checks/proof")).unwrap(),
+        "arbitrary-path"
+    );
+    assert!(!work.join("prohibited").exists());
+    for (writable, read_only, script) in [
+        (
+            true,
+            "quality/checks",
+            "const fs=require('fs');fs.writeFileSync('/work/root-write','allowed');try{fs.writeFileSync('/work/quality/checks/forbidden','bad');process.exit(3)}catch{}",
+        ),
+        (
+            false,
+            ".",
+            "const fs=require('fs');try{fs.writeFileSync('/work/dot-write','bad');process.exit(3)}catch{}",
+        ),
+    ] {
+        let mut next = spec.clone();
+        next.operation_id = id();
+        next.writable = writable;
+        next.writable_subdirectories.clear();
+        next.read_only_subdirectories = vec![read_only.into()];
+        next.command = vec!["node".into(), "-e".into(), script.into()];
+        sandbox.create(&next).unwrap();
+        sandbox.start(&next.operation_id).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while sandbox
+            .inspect(&next.operation_id)
+            .unwrap()
+            .is_some_and(|r| r.running)
+            && Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(50));
+        }
+        let logs = sandbox.logs(&next.operation_id).unwrap();
+        let exit = sandbox
+            .inspect(&next.operation_id)
+            .unwrap()
+            .unwrap()
+            .exit_code;
+        sandbox.stop(&next.operation_id).unwrap();
+        sandbox.remove(&next.operation_id).unwrap();
+        assert_eq!(exit, 0, "{logs}");
+    }
+    assert!(work.join("root-write").exists());
+    assert!(!work.join("quality/checks/forbidden").exists());
+    assert!(!work.join("dot-write").exists());
 }

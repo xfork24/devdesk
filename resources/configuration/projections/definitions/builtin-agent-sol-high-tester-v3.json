@@ -8,24 +8,14 @@
     "version": 3,
     "supersedes": null,
     "body": "",
-    "slots": [],
-    "rules": [],
     "agent_profile": {
-      "allowed_work": [
-        "discussion",
-        "testing"
-      ],
-      "output_schemas": [
-        "test_plan/v1",
-        "test_result/v1"
-      ],
-      "role": "tester",
+      "role": "builtin-role-tester",
       "skill_revisions": [
         "builtin-skill-engineering-context-v2",
         "builtin-skill-test-design-v2",
         "builtin-skill-release-verification-v2"
       ],
-      "tool_policy": "test_write"
+      "tool_policy": "scoped_write"
     }
   },
   "text_files": {
@@ -43,6 +33,10 @@
     "/agent_profile/skill_revisions/2": {
       "template_ref": "governance.builtin-skill-release-verification-v2",
       "target": "revision"
+    },
+    "/agent_profile/role": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
     }
   },
   "initial_only": false

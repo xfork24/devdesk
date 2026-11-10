@@ -1,83 +1,29 @@
-# 真实工程接入
+# 工程接入与通用流程
 
-Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检查、克隆；讨论与工程任务根据实际选中的 Harness 按需准备运行环境。产品只装配原生供应商执行器；仅接受当前结构和原生执行来源，测试使用独立夹具及原生接口替身。
+DevDesk 使用 Workflow v4 驱动工作。Role 是业务身份，Agent 加载自己的 Skill 和能力，Step 的 `task_instructions` 指定本次任务。完整合同见 [Workflow 执行合同](plans/workflow-business-configuration/CONTRACT.md)，出厂配置见 [默认目录](../resources/configuration/README.md)。
 
-## 配置与运行
+## 操作流程
 
-宿主需要可用的 Git、已登录的 GitHub CLI，以及运行中的 Linux Docker Engine / Docker Desktop。macOS / Linux 的 DSH 凭据仍使用系统凭据库；Linux 需 `libsecret-tools` 与可用的桌面 Secret Service。系统软件安装与账号授权仍由用户完成，DevDesk 管理版本固定的 Harness 安装和镜像。
+1. 工程项目通过“打开 GitHub 项目”接入 `owner/repo` 与主分支，后台验证、克隆并登记受管理工作空间。实际 GitHub 操作需要 Git 和已授权的 GitHub CLI。仓库操作失败保留原操作 ID，供核对。
+2. 在设置中完成所用供应商授权并确认 Docker 可用。运行环境在实际调用时准备；读取配置不安装运行时或调用模型。供应商与凭据边界见 [模型接入](model-providers.md) 和 [系统凭据](system-credentials.md)。
+3. 在“流程与规范”编辑 Workflow：Stage 提供背景和可选默认 Role，Agent Step 可覆盖 Role，添加任务指令、必需 Skill、规范、输入输出、访问范围及预算。工具 Step 和子流程调用使用精确修订。保存草稿允许未完成引用，发布必须校验完整闭包。
+4. 在“项目管理”选择 Workflow，将所有需要的 Role 身份绑定到相应 Agent，可选 Standard。新建 Feature 时冻结完整配置、权限和接入绑定；后续修改不替换已有运行。
+5. 在“执行与交付”查看真实 Stage/Step、子流程、输出和等待状态。补充输入通过当前 Step 提交；确认绑定当前输入摘要及输出 ID。技术重试保留输入并创建新执行，返工沿依赖关系失效后继结果。未知副作用先核对。
 
-1. 点击 **打开 GitHub 项目**，填写 `owner/repo`（也接受 GitHub HTTPS / SSH URL）、主分支和可选名称。DevDesk 自动保存仓库接入意图，后台检查权限与规则、克隆并建立 mainline worktree。同一仓库和分支再次打开时复用项目。接入成功前不能创建 Feature 或启动工程执行；失败原因及原操作核对入口显示在仓库状态中。
-2. 在设置中为所用供应商授权：Codex 点击 **网页登录**，DevDesk 自动发现可复用的同版本原生组件，或从固定的官方发行版下载并校验 SHA256，使用数据集独立的 `CODEX_HOME` 完成 OAuth；DSH 按模型服务商分别配置 DeepSeek 官方 key、智谱国内编程订阅 key 或 MiniMax 国内订阅 Key；本机 Ollama 免密。配置与容器访问见 [模型服务商](model-providers.md)。无需手动登记本机 Codex 或两套 Linux 镜像。
-3. “项目管理”已预填默认分阶段 Feature/Task 工作流及六个 Role→Agent 绑定，可直接保存或调整。默认 Model 为 GPT-6.1 Sol High，Harness 为固定 Codex，Docker 与 Permissions 已定义；各职责 Capability 使用对应的 Markdown Skill 和必要原生工具。运行环境与凭据在实际执行前核验，读取默认目录不触发安装。
-4. “工作流程”管理命名流程，在两列编辑器中维护阶段、Step、子流程、Role 和显式 Spec。“角色与 Agent”分别管理 Role/Capability/Agent；“基础组件”管理 Model/Harness/Tool/Skill；“规范”管理 Spec 和可选 Standard。所有项目绑定统一在“项目管理”保存，未选 Standard 仍执行规范和内核门禁。
-5. 在“执行与交付”创建 Feature。创建时即冻结治理配置；流程依次驱动需求讨论与交付评审、方案规划、固定 TaskGroup、Task TDD、Feature 收尾和主干接纳。角色讨论显示推荐组合，文档、上下文及测试分别在所属对象的页签查看。
+普通分析流程可通过 API 在 Project 上启动，不需要 Task、Git 候选或固定文档类型。执行视图支持 Project 直属运行。材料采用类型、修订与显式输入引用，讨论提案采纳只建立材料，不隐式生成 Feature 或 Task。
 
-运行时构建配方与 DSH 权限后端随 Host 编译嵌入，发布程序无需源码目录、宿主 Node/npm 或 Rust 工具链即可准备运行时。构建上下文仅包含嵌入的固定文件，完成后清理。镜像 tag 包含配方摘要，登记时保存不可变镜像 ID、版本和平台；有显式固定安装偏好时必须核验原安装，不会静默替换。已有 Session、Attempt、Run 的安装与来源不变。
+## 实际执行边界
 
-仓库核对请求在没有其他 Run/Turn 时也会唤醒后台调度，重启后仍处理已保存的请求。首次克隆中断后，核对会先验证所属 bare 仓库和 origin，再下载缺失的主分支；GitHub 的 Git 协调调用固定使用 HTTP/1.1，以避免部分网络下默认 HTTP 传输停滞；网络克隆/续传允许最多 180 秒，保留原目录、对象和操作 ID。
+Agent 运行保存 canonical `agent-task/v4`、Session、Turn 和真实 worker。任务正文、职责、Skill、Spec、输入、输出合同与授权分别保留来源。权限由 Agent 能力上限、Step 访问声明、完整 Permission 与执行后端共同落实，业务 Role 不能扩大权限。写入必须使用受管理工作空间及明确路径。
 
-Docker 未安装或未启动时显示环境阻塞，仓库权限或策略不兼容时保留原接入操作，供核对后重试。不会回退模拟执行，也不会修改 GitHub 规则。历史原型项目不进入正常 Web 项目列表，后端仅提供只读兼容。
+平台工具执行真实工作空间查询、快照、Task 创建、测试、候选与发布；工具运行不借用占位 Agent。测试使用固定代码 SHA、明确 Node TestRecipe、固定镜像、无网络容器和结构化失败报告，断言失败与环境故障分开。新增语言或 runner 需要实现新的适配契约。
 
-新原生 Session 必须使用完整 Agent 及其 AgentID，不能另外覆盖 Model、Harness 或 Permission。Harness 偏好只作配置建议，不改写已发布组合。Project 默认调整只影响后来创建的 Feature；已有 Feature 后续 Task、Session、Attempt 和候选继续使用创建时的配置锁。技术重试沿用原锁，构建不兼容时明确阻塞。
+Git 候选以预期目标为父提交。接纳要求当前流程的确切候选、对应候选的真实通过测试、绑定该版本的人工确认及实际 CAS/preflight；远端发布使用精确 lease，PR 接纳结果须与同一候选匹配。业务流程决定何时调用，配置不能跳过执行器的真实性检查。
 
-## 对象与工作流程
+所有外部调用先持久化意图，再在事务外执行，最后接纳回执。取消必须停止实际 worker 或测试容器；未知调用不直接重放。重启后保留待核对状态，副作用按原操作 ID 恢复。切换项目和关闭浏览器不取消后台工作，Host 退出停止自己拥有的执行者。
 
-```mermaid
-flowchart LR
-  UI[React 工作台] --> Host[本地 HTTP / 同源鉴权]
-  Host --> Core[Rust 用例与调度]
-  Core --> P[(当前项目 SQLite)]
-  Host --> G[(全局 SQLite：安装 / 角色修订 / 索引)]
-  Core --> Chat[Session / Turn / Interaction / Proposal]
-  Chat --> Plan[Requirement / Design / TaskPlan / TestPlan]
-  Plan --> Gate[规划 Run → Delivery → 独立 Review → initial Snapshot]
-  Gate --> Tasks[Task / scope / 独立 worktree]
-  Tasks --> TDD[测试作者 → Red → 开发 → Green → docs / verify]
-  TDD --> Delivery[Delivery / Review / 固定 SHA 证据]
-  Delivery --> Merge[候选 / PR / 同候选测试与 Review]
-  Merge --> CAS[本地 CAS → 远端精确 lease → PR merged 核对]
-  CAS --> Closure[Feature 测试修订 / 全量测试 / 文档 / Review]
-  Closure --> Main[主干候选 → 同样的 PR 接纳流程]
-```
+## 验证与开发数据
 
-- RuntimeInstallation 是共享安装；AgentRevision 是完整不可变组合，AgentID 是固定组合及 Scope 的实例；Session 是实例在具体工作范围下的会话；RuntimeExecution 是一次实际 worker/测试容器生命周期。讨论 Turn 不伪造工程 Run。
-- 工作流运行图展示冻结定义，编辑在“工作流程”页面进行。每步可自动推进或等待人确认；默认主干候选完成测试和 Review 后等待确认，随后才应用接纳。
-- AgentID 经验先按项目名称、Feature 名称、时间筛选索引，再读取具体快照。Global 实例可跨项目读取自己的经验，Project 实例仅限所属项目；场景恢复创建带来源的新 Session。
-- 远端主干前进时，精确 lease 阻止旧候选接纳。在“交付与评审 → Merge 候选”使用“核对并快进主干”，记录冻结远端 SHA 的同步操作；仅允许干净主干 worktree 快进。旧候选及确认失效，从候选准备返工后重新测试、Review 和确认。未知接纳结果须先按原 operation 核对。
-- Project 可先保存 Requirement；Feature 固定来源需求修订。Proposal 由完成轮次提取或显式编辑，采纳使用正式领域命令，检查目标版本、输入修订、归属、验收映射和依赖图。
-- Requirement Delivery Review 通过后才派发设计阶段；计划 Delivery Review 通过后生成 initial Snapshot，TaskPlan 的稳定 key 才能实例化为真实 Task/worktree。
-- Tester 仅写冻结的 `tests/<suite>/` 目录；Developer 可以修改所属 Task worktree，测试目录只读。缺失目标模块与依赖/语法/环境错误分别处理，只有实际断言失败能满足 Red。
-- CommandTests 从固定 Git blobs 创建独立、无模型/GitHub凭据、无网络的测试容器。固定 TestRecipe 指定文件、镜像和超时；报告绑定 Run、代码 SHA、测试定义、执行实例、实际退出码和停止证明。
-- Task → Feature 每次构造一个以预期目标为唯一父提交的候选，独立验证和评审。目标变化后旧候选不能接纳，必须重建并重验。GitHub PR 的 head 必须是同一候选；本地推进、远端同步、PR merged 分别留痕。
-- Feature 收尾是独立 Attempt：Tester 可在 Feature 测试目录补齐/修订完整测试，随后全量测试、文档、复验、Review。此阶段不伪造新的 Task Red。`Delivery.source_deliveries` 冻结已经完成接纳的 Task 交付；评审包包含其原始 Red/Green、Review、远端回执和当前固定版本 diff。
+`./scripts/check/check.sh` 验证 Rust、HTTP、安全、SQLite、模板重置及 debug/release Chromium。真实 Docker 验证可使用 `scripts/check/check-live.sh --groups git,docker,permissions`，不调用模型。真实模型与 GitHub 发布须使用专用数据集和测试仓库；历史版本的验收报告不代表新执行器已完成相同实机验收。
 
-## 副作用与恢复
-
-数据库事务先保存输入/操作意图；Docker、Git、供应商和 GitHub 调用在事务外执行，回执先保存再投影领域状态。Git 操作 ID 按用途分开，候选与推进可以共享同一个 Merge ID。PR 创建前按冻结分支和 marker 查询，丢失回执后核对原 PR；不调用 GitHub 平台 merge 接口。
-
-所有工程工具在所属容器内运行，无法访问 Docker socket、宿主 HOME 或其他 worktree。默认配置采用容器全权限，受限配置及状态隔离使用当前版本化 Permission 后端；具体选择见 [权限说明](../permissions/README.md)。`.git`、项目本地 Harness 配置和插件入口被屏蔽。受限 Permission 使用 Codex 原生命名 profile 或 DSH 原生 profile、受控工具规则与 bwrap 包装；默认全权限使用供应商原生外部隔离/全权限模式。只有受限后端声明并验证工具状态隔离，全权限以整个容器为信任范围。不通过放开 Docker 特权解决嵌套沙箱问题。
-
-正常终态先停止 worker、封存脱敏协议和运行报告，再清理容器。停止回执区分 Codex interrupt ACK、DSH forced stop、正常静止和恢复停止。清理失败保留归属，可显式重试；共享镜像和安装不删除。应用退出处理所有已打开项目的所属执行者，切换项目或关闭浏览器不会取消后台工作。
-
-恢复不重发已派发但结果未知的输入。未知轮次保留待核对状态，停止原执行者并保留协议；需要显式处理后才能创建后继会话。尚未封存的工作树修改不会被技术重试覆盖。记录与封存产物保留；不能以删库或清空工作树恢复。
-
-## 验证
-
-离线回归使用 `./scripts/check/check.sh`，包含 Rust、HTTP、debug/release Chromium 流程。真实测试使用专用数据集、仓库和带归属标签的容器；原始执行记录见 [最终验收](plans/real-engineering-integration/R8-acceptance.md)。当前统一入口为 `scripts/check/check-live.sh --providers codex,dsh --github-repo <owner/test-repo>`，默认组 `git,docker,permissions` 不调用模型。完整工程验收需显式选择 `--groups workbench` 并提供运行中的 `--url`；它会调用真实模型、创建工程事实及 PR，只能使用专用测试仓库。当前入口不提供旧 mode、旧分组或自动重启选项。新闭环使用独立报告目录与随机源码前缀，不能重跑已实现同名任务冒充 Red。
-
-首批 Tests 仅支持无依赖的 Node `node:test` 固定文件配方。其他语言、依赖下载、网络测试和严格分支保护下的其他合入策略需要新的适配契约，不在现有执行路径中隐式放开。
-
-Ubuntu 实机验收步骤见 [Ubuntu Web 验收](ubuntu-web-acceptance.md)；当前 Linux 宿主验证状态与 macOS 分开记录。
-
-系统凭据边界：
-
-```mermaid
-flowchart LR
-  Web[Web 设置与角色讨论] --> Host[签名 Host / CredentialVault]
-  Host -->|macOS 私有管道| Helper[固定共享凭据助手]
-  Helper -->|验证对应签名 Host| Keychain[Security.framework / Keychain]
-  Host -->|Linux 私有 stdin| SecretTool[secret-tool / Secret Service]
-  Host --> Worker[受控 Harness worker]
-```
-
-Host 重编译复用助手，助手既不随项目/角色复制，也不进入工程沙箱。其升级与 Host 升级分开；普通凭据调用禁用系统交互，显式授权入口才允许一次系统授权。
+本次未上线改造不迁移旧开发数据，当前结构为 global 13 / project 44。旧数据集必须停机后重建，保留外部源仓库和凭据。此清理是本次开发改造，不是正常运行中的故障恢复办法。

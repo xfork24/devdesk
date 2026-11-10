@@ -1,0 +1,46 @@
+{
+  "template_key": "governance.builtin-tool-git-candidate-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-git-candidate-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-git-candidate",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "准备代码候选",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "git.candidate",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "object"
+          },
+          "target_revision": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "workspace",
+          "target_revision"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

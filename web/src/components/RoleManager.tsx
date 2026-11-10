@@ -6,7 +6,6 @@ import {
 } from "./ActionFeedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  dutyLabels,
   latest,
   MarkdownField,
   useDraft,
@@ -39,11 +38,10 @@ export function RoleManager({
     selected: "",
     name: "",
     instructions: "",
-    execution_role: "analyst",
     visibility: { kind: "global", project_ids: [] as string[] },
   });
   const [draft, setDraft] = useDraft(
-    `devdesk:v2:roles:${project?.id || "global"}`,
+    `devdesk:v4:roles:${project?.id || "global"}`,
     empty,
   );
   const load = useCallback(async () => {
@@ -59,7 +57,12 @@ export function RoleManager({
         limit: 100,
       }),
     ]);
-    setRows((roles.records || []).map((row:Row)=>({...row,template_source:roles.template_sources?.[row.id]})));
+    setRows(
+      (roles.records || []).map((row: Row) => ({
+        ...row,
+        template_source: roles.template_sources?.[row.id],
+      })),
+    );
     setProjects(workspace.projects || []);
   }, [request, project?.id]);
   useEffect(() => {
@@ -76,7 +79,6 @@ export function RoleManager({
       selected: row.id,
       name: row.name,
       instructions: row.data.instructions,
-      execution_role: row.data.execution_role,
       visibility: {
         kind:
           row.data.visibility?.kind ||
@@ -121,7 +123,6 @@ export function RoleManager({
                 name: draft.name,
                 scope: { kind: "global" },
                 data: {
-                  execution_role: draft.execution_role,
                   instructions: draft.instructions,
                   visibility:
                     draft.visibility.kind === "global"
@@ -190,9 +191,7 @@ export function RoleManager({
               }}
             >
               <strong>{row.name}</strong>
-              <span>
-                {dutyLabels[row.data.execution_role]} · v{row.version}
-              </span>
+              <span>v{row.version}</span>
             </ActionButton>
           ))}
         </div>
@@ -270,26 +269,6 @@ export function RoleManager({
               return setDraft({ ...draft, instructions });
             }}
           />
-          <details>
-            <summary>执行职责设置</summary>
-            <label>
-              执行职责
-              <ActionSelect
-                value={draft.execution_role}
-                onChange={(e) => {
-                  captureFeedback();
-                  return setDraft({ ...draft, execution_role: e.target.value });
-                }}
-              >
-                {Object.entries(dutyLabels).map(([id, label]) => (
-                  <option value={id} key={id}>
-                    {label}
-                  </option>
-                ))}
-              </ActionSelect>
-            </label>
-            <p>用于动作和写入范围校验；Role 名称可以自由设置。</p>
-          </details>
           <div className="actions">
             <ActionButton
               className="primary"

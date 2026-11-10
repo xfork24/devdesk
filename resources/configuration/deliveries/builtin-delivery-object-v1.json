@@ -1,0 +1,29 @@
+{
+  "template_key": "governance.builtin-delivery-object-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-delivery-object-v1",
+    "kind": "delivery_type",
+    "definition_id": "builtin-delivery-object",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "结构化材料",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "body": "结构化材料，按绑定的输入与输出声明提交。",
+      "format": "json",
+      "content_schema": {
+        "type": "object"
+      }
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

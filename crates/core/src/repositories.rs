@@ -21,21 +21,22 @@ impl Engine {
                     "需要当前真实 Project revision",
                 )?;
                 require(
-                    !s.advances.iter().any(|a| {
-                        ![AdvanceStatus::Applied, AdvanceStatus::NotApplied].contains(&a.status)
+                    !s.repository_operations.iter().any(|op| {
+                        op.project_id == target && op.status != RepositoryOperationStatus::Completed
                     }),
-                    "先核对在途接纳操作",
+                    "请先核对或完成当前仓库操作",
                 )?;
                 require(
-                    !s.repository_operations.iter().any(|op| {
-                        [
-                            RepositoryOperationStatus::Prepared,
-                            RepositoryOperationStatus::Dispatched,
-                            RepositoryOperationStatus::Observed,
-                        ]
-                        .contains(&op.status)
+                    !s.governance.iter().any(|r| {
+                        r.kind == "platform_call"
+                            && r.scope.project() == Some(target)
+                            && ["prepared", "running", "needs_reconciliation"]
+                                .contains(&r.data["status"].as_str().unwrap_or(""))
+                            && r.data["request"]["definition"]["qualified_name"]
+                                .as_str()
+                                .is_some_and(|name| name.starts_with("git."))
                     }),
-                    "先等待在途仓库操作结束",
+                    "Git 操作仍在进行或等待核对",
                 )?;
                 let workspace = project
                     .workspace_definition
@@ -94,8 +95,7 @@ impl Engine {
                     .ok_or_else(|| err("not_found", "Project 不存在"))?;
                 require(
                     project.execution_mode == "live"
-                        && !s.features.iter().any(|f| f.project_id == target)
-                        && s.runs.is_empty(),
+                        && !s.features.iter().any(|f| f.project_id == target),
                     "请在尚未创建 Feature/Run 的独立项目中登记仓库",
                 )?;
                 require(
@@ -156,6 +156,7 @@ impl Engine {
         }))
     }
     pub fn tick_repositories(&self) -> Result<()> {
+        self.prepare_task_worktrees()?;
         let snapshot = self.store.snapshot()?;
         for operation in snapshot.repository_operations.iter().filter(|op| {
             (op.status == RepositoryOperationStatus::Prepared
@@ -226,28 +227,6 @@ impl Engine {
             let projected = self.store.transact(None, &mut |s| {
                 match &observed {
                     Ok(receipt) => {
-                        if let Some(done) = self.project_live_repository(s, operation, receipt)? {
-                            let op = s
-                                .repository_operations
-                                .iter_mut()
-                                .find(|op| op.id == operation.id)
-                                .unwrap();
-                            if done {
-                                op.status = RepositoryOperationStatus::Completed;
-                                op.receipt = Some(receipt.clone());
-                                op.reason.clear();
-                            } else if op.revision > 100 {
-                                op.status = RepositoryOperationStatus::NeedsReconciliation;
-                                op.receipt = None;
-                                op.reason = "github_merge_not_observed".into();
-                            } else {
-                                op.status = RepositoryOperationStatus::Prepared;
-                                op.receipt = None;
-                                op.reason = format!("poll_after:{}", now() + 5000);
-                            }
-                            op.revision += 1;
-                            return Ok(json!({"ok":true}));
-                        }
                         let worktree = match (&operation.action, receipt) {
                             (
                                 RepositoryAction::RefreshMainline {
@@ -276,40 +255,6 @@ impl Engine {
                                     "同步期间主干事实已变化",
                                 )?;
                                 head.revision = revision.clone();
-                                let mut superseded = vec![];
-                                for merge in s.merges.iter_mut().filter(|m| {
-                                    m.target == format!("main:{}", operation.project_id)
-                                        && m.expected_target != *revision
-                                        && m.status != Status::Completed
-                                }) {
-                                    merge.status = Status::Interrupted;
-                                    merge.revision += 1;
-                                    superseded.push(merge.id.clone());
-                                }
-                                for delivery in s.deliveries.iter_mut().filter(|d| {
-                                    d.merge_id
-                                        .as_ref()
-                                        .is_some_and(|id| superseded.contains(id))
-                                }) {
-                                    delivery.stale = true;
-                                }
-                                for op in &mut s.repository_operations {
-                                    let merge = match &op.action {
-                                        RepositoryAction::Candidate { merge, .. }
-                                        | RepositoryAction::PublishRef { merge, .. }
-                                        | RepositoryAction::PullRequest { merge, .. } => {
-                                            Some(merge)
-                                        }
-                                        _ => None,
-                                    };
-                                    if op.status != RepositoryOperationStatus::Completed
-                                        && merge.is_some_and(|id| superseded.contains(id))
-                                    {
-                                        op.status = RepositoryOperationStatus::NeedsReconciliation;
-                                        op.reason = "superseded_target".into();
-                                        op.revision += 1;
-                                    }
-                                }
                                 for r in s.governance.iter_mut().filter(|r| {
                                     r.kind == "workflow_instance"
                                         && r.data["status"] != "completed"
@@ -401,45 +346,16 @@ impl Engine {
                                         && revision.len() == expected.len(),
                                     "代码封存回执身份不符",
                                 )?;
-                                let r = s
-                                    .runs
-                                    .iter()
-                                    .find(|r| &r.id == run)
-                                    .ok_or_else(|| err("blocked", "封存源 Run 不存在"))?
-                                    .clone();
-                                require(
-                                    r.origin == Origin::External
-                                        && r.writes
-                                        && r.worktree == context.source.worktree,
-                                    "代码封存源 Run 绑定不符",
-                                )?;
                                 let head = s
                                     .heads
                                     .iter_mut()
                                     .find(|h| h.id == context.source.owner)
-                                    .ok_or_else(|| err("blocked", "封存代码头不存在"))?;
+                                    .ok_or_else(|| err("blocked", "代码头不存在"))?;
                                 require(
                                     head.revision == *expected || head.revision == *revision,
                                     "代码头已变化",
                                 )?;
                                 head.revision = revision.clone();
-                                if r.node == "test_author"
-                                    && r.attempt_id.as_deref().is_some_and(|id| {
-                                        s.attempt(id).is_ok_and(|a| a.phase == "implementation")
-                                    })
-                                {
-                                    let a = s
-                                        .attempts
-                                        .iter_mut()
-                                        .find(|a| Some(&a.id) == r.attempt_id.as_ref())
-                                        .unwrap();
-                                    require(
-                                        a.baseline.is_none()
-                                            || a.baseline.as_ref() == Some(revision),
-                                        "Red baseline 已冻结",
-                                    )?;
-                                    a.baseline = Some(revision.clone());
-                                }
                                 None
                             }
                             _ => return Err(err("adapter_contract", "仓库回执类型不符")),
@@ -482,7 +398,7 @@ impl Engine {
                             {
                                 task.worktree = worktree.path.clone();
                                 if task.status == Status::Prepared {
-                                    task.status = Status::Ready;
+                                    task.status = Status::Queued;
                                     task.revision += 1;
                                 }
                             }
@@ -537,6 +453,17 @@ impl Engine {
                 })?;
             }
         }
+        Ok(())
+    }
+    pub fn prepare_task_worktrees(&self) -> Result<()> {
+        self.store.transact(None,&mut |state| {
+            let pending:Vec<_>=state.tasks.iter().filter(|task|task.worktree.is_empty()&&task.status!=Status::Completed
+                &&task.dependencies.iter().all(|id|state.tasks.iter().any(|dependency|dependency.id==*id&&dependency.status==Status::Completed))
+                &&!state.repository_operations.iter().any(|op|matches!(&op.action,RepositoryAction::CreateWorktree{owner,..} if owner==&task.id)))
+                .filter_map(|task|state.feature(&task.feature_id).ok().and_then(|feature|state.heads.iter().find(|head|head.id==feature.id).map(|head|(feature.project_id.clone(),task.id.clone(),head.revision.clone())))).collect();
+            for (project,task,base) in pending {self.enqueue_worktree(state,&project,&task,WorktreeKind::Task,&base);}
+            Ok(Value::Null)
+        })?;
         Ok(())
     }
     pub(crate) fn enqueue_worktree(

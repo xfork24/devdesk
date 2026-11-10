@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import tarfile
 import tempfile
+import time
 import urllib.request
 import uuid
 
@@ -69,8 +70,8 @@ try:
             return rpc(method, {'command_id': str(uuid.uuid4()), 'target': target,
                                 'expected_revision': revision, 'payload': payload})
         resources = rpc('query.permission_resources')
-        assert resources['profiles'] and resources['sources']
-        assert all(str(package.resolve()) in path for path in resources['sources'])
+        assert resources['profiles'] and resources['source']['is_builtin']
+        assert str(package.resolve()) in resources['source']['path']
         target_row = next(t for t in resources['targets'] if t['provider'] == 'codex' and t['supported'])
         target = target_row['target']
         initial_revision = target_row['active']['revision']
@@ -86,9 +87,12 @@ try:
         preset_root = dataset / 'permissions/presets'
         preset_root.mkdir(parents=True)
         (preset_root / 'runtime.json').write_text(json.dumps(runtime_preset))
+        command('permission.source.select', {'path': str(preset_root)})
         command('permission.profile.reload', {})
         reloaded = rpc('query.permission_resources')
         assert any(p['id'] == runtime_preset['id'] for p in reloaded['profiles'])
+        command('permission.profile.reload', {'builtin': True})
+        assert rpc('query.permission_resources')['source']['is_builtin']
         assert next(t for t in reloaded['targets'] if t['target'] == target)['active']['revision'] == initial_revision + 1
         report['runtime_reload_without_restart'] = True
         assert request('query.permissions')['error']['data']['code'] == 'method_not_found'
@@ -96,10 +100,13 @@ try:
         project = command('project.create', {'title': 'Standalone Permission schema'})['id']
         defaults = rpc('query.configuration_defaults')
         workflow = rpc('query.workflow', {'id': defaults['workflow_ref']})
-        assert workflow['data']['schema_version'] == 3
+        assert workflow['data']['schema_version'] == 4
+        feature_tests = next(step for step in workflow['data']['steps'] if 'release_recipe' in step.get('tags', []))
+        assert feature_tests['access']['writable_paths'], 'Feature test author must have actual test-directory access'
+        report['feature_test_author_has_explicit_write_scope'] = True
         document = json.loads(json.dumps(workflow['data']))
-        step = next(s for s in document['steps'] if s['kind'] == 'agent.interact')
-        assert step['task_instructions'].startswith('#')
+        step = next(s for s in document['steps'] if s['executor']['type'] == 'agent')
+        assert step['task_instructions'].strip()
         original_task = step['task_instructions']
         changed_task = '# Package task\n\n原文 {{literal}}, `code`\n'
         step['task_instructions'] = changed_task
@@ -107,11 +114,43 @@ try:
         published = command('workflow.publish', {}, draft['id'], draft['revision'])
         assert next(s for s in published['data']['steps'] if s['key'] == step['key'])['task_instructions'] == changed_task
         assert next(s for s in rpc('query.workflow', {'id': workflow['id']})['data']['steps'] if s['key'] == step['key'])['task_instructions'] == original_task
-        preview = rpc('query.workflow_task_preview', {'project_id': project, 'id': published['id'], 'path': step['key'], 'agent_revision_id': defaults['role_agent_bindings'][step['role_ref']]})
-        assert preview['task']['instructions'] == changed_task
-        assert preview['base_context']['skills'] and preview['specifications']
-        assert preview['scope_checked'] is False
-        report['workflow_v3_embedded_tasks_edit_publish_preview'] = True
+        preview = rpc('query.workflow_task_preview', {'project_id': project, 'id': published['id'], 'step': step['key'], 'preview_agent_ref': defaults['role_agent_bindings'][step['executor']['role_ref']]})
+        assert preview['task']['task_instructions'] == changed_task
+        assert preview['task']['agent'] and preview['task']['specifications']
+        assert preview['task']['renderer_version'] == 'agent-task/v4'
+        report['workflow_v4_embedded_tasks_edit_publish_preview'] = True
+        capture = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'materials.capture')
+        complete = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'tasks.complete')
+        task_workflow = rpc('query.workflow', {'id': defaults['task_workflow_ref']})
+        assert task_workflow['data']['steps'][-1]['executor']['tool_ref'] == complete['id']
+        implementation_review = next(step for step in task_workflow['data']['steps'] if 'verify' in step.get('inputs', {}))
+        verify_step = next(step for step in task_workflow['data']['steps'] if step['key'] == implementation_review['inputs']['verify']['source']['step'])
+        assert verify_step['executor']['type'] == 'tool' and verify_step['key'] in implementation_review['dependencies']
+        # Exercise the actual standalone scheduler and platform handler without a model or fake Session.
+        generic = command('workflow.create', {'name': 'Standalone configured capture', 'document': {
+            'schema_version': 4, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [
+                {'key': 'ready', 'name': '准备', 'stage': 'audit', 'executor': {'type': 'control'}},
+                {'key': 'capture', 'name': '记录实际输入', 'stage': 'audit', 'dependencies': ['ready'],
+                 'executor': {'type': 'tool', 'tool_ref': capture['id'], 'arguments': {'value': {'type': 'constant', 'value': {'version': 4}}}},
+                 'outputs': {'result': {'delivery_ref': 'builtin-delivery-object-v1'}}}
+            ]}})
+        generic = command('workflow.publish', {}, generic['id'], generic['revision'])
+        active = rpc('query.workspace')['active_project']
+        run = command('workflow.start', {'workflow_ref': generic['id'], 'role_agent_bindings': {}}, project, active['revision'])
+        for _ in range(150):
+            execution = rpc('query.workflow_instance', {'id': run['id']})
+            if execution['runtime']['status'] == 'completed':
+                break
+            assert execution['runtime']['status'] not in ['failed', 'needs_reconciliation'], execution
+            time.sleep(.1)
+        else:
+            raise TimeoutError('standalone configured workflow')
+        captured = execution['runtime']['steps'][1]
+        assert captured['session_id'] is None and captured['turn_id'] is None
+        assert execution['outputs'][captured['outputs']['result']]['value']['inputs']['value'] == {'version': 4}
+        report['standalone_generic_workflow_execution'] = True
+        report['explicit_task_completion_embedded'] = True
+        report['delivery_verification_before_review_embedded'] = True
         db = dataset / 'projects' / project / 'engineering.sqlite3'
         expected_schema = int(re.search(r'PRAGMA user_version=(\d+)', (source / 'sql/project/schema.sql').read_text()).group(1))
         with sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True) as conn:

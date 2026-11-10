@@ -8,18 +8,8 @@
     "version": 3,
     "supersedes": null,
     "body": "",
-    "slots": [],
-    "rules": [],
     "agent_profile": {
-      "allowed_work": [
-        "discussion",
-        "design"
-      ],
-      "output_schemas": [
-        "design/v1",
-        "task_plan/v1"
-      ],
-      "role": "architect",
+      "role": "builtin-role-architect",
       "skill_revisions": [
         "builtin-skill-engineering-context-v2",
         "builtin-skill-architecture-v2"
@@ -38,6 +28,10 @@
     "/agent_profile/skill_revisions/1": {
       "template_ref": "governance.builtin-skill-architecture-v2",
       "target": "revision"
+    },
+    "/agent_profile/role": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
     }
   },
   "initial_only": false

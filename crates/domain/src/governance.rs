@@ -1,6 +1,5 @@
 //! Versioned configuration and executable workflow contracts. No I/O.
 use crate::*;
-use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -132,6 +131,8 @@ pub struct HarnessDefinition {
 #[serde(deny_unknown_fields)]
 pub struct ToolDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<PlatformToolRuntime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness_provider: Option<String>,
     pub qualified_name: String,
     pub implementation: String,
@@ -140,9 +141,27 @@ pub struct ToolDefinition {
     #[serde(default)]
     pub capabilities: Vec<String>,
 }
+impl ToolDefinition {
+    /// Provider function names use portable identifier characters; handler IDs remain unchanged.
+    pub fn call_name(&self) -> String {
+        if self.implementation == "platform" {
+            format!("devdesk_{}", self.qualified_name.replace('.', "_"))
+        } else {
+            self.qualified_name.clone()
+        }
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatformToolRuntime {
+    pub harness_ref: Id,
+    pub permission_selection: AgentPermissionSelection,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentComposition {
+    #[serde(default)]
+    pub execution: AgentWorkProfile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission_selection: Option<AgentPermissionSelection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -163,7 +182,6 @@ pub struct AgentComposition {
 pub struct RoleDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<DefinitionVisibility>,
-    pub execution_role: AgentRole,
     pub instructions: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,203 +206,6 @@ pub struct AgentExecutionConfiguration {
     pub tool_revisions: Vec<Id>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AdvanceMode {
-    #[default]
-    Automatic,
-    HumanConfirmation,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-pub enum WorkflowCondition {
-    #[default]
-    Always,
-    All {
-        conditions: Vec<WorkflowCondition>,
-    },
-    Any {
-        conditions: Vec<WorkflowCondition>,
-    },
-    OutputPresent {
-        step: String,
-    },
-    Accepted {
-        kind: String,
-    },
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkflowStage {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub description: String,
-    pub key: String,
-    pub name: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkflowSlot {
-    pub role: AgentRole,
-    #[serde(default)]
-    pub agent_ref: Option<Id>,
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InteractionContract {
-    #[serde(default)]
-    pub mode: String,
-    #[serde(default)]
-    pub required_topics: Vec<String>,
-    #[serde(default)]
-    pub output_kind: String,
-    #[serde(default)]
-    pub max_turns: u64,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkflowPortReference {
-    pub step: String,
-    pub port: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkflowStep {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub delivery_outputs: BTreeMap<String, WorkflowDeliveryOutput>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub delivery_inputs: BTreeMap<String, WorkflowDeliveryInput>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::agent_task::supplied_task"
-    )]
-    pub task_instructions: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub role_ref: Option<Id>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub spec_refs: Vec<Id>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subworkflow_ref: Option<Id>,
-    pub key: String,
-    pub name: String,
-    pub stage: String,
-    pub kind: String,
-    #[serde(default = "one")]
-    pub contract_version: u64,
-    #[serde(default)]
-    pub dependencies: Vec<String>,
-    #[serde(default)]
-    pub participant_slot: Option<String>,
-    #[serde(default)]
-    pub inputs: BTreeMap<String, WorkflowPortReference>,
-    #[serde(default)]
-    pub interaction: InteractionContract,
-    #[serde(default)]
-    pub advance_mode: AdvanceMode,
-    #[serde(default)]
-    pub condition: WorkflowCondition,
-    #[serde(default)]
-    pub parameters: BTreeMap<String, Value>,
-    #[serde(default)]
-    pub execution_recipe: Vec<WorkflowRunNode>,
-    #[serde(default)]
-    pub rework_scope: Vec<String>,
-    #[serde(default = "three")]
-    pub retry_limit: u64,
-}
-fn one() -> u64 {
-    1
-}
-fn three() -> u64 {
-    3
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkflowRunNode {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "crate::agent_task::supplied_task"
-    )]
-    pub task_instructions: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub role_ref: Option<Id>,
-    pub key: String,
-    pub role: AgentRole,
-    #[serde(default)]
-    pub dependencies: Vec<String>,
-    #[serde(default)]
-    pub writes: bool,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkflowDocument {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub input_ports: Vec<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub output_ports: BTreeMap<String, WorkflowPortReference>,
-    pub schema_version: u64,
-    pub process_kind: String,
-    pub stages: Vec<WorkflowStage>,
-    #[serde(default)]
-    pub binding_slots: BTreeMap<String, WorkflowSlot>,
-    pub steps: Vec<WorkflowStep>,
-    #[serde(default)]
-    pub subworkflow_refs: BTreeMap<String, Id>,
-}
-pub fn workflow_action_catalog() -> Value {
-    json!([
-        "agent.interact",
-        "proposal.adopt",
-        "attempt.execute",
-        "delivery.review",
-        "merge.prepare",
-        "merge.review",
-        "merge.apply",
-        "snapshot.capture",
-        "resource.cleanup",
-        "tasks.foreach",
-        "branch",
-        "join",
-        "workflow.call"
-    ])
-}
-pub fn validate_workflow(doc: &WorkflowDocument) -> Result<Vec<String>> {
-    require(doc.schema_version == 3, "Workflow 仅支持 Schema v3")?;
-    validate_workflow_v3(doc)
-}
-
-pub(crate) fn validate_condition(c: &WorkflowCondition, keys: &BTreeSet<&str>) -> Result<()> {
-    match c {
-        WorkflowCondition::All { conditions } | WorkflowCondition::Any { conditions } => {
-            require(
-                !conditions.is_empty() && conditions.len() <= 20,
-                "条件组合为空或过大",
-            )?;
-            for c in conditions {
-                validate_condition(c, keys)?;
-            }
-        }
-        WorkflowCondition::OutputPresent { step } => {
-            require(keys.contains(step.as_str()), "条件引用未知步骤")?
-        }
-        WorkflowCondition::Accepted { kind } => require(
-            [
-                "requirement",
-                "plan",
-                "implementation",
-                "closure",
-                "merge_candidate",
-            ]
-            .contains(&kind.as_str()),
-            "未知交付条件",
-        )?,
-        WorkflowCondition::Always => {}
-    }
-    Ok(())
-}
 pub fn topological(nodes: &[(String, Vec<String>)]) -> Result<Vec<String>> {
     valid_dag(nodes)?;
     let mut done = Vec::new();
@@ -398,178 +219,17 @@ pub fn topological(nodes: &[(String, Vec<String>)]) -> Result<Vec<String>> {
     Ok(done)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FeatureConfiguration {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub integration_locks: BTreeMap<Id, IntegrationLock>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub specification_snapshot: Vec<SpecificationBinding>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub baseline_check: Option<BaselineCheck>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub role_agent_bindings: BTreeMap<Id, Id>,
-    pub project_configuration_id: Id,
-    pub workflow_ref: Id,
-    pub standard_ref: Id,
-    pub agent_refs: BTreeMap<String, Id>,
-    pub definition_hashes: BTreeMap<String, String>,
-    pub plan: WorkflowDocument,
-    pub task_plan: WorkflowDocument,
-    #[serde(deserialize_with = "current_workflow_compiler")]
-    pub compiler_version: u64,
-}
-fn current_workflow_compiler<'de, D: serde::Deserializer<'de>>(
-    d: D,
-) -> std::result::Result<u64, D::Error> {
-    let version = u64::deserialize(d)?;
-    if version != 3 {
-        return Err(serde::de::Error::custom("Workflow compiler must be v3"));
-    }
-    Ok(version)
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowStepRuntime {
-    pub id: Id,
-    pub key: String,
-    pub round: u64,
-    pub status: String,
-    pub input_hash: String,
-    #[serde(default)]
-    pub outputs: BTreeMap<String, Id>,
-    #[serde(default)]
-    pub reason: String,
-    pub revision: u64,
-    #[serde(default)]
-    pub confirmation: Option<Value>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowRuntime {
-    pub owner_id: Id,
-    pub feature_id: Id,
-    pub task_id: Option<Id>,
-    pub parent_id: Option<Id>,
-    pub configuration_lock_id: Id,
-    pub workflow_ref: Id,
-    pub status: String,
-    pub paused: bool,
-    pub dirty: bool,
-    pub steps: Vec<WorkflowStepRuntime>,
-    #[serde(default)]
-    pub task_members: Vec<Id>,
-    #[serde(default)]
-    pub task_plan_revision: Option<Id>,
-    pub generation: u64,
-}
 impl EngineeringState {
-    /// The accepted TaskPlan generation fixes closure membership; unrelated historical Tasks are excluded.
-    pub fn required_tasks<'a>(&'a self, feature: &str) -> Vec<&'a Task> {
-        if self.feature_configuration(feature).is_some() {
-            let members = self
-                .governance
-                .iter()
-                .find(|r| r.kind == "workflow_instance" && r.definition_id == feature)
-                .and_then(|r| r.decode::<WorkflowRuntime>().ok())
-                .map(|r| r.task_members)
-                .unwrap_or_default();
-            self.tasks
-                .iter()
-                .filter(|t| members.contains(&t.id))
-                .collect()
-        } else {
-            self.tasks
-                .iter()
-                .filter(|t| t.feature_id == feature)
-                .collect()
-        }
-    }
     pub fn workflow_paused(&self, owner: &str) -> bool {
-        let feature = self
-            .tasks
-            .iter()
-            .find(|t| t.id == owner)
-            .map_or(owner, |t| t.feature_id.as_str());
         self.governance.iter().any(|r| {
-            r.kind == "workflow_instance"
-                && r.data["paused"] == true
-                && (r.definition_id == owner || r.definition_id == feature)
+            r.kind == "workflow_instance" && r.data["paused"] == true && r.data["owner_id"] == owner
         })
-    }
-    pub fn attempt_inputs_current(&self, a: &Attempt) -> bool {
-        if self.feature_configuration(&a.feature_id).is_none() {
-            return self
-                .feature(&a.feature_id)
-                .is_ok_and(|f| f.input_version == a.input_version);
-        }
-        if a.phase != "requirement_definition" {
-            if let Some(plan) = self.documents.iter().rev().find(|d| {
-                self.document_in_feature(d, &a.feature_id)
-                    && d.task_id.is_none()
-                    && d.kind == "doc"
-                    && d.title == "Structured Task Plan"
-            }) {
-                if !a.documents.contains(&plan.id) {
-                    return false;
-                }
-            }
-        }
-        let kinds: &[&str] = if a.phase == "requirement_definition" {
-            &["requirement"]
-        } else {
-            &["requirement", "design", "test"]
-        };
-        kinds.iter().all(|kind| {
-            let matching: Vec<_> = self
-                .documents
-                .iter()
-                .filter(|d| {
-                    self.document_in_feature(d, &a.feature_id)
-                        && d.kind == *kind
-                        && (if *kind == "test" && a.task_id.is_some() {
-                            d.task_id == a.task_id
-                        } else {
-                            d.task_id.is_none()
-                        })
-                })
-                .collect();
-            matching
-                .iter()
-                .filter(|d| {
-                    !matching
-                        .iter()
-                        .any(|new| new.supersedes.as_ref() == Some(&d.id))
-                })
-                .all(|d| a.documents.contains(&d.id) || a.outputs.contains(&d.id))
-        })
-    }
-    pub fn delivery_inputs_current(&self, d: &Delivery) -> bool {
-        if self.feature_configuration(&d.feature_id).is_none() {
-            return self
-                .feature(&d.feature_id)
-                .is_ok_and(|f| f.input_version == d.input_version);
-        }
-        if let Some(a) = &d.attempt_id {
-            return self
-                .attempt(a)
-                .is_ok_and(|a| self.attempt_inputs_current(a));
-        }
-        d.merge_id
-            .as_ref()
-            .and_then(|id| self.merge(id).ok())
-            .and_then(|m| self.delivery(&m.source_delivery).ok())
-            .is_some_and(|source| self.delivery_inputs_current(source))
     }
     pub fn configuration(&self, id: &str) -> Result<&ConfigurationRecord> {
         self.governance
             .iter()
             .find(|r| r.id == id)
             .ok_or_else(|| err("not_found", format!("配置不存在: {id}")))
-    }
-    pub fn feature_configuration(&self, feature: &str) -> Option<FeatureConfiguration> {
-        self.governance
-            .iter()
-            .find(|r| r.kind == "feature_lock" && r.definition_id == feature)
-            .and_then(|r| r.decode().ok())
     }
     pub fn validate_governance(&self, before: &Self) -> Result<()> {
         let mut ids = BTreeSet::new();
@@ -617,233 +277,4 @@ impl EngineeringState {
         )?;
         Ok(())
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn definition_visibility_does_not_determine_instance_scope() {
-        let p = Scope::Project {
-            project_id: "p".into(),
-        };
-        assert!(Scope::Global.visible_from(&p));
-        assert!(!p.visible_from(&Scope::Global));
-        assert!(!p.visible_from(&Scope::Project {
-            project_id: "q".into()
-        }));
-    }
-    #[test]
-    fn workflow_rejects_cycles_and_missing_dependencies() {
-        assert!(
-            topological(&[
-                ("a".into(), vec!["b".into()]),
-                ("b".into(), vec!["a".into()])
-            ])
-            .is_err()
-        );
-        assert!(topological(&[("a".into(), vec!["missing".into()])]).is_err());
-    }
-    #[test]
-    fn hashes_distinguish_model_parameters() {
-        assert_ne!(
-            configuration_hash(&json!({"model":"a","effort":"high"})),
-            configuration_hash(&json!({"model":"a","effort":"low"}))
-        );
-    }
-    #[test]
-    fn published_action_schema_matches_the_compiler_catalog() {
-        let rpc: Value =
-            serde_json::from_str(include_str!("../../../schemas/rpc.schema.json")).unwrap();
-        let action: Value =
-            serde_json::from_str(include_str!("../../../schemas/workflow-action.schema.json"))
-                .unwrap();
-        assert_eq!(
-            rpc["$defs"]["WorkflowStep"]["properties"]["kind"]["enum"],
-            workflow_action_catalog()
-        );
-        assert_eq!(
-            action["properties"]["kind"]["enum"],
-            workflow_action_catalog()
-        );
-        assert_eq!(
-            action["properties"]["contract_version"]["enum"],
-            json!([1, 2])
-        );
-        for name in [
-            "WorkflowDocument",
-            "AgentComposition",
-            "ModelDefinition",
-            "ToolDefinition",
-        ] {
-            assert!(rpc["$defs"][name].is_object(), "missing {name}");
-        }
-    }
-}
-
-/// Engineering gates are applied to the expanded executable graph for both contracts.
-pub fn validate_workflow_semantics(doc: &WorkflowDocument) -> Result<()> {
-    if doc.process_kind == "feature" {
-        for kind in [
-            "agent.interact",
-            "proposal.adopt",
-            "attempt.execute",
-            "delivery.review",
-            "tasks.foreach",
-            "merge.prepare",
-            "merge.apply",
-            "snapshot.capture",
-        ] {
-            require(
-                doc.steps.iter().any(|s| s.kind == kind),
-                format!("Feature 流程缺少必需动作 {kind}"),
-            )?;
-        }
-    }
-    if doc.process_kind == "task" {
-        require(
-            doc.steps.iter().any(|s| {
-                s.kind == "attempt.execute"
-                    && s.parameters.get("phase").and_then(Value::as_str) == Some("implementation")
-            }),
-            "Task 流程缺少正式实现步骤",
-        )?;
-    }
-
-    let ancestors = |key: &str| -> BTreeSet<String> {
-        let mut found = BTreeSet::new();
-        let mut queue = vec![key.to_owned()];
-        while let Some(key) = queue.pop() {
-            if let Some(step) = doc.steps.iter().find(|s| s.key == key) {
-                for dep in &step.dependencies {
-                    if found.insert(dep.clone()) {
-                        queue.push(dep.clone());
-                    }
-                }
-            }
-        }
-        found
-    };
-    let has_ancestor = |step: &WorkflowStep, kind: &str, phase: Option<&str>| {
-        let all = ancestors(&step.key);
-        doc.steps.iter().any(|candidate| {
-            all.contains(&candidate.key)
-                && candidate.kind == kind
-                && phase.is_none_or(|p| {
-                    candidate.parameters.get("phase").and_then(Value::as_str) == Some(p)
-                })
-        })
-    };
-    for step in &doc.steps {
-        let all = ancestors(&step.key);
-        if let Some(input) = step.inputs.get("merge") {
-            if step.kind == "merge.apply" {
-                require(
-                    doc.steps
-                        .iter()
-                        .any(|s| s.key == input.step && s.kind == "merge.review"),
-                    "合入输入必须来自已完成的候选评审步骤",
-                )?;
-            }
-        }
-        let reviewed_phase = |phase: &str| {
-            doc.steps.iter().any(|review| {
-                review.kind == "delivery.review"
-                    && all.contains(&review.key)
-                    && doc.steps.iter().any(|producer| {
-                        ancestors(&review.key).contains(&producer.key)
-                            && producer.kind == "attempt.execute"
-                            && producer.parameters.get("phase").and_then(Value::as_str)
-                                == Some(phase)
-                    })
-            })
-        };
-        if doc.process_kind == "feature" {
-            if step.kind == "agent.interact"
-                && ["design", "task_plan", "test_plan"]
-                    .contains(&step.interaction.output_kind.as_str())
-            {
-                require(
-                    reviewed_phase("requirement_definition"),
-                    format!("{}: 方案讨论必须在需求交付评审之后", step.key),
-                )?;
-            }
-            if step.kind == "tasks.foreach" {
-                require(
-                    reviewed_phase("solution_planning"),
-                    "展开 Tasks 必须在方案交付评审之后",
-                )?;
-            }
-            if step.kind == "attempt.execute"
-                && step.parameters.get("phase").and_then(Value::as_str) == Some("closure")
-            {
-                require(
-                    has_ancestor(step, "tasks.foreach", None),
-                    "Feature 收尾必须在固定 Task 集合汇合之后",
-                )?;
-            }
-            if step.kind == "merge.prepare" {
-                require(
-                    reviewed_phase("closure"),
-                    "主干候选必须在 Feature 收尾评审之后",
-                )?;
-            }
-        } else if doc.process_kind == "task" && step.kind == "merge.prepare" {
-            require(
-                reviewed_phase("implementation"),
-                "Task 候选必须在实现交付评审之后",
-            )?;
-        }
-        if step.kind == "merge.apply" {
-            require(
-                has_ancestor(step, "merge.review", None),
-                format!("{}: 合入必须依赖候选评审", step.key),
-            )?;
-        }
-        if step.kind == "merge.review" {
-            require(
-                has_ancestor(step, "merge.prepare", None),
-                format!("{}: 评审必须依赖冻结候选", step.key),
-            )?;
-        }
-        if step.kind == "merge.prepare" {
-            require(
-                has_ancestor(step, "delivery.review", None),
-                format!("{}: 候选必须依赖交付评审", step.key),
-            )?;
-        }
-        if step.kind == "attempt.execute"
-            && step.parameters.get("phase").and_then(Value::as_str) == Some("solution_planning")
-        {
-            require(
-                has_ancestor(step, "attempt.execute", Some("requirement_definition"))
-                    && has_ancestor(step, "delivery.review", None),
-                "方案规划必须在需求交付评审之后",
-            )?;
-        }
-        if step.kind == "tasks.foreach" {
-            require(
-                has_ancestor(step, "attempt.execute", Some("solution_planning")),
-                "Task 展开必须依赖方案规划",
-            )?;
-        }
-        if step.kind == "branch" {
-            require(
-                doc.steps.iter().any(|s| s.dependencies.contains(&step.key)),
-                format!("{}: 分支没有出口", step.key),
-            )?;
-        }
-    }
-    if doc.process_kind == "feature" {
-        for phase in ["requirement_definition", "solution_planning", "closure"] {
-            require(
-                doc.steps.iter().any(|s| {
-                    s.kind == "attempt.execute"
-                        && s.parameters.get("phase").and_then(Value::as_str) == Some(phase)
-                }),
-                format!("缺少正式阶段 {phase}"),
-            )?;
-        }
-    }
-    Ok(())
 }

@@ -16,5 +16,12 @@
     "governance.builtin-role-reviewer-v1": "governance.builtin-agent-sol-high-reviewer-v3"
   },
   "harness_permission_ref": "governance.permission-harness-full-access-v2-r1",
-  "sandbox_permission_ref": "governance.permission-sandbox-full-access-v2-r1"
+  "sandbox_permission_ref": "governance.permission-sandbox-full-access-v2-r1",
+  "authoring": {
+    "execution_budget": {
+      "max_turns": 8,
+      "timeout_seconds": 300,
+      "retry_limit": 3
+    }
+  }
 }

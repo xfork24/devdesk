@@ -46,6 +46,7 @@ def run():
         child, rpc = start()
         try:
             defaults = rpc("query.configuration_defaults")
+            delivery_count = rpc("query.configurations", {"kind": "delivery_type", "limit": 100})["total"]
             rpc("settings.update", {"global_concurrency": 3, "default_harness": "dsh"})
             custom = rpc("delivery_type.create", {"command_id": "custom-delivery", "payload": {
                 "name": "Standalone custom delivery", "data": {"format": "markdown", "body": "database copy"}
@@ -59,7 +60,7 @@ def run():
             assert result["generation"] == 2
             assert rpc("configuration.templates.reset", command) == result
             current = rpc("query.configurations", {"kind": "delivery_type", "limit": 100})
-            assert current["total"] == 4
+            assert current["total"] == delivery_count
             assert not any(record["id"] == custom["id"] for record in current["records"])
             history = rpc("query.configurations", {"kind": "delivery_type", "include_archived": True, "include_history": True, "limit": 100})
             assert custom in history["records"]
@@ -74,7 +75,7 @@ def run():
         try:
             assert rpc("query.template_catalog")["generation"] == 2
             assert rpc("query.configuration_defaults")["workflow_ref"] == restored["workflow_ref"]
-            assert rpc("query.configurations", {"kind": "delivery_type"})["total"] == 4
+            assert rpc("query.configurations", {"kind": "delivery_type"})["total"] == delivery_count
             preview = rpc("query.template_reset_preview")
             result = rpc("configuration.templates.reset", {"command_id": "repeat-standalone", "payload": {
                 "expected_catalog_generation": preview["generation"],

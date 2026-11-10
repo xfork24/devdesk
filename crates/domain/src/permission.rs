@@ -292,7 +292,7 @@ pub fn isolated_test_permissions() -> ExecutionPermissions {
         sandbox: resolved,
         approval: ApprovalPolicy::Never,
         scope: ExecutionScope {
-            work_type: WorkType::Testing,
+            work_type: WorkType::Workflow,
             writable_paths: vec![],
             read_only_paths: vec![".".into()],
         },

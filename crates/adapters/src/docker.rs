@@ -591,19 +591,19 @@ impl DockerSandbox {
         for relative in &spec.writable_subdirectories {
             require(
                 spec.purpose == ContainerPurpose::Harness
-                    && relative.starts_with("tests/")
-                    && !relative.contains(['\\', '\n', '\r', ','])
+                    && !relative.starts_with(['/', '-'])
+                    && !relative.contains(['\\', '\n', '\r', '\0', ','])
                     && relative
                         .split('/')
                         .all(|v| !v.is_empty() && v != "." && v != ".."),
-                "测试写路径不合法",
+                "局部写路径不合法",
             )?;
             let source = work.join(relative);
             reject_symlink(&source)?;
             let source = fs::canonicalize(&source).map_err(storage)?;
             require(
                 source.starts_with(&work) && source.is_dir(),
-                "测试写路径不在所属 worktree 内",
+                "局部写路径不在所属 worktree 内",
             )?;
             args.extend([
                 "--mount".into(),
@@ -614,16 +614,28 @@ impl DockerSandbox {
             ]);
         }
         for relative in &spec.read_only_subdirectories {
+            if relative == "." {
+                require(
+                    !spec.writable && spec.writable_subdirectories.is_empty(),
+                    "根目录只读与写入授权冲突",
+                )?;
+                continue;
+            }
             require(
-                spec.purpose == ContainerPurpose::Harness && relative == "tests",
-                "只读覆盖仅允许冻结测试目录",
+                spec.purpose == ContainerPurpose::Harness
+                    && !relative.starts_with(['/', '-'])
+                    && !relative.contains(['\\', '\n', '\r', '\0', ','])
+                    && relative
+                        .split('/')
+                        .all(|p| !p.is_empty() && p != "." && p != ".."),
+                "只读覆盖路径不合法",
             )?;
             let path = work.join(relative);
             reject_symlink(&path)?;
             let path = fs::canonicalize(&path).map_err(storage)?;
             require(
                 path.starts_with(&work) && path.is_dir(),
-                "冻结测试目录不在所属 worktree",
+                "只读目录不在所属 worktree",
             )?;
             args.extend([
                 "--mount".into(),

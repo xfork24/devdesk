@@ -136,8 +136,6 @@ impl SqliteStore {
         s.executions = load_table(conn, "executions")?;
         s.repository_operations = load_table(conn, "repository_operations")?;
         s.repository_worktrees = load_table(conn, "repository_worktrees")?;
-        s.advances = load_table::<MergeAdvance>(conn, "advances")?;
-        s.effects = load_table::<EffectRecord>(conn, "effects")?;
         s.harnesses = load_table::<Harness>(conn, "harnesses")?;
         s.sandboxes = load_table::<Sandbox>(conn, "sandboxes")?;
         s.projects = load_table::<Project>(conn, "projects")?;
@@ -145,17 +143,10 @@ impl SqliteStore {
         s.tasks = load_table::<Task>(conn, "tasks")?;
         s.documents = load_table::<Document>(conn, "documents")?;
         s.definitions = load_table::<Definition>(conn, "definitions")?;
-        s.attempts = load_table::<Attempt>(conn, "attempts")?;
-        s.runs = load_table::<Run>(conn, "runs")?;
         s.sessions = load_table::<Session>(conn, "sessions")?;
         s.contexts = load_table::<Context>(conn, "contexts")?;
         s.snapshots = load_table::<Snapshot>(conn, "snapshots")?;
-        s.deliveries = load_table::<Delivery>(conn, "deliveries")?;
-        s.reviews = load_table::<Review>(conn, "reviews")?;
-        s.overrides = load_table::<Override>(conn, "overrides")?;
-        s.merges = load_table::<Merge>(conn, "merges")?;
         s.heads = load_table::<GitHead>(conn, "heads")?;
-        s.resources = load_table::<Resource>(conn, "resources")?;
         s.artifacts = load_table::<Artifact>(conn, "artifacts")?;
         s.events = load_table::<Event>(conn, "events")?;
         Ok(s)
@@ -189,8 +180,6 @@ impl SqliteStore {
             &s.repository_worktrees,
             &before.repository_worktrees,
         )?;
-        save_table(conn, "advances", &s.advances, &before.advances)?;
-        save_table(conn, "effects", &s.effects, &before.effects)?;
         save_table(conn, "harnesses", &s.harnesses, &before.harnesses)?;
         save_table(conn, "sandboxes", &s.sandboxes, &before.sandboxes)?;
         save_table(conn, "projects", &s.projects, &before.projects)?;
@@ -198,17 +187,10 @@ impl SqliteStore {
         save_table(conn, "tasks", &s.tasks, &before.tasks)?;
         save_table(conn, "documents", &s.documents, &before.documents)?;
         save_table(conn, "definitions", &s.definitions, &before.definitions)?;
-        save_table(conn, "attempts", &s.attempts, &before.attempts)?;
-        save_table(conn, "runs", &s.runs, &before.runs)?;
         save_table(conn, "sessions", &s.sessions, &before.sessions)?;
         save_table(conn, "contexts", &s.contexts, &before.contexts)?;
         save_table(conn, "snapshots", &s.snapshots, &before.snapshots)?;
-        save_table(conn, "deliveries", &s.deliveries, &before.deliveries)?;
-        save_table(conn, "reviews", &s.reviews, &before.reviews)?;
-        save_table(conn, "overrides", &s.overrides, &before.overrides)?;
-        save_table(conn, "merges", &s.merges, &before.merges)?;
         save_table(conn, "heads", &s.heads, &before.heads)?;
-        save_table(conn, "resources", &s.resources, &before.resources)?;
         save_table(conn, "artifacts", &s.artifacts, &before.artifacts)?;
         save_table(conn, "events", &s.events, &before.events)?;
         Ok(())
@@ -269,21 +251,15 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 41 || version == 42,
-        "数据集不是当前项目结构，请先完成离线迁移",
+        version == 0 || version == 44,
+        "数据集不是当前项目结构，请删除过时开发数据后重新建立",
     )?;
     if version == 0 {
         connection
             .execute_batch(include_str!("../../../sql/project/schema.sql"))
             .map_err(storage)?;
     }
-    if version < 42 {
-        connection
-            .execute_batch(include_str!(
-                "../../../sql/project/042_template_catalog.sql"
-            ))
-            .map_err(storage)?;
-    }
+
     Ok(connection)
 }
 
@@ -409,11 +385,9 @@ impl EngineeringStore for SqliteStore {
         // Idle projects must not deserialize their complete protocol history on every tick.
         let conn = self.connection.lock().map_err(storage)?;
         conn.query_row("SELECT
-          EXISTS(SELECT 1 FROM governance_records instance WHERE instance.kind='workflow_instance' AND json_extract(instance.data,'$.paused')=0 AND json_extract(instance.data,'$.status') NOT IN ('cancelled','completed') AND NOT EXISTS(SELECT 1 FROM governance_records parent WHERE parent.kind='workflow_instance' AND parent.definition_id=json_extract(instance.scope,'$.feature_id') AND json_extract(parent.data,'$.paused')=1) AND (json_extract(instance.data,'$.dirty')=1 OR EXISTS(SELECT 1 FROM governance_records intent,json_each(instance.data,'$.steps') step WHERE intent.kind='workflow_intent' AND intent.definition_id=json_extract(step.value,'$.id') AND json_extract(intent.data,'$.status')='prepared' AND json_extract(step.value,'$.status') NOT IN ('completed','skipped')))) OR
+          EXISTS(SELECT 1 FROM governance_records WHERE kind='workflow_instance' AND json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('cancelled','completed','failed','needs_reconciliation')) OR
+          EXISTS(SELECT 1 FROM governance_records WHERE kind='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR
           EXISTS(SELECT 1 FROM governance_records WHERE kind='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
-          EXISTS(SELECT 1 FROM runs WHERE status IN ('queued','running')) OR
-          EXISTS(SELECT 1 FROM effects WHERE status IN ('pending','observed') OR (status='needs_reconciliation' AND (reason='reconcile_requested' OR (kind='test' AND reason='restart_native_observation_only')))) OR
-          EXISTS(SELECT 1 FROM advances WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM turns WHERE status IN ('queued','dispatching','running','waiting_interaction') OR (status='needs_reconciliation' AND cancel_requested=1)) OR
           EXISTS(SELECT 1 FROM executions WHERE writer_revoked=0 OR status='succeeded')",
@@ -561,7 +535,7 @@ impl ArtifactStore for FileArtifacts {
             )?;
         }
         let aid = id();
-        let extension = if ["manifests", "snapshots"].contains(&category) {
+        let extension = if ["snapshots", "workflow-outputs", "proposals"].contains(&category) {
             "json"
         } else {
             "md"

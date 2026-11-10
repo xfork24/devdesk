@@ -171,11 +171,10 @@ impl EngineeringState {
                             .feature(&t.feature_id)
                             .is_ok_and(|f| f.project_id == work.project_id)
                 }),
-                WorktreeKind::Candidate => self.merges.iter().any(|m| {
-                    m.id == work.owner_id
-                        && self
-                            .feature(&m.feature_id)
-                            .is_ok_and(|f| f.project_id == work.project_id)
+                WorktreeKind::Candidate => self.governance.iter().any(|r| {
+                    r.kind == "platform_call"
+                        && r.definition_id == work.owner_id
+                        && r.scope.project() == Some(work.project_id.as_str())
                 }),
             };
             require(valid, "worktree 归属不存在或跨项目")?;

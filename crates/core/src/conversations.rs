@@ -90,16 +90,7 @@ impl Engine {
                 )?;
                 let binding: RuntimeBinding = serde_json::from_value(p["binding"].clone())
                     .map_err(|_| err("invalid_params", "缺少完整运行时绑定"))?;
-                require(
-                    binding.work_type != WorkType::Implementation || scope == SessionScope::Task,
-                    "代码实施必须使用 Task Session",
-                )?;
-                let step_open = p["workflow_step_instance_id"].is_string();
-                let task_open = step_open
-                    && feature
-                        .as_ref()
-                        .and_then(|id| s.feature_configuration(id))
-                        .is_some_and(|l| l.compiler_version == 3);
+                let step_open = p["configured_execution_id"].is_string();
                 let mut snapshot = opt(p, "snapshot_id");
                 if let Some(id) = &snapshot {
                     let snap = s
@@ -137,48 +128,16 @@ impl Engine {
                                 && opt(p, "agent_instance_id").is_none_or(|instance| {
                                     session_instance(s, session) == Some(instance.as_str())
                                 })
-                                && (scope == SessionScope::Task
-                                    || crate::agent_tasks::session_workflow_context(s, &session.id)
-                                        .is_some_and(|context| {
-                                            context["step_instance_id"]
-                                                == p["workflow_step_instance_id"]
-                                                && context["recipe_node"]
-                                                    == p.get("workflow_recipe_node")
-                                                        .cloned()
-                                                        .unwrap_or(Value::Null)
-                                        }))
+                                && (crate::agent_tasks::session_workflow_context(s, &session.id)
+                                    .is_some_and(|context| {
+                                        context["step_instance_id"] == p["configured_execution_id"]
+                                    }))
                                 && s.turns.iter().any(|turn| {
                                     turn.session_id == session.id && turn.status.active()
                                 })
                         }),
                         "请先结束或核对当前步骤原会话的活动轮次",
                     )?;
-                }
-                if scope == SessionScope::Task && p["force_new"] != true && predecessor.is_none() {
-                    if let Some(latest) = s.sessions.iter().rev().find(|session| {
-                        session.owner_id == target
-                            && session.scope == Some(SessionScope::Task)
-                            && s.agent_identity(&session.agent)
-                                .is_ok_and(|root| root == identity)
-                            && opt(p, "agent_instance_id").is_none_or(|instance| {
-                                session_instance(s, session) == Some(instance.as_str())
-                            })
-                    }) {
-                        require(
-                            latest.agent == agent
-                                && latest
-                                    .runtime_binding
-                                    .as_ref()
-                                    .is_some_and(|old| old.same_task_agent(&binding)),
-                            "Task 已有该 Agent 的会话；运行基线变化时请显式新建 Session",
-                        )?;
-                        require(
-                            snapshot
-                                .as_ref()
-                                .is_none_or(|id| latest.snapshot_id.as_ref() == Some(id)),
-                            "Task 已有会话；更换继承快照时请显式新建 Session",
-                        )?;
-                    }
                 }
                 if let Some(existing) = s
                     .sessions
@@ -192,29 +151,18 @@ impl Engine {
                             && opt(p, "agent_instance_id").is_none_or(|instance| {
                                 session_instance(s, v) == Some(instance.as_str())
                             })
-                            && (scope == SessionScope::Task
-                                || !step_open
+                            && (!step_open
                                 || crate::agent_tasks::session_workflow_context(s, &v.id)
                                     .is_some_and(|context| {
-                                        context["step_instance_id"]
-                                            == p["workflow_step_instance_id"]
-                                            && context["recipe_node"]
-                                                == p.get("workflow_recipe_node")
-                                                    .cloned()
-                                                    .unwrap_or(Value::Null)
+                                        context["step_instance_id"] == p["configured_execution_id"]
                                     }))
                     })
-                    .take(if scope == SessionScope::Task || !step_open {
-                        1
-                    } else {
-                        usize::MAX
-                    })
+                    .take(if !step_open { 1 } else { usize::MAX })
                     .find(|v| {
                         p["force_new"] != true
                             && v.project_id.as_ref() == Some(&project)
                             && v.scope == Some(scope)
-                            && (scope == SessionScope::Task
-                                || step_open
+                            && (step_open
                                 || !matches!(
                                     v.lifecycle,
                                     Some(
@@ -231,9 +179,7 @@ impl Engine {
                                         && r.data["agent_instance_id"] == instance
                                 })
                             })
-                            && (scope == SessionScope::Task
-                                || step_open
-                                || v.runtime_binding.as_ref() == Some(&binding))
+                            && v.runtime_binding.as_ref() == Some(&binding)
                             && snapshot
                                 .as_ref()
                                 .is_none_or(|id| v.snapshot_id.as_ref() == Some(id))
@@ -242,7 +188,7 @@ impl Engine {
                 {
                     json!({"id":existing.id,"reused":true,"revision":existing.revision})
                 } else {
-                    if predecessor.is_none() && !task_open {
+                    if predecessor.is_none() && !step_open {
                         let identity = s.agent_identity(&agent)?;
                         if let Some(previous) = s
                             .sessions
@@ -273,8 +219,6 @@ impl Engine {
                                     s,
                                     &previous,
                                     "conversation_handoff",
-                                    None,
-                                    None,
                                     None,
                                 )?);
                             }
@@ -330,23 +274,12 @@ impl Engine {
                     .find(|v| v.id == target)
                     .cloned()
                     .ok_or_else(|| err("not_found", "Session 不存在"))?;
-                let session = crate::agent_tasks::session_for_node(s, &session, None, None)?;
                 let owner = session_owner(&session)?;
                 require(
-                    !crate::agent_tasks::session_has_formal_run(s, &session.id),
-                    "正式执行会话不接受讨论输入；请返回工作流查看执行状态，待模型报告完成后执行人类 Approve；中断时使用技术重试",
-                )?;
-                require(
                     session.runtime_binding.as_ref().is_some_and(|b| {
-                        [WorkType::Discussion, WorkType::Design].contains(&b.work_type)
+                        [WorkType::Discussion, WorkType::Workflow].contains(&b.work_type)
                     }),
-                    "工程专用 Session 只接受正式 Run 输入",
-                )?;
-                require(
-                    !s.runs
-                        .iter()
-                        .any(|r| r.session_id == session.id && r.status == Status::Running),
-                    "Session 正在执行正式 Run",
+                    "Session 缺少有效的工作类型",
                 )?;
                 require(
                     !matches!(
@@ -360,9 +293,22 @@ impl Engine {
                     "原会话已关闭或需创建带快照的后继 Session",
                 )?;
                 let input = text(p, "input")?;
+                let input = self
+                    .configured_conversation_input(s, &session, command, &input)?
+                    .unwrap_or(input);
                 let client = text(p, "client_message_id")?;
+                let configured_step = s
+                    .governance
+                    .iter()
+                    .any(|r| r.kind == "configured_session" && r.definition_id == session.id);
                 require(
-                    input.len() <= 65536 && client.len() <= 160,
+                    input.len()
+                        <= if configured_step {
+                            TASK_PAYLOAD_LIMIT
+                        } else {
+                            65536
+                        }
+                        && client.len() <= 160,
                     "讨论输入或客户端消息 ID 超出限制",
                 )?;
                 if let Some(previous) = s
@@ -391,9 +337,7 @@ impl Engine {
                     s,
                     &session,
                     "conversation_input",
-                    None,
-                    None,
-                    None,
+                    configured_step.then_some([].as_slice()),
                 )?);
                 let source_revision = revision(s, &session.owner_id);
                 let code_view = self.discussion_code_view(s, &session)?;
@@ -423,7 +367,7 @@ impl Engine {
                     cancel_requested: false,
                     started: None,
                     finished: None,
-                    run_id: None,
+
                     revision: 1,
                 });
                 s.conversation_events.push(ConversationEvent {
@@ -583,35 +527,8 @@ impl Engine {
         session: &Session,
         kind: &str,
         documents_override: Option<&[Id]>,
-        binding_override: Option<&BindingLock>,
-        task_source: Option<&ConfigurationRecord>,
     ) -> Result<Id> {
         let owner = session_owner(session)?;
-        let binding = match &owner {
-            MaterialOwner::Global => BindingLock {
-                agent: session.agent.clone(),
-                skills: vec![],
-                standard: String::new(),
-                harness: session.harness.clone(),
-                sandbox: session.sandbox.clone(),
-            },
-            MaterialOwner::Project { id } => s
-                .projects
-                .iter()
-                .find(|p| &p.id == id)
-                .unwrap()
-                .binding
-                .clone(),
-            MaterialOwner::Feature { id } => s.feature(id)?.binding.clone(),
-            MaterialOwner::Task { id, .. } => s.task(id)?.binding.clone(),
-        };
-        let binding = if let Some(binding) = binding_override {
-            binding.clone()
-        } else if session.origin == Origin::External {
-            self.live_binding(s, &session.id, &binding.standard, None)?
-        } else {
-            binding
-        };
         let mut messages: Vec<_> = s
             .conversation_events
             .iter()
@@ -624,27 +541,8 @@ impl Engine {
         while messages.iter().map(|e| e.content.len()).sum::<usize>() > 65536 {
             messages.remove(0);
         }
-        let specification_source = if session.scope == Some(SessionScope::Task) {
-            task_source.or_else(|| crate::agent_tasks::session_binding(s, &session.id)).and_then(|binding| {
-                if binding.kind == "execution_runtime_binding" { return Some(json!({"spec_refs":binding.data["spec_refs"],"workflow_step_instance_id":binding.data["step_instance_id"],"step":binding.data["step"]})); }
-                let task: WorkflowTaskDefinition = serde_json::from_value(binding.data["definition"].clone()).ok()?;
-                let step = task.decode_step().ok()?;
-                Some(json!({"spec_refs":step.spec_refs,"workflow_step_instance_id":binding.data["step_instance_id"],"step":step.key}))
-            })
-        } else { None }.or_else(|| s.governance.iter().rev().find(|r| r.kind == "execution_specification" && r.definition_id == session.id).map(|r| r.data.clone()));
-        let specifications: Vec<_> = specification_source
-            .as_ref()
-            .into_iter()
-            .flat_map(|r| r["spec_refs"].as_array().into_iter().flatten())
-            .filter_map(|id| {
-                s.definitions
-                    .iter()
-                    .find(|d| Some(d.id.as_str()) == id.as_str())
-            })
-            .cloned()
-            .collect();
         let content =
-            serde_json::to_string(&json!({"specifications":specifications,"specification_source":specification_source,"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
+            serde_json::to_string(&json!({"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
                 .map_err(|e| err("serialization", e.to_string()))?;
         let mut documents = match &owner {
             MaterialOwner::Global => s
@@ -681,22 +579,15 @@ impl Engine {
             task_id: session.task_id.clone(),
             kind: kind.into(),
             content,
-            binding,
             documents,
-            delivery_id: None,
             inherited_from: session.snapshot_id.clone(),
             capture: SnapshotCapture {
-                attempt: None,
-                runs: s
-                    .runs
-                    .iter()
-                    .filter(|r| r.session_id == session.id)
-                    .rev()
-                    .take(50)
-                    .map(|r| r.id.clone())
+                step_execution_ids: crate::agent_tasks::session_binding(s, &session.id)
+                    .and_then(|r| r.data["execution_id"].as_str())
+                    .map(str::to_owned)
+                    .into_iter()
                     .collect(),
                 sessions: vec![session.id.clone()],
-                resources: vec![],
                 captured_at: Some(now()),
                 reason: if kind == "conversation_handoff" {
                     "Explicit successor after runtime/configuration change"
@@ -743,27 +634,18 @@ impl Engine {
                         anchor.is_none_or(|session| session.scope != Some(SessionScope::Task))
                     })
                     .and_then(|sid| crate::agent_tasks::session_workflow_context(&s, sid));
-                let step_filter = p["workflow_step_instance_id"].as_str().or_else(|| {
+                let step_filter = p["step_execution_id"].as_str().or_else(|| {
                     context
                         .as_ref()
                         .and_then(|v| v["step_instance_id"].as_str())
                 });
-                let recipe_filter = p
-                    .get("workflow_recipe_node")
-                    .cloned()
-                    .or_else(|| context.as_ref().map(|v| v["recipe_node"].clone()));
                 let rows: Vec<_> = s
                     .sessions
                     .iter()
                     .filter(|v| {
                         v.scope.is_some()
                             && step_filter.is_none_or(|step| {
-                                crate::agent_tasks::session_matches_context(
-                                    &s,
-                                    v,
-                                    step,
-                                    recipe_filter.as_ref(),
-                                )
+                                crate::agent_tasks::session_matches_context(&s, v, step)
                             })
                             && anchor.is_none_or(|anchor| {
                                 anchor.scope != Some(SessionScope::Task)
@@ -826,11 +708,9 @@ impl Engine {
             let next = events.last().map_or(cursor, |e| e.sequence);
             let turns: Vec<_> = s.turns.iter().filter(|t| t.session_id == sid).collect();
             let formal_execution = crate::agent_tasks::formal_session(&s, sid);
-            let output_contract = crate::agent_tasks::session_workflow_task(&s, sid)
-                .map(|(step, node)| agent_task_output_contract(&step, node.as_deref()))
-                .or_else(|| formal_execution.then(stage_answer_output_contract));
+            let output_contract: Option<Value> = None;
             Ok(
-                json!({"session":session,"current_runtime_binding":crate::agent_tasks::session_for_node(&s,session,None,None)?.runtime_binding,"workflow_context":crate::agent_tasks::session_workflow_context(&s, sid),"formal_execution":formal_execution,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
+                json!({"session":session,"current_runtime_binding":session.runtime_binding,"workflow_context":crate::agent_tasks::session_workflow_context(&s, sid),"formal_execution":formal_execution,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

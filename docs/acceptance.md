@@ -1,6 +1,8 @@
-# DevDesk 当前版本验收记录
+# DevDesk 验收记录
 
-## 2026-11-10：删除旧系统并迁移当前开发数据集
+当前 Workflow v4 与通用步骤改造的验收、证据和平台限制见 [执行报告](plans/workflow-business-configuration/EXECUTION.md)，提交前复查见 [业务硬编码审查](plans/workflow-business-configuration/AUDIT.md)。当前运行合同与旧版本不同，下列内容保留此前版本的历史执行事实，不作为当前支持范围。
+
+## 历史：2026-11-10 权限改造与当时开发数据集清理
 
 已迁移实际数据集 `/Users/hengliu/workspace/devdesk/data`，服务仍使用 `http://127.0.0.1:4318`。唯一项目为 `devdesk-project-1`（`7bb3ae37-523f-4e52-b9fa-f587807651dc`）。项目没有 Feature、Task、Session、Run、Execution 或 Snapshot 历史，因而没有旧执行需要保留或重建。下列数量按全局与项目镜像去重，不把同一配置计算两次。
 

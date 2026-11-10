@@ -1,3 +1,6 @@
+#[path = "../../../tests/support/defaults.rs"]
+mod default_fixture;
+use default_fixture::*;
 #[path = "../../../tests/support/permissions.rs"]
 mod permission_fixture;
 use devdesk_adapters::{
@@ -182,7 +185,7 @@ fn static_skill_package_rejects_traversal_and_does_not_enable_scripts() {
     assert!(import_skill_zip(b"not a zip").is_err());
 }
 
-fn invocation(root: &std::path::Path, port: u16) -> ToolInvocation {
+fn invocation(_root: &std::path::Path, port: u16) -> ToolInvocation {
     let permissions = permission_fixture::compile(
         HarnessProvider::Codex,
         ExecutionScope {
@@ -215,7 +218,7 @@ fn invocation(root: &std::path::Path, port: u16) -> ToolInvocation {
         agent_instance_id: None,
         session_id: None,
         turn_id: None,
-        run_id: None,
+
         operation_id: None,
         request_id: None,
         call_id: id(),
@@ -785,7 +788,7 @@ fn registered_invocation(root: &std::path::Path) -> (Engine, ToolInvocation) {
         agent_instance_id: None,
         session_id: None,
         turn_id: None,
-        run_id: None,
+
         operation_id: None,
         request_id: None,
         call_id: id(),

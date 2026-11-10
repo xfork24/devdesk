@@ -12,7 +12,10 @@ async function rpc(page: Page, method: string, params: any = {}) {
 }
 async function setup(page: Page) {
   await page.goto("/");
-  if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
+  if (
+    (await page.request.get("/capabilities").then((r) => r.json()))
+      .setup_required
+  ) {
     await page
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-task-web-")));
@@ -21,7 +24,7 @@ async function setup(page: Page) {
 }
 test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Spec 一起预览", async ({
   page,
-}) => {
+}, info) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await setup(page);
@@ -34,24 +37,17 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
     payload: {
       name,
       document: {
-        schema_version: 3,
-        process_kind: "subworkflow",
+        schema_version: 4,
         stages: [{ key: "work", name: "任务阶段" }],
         steps: [
           {
             key: "discuss",
             name: "执行可编辑任务",
             stage: "work",
-            kind: "agent.interact",
-            contract_version: 2,
-            role_ref: "builtin-role-analyst",
+            executor: { type: "agent", role_ref: "builtin-role-analyst" },
+            required_skill_refs: ["builtin-skill-prd-v2"],
             spec_refs: ["builtin-spec-stage-prd-v1"],
             task_instructions: original,
-            interaction: {
-              required_topics: ["具体结果"],
-              output_kind: "requirement",
-              max_turns: 8,
-            },
           },
         ],
       },
@@ -64,15 +60,17 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
     payload: {},
   });
   await page.goto(`/?tab=workflows&workflow_id=${published.id}`);
-  const editor = page.getByRole("region", { name: "Workflow 编辑器" });
+  const editor = page.getByRole("region", { name: "工作流程管理" });
   await editor.getByRole("button", { name: /执行可编辑任务/ }).click();
   await expect(
     editor.getByRole("heading", { name: "原任务", exact: true }),
   ).toBeVisible();
   await editor.getByRole("button", { name: "编辑流程", exact: true }).click();
-  await editor
-    .getByRole("button", { name: "任务指令", exact: true })
-    .click();
+  await expect(
+    editor.getByRole("button", { name: "保存草稿", exact: true }),
+  ).toBeEnabled();
+  await editor.getByRole("button", { name: /执行可编辑任务/ }).click();
+  await editor.getByRole("button", { name: "任务指令", exact: true }).click();
   await editor
     .getByRole("textbox", { name: "任务指令", exact: true })
     .fill(body);
@@ -95,88 +93,30 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
   ).toBeVisible();
   await editor.getByText("预览任务与执行上下文", { exact: true }).click();
   await editor
-    .getByLabel("预览 Agent", { exact: true })
+    .getByLabel("预览 Agent（可选）", { exact: true })
     .selectOption("builtin-agent-sol-high-analyst-v3");
   await editor
-    .getByRole("button", { name: "生成任务预览", exact: true })
+    .getByRole("button", { name: "预览当前任务", exact: true })
     .click();
   const preview = editor.getByRole("region", { name: "Agent 任务与上下文" });
   await expect(
     preview.getByRole("heading", { name: "可编辑任务正文", exact: true }),
   ).toBeVisible();
-  await expect(
-    preview.getByRole("group", { name: /Role 与 Agent 有效指令/ }),
-  ).toBeVisible();
-  await expect(preview.getByRole("group", { name: /Skill ·/ })).toHaveCount(2);
+  await expect(preview.getByRole("group", { name: /Role 职责/ })).toBeVisible();
+  await expect(preview.getByRole("group", { name: /Skill ·/ })).toHaveCount(1);
   await expect(preview.getByRole("group", { name: /Spec ·/ })).toHaveCount(1);
-  await editor
-    .getByRole("button", { name: "保存可用版本", exact: true })
-    .click();
+  await editor.getByRole("button", { name: "发布流程", exact: true }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "流程可用版本已保存。" }),
-  ).toHaveText(/流程可用版本已保存/);
+    page.getByRole("status").filter({ hasText: "流程已发布。" }),
+  ).toHaveText(/流程已发布/);
   const newPublished = new URL(page.url()).searchParams.get("workflow_id");
   expect(
     (await rpc(page, "query.workflow", { id: newPublished })).data.steps[0]
       .task_instructions,
   ).toBe(body);
+  await page.screenshot({
+    path: info.outputPath("agent-task-preview.png"),
+    fullPage: true,
+  });
   expect(errors).toEqual([]);
-});
-
-test("正式执行分别编辑公共和 Agent 节点任务，系统测试节点不显示任务编辑器", async ({
-  page,
-}) => {
-  await setup(page);
-  await page.goto(
-    "/?tab=workflows&workflow_id=builtin-workflow-task-sol-high-v4",
-  );
-  const editor = page.getByRole("region", { name: "Workflow 编辑器" });
-  await editor.getByRole("button", { name: /TDD 与实现/ }).click();
-  await editor.getByRole("button", { name: "编辑流程", exact: true }).click();
-  await editor
-    .getByRole("button", {
-      name: "公共任务指令",
-      exact: true,
-    })
-    .click();
-  await editor
-    .getByRole("textbox", { name: "公共任务指令", exact: true })
-    .fill("## 公共目标\n\n仅实现当前 Task。");
-  await editor
-    .getByRole("button", {
-      name: "实现 节点任务指令",
-      exact: true,
-    })
-    .click();
-  await editor
-    .getByRole("textbox", {
-      name: "实现 节点任务指令",
-      exact: true,
-    })
-    .fill("## 具体实现\n\n按已采纳接口完成当前 Task, 保持测试不变。");
-  await expect(
-    editor.getByRole("group", { name: /节点任务指令/ }),
-  ).toHaveCount(3);
-  await expect(
-    editor.getByText("系统测试执行器按冻结 TestRecipe 执行，不调用 Agent。", {
-      exact: true,
-    }),
-  ).toHaveCount(3);
-  await editor.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "流程草稿已保存。" }),
-  ).toHaveText(/流程草稿已保存/);
-  const id = new URL(page.url()).searchParams.get("workflow_id");
-  const doc = (await rpc(page, "query.workflow", { id })).data.document;
-  const step = doc.steps.find((s: any) => s.kind === "attempt.execute");
-  expect(step.task_instructions).toBe("## 公共目标\n\n仅实现当前 Task。");
-  expect(
-    step.execution_recipe.find((n: any) => n.key === "implement")
-      .task_instructions,
-  ).toContain("## 具体实现");
-  expect(
-    step.execution_recipe
-      .filter((n: any) => ["red", "green", "verify"].includes(n.key))
-      .every((n: any) => n.task_instructions === undefined),
-  ).toBe(true);
 });

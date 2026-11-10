@@ -1,5 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "DevDesk ProjectConfigurationV2",
-  "$ref": "rpc.schema.json#/$defs/ProjectConfigurationV2"
+  "title": "DevDesk Project configuration v3",
+  "$ref": "rpc.schema.json#/$defs/ProjectConfiguration"
 }

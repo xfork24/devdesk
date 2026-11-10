@@ -1,3 +1,6 @@
+#[path = "../../../tests/support/defaults.rs"]
+mod default_fixture;
+use default_fixture::*;
 use devdesk_adapters::{permission_profiles::*, *};
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -14,7 +17,10 @@ fn global(path: &std::path::Path) -> (Arc<GlobalStore>, Engine) {
         store.clone(),
         Arc::new(FileArtifacts::new(path.into())),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(path).unwrap(),
+    ));
     engine.bootstrap().unwrap();
     (store, engine)
 }
@@ -246,6 +252,9 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
     p.id = "runtime-added".into();
     p.identity = "runtime-added".into();
     std::fs::write(root.join("new.json"), serde_json::to_vec(&p).unwrap()).unwrap();
+    store
+        .select_permission_preset_source(&command("select", json!({"path":root}), None, None).1)
+        .unwrap();
     let c = command("reload", json!({}), None, None).1;
     assert!(
         store.reload_permission_presets(&c).unwrap()["added"]
@@ -276,6 +285,111 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
             .unwrap_err()
             .code,
         "revision_conflict"
+    );
+}
+
+#[test]
+fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, e) = global(dir.path());
+    let builtin = store.permission_preset_source().unwrap();
+    assert!(builtin.is_builtin);
+    assert_eq!(builtin.path, builtin.builtin_path);
+    // The former automatic dataset source no longer participates in loading.
+    let former = dir.path().join("permissions/presets");
+    std::fs::create_dir_all(&former).unwrap();
+    std::fs::write(former.join("invalid.json"), "invalid").unwrap();
+    store
+        .reload_permission_presets(&command("reload", json!({}), None, None).1)
+        .unwrap();
+
+    let first = dir.path().join("团队 预设");
+    let second = dir.path().join("个人预设");
+    for (path, name) in [(&first, "team"), (&second, "personal")] {
+        std::fs::create_dir(path).unwrap();
+        let mut p = profile(&e, "permission-harness-read-only-v2-r1");
+        p.id = name.into();
+        p.identity = name.into();
+        std::fs::write(path.join("profile.json"), serde_json::to_vec(&p).unwrap()).unwrap();
+    }
+    let select_first = command("select", json!({"path":first}), None, None).1;
+    store
+        .select_permission_preset_source(&select_first)
+        .unwrap();
+    let loaded = store
+        .reload_permission_presets(&command("reload", json!({}), None, None).1)
+        .unwrap();
+    assert_eq!(loaded["added"], json!(["team"]));
+    assert!(store.snapshot().unwrap().configuration("personal").is_err());
+    store
+        .select_permission_preset_source(&command("select", json!({"path":second}), None, None).1)
+        .unwrap();
+    // An invalid former source must not break the current source's reload.
+    std::fs::write(first.join("profile.json"), "invalid").unwrap();
+    let loaded = store
+        .reload_permission_presets(&command("reload", json!({}), None, None).1)
+        .unwrap();
+    assert_eq!(loaded["added"], json!(["personal"]));
+    // Replaying an older selection must not revert a newer selection.
+    store
+        .select_permission_preset_source(&select_first)
+        .unwrap();
+    assert_eq!(
+        store.permission_preset_source().unwrap().path,
+        std::fs::canonicalize(&second).unwrap()
+    );
+    drop(e);
+    drop(store);
+
+    let (store, _) = global(dir.path());
+    assert_eq!(
+        store.permission_preset_source().unwrap().path,
+        std::fs::canonicalize(&second).unwrap()
+    );
+    assert!(!store.permission_preset_source().unwrap().is_builtin);
+    std::fs::remove_dir_all(&second).unwrap();
+    assert!(
+        store
+            .reload_permission_presets(&command("reload", json!({}), None, None).1)
+            .is_err()
+    );
+    assert!(!store.permission_preset_source().unwrap().is_builtin);
+    let restore = command("reload", json!({"builtin":true}), None, None).1;
+    store.reload_permission_presets(&restore).unwrap();
+    assert!(store.permission_preset_source().unwrap().is_builtin);
+    let state = store.snapshot().unwrap();
+    assert!(state.configuration("team").is_ok());
+    assert!(state.configuration("personal").is_ok());
+    assert!(
+        state
+            .governance
+            .iter()
+            .all(|r| r.kind != "permission_assignment")
+    );
+    assert!(
+        store
+            .select_permission_preset_source(
+                &command("select", json!({"path":"relative"}), None, None).1
+            )
+            .is_err()
+    );
+    assert!(
+        store
+            .select_permission_preset_source(
+                &command(
+                    "select",
+                    json!({"path":former.join("invalid.json")}),
+                    None,
+                    None
+                )
+                .1
+            )
+            .is_err()
+    );
+    assert!(
+        store
+            .reload_permission_presets(&command("reload", json!({"builtin":"true"}), None, None).1)
+            .is_err()
     );
 }
 
@@ -428,7 +542,7 @@ fn compiler_rejects_unenforceable_rules_and_checks_the_real_scope() {
             &e.store.snapshot().unwrap(),
             &lock(&e, &h.id),
             Some(ExecutionScope {
-                work_type: WorkType::Implementation,
+                work_type: WorkType::Workflow,
                 writable_paths: vec!["src".into()],
                 read_only_paths: vec![]
             })
@@ -534,7 +648,10 @@ fn successor_switch_accepts_input_once_preserves_history_and_recovers_after_rest
         Arc::new(SqliteStore::open(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(dir.path()).unwrap(),
+    ));
     e.bootstrap().unwrap();
     let (_, sid, mut next) = prepared_discussion(&e);
     next.configuration_digest = "b".repeat(64);
@@ -587,7 +704,10 @@ fn successor_switch_accepts_input_once_preserves_history_and_recovers_after_rest
         Arc::new(SqliteStore::open(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(dir.path()).unwrap(),
+    ));
     restarted.bootstrap().unwrap();
     assert_eq!(
         restarted.send_with_permission_binding(c, next).unwrap(),
@@ -603,7 +723,10 @@ fn queued_input_prevents_permission_switch_and_cannot_be_reinterpreted() {
         Arc::new(SqliteStore::open(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(dir.path()).unwrap(),
+    ));
     e.bootstrap().unwrap();
     let (_, sid, mut next) = prepared_discussion(&e);
     execute(
@@ -643,7 +766,10 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
         Arc::new(SqliteStore::open(dir.path()).unwrap()),
         Arc::new(FileArtifacts::new(dir.path().into())),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(dir.path()).unwrap(),
+    ));
     e.bootstrap().unwrap();
     let project = execute(
         &e,
@@ -722,7 +848,7 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
         .as_str()
         .unwrap()
         .to_owned();
-    let frozen = frozen_permission_lock(
+    let frozen = frozen_configured_permission(
         &e.store.snapshot().unwrap(),
         &feature,
         a["id"].as_str().unwrap(),
@@ -741,7 +867,7 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
     .unwrap();
     assert_ne!(frozen, lock(&e, DEFAULT_HARNESS_ID));
     assert_eq!(
-        frozen_permission_lock(
+        frozen_configured_permission(
             &e.store.snapshot().unwrap(),
             &feature,
             a["id"].as_str().unwrap()
@@ -786,7 +912,7 @@ fn uncertain_stop_retains_the_intent_and_retry_uses_the_original_binding() {
                 kind: RuntimeExecutionKind::Harness,
                 id: id(),
                 session_id: sid.clone(),
-                run_id: None,
+
                 operation_id: id(),
                 container_id: None,
                 image_digest: format!("sha256:{}", "a".repeat(64)),
@@ -861,7 +987,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
             &e.store.snapshot().unwrap(),
             &lock(&e, h),
             Some(ExecutionScope {
-                work_type: WorkType::Implementation,
+                work_type: WorkType::Workflow,
                 writable_paths: vec![".".into()],
                 read_only_paths: vec!["tests".into()],
             }),
@@ -1132,7 +1258,7 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
                     kind: RuntimeExecutionKind::Harness,
                     id: id(),
                     session_id: sid.clone(),
-                    run_id: None,
+
                     operation_id: id(),
                     container_id: None,
                     image_digest: format!("sha256:{}", "a".repeat(64)),
@@ -1225,4 +1351,22 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
             "a".repeat(64)
         );
     }
+}
+
+fn frozen_configured_permission(
+    state: &EngineeringState,
+    feature: &str,
+    agent: &str,
+) -> Result<VersionedPermissionLock> {
+    let instance = state
+        .governance
+        .iter()
+        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == feature)
+        .ok_or_else(|| err("not_found", "流程不存在"))?;
+    let plan: ConfiguredWorkflowPlan =
+        serde_json::from_value(instance.data["plan"].clone()).unwrap();
+    plan.permission_locks
+        .get(agent)
+        .cloned()
+        .ok_or_else(|| err("not_found", "权限未冻结"))
 }

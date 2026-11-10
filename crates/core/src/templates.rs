@@ -1,4 +1,7 @@
 //! Embedded factory definitions, database copies, and append-only catalog generations.
+#[cfg(test)]
+#[path = "../../../tests/support/defaults.rs"]
+mod default_fixture;
 use crate::governance::{record, update_record};
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -72,35 +75,34 @@ fn reference_pointer(pointer: &str) -> bool {
     matches!(
         key,
         "integration_ref"
+            | "role"
             | "tool_ref"
             | "model_ref"
             | "harness_ref"
             | "capability_ref"
             | "role_ref"
+            | "default_role_ref"
+            | "delivery_ref"
             | "workflow_ref"
-            | "subworkflow_ref"
             | "standard_ref"
             | "sandbox_ref"
             | "revision_id"
             | "agent_revision_id"
             | "agent_ref"
-            | "source_standard"
-            | "source_workflow"
             | "definition_id"
-            | "participant_slot"
-            | "spec"
             | "supersedes"
     ) || (matches!(key, "id" | "identity") && pointer.starts_with("/data/"))
         || parts.iter().any(|p| {
             matches!(
                 *p,
-                "subworkflow_refs"
-                    | "tools"
+                "tools"
                     | "skills"
                     | "permissions"
                     | "skill_revisions"
                     | "tool_revisions"
                     | "spec_refs"
+                    | "required_skill_refs"
+                    | "tool_refs"
                     | "required_spec_refs"
                     | "allowed_tools"
                     | "requires_tools"
@@ -287,11 +289,8 @@ fn materialize(
             "agent" => governance::validate_composition(&s, &r.decode()?, &r.scope)
                 .map_err(|e| err(&e.code, format!("{}: {}", r.name, e.message)))?,
             "workflow" => {
-                let doc: WorkflowDocument = r.decode()?;
-                validate_workflow(&doc)?;
-                if doc.schema_version >= 2 {
-                    workflow_definition::compile(&s, r, None, &r.scope)?;
-                }
+                let doc: WorkflowDefinition = r.decode()?;
+                doc.validate()?;
             }
             "delivery_type" => r.decode::<DeliveryTypeDefinition>()?.validate()?,
             "integration" => r.decode::<IntegrationDefinition>()?.validate()?,
@@ -333,7 +332,10 @@ fn materialize(
                 let tool: ToolDefinition = r.decode()?;
                 require(
                     !tool.qualified_name.is_empty()
-                        && tool.implementation == "harness.native"
+                        && (tool.implementation == "harness.native"
+                            || (tool.implementation == "platform"
+                                && crate::platform_tools::PLATFORM_HANDLERS
+                                    .contains(&tool.qualified_name.as_str())))
                         && tool.input_schema.is_object()
                         && tool.output_schema.is_object(),
                     "默认原生工具契约无效",
@@ -815,6 +817,7 @@ pub fn current_template_defaults(s: &EngineeringState) -> Option<Value> {
 
 #[cfg(test)]
 mod tests {
+    use super::default_fixture::*;
     use super::*;
     #[test]
     fn resources_restore_fresh_references_and_keep_the_original_graph() {
@@ -829,7 +832,10 @@ mod tests {
         let wf = s
             .configuration(refs["workflow_ref"].as_str().unwrap())
             .unwrap();
-        workflow_definition::compile(&s, wf, None, &Scope::Global).unwrap();
+        wf.decode::<WorkflowDefinition>()
+            .unwrap()
+            .validate()
+            .unwrap();
         assert!(template_catalog_pristine(&s));
         s.validate_governance(&before).unwrap();
         assert_ne!(refs["model_ref"], DEFAULT_MODEL_ID);

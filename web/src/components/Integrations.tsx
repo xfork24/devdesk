@@ -916,12 +916,14 @@ function BindingManager({
     endFeedback,
   } = useActionFeedback();
 
+  const bindingDefaults = useRef<Row>({});
+  const [bindingReady, setBindingReady] = useState(false);
   const fresh = () => ({
     selected: "",
     name: "",
     scope: project ? "project" : "global",
-    harness_ref: "builtin-harness-codex-managed-v1",
-    sandbox_ref: "builtin-permission-sandbox-docker-v1",
+    harness_ref: bindingDefaults.current.harness_ref || "",
+    sandbox_ref: bindingDefaults.current.permission_sandbox_ref || "",
     auth_kind: "none",
     credential_ref: "",
     header: "X-API-Key",
@@ -949,9 +951,17 @@ function BindingManager({
     [oauthState, setOauthState] = useState(""),
     [oauthUrl, setOauthUrl] = useState("");
   useEffect(() => {
-    void request("query.permission_resources")
-      .then(setPermissions)
+    let current = true;
+    void Promise.all([request("query.permission_resources"), request("query.configuration_defaults")])
+      .then(([resources, defaults]) => {
+        if (!current) return;
+        bindingDefaults.current = defaults;
+        setPermissions(resources);
+        setDraft((previous) => previous.selected ? previous : { ...previous, harness_ref: previous.harness_ref || defaults.harness_ref || "", sandbox_ref: previous.sandbox_ref || defaults.permission_sandbox_ref || "" });
+        setBindingReady(true);
+      })
       .catch((e) => setError(String(e)));
+    return () => { current = false; };
   }, [request]);
   const bindings = latest(
     sources.filter(
@@ -1099,7 +1109,7 @@ function BindingManager({
             });
           }}
         >
-          <fieldset disabled={!!deletedBinding} className="integration-fields">
+          <fieldset disabled={!!deletedBinding || !bindingReady} className="integration-fields">
             <label>
               绑定名称
               <input
@@ -2592,12 +2602,18 @@ function SkillImport({
     </section>
   );
 }
+type HistoryEntry =
+  | { type: "event"; time: number; event: Row }
+  | { type: "tool_call"; time: number; call: Row };
+
 export function CallHistory({
   request,
   project,
+  historyScope,
 }: {
   request: Request;
   project?: Row;
+  historyScope?: "global" | "project";
 }) {
   const {
     error,
@@ -2607,37 +2623,76 @@ export function CallHistory({
     endFeedback,
   } = useActionFeedback();
 
-  const [rows, setRows] = useState<Row[]>([]),
+  const requestVersion = useRef(0);
+  const [rows, setRows] = useState<HistoryEntry[]>([]),
     [selected, setSelected] = useState<Row>(),
     [offset, setOffset] = useState(0),
     [total, setTotal] = useState(0),
     [evidence, setEvidence] = useState(""),
-    [effect, setEffect] = useState("unknown");
+    [effect, setEffect] = useState("unknown"),
+    [loaded, setLoaded] = useState(false);
+  const noProject = historyScope === "project" && !project?.id;
   const load = useCallback(async () => {
+    if (historyScope === "project" && !project?.id) {
+      setRows([]);
+      setTotal(0);
+      setSelected(undefined);
+      setLoaded(true);
+      return;
+    }
+    const version = ++requestVersion.current;
     const query: Row = {
       local: !!project,
       project_id: project?.id,
       offset,
       limit: 50,
     };
-    const r = await request("query.tool_calls", query);
-    setRows(r.records);
+    if (historyScope) {
+      query.scope = historyScope;
+      query.include_tool_calls = true;
+    }
+    const r = await request(
+      historyScope ? "query.history" : "query.tool_calls",
+      query,
+    );
+    if (version !== requestVersion.current) return;
+    const entries: HistoryEntry[] = historyScope
+      ? r.records
+      : r.records.map((call: Row) => ({
+          type: "tool_call",
+          time: call.created_at,
+          call,
+        }));
+    setRows(entries);
     setTotal(r.total);
-    setSelected((old) => r.records.find((v: Row) => v.id === old?.id));
-  }, [request, project?.id, offset]);
+    setSelected((old) => {
+      const entry = entries.find(
+        (entry) => entry.type === "tool_call" && entry.call.id === old?.id,
+      );
+      return entry?.type === "tool_call" ? entry.call : undefined;
+    });
+    setLoaded(true);
+  }, [request, project?.id, offset, historyScope]);
   useEffect(() => {
     let active = true;
-    const run = () => {
-      if (active)
-        void load().catch((e) => {
-          if (active) setError(String(e));
-        });
+    let timer: ReturnType<typeof setTimeout>;
+    const run = async () => {
+      try {
+        await load();
+      } catch (e) {
+        if (active) {
+          setLoaded(true);
+          setError(String(e));
+        }
+      } finally {
+        if (active) timer = setTimeout(() => void run(), 1500);
+      }
     };
-    run();
-    const timer = setInterval(run, 1500);
+    void run();
     return () => {
       active = false;
-      clearInterval(timer);
+      requestVersion.current += 1;
+      clearTimeout(timer);
     };
   }, [load]);
   const act = async (method: string, row: Row, payload: Row) => {
@@ -2651,11 +2706,15 @@ export function CallHistory({
     }
   };
   return (
-    <section className="panel" aria-label="工具调用记录">
+    <section
+      className="panel"
+      aria-label={historyScope ? "历史记录" : "工具调用记录"}
+    >
       <div className="panel-heading">
-        <h2>Tools调用记录</h2>
+        <h2>{historyScope ? "历史记录" : "Tools调用记录"}</h2>
         <span className="muted">按时间倒序 · 每页 50 条</span>
         <ActionButton
+          disabled={noProject}
           onClick={async () => {
             captureFeedback();
             beginFeedback();
@@ -2669,201 +2728,238 @@ export function CallHistory({
             }
           }}
         >
-          刷新调用记录
+          {historyScope ? "刷新历史记录" : "刷新调用记录"}
         </ActionButton>
       </div>
       <div className="tool-call-content">
         <div className="tool-call-history">
           {rows.length === 0 && (
             <div className="empty">
-              <p>尚无工具调用记录。</p>
+              <p>
+                {noProject
+                  ? "请选择当前项目以查看历史记录。"
+                  : !loaded
+                    ? "正在读取历史记录…"
+                    : historyScope
+                      ? "尚无历史记录。"
+                      : "尚无工具调用记录。"}
+              </p>
             </div>
           )}
-          {rows.map((r, index) => (
-            <div className="tool-call-history-item" key={r.id}>
-              <div className="history-row">
-                <span className="event-id">#{offset + index + 1}</span>
-                <div>
-                  <ActionButton
-                    className="history-action"
-                    aria-expanded={selected?.id === r.id}
-                    aria-controls={`tool-call-detail-${r.id}`}
-                    onClick={() => {
-                      captureFeedback();
-                      setSelected((current) =>
-                        current?.id === r.id ? undefined : r,
-                      );
-                    }}
-                  >
-                    <strong>{r.name}</strong>
-                  </ActionButton>
-                  <p>
-                    {r.data.status} ·{" "}
-                    {r.data.invocation?.agent_instance_id || "手工测试"}
-                  </p>
-                  <code>{r.id}</code>
+          {rows.map((entry, index) => {
+            if (entry.type === "event") {
+              const e = entry.event;
+              return (
+                <div className="history-row" key={`event:${e.id}`}>
+                  <span className="event-id" title={`事件 #${e.id}`}>
+                    #{offset + index + 1}
+                  </span>
+                  <div>
+                    <strong>{e.kind}</strong>
+                    <p>持久化事件 · {e.detail}</p>
+                    <code>{e.target}</code>
+                  </div>
+                  <time dateTime={new Date(e.time).toISOString()}>
+                    {new Date(e.time).toLocaleString("zh-CN", {
+                      hour12: false,
+                    })}
+                  </time>
                 </div>
-                <time dateTime={new Date(r.created_at).toISOString()}>
-                  {new Date(r.created_at).toLocaleString()}
-                </time>
-              </div>
-              {selected && selected.id === r.id && (
-                <article
-                  className="tool-call-details"
-                  id={`tool-call-detail-${r.id}`}
-                  aria-label="调用详情"
-                >
-                  <h3>{selected.name}</h3>
-                  <p>
-                    状态：{selected.data.status} · 远端副作用：
-                    {selected.data.remote_effect}
-                  </p>
-                  <p>{selected.id}</p>
-                  <dl>
-                    <dt>工具修订</dt>
-                    <dd>{selected.data.invocation.tool.revision_id}</dd>
-                    <dt>接入绑定</dt>
-                    <dd>{selected.data.invocation.tool.binding_ref}</dd>
-                    <dt>Agent</dt>
-                    <dd>
-                      {selected.data.invocation.agent_instance_id || "手工测试"}
-                    </dd>
-                  </dl>
-                  <details>
-                    <summary>参数与来源</summary>
-                    <pre>
-                      {JSON.stringify(selected.data.invocation, null, 2)}
-                    </pre>
-                  </details>
-                  <h4>执行回执</h4>
-                  {selected.data.receipt?.content?.some(
-                    (c: Row) =>
-                      c.type === "resource_link" &&
-                      c.uri?.startsWith("devdesk-tool-artifact:"),
-                  ) && (
+              );
+            }
+            const r = entry.call;
+            return (
+              <div className="tool-call-history-item" key={`tool_call:${r.id}`}>
+                <div className="history-row">
+                  <span className="event-id">#{offset + index + 1}</span>
+                  <div>
                     <ActionButton
-                      onClick={async () => {
-                        captureFeedback();
-
-                        try {
-                          const result = await command(
-                            request,
-                            "tool.call.artifact",
-                            project,
-                            {},
-                            selected,
-                          );
-                          const bytes = Uint8Array.from(
-                            atob(result.base64),
-                            (c) => c.charCodeAt(0),
-                          );
-                          const url = URL.createObjectURL(
-                            new Blob([bytes], { type: result.mime }),
-                          );
-                          const link = document.createElement("a");
-                          link.href = url;
-                          link.download = `${selected.id}.bin`;
-                          link.click();
-                          setTimeout(() => URL.revokeObjectURL(url), 1000);
-                        } catch (e) {
-                          setError(String(e));
-                        }
-                      }}
-                    >
-                      下载调用文件结果
-                    </ActionButton>
-                  )}
-                  <pre>
-                    {JSON.stringify(
-                      selected.data.receipt || { status: selected.data.status },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                  {selected.data.status === "awaiting_approval" && (
-                    <div className="actions">
-                      <ActionButton
-                        onClick={() => {
-                          captureFeedback();
-                          return void act("tool.call.approve", selected, {
-                            approve: true,
-                          });
-                        }}
-                      >
-                        批准此调用
-                      </ActionButton>
-                      <ActionButton
-                        onClick={() => {
-                          captureFeedback();
-                          return void act("tool.call.approve", selected, {
-                            approve: false,
-                          });
-                        }}
-                      >
-                        拒绝此调用
-                      </ActionButton>
-                    </div>
-                  )}
-                  {["prepared", "dispatched", "awaiting_approval"].includes(
-                    selected.data.status,
-                  ) && (
-                    <ActionButton
+                      className="history-action"
+                      aria-expanded={selected?.id === r.id}
+                      aria-controls={`tool-call-detail-${r.id}`}
                       onClick={() => {
                         captureFeedback();
-                        return void act("tool.call.cancel", selected, {});
+                        setSelected((current) =>
+                          current?.id === r.id ? undefined : r,
+                        );
                       }}
                     >
-                      取消工具调用
+                      <strong>{r.name}</strong>
                     </ActionButton>
-                  )}
-                  {selected.data.status === "needs_reconciliation" && (
-                    <fieldset>
-                      <legend>核对未确认调用</legend>
-                      <p>
-                        系统不会自动重发。先检查执行器实际回执；没有回执时记录人工核对的来源。
-                      </p>
-                      <label>
-                        远端执行事实
-                        <ActionSelect
-                          value={effect}
-                          onChange={(e) => {
-                            captureFeedback();
-                            return setEffect(e.target.value);
-                          }}
-                        >
-                          <option value="unknown">仍不确定</option>
-                          <option value="not_applied">确认未执行</option>
-                          <option value="applied">确认已执行</option>
-                        </ActionSelect>
-                      </label>
-                      <label>
-                        核对证据
-                        <textarea
-                          value={evidence}
-                          onChange={(e) => {
-                            captureFeedback();
-                            return setEvidence(e.target.value);
-                          }}
-                        />
-                      </label>
+                    <p>
+                      {historyScope ? "Tools调用 · " : ""}
+                      {r.data.status} ·{" "}
+                      {r.data.invocation?.agent_instance_id || "手工测试"}
+                    </p>
+                    <code>{r.id}</code>
+                  </div>
+                  <time dateTime={new Date(r.created_at).toISOString()}>
+                    {new Date(r.created_at).toLocaleString("zh-CN", {
+                      hour12: false,
+                    })}
+                  </time>
+                </div>
+                {selected && selected.id === r.id && (
+                  <article
+                    className="tool-call-details"
+                    id={`tool-call-detail-${r.id}`}
+                    aria-label="调用详情"
+                  >
+                    <h3>{selected.name}</h3>
+                    <p>
+                      状态：{selected.data.status} · 远端副作用：
+                      {selected.data.remote_effect}
+                    </p>
+                    <p>{selected.id}</p>
+                    <dl>
+                      <dt>工具修订</dt>
+                      <dd>{selected.data.invocation.tool.revision_id}</dd>
+                      <dt>接入绑定</dt>
+                      <dd>{selected.data.invocation.tool.binding_ref}</dd>
+                      <dt>Agent</dt>
+                      <dd>
+                        {selected.data.invocation.agent_instance_id ||
+                          "手工测试"}
+                      </dd>
+                    </dl>
+                    <details>
+                      <summary>参数与来源</summary>
+                      <pre>
+                        {JSON.stringify(selected.data.invocation, null, 2)}
+                      </pre>
+                    </details>
+                    <h4>执行回执</h4>
+                    {selected.data.receipt?.content?.some(
+                      (c: Row) =>
+                        c.type === "resource_link" &&
+                        c.uri?.startsWith("devdesk-tool-artifact:"),
+                    ) && (
                       <ActionButton
-                        disabled={!evidence.trim()}
-                        onClick={() => {
+                        onClick={async () => {
                           captureFeedback();
-                          return void act("tool.call.reconcile", selected, {
-                            remote_effect: effect,
-                            evidence,
-                          });
+
+                          try {
+                            const result = await command(
+                              request,
+                              "tool.call.artifact",
+                              project,
+                              {},
+                              selected,
+                            );
+                            const bytes = Uint8Array.from(
+                              atob(result.base64),
+                              (c) => c.charCodeAt(0),
+                            );
+                            const url = URL.createObjectURL(
+                              new Blob([bytes], { type: result.mime }),
+                            );
+                            const link = document.createElement("a");
+                            link.href = url;
+                            link.download = `${selected.id}.bin`;
+                            link.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
+                          } catch (e) {
+                            setError(String(e));
+                          }
                         }}
                       >
-                        核对调用事实
+                        下载调用文件结果
                       </ActionButton>
-                    </fieldset>
-                  )}
-                </article>
-              )}
-            </div>
-          ))}
+                    )}
+                    <pre>
+                      {JSON.stringify(
+                        selected.data.receipt || {
+                          status: selected.data.status,
+                        },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                    {selected.data.status === "awaiting_approval" && (
+                      <div className="actions">
+                        <ActionButton
+                          onClick={() => {
+                            captureFeedback();
+                            return void act("tool.call.approve", selected, {
+                              approve: true,
+                            });
+                          }}
+                        >
+                          批准此调用
+                        </ActionButton>
+                        <ActionButton
+                          onClick={() => {
+                            captureFeedback();
+                            return void act("tool.call.approve", selected, {
+                              approve: false,
+                            });
+                          }}
+                        >
+                          拒绝此调用
+                        </ActionButton>
+                      </div>
+                    )}
+                    {["prepared", "dispatched", "awaiting_approval"].includes(
+                      selected.data.status,
+                    ) && (
+                      <ActionButton
+                        onClick={() => {
+                          captureFeedback();
+                          return void act("tool.call.cancel", selected, {});
+                        }}
+                      >
+                        取消工具调用
+                      </ActionButton>
+                    )}
+                    {selected.data.status === "needs_reconciliation" && (
+                      <fieldset>
+                        <legend>核对未确认调用</legend>
+                        <p>
+                          系统不会自动重发。先检查执行器实际回执；没有回执时记录人工核对的来源。
+                        </p>
+                        <label>
+                          远端执行事实
+                          <ActionSelect
+                            value={effect}
+                            onChange={(e) => {
+                              captureFeedback();
+                              return setEffect(e.target.value);
+                            }}
+                          >
+                            <option value="unknown">仍不确定</option>
+                            <option value="not_applied">确认未执行</option>
+                            <option value="applied">确认已执行</option>
+                          </ActionSelect>
+                        </label>
+                        <label>
+                          核对证据
+                          <textarea
+                            value={evidence}
+                            onChange={(e) => {
+                              captureFeedback();
+                              return setEvidence(e.target.value);
+                            }}
+                          />
+                        </label>
+                        <ActionButton
+                          disabled={!evidence.trim()}
+                          onClick={() => {
+                            captureFeedback();
+                            return void act("tool.call.reconcile", selected, {
+                              remote_effect: effect,
+                              evidence,
+                            });
+                          }}
+                        >
+                          核对调用事实
+                        </ActionButton>
+                      </fieldset>
+                    )}
+                  </article>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div className="pagination">
           <ActionButton

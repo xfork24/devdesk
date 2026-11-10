@@ -284,14 +284,6 @@ pub fn validate_execution_permissions(
             "正式写入阶段的执行范围与只读 Permission 冲突",
         ));
     }
-    if p.scope.work_type == WorkType::Implementation
-        && p.harness.policy.filesystem == FilesystemPermission::ReadOnly
-    {
-        return Err(err(
-            "permission_conflict",
-            "实施阶段需要写入授权代码范围，Harness 当前只读",
-        ));
-    }
     Ok(())
 }
 pub fn codex_sandbox_policy(p: &ExecutionPermissions) -> Value {

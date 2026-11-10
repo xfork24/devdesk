@@ -1,7 +1,12 @@
+#[cfg(test)]
+use crate::default_fixture::*;
 #[path = "github_projects.rs"]
 mod github_projects;
 #[path = "governance.rs"]
 mod governance;
+#[cfg(test)]
+#[path = "history_tests.rs"]
+mod history_tests;
 #[path = "integrations.rs"]
 mod integrations;
 #[path = "model_providers.rs"]
@@ -50,9 +55,7 @@ fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
     for r in s.governance.iter().filter(|r| {
         r.kind == "agent"
             && template_record_current(s, r)
-            && (r.definition_id.starts_with("builtin-agent-")
-                || template_catalog_member(s, r)
-                    .is_some_and(|m| m.data["template_key"].is_string()))
+            && template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
     }) {
         let agent: AgentComposition = r.decode()?;
         targets.insert(agent.harness_ref);
@@ -62,8 +65,7 @@ fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
         .iter()
         .filter(|r| r.kind == "harness" && template_record_current(s, r))
     {
-        if (r.definition_id.starts_with("builtin-harness-")
-            || template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string()))
+        if template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
             && !s.governance.iter().any(|n| {
                 n.kind == r.kind && n.definition_id == r.definition_id && n.version > r.version
             })
@@ -116,7 +118,7 @@ impl Workspace {
         &self,
         e: &Engine,
         mut command: Command,
-        engineering: bool,
+        _engineering: bool,
     ) -> Result<Value> {
         require(!command.command_id.is_empty(), "command_id 不能为空")?;
         require(
@@ -127,8 +129,8 @@ impl Workspace {
         if let Some(previous) = e.store.replay(&command.command_id, &fingerprint)? {
             return Ok(previous);
         }
+        let configured = e.configured_agent_request(&command)?;
         self.resolve_agent_composition(e, &mut command)?;
-        e.validate_workflow_command("session.open", &command)?;
         let state = e.store.snapshot()?;
         let agent = command.payload["agent"]
             .as_str()
@@ -147,12 +149,8 @@ impl Workspace {
             .map_err(|_| err("invalid_params", "无效工作类型"))?
             .unwrap_or(WorkType::Discussion);
         require(
-            engineering || [WorkType::Discussion, WorkType::Design].contains(&work_type),
-            "工程实施/测试/正式评审须从冻结的 Run 入口启动",
-        )?;
-        require(
-            profile.allowed_work.contains(&work_type),
-            "角色不支持当前工作类型",
+            configured.is_some() || work_type == WorkType::Discussion,
+            "Workflow 执行须来自冻结的步骤意图",
         )?;
         let provider: HarnessProvider = serde_json::from_value(command.payload["provider"].clone())
             .map_err(|_| err("invalid_configuration", "Agent 缺少 Harness 后端"))?;
@@ -186,24 +184,36 @@ impl Workspace {
             !model.trim().is_empty() && model.len() <= 160,
             "模型 ID 无效",
         )?;
-        let policy =
-            if [WorkType::Discussion, WorkType::Design, WorkType::Review].contains(&work_type) {
+        let policy = if let Some(configured) = &configured {
+            let requested = if configured.access.writable_paths.is_empty() {
                 ToolPolicy::ReadOnly
+            } else if configured.access.writable_paths == ["."] {
+                ToolPolicy::WorkspaceWrite
             } else {
-                profile.tool_policy
+                ToolPolicy::ScopedWrite
             };
+            require(
+                profile.tool_policy.permits(requested),
+                "Agent 执行配置未允许所请求的写入范围",
+            )?;
+            requested
+        } else {
+            ToolPolicy::ReadOnly
+        };
         require(
-            engineering || command.payload.get("writable_paths").is_none(),
+            command.payload.get("writable_paths").is_none(),
             "写目录只能由正式工程入口解析",
         )?;
-        let writable_paths: Vec<String> = if policy == ToolPolicy::ReadOnly {
+        let writable_paths: Vec<String> = if let Some(configured) = &configured {
+            configured.access.writable_paths.clone()
+        } else if policy == ToolPolicy::ReadOnly {
             vec![]
         } else {
             serde_json::from_value(command.payload["writable_paths"].clone())
                 .map_err(|_| err("invalid_params", "缺少冻结写目录"))?
         };
-        let read_only_paths = if policy == ToolPolicy::TaskWrite {
-            vec!["tests".to_string()]
+        let read_only_paths = if let Some(configured) = &configured {
+            configured.access.read_only_paths.clone()
         } else {
             vec![]
         };
@@ -216,14 +226,8 @@ impl Workspace {
             .permission_selection
             .as_ref()
             .ok_or_else(|| err("permission_unconfigured", "Agent 必须选择版本化权限"))?;
-        let lock = if engineering {
-            let owner = command.target.as_deref().unwrap_or("");
-            let feature = state
-                .tasks
-                .iter()
-                .find(|t| t.id == owner)
-                .map_or(owner, |t| t.feature_id.as_str());
-            frozen_permission_lock(&state, feature, agent)?
+        let lock = if let Some(configured) = &configured {
+            configured.permissions.clone()
         } else {
             resolve_permission_lock(&state, &composition.harness_ref, selection)?
         };
@@ -294,11 +298,6 @@ impl Workspace {
                     .and_then(|patch| configuration_digest(&json!(patch)))
             })
             .transpose()?;
-        let model_parameters = agent_configuration
-            .as_ref()
-            .ok_or_else(|| err("invalid_configuration", "缺少 Agent 执行配置"))?
-            .model_parameters
-            .clone();
         let mut binding = RuntimeBinding {
             model_connection,
             model_profile_digest,
@@ -307,7 +306,7 @@ impl Workspace {
             installation: installation.clone(),
             adapter_version: adapter,
             model,
-            model_parameters,
+            model_parameters: Default::default(),
             tool_policy: policy,
             writable_paths,
             read_only_paths,
@@ -318,359 +317,6 @@ impl Workspace {
         binding.configuration_digest = Self::permission_runtime_digest(definition, &binding)?;
         command.payload["binding"] = json!(binding);
         e.execute_resolved("session.open", command, &fingerprint)
-    }
-    fn resolve_live_attempt(&self, e: &Engine, mut command: Command) -> Result<Value> {
-        require(
-            command.payload.get("live_sessions").is_none(),
-            "阶段 Session 由宿主解析，不能由客户端指定",
-        )?;
-        let fingerprint = command_fingerprint("attempt.start", &command);
-        if let Some(result) = e.store.replay(&command.command_id, &fingerprint)? {
-            return Ok(result);
-        }
-        e.validate_workflow_command("attempt.start", &command)?;
-        let state = e.store.snapshot()?;
-        let target = command
-            .target
-            .as_deref()
-            .ok_or_else(|| err("invalid_params", "缺少 Attempt target"))?;
-        e.validate_attempt_cancellation(target)?;
-        let task = state.tasks.iter().find(|t| t.id == target);
-        let phase_value = if task.is_some() {
-            Some("implementation")
-        } else {
-            command.payload["phase"].as_str()
-        }
-        .ok_or_else(|| err("invalid_params", "Feature 执行必须选择确切阶段"))?
-        .to_owned();
-        let phase = phase_value.as_str();
-        let stage_roles: Vec<(&str, AgentRole, WorkType)> = match phase {
-            "requirement_definition" => vec![(
-                "requirement_validate",
-                AgentRole::Analyst,
-                WorkType::Discussion,
-            )],
-            "solution_planning" => vec![
-                ("plan_validate", AgentRole::Architect, WorkType::Design),
-                (
-                    "test_plan_validate",
-                    AgentRole::Tester,
-                    WorkType::Discussion,
-                ),
-            ],
-            "implementation" => vec![
-                ("test_author", AgentRole::Tester, WorkType::Testing),
-                ("red", AgentRole::Tester, WorkType::Discussion),
-                ("implement", AgentRole::Developer, WorkType::Implementation),
-                ("green", AgentRole::Tester, WorkType::Discussion),
-                ("docs", AgentRole::Developer, WorkType::Discussion),
-                ("verify", AgentRole::Tester, WorkType::Discussion),
-            ],
-            "closure" => vec![
-                ("test_author", AgentRole::Tester, WorkType::Testing),
-                ("feature_tests", AgentRole::Tester, WorkType::Discussion),
-                ("docs", AgentRole::Developer, WorkType::Discussion),
-                ("verify", AgentRole::Tester, WorkType::Discussion),
-            ],
-            _ => return Err(err("invalid_params", "未知阶段")),
-        };
-        let mut stage_roles: Vec<(String, AgentRole, WorkType)> = stage_roles
-            .into_iter()
-            .map(|(n, r, w)| (n.into(), r, w))
-            .collect();
-        if let Some(recipe) = e.workflow_recipe(
-            &state,
-            target,
-            phase,
-            command.payload["workflow_step_instance_id"].as_str(),
-        ) {
-            stage_roles = recipe
-                .into_iter()
-                .map(|n| {
-                    let work = if n.key == "implement" {
-                        WorkType::Implementation
-                    } else if n.key == "test_author" {
-                        WorkType::Testing
-                    } else if n.role == AgentRole::Architect {
-                        WorkType::Design
-                    } else {
-                        WorkType::Discussion
-                    };
-                    (n.key, n.role, work)
-                })
-                .collect();
-        }
-        let feature = task.map_or(target, |t| t.feature_id.as_str());
-        let frozen = state.feature_configuration(feature);
-        if command.payload["workflow_step_instance_id"].is_null() {
-            if let Some(id) = e.workflow_step_id(&state, target, "attempt.execute", Some(phase))? {
-                command.payload["workflow_step_instance_id"] = json!(id);
-            }
-        }
-        let mut sessions = std::collections::BTreeMap::new();
-        for (stage, role, work_type) in stage_roles {
-            let key = match role {
-                AgentRole::Analyst => "analyst",
-                AgentRole::Architect => "architect",
-                AgentRole::Developer => "developer",
-                AgentRole::Tester => "tester",
-                AgentRole::Reviewer => "reviewer",
-            };
-            let root = format!("builtin-agent-{key}-v1");
-            let explicit = e.workflow_agent_for(
-                &state,
-                target,
-                "attempt.execute",
-                Some(phase),
-                Some(&stage),
-                command.payload["workflow_step_instance_id"].as_str(),
-            )?;
-            let agent = if let Some(chosen) = &explicit {
-                state
-                    .definitions
-                    .iter()
-                    .find(|d| &d.id == chosen)
-                    .ok_or_else(|| err("not_found", "冻结 Agent 不存在"))?
-            } else if let Some(lock) = &frozen {
-                let chosen = lock
-                    .agent_refs
-                    .get(key)
-                    .ok_or_else(|| err("configuration_required", "流程未绑定所需 Agent"))?;
-                state
-                    .definitions
-                    .iter()
-                    .find(|d| &d.id == chosen)
-                    .ok_or_else(|| err("not_found", "冻结 Agent 不存在"))?
-            } else {
-                state
-                    .definitions
-                    .iter()
-                    .filter(|d| {
-                        d.agent_profile.as_ref().is_some_and(|p| p.role == role)
-                            && state.agent_identity(&d.id).is_ok_and(|id| id == root)
-                    })
-                    .max_by_key(|d| d.version)
-                    .ok_or_else(|| err("blocked", "预置工程角色缺失"))?
-            };
-            let paths = if work_type == WorkType::Implementation {
-                vec![".".to_string()]
-            } else if work_type == WorkType::Testing {
-                let recipe = state
-                    .documents
-                    .iter()
-                    .rev()
-                    .find(|d| {
-                        d.kind == "test"
-                            && if task.is_some() {
-                                d.task_id.as_deref() == Some(target)
-                            } else {
-                                d.task_id.is_none() && state.document_in_feature(d, target)
-                            }
-                    })
-                    .and_then(|d| d.test_recipe.as_ref())
-                    .ok_or_else(|| err("configuration_required", "Task Test 缺少实际测试配方"))?;
-                recipe.validate()?;
-                let mut paths = std::collections::BTreeSet::new();
-                for file in &recipe.files {
-                    let parent = file.rsplit_once('/').map(|p| p.0).unwrap_or("");
-                    require(
-                        parent.starts_with("tests/") && parent != "tests/",
-                        "测试作者配方需使用独立 tests/<suite>/ 目录",
-                    )?;
-                    paths.insert(parent.to_string());
-                }
-                paths.into_iter().collect()
-            } else {
-                vec![]
-            };
-            let mut payload =
-                json!({"agent":agent.id,"work_type":work_type,"writable_paths":paths});
-            payload["workflow_recipe_node"] = json!(stage);
-            for name in [
-                "provider",
-                "installation_id",
-                "model",
-                "workflow_step_instance_id",
-            ] {
-                if let Some(value) = command.payload.get(name) {
-                    payload[name] = value.clone();
-                }
-            }
-            let opened = self.open_role_session(
-                e,
-                Command {
-                    command_id: format!("{}:session:{stage}", command.command_id),
-                    target: command.target.clone(),
-                    expected_revision: command.expected_revision,
-                    payload,
-                },
-                true,
-            )?;
-            sessions.insert(
-                stage.to_string(),
-                opened["id"].as_str().unwrap().to_string(),
-            );
-        }
-        command.payload["live_sessions"] = json!(sessions);
-        e.execute_resolved("attempt.start", command, &fingerprint)
-    }
-    fn resolve_live_review(&self, e: &Engine, mut command: Command) -> Result<Value> {
-        require(
-            command.payload.get("review_session").is_none(),
-            "Reviewer Session 由宿主解析",
-        )?;
-        let fingerprint = command_fingerprint("review.request", &command);
-        if let Some(value) = e.store.replay(&command.command_id, &fingerprint)? {
-            return Ok(value);
-        }
-        e.validate_workflow_command("review.request", &command)?;
-        let state = e.store.snapshot()?;
-        let delivery = state.delivery(command.target.as_deref().unwrap_or(""))?;
-        let owner = delivery.task_id.as_deref().unwrap_or(&delivery.feature_id);
-        let revision = if let Some(task) = &delivery.task_id {
-            state.task(task)?.revision
-        } else {
-            state.feature(owner)?.revision
-        };
-        let frozen = state.feature_configuration(&delivery.feature_id);
-        let action = if delivery.merge_id.is_some() {
-            "merge.review"
-        } else {
-            "delivery.review"
-        };
-        if command.payload["workflow_step_instance_id"].is_null() {
-            if let Some(id) = e.workflow_step_id(&state, owner, action, None)? {
-                command.payload["workflow_step_instance_id"] = json!(id);
-            }
-        }
-        let explicit = e.workflow_agent_for(
-            &state,
-            owner,
-            action,
-            None,
-            None,
-            command.payload["workflow_step_instance_id"].as_str(),
-        )?;
-        let agent = if let Some(chosen) = &explicit {
-            state
-                .definitions
-                .iter()
-                .find(|d| &d.id == chosen)
-                .ok_or_else(|| err("not_found", "冻结 Reviewer 不存在"))?
-        } else if let Some(lock) = &frozen {
-            let chosen = lock
-                .agent_refs
-                .get("reviewer")
-                .ok_or_else(|| err("configuration_required", "未绑定 Reviewer Agent"))?;
-            state
-                .definitions
-                .iter()
-                .find(|d| &d.id == chosen)
-                .ok_or_else(|| err("not_found", "冻结 Reviewer 不存在"))?
-        } else {
-            state
-                .definitions
-                .iter()
-                .filter(|d| {
-                    d.agent_profile
-                        .as_ref()
-                        .is_some_and(|p| p.role == AgentRole::Reviewer)
-                        && state
-                            .agent_identity(&d.id)
-                            .is_ok_and(|root| root == "builtin-agent-sol-high-reviewer-v3")
-                })
-                .max_by_key(|d| d.version)
-                .ok_or_else(|| err("blocked", "缺少独立 Reviewer"))?
-        };
-        let mut payload = json!({"agent":agent.id,"work_type":"review"});
-        for key in [
-            "provider",
-            "installation_id",
-            "model",
-            "workflow_step_instance_id",
-        ] {
-            if let Some(value) = command.payload.get(key) {
-                payload[key] = value.clone();
-            }
-        }
-        let session = self.open_role_session(
-            e,
-            Command {
-                command_id: format!("{}:review-session", command.command_id),
-                target: Some(owner.into()),
-                expected_revision: Some(revision),
-                payload,
-            },
-            true,
-        )?;
-        command.payload["review_session"] = session["id"].clone();
-        e.execute_resolved("review.request", command, &fingerprint)
-    }
-    fn resolve_live_merge(&self, e: &Engine, mut command: Command) -> Result<Value> {
-        require(
-            command.payload.get("merge_session").is_none(),
-            "候选 Session 由宿主解析",
-        )?;
-        let fingerprint = command_fingerprint("merge.request", &command);
-        if let Some(value) = e.store.replay(&command.command_id, &fingerprint)? {
-            return Ok(value);
-        }
-        e.validate_workflow_command("merge.request", &command)?;
-        let state = e.store.snapshot()?;
-        let owner = command.target.as_deref().unwrap_or("");
-        let revision = if let Some(task) = state.tasks.iter().find(|t| t.id == owner) {
-            task.revision
-        } else {
-            state.feature(owner)?.revision
-        };
-        let feature = state
-            .tasks
-            .iter()
-            .find(|t| t.id == owner)
-            .map_or(owner, |t| t.feature_id.as_str());
-        if command.payload["workflow_step_instance_id"].is_null() {
-            if let Some(id) = e.workflow_step_id(&state, owner, "merge.prepare", None)? {
-                command.payload["workflow_step_instance_id"] = json!(id);
-            }
-        }
-        let agent = e
-            .workflow_agent_for(
-                &state,
-                owner,
-                "merge.prepare",
-                None,
-                None,
-                command.payload["workflow_step_instance_id"].as_str(),
-            )?
-            .or_else(|| {
-                state
-                    .feature_configuration(feature)
-                    .and_then(|c| c.agent_refs.get("tester").cloned())
-            })
-            .unwrap_or_else(|| "builtin-agent-sol-high-tester-v3".into());
-        let mut payload = json!({"agent":agent,"work_type":"discussion"});
-        for key in [
-            "provider",
-            "installation_id",
-            "model",
-            "workflow_step_instance_id",
-        ] {
-            if let Some(value) = command.payload.get(key) {
-                payload[key] = value.clone();
-            }
-        }
-        let session = self.open_role_session(
-            e,
-            Command {
-                command_id: format!("{}:merge-session", command.command_id),
-                target: Some(owner.into()),
-                expected_revision: Some(revision),
-                payload,
-            },
-            true,
-        )?;
-        command.payload["merge_session"] = session["id"].clone();
-        e.execute_resolved("merge.request", command, &fingerprint)
     }
     pub fn open(root: &Path) -> Result<Arc<Self>> {
         Self::open_with_adapters(root, execution_adapters(root)?)
@@ -683,7 +329,9 @@ impl Workspace {
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
         configuration.recover_tool_receipts()?;
-        if template_catalog_generation(&global.snapshot()?) == TEMPLATE_INITIAL_GENERATION {
+        if template_catalog_generation(&global.snapshot()?) == TEMPLATE_INITIAL_GENERATION
+            && global.permission_preset_source()?.is_builtin
+        {
             global.reload_permission_presets(&Command {
                 command_id: id(),
                 target: None,
@@ -1295,42 +943,6 @@ impl Workspace {
         if e.store.project_id().is_some() {
             self.sync_configuration(&e)?;
         }
-        if method == "run.retry" {
-            let state = e.store.snapshot()?;
-            if let Some(run) = state.runs.iter().find(|r| {
-                Some(r.id.as_str()) == params["target"].as_str() && r.origin == Origin::External
-            }) {
-                let binding = state
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == run.session_id)
-                    .and_then(|s| s.runtime_binding.as_ref())
-                    .ok_or_else(|| err("blocked", "旧运行时锁缺失"))?;
-                require(
-                    binding.adapter_version
-                        == harness::managed_adapter_identity(binding.installation.key.provider),
-                    "冻结适配器构建已更新，不能在技术重试时更换配置，请新建 Attempt",
-                )?;
-                if run.writes {
-                    let a = state.attempt(
-                        run.attempt_id
-                            .as_deref()
-                            .ok_or_else(|| err("blocked", "写 Run 缺少 Attempt"))?,
-                    )?;
-                    let context = a
-                        .git_context
-                        .as_ref()
-                        .ok_or_else(|| err("blocked", "旧代码定位缺失"))?;
-                    let head = state
-                        .heads
-                        .iter()
-                        .find(|h| h.id == context.source.owner)
-                        .ok_or_else(|| err("blocked", "代码头缺失"))?;
-                    git::CliGit::new(Path::new(&self.global.root()))?
-                        .validate_view(context, &head.revision)?;
-                }
-            }
-        }
         if method == "conversation.send" {
             let command: Command = serde_json::from_value(params.clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
@@ -1357,42 +969,6 @@ impl Workspace {
         }
         if let Some(result) = self.experience_dispatch(method, &params, &e) {
             return result;
-        }
-        if method == "attempt.start"
-            && e.store
-                .snapshot()?
-                .projects
-                .first()
-                .is_some_and(|p| p.execution_mode == "live")
-        {
-            let c: Command = serde_json::from_value(params.clone())
-                .map_err(|e| err("invalid_params", e.to_string()))?;
-            return self.resolve_live_attempt(&e, c);
-        }
-        if method == "merge.request"
-            && e.store
-                .snapshot()?
-                .projects
-                .first()
-                .is_some_and(|p| p.execution_mode == "live")
-        {
-            return self.resolve_live_merge(
-                &e,
-                serde_json::from_value(params.clone())
-                    .map_err(|e| err("invalid_params", e.to_string()))?,
-            );
-        }
-        if method == "review.request" {
-            let state = e.store.snapshot()?;
-            if state.deliveries.iter().any(|d| {
-                Some(d.id.as_str()) == params["target"].as_str() && d.origin == Origin::External
-            }) {
-                return self.resolve_live_review(
-                    &e,
-                    serde_json::from_value(params.clone())
-                        .map_err(|e| err("invalid_params", e.to_string()))?,
-                );
-            }
         }
         if method == "feature.create" {
             let mut params = params.clone();
@@ -1571,16 +1147,7 @@ impl Workspace {
             if should_stop() {
                 return Ok(());
             }
-            running.push(
-                engine
-                    .store
-                    .snapshot()?
-                    .runs
-                    .iter()
-                    .filter(|r| r.status == Status::Running)
-                    .count()
-                    + engine.conversation_running()?,
-            );
+            running.push(engine.conversation_running()?);
         }
         let mut total: usize = running.iter().sum();
         // The scheduler is single-threaded across projects. Other running projects consume quota.
@@ -1647,14 +1214,7 @@ impl Workspace {
                     })?;
                 }
             }
-            let next = e
-                .store
-                .snapshot()?
-                .runs
-                .iter()
-                .filter(|r| r.status == Status::Running)
-                .count()
-                + e.conversation_running()?;
+            let next = e.conversation_running()?;
             total = total - running[index] + next;
             running[index] = next;
         }
@@ -1675,13 +1235,7 @@ impl Workspace {
         let mut others = 0;
         for other in engines {
             if !Arc::ptr_eq(engine, &other) {
-                others += other
-                    .store
-                    .snapshot()?
-                    .runs
-                    .iter()
-                    .filter(|run| run.status == Status::Running)
-                    .count();
+                others += other.conversation_running()?;
             }
         }
         Ok(limit.saturating_sub(others))
@@ -1728,29 +1282,29 @@ mod tests {
             json!({}),
         );
     }
+
     #[test]
-    fn project_component_preferences_survive_restart_and_reject_raw_model_fields() {
+    fn project_updates_reject_obsolete_or_unrecognized_execution_settings() {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
-        let project = create(&w, "Component preferences");
-        let preferences = json!({"default":{"provider":"codex","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID},"roles":[]});
-        w.dispatch("project.update",json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":1,"payload":{"runtime_preferences":preferences}})).unwrap();
-        let mut invalid = preferences.clone();
-        invalid["default"]["model"] = json!("raw-model");
-        assert!(w.dispatch("project.update",json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":2,"payload":{"runtime_preferences":invalid}})).is_err());
-        drop(w);
-        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
-        assert_eq!(
-            json!(
-                w.active_engine(Some(&project))
-                    .unwrap()
-                    .store
-                    .snapshot()
-                    .unwrap()
-                    .projects[0]
-                    .runtime_preferences
-            ),
-            preferences
+        let project = create(&w, "Explicit Agent configuration");
+        for payload in [
+            json!({"runtime_preferences":{"default":{},"roles":[]}}),
+            json!({"role_models":{}}),
+        ] {
+            assert!(w.dispatch("project.update",json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":1,"payload":payload})).is_err());
+        }
+        let state = w
+            .active_engine(Some(&project))
+            .unwrap()
+            .store
+            .snapshot()
+            .unwrap();
+        assert_eq!(state.projects[0].revision, 1);
+        assert!(
+            json!(state.projects[0])
+                .get("runtime_preferences")
+                .is_none()
         );
     }
 
@@ -1770,7 +1324,7 @@ mod tests {
             json!({"project_id":a,"title":"A Feature"}),
         );
         let fid = fa["id"].as_str().unwrap();
-        w.dispatch("document.revise",json!({"project_id":a,"command_id":"doc-a","target":fid,"expected_revision":1,"payload":{"kind":"requirement","title":"A 需求","body":"项目 A 专属内容"}})).unwrap();
+        w.dispatch("document.revise",json!({"project_id":a,"command_id":"doc-a","target":fid,"expected_revision":engine_a.store.snapshot().unwrap().feature(fid).unwrap().revision,"payload":{"kind":"requirement","title":"A 需求","body":"项目 A 专属内容"}})).unwrap();
         let artifact = engine_a.store.snapshot().unwrap().artifacts[0].clone();
         let b = create(&w, "项目 B");
         let engine_b = w.active_engine(Some(&b)).unwrap();
@@ -2120,7 +1674,7 @@ mod adapter_injection_tests {
         let one = create(&w, "One");
         let two = create(&w, "Two");
         let other = create(&w, "Other");
-        let role=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"Shared specialist","scope":{"kind":"project","project_id":one},"data":{"execution_role":"analyst","instructions":"# Shared duty","visibility":{"kind":"projects","project_ids":[one,two]}}}})).unwrap();
+        let role=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"Shared specialist","scope":{"kind":"project","project_id":one},"data":{"instructions":"# Shared duty","visibility":{"kind":"projects","project_ids":[one,two]}}}})).unwrap();
         for pid in [&one, &two, &other] {
             select(&w, pid);
             let roles = w
@@ -2138,7 +1692,7 @@ mod adapter_injection_tests {
                 pid != &other
             );
         }
-        let revised=w.dispatch("role.revise",json!({"command_id":id(),"target":role["id"],"expected_revision":role["revision"],"payload":{"name":"Narrowed specialist","data":{"execution_role":"analyst","instructions":"# Shared duty v2","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
+        let revised=w.dispatch("role.revise",json!({"command_id":id(),"target":role["id"],"expected_revision":role["revision"],"payload":{"name":"Narrowed specialist","data":{"instructions":"# Shared duty v2","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
         select(&w, &two);
         let roles = w
             .dispatch(
@@ -2226,14 +1780,8 @@ mod adapter_injection_tests {
             json!({"project_id":two,"title":"Frozen before scope change"}),
         );
         let fid = feature["id"].as_str().unwrap();
-        let frozen = json!(
-            e.store
-                .snapshot()
-                .unwrap()
-                .feature_configuration(fid)
-                .unwrap()
-        );
-        w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"payload":{"name":"Narrow analyst","data":{"execution_role":"analyst","instructions":"# Narrow responsibility","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
+        let frozen = json!(e.store.snapshot().unwrap().frozen_test_plan(fid).unwrap());
+        w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"payload":{"name":"Narrow analyst","data":{"instructions":"# Narrow responsibility","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
         w.sync_configuration(&e).unwrap();
         assert_eq!(e.project_configuration_status().unwrap()["ready"], false);
         let mut command = Command {
@@ -2274,13 +1822,7 @@ mod adapter_injection_tests {
             default_configured_agent_id("analyst")
         );
         assert_eq!(
-            json!(
-                e.store
-                    .snapshot()
-                    .unwrap()
-                    .feature_configuration(fid)
-                    .unwrap()
-            ),
+            json!(e.store.snapshot().unwrap().frozen_test_plan(fid).unwrap()),
             frozen
         );
     }
@@ -2327,5 +1869,23 @@ mod global_discussion_tests {
             )
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+pub(super) trait FrozenConfiguredPlanForTests {
+    fn frozen_test_plan(&self, feature: &str) -> Option<devdesk_core::ConfiguredWorkflowPlan>;
+}
+#[cfg(test)]
+impl FrozenConfiguredPlanForTests for EngineeringState {
+    fn frozen_test_plan(&self, feature: &str) -> Option<devdesk_core::ConfiguredWorkflowPlan> {
+        self.governance
+            .iter()
+            .find(|r| {
+                r.kind == "workflow_instance"
+                    && r.data["owner_id"] == feature
+                    && r.data["parent_execution_id"].is_null()
+            })
+            .and_then(|r| serde_json::from_value(r.data["plan"].clone()).ok())
     }
 }

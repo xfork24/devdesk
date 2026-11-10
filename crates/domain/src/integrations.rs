@@ -302,6 +302,8 @@ pub struct BoundTool {
 pub struct IntegrationLock {
     #[serde(default)]
     pub tools: Vec<BoundTool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub platform_tools: Vec<ConfigurationRecord>,
     #[serde(default)]
     pub skills: BTreeMap<Id, SkillPackage>,
 }
@@ -314,7 +316,6 @@ pub struct ToolInvocation {
     pub agent_instance_id: Option<Id>,
     pub session_id: Option<Id>,
     pub turn_id: Option<Id>,
-    pub run_id: Option<Id>,
     pub operation_id: Option<Id>,
     pub request_id: Option<Value>,
     pub call_id: String,

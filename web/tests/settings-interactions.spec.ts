@@ -172,10 +172,26 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("Tools 调用记录采用事件行并在行内展开详情与审批", async ({
+test("项目与 Global 历史合并事件和工具调用，统一排序分页并保留审批", async ({
   page,
 }, info) => {
   await setup(page);
+  const workspaceResponse = await page.request.post("/rpc", {
+    data: { jsonrpc: "2.0", id: 1, method: "query.workspace", params: {} },
+  });
+  const base = (await workspaceResponse.json()).result;
+  const project = {
+    id: crypto.randomUUID(),
+    title: "历史范围测试项目",
+    revision: 1,
+  };
+  await page.route("**/capabilities", (route) =>
+    route.fulfill({
+      json: { setup_required: false, active_project_id: project.id },
+    }),
+  );
+  const time = Date.now();
+  let paginated = false;
   const calls = [
     {
       id: "call-success",
@@ -193,7 +209,7 @@ test("Tools 调用记录采用事件行并在行内展开详情与审批", async
     id: call.id,
     name: call.name,
     revision: 1,
-    created_at: Date.now() - index * 1000,
+    created_at: time + (index === 0 ? 3000 : 1000),
     data: {
       status: call.status,
       remote_effect: call.status === "succeeded" ? "applied" : "unknown",
@@ -208,13 +224,62 @@ test("Tools 调用记录采用事件行并在行内展开详情与审批", async
       },
     },
   }));
+  const globalCall = {
+    ...calls[0],
+    id: "call-global",
+    name: "Global 接入调用",
+  };
   let approved = false;
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result: any;
-    if (call.method === "query.tool_calls")
-      result = { records: calls, total: calls.length };
-    else if (call.method === "tool.call.approve") {
+    if (call.method === "query.workspace")
+      result = {
+        ...base,
+        active_project: project,
+        projects: [project],
+        repository_ready: true,
+      };
+    else if (call.method === "query.history") {
+      expect(call.params.include_tool_calls).toBe(true);
+      const isGlobal = call.params.scope === "global";
+      expect(call.params.project_id).toBe(isGlobal ? undefined : project.id);
+      const event = {
+        id: 1,
+        kind: `${call.params.scope} 事件`,
+        detail: "Fixture event",
+        target: isGlobal ? "global" : project.id,
+        time: time + 2000,
+      };
+      const records = [
+        { type: "event", time: event.time, event },
+        ...(isGlobal ? [globalCall] : calls).map((call) => ({
+          type: "tool_call",
+          time: call.created_at,
+          call,
+        })),
+        ...(!isGlobal && paginated
+          ? Array.from({ length: 52 }, (_, index) => ({
+              type: "event",
+              time: time - index * 1000,
+              event: {
+                id: index + 2,
+                kind: `较早事件 ${index + 1}`,
+                detail: "Earlier event",
+                target: project.id,
+                time: time - index * 1000,
+              },
+            }))
+          : []),
+      ].sort((a, b) => b.time - a.time);
+      result = {
+        records: records.slice(
+          call.params.offset,
+          call.params.offset + call.params.limit,
+        ),
+        total: records.length,
+      };
+    } else if (call.method === "tool.call.approve") {
       approved = call.params.payload.approve;
       calls[1].data.status = "succeeded";
       calls[1].data.receipt.status = "succeeded";
@@ -222,13 +287,33 @@ test("Tools 调用记录采用事件行并在行内展开详情与审批", async
     } else return route.fallback();
     return route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
-  await page.getByRole("button", { name: "历史记录", exact: true }).click();
-  await page.getByLabel("历史范围", { exact: true }).selectOption("tools");
+  await page.goto("/?tab=history");
+  const scope = page.getByLabel("历史范围", { exact: true });
+  await expect(scope.locator("option")).toHaveText(["当前项目", "Global"]);
+  await expect(page.getByLabel("调用记录归属", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("project 事件", { exact: true })).toBeVisible();
   const history = page.getByRole("region", {
-    name: "工具调用记录",
+    name: "历史记录",
     exact: true,
   });
-  await expect(history.locator(".history-row")).toHaveCount(2);
+  await expect(history.locator(".history-row")).toHaveCount(3);
+  await expect(history.locator(".event-id")).toHaveText(["#1", "#2", "#3"]);
+  await expect(history).not.toContainText(globalCall.name);
+  await expect(
+    page
+      .locator(".panel")
+      .filter({
+        has: page.getByRole("heading", { name: "持久化事件", exact: true }),
+      }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Tools调用记录", exact: true }),
+  ).toHaveCount(0);
+  await expect(history.locator(".history-row strong")).toHaveText([
+    "读取构建报告",
+    "project 事件",
+    "更新工单",
+  ]);
   await expect(history.getByRole("textbox")).toHaveCount(0);
   await expect(history).toContainText("按时间倒序 · 每页 50 条");
   await expect(history.locator(".pagination")).toContainText("第 1 页");
@@ -262,6 +347,41 @@ test("Tools 调用记录采用事件行并在行内展开详情与审批", async
   await expect(
     history.getByRole("article", { name: "调用详情" }),
   ).toContainText("succeeded");
+  await scope.selectOption("global");
+  await expect(page.getByText("global 事件", { exact: true })).toBeVisible();
+  await expect(page.getByText("project 事件", { exact: true })).toHaveCount(0);
+  await expect(history.locator(".history-row")).toHaveCount(2);
+  await expect(history).toContainText(globalCall.name);
+  await expect(history).not.toContainText("更新工单");
+  await expect(history.locator(".history-row strong")).toHaveText([
+    "Global 接入调用",
+    "global 事件",
+  ]);
+  await scope.selectOption("project");
+  await expect(page.getByText("project 事件", { exact: true })).toBeVisible();
+  await expect(history.locator(".history-row")).toHaveCount(3);
+  await expect(history).not.toContainText(globalCall.name);
+  paginated = true;
+  await history
+    .getByRole("button", { name: "刷新历史记录", exact: true })
+    .click();
+  await expect(history.locator(".history-row")).toHaveCount(50);
+  await history.getByRole("button", { name: "下一页", exact: true }).click();
+  await expect(history.locator(".pagination")).toContainText("第 2 页");
+  await expect(history.locator(".history-row")).toHaveCount(5);
+  await expect(history.locator(".history-row strong")).toHaveText([
+    "较早事件 48",
+    "较早事件 49",
+    "较早事件 50",
+    "较早事件 51",
+    "较早事件 52",
+  ]);
+  await expect(
+    history.getByRole("button", { name: "下一页", exact: true }),
+  ).toBeDisabled();
+  await scope.selectOption("global");
+  await expect(history.locator(".pagination")).toContainText("第 1 页");
+  await expect(history.locator(".history-row")).toHaveCount(2);
   await page.unrouteAll({ behavior: "wait" });
 });
 

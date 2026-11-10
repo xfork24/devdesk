@@ -233,16 +233,16 @@ pub fn preflight_profile(
             devdesk_core::current_template_defaults(s)
                 .as_ref()
                 .and_then(|d| d["permission_sandbox_ref"].as_str())
-                .unwrap_or(DEFAULT_PERMISSION_SANDBOX),
+                .ok_or_else(|| err("configuration_required", "默认 Sandbox 未配置"))?,
         )?
     };
     let defaults = devdesk_core::current_template_defaults(s);
-    let default = |key: &str, id: &str| -> Result<PermissionProfile> {
+    let default = |key: &str| -> Result<PermissionProfile> {
         s.configuration(
             defaults
                 .as_ref()
                 .and_then(|d| d[key].as_str())
-                .unwrap_or(id),
+                .ok_or_else(|| err("configuration_required", format!("默认配置缺少 {key}")))?,
         )?
         .decode()
     };
@@ -252,10 +252,7 @@ pub fn preflight_profile(
             if target.kind == PermissionTargetKind::Harness {
                 checked.clone()
             } else {
-                default(
-                    "harness_permission_ref",
-                    "permission-harness-full-access-v2-r1",
-                )?
+                default("harness_permission_ref")?
             },
         )?,
         sandbox: bound(
@@ -263,10 +260,7 @@ pub fn preflight_profile(
             if target.kind == PermissionTargetKind::Sandbox {
                 checked
             } else {
-                default(
-                    "sandbox_permission_ref",
-                    "permission-sandbox-full-access-v2-r1",
-                )?
+                default("sandbox_permission_ref")?
             },
         )?,
     };
@@ -301,41 +295,108 @@ pub fn verify_permission_installation(
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+pub struct PermissionPresetSource {
+    pub path: PathBuf,
+    pub builtin_path: PathBuf,
+    pub is_builtin: bool,
+}
+
+pub fn builtin_permission_preset_source() -> Result<PathBuf> {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        let path = parent.join("permissions/presets");
+        if path.is_dir() {
+            return permission_preset_directory(&path);
+        }
+    }
+    permission_preset_directory(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../permissions/presets"),
+    )
+}
+
+fn permission_preset_directory(path: &Path) -> Result<PathBuf> {
+    if !path.is_absolute() {
+        return Err(err("invalid_params", "预设来源必须是绝对目录"));
+    }
+    reject_symlink(path)?;
+    let path = fs::canonicalize(path).map_err(storage)?;
+    if !path.is_dir() {
+        return Err(err("invalid_params", "预设来源不是目录"));
+    }
+    Ok(path)
+}
+
+fn preset_source_selection(s: &EngineeringState) -> Option<&ConfigurationRecord> {
+    s.governance
+        .iter()
+        .filter(|r| r.kind == "permission_source_selection")
+        .max_by_key(|r| r.version)
+}
+
+fn preset_source(s: &EngineeringState, builtin: PathBuf) -> PermissionPresetSource {
+    let path = preset_source_selection(s)
+        .and_then(|r| r.data["path"].as_str())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| builtin.clone());
+    PermissionPresetSource {
+        is_builtin: path == builtin,
+        path,
+        builtin_path: builtin,
+    }
+}
+
+fn select_preset_source(s: &mut EngineeringState, path: Option<&Path>) {
+    let previous = preset_source_selection(s);
+    let data = json!({"path":path});
+    if previous.is_none() && path.is_none() || previous.is_some_and(|r| r.data == data) {
+        return;
+    }
+    let version = previous.map_or(1, |r| r.version + 1);
+    let supersedes = previous.map(|r| r.id.clone());
+    s.governance.push(ConfigurationRecord {
+        id: id(),
+        kind: "permission_source_selection".into(),
+        definition_id: "permission-preset-source".into(),
+        scope: Scope::Global,
+        name: "权限预设目录".into(),
+        version,
+        supersedes,
+        content_hash: configuration_hash(&data),
+        data,
+        immutable: true,
+        revision: 1,
+        created_at: 0,
+    });
+}
+
 impl GlobalStore {
-    pub fn permission_preset_sources(&self) -> Result<Vec<PathBuf>> {
-        let mut roots = vec![Path::new(&self.root()).join("permissions/presets")];
-        let mut packaged = false;
-        if let Ok(exe) = std::env::current_exe()
-            && let Some(parent) = exe.parent()
-        {
-            let path = parent.join("permissions/presets");
-            packaged = path.exists();
-            roots.push(path);
+    pub fn permission_preset_source(&self) -> Result<PermissionPresetSource> {
+        Ok(preset_source(
+            &self.snapshot()?,
+            builtin_permission_preset_source()?,
+        ))
+    }
+
+    pub fn select_permission_preset_source(&self, c: &Command) -> Result<Value> {
+        if c.command_id.is_empty() {
+            return Err(err("invalid_params", "command_id 不能为空"));
         }
-        if !packaged {
-            roots.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../permissions/presets"));
+        let fp = command_fingerprint("permission.source.select", c);
+        if let Some(previous) = self.replay(&c.command_id, &fp)? {
+            return Ok(previous);
         }
-        for r in self
-            .snapshot()?
-            .governance
-            .iter()
-            .filter(|r| r.kind == "permission_source")
-        {
-            if let Some(p) = r.data["path"].as_str() {
-                roots.push(PathBuf::from(p));
-            }
-        }
-        let mut canonical = Vec::new();
-        for root in roots {
-            if root.exists() {
-                reject_symlink(&root)?;
-                let p = fs::canonicalize(root).map_err(storage)?;
-                if !canonical.contains(&p) {
-                    canonical.push(p);
-                }
-            }
-        }
-        Ok(canonical)
+        let path = permission_preset_directory(Path::new(
+            c.payload["path"]
+                .as_str()
+                .ok_or_else(|| err("invalid_params", "需要预设目录"))?,
+        ))?;
+        let builtin = builtin_permission_preset_source()?;
+        self.transact(Some((&c.command_id, &fp)), &mut |s| {
+            select_preset_source(s, if path == builtin { None } else { Some(&path) });
+            Ok(json!(preset_source(s, builtin.clone())))
+        })
     }
     pub fn reload_permission_presets(&self, c: &Command) -> Result<Value> {
         if c.command_id.is_empty() {
@@ -345,12 +406,21 @@ impl GlobalStore {
         if let Some(previous) = self.replay(&c.command_id, &fp)? {
             return Ok(previous);
         }
-        let roots = self.permission_preset_sources()?;
+        let builtin = match c.payload.get("builtin") {
+            None => false,
+            Some(Value::Bool(value)) => *value,
+            _ => return Err(err("invalid_params", "builtin 必须为布尔值")),
+        };
+        let before = self.snapshot()?;
+        let source_revision = preset_source_selection(&before).map(|r| r.id.clone());
+        let builtin_path = builtin_permission_preset_source()?;
+        let source = preset_source(&before, builtin_path.clone());
+        let root = permission_preset_directory(if builtin { &builtin_path } else { &source.path })?;
         let mut profiles = Vec::new();
         let mut origins = Vec::new();
         let mut bytes = 0;
-        for root in &roots {
-            let mut files: Vec<_> = fs::read_dir(root)
+        {
+            let mut files: Vec<_> = fs::read_dir(&root)
                 .map_err(storage)?
                 .collect::<std::io::Result<Vec<_>>>()
                 .map_err(storage)?;
@@ -388,6 +458,9 @@ impl GlobalStore {
             }
         }
         self.transact(Some((&c.command_id, &fp)), &mut |s| {
+            if preset_source_selection(s).map(|r| &r.id) != source_revision.as_ref() {
+                return Err(err("revision_conflict", "预设目录已变更，请重新加载"));
+            }
             let result = insert_permission_profiles(s, &profiles, "presets")?;
             for (profile, data) in &origins {
                 let key = format!(
@@ -410,6 +483,9 @@ impl GlobalStore {
                         created_at: 0,
                     });
                 }
+            }
+            if builtin {
+                select_preset_source(s, None);
             }
             devdesk_core::register_template_members(s, template_catalog_generation(s));
             Ok(result)

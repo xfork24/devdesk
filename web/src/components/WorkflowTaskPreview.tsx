@@ -1,74 +1,89 @@
+import { useState } from "react";
 import {
   ActionButton,
-  ActionForm,
   ActionSelect,
   useActionFeedback,
 } from "./ActionFeedback";
-import { useState } from "react";
 import { MarkdownField, type Request, type Row } from "./configuration-ui";
 
 export function AgentTaskView({ value }: { value: Row }) {
-  const frozen = value.task?.content ? value.task : undefined;
-  const content = frozen?.content || value;
-  const base = frozen?.base || value.base_context;
-  const task = content.task;
-  if (!task?.instructions)
-    return (
-      <p className="muted">
-        此独立讨论没有 Workflow 任务快照。
-      </p>
-    );
-  const text = (label: string, body: string, id: string) => (
-    <MarkdownField
-      key={id}
-      label={label}
-      value={body}
-      onChange={() => {}}
-      readOnly
-      rows={6}
-    />
-  );
+  const frozen =
+    value.task?.renderer_version === "agent-task/v4" ? value.task : undefined;
+  const content =
+    frozen?.task || (typeof value.task === "object" ? value.task : value);
+  const instructions =
+    content.task_instructions ||
+    (typeof value.task === "string" ? value.task : "");
+  if (!instructions)
+    return <p className="muted">此讨论没有 Workflow 步骤任务。</p>;
   return (
     <section aria-label="Agent 任务与上下文">
-      {text("公共任务指令", task.instructions, "common")}
-      {task.node_instructions
-        ? text("节点任务指令", task.node_instructions, "node")
-        : null}
-      {content.stage_context?.description
-        ? text("阶段背景", content.stage_context.description, "stage")
-        : null}
-      {base?.agent
-        ? text(
-            `Role 与 Agent 有效指令 · ${base.agent.name}`,
-            base.agent.body,
-            base.agent.id,
-          )
-        : null}
-      {(base?.skills || []).map((skill: Row) =>
-        text(`Skill · ${skill.name}`, skill.body, skill.id),
-      )}
-      {(content.specifications || []).map((spec: Row) =>
-        text(`Spec · ${spec.name}`, spec.body, spec.id),
-      )}
-      {(content.delivery_types || []).map((delivery: Row) =>
-        text(`Delivery · ${delivery.name}`, delivery.data.body, delivery.id),
-      )}
+      {content.agent?.data?.instructions ? (
+        <MarkdownField
+          label={`Agent 指令 · ${content.agent.name}`}
+          value={content.agent.data.instructions}
+          onChange={() => {}}
+          readOnly
+        />
+      ) : null}
+      {content.role?.role?.data?.instructions ? (
+        <MarkdownField
+          label={`Role 职责 · ${content.role.name}`}
+          value={content.role.role.data.instructions}
+          onChange={() => {}}
+          readOnly
+        />
+      ) : null}
+      <MarkdownField
+        label="任务指令"
+        value={instructions}
+        onChange={() => {}}
+        readOnly
+        rows={8}
+      />
+      {content.stage?.description ? (
+        <MarkdownField
+          label="阶段背景"
+          value={content.stage.description}
+          onChange={() => {}}
+          readOnly
+        />
+      ) : null}
+      {(content.required_skills || []).map((skill: Row) => (
+        <MarkdownField
+          key={skill.id}
+          label={`Skill · ${skill.name}`}
+          value={skill.data?.body || skill.body || ""}
+          onChange={() => {}}
+          readOnly
+        />
+      ))}
+      {(content.specifications || []).map((spec: Row) => (
+        <MarkdownField
+          key={spec.id}
+          label={`Spec · ${spec.name}`}
+          value={spec.data?.body || spec.body || ""}
+          onChange={() => {}}
+          readOnly
+        />
+      ))}
       {(value.diagnostics || []).map((line: string) => (
-        <p className="muted" key={line}>
+        <p key={line} className="muted">
           {line}
         </p>
       ))}
       <details>
-        <summary>任务来源与输出合同</summary>
+        <summary>来源、材料与输出要求</summary>
         <pre>
           {JSON.stringify(
             {
-              source: content.source,
-              definition: frozen?.definition || value.definition,
-              digest: frozen?.digest || value.definition_digest,
-              output_contract: content.output_contract,
-              inputs: content.inputs,
-              materials: content.materials,
+              source: content.source || value.source,
+              role_ref: value.role_ref,
+              inputs: content.inputs || value.inputs,
+              input_sources: content.input_sources,
+              outputs: content.outputs || value.outputs,
+              completion: content.completion || value.completion,
+              authorization: content.authorization || value.access,
             },
             null,
             2,
@@ -79,9 +94,6 @@ export function AgentTaskView({ value }: { value: Row }) {
         <details>
           <summary>实际发送的新输入</summary>
           <pre>{frozen.rendered_input}</pre>
-          <p className="muted">
-            这里记录本轮新增输入；原生会话已有的历史上下文另由会话履历保存。
-          </p>
         </details>
       ) : null}
     </section>
@@ -90,128 +102,102 @@ export function AgentTaskView({ value }: { value: Row }) {
 
 export function WorkflowTaskPreview({
   request,
-  projectId,
   document,
   step,
-  agents,
-  roles,
-  nodeKeys,
+  records,
+  project,
+  workflowId,
 }: {
   request: Request;
-  projectId?: string;
   document: Row;
   step: Row;
-  agents: Row[];
-  roles: Row[];
-  nodeKeys: string[];
+  records: Row[];
+  project?: Row;
+  workflowId?: string;
 }) {
-  const {
-    error,
-    setError,
-    capture: captureFeedback,
-    beginFeedback,
-    endFeedback,
-  } = useActionFeedback();
-
-  const [node, setNode] = useState(nodeKeys[0] || "");
-  const [agent, setAgent] = useState("");
-  const [value, setValue] = useState<Row>();
-
-  const [busy, setBusy] = useState(false);
-  const [previewSignature, setPreviewSignature] = useState("");
-  const selectedNode = nodeKeys.includes(node) ? node : nodeKeys[0] || "";
+  const { error, setError, capture, beginFeedback, endFeedback } =
+    useActionFeedback();
+  const [agent, setAgent] = useState(""),
+    [value, setValue] = useState<Row>(),
+    [busy, setBusy] = useState(false),
+    [previewSignature, setPreviewSignature] = useState("");
   const role =
-    step.execution_recipe?.find((n: Row) => n.key === selectedNode)?.role_ref ||
-    step.role_ref;
-  const roleIdentity = (ref: string) =>
-    roles.find((r) => r.id === ref || r.definition_id === ref)?.definition_id ||
-    ref;
-  const selectedAgent = agents.some(
-    (a) =>
-      a.id === agent && roleIdentity(a.data.role_ref) === roleIdentity(role),
-  )
-    ? agent
-    : "";
+    step.executor.role_ref ||
+    document.stages.find((stage: Row) => stage.key === step.stage)
+      ?.default_role_ref;
+  const identity = (id: string) =>
+    records.find(
+      (row) =>
+        row.kind === "role" && (row.id === id || row.definition_id === id),
+    )?.definition_id || id;
+  const agents = records.filter(
+    (row) =>
+      row.kind === "agent" && identity(row.data.role_ref) === identity(role),
+  );
+  const selectedAgent = agents.some((row) => row.id === agent) ? agent : "";
   const signature = JSON.stringify({
     document,
-    node: selectedNode,
+    step: step.key,
     agent: selectedAgent,
   });
+  async function preview() {
+    capture();
+    beginFeedback();
+    setBusy(true);
+    setError("");
+    try {
+      const result = await request("query.workflow_task_preview", {
+        id: workflowId || undefined,
+        document,
+        step: step.key,
+        project_id: project?.id,
+        preview_agent_ref: selectedAgent || undefined,
+      });
+      setValue(result);
+      setPreviewSignature(signature);
+    } catch (error) {
+      setError(String(error));
+    } finally {
+      setBusy(false);
+      endFeedback();
+    }
+  }
   return (
     <details>
       <summary>预览任务与执行上下文</summary>
-      {nodeKeys.length ? (
-        <label>
-          预览配方节点
-          <ActionSelect
-            aria-label="预览配方节点"
-            value={selectedNode}
-            onChange={(e) => {
-              captureFeedback();
-
-              setNode(e.target.value);
-              setValue(undefined);
-            }}
-          >
-            {nodeKeys.map((key) => (
-              <option key={key}>{key}</option>
-            ))}
-          </ActionSelect>
-        </label>
-      ) : null}
       <label>
         预览 Agent（可选）
         <ActionSelect
-          aria-label="预览 Agent"
           value={selectedAgent}
-          onChange={(e) => {
-            captureFeedback();
-
-            setAgent(e.target.value);
+          onChange={(event) => {
+            setAgent(event.target.value);
             setValue(undefined);
           }}
         >
-          <option value="">使用项目绑定；无绑定时显示缺口</option>
-          {agents
-            .filter((a) => roleIdentity(a.data.role_ref) === roleIdentity(role))
-            .map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} · v{a.version}
-              </option>
-            ))}
+          <option value="">尚未绑定</option>
+          {agents.map((agent) => (
+            <option key={agent.id} value={agent.id}>
+              {agent.name} · v{agent.version}
+            </option>
+          ))}
         </ActionSelect>
       </label>
       <ActionButton
         type="button"
         disabled={busy}
-        onClick={async () => {
-          captureFeedback();
-
-          (beginFeedback(), setBusy(true));
-          setError("");
-          setPreviewSignature(signature);
-          try {
-            setValue(
-              await request("query.workflow_task_preview", {
-                project_id: projectId,
-                document,
-                path: step.key,
-                ...(selectedNode ? { recipe_node: selectedNode } : {}),
-                ...(selectedAgent ? { agent_revision_id: selectedAgent } : {}),
-              }),
-            );
-          } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
-          } finally {
-            (endFeedback(), setBusy(false));
-          }
-        }}
+        onClick={() => void preview()}
       >
-        生成任务预览
+        预览当前任务
       </ActionButton>
-      {error ? <p role="alert">{error}</p> : null}
       {value && previewSignature === signature ? (
         <AgentTaskView value={value} />
+      ) : value ? (
+        <p className="muted">配置已变化，请重新预览。</p>
+      ) : null}
+      {error ? (
+        <p role="alert" className="error">
+          {error}
+        </p>
       ) : null}
     </details>
   );

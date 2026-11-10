@@ -1,5 +1,8 @@
 //! Test-only native port doubles. They never run Git, Docker, a model or a network request.
 #![allow(dead_code)]
+#[path = "defaults.rs"]
+mod defaults;
+use defaults::*;
 use devdesk_core::{Command, Engine, ports};
 use devdesk_domain::*;
 use serde_json::json;
@@ -27,9 +30,6 @@ impl ports::Harness for IdleHarness {
 }
 struct UnavailableGit;
 impl ports::Git for UnavailableGit {
-    fn execution_revision(&self, _: &Attempt, _: &str) -> Result<String> {
-        Err(err("fixture_unavailable", "No repository fixture supplied"))
-    }
     fn candidate(&self, _: &GitContext, _: &str, _: &str, _: &str) -> Result<String> {
         Err(err("fixture_unavailable", "No candidate fixture supplied"))
     }
@@ -117,7 +117,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
                 cancel_requested: false,
                 started: None,
                 finished: None,
-                run_id: None,
+
                 revision: 1,
             });
             Ok(json!(null))
@@ -130,7 +130,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
 pub fn configure_project(e: &Engine, project: &str) {
     let s = e.store.snapshot().unwrap();
     let defaults = e.configuration_defaults(Some(project)).unwrap();
-    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_V3_ID,"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
+    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
 }
 
 /// Explicit fixture grants for current built-in targets, through the production v2 command.

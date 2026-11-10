@@ -1,3 +1,6 @@
+#[path = "../../../tests/support/defaults.rs"]
+mod default_fixture;
+use default_fixture::*;
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
 #[path = "../../../tests/support/schemas.rs"]
@@ -13,7 +16,10 @@ fn engine(path: &std::path::Path) -> Engine {
         Arc::new(SqliteStore::open(path).unwrap()),
         Arc::new(FileArtifacts::new(path.into())),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(path).unwrap(),
+    ));
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
     e
@@ -101,7 +107,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
                 cancel_requested: false,
                 started: None,
                 finished: None,
-                run_id: None,
+
                 revision: 1,
             });
             s.conversation_events.push(ConversationEvent {
@@ -128,7 +134,6 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
     let e = engine(dir.path());
     let (pid, sid, turn) = initialize(&e);
     let s = e.store.snapshot().unwrap();
-    assert!(s.features.is_empty() && s.runs.is_empty() && s.attempts.is_empty());
     assert_eq!(s.sessions[0].project_id.as_ref(), Some(&pid));
     assert_eq!(s.sessions[0].id, sid);
     assert_eq!(s.turns[0].id, turn);
@@ -171,12 +176,15 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
     assert_ne!(
         roles
             .iter()
-            .find(|d| d.agent_profile.as_ref().unwrap().role == AgentRole::Reviewer)
+            .find(
+                |d| d.agent_profile.as_ref().unwrap().role == String::from("builtin-role-reviewer")
+            )
             .unwrap()
             .id,
         roles
             .iter()
-            .find(|d| d.agent_profile.as_ref().unwrap().role == AgentRole::Developer)
+            .find(|d| d.agent_profile.as_ref().unwrap().role
+                == String::from("builtin-role-developer"))
             .unwrap()
             .id
     );
@@ -271,7 +279,7 @@ fn completion_needs_external_session_consumption_and_writer_release_proof() {
                 protocol_artifact: None,
                 id: id(),
                 session_id: sid.clone(),
-                run_id: None,
+
                 operation_id: id(),
                 container_id: Some("fixture-container".into()),
                 image_digest: "a".repeat(64),
@@ -315,7 +323,6 @@ fn completion_needs_external_session_consumption_and_writer_release_proof() {
             Ok(json!(null))
         })
         .unwrap();
-    assert!(e.store.snapshot().unwrap().runs.is_empty());
 }
 
 #[test]
@@ -360,7 +367,7 @@ fn project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revisi
         "feature.create",
         None,
         None,
-        json!({"project_id":project,"title":"CSV export","source_requirement":requirement}),
+        json!({"project_id":project,"title":"CSV export","source_materials":[requirement]}),
     )
     .unwrap()["id"]
         .as_str()
@@ -375,7 +382,7 @@ fn project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revisi
     assert!(document.feature_id.is_none());
     assert_eq!(document.project_id.as_ref(), Some(&project));
     assert_eq!(
-        state.feature(&feature).unwrap().source_requirement.as_ref(),
+        state.feature(&feature).unwrap().source_materials.first(),
         Some(&requirement)
     );
     assert!(state.document_in_feature(document, &feature));
@@ -409,7 +416,7 @@ fn project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revisi
             "feature.create",
             None,
             None,
-            json!({"project_id":other,"title":"invalid","source_requirement":requirement})
+            json!({"project_id":other,"title":"invalid","source_materials":[requirement]})
         )
         .is_err()
     );
@@ -426,7 +433,7 @@ fn project_requirement_and_snapshot_have_real_owner_then_feature_pins_the_revisi
     let reopened = engine(dir.path());
     let s = reopened.store.snapshot().unwrap();
     assert_eq!(
-        s.feature(&feature).unwrap().source_requirement.as_ref(),
+        s.feature(&feature).unwrap().source_materials.first(),
         Some(&requirement)
     );
     assert_eq!(
@@ -547,7 +554,6 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
             .as_ref(),
         Some(&next)
     );
-    assert_eq!(e.store.snapshot().unwrap().runs.len(), 0);
     let artifacts: Vec<_> = e
         .store
         .snapshot()
@@ -580,187 +586,63 @@ fn complete_fixture(e: &Engine, sid: &str, tid: &str) {
         })
         .unwrap();
 }
-fn command(
-    method: &str,
-    target: Option<&str>,
-    revision: Option<u64>,
-    payload: serde_json::Value,
-) -> (String, Command) {
-    (
-        method.into(),
-        Command {
-            command_id: id(),
-            target: target.map(str::to_owned),
-            expected_revision: revision,
-            payload,
-        },
-    )
-}
+
 #[test]
-fn structured_proposals_adopt_atomically_then_reject_stale_and_cross_project_inputs() {
+fn generic_proposal_adopts_typed_material_with_sources_without_creating_business_objects() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
-    let (pid, sid, tid) = initialize(&e);
-    complete_fixture(&e, &sid, &tid);
-    let (_, create) = command(
-        "proposal.create",
-        None,
-        None,
-        json!({"turn_id":tid,"target":pid,"content":{"kind":"requirement","title":"Calculator","body":"Add integers","acceptance":[{"key":"AC-1","description":"2+3=5"}]}}),
-    );
-    let proposal = e.execute("proposal.create", create.clone()).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let (project, session, turn) = initialize(&e);
+    complete_fixture(&e, &session, &turn);
+    let material = e
+        .execute(
+            "document.revise",
+            Command {
+                command_id: id(),
+                target: Some(project.clone()),
+                expected_revision: Some(1),
+                payload: json!({"kind":"source","title":"原始材料","body":"已记录输入"}),
+            },
+        )
+        .unwrap();
+    let draft=e.execute("proposal.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"turn_id":turn,"content":{"delivery_ref":"builtin-delivery-object-v1","title":"任意业务结果","value":{"risks":["scope"]},"input_refs":[material["id"]]}})}).unwrap();
+    let adopted = e
+        .execute(
+            "proposal.adopt",
+            Command {
+                command_id: id(),
+                target: Some(draft["id"].as_str().unwrap().into()),
+                expected_revision: Some(1),
+                payload: json!({}),
+            },
+        )
+        .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let document = state
+        .documents
+        .iter()
+        .find(|d| Some(d.id.as_str()) == adopted["objects"][0].as_str())
+        .unwrap();
     assert_eq!(
-        e.execute("proposal.create", create).unwrap()["id"],
-        proposal
+        document.input_refs,
+        vec![material["id"].as_str().unwrap().to_string()]
     );
-    assert!(e.store.snapshot().unwrap().documents.is_empty());
-    let (_, adopt) = command("proposal.adopt", Some(&proposal), Some(1), json!({}));
-    let result = e.execute("proposal.adopt", adopt.clone()).unwrap();
-    assert_eq!(e.execute("proposal.adopt", adopt).unwrap(), result);
-    let req = result["objects"][0].as_str().unwrap();
-    let s = e.store.snapshot().unwrap();
-    assert_eq!(s.documents.len(), 1);
-    assert_eq!(s.documents[0].project_id.as_ref(), Some(&pid));
-    assert!(s.deliveries.is_empty());
-    let (_, feature) = command(
-        "proposal.create",
-        None,
-        None,
-        json!({"turn_id":tid,"target":pid,"content":{"kind":"feature","title":"Arithmetic","requirement":req}}),
+    assert_eq!(document.kind, "builtin-delivery-object-v1");
+    assert!(document.body.contains("risks"));
+    assert!(state.features.is_empty());
+    assert!(state.tasks.is_empty());
+    assert!(
+        e.execute(
+            "proposal.adopt",
+            Command {
+                command_id: id(),
+                target: Some(draft["id"].as_str().unwrap().into()),
+                expected_revision: Some(1),
+                payload: json!({})
+            }
+        )
+        .is_err()
     );
-    let proposal = e.execute("proposal.create", feature).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let revision = e.store.snapshot().unwrap().projects[0].revision;
-    let (_, update) = command(
-        "project.update",
-        Some(&pid),
-        Some(revision),
-        json!({"title":"Updated project"}),
-    );
-    e.execute("project.update", update).unwrap();
-    let (_, adopt) = command("proposal.adopt", Some(&proposal), Some(1), json!({}));
-    assert!(e.execute("proposal.adopt", adopt).is_err());
-    assert!(e.store.snapshot().unwrap().features.is_empty());
-    let (_, other) = command(
-        "project.create",
-        None,
-        None,
-        json!({"title":"Other project"}),
-    );
-    let other = e.execute("project.create", other).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let (_, bad) = command(
-        "proposal.create",
-        None,
-        None,
-        json!({"turn_id":tid,"target":other,"content":{"kind":"feature","title":"Cross project","requirement":req}}),
-    );
-    assert!(e.execute("proposal.create", bad).is_err());
 }
-#[test]
-fn proposal_schema_failures_and_task_dependency_cycles_never_create_formal_objects() {
-    let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
-    let (pid, sid, tid) = initialize(&e);
-    complete_fixture(&e, &sid, &tid);
-    let (_, bad) = command(
-        "proposal.create",
-        None,
-        None,
-        json!({"turn_id":tid,"target":pid,"content":{"kind":"requirement","title":"R","body":"R","acceptance":[]}}),
-    );
-    assert!(e.execute("proposal.create", bad).is_err());
-    let (_, bad) = command(
-        "proposal.create",
-        None,
-        None,
-        json!({"turn_id":tid,"target":pid,"content":{"kind":"requirement","title":"R","body":"R","acceptance":[{"key":"A","description":"A"}],"execute":"bad"}}),
-    );
-    assert!(e.execute("proposal.create", bad).is_err());
-    let (_, extract) = command(
-        "proposal.extract",
-        None,
-        None,
-        json!({"turn_id":tid,"target":pid}),
-    );
-    assert!(e.execute("proposal.extract", extract).is_err());
-    let s = e.store.snapshot().unwrap();
-    assert!(s.proposals.is_empty() && s.documents.is_empty() && s.tasks.is_empty());
-}
-
-#[test]
-fn task_plan_validates_dependency_graph_and_cannot_skip_planning_review() {
-    let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
-    let (pid, sid, tid) = initialize(&e);
-    complete_fixture(&e, &sid, &tid);
-    let (_, req) = command(
-        "document.revise",
-        Some(&pid),
-        Some(1),
-        json!({"kind":"requirement","title":"R","body":"R","acceptance":[{"key":"A","description":"A"}]}),
-    );
-    let req = e.execute("document.revise", req).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let (_, feature) = command(
-        "feature.create",
-        None,
-        None,
-        json!({"project_id":pid,"title":"F","source_requirement":req}),
-    );
-    runtime::configure_project(&e, &pid);
-    let fid = e.execute("feature.create", feature).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let (_, design) = command(
-        "document.revise",
-        Some(&fid),
-        Some(1),
-        json!({"kind":"design","title":"D","body":"D"}),
-    );
-    let design = e.execute("document.revise", design).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let mut content = json!({"kind":"task_plan","requirement":req,"design":design,"tasks":[{"key":"one","title":"One","acceptance":["A"],"dependencies":["two"]},{"key":"two","title":"Two","acceptance":["A"],"dependencies":["one"]}]});
-    let (_, cycle) = command(
-        "proposal.create",
-        None,
-        None,
-        json!({"turn_id":tid,"target":fid,"content":content}),
-    );
-    assert!(e.execute("proposal.create", cycle).is_err());
-    assert!(e.store.snapshot().unwrap().proposals.is_empty());
-    content["tasks"][0]["dependencies"] = json!([]);
-    let (_, create) = command(
-        "proposal.create",
-        None,
-        None,
-        json!({"turn_id":tid,"target":fid,"content":content}),
-    );
-    let proposal = e.execute("proposal.create", create).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let (_, adopt) = command("proposal.adopt", Some(&proposal), Some(1), json!({}));
-    assert!(e.execute("proposal.adopt", adopt).is_err());
-    let (_, instantiate) = command("proposal.instantiate", Some(&proposal), Some(2), json!({}));
-    assert!(e.execute("proposal.instantiate", instantiate).is_err());
-    let s = e.store.snapshot().unwrap();
-    assert!(s.tasks.is_empty());
-    assert!(s.proposals[0].task_instances.is_empty());
-}
-
 struct ConversationFixture {
     store: Arc<SqliteStore>,
     dispatched: std::sync::atomic::AtomicUsize,

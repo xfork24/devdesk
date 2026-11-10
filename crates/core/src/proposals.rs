@@ -1,496 +1,203 @@
-//! Structured discussion outcomes are adopted through the same formal domain commands as manual edits.
+//! Typed discussion material; adopting a document does not create engineering tasks or grant evidence.
 use crate::*;
-use std::collections::{HashMap, HashSet};
-fn dependencies(content: &ProposalContent) -> Vec<Id> {
-    match content {
-        ProposalContent::Requirement { .. } => vec![],
-        ProposalContent::Feature { requirement, .. }
-        | ProposalContent::Design { requirement, .. } => vec![requirement.clone()],
-        ProposalContent::TaskPlan {
-            requirement,
-            design,
-            ..
-        }
-        | ProposalContent::TestPlan {
-            requirement,
-            design,
-            ..
-        } => vec![requirement.clone(), design.clone()],
-    }
-}
-fn validate(
-    s: &EngineeringState,
-    session: &Session,
-    content: &ProposalContent,
-    target: &str,
-) -> Result<()> {
-    let project = session.project_id.as_deref().unwrap();
-    require(
-        s.projects.iter().any(|p| p.id == target && p.id == project)
-            || s.features
-                .iter()
-                .any(|f| f.id == target && f.project_id == project),
-        "提案目标必须属于来源项目",
-    )?;
-    for id in dependencies(content) {
-        let doc = s
-            .documents
-            .iter()
-            .find(|d| d.id == id)
-            .ok_or_else(|| err("not_found", "提案输入修订不存在"))?;
-        let owner = material_owner(
-            doc.project_id.as_deref(),
-            doc.feature_id.as_deref(),
-            doc.task_id.as_deref(),
-        )?;
-        require(s.material_project(&owner)? == project, "提案引用跨项目")?;
-        if s.features.iter().any(|f| f.id == target) {
-            require(
-                s.document_in_feature(doc, target),
-                "提案输入不属于目标 Feature",
-            )?;
-        }
-        require(
-            !s.documents.iter().any(|d| {
-                d.supersedes.as_ref() == Some(&id)
-                    && if s.features.iter().any(|f| f.id == target) {
-                        s.document_in_feature(d, target)
-                    } else {
-                        d.project_id.as_deref() == Some(target)
-                    }
-            }),
-            "提案输入已被修订，请基于新修订重新讨论",
-        )?;
-    }
-    match content {
-        ProposalContent::Requirement {
-            title,
-            body,
-            acceptance,
-        } => {
-            require(
-                !title.trim().is_empty() && !body.trim().is_empty(),
-                "需求标题与正文不能为空",
-            )?;
-            criteria(&json!({"acceptance":acceptance}), body)?;
-        }
-        ProposalContent::Feature { title, requirement } => {
-            require(
-                !title.trim().is_empty() && target == project,
-                "Feature 提案应以 Project 为目标",
-            )?;
-            require(
-                s.documents.iter().any(|d| {
-                    d.id == *requirement
-                        && d.kind == "requirement"
-                        && d.project_id.as_deref() == Some(project)
-                }),
-                "Feature 需要同项目的 Project Requirement",
-            )?;
-        }
-        ProposalContent::Design {
-            title,
-            body,
-            requirement,
-        } => {
-            require(
-                !title.trim().is_empty()
-                    && !body.trim().is_empty()
-                    && s.features.iter().any(|f| f.id == target),
-                "Design 需要 Feature 目标与完整正文",
-            )?;
-            require(
-                s.documents
-                    .iter()
-                    .any(|d| d.id == *requirement && d.kind == "requirement"),
-                "Design 缺少确定需求修订",
-            )?;
-        }
-        ProposalContent::TaskPlan {
-            requirement,
-            design,
-            tasks,
-        } => {
-            require(
-                !tasks.is_empty() && tasks.len() <= 100,
-                "TaskPlan 需包含 1—100 个条目",
-            )?;
-            require(
-                s.features.iter().any(|f| f.id == target),
-                "TaskPlan 必须属于 Feature",
-            )?;
-            let keys: HashSet<_> = tasks.iter().map(|t| t.key.as_str()).collect();
-            require(
-                keys.len() == tasks.len() && keys.iter().all(|k| !k.trim().is_empty()),
-                "TaskPlan 条目标识必须非空且唯一",
-            )?;
-            let acceptance = s.acceptance_keys(requirement)?;
-            for t in tasks {
-                if let Some(recipe) = &t.test_recipe {
-                    recipe.validate()?;
-                }
-                require(
-                    !t.title.trim().is_empty()
-                        && !t.acceptance.is_empty()
-                        && t.acceptance.iter().all(|key| acceptance.contains(key)),
-                    "Task 范围必须映射需求验收条目",
-                )?;
-                require(
-                    t.dependencies
-                        .iter()
-                        .all(|k| keys.contains(k.as_str()) && k != &t.key),
-                    "TaskPlan 依赖不存在或引用自身",
-                )?;
-            }
-            let mut done = HashSet::new();
-            loop {
-                let old = done.len();
-                for t in tasks {
-                    if let Some(recipe) = &t.test_recipe {
-                        recipe.validate()?;
-                    }
-                    if t.dependencies.iter().all(|k| done.contains(k)) {
-                        done.insert(t.key.clone());
-                    }
-                }
-                if done.len() == tasks.len() {
-                    break;
-                }
-                require(done.len() > old, "TaskPlan 依赖存在环")?;
-            }
-            require(
-                s.documents.iter().any(|d| {
-                    d.id == *design
-                        && d.kind == "design"
-                        && d.requirement_id.as_ref() == Some(requirement)
-                }),
-                "TaskPlan 设计与需求修订不匹配",
-            )?;
-        }
-        ProposalContent::TestPlan {
-            title,
-            body,
-            requirement,
-            design,
-            verifies,
-            test_recipe,
-        } => {
-            if let Some(recipe) = test_recipe {
-                recipe.validate()?;
-            }
-            let keys = s.acceptance_keys(requirement)?;
-            require(
-                !title.trim().is_empty()
-                    && !body.trim().is_empty()
-                    && !verifies.is_empty()
-                    && verifies.iter().all(|k| keys.contains(k)),
-                "TestPlan 缺少有效验收映射",
-            )?;
-            require(
-                s.documents.iter().any(|d| {
-                    d.id == *design
-                        && d.kind == "design"
-                        && d.requirement_id.as_ref() == Some(requirement)
-                }),
-                "TestPlan 设计与需求修订不匹配",
-            )?;
-        }
-    }
-    Ok(())
-}
 impl Engine {
     pub(crate) fn proposal_command(
         &self,
         method: &str,
-        c: &Command,
-        s: &mut EngineeringState,
+        command: &Command,
+        state: &mut EngineeringState,
     ) -> Result<Option<Value>> {
         if !method.starts_with("proposal.") {
             return Ok(None);
         }
-        let target = c.target.as_deref().unwrap_or("");
-        let p = &c.payload;
-        let result = match method {
+        let target = command.target.as_deref().unwrap_or("");
+        let p = &command.payload;
+        match method {
             "proposal.create" | "proposal.extract" | "proposal.revise" => {
                 let previous = if method == "proposal.revise" {
                     Some(
-                        s.proposals
+                        state
+                            .proposals
                             .iter()
-                            .find(|p| p.id == target)
-                            .cloned()
-                            .ok_or_else(|| err("not_found", "Proposal 不存在"))?,
+                            .find(|r| r.id == target)
+                            .ok_or_else(|| err("not_found", "提案不存在"))?
+                            .clone(),
                     )
                 } else {
                     None
                 };
-                if let Some(old) = &previous {
+                if let Some(previous) = &previous {
                     require(
-                        c.expected_revision == Some(old.revision)
-                            && old.status == ProposalStatus::Draft,
-                        "只能修订当前草稿",
+                        previous.status == ProposalStatus::Draft
+                            && command.expected_revision == Some(previous.revision),
+                        "提案版本或状态已变化",
                     )?;
                     require(
-                        !s.proposals
+                        !state
+                            .proposals
                             .iter()
-                            .any(|p| p.supersedes.as_deref() == Some(target)),
-                        "提案已有新修订",
+                            .any(|r| r.supersedes.as_ref() == Some(&previous.id)),
+                        "提案已有后继版本",
                     )?;
                 }
-                let tid = previous
+                let turn_id = previous
                     .as_ref()
-                    .map(|p| p.turn_id.as_str())
-                    .or_else(|| p["turn_id"].as_str())
+                    .map(|r| r.turn_id.as_str())
+                    .or(p["turn_id"].as_str())
                     .ok_or_else(|| err("invalid_params", "需要来源 turn_id"))?;
-                let turn = s
+                let turn = state
                     .turns
                     .iter()
-                    .find(|t| t.id == tid && t.status == TurnStatus::Completed)
-                    .ok_or_else(|| err("blocked", "来源轮次必须真实完成"))?;
-                let session = s
+                    .find(|t| t.id == turn_id && t.status == TurnStatus::Completed)
+                    .ok_or_else(|| err("blocked", "来源轮次尚未真实完成"))?;
+                let session = state
                     .sessions
                     .iter()
-                    .find(|v| v.id == turn.session_id)
+                    .find(|s| s.id == turn.session_id)
                     .unwrap()
                     .clone();
-                let formal_session = crate::agent_tasks::formal_session(s, &session.id);
                 require(
-                    turn.run_id.is_none() && !formal_session,
-                    "正式交付或评审结果不属于需求提案；请在工作流查看模型结论并执行人类 Approve",
+                    !crate::agent_tasks::formal_session(state, &session.id),
+                    "工作流产物由步骤输出合同接收，请在工作流中处理",
                 )?;
                 let content: ProposalContent = if method == "proposal.extract" {
-                    let text = s
+                    let body = state
                         .conversation_events
                         .iter()
-                        .rev()
-                        .find(|e| {
-                            e.turn_id == tid
-                                && e.kind == ConversationEventKind::Assistant
-                                && e.mode == MessageMode::Full
+                        .filter(|e| {
+                            e.turn_id == turn_id && e.kind == ConversationEventKind::Assistant
                         })
-                        .ok_or_else(|| err("blocked", "没有完整模型输出"))?
-                        .content
-                        .trim();
-                    let clean = text
-                        .strip_prefix("```json")
-                        .and_then(|s| s.strip_suffix("```"))
-                        .unwrap_or(text)
-                        .trim();
-                    serde_json::from_str(clean).map_err(|_| {
-                        err(
-                            "invalid_proposal",
-                            "模型输出不符合 ProposalContent schema；请编辑结构化内容后重试",
-                        )
-                    })?
+                        .fold(String::new(), |mut body, e| {
+                            if e.mode == MessageMode::Full {
+                                body = e.content.clone()
+                            } else {
+                                body.push_str(&e.content)
+                            }
+                            body
+                        });
+                    serde_json::from_str(body.trim())
+                        .map_err(|e| err("invalid_proposal", e.to_string()))?
                 } else {
                     serde_json::from_value(p["content"].clone())
-                        .map_err(|_| err("invalid_proposal", "结构化提案内容无效"))?
+                        .map_err(|e| err("invalid_proposal", e.to_string()))?
                 };
-                let owner = p["target"]
-                    .as_str()
-                    .or_else(|| previous.as_ref().and_then(|p| p.target.as_deref()))
-                    .unwrap_or(&session.owner_id)
-                    .to_string();
-                validate(s, &session, &content, &owner)?;
-                let expected = p["expected_revision"]
-                    .as_u64()
-                    .or_else(|| {
-                        if owner == session.owner_id {
-                            turn.source_revision
-                        } else {
-                            None
-                        }
-                    })
-                    .or_else(|| revision(s, &owner))
-                    .ok_or_else(|| err("blocked", "目标缺少 revision"))?;
-                require(revision(s, &owner) == Some(expected), "提案目标版本已变化")?;
-                let material = if s.projects.iter().any(|v| v.id == owner) {
-                    MaterialOwner::Project { id: owner.clone() }
-                } else {
-                    MaterialOwner::Feature { id: owner.clone() }
+                require(!content.title.trim().is_empty(), "材料标题不能为空")?;
+                let scope = Scope::Project {
+                    project_id: turn.project_id.clone(),
                 };
-                let body = serde_json::to_string_pretty(&content)
-                    .map_err(|e| err("serialization", e.to_string()))?;
-                let mut artifact = self.artifacts.seal_scoped(&material, "proposals", &body)?;
-                artifact.origin = if method == "proposal.extract" {
-                    Origin::External
-                } else {
-                    Origin::Human
-                };
-                let proposal = Proposal {
+                let delivery = crate::governance::reference(
+                    state,
+                    &content.delivery_ref,
+                    "delivery_type",
+                    &scope,
+                )?;
+                self.validate_configured_value(&delivery.decode()?, &content.value)?;
+                for input in &content.input_refs {
+                    let same_project =
+                        state
+                            .documents
+                            .iter()
+                            .find(|d| d.id == *input)
+                            .is_some_and(|d| {
+                                d.project_id.as_ref() == Some(&turn.project_id)
+                                    || d.feature_id
+                                        .as_deref()
+                                        .and_then(|id| state.feature(id).ok())
+                                        .is_some_and(|f| f.project_id == turn.project_id)
+                            })
+                            || state.configuration(input).is_ok_and(|r| {
+                                r.kind == "workflow_output"
+                                    && r.scope.project() == Some(turn.project_id.as_str())
+                            });
+                    require(same_project, "材料输入必须属于同一项目")?;
+                }
+                let expected = revision(state, &session.owner_id);
+                require(expected.is_some(), "提案需要明确的项目或工作范围")?;
+                let owner = material_owner(
+                    session
+                        .project_id
+                        .as_deref()
+                        .filter(|_| session.scope == Some(SessionScope::Project)),
+                    session.feature_id.as_deref(),
+                    session.task_id.as_deref(),
+                )?;
+                let artifact = self.artifacts.seal_scoped(
+                    &owner,
+                    "proposals",
+                    &serde_json::to_string(&content)
+                        .map_err(|e| err("serialization", e.to_string()))?,
+                )?;
+                let row = Proposal {
                     id: id(),
                     project_id: turn.project_id.clone(),
                     session_id: session.id,
-                    turn_id: tid.into(),
-                    schema_version: 1,
-                    dependencies: dependencies(&content),
+                    turn_id: turn.id.clone(),
+                    schema_version: 2,
+                    dependencies: content.input_refs.clone(),
                     content,
-                    target: Some(owner),
-                    expected_revision: Some(expected),
+                    target: Some(session.owner_id),
+                    expected_revision: expected,
                     status: ProposalStatus::Draft,
                     artifact_id: Some(artifact.id.clone()),
                     adopted_objects: vec![],
-                    supersedes: previous.map(|p| p.id),
+                    supersedes: previous.map(|r| r.id),
                     revision: 1,
-                    task_instances: HashMap::new(),
                 };
-                let id = proposal.id.clone();
-                s.artifacts.push(artifact);
-                s.proposals.push(proposal);
-                json!({"id":id})
+                let result = json!({"id":row.id});
+                state.artifacts.push(artifact);
+                state.proposals.push(row);
+                Ok(Some(result))
             }
-            "proposal.reject" => {
-                let row = s
-                    .proposals
-                    .iter_mut()
-                    .find(|p| p.id == target)
-                    .ok_or_else(|| err("not_found", "Proposal 不存在"))?;
-                require(
-                    c.expected_revision == Some(row.revision)
-                        && row.status == ProposalStatus::Draft,
-                    "只能拒绝当前草稿",
-                )?;
-                row.status = ProposalStatus::Rejected;
-                row.revision += 1;
-                json!({"id":target})
-            }
-            "proposal.adopt" => {
-                let proposal = s
+            "proposal.reject" | "proposal.adopt" => {
+                let row = state
                     .proposals
                     .iter()
-                    .find(|p| p.id == target)
-                    .cloned()
-                    .ok_or_else(|| err("not_found", "Proposal 不存在"))?;
+                    .find(|r| r.id == target)
+                    .ok_or_else(|| err("not_found", "提案不存在"))?
+                    .clone();
                 require(
-                    proposal.status == ProposalStatus::Draft
-                        && c.expected_revision == Some(proposal.revision),
-                    "提案已处理或 revision 冲突",
+                    row.status == ProposalStatus::Draft
+                        && command.expected_revision == Some(row.revision),
+                    "提案状态已变化",
                 )?;
                 require(
-                    !s.proposals
+                    !state
+                        .proposals
                         .iter()
-                        .any(|p| p.supersedes.as_deref() == Some(target)),
-                    "提案已有后继修订",
+                        .any(|r| r.supersedes.as_ref() == Some(&row.id)),
+                    "提案已有后继版本",
                 )?;
-                let owner = proposal.target.as_deref().unwrap();
-                require(
-                    revision(s, owner) == proposal.expected_revision,
-                    "提案目标已变化，请重新确认内容",
-                )?;
-                let session = s
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == proposal.session_id)
-                    .unwrap();
-                validate(s, session, &proposal.content, owner)?;
-                let (method, payload) = match &proposal.content {
-                    ProposalContent::Requirement {
-                        title,
-                        body,
-                        acceptance,
-                    } => (
-                        "document.revise",
-                        json!({"kind":"requirement","title":title,"body":body,"acceptance":acceptance}),
-                    ),
-                    ProposalContent::Feature { title, requirement } => (
-                        "feature.create",
-                        json!({"project_id":proposal.project_id,"title":title,"source_requirement":requirement}),
-                    ),
-                    ProposalContent::Design { title, body, .. } => (
-                        "document.revise",
-                        json!({"kind":"design","title":title,"body":body}),
-                    ),
-                    ProposalContent::TaskPlan { .. } => (
-                        "document.revise",
-                        json!({"kind":"doc","title":"Structured Task Plan","body":serde_json::to_string_pretty(&proposal.content).unwrap()}),
-                    ),
-                    ProposalContent::TestPlan {
-                        title,
-                        body,
-                        verifies,
-                        test_recipe,
-                        ..
-                    } => (
-                        "document.revise",
-                        json!({"kind":"test","title":title,"body":body,"verifies":verifies,"test_recipe":test_recipe}),
-                    ),
-                };
-                let result = self.apply_command(
-                    method,
-                    &Command {
-                        command_id: format!("{}:adopt", c.command_id),
-                        target: Some(owner.into()),
-                        expected_revision: proposal.expected_revision,
-                        payload,
-                    },
-                    s,
-                )?;
-                let object = string_result(&result)?;
-                let row = s.proposals.iter_mut().find(|p| p.id == target).unwrap();
-                row.status = ProposalStatus::Accepted;
-                row.adopted_objects = vec![object];
-                row.revision += 1;
-                json!({"id":target,"objects":row.adopted_objects})
-            }
-            "proposal.instantiate" => {
-                let proposal = s
-                    .proposals
-                    .iter()
-                    .find(|p| p.id == target)
-                    .cloned()
-                    .ok_or_else(|| err("not_found", "Proposal 不存在"))?;
-                require(
-                    c.expected_revision == Some(proposal.revision)
-                        && proposal.status == ProposalStatus::Accepted,
-                    "需要已采纳的 TaskPlan",
-                )?;
-                let ProposalContent::TaskPlan {
-                    requirement,
-                    design,
-                    tasks,
-                } = &proposal.content
-                else {
-                    return Err(err("blocked", "只支持实例化 TaskPlan"));
-                };
-                if !proposal.task_instances.is_empty() {
-                    return Ok(Some(json!({"id":target,"tasks":proposal.task_instances})));
+                if method == "proposal.reject" {
+                    let current = state.proposals.iter_mut().find(|r| r.id == target).unwrap();
+                    current.status = ProposalStatus::Rejected;
+                    current.revision += 1;
+                    return Ok(Some(json!({"id":target})));
                 }
-                let fid = proposal.target.as_deref().unwrap();
-                let session = s
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == proposal.session_id)
-                    .unwrap();
-                validate(s, session, &proposal.content, fid)?;
-                let mut instances: HashMap<String, Id> = HashMap::new();
-                while instances.len() < tasks.len() {
-                    for task in tasks {
-                        if instances.contains_key(&task.key)
-                            || !task.dependencies.iter().all(|k| instances.contains_key(k))
-                        {
-                            continue;
-                        }
-                        let deps: Vec<_> = task
-                            .dependencies
-                            .iter()
-                            .map(|k| instances[k].clone())
-                            .collect();
-                        let result=self.apply_command("task.create",&Command{command_id:format!("{}:{}",c.command_id,task.key),target:Some(fid.into()),expected_revision:revision(s,fid),payload:json!({"title":task.title,"dependencies":deps,"scope":{"requirement":requirement,"design":design,"acceptance":task.acceptance},"test_recipe":task.test_recipe})},s)?;
-                        instances.insert(task.key.clone(), string_result(&result)?);
-                    }
-                }
-                let row = s.proposals.iter_mut().find(|p| p.id == target).unwrap();
-                row.task_instances = instances;
-                row.revision += 1;
-                json!({"id":target,"tasks":row.task_instances})
+                let owner = row
+                    .target
+                    .as_deref()
+                    .ok_or_else(|| err("scope_violation", "提案归属缺失"))?;
+                require(
+                    revision(state, owner) == row.expected_revision,
+                    "目标范围版本已变化，请重建提案",
+                )?;
+                let definition: DeliveryTypeDefinition =
+                    state.configuration(&row.content.delivery_ref)?.decode()?;
+                self.validate_configured_value(&definition, &row.content.value)?;
+                let body = row
+                    .content
+                    .value
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| serde_json::to_string_pretty(&row.content.value).unwrap());
+                let material=self.revise_material(state,owner,&json!({"kind":row.content.delivery_ref,"title":row.content.title,"body":body,"input_refs":row.content.input_refs}))?;
+                let current = state.proposals.iter_mut().find(|r| r.id == target).unwrap();
+                current.status = ProposalStatus::Accepted;
+                current.adopted_objects = vec![text(&material, "id")?];
+                current.revision += 1;
+                Ok(Some(json!({"id":target,"objects":current.adopted_objects})))
             }
-            _ => return Err(err("method_not_found", "未知 Proposal 命令")),
-        };
-        Ok(Some(result))
+            _ => Err(err("method_not_found", "未知提案命令")),
+        }
     }
-}
-fn string_result(v: &Value) -> Result<String> {
-    v["id"]
-        .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| err("internal", "领域命令没有返回对象 ID"))
 }

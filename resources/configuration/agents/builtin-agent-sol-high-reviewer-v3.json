@@ -26,7 +26,7 @@
         },
         "sandbox_ref": "builtin-permission-sandbox-docker-v1"
       },
-      "role": "reviewer",
+      "role": "builtin-role-reviewer",
       "role_ref": "builtin-role-reviewer-v1",
       "skills": [
         "builtin-skill-engineering-context-v2",
@@ -34,7 +34,10 @@
       ],
       "tools": [
         "builtin-tool-codex-native-v1"
-      ]
+      ],
+      "execution": {
+        "tool_policy": "read_only"
+      }
     },
     "immutable": true,
     "revision": 1,
@@ -75,6 +78,10 @@
     "/data/tools/0": {
       "template_ref": "governance.builtin-tool-codex-native-v1",
       "target": "revision"
+    },
+    "/data/role": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
     }
   },
   "initial_only": false

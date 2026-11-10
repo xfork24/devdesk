@@ -2,8 +2,6 @@
 use crate::*;
 use serde_json::json;
 
-pub const DEFAULT_PERMISSION_SANDBOX: &str = "builtin-permission-sandbox-docker-v1";
-
 /// JSON objects are ordered identically for typed values, imported files and stored records.
 pub fn permission_content_hash<T: Serialize>(value: &T) -> String {
     configuration_hash(&serde_json::to_value(value).expect("serializable permission"))
@@ -277,44 +275,12 @@ pub fn resolve_permission_lock(
     })
 }
 
-pub fn default_permission_selection() -> AgentPermissionSelection {
-    AgentPermissionSelection {
-        sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
-        harness: PermissionSelection::FollowTarget,
-        sandbox: PermissionSelection::FollowTarget,
-    }
-}
-
 pub fn agent_permission_selection(
     _s: &EngineeringState,
     _agent_id: &str,
     agent: &AgentComposition,
 ) -> Option<AgentPermissionSelection> {
     agent.permission_selection.clone()
-}
-
-pub fn frozen_permission_lock(
-    s: &EngineeringState,
-    feature: &str,
-    agent: &str,
-) -> Result<VersionedPermissionLock> {
-    let r = s
-        .governance
-        .iter()
-        .filter(|r| {
-            ["feature_permission_lock", "feature_permission_renewal"].contains(&r.kind.as_str())
-                && r.data["feature_id"] == feature
-                && r.data["agent_revision_id"] == agent
-        })
-        .max_by_key(|r| r.version)
-        .ok_or_else(|| {
-            err(
-                "permission_unconfigured",
-                "工程配置未冻结此 Agent 的权限绑定，请创建新的授权配置",
-            )
-        })?;
-    serde_json::from_value(r.data["lock"].clone())
-        .map_err(|e| err("invalid_configuration", e.to_string()))
 }
 
 pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermissions) -> Result<()> {

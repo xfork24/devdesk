@@ -31,7 +31,8 @@ impl Engine {
                 .find(|r| r.id == sid)
                 .ok_or_else(|| err("not_found", "Session 不存在"))?;
             require(
-                session.scope != Some(SessionScope::Task),
+                session.scope != Some(SessionScope::Task)
+                    || crate::agent_tasks::formal_session(s, sid),
                 "Task 会话的运行基线已冻结；更换权限或集成时请显式新建 Session",
             )?;
             if let Some(intent) = s.governance.iter().find(|r| r.id == intent_id) {
@@ -47,7 +48,7 @@ impl Engine {
                 let mut expected = b.clone();
                 expected.permissions = new_binding.permissions.clone();
                 expected.configuration_digest = new_binding.configuration_digest.clone();
-                [WorkType::Discussion, WorkType::Design].contains(&b.work_type)
+                [WorkType::Discussion, WorkType::Workflow].contains(&b.work_type)
                     && expected == new_binding
             }) {
                 return Err(err(
@@ -58,9 +59,6 @@ impl Engine {
             if s.turns
                 .iter()
                 .any(|t| t.session_id == sid && t.status.active())
-                || s.runs
-                    .iter()
-                    .any(|r| r.session_id == sid && r.status == Status::Running)
                 || matches!(
                     session.lifecycle,
                     Some(
@@ -194,7 +192,7 @@ impl Engine {
             if s.turns.iter().any(|t|t.session_id==sid && t.status.active()) || s.executions.iter().any(|e|e.session_id==sid && !e.writer_revoked) {
                 return Err(err("needs_reconciliation","原会话尚未静止"));
             }
-            let snapshot=self.capture_conversation(s,&original,"permission_handoff",None,None,None)?;
+            let snapshot=self.capture_conversation(s,&original,"permission_handoff",None)?;
             let instance=s.governance.iter().find(|r|r.kind=="agent_session" && r.definition_id==sid).and_then(|r|r.data["agent_instance_id"].as_str()).map(str::to_owned);
             let mut payload=json!({"agent":original.agent,"binding":binding,"force_new":true,"predecessor":sid,"snapshot_id":snapshot});
             if let Some(instance)=instance {payload["agent_instance_id"]=json!(instance);}

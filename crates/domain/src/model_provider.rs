@@ -14,6 +14,15 @@ pub enum DshModelProvider {
     Ollama,
 }
 
+fn provider_defaults() -> &'static Value {
+    static DEFAULTS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    DEFAULTS.get_or_init(|| {
+        serde_json::from_str(include_str!(
+            "../../../resources/configuration/model-provider-defaults.json"
+        ))
+        .expect("model provider defaults")
+    })
+}
 impl DshModelProvider {
     pub const ALL: [Self; 4] = [
         Self::Deepseek,
@@ -36,12 +45,9 @@ impl DshModelProvider {
         }
     }
     pub fn label(self) -> &'static str {
-        match self {
-            Self::Deepseek => "DeepSeek 官方 API",
-            Self::ZaiCodingCn => "智谱 AI 编程订阅 国内",
-            Self::MinimaxCn => "MiniMax 订阅 国内",
-            Self::Ollama => "本机 Ollama",
-        }
+        provider_defaults()[self.as_str()]["label"]
+            .as_str()
+            .expect("provider label")
     }
     pub fn route(self) -> &'static str {
         if self == Self::Deepseek {
@@ -59,12 +65,9 @@ impl DshModelProvider {
         }
     }
     pub fn endpoint(self) -> &'static str {
-        match self {
-            Self::Deepseek => "https://api.deepseek.com",
-            Self::ZaiCodingCn => "https://open.bigmodel.cn/api/coding/paas/v4",
-            Self::MinimaxCn => "https://api.minimax.cn/anthropic",
-            Self::Ollama => "http://127.0.0.1:11434/v1",
-        }
+        provider_defaults()[self.as_str()]["endpoint"]
+            .as_str()
+            .expect("provider endpoint")
     }
     pub fn protocol(self) -> &'static str {
         match self {
@@ -106,10 +109,10 @@ pub fn dsh_model_catalog(provider: DshModelProvider) -> Vec<ModelCapacity> {
 
 pub fn model_provider_catalog() -> Value {
     let mut rows = vec![
-        serde_json::json!({"id":"openai","label":"OpenAI / ChatGPT","harness":"codex","auth_kind":"oauth","models":[]}),
+        serde_json::json!({"id":"openai","label":provider_defaults()["openai"]["label"],"harness":"codex","auth_kind":"oauth","models":[]}),
     ];
     for p in DshModelProvider::ALL {
-        rows.push(serde_json::json!({"id":p.as_str(),"label":p.label(),"harness":"dsh","route":p.route(),"protocol":p.protocol(),"endpoint":p.endpoint(),"auth_kind":if p.requires_key(){"api_key"}else{"none"},"runtime_version":"0.2.2-rc.1","models":dsh_model_catalog(p)}));
+        rows.push(serde_json::json!({"id":p.as_str(),"label":p.label(),"harness":"dsh","route":p.route(),"protocol":p.protocol(),"endpoint":p.endpoint(),"auth_kind":if p.requires_key(){"api_key"}else{"none"},"runtime_version":DEFAULT_DSH_VERSION,"models":dsh_model_catalog(p)}));
     }
     serde_json::json!({"providers":rows})
 }
@@ -344,7 +347,7 @@ mod tests {
     }
     fn harness(providers: &[&str]) -> HarnessDefinition {
         serde_json::from_value(
-            json!({"provider":"dsh","runtime_version":"0.2.2-rc.1","model_providers":providers}),
+            json!({"provider":"dsh","runtime_version":DEFAULT_DSH_VERSION,"model_providers":providers}),
         )
         .unwrap()
     }

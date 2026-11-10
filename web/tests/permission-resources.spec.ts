@@ -1,9 +1,16 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  realpathSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
-test("统一权限文件与 UI 修订在运行时绑定确切目标版本", async ({ page }) => {
+test("统一权限文件与 UI 修订在运行时绑定确切目标版本", async ({
+  page,
+}, testInfo) => {
   const consoleErrors: string[] = [];
   page.on("pageerror", (e) => consoleErrors.push(e.message));
   await page.goto("/");
@@ -27,7 +34,9 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   await expect(
     page.getByRole("heading", { name: "Permission 定义与版本绑定" }),
   ).toBeVisible();
-  await expect(page.getByText("旧权限配置兼容入口", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("旧权限配置兼容入口", { exact: true }),
+  ).toHaveCount(0);
   const catalog = await rpc("query.permission_resources");
   const target = catalog.targets.find(
     (t: any) => t.provider === "codex" && t.supported,
@@ -153,7 +162,8 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   await expect
     .poll(async () => (await active()).revision)
     .toBe(bound.revision + 2);
-  const source = mkdtempSync(join(tmpdir(), "devdesk-runtime-preset-"));
+  const dataDirectory = (await rpc("permission.source.browse")).path;
+  const source = mkdtempSync(join(dataDirectory, "团队 预设-"));
   const file = {
     ...first,
     id: `file-${crypto.randomUUID()}`,
@@ -162,13 +172,71 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   };
   writeFileSync(join(source, "new.json"), JSON.stringify(file));
   await page.getByText("预定义来源与历史", { exact: true }).click();
-  await page.getByLabel("新增预设来源目录").fill(source);
-  await page.getByRole("button", { name: "登记预设目录" }).click();
-  await expect(
-    page.getByText("来源已登记，可重新加载预设。", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "重新加载预设" }).click();
+  await expect(page.getByLabel("新增预设来源目录")).toHaveCount(0);
+  await expect(page.getByLabel("当前预设目录")).toHaveText(
+    catalog.source.builtin_path,
+  );
+  await page.getByRole("button", { name: "打开文件夹", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "选择预设文件夹" });
+  await expect(picker).toBeVisible();
+  await picker.getByRole("button", { name: "数据目录", exact: true }).click();
+  await picker
+    .getByRole("button", { name: basename(source), exact: true })
+    .click();
+  await expect(picker.getByLabel("正在浏览的文件夹")).toHaveText(
+    realpathSync(source),
+  );
+  await picker.screenshot({
+    path: testInfo.outputPath("preset-directory-picker.png"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await picker.screenshot({
+    path: testInfo.outputPath("preset-directory-picker-mobile.png"),
+  });
+  expect((await picker.boundingBox())!.width).toBeLessThanOrEqual(390);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await picker.getByRole("button", { name: "选择此文件夹" }).click();
+  await expect(picker).not.toBeVisible();
+  await expect(page.getByLabel("当前预设目录")).toHaveText(
+    realpathSync(source),
+  );
+  expect(
+    (await rpc("query.permission_resources")).profiles.some(
+      (p: any) => p.id === file.id,
+    ),
+  ).toBe(false);
+  await page.getByRole("button", { name: "重新加载预设", exact: true }).click();
   await expect(page.getByText(/预设重新加载完成/)).toBeVisible();
+  expect(
+    (await rpc("query.permission_resources")).profiles.some(
+      (p: any) => p.id === file.id,
+    ),
+  ).toBe(true);
+  expect((await active()).revision).toBe(bound.revision + 2);
+  // Selection survives a fresh settings view; cancelling leaves it untouched.
+  await page.reload();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByText("预定义来源与历史", { exact: true }).click();
+  await expect(page.getByLabel("当前预设目录")).toHaveText(
+    realpathSync(source),
+  );
+  await page.getByRole("button", { name: "打开文件夹", exact: true }).click();
+  await picker.getByRole("button", { name: "上一级文件夹" }).click();
+  await picker.press("Escape");
+  await expect(picker).not.toBeVisible();
+  await expect(page.getByLabel("当前预设目录")).toHaveText(
+    realpathSync(source),
+  );
+  await page
+    .getByRole("button", { name: "重新加载内置预设", exact: true })
+    .click();
+  await expect(page.getByText(/内置预设重新加载完成/)).toBeVisible();
+  await expect(page.getByLabel("当前预设目录")).toHaveText(
+    catalog.source.builtin_path,
+  );
+  expect((await rpc("query.permission_resources")).source.is_builtin).toBe(
+    true,
+  );
   expect(
     (await rpc("query.permission_resources")).profiles.some(
       (p: any) => p.id === file.id,

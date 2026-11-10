@@ -3,7 +3,7 @@
 //! These runtime interfaces are separate from `devdesk_domain::Harness` and
 //! `devdesk_domain::Sandbox`, which describe persisted configuration and instances.
 use devdesk_domain::{
-    AdvanceObservation, Attempt, Document, ExecutionInstance, GitContext, Id, Origin, Result,
+    AdvanceObservation, Document, ExecutionInstance, GitContext, Id, Origin, Result,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -82,7 +82,7 @@ pub type CodeView = devdesk_domain::FrozenCode;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStart {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task_base: Option<devdesk_domain::AgentTaskBase>,
+    pub configured_task: Option<devdesk_domain::ConfiguredAgentTask>,
     #[serde(default)]
     pub code_view: Option<CodeView>,
     pub session: devdesk_domain::Session,
@@ -105,7 +105,7 @@ pub struct SessionReceipt {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnDispatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task: Option<devdesk_domain::FrozenAgentTask>,
+    pub configured_task: Option<devdesk_domain::ConfiguredAgentTask>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub specifications: Vec<devdesk_domain::Definition>,
     pub session: devdesk_domain::Session,
@@ -199,7 +199,12 @@ pub trait Git: Send + Sync {
         self.identity()
     }
     /// Read/freeze the code revision for an execution stage.
-    fn execution_revision(&self, attempt: &Attempt, phase: &str) -> Result<String>;
+    fn workspace_revision(&self, _context: &GitContext) -> Result<String> {
+        Err(devdesk_domain::err(
+            "unsupported",
+            "Git 适配器缺少工作空间版本查询",
+        ))
+    }
     fn repository_operation(
         &self,
         _operation: &devdesk_domain::RepositoryOperation,
@@ -253,16 +258,16 @@ pub trait Git: Send + Sync {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestRequest {
+    #[serde(default)]
+    pub expect_assertion_failure: bool,
+    #[serde(default)]
+    pub recipe: Option<devdesk_domain::TestRecipe>,
     pub operation_id: Id,
     #[serde(default)]
     pub session_id: Option<Id>,
-    pub phase: String,
     pub candidate: String,
-    pub test_definitions: Vec<Id>,
     pub environment: String,
     pub origin: Origin,
-    #[serde(default)]
-    pub definitions: Vec<Document>,
     #[serde(default)]
     pub code: Option<GitContext>,
     #[serde(default)]

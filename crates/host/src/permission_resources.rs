@@ -83,15 +83,19 @@ impl Workspace {
             &lock,
             &binding.installation,
         )?;
-        let integrations = devdesk_core::integration_feature_lock(
-            &s,
-            &session.agent,
-            session.feature_id.as_deref(),
-        )
-        .map(Ok)
-        .unwrap_or_else(|| {
-            devdesk_core::freeze_integrations(&s, &a, session.project_id.as_deref())
-        })?;
+        let integrations = if s
+            .governance
+            .iter()
+            .any(|r| r.kind == "configured_session" && r.definition_id == session.id)
+        {
+            binding
+                .agent_configuration
+                .as_ref()
+                .and_then(|c| c.integration_lock.clone())
+                .ok_or_else(|| err("configuration_required", "步骤会话接入锁缺失"))?
+        } else {
+            devdesk_core::freeze_integrations(&s, &a, session.project_id.as_deref())?
+        };
         let integrations_unchanged = binding
             .agent_configuration
             .as_ref()
@@ -191,7 +195,8 @@ impl Workspace {
             "permission.profile.import",
             "permission.profile.export",
             "permission.profile.reload",
-            "permission.source.register",
+            "permission.source.select",
+            "permission.source.browse",
             "permission.bindings.apply",
             "permission.binding.preflight",
         ]
@@ -247,7 +252,7 @@ impl Workspace {
                     Ok(
                         json!({"profiles":records("permission_profile").iter().map(|r|&r.data).collect::<Vec<_>>(),
                         "bindings":records("permission_binding"),"origins":records("permission_origin").into_iter().chain(records("permission_file_origin")).collect::<Vec<_>>(),"targets":targets,"agents":agents,
-                        "sources":self.global.permission_preset_sources()?,"default_sandbox_ref":current_template_defaults(&s).map(|d| d["permission_sandbox_ref"].clone())}),
+                        "source":self.global.permission_preset_source()?,"default_sandbox_ref":current_template_defaults(&s).map(|d| d["permission_sandbox_ref"].clone())}),
                     )
                 }
                 "permission.profile.export" => permission_profile_export(
@@ -261,56 +266,46 @@ impl Workspace {
                         .map_err(|e| err("invalid_params", e.to_string()))?;
                     self.global.reload_permission_presets(&c)
                 }
-                "permission.source.register" => {
+                "permission.source.select" => {
                     let c: Command = serde_json::from_value(params.clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?;
-                    if c.command_id.is_empty() {
-                        return Err(err("invalid_params", "command_id 不能为空"));
-                    }
-                    let fp = command_fingerprint(method, &c);
-                    if let Some(previous) = self.global.replay(&c.command_id, &fp)? {
-                        return Ok(previous);
-                    }
-                    let path = Path::new(
-                        c.payload["path"]
-                            .as_str()
-                            .ok_or_else(|| err("invalid_params", "需要绝对目录"))?,
-                    );
-                    if !path.is_absolute()
-                        || path
-                            .symlink_metadata()
-                            .map_err(|e| err("invalid_params", e.to_string()))?
-                            .file_type()
-                            .is_symlink()
-                    {
-                        return Err(err("invalid_params", "预设来源必须是明确的普通绝对目录"));
+                    self.global.select_permission_preset_source(&c)
+                }
+                "permission.source.browse" => {
+                    let source = self.global.permission_preset_source()?;
+                    let path = match params.get("path") {
+                        None => PathBuf::from(self.global.root()),
+                        Some(Value::String(path)) => PathBuf::from(path),
+                        _ => return Err(err("invalid_params", "目录路径必须是字符串")),
+                    };
+                    if !path.is_absolute() {
+                        return Err(err("invalid_params", "需要绝对目录"));
                     }
                     let path = std::fs::canonicalize(path)
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                    if !path.is_dir() {
-                        return Err(err("invalid_params", "预设来源不是目录"));
-                    }
-                    self.global.transact(Some((&c.command_id, &fp)), &mut |s| {
-                        let data = json!({"path":path});
-                        let key = format!("permission-source:{}", configuration_hash(&data));
-                        if !s.governance.iter().any(|r| r.id == key) {
-                            s.governance.push(ConfigurationRecord {
-                                id: key.clone(),
-                                kind: "permission_source".into(),
-                                definition_id: key.clone(),
-                                scope: Scope::Global,
-                                name: "权限预设目录".into(),
-                                version: 1,
-                                supersedes: None,
-                                content_hash: configuration_hash(&data),
-                                data,
-                                immutable: true,
-                                revision: 1,
-                                created_at: 0,
-                            });
+                        .map_err(|e| err("invalid_params", format!("无法打开文件夹：{e}")))?;
+                    let mut directories = Vec::new();
+                    for entry in std::fs::read_dir(&path)
+                        .map_err(|e| err("invalid_params", format!("无法读取文件夹：{e}")))?
+                    {
+                        let entry = entry.map_err(|e| err("invalid_params", e.to_string()))?;
+                        if entry.file_type().is_ok_and(|kind| kind.is_dir())
+                            && let Some(name) = entry.file_name().to_str()
+                        {
+                            directories.push(json!({"name":name,"path":entry.path()}));
                         }
-                        Ok(json!({"id":key,"path":path}))
-                    })
+                    }
+                    directories.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                    let mut locations = vec![
+                        json!({"name":"数据目录","path":self.global.root()}),
+                        json!({"name":"内置预设","path":source.builtin_path}),
+                        json!({"name":"根目录","path":Path::new(&path).ancestors().last()}),
+                    ];
+                    if let Some(home) = std::env::var_os("HOME") {
+                        locations.insert(0, json!({"name":"主目录","path":PathBuf::from(home)}));
+                    }
+                    Ok(
+                        json!({"path":path,"parent":path.parent(),"directories":directories,"locations":locations}),
+                    )
                 }
                 "permission.binding.preflight" => {
                     if params.get("selection").is_some() {
@@ -431,6 +426,75 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preset_folder_browsing_selection_and_builtin_recovery_survive_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let custom = root.join("团队 预设");
+        std::fs::create_dir(&custom).unwrap();
+        std::fs::write(root.join("not-a-folder.json"), "{}").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&custom, root.join("linked-folder")).unwrap();
+        let listing = w.dispatch("permission.source.browse", json!({})).unwrap();
+        assert_eq!(listing["path"], json!(root));
+        assert!(
+            listing["directories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["name"] == "团队 预设")
+        );
+        assert!(
+            listing["directories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|d| d["name"] != "not-a-folder.json" && d["name"] != "linked-folder")
+        );
+        assert!(
+            w.dispatch("permission.source.browse", json!({"path":"relative"}))
+                .is_err()
+        );
+        assert!(
+            w.dispatch("permission.source.browse", json!({"path":false}))
+                .is_err()
+        );
+        let catalog = w.dispatch("query.permission_resources", json!({})).unwrap();
+        let bindings = catalog["bindings"].clone();
+        assert_eq!(catalog["source"]["is_builtin"], true);
+        let c = json!({"command_id":id(),"payload":{"path":custom}});
+        let selected = w.dispatch("permission.source.select", c.clone()).unwrap();
+        assert_eq!(selected["path"], json!(custom));
+        assert_eq!(selected["is_builtin"], false);
+        assert_eq!(w.dispatch("permission.source.select", c).unwrap(), selected);
+        drop(w);
+
+        // A moved custom folder must not prevent opening settings to recover it.
+        std::fs::remove_dir(&custom).unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        assert_eq!(
+            w.dispatch("query.permission_resources", json!({})).unwrap()["source"]["path"],
+            json!(custom)
+        );
+        assert!(
+            w.dispatch(
+                "permission.profile.reload",
+                json!({"command_id":id(),"payload":{}})
+            )
+            .is_err()
+        );
+        w.dispatch(
+            "permission.profile.reload",
+            json!({"command_id":id(),"payload":{"builtin":true}}),
+        )
+        .unwrap();
+        let restored = w.dispatch("query.permission_resources", json!({})).unwrap();
+        assert_eq!(restored["source"], catalog["source"]);
+        assert_eq!(restored["bindings"], bindings);
+    }
+
     #[test]
     fn send_adopts_the_new_target_binding_in_a_successor_without_mutating_history() {
         let dir = tempfile::tempdir().unwrap();

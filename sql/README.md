@@ -1,14 +1,16 @@
 # 当前 SQLite 结构
 
-系统使用当前数据库基线，并只对当前基线追加本次模板目录索引迁移；不恢复旧系统逐级迁移链。
+本次改造使用全新的开发数据基线，不迁移旧数据、不保留旧业务合同。
 
 | 文件 | 数据库 | user_version |
 |---|---|---:|
-| `global/schema.sql` + `global/011_template_catalog.sql` | `<data>/global.sqlite3`，共享配置、安装和项目索引 | 11 |
-| `project/schema.sql` + `project/042_template_catalog.sql` | `<data>/projects/<project-id>/engineering.sqlite3`，工程、会话和执行记录 | 42 |
+| `global/schema.sql` | `<data>/global.sqlite3`，共享配置、安装与项目索引 | 13 |
+| `project/schema.sql` | `<data>/projects/<project-id>/engineering.sqlite3`，材料、会话与流程运行 | 44 |
 
-基线文件仍分别为 10、41，在编译时嵌入程序。空库以事务创建基线后应用 `global/011_template_catalog.sql` 或 `project/042_template_catalog.sql`；main 的已有 10/41 库只追加同一事务索引迁移，定义和执行数据保持原值。已有库必须匹配基线或迁移后版本；旧单库布局和其他旧结构被明确拒绝。Permission profile、精确绑定和活动分配存放在治理记录中，v1 `permissions` 表、旧全局权限设置和项目覆盖列已移除。
+空库在事务中直接创建当前结构。其他版本会被明确拒绝；此项目尚未上线，旧开发数据按本次改造授权删除后重建。不要在运行路径加入隐式迁移或旧动作回退。
 
-结构变更需要显式的数据迁移与校验。不要以删库代替升级或恢复，也不要在运行路径增加旧行为回退。
+Workflow 修订、冻结计划、StepExecution、实际输出、确认、历史轮次与工具回执保存于版本化治理记录；材料使用显式 `input_refs`，Feature 使用 `source_materials`。旧 Attempt、Run、Delivery/Review、Merge 等业务调度表及旧配置索引已删除。原生 Session、Turn、RuntimeExecution、仓库操作、Artifact 与幂等记录继续承载实际执行事实。
 
-模板状态、不可变修订成员和回执复用 `governance_records`，新增目录唯一索引与代次索引。重置仅通过目录代次切换当前定义，精确历史引用继续有效。
+模板目录使用身份、代次及不可变成员索引。重置只切换当前目录，正常运行中的冻结引用保持确切修订。凭据独立保存于数据集凭据目录或系统凭据库，不写入业务配置与运行数据库。
+
+当前结构已删除对象上的空 BindingLock、项目运行时偏好、Definition 的旧 slots/rules，以及旧 execution_task 索引。每个 Step 独立冻结 Session 运行配置。

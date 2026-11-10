@@ -20,12 +20,6 @@ class Client:
  def open(self,project):
   self.command('project.open',project);self.project=project
  def feature(self,feature):return self.rpc('query.workspace',{'feature_id':feature,'limit':100})['detail']
- def attempt_runs(self,view,attempt):
-  rows=[row for row in view['runs'] if row.get('attempt_id')==attempt and not row['node'].startswith('review:')]
-  return self.latest_runs(rows)
- def latest_runs(self,rows):
-  superseded={row['retry_of'] for row in rows if row.get('retry_of')}
-  return [row for row in rows if row['id'] not in superseded]
  def discuss(self,owner,revision,role,provider,prompt,timeout=240,work_type='discussion'):
   records=self.rpc('query.configurations',{'include_history':False,'limit':1000})['records'];by_id={r['id']:r for r in records}
   agent=next((r for r in records if r['kind']=='agent' and by_id.get(r['data'].get('role_ref'),{}).get('definition_id')=='builtin-role-'+role and by_id.get(r['data']['harness_ref'],{}).get('data',{}).get('provider')==provider),None)

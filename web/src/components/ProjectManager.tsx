@@ -46,7 +46,7 @@ export function ProjectManager({
     [mainline, setMainline] = useState("main"),
     [title, setTitle] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:v2:project:${project?.id || "global"}`,
+    `devdesk:v4:project:${project?.id || "global"}`,
     () => ({
       workflow_ref: "",
       standard_ref: "",
@@ -83,7 +83,7 @@ export function ProjectManager({
     );
     setDefaults(preset);
     setHealth(workspace);
-    if (configuration.configuration?.data.schema_version === 2)
+    if (configuration.configuration?.data.schema_version === 3)
       setDraft((current) =>
         current.workflow_ref
           ? current
@@ -142,7 +142,7 @@ export function ProjectManager({
     (r) =>
       r.kind === "workflow" &&
       r.data.schema_version >= 2 &&
-      r.data.process_kind === "feature",
+      r.data.schema_version === 4,
   );
   const standards = records.filter(
     (r) => r.kind === "standard" && Array.isArray(r.data.baseline_rules),

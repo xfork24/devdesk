@@ -1,4 +1,7 @@
 #[cfg(test)]
+#[path = "../../../tests/support/defaults.rs"]
+mod default_fixture;
+#[cfg(test)]
 #[path = "../../../tests/support/runtime.rs"]
 mod test_runtime;
 mod workspace;

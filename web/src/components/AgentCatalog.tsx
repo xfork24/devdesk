@@ -5,12 +5,17 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { ModelFields, type ModelProvider } from "./DshProviderSettings";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { RoleManager } from "./RoleManager";
+import { WorkflowSpecifications } from "./WorkflowSpecifications";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
 import {
-  actionLabels,
-  dutyLabels,
   latest,
   loadCatalog,
   templateSourceLabel,
@@ -41,6 +46,7 @@ function initial(kind: string): Row {
       return {
         role_ref: "",
         capability_ref: "",
+        execution: { tool_policy: "read_only" },
         permission_selection: {
           sandbox_ref: "",
           harness: { mode: "follow_target" },
@@ -72,13 +78,13 @@ function initial(kind: string): Row {
         capabilities: [],
       };
     case "standard":
-      return { body: "", baseline_rules: [] };
+      return { schema_version: 3, body: "", baseline_rules: [] };
     case "delivery_type":
-      return { body: "", format: "markdown" };
+      return { body: "", format: "markdown", content_schema: null };
     case "spec":
-      return { body: "", rules: [], applicable_actions: [] };
+      return { schema_version: 3, body: "", checks: [], applicable_to: [] };
     default:
-      return { body: "", rules: [] };
+      return { body: "" };
   }
 }
 export function AgentCatalog({
@@ -189,7 +195,7 @@ export function ResourceEditor({
     [busy, setBusy] = useState(false),
     [integrations, setIntegrations] = useState<Row[]>([]);
   const [draft, setDraft] = useDraft(
-    `devdesk:v3:resource:${project?.id || "global"}:${kind}`,
+    `devdesk:v4:resource:${project?.id || "global"}:${kind}`,
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
@@ -305,6 +311,7 @@ export function ResourceEditor({
       value = {
         role_ref: value.role_ref || "",
         capability_ref: value.capability_ref || "",
+        execution: value.execution || { tool_policy: "read_only" },
         ...(value.permission_selection
           ? { permission_selection: value.permission_selection }
           : {}),
@@ -314,8 +321,6 @@ export function ResourceEditor({
             : value.instructions,
       };
     }
-    if (kind === "standard" && !value.baseline_rules)
-      value = { body: value.body || "", baseline_rules: [] };
     setDraft({
       selected: row.id,
       name: row.name,
@@ -359,7 +364,6 @@ export function ResourceEditor({
         payload.tools = (payload.tools || []).filter((id: string) =>
           options("tool").some((row) => row.id === id),
         );
-      if (kind === "spec") delete payload.slots;
       if (kind === "agent" && !payload.instructions)
         delete payload.instructions;
       if (
@@ -454,7 +458,9 @@ export function ResourceEditor({
         <div className="configuration-list">
           <ActionButton
             className={
-              !old && !showAdditionalEditor ? "new-resource selected" : "new-resource"
+              !old && !showAdditionalEditor
+                ? "new-resource selected"
+                : "new-resource"
             }
             onClick={() => {
               captureFeedback();
@@ -490,7 +496,9 @@ export function ResourceEditor({
             <ActionButton
               key={row.id}
               className={
-                !showAdditionalEditor && draft.selected === row.id ? "selected" : ""
+                !showAdditionalEditor && draft.selected === row.id
+                  ? "selected"
+                  : ""
               }
               onClick={() => {
                 captureFeedback();
@@ -506,9 +514,7 @@ export function ResourceEditor({
           ))}
         </div>
         {additionalEditor && (
-          <div hidden={!showAdditionalEditor}>
-            {additionalEditor.content}
-          </div>
+          <div hidden={!showAdditionalEditor}>{additionalEditor.content}</div>
         )}
         <ActionForm
           hidden={showAdditionalEditor}
@@ -547,6 +553,20 @@ export function ResourceEditor({
             </label>
             {kind === "agent" && (
               <>
+                <label>
+                  工作空间写入能力上限
+                  <ActionSelect
+                    value={data.execution?.tool_policy || "read_only"}
+                    onChange={(event) =>
+                      patch({ execution: { tool_policy: event.target.value } })
+                    }
+                  >
+                    <option value="read_only">只读</option>
+                    <option value="scoped_write">仅步骤声明的目录</option>
+                    <option value="workspace_write">步骤声明的工作空间</option>
+                  </ActionSelect>
+                </label>
+
                 {select("Role 精确版本", "role", "role_ref", false, true)}
                 {select(
                   "Capability 精确版本",
@@ -557,9 +577,7 @@ export function ResourceEditor({
                 )}
                 {role && (
                   <div className="notice">
-                    <strong>
-                      {role.name} · {dutyLabels[role.data.execution_role]}
-                    </strong>
+                    <strong>{role.name}</strong>
                     <MarkdownPreview text={role.data.instructions} />
                   </div>
                 )}
@@ -1170,206 +1188,14 @@ export function ResourceEditor({
                 }}
               />
             )}
-            {kind === "spec" && (
-              <>
-                <label>
-                  适用动作
-                  <ActionSelect
-                    multiple
-                    value={(data.applicable_actions || []).map(
-                      (a: Row) => a.kind,
-                    )}
-                    onChange={(e) => {
-                      captureFeedback();
-                      return patch({
-                        applicable_actions: Array.from(
-                          e.target.selectedOptions,
-                          (o) => ({ kind: o.value }),
-                        ),
-                      });
-                    }}
-                  >
-                    {Object.entries(actionLabels).map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </ActionSelect>
-                </label>
-                <label>
-                  自动检查规则
-                  <ActionSelect
-                    multiple
-                    value={data.rules || []}
-                    onChange={(e) => {
-                      captureFeedback();
-                      return patch({
-                        rules: Array.from(
-                          e.target.selectedOptions,
-                          (o) => o.value,
-                        ),
-                      });
-                    }}
-                  >
-                    {[
-                      ["traceability", "需求追溯"],
-                      ["failure_paths", "失败路径"],
-                      ["sections", "文档章节"],
-                    ].map(([id, label]) => (
-                      <option key={id} value={id}>
-                        {label}
-                      </option>
-                    ))}
-                  </ActionSelect>
-                </label>
-                <p className="muted full-width">
-                  正文要求可交给人或 Agent
-                  评审，自动检查仅执行这里已支持的检查器。
-                </p>
-              </>
-            )}
-            {kind === "standard" && (
-              <div className="full-width">
-                <h3>覆盖规则</h3>
-                {(data.baseline_rules || []).map((rule: Row, index: number) => (
-                  <fieldset key={index}>
-                    <legend>规则 {index + 1}</legend>
-                    <label>
-                      标准动作
-                      <ActionSelect
-                        value={rule.selector.kind}
-                        onChange={(e) => {
-                          captureFeedback();
-
-                          const rules = structuredClone(data.baseline_rules);
-                          rules[index].selector.kind = e.target.value;
-                          patch({ baseline_rules: rules });
-                        }}
-                      >
-                        {Object.entries(actionLabels).map(([id, label]) => (
-                          <option key={id} value={id}>
-                            {label}
-                          </option>
-                        ))}
-                      </ActionSelect>
-                    </label>
-                    <label>
-                      阶段限定（可选）
-                      <ActionSelect
-                        value={rule.selector.phase || ""}
-                        onChange={(e) => {
-                          captureFeedback();
-
-                          const rules = structuredClone(data.baseline_rules);
-                          if (e.target.value)
-                            rules[index].selector.phase = e.target.value;
-                          else delete rules[index].selector.phase;
-                          patch({ baseline_rules: rules });
-                        }}
-                      >
-                        <option value="">全部阶段</option>
-                        {[
-                          "requirement_definition",
-                          "solution_planning",
-                          "implementation",
-                          "closure",
-                        ].map((value) => (
-                          <option key={value}>{value}</option>
-                        ))}
-                      </ActionSelect>
-                    </label>
-                    <label>
-                      交付类型限定（可选）
-                      <ActionSelect
-                        value={rule.selector.delivery_kind || ""}
-                        onChange={(e) => {
-                          captureFeedback();
-
-                          const rules = structuredClone(data.baseline_rules);
-                          if (e.target.value)
-                            rules[index].selector.delivery_kind =
-                              e.target.value;
-                          else delete rules[index].selector.delivery_kind;
-                          patch({ baseline_rules: rules });
-                        }}
-                      >
-                        <option value="">全部交付</option>
-                        {[
-                          "requirement",
-                          "plan",
-                          "implementation",
-                          "closure",
-                          "merge_candidate",
-                        ].map((value) => (
-                          <option key={value}>{value}</option>
-                        ))}
-                      </ActionSelect>
-                    </label>
-                    <RevisionSelect
-                      label={`规则 ${index + 1} 必需 Spec`}
-                      records={options("spec")}
-                      multiple
-                      required
-                      value={rule.required_spec_refs}
-                      onChange={(value) => {
-                        captureFeedback();
-
-                        const rules = structuredClone(data.baseline_rules);
-                        rules[index].required_spec_refs = value;
-                        patch({ baseline_rules: rules });
-                      }}
-                    />
-                    <label>
-                      最低匹配节点数
-                      <input
-                        type="number"
-                        min={1}
-                        required
-                        value={rule.min_matches}
-                        onChange={(e) => {
-                          captureFeedback();
-
-                          const rules = structuredClone(data.baseline_rules);
-                          rules[index].min_matches = Number(e.target.value);
-                          patch({ baseline_rules: rules });
-                        }}
-                      />
-                    </label>
-                    <ActionButton
-                      type="button"
-                      onClick={() => {
-                        captureFeedback();
-                        return patch({
-                          baseline_rules: data.baseline_rules.filter(
-                            (_: Row, i: number) => i !== index,
-                          ),
-                        });
-                      }}
-                    >
-                      删除规则 {index + 1}
-                    </ActionButton>
-                  </fieldset>
-                ))}
-                <ActionButton
-                  type="button"
-                  onClick={() => {
-                    captureFeedback();
-                    return patch({
-                      baseline_rules: [
-                        ...(data.baseline_rules || []),
-                        {
-                          selector: { kind: "delivery.review" },
-                          required_spec_refs: [],
-                          min_matches: 1,
-                        },
-                      ],
-                    });
-                  }}
-                >
-                  添加覆盖规则
-                </ActionButton>
-              </div>
-            )}
+            {["spec", "standard", "delivery_type"].includes(kind) ? (
+              <WorkflowSpecifications
+                kind={kind}
+                data={data}
+                records={records}
+                onChange={patch}
+              />
+            ) : null}
           </div>
           <div className="actions">
             <ActionButton

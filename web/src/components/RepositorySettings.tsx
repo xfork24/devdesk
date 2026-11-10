@@ -77,11 +77,10 @@ export function RepositorySettings({
     };
   }, [project.id, ready, request, refresh]);
   return (
-    <section className="panel" aria-label="GitHub 仓库状态">
+    <section className="panel repository-settings" aria-label="GitHub 仓库状态">
       <div className="panel-heading">
         <div>
           <h2>GitHub 仓库</h2>
-          <p className="muted">打开项目时自动检查权限、登记并克隆仓库。</p>
         </div>
       </div>
       <div style={{ padding: 20 }}>

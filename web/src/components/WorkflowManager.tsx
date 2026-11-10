@@ -1,772 +1,633 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionButton,
-  ActionForm,
   ActionSelect,
   useActionFeedback,
 } from "./ActionFeedback";
-import { WorkflowTaskPreview } from "./WorkflowTaskPreview";
-import { WorkflowDeliveries } from "./WorkflowDeliveries";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
-  actionLabels,
-  dutyLabels,
   latest,
   loadCatalog,
   MarkdownField,
-  MarkdownTopicsField,
   RevisionSelect,
   useDraft,
-  type Row,
   type Request,
+  type Row,
 } from "./configuration-ui";
+import {
+  JsonField,
+  SourceSelect,
+  WorkflowDeliveries,
+} from "./WorkflowDeliveries";
+import { WorkflowTaskPreview } from "./WorkflowTaskPreview";
+
 type Props = {
   request: Request;
   project?: Row;
   refresh: () => Promise<unknown>;
 };
-const nodeLabels: Record<string, string> = {
-  test_author: "编写独立测试",
-  red: "断言 Red",
-  implement: "实现",
-  green: "Green",
-  docs: "文档",
-  verify: "验证",
-  feature_tests: "Feature 测试",
-  requirement_validate: "需求验证",
-  plan_validate: "方案验证",
-  test_plan_validate: "测试计划验证",
-};
-const phases: Record<string, string> = {
-  requirement_definition: "需求定义",
-  solution_planning: "方案规划",
-  implementation: "Task 实现",
-  closure: "Feature 收尾",
-};
-const split = (text: string) =>
-  text
-    .split(/[,，\n]/)
-    .map((v) => v.trim())
-    .filter(Boolean);
 const emptyDocument = () => ({
-  schema_version: 3,
-  process_kind: "feature",
-  stages: [{ key: "work", name: "工作" }],
-  steps: [],
-  binding_slots: {},
-  subworkflow_refs: {},
-  input_ports: [],
-  output_ports: {},
+  schema_version: 4,
+  stages: [
+    { key: "work", name: "工作", description: "", default_role_ref: null },
+  ],
+  steps: [] as Row[],
+  inputs: {},
+  outputs: {},
+  completion: { op: "always" },
 });
-function outputNames(step: Row, records: Row[]): string[] {
-  return [...new Set([...nativeOutputNames(step, records), ...Object.keys(step.delivery_outputs || {})])];
+const executorNames: Record<string, string> = {
+  agent: "Agent 工作",
+  tool: "调用工具",
+  workflow: "调用子流程",
+  control: "控制与确认",
+};
+const splitPaths = (value: string) =>
+  value
+    .split(/[\n,，]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+function replacePort(
+  value: any,
+  step: string,
+  previous: string,
+  next: string,
+): any {
+  if (Array.isArray(value))
+    return value.map((value) => replacePort(value, step, previous, next));
+  if (!value || typeof value !== "object") return value;
+  if (value.type === "constant") return value;
+  if (value.step === step && value.port === previous)
+    return { ...value, port: next };
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      value.op === "equals" && key === "value"
+        ? item
+        : replacePort(item, step, previous, next),
+    ]),
+  );
 }
-function nativeOutputNames(step: Row, records: Row[]): string[] {
-  switch (step.kind) {
-    case "agent.interact":
-      return ["session", "proposal", "document"];
-    case "proposal.adopt":
-      return ["proposal", "document"];
-    case "attempt.execute":
-      return ["attempt", "delivery"];
-    case "delivery.review":
-      return ["delivery"];
-    case "merge.prepare":
-    case "merge.review":
-      return ["merge", "delivery"];
-    case "merge.apply":
-      return ["merge"];
-    case "snapshot.capture":
-      return ["snapshot"];
-    case "tasks.foreach":
-      return ["group"];
-    case "workflow.call":
-      return Object.keys(
-        records.find((r) => r.id === step.subworkflow_ref)?.data.output_ports ||
-          {},
-      );
-    default:
-      return [];
-  }
-}
-function specificationContext(
-  step: Row,
-  steps: Row[],
-  seen = new Set<string>(),
-): { phase?: string; delivery?: string } {
-  const phase =
-    step.kind === "agent.interact"
-      ? step.interaction?.output_kind
-      : step.parameters?.phase;
-  if (step.kind.startsWith("merge."))
-    return { phase, delivery: "merge_candidate" };
-  if (phase)
-    return {
-      phase,
-      delivery:
-        phase === "requirement_definition"
-          ? "requirement"
-          : phase === "solution_planning"
-            ? "plan"
-            : phase,
-    };
-  if (seen.has(step.key)) return {};
-  seen.add(step.key);
-  for (const key of step.dependencies || []) {
-    const parent = steps.find((s) => s.key === key);
-    if (parent) {
-      const context = specificationContext(parent, steps, seen);
-      if (context.delivery) return { delivery: context.delivery };
-    }
-  }
-  return {};
-}
+
 export function WorkflowManager({ request, project, refresh }: Props) {
   const {
     error,
     setError,
     message,
     setMessage,
-    capture: captureFeedback,
+    capture,
     beginFeedback,
     endFeedback,
   } = useActionFeedback();
-
-  const treeId = useId();
   const [rows, setRows] = useState<Row[]>([]),
     [records, setRecords] = useState<Row[]>([]),
-    [contracts, setContracts] = useState<Row>({
-      actions: [],
-      recipe_nodes: [],
-    }),
     [busy, setBusy] = useState(false),
-    [validation, setValidation] = useState<Row>(),
-    [moveStage, setMoveStage] = useState(""),
-    [search, setSearch] = useState("");
+    [validation, setValidation] = useState<Row>();
+  const [authoring, setAuthoring] = useState<Row>();
+  const [importText, setImportText] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:v3:workflow:${project?.id || "global"}`,
+    `devdesk:v4:workflow:${project?.id || "global"}`,
     () => ({
       selected: "",
-      view: "list",
+      revision: 1,
       name: "",
       scope: "global",
-      document: emptyDocument() as Row,
-      revision: 1,
-      editing: false,
+      view: "list",
+      editing: true,
       node: "workflow",
+      document: emptyDocument() as Row,
       collapsedStages: [] as string[],
     }),
   );
-  const initialRoute = useRef(false);
+  const editorRef = useRef<HTMLElement>(null);
+  const epoch = useRef(0),
+    routeSelected = useRef(false);
   const load = useCallback(async () => {
-    const catalog = await loadCatalog(request, project);
-    const workflows: Row[] = [];
-    let offset = 0;
-    for (;;) {
-      const page = await request("query.workflows", {
-        local: !!project,
-        project_id: project?.id,
-        offset,
-        limit: 100,
-        include_history: true,
-      });
-      workflows.push(...page.records);
-      if (page.action_contracts) setContracts(page.action_contracts);
-      offset += page.records.length;
-      if (offset >= page.total || !page.records.length) break;
-    }
-    setRows(workflows);
+    const current = ++epoch.current;
+    const [catalog, workflows, defaults] = await Promise.all([
+      loadCatalog(request, project),
+      (async () => {
+        const records: Row[] = [];
+        for (let offset = 0; ;) {
+          const page = await request("query.workflows", {
+            local: !!project,
+            project_id: project?.id,
+            offset,
+            limit: 100,
+            include_history: true,
+          });
+          records.push(...page.records);
+          offset += page.records.length;
+          if (offset >= page.total || !page.records.length) return { records };
+        }
+      })(),
+      request("query.configuration_defaults", { project_id: project?.id }),
+    ]);
+    if (epoch.current !== current) return;
+    setAuthoring(defaults.authoring);
     setRecords(catalog);
+    setRows(workflows.records || []);
   }, [request, project?.id]);
-  const choose = (row: Row) => {
-    const doc = structuredClone(
-      row.kind === "workflow_draft" ? row.data.document : row.data,
-    );
-    setDraft({
-      selected: row.id,
-      view: "editor",
-      name: row.name,
-      scope: row.scope.kind,
-      document: doc,
-      revision: row.revision,
-      editing: row.kind === "workflow_draft" && !row.data.published_revision_id,
-      node: "workflow",
-      collapsedStages: [],
-    });
-    setValidation(undefined);
-    setMessage("");
-    const params = new URLSearchParams(location.search);
-    params.set("workflow_id", row!.id);
-    history.replaceState(null, "", `?${params}`);
-  };
   useEffect(() => {
-    let active = true;
-    void load().catch((e) => {
-      if (active) setError(String(e));
-    });
+    void load().catch((error) => setError(String(error)));
     return () => {
-      active = false;
+      epoch.current++;
     };
   }, [load]);
+  const choose = useCallback(
+    (row: Row) => {
+      const document =
+        row.kind === "workflow_draft" ? row.data.document : row.data;
+      if (document.schema_version !== 4) {
+        setError("此流程使用过时的开发合同，请重建配置。");
+        return;
+      }
+      setDraft({
+        ...draft,
+        selected: row.id,
+        revision: row.revision,
+        name: row.name,
+        scope: row.scope?.kind || "global",
+        view: "editor",
+        editing: row.kind === "workflow_draft",
+        node: "workflow",
+        document: structuredClone(document),
+      });
+      setValidation(undefined);
+      const params = new URLSearchParams(location.search);
+      params.set("workflow_id", row.id);
+      history.replaceState(null, "", `?${params}`);
+    },
+    [draft, setDraft, setError],
+  );
   useEffect(() => {
-    if (initialRoute.current || !rows.length) return;
-    initialRoute.current = true;
-    const id = new URLSearchParams(location.search).get("workflow_id");
-    if (id === draft.selected) return;
-    if (id) {
-      const row = rows.find((r) => r.id === id);
-      if (row) choose(row);
-      else
-        void request("query.workflow", { id, project_id: project?.id })
-          .then(choose)
-          .catch((e) => setError(String(e)));
-    }
-  }, [rows]);
+    if (!rows.length || routeSelected.current) return;
+    routeSelected.current = true;
+    const selected = new URLSearchParams(location.search).get("workflow_id");
+    const row = rows.find((row) => row.id === selected);
+    if (row && (draft.selected !== row.id || draft.view !== "editor"))
+      choose(row);
+  }, [rows, choose, draft.selected, draft.view]);
   const document = draft.document;
-  const collapsedStages = draft.collapsedStages || [];
-  const selected = rows.find((r) => r.id === draft.selected);
-  const editable = draft.editing;
-  const workflows = latest(
-    rows.filter((r) => r.kind === "workflow" && r.data.schema_version === 3),
+  const roles = latest(records.filter((row) => row.kind === "role")).map(
+    (row) => ({ ...row, id: row.definition_id }),
   );
-  const requiresTask = (kind: string) =>
-    contracts.actions.some((a: Row) => a.kind === kind && a.requires_task);
-  const requiresRole = (kind: string) =>
-    contracts.actions.some((a: Row) => a.kind === kind && a.requires_role);
-  const agentNode = (key: string) =>
-    contracts.recipe_nodes.some((n: Row) => n.key === key && n.requires_task);
-  const actionNames = Object.fromEntries(
-    contracts.actions.map((a: Row) => [a.kind, a.label]),
-  );
-  const roles = latest(records.filter((r) => r.kind === "role"));
-  const specs = records.filter((r) => r.kind === "spec");
   const stage = draft.node.startsWith("stage:")
-    ? document.stages.find((s: Row) => s.key === draft.node.slice(6))
+    ? document.stages.find((stage: Row) => stage.key === draft.node.slice(6))
     : undefined;
   const step = draft.node.startsWith("step:")
-    ? document.steps.find((s: Row) => s.key === draft.node.slice(5))
+    ? document.steps.find((step: Row) => step.key === draft.node.slice(5))
     : undefined;
-  const update = (value: Row) =>
+  const workflows = rows.filter(
+    (row) => row.kind === "workflow" && row.data.schema_version === 4,
+  );
+  const update = (patch: Row) => {
+    setValidation(undefined);
     setDraft((current) => ({
       ...current,
-      document: { ...current.document, ...value },
+      document: { ...current.document, ...patch },
     }));
-  const updateStep = (value: Row) =>
-    setDraft((current) => ({
-      ...current,
-      document: {
-        ...current.document,
-        steps: current.document.steps.map((s: Row) =>
-          s.key === step?.key ? { ...s, ...value } : s,
-        ),
-      },
-    }));
-  const mutate = (
+  };
+  const updateStep = (patch: Row) =>
+    update({
+      steps: document.steps.map((item: Row) =>
+        item.key === step?.key ? { ...item, ...patch } : item,
+      ),
+    });
+  async function mutate(
     method: string,
     target: string | undefined,
     payload: Row,
     revision?: number,
-  ) =>
-    request(method, {
+  ) {
+    return request(method, {
       project_id: project?.id,
       command_id: crypto.randomUUID(),
       target,
       expected_revision: revision,
       payload,
     });
-  async function act(fn: () => Promise<void>) {
-    captureFeedback();
-
-    (beginFeedback(), setBusy(true));
+  }
+  async function run(work: () => Promise<void>) {
+    capture();
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
-      await fn();
-    } catch (e) {
-      setError(String(e));
+      await work();
+    } catch (error) {
+      setError(String(error));
     } finally {
-      (endFeedback(), setBusy(false));
+      setBusy(false);
+      endFeedback();
     }
   }
   async function save() {
-    captureFeedback();
-
-    let row = selected;
-    if (!row) {
-      row = await mutate("workflow.create", undefined, {
-        name: draft.name,
-        scope:
-          draft.scope === "project"
-            ? { kind: "project", project_id: project!.id }
-            : { kind: "global" },
-        document,
-      });
-    } else {
-      row = await mutate(
-        "workflow.draft.update",
-        row.id,
-        { name: draft.name, document },
-        draft.revision,
-      );
+    for (const field of editorRef.current?.querySelectorAll<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >("input,textarea,select") || []) {
+      if (!field.reportValidity())
+        throw new Error("请先修正表单中的无效内容。");
     }
-    await load();
+
+    const row = draft.selected && rows.find((row) => row.id === draft.selected);
+    const saved = row
+      ? await mutate(
+          "workflow.draft.update",
+          row.id,
+          { name: draft.name, document },
+          draft.revision,
+        )
+      : await mutate("workflow.create", undefined, {
+          name: draft.name,
+          scope:
+            draft.scope === "project"
+              ? { kind: "project", project_id: project!.id }
+              : { kind: "global" },
+          document,
+        });
     setDraft((current) => ({
       ...current,
-      selected: row!.id,
-      revision: row!.revision,
+      selected: saved.id,
+      revision: saved.revision,
       editing: true,
     }));
     const params = new URLSearchParams(location.search);
-    params.set("workflow_id", row!.id);
+    params.set("workflow_id", saved.id);
     history.replaceState(null, "", `?${params}`);
+    await load();
     setMessage("流程草稿已保存。");
-    return row!;
+    return saved;
   }
-  async function validate() {
-    captureFeedback();
-
-    const row = await request("query.workflow_requirements", {
-      id: draft.selected,
-      project_id: project?.id,
-      document,
-    });
-    setValidation(row);
-    setMessage("结构、Role、Spec 与子流程引用校验通过。");
-  }
-  function addStep(kind = "join") {
+  function addStep(type = "agent") {
     const key = `step_${crypto.randomUUID().slice(0, 8)}`;
+    const executor =
+      type === "agent"
+        ? { type, role_ref: null }
+        : type === "workflow"
+          ? { type, workflow_ref: "", foreach: null }
+          : type === "tool"
+            ? { type, tool_ref: "", arguments: {} }
+            : { type };
     const item = {
       key,
-      name: kind === "workflow.call" ? "新子流程" : "新步骤",
+      name: type === "workflow" ? "新子流程调用" : "新步骤",
       stage: stage?.key || step?.stage || document.stages[0]?.key,
-      kind,
-      contract_version: requiresTask(kind) ? 2 : 1,
-      ...(requiresTask(kind) ? { task_instructions: "" } : {}),
-      dependencies: step ? [step.key] : [],
-      role_ref: null,
+      executor,
+      task_instructions: type === "agent" ? "" : null,
+      required_skill_refs: [],
       spec_refs: [],
+      tags: [],
+      dependencies: step ? [step.key] : [],
       inputs: {},
-      interaction: {
-        mode: "discussion",
-        required_topics: [],
-        output_kind: "requirement",
-        max_turns: 8,
+      outputs: {},
+      access: {
+        workspace_input: null,
+        writable_paths: [],
+        read_only_paths: [],
+        tool_refs: [],
       },
-      advance_mode: "automatic",
+      budget: structuredClone(
+        authoring?.execution_budget || {
+          max_turns: 8,
+          timeout_seconds: 300,
+          retry_limit: 3,
+        },
+      ),
       condition: { op: "always" },
-      parameters: {},
-      execution_recipe: [],
-      rework_scope: [],
-      retry_limit: 3,
-      ...(kind === "workflow.call" ? { subworkflow_ref: "" } : {}),
+      completion: { op: "always" },
+      confirmation: "automatic",
     };
     update({ steps: [...document.steps, item] });
     setDraft((current) => ({
       ...current,
       node: `step:${key}`,
-      collapsedStages: (current.collapsedStages || []).filter(
-        (stage) => stage !== item.stage,
+      collapsedStages: current.collapsedStages.filter(
+        (stage: string) => stage !== item.stage,
       ),
     }));
   }
-  function sourceOptions(current?: Row) {
-    const allowed = new Set<string>();
-    function visit(key: string) {
-      if (allowed.has(key)) return;
-      allowed.add(key);
-      const row = document.steps.find((s: Row) => s.key === key);
-      for (const dep of row?.dependencies || []) visit(dep);
+  function renameOutput(previous: string, next: string) {
+    if (!step || previous === next) return;
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(next) || next in step.outputs) {
+      setError("输出名称需唯一，使用字母、数字、下划线或连字符。");
+      return;
     }
-    if (current) for (const dep of current.dependencies || []) visit(dep);
-    else for (const s of document.steps) allowed.add(s.key);
-    return document.steps
-      .filter((s: Row) => allowed.has(s.key))
-      .flatMap((s: Row) =>
-        outputNames(s, records).map((port) => ({
-          value: `${s.key}:${port}`,
-          label: `${s.name} / ${port}`,
-        })),
-      );
+    const steps = document.steps.map((item: Row) =>
+      item.key === step.key
+        ? {
+            ...item,
+            outputs: Object.fromEntries(
+              Object.entries(item.outputs).map(([name, value]) => [
+                name === previous ? next : name,
+                value,
+              ]),
+            ),
+          }
+        : item,
+    );
+    update(replacePort({ ...document, steps }, step.key, previous, next));
   }
-  function inputSelect(
-    label: string,
-    value: Row | undefined,
-    onChange: (v: Row | undefined) => void,
-    current?: Row,
-  ) {
-    return (
-      <label key={label}>
-        {label}
-        <ActionSelect
-          aria-label="{label}"
-          value={value ? `${value.step}:${value.port}` : ""}
-          disabled={!editable}
-          onChange={(e) => {
-            captureFeedback();
-
-            if (!e.target.value) onChange(undefined);
-            else {
-              const [step, port] = e.target.value.split(":");
-              onChange({ step, port });
-            }
+  const visibleRows = rows.filter(
+    (row) =>
+      (row.kind === "workflow_draft"
+        ? row.data.document?.schema_version
+        : row.data.schema_version) === 4,
+  );
+  return (
+    <section
+      ref={editorRef}
+      className="panel workflow-manager"
+      aria-label="工作流程管理"
+    >
+      <div className="panel-heading">
+        <div>
+          <h2>工作流程</h2>
+          <p>通过步骤任务、技能、材料与完成要求定义工作。</p>
+        </div>
+        <ActionButton
+          type="button"
+          onClick={() => {
+            capture();
+            setDraft({
+              selected: "",
+              revision: 1,
+              name: "",
+              scope: project ? "project" : "global",
+              view: "editor",
+              editing: true,
+              node: "workflow",
+              document: emptyDocument(),
+              collapsedStages: [],
+            });
+            setValidation(undefined);
           }}
         >
-          <option value="">请选择上游输出</option>
-          {(document.input_ports || []).map((port: string) => (
-            <option key={port} value={`$input:${port}`}>
-              流程输入 / {port}
-            </option>
-          ))}
-          {sourceOptions(current).map((option: Row) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </ActionSelect>
-      </label>
-    );
-  }
-  const child =
-    step?.kind === "workflow.call"
-      ? records.find((r) => r.id === step.subworkflow_ref)
-      : undefined;
-  const requiredInputs =
-    step?.kind === "workflow.call"
-      ? child?.data.input_ports || []
-      : step && ["delivery.review"].includes(step.kind)
-        ? ["delivery"]
-        : step && ["merge.review", "merge.apply"].includes(step.kind)
-          ? ["merge"]
-          : [];
-  return (
-    <>
-      {(draft.view === "list" || (!draft.selected && !editable)) && (
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>工作流程</h2>
-              <p>Step 选择 Role 和 Spec；项目管理为 Role 绑定具体 Agent。</p>
-            </div>
+          新建流程
+        </ActionButton>
+      </div>
+      {draft.view === "list" ? (
+        <div className="configuration-list">
+          {latest(visibleRows).map((row) => (
             <ActionButton
+              key={row.id}
               onClick={() => {
-                captureFeedback();
-
-                const params = new URLSearchParams(location.search);
-                params.delete("workflow_id");
-                history.replaceState(null, "", `?${params}`);
-                setDraft({
-                  selected: "",
-                  view: "editor",
-                  name: "",
-                  scope: "global",
-                  document: emptyDocument(),
-                  revision: 1,
-                  editing: true,
-                  node: "workflow",
-                  collapsedStages: [],
-                });
+                capture();
+                choose(row);
               }}
             >
-              新建 Workflow
+              <strong>{row.name}</strong>
+              <small>
+                {row.kind === "workflow_draft" ? "草稿" : `v${row.version}`}
+              </small>
             </ActionButton>
-          </div>
-          <label>
-            检索 Workflow
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => {
-                captureFeedback();
-                return setSearch(e.target.value);
+          ))}
+          {!visibleRows.length ? <p>暂无流程，可创建新的工作流程。</p> : null}
+        </div>
+      ) : (
+        <>
+          <div className="actions">
+            <ActionButton
+              disabled={busy}
+              onClick={() => {
+                setDraft((current) => ({
+                  ...current,
+                  selected: "",
+                  revision: 1,
+                  name: `${current.name} 副本`,
+                  editing: true,
+                  view: "editor",
+                  node: "workflow",
+                }));
               }}
-            />
-          </label>
-          <div className="workflow-list">
-            {[
-              ...workflows,
-              ...rows.filter(
-                (r) =>
-                  r.kind === "workflow_draft" && !r.data.published_revision_id,
-              ),
-            ]
-              .filter((row) =>
-                row.name.toLowerCase().includes(search.toLowerCase()),
-              )
-              .map((row) => (
-                <ActionButton
-                  key={row.id}
-                  className={draft.selected === row.id ? "selected" : ""}
-                  onClick={() => {
-                    captureFeedback();
-                    return choose(row);
-                  }}
-                >
-                  <strong>{row.name}</strong>
-                  <span>
-                    {row.kind === "workflow_draft" ? "草稿" : `v${row.version}`}{" "}
-                    · {row.scope.kind}
-                  </span>
-                </ActionButton>
-              ))}
-          </div>
-        </section>
-      )}
-      {draft.view !== "list" && (draft.selected || editable) && (
-        <section className="panel" aria-label="Workflow 编辑器">
-          <div className="panel-heading">
-            <div>
-              <h2>{draft.name || "未命名流程"}</h2>
-              <p>
-                {editable
-                  ? "编辑中的草稿 · 表单内容在本机自动保存"
-                  : "已保存版本 · 修改时建立新修订"}
-              </p>
-            </div>
-            <div className="actions">
+            >
+              复制为新流程
+            </ActionButton>
+            <ActionButton
+              onClick={() => {
+                const url = URL.createObjectURL(
+                  new Blob(
+                    [JSON.stringify({ name: draft.name, document }, null, 2)],
+                    { type: "application/json" },
+                  ),
+                );
+                const link = window.document.createElement("a");
+                link.href = url;
+                link.download = `workflow-${draft.selected || "draft"}.json`;
+                link.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              导出流程
+            </ActionButton>
+            <details>
+              <summary>导入流程</summary>
+              <label>
+                Workflow JSON
+                <textarea
+                  value={importText}
+                  onChange={(event) => setImportText(event.target.value)}
+                />
+              </label>
               <ActionButton
                 onClick={() => {
-                  captureFeedback();
-
-                  setDraft((current) => ({ ...current, view: "list" }));
-                  const params = new URLSearchParams(location.search);
-                  params.delete("workflow_id");
-                  history.replaceState(null, "", `?${params}`);
+                  try {
+                    const value = JSON.parse(importText);
+                    const imported = value.document || value;
+                    if (
+                      imported.schema_version !== 4 ||
+                      !Array.isArray(imported.steps) ||
+                      !Array.isArray(imported.stages)
+                    )
+                      throw new Error("请选择 Workflow v4 的完整定义。");
+                    setDraft((current) => ({
+                      ...current,
+                      selected: "",
+                      revision: 1,
+                      name: value.name || "导入流程",
+                      editing: true,
+                      view: "editor",
+                      node: "workflow",
+                      document: imported,
+                    }));
+                    setImportText("");
+                  } catch (error) {
+                    setError(String(error));
+                  }
                 }}
               >
-                返回流程列表
+                载入为新草稿
               </ActionButton>
-              {selected && (
-                <ActionButton
-                  disabled={busy}
-                  onClick={() => {
-                    captureFeedback();
-                    return void act(async () => {
-                      const row = await mutate("workflow.create", undefined, {
-                        name: `${draft.name} · 副本`,
-                        scope: selected.scope,
-                        document,
-                      });
-                      await load();
-                      choose(row);
-                    });
-                  }}
-                >
-                  复制流程
-                </ActionButton>
-              )}
-              {selected && (
-                <label>
-                  历史修订
-                  <ActionSelect
-                    aria-label="历史修订"
-                    value={selected.id}
-                    onChange={(e) => {
-                      captureFeedback();
+            </details>
 
-                      const row = rows.find((r) => r.id === e.target.value);
-                      if (row) choose(row);
-                    }}
-                  >
-                    {rows
-                      .filter((r) => r.definition_id === selected.definition_id)
-                      .map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.kind === "workflow_draft" ? "草稿" : "可用版本"} ·
-                          v{r.version}
-                        </option>
-                      ))}
-                  </ActionSelect>
-                </label>
-              )}
-              <ActionButton
-                onClick={() => {
-                  captureFeedback();
-                  return setDraft((current) => ({
-                    ...current,
-                    node: "workflow",
-                  }));
-                }}
-              >
-                流程配置
-              </ActionButton>
-              {!editable && selected && (
-                <ActionButton
-                  disabled={busy}
-                  onClick={() => {
-                    captureFeedback();
-                    return void act(async () => {
-                      const row = await mutate(
-                        "workflow.draft.create",
-                        selected.id,
-                        {
-                          base_revision_id:
-                            selected.data.published_revision_id || selected.id,
-                        },
-                        selected.revision,
-                      );
-                      await load();
-                      choose(row);
-                      setDraft((current) => ({
-                        ...current,
-                        node: draft.node,
-                        collapsedStages,
-                      }));
-                    });
-                  }}
-                >
-                  编辑流程
-                </ActionButton>
-              )}
-              {editable && (
-                <>
-                  <ActionButton
-                    disabled={busy || !draft.name.trim()}
-                    onClick={() => {
-                      captureFeedback();
-                      return void act(async () => {
-                        await save();
-                      });
-                    }}
-                  >
-                    保存草稿
-                  </ActionButton>
-                  <ActionButton
-                    disabled={busy || !draft.name.trim()}
-                    onClick={() => {
-                      captureFeedback();
-                      return void act(async () => {
-                        const row = await save();
-                        await request("query.workflow_requirements", {
-                          id: row.id,
-                          project_id: project?.id,
-                        });
-                        const published = await mutate(
-                          "workflow.publish",
-                          row.id,
-                          {},
-                          row.revision,
-                        );
-                        await load();
-                        choose(published);
-                        await refresh();
-                        setMessage("流程可用版本已保存。");
-                      });
-                    }}
-                  >
-                    保存可用版本
-                  </ActionButton>
-                </>
-              )}
+            <ActionButton
+              type="button"
+              onClick={() => {
+                capture();
+                setDraft((current) => ({ ...current, view: "list" }));
+              }}
+            >
+              返回流程列表
+            </ActionButton>
+            {!draft.editing && draft.selected ? (
               <ActionButton
                 disabled={busy}
-                onClick={() => {
-                  captureFeedback();
-                  return void act(validate);
-                }}
+                onClick={() =>
+                  run(async () => {
+                    const row = await mutate(
+                      "workflow.draft.create",
+                      undefined,
+                      { base_revision_id: draft.selected },
+                    );
+                    await load();
+                    choose(row);
+                  })
+                }
               >
-                校验与规范预览
+                编辑流程
               </ActionButton>
-              {selected?.kind === "workflow" && (
+            ) : null}
+            {draft.editing ? (
+              <>
                 <ActionButton
-                  disabled={busy}
-                  onClick={() => {
-                    captureFeedback();
-                    return void act(async () => {
-                      await mutate(
-                        "configuration.retire",
-                        selected.id,
-                        { reason: "用户删除流程" },
-                        selected.revision,
+                  disabled={busy || !draft.name.trim()}
+                  onClick={() =>
+                    run(async () => {
+                      await save();
+                    })
+                  }
+                >
+                  保存草稿
+                </ActionButton>
+                <ActionButton
+                  disabled={busy || !draft.name.trim()}
+                  onClick={() =>
+                    run(async () => {
+                      const row = await save();
+                      const published = await mutate(
+                        "workflow.publish",
+                        row.id,
+                        {},
+                        row.revision,
                       );
                       await load();
-                      setDraft((current) => ({
-                        ...current,
-                        selected: "",
-                        editing: false,
-                      }));
-                      setMessage("流程已停用，历史保留。");
-                    });
-                  }}
+                      choose(published);
+                      await refresh();
+                      setMessage("流程已发布。");
+                    })
+                  }
                 >
-                  删除流程
+                  发布流程
                 </ActionButton>
-              )}
-            </div>
+              </>
+            ) : null}
+            <ActionButton
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const value = await request("query.workflow_requirements", {
+                    id: draft.selected || undefined,
+                    document,
+                    project_id: project?.id,
+                  });
+                  setValidation(value);
+                  setMessage("流程结构、材料和配置引用校验通过。");
+                })
+              }
+            >
+              校验流程
+            </ActionButton>
           </div>
           <div className="workflow-editor workflow-editor-v2">
-            <aside className="workflow-preview">
-              <h3>阶段与子流程</h3>
-              {document.stages.map((item: Row, index: number) => (
-                <div className="workflow-stage-group" key={item.key}>
-                  <ActionButton
-                    type="button"
-                    aria-label={`${collapsedStages.includes(item.key) ? "展开" : "折叠"}阶段：${item.name}`}
-                    aria-expanded={!collapsedStages.includes(item.key)}
-                    aria-controls={`${treeId}-${item.key}`}
-                    className={
-                      draft.node === `stage:${item.key}` ? "selected" : ""
-                    }
-                    onClick={() => {
-                      captureFeedback();
-
-                      setMoveStage("");
-                      setDraft((current) => ({
-                        ...current,
-                        node: `stage:${item.key}`,
-                        collapsedStages: (
-                          current.collapsedStages || []
-                        ).includes(item.key)
-                          ? (current.collapsedStages || []).filter(
-                              (key) => key !== item.key,
-                            )
-                          : [...(current.collapsedStages || []), item.key],
-                      }));
-                    }}
-                  >
-                    <strong>
-                      <span aria-hidden="true">
-                        {collapsedStages.includes(item.key) ? "▸ " : "▾ "}
-                      </span>
-                      {index + 1}. {item.name}
-                    </strong>
-                  </ActionButton>
-                  <div
-                    id={`${treeId}-${item.key}`}
-                    hidden={collapsedStages.includes(item.key)}
-                  >
-                    {document.steps
-                      .filter((s: Row) => s.stage === item.key)
-                      .map((item: Row) => (
-                        <ActionButton
-                          key={item.key}
-                          className={
-                            step?.key === item.key
-                              ? "selected workflow-node"
-                              : "workflow-node"
-                          }
-                          onClick={() => {
-                            captureFeedback();
-                            return setDraft((current) => ({
-                              ...current,
-                              node: `step:${item.key}`,
-                            }));
-                          }}
-                        >
-                          {item.kind === "workflow.call" ? "↳ " : ""}
-                          {item.name}
-                          <small>{actionLabels[item.kind]}</small>
-                        </ActionButton>
-                      ))}
+            <aside className="workflow-stages">
+              <ActionButton
+                type="button"
+                onClick={() => {
+                  capture();
+                  setDraft((current) => ({ ...current, node: "workflow" }));
+                }}
+              >
+                {draft.name || "流程配置"}
+              </ActionButton>
+              {document.stages.map((item: Row) => (
+                <div key={item.key}>
+                  <div className="actions">
+                    <ActionButton
+                      type="button"
+                      onClick={() => {
+                        capture();
+                        setDraft((current) => ({
+                          ...current,
+                          node: `stage:${item.key}`,
+                        }));
+                      }}
+                    >
+                      {item.name}
+                    </ActionButton>
+                    <ActionButton
+                      type="button"
+                      aria-label={`${draft.collapsedStages.includes(item.key) ? "展开" : "折叠"}阶段：${item.name}`}
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          node: `stage:${item.key}`,
+                          collapsedStages: current.collapsedStages.includes(
+                            item.key,
+                          )
+                            ? current.collapsedStages.filter(
+                                (key: string) => key !== item.key,
+                              )
+                            : [...current.collapsedStages, item.key],
+                        }))
+                      }
+                    >
+                      {draft.collapsedStages.includes(item.key)
+                        ? "展开"
+                        : "折叠"}
+                    </ActionButton>
                   </div>
+                  {!draft.collapsedStages.includes(item.key)
+                    ? document.steps
+                        .filter((step: Row) => step.stage === item.key)
+                        .map((step: Row) => (
+                          <ActionButton
+                            key={step.key}
+                            className={
+                              draft.node === `step:${step.key}`
+                                ? "selected"
+                                : ""
+                            }
+                            type="button"
+                            onClick={() => {
+                              capture();
+                              setDraft((current) => ({
+                                ...current,
+                                node: `step:${step.key}`,
+                              }));
+                            }}
+                          >
+                            {step.name}
+                            <small>{executorNames[step.executor.type]}</small>
+                          </ActionButton>
+                        ))
+                    : null}
                 </div>
               ))}
-              {editable && (
+              {draft.editing ? (
                 <div className="actions">
                   <ActionButton
+                    type="button"
                     onClick={() => {
-                      captureFeedback();
-
                       const key = `stage_${crypto.randomUUID().slice(0, 8)}`;
                       update({
-                        stages: [...document.stages, { key, name: "新阶段" }],
+                        stages: [
+                          ...document.stages,
+                          {
+                            key,
+                            name: "新阶段",
+                            description: "",
+                            default_role_ref: null,
+                          },
+                        ],
                       });
                       setDraft((current) => ({
                         ...current,
@@ -777,270 +638,170 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     添加阶段
                   </ActionButton>
                   <ActionButton
+                    type="button"
                     disabled={!document.stages.length}
-                    onClick={() => {
-                      captureFeedback();
-                      return addStep();
-                    }}
+                    onClick={() => addStep()}
                   >
                     添加步骤
                   </ActionButton>
                   <ActionButton
+                    type="button"
                     disabled={!document.stages.length}
-                    onClick={() => {
-                      captureFeedback();
-                      return addStep("workflow.call");
-                    }}
+                    onClick={() => addStep("workflow")}
                   >
-                    添加子流程
+                    添加子流程调用
                   </ActionButton>
                 </div>
-              )}
+              ) : null}
             </aside>
             <div className="workflow-step-form">
-              <fieldset disabled={!editable}>
-                {draft.node === "workflow" && (
+              <fieldset disabled={!draft.editing || busy}>
+                {draft.node === "workflow" ? (
                   <>
                     <legend>流程配置</legend>
                     <label>
-                      Workflow 名称
+                      流程名称
                       <input
                         required
                         value={draft.name}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({ ...draft, name: e.target.value });
-                        }}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            name: event.target.value,
+                          }))
+                        }
                       />
                     </label>
-                    <label>
-                      流程用途
-                      <ActionSelect
-                        aria-label="流程用途"
-                        value={document.process_kind}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return update({ process_kind: e.target.value });
-                        }}
-                      >
-                        <option value="feature">Feature 流程</option>
-                        <option value="task">Task 流程</option>
-                        <option value="project_intake">项目讨论</option>
-                        <option value="subworkflow">可复用子流程</option>
-                      </ActionSelect>
-                    </label>
-                    <label>
-                      定义范围
-                      <ActionSelect
-                        aria-label="定义范围"
-                        disabled={!!selected}
-                        value={draft.scope}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({ ...draft, scope: e.target.value });
-                        }}
-                      >
-                        <option value="global">Global</option>
-                        {project && <option value="project">当前项目</option>}
-                      </ActionSelect>
-                    </label>
-                    {document.steps.some(
-                      (s: Row) => s.kind === "tasks.foreach",
-                    ) && (
-                      <RevisionSelect
-                        label="Task 子流程版本"
-                        records={workflows.filter(
-                          (r) => r.data.process_kind === "task",
-                        )}
-                        value={document.subworkflow_refs?.task || ""}
-                        required
-                        onChange={(value) => {
-                          captureFeedback();
-                          return update({
-                            subworkflow_refs: {
-                              ...document.subworkflow_refs,
-                              task: value,
-                            },
-                          });
-                        }}
-                      />
-                    )}
-                    <details>
-                      <summary>子流程输入输出接口</summary>
+                    {!draft.selected ? (
                       <label>
-                        输入端口名称（逗号或换行分隔）
-                        <textarea
-                          value={(document.input_ports || []).join("\n")}
-                          onChange={(e) => {
-                            captureFeedback();
-                            return update({
-                              input_ports: split(e.target.value),
-                            });
-                          }}
-                        />
+                        定义范围
+                        <ActionSelect
+                          value={draft.scope}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              scope: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="global">全局</option>
+                          {project ? (
+                            <option value="project">当前项目</option>
+                          ) : null}
+                        </ActionSelect>
                       </label>
-                      {Object.entries(document.output_ports || {}).map(
-                        ([name, value]) => (
-                          <div key={name}>
-                            <label>
-                              输出端口名称
-                              <input
-                                aria-label={`输出端口名称 ${name}`}
-                                defaultValue={name}
-                                onBlur={(e) => {
-                                  const key = e.target.value.trim();
-                                  if (
-                                    key &&
-                                    key !== name &&
-                                    !document.output_ports[key]
-                                  ) {
-                                    const ports = { ...document.output_ports };
-                                    delete ports[name];
-                                    ports[key] = value;
-                                    update({ output_ports: ports });
-                                  }
-                                }}
-                              />
-                            </label>
-                            {inputSelect(`输出 ${name}`, value as Row, (v) => {
-                              const ports = { ...document.output_ports };
-                              if (v) ports[name] = v;
-                              else delete ports[name];
-                              update({ output_ports: ports });
-                            })}
-                            <ActionButton
-                              type="button"
-                              onClick={() => {
-                                captureFeedback();
-
-                                const ports = { ...document.output_ports };
-                                delete ports[name];
-                                update({ output_ports: ports });
-                              }}
-                            >
-                              删除输出 {name}
-                            </ActionButton>
-                          </div>
-                        ),
-                      )}
-                      <ActionButton
-                        type="button"
-                        onClick={() => {
-                          captureFeedback();
-                          return update({
-                            output_ports: {
-                              ...document.output_ports,
-                              [`output_${Object.keys(document.output_ports || {}).length + 1}`]:
-                                { step: "", port: "" },
-                            },
-                          });
-                        }}
-                      >
-                        添加输出端口
-                      </ActionButton>
+                    ) : null}
+                    <details>
+                      <summary>流程输入输出与完成要求</summary>
+                      <JsonField
+                        label="流程输入端口"
+                        value={document.inputs}
+                        onChange={(inputs) => update({ inputs })}
+                      />
+                      <JsonField
+                        label="流程输出引用"
+                        value={document.outputs}
+                        onChange={(outputs) => update({ outputs })}
+                      />
+                      <JsonField
+                        label="流程完成条件"
+                        value={document.completion}
+                        onChange={(completion) => update({ completion })}
+                      />
                     </details>
                   </>
-                )}
-                {stage && (
+                ) : null}
+                {stage ? (
                   <>
                     <legend>阶段配置</legend>
                     <label>
                       阶段名称
                       <input
                         value={stage.name}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return update({
-                            stages: document.stages.map((s: Row) =>
-                              s.key === stage.key
-                                ? { ...s, name: e.target.value }
-                                : s,
+                        onChange={(event) =>
+                          update({
+                            stages: document.stages.map((item: Row) =>
+                              item.key === stage.key
+                                ? { ...item, name: event.target.value }
+                                : item,
                             ),
-                          });
-                        }}
+                          })
+                        }
                       />
                     </label>
-                    <MarkdownField
-                      key={`${draft.selected}:${stage.key}:description`}
-                      label="阶段意图与交付物"
-                      rows={8}
-                      readOnly={!editable}
-                      value={stage.description || ""}
-                      onChange={(description) => {
-                        captureFeedback();
-                        return update({
-                          stages: document.stages.map((s: Row) =>
-                            s.key === stage.key ? { ...s, description } : s,
-                          ),
-                        });
-                      }}
-                    />
-                    <div className="actions">
-                      {[-1, 1].map((direction) => (
-                        <ActionButton
-                          key={direction}
-                          type="button"
-                          onClick={() => {
-                            captureFeedback();
 
+                    <div className="actions">
+                      {[-1, 1].map((delta) => (
+                        <ActionButton
+                          key={delta}
+                          type="button"
+                          disabled={
+                            document.stages.findIndex(
+                              (s: Row) => s.key === stage.key,
+                            ) +
+                              delta <
+                              0 ||
+                            document.stages.findIndex(
+                              (s: Row) => s.key === stage.key,
+                            ) +
+                              delta >=
+                              document.stages.length
+                          }
+                          onClick={() => {
                             const stages = [...document.stages];
-                            const i = stages.findIndex(
+                            const index = stages.findIndex(
                               (s) => s.key === stage.key,
                             );
-                            const target = i + direction;
-                            if (target >= 0 && target < stages.length) {
-                              [stages[i], stages[target]] = [
-                                stages[target],
-                                stages[i],
-                              ];
-                              update({ stages });
-                            }
+                            [stages[index], stages[index + delta]] = [
+                              stages[index + delta],
+                              stages[index],
+                            ];
+                            update({ stages });
                           }}
                         >
-                          {direction < 0 ? "阶段上移" : "阶段下移"}
+                          {delta < 0 ? "上移阶段" : "下移阶段"}
                         </ActionButton>
                       ))}
                     </div>
-                    {document.steps.some((s: Row) => s.stage === stage.key) && (
-                      <label>
-                        删除阶段前将节点迁移到
-                        <ActionSelect
-                          aria-label="删除阶段前将节点迁移到"
-                          value={moveStage}
-                          onChange={(e) => {
-                            captureFeedback();
-                            return setMoveStage(e.target.value);
-                          }}
-                        >
-                          <option value="">请选择目标阶段</option>
-                          {document.stages
-                            .filter((s: Row) => s.key !== stage.key)
-                            .map((s: Row) => (
-                              <option key={s.key} value={s.key}>
-                                {s.name}
-                              </option>
-                            ))}
-                        </ActionSelect>
-                      </label>
-                    )}
+                    <RevisionSelect
+                      label="阶段默认 Role"
+                      records={roles}
+                      value={stage.default_role_ref || ""}
+                      onChange={(default_role_ref) =>
+                        update({
+                          stages: document.stages.map((item: Row) =>
+                            item.key === stage.key
+                              ? {
+                                  ...item,
+                                  default_role_ref: default_role_ref || null,
+                                }
+                              : item,
+                          ),
+                        })
+                      }
+                    />
+                    <MarkdownField
+                      label="阶段背景"
+                      value={stage.description || ""}
+                      onChange={(description) =>
+                        update({
+                          stages: document.stages.map((item: Row) =>
+                            item.key === stage.key
+                              ? { ...item, description }
+                              : item,
+                          ),
+                        })
+                      }
+                    />
                     <ActionButton
                       type="button"
-                      disabled={
-                        document.steps.some(
-                          (s: Row) => s.stage === stage.key,
-                        ) && !moveStage
-                      }
+                      disabled={document.steps.some(
+                        (item: Row) => item.stage === stage.key,
+                      )}
                       onClick={() => {
-                        captureFeedback();
-
                         update({
                           stages: document.stages.filter(
-                            (s: Row) => s.key !== stage.key,
-                          ),
-                          steps: document.steps.map((s: Row) =>
-                            s.stage === stage.key
-                              ? { ...s, stage: moveStage }
-                              : s,
+                            (item: Row) => item.key !== stage.key,
                           ),
                         });
                         setDraft((current) => ({
@@ -1049,810 +810,504 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         }));
                       }}
                     >
-                      删除阶段
+                      删除空阶段
                     </ActionButton>
                   </>
-                )}
-                {step && (
+                ) : null}
+                {step ? (
                   <>
                     <legend>步骤配置</legend>
                     <label>
                       步骤名称
                       <input
                         value={step.name}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return updateStep({ name: e.target.value });
-                        }}
+                        onChange={(event) =>
+                          updateStep({ name: event.target.value })
+                        }
                       />
                     </label>
                     <label>
                       所属阶段
                       <ActionSelect
-                        aria-label="所属阶段"
                         value={step.stage}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return updateStep({ stage: e.target.value });
-                        }}
+                        onChange={(event) =>
+                          updateStep({ stage: event.target.value })
+                        }
                       >
-                        {document.stages.map((s: Row) => (
-                          <option key={s.key} value={s.key}>
-                            {s.name}
+                        {document.stages.map((stage: Row) => (
+                          <option key={stage.key} value={stage.key}>
+                            {stage.name}
                           </option>
                         ))}
                       </ActionSelect>
                     </label>
                     <label>
-                      标准动作
+                      执行方式
                       <ActionSelect
-                        aria-label="标准动作"
-                        value={step.kind}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return updateStep({
-                            kind: e.target.value,
-                            contract_version:
-                              requiresTask(e.target.value)
-                                ? 2
-                                : 1,
+                        value={step.executor.type}
+                        onChange={(event) => {
+                          const type = event.target.value;
+                          updateStep({
+                            executor:
+                              type === "agent"
+                                ? { type, role_ref: null }
+                                : type === "tool"
+                                  ? { type, tool_ref: "", arguments: {} }
+                                  : type === "workflow"
+                                    ? { type, workflow_ref: "", foreach: null }
+                                    : { type },
                             task_instructions:
-                              requiresTask(e.target.value)
-                                ? ""
-                                : undefined,
-                            participant_slot: null,
-                            spec_refs: requiresRole(e.target.value)
-                              ? step.spec_refs || []
-                              : [],
-                            execution_recipe:
-                              e.target.value === "attempt.execute"
-                                ? step.execution_recipe || []
-                                : [],
-                            role_ref: requiresRole(e.target.value)
-                              ? step.role_ref
-                              : null,
-                            subworkflow_ref:
-                              e.target.value === "workflow.call"
-                                ? step.subworkflow_ref || ""
+                              type === "agent"
+                                ? step.task_instructions || ""
                                 : null,
+                            required_skill_refs:
+                              type === "agent"
+                                ? step.required_skill_refs || []
+                                : [],
                           });
                         }}
                       >
-                        {Object.entries(actionNames).map(([id, label]) => (
-                          <option key={id} value={id}>
-                            {label}
+                        {Object.entries(executorNames).map(([key, name]) => (
+                          <option key={key} value={key}>
+                            {name}
                           </option>
                         ))}
                       </ActionSelect>
                     </label>
-                    {requiresTask(step.kind) ? (
+                    {step.executor.type === "agent" ? (
                       <>
+                        <RevisionSelect
+                          label="执行 Role（留空继承阶段）"
+                          records={roles}
+                          value={step.executor.role_ref || ""}
+                          onChange={(role_ref) =>
+                            updateStep({
+                              executor: {
+                                ...step.executor,
+                                role_ref: role_ref || null,
+                              },
+                            })
+                          }
+                        />
                         <MarkdownField
                           key={`${draft.selected}:${step.key}:task`}
-                          label={
-                            step.kind === "attempt.execute"
-                              ? "公共任务指令"
-                              : "任务指令"
-                          }
+                          label="任务指令"
                           required
-                          rows={10}
-                          readOnly={!editable}
                           value={step.task_instructions || ""}
-                          onChange={(task_instructions) => {
-                            captureFeedback();
-                            return updateStep({ task_instructions });
-                          }}
+                          onChange={(task_instructions) =>
+                            updateStep({ task_instructions })
+                          }
+                          rows={12}
                         />
                         <p className="muted">
-                          此任务与 Role、所选 Skill、步骤 Spec 一起传给
-                          Agent；业务提示词和内容检查要求在此配置。配方步骤还需配置下方各
-                          Agent
-                          节点的任务。发布产生新修订，已有工程保持原冻结任务。
+                          描述本次工作目标；工作方法引用 Skill，验收依据引用
+                          Spec。
                         </p>
-                      </>
-                    ) : null}
-                    {requiresRole(step.kind) && (
-                      <>
                         <RevisionSelect
-                          label="执行 Role"
-                          records={roles.map((r) => ({
-                            ...r,
-                            id: r.definition_id,
-                          }))}
-                          required
-                          value={step.role_ref || ""}
-                          onChange={(value) => {
-                            captureFeedback();
-                            return updateStep({
-                              role_ref: value,
-                              participant_slot: null,
-                            });
-                          }}
-                        />
-                        <RevisionSelect
-                          label="步骤 Spec"
-                          records={specs.filter(
-                            (r) =>
-                              !r.data.applicable_actions?.length ||
-                              r.data.applicable_actions.some((a: Row) => {
-                                const context = specificationContext(
-                                  step,
-                                  document.steps,
-                                );
-                                return (
-                                  a.kind === step.kind &&
-                                  (!a.phase ||
-                                    !context.phase ||
-                                    a.phase === context.phase) &&
-                                  (!a.delivery_kind ||
-                                    !context.delivery ||
-                                    a.delivery_kind === context.delivery)
-                                );
-                              }),
+                          label="本次必需 Skills"
+                          records={records.filter(
+                            (row) => row.kind === "skill",
                           )}
                           multiple
-                          required
-                          value={step.spec_refs || []}
-                          onChange={(value) => {
-                            captureFeedback();
-                            return updateStep({ spec_refs: value });
-                          }}
+                          value={step.required_skill_refs || []}
+                          onChange={(required_skill_refs) =>
+                            updateStep({ required_skill_refs })
+                          }
                         />
                       </>
-                    )}
-                    <fieldset disabled={!editable || busy} className="full-width">
-                      <WorkflowDeliveries document={document} step={step} records={records}
-                        onChange={(value) => { captureFeedback(); updateStep(value); }} />
-                    </fieldset>
-                    <label>
-                      前置步骤
-                      <ActionSelect
-                        aria-label="前置步骤"
-                        multiple
-                        value={step.dependencies || []}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return updateStep({
-                            dependencies: Array.from(
-                              e.target.selectedOptions,
-                              (o) => o.value,
-                            ),
-                          });
-                        }}
-                      >
-                        {document.steps
-                          .filter((s: Row) => s.key !== step.key)
-                          .map((s: Row) => (
-                            <option value={s.key} key={s.key}>
-                              {s.name}
-                            </option>
-                          ))}
-                      </ActionSelect>
-                    </label>
-                    {step.kind === "workflow.call" && (
+                    ) : null}
+                    {step.executor.type === "tool" ? (
+                      <>
+                        <RevisionSelect
+                          label="执行工具"
+                          records={records.filter(
+                            (row) =>
+                              row.kind === "tool" &&
+                              (row.data.schema_version === 2 ||
+                                row.data.implementation === "platform"),
+                          )}
+                          required
+                          value={step.executor.tool_ref || ""}
+                          onChange={(tool_ref) =>
+                            updateStep({
+                              executor: {
+                                ...step.executor,
+                                tool_ref,
+                                arguments: {},
+                              },
+                            })
+                          }
+                        />
+                        <JsonField
+                          key={`${step.key}:arguments`}
+                          label="工具参数映射"
+                          value={step.executor.arguments || {}}
+                          onChange={(arguments_) =>
+                            updateStep({
+                              executor: {
+                                ...step.executor,
+                                arguments: arguments_,
+                              },
+                            })
+                          }
+                        />
+                        <JsonField
+                          label="工具输出映射（端口名 → JSON Pointer）"
+                          value={step.executor.output_mapping || {}}
+                          readOnly={!draft.editing}
+                          onChange={(output_mapping) =>
+                            updateStep({
+                              executor: { ...step.executor, output_mapping },
+                            })
+                          }
+                        />
+                      </>
+                    ) : null}
+                    {step.executor.type === "workflow" ? (
                       <>
                         <RevisionSelect
                           label="调用子流程"
                           records={workflows.filter(
-                            (r) => r.id !== draft.selected,
+                            (row) => row.id !== draft.selected,
                           )}
                           required
-                          value={step.subworkflow_ref || ""}
-                          onChange={(value) => {
-                            captureFeedback();
-                            return updateStep({
-                              subworkflow_ref: value,
-                              inputs: {},
-                            });
-                          }}
-                        />
-                        {child && (
-                          <p>
-                            <a
-                              href={`?tab=workflows&workflow_id=${encodeURIComponent(child.id)}${project ? `&project_id=${encodeURIComponent(project.id)}` : ""}`}
-                            >
-                              编辑子流程：{child.name} v{child.version}
-                            </a>
-                          </p>
-                        )}
-                      </>
-                    )}
-                    {[
-                      ...new Set([
-                        ...requiredInputs,
-                        ...Object.keys(step.inputs || {}),
-                      ]),
-                    ].map((port) =>
-                      inputSelect(
-                        `输入 ${port}`,
-                        step.inputs?.[port],
-                        (value) => {
-                          const inputs = { ...step.inputs };
-                          if (value) inputs[port] = value;
-                          else delete inputs[port];
-                          updateStep({ inputs });
-                        },
-                        step,
-                      ),
-                    )}
-                    {step.kind === "agent.interact" && (
-                      <>
-                        <MarkdownTopicsField
-                          key={`${draft.selected}:${step.key}:topics`}
-                          value={step.interaction?.required_topics || []}
-                          readOnly={!editable}
-                          onChange={(required_topics) => {
-                            captureFeedback();
-                            return updateStep({
-                              interaction: {
-                                ...step.interaction,
-                                required_topics,
-                              },
-                            });
-                          }}
-                        />
-                        <label>
-                          输出类型
-                          <ActionSelect
-                            aria-label="输出类型"
-                            value={
-                              step.interaction?.output_kind || "requirement"
-                            }
-                            onChange={(e) => {
-                              captureFeedback();
-                              return updateStep({
-                                interaction: {
-                                  ...step.interaction,
-                                  output_kind: e.target.value,
-                                },
-                              });
-                            }}
-                          >
-                            {[
-                              "requirement",
-                              "feature",
-                              "design",
-                              "task_plan",
-                              "test_plan",
-                            ].map((id) => (
-                              <option key={id}>{id}</option>
-                            ))}
-                          </ActionSelect>
-                        </label>
-                        <label>
-                          最大轮数
-                          <input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={step.interaction?.max_turns || 8}
-                            onChange={(e) => {
-                              captureFeedback();
-                              return updateStep({
-                                interaction: {
-                                  ...step.interaction,
-                                  max_turns: Number(e.target.value),
-                                },
-                              });
-                            }}
-                          />
-                        </label>
-                      </>
-                    )}
-                    {step.kind === "attempt.execute" && (
-                      <>
-                        <label>
-                          执行阶段
-                          <ActionSelect
-                            aria-label="执行阶段"
-                            value={step.parameters?.phase || ""}
-                            onChange={(e) => {
-                              captureFeedback();
-                              return updateStep({
-                                parameters: {
-                                  ...step.parameters,
-                                  phase: e.target.value,
-                                },
-                                task_instructions: "",
-                                execution_recipe: [],
-                              });
-                            }}
-                          >
-                            <option value="">请选择</option>
-                            {Object.entries(phases).map(([id, label]) => (
-                              <option key={id} value={id}>
-                                {label}
-                              </option>
-                            ))}
-                          </ActionSelect>
-                        </label>
-                        <h3>执行节点与 Role</h3>
-                        {(step.execution_recipe || []).map(
-                          (node: Row, index: number) => (
-                            <fieldset key={node.key}>
-                              <legend>
-                                {nodeLabels[node.key] || node.key}
-                              </legend>
-                              {agentNode(node.key) ? (
-                                  <MarkdownField
-                                    key={`${draft.selected}:${step.key}:${node.key}:task`}
-                                    label={`${nodeLabels[node.key] || node.key} 节点任务指令`}
-                                    required
-                                    rows={8}
-                                    readOnly={!editable}
-                                    value={node.task_instructions || ""}
-                                    onChange={(task_instructions) => {
-                                      captureFeedback();
-
-                                      const recipe = structuredClone(
-                                        step.execution_recipe,
-                                      );
-                                      recipe[index].task_instructions =
-                                        task_instructions;
-                                      updateStep({ execution_recipe: recipe });
-                                    }}
-                                  />
-                                ) : (
-                                  <p className="muted">
-                                    系统测试执行器按冻结 TestRecipe 执行，不调用
-                                    Agent。
-                                  </p>
-                                )}
-                              <RevisionSelect
-                                label={`${nodeLabels[node.key] || node.key} Role`}
-                                records={roles
-                                  .filter(
-                                    (r) => r.data.execution_role === node.role,
-                                  )
-                                  .map((r) => ({ ...r, id: r.definition_id }))}
-                                required
-                                value={node.role_ref || ""}
-                                onChange={(value) => {
-                                  captureFeedback();
-
-                                  const recipe = structuredClone(
-                                    step.execution_recipe,
-                                  );
-                                  recipe[index].role_ref = value;
-                                  updateStep({ execution_recipe: recipe });
-                                }}
-                              />
-                              <label>
-                                节点前置依赖
-                                <ActionSelect
-                                  aria-label="节点前置依赖"
-                                  multiple
-                                  value={node.dependencies || []}
-                                  onChange={(e) => {
-                                    captureFeedback();
-
-                                    const recipe = structuredClone(
-                                      step.execution_recipe,
-                                    );
-                                    recipe[index].dependencies = Array.from(
-                                      e.target.selectedOptions,
-                                      (o) => o.value,
-                                    );
-                                    updateStep({ execution_recipe: recipe });
-                                  }}
-                                >
-                                  {step.execution_recipe
-                                    .filter((n: Row) => n.key !== node.key)
-                                    .map((n: Row) => (
-                                      <option key={n.key} value={n.key}>
-                                        {nodeLabels[n.key] || n.key}
-                                      </option>
-                                    ))}
-                                </ActionSelect>
-                              </label>
-                              <span className="muted">
-                                {dutyLabels[node.role]} ·{" "}
-                                {node.writes ? "受限写入" : "只读"}
-                              </span>
-                            </fieldset>
-                          ),
-                        )}
-                        <ActionButton
-                          type="button"
-                          onClick={() => {
-                            captureFeedback();
-
-                            const phase = step.parameters?.phase;
-                            const nodes: Row[] =
-                              phase === "implementation"
-                                ? [
-                                    {
-                                      key: "test_author",
-                                      role: "tester",
-                                      dependencies: [],
-                                      writes: true,
-                                    },
-                                    {
-                                      key: "red",
-                                      role: "tester",
-                                      dependencies: ["test_author"],
-                                      writes: false,
-                                    },
-                                    {
-                                      key: "implement",
-                                      role: "developer",
-                                      dependencies: ["red"],
-                                      writes: true,
-                                    },
-                                    {
-                                      key: "green",
-                                      role: "tester",
-                                      dependencies: ["implement"],
-                                      writes: false,
-                                    },
-                                    {
-                                      key: "docs",
-                                      role: "developer",
-                                      dependencies: ["green"],
-                                      writes: false,
-                                    },
-                                    {
-                                      key: "verify",
-                                      role: "tester",
-                                      dependencies: ["green", "docs"],
-                                      writes: false,
-                                    },
-                                  ]
-                                : phase === "solution_planning"
-                                  ? [
-                                      {
-                                        key: "plan_validate",
-                                        role: "architect",
-                                        dependencies: [],
-                                        writes: false,
-                                      },
-                                      {
-                                        key: "test_plan_validate",
-                                        role: "tester",
-                                        dependencies: ["plan_validate"],
-                                        writes: false,
-                                      },
-                                    ]
-                                  : phase === "closure"
-                                    ? [
-                                        {
-                                          key: "test_author",
-                                          role: "tester",
-                                          dependencies: [],
-                                          writes: true,
-                                        },
-                                        {
-                                          key: "feature_tests",
-                                          role: "tester",
-                                          dependencies: ["test_author"],
-                                          writes: false,
-                                        },
-                                        {
-                                          key: "docs",
-                                          role: "developer",
-                                          dependencies: ["feature_tests"],
-                                          writes: false,
-                                        },
-                                        {
-                                          key: "verify",
-                                          role: "tester",
-                                          dependencies: [
-                                            "feature_tests",
-                                            "docs",
-                                          ],
-                                          writes: false,
-                                        },
-                                      ]
-                                    : [
-                                        {
-                                          key: "requirement_validate",
-                                          role: "analyst",
-                                          dependencies: [],
-                                          writes: false,
-                                        },
-                                      ];
+                          value={step.executor.workflow_ref || ""}
+                          onChange={(workflow_ref) =>
                             updateStep({
-                              execution_recipe: nodes.map((node) => ({
-                                ...(agentNode(node.key)
-                                  ? { task_instructions: "" }
-                                  : {}),
-                                ...node,
-                                role_ref: null,
-                              })),
-                            });
-                          }}
-                        >
-                          设置该阶段执行节点
-                        </ActionButton>
+                              executor: { ...step.executor, workflow_ref },
+                            })
+                          }
+                        />
+                        {step.executor.workflow_ref ? (
+                          <a
+                            href={`?tab=workflows&workflow_id=${encodeURIComponent(step.executor.workflow_ref)}${project ? `&project_id=${encodeURIComponent(project.id)}` : ""}`}
+                          >
+                            编辑所引用的子流程
+                          </a>
+                        ) : null}
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={!!step.executor.foreach}
+                            onChange={(event) =>
+                              updateStep({
+                                executor: {
+                                  ...step.executor,
+                                  foreach: event.target.checked
+                                    ? {
+                                        source: { step: "", port: "" },
+                                        item_input: "item",
+                                        max_concurrency: 1,
+                                        min_items: 1,
+                                      }
+                                    : null,
+                                },
+                              })
+                            }
+                          />
+                          对集合逐项执行
+                        </label>
+                        {step.executor.foreach ? (
+                          <>
+                            <SourceSelect
+                              document={document}
+                              step={step}
+                              value={step.executor.foreach.source}
+                              label="集合来源"
+                              onChange={(source) =>
+                                updateStep({
+                                  executor: {
+                                    ...step.executor,
+                                    foreach: {
+                                      ...step.executor.foreach,
+                                      source,
+                                    },
+                                  },
+                                  dependencies:
+                                    source.step === "$input"
+                                      ? step.dependencies
+                                      : [
+                                          ...new Set([
+                                            ...step.dependencies,
+                                            source.step,
+                                          ]),
+                                        ],
+                                })
+                              }
+                            />
+                            <label>
+                              子流程条目输入名
+                              <input
+                                value={step.executor.foreach.item_input}
+                                onChange={(event) =>
+                                  updateStep({
+                                    executor: {
+                                      ...step.executor,
+                                      foreach: {
+                                        ...step.executor.foreach,
+                                        item_input: event.target.value,
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              集合并发上限
+                              <input
+                                type="number"
+                                min={1}
+                                max={32}
+                                value={step.executor.foreach.max_concurrency}
+                                onChange={(event) =>
+                                  updateStep({
+                                    executor: {
+                                      ...step.executor,
+                                      foreach: {
+                                        ...step.executor.foreach,
+                                        max_concurrency: Number(
+                                          event.target.value,
+                                        ),
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                          </>
+                        ) : null}
                       </>
-                    )}
-                    <label>
-                      推进方式
-                      <ActionSelect
-                        aria-label="推进方式"
-                        value={step.advance_mode || "automatic"}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return updateStep({ advance_mode: e.target.value });
-                        }}
-                      >
-                        <option value="automatic">自动</option>
-                        <option value="human_confirmation">人工确认</option>
-                      </ActionSelect>
-                    </label>
-                    <ConditionEditor
-                      condition={step.condition || { op: "always" }}
-                      steps={document.steps}
-                      onChange={(condition) => {
-                        captureFeedback();
-                        return updateStep({ condition });
-                      }}
+                    ) : null}
+                    <RevisionSelect
+                      label="验收 Spec"
+                      records={records.filter((row) => row.kind === "spec")}
+                      multiple
+                      value={step.spec_refs || []}
+                      onChange={(spec_refs) => updateStep({ spec_refs })}
                     />
                     <label>
-                      重试上限
-                      <input
-                        type="number"
-                        min={0}
-                        max={10}
-                        value={step.retry_limit ?? 3}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return updateStep({
-                            retry_limit: Number(e.target.value),
-                          });
-                        }}
-                      />
-                    </label>
-                    <label>
-                      返工范围
+                      前置步骤
                       <ActionSelect
-                        aria-label="返工范围"
                         multiple
-                        value={step.rework_scope || []}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return updateStep({
-                            rework_scope: Array.from(
-                              e.target.selectedOptions,
-                              (o) => o.value,
+                        value={step.dependencies || []}
+                        onChange={(event) =>
+                          updateStep({
+                            dependencies: Array.from(
+                              event.target.selectedOptions,
+                              (option) => option.value,
                             ),
-                          });
-                        }}
+                          })
+                        }
                       >
-                        {document.steps.map((s: Row) => (
-                          <option value={s.key} key={s.key}>
-                            {s.name}
-                          </option>
-                        ))}
+                        {document.steps
+                          .filter((item: Row) => item.key !== step.key)
+                          .map((item: Row) => (
+                            <option key={item.key} value={item.key}>
+                              {item.name}
+                            </option>
+                          ))}
                       </ActionSelect>
                     </label>
-                    <div className="actions">
-                      {[-1, 1].map((direction) => (
-                        <ActionButton
-                          type="button"
-                          key={direction}
-                          onClick={() => {
-                            captureFeedback();
-
-                            const steps = [...document.steps];
-                            const index = steps.findIndex(
-                              (s) => s.key === step.key,
-                            );
-                            const target = index + direction;
-                            if (target >= 0 && target < steps.length) {
-                              [steps[index], steps[target]] = [
-                                steps[target],
-                                steps[index],
-                              ];
-                              update({ steps });
-                            }
-                          }}
-                        >
-                          {direction < 0 ? "步骤上移" : "步骤下移"}
-                        </ActionButton>
-                      ))}
-                      <ActionButton
-                        type="button"
-                        disabled={document.steps.some(
-                          (s: Row) =>
-                            s.dependencies?.includes(step.key) ||
-                            Object.values(s.inputs || {}).some(
-                              (input: any) => input.step === step.key,
-                            ),
-                        )}
-                        onClick={() => {
-                          captureFeedback();
-
-                          update({
-                            steps: document.steps.filter(
-                              (s: Row) => s.key !== step.key,
-                            ),
-                          });
-                          setDraft((current) => ({
-                            ...current,
-                            node: "workflow",
-                          }));
-                        }}
+                    <WorkflowDeliveries
+                      document={document}
+                      step={step}
+                      records={records}
+                      onChange={updateStep}
+                      onRenameOutput={renameOutput}
+                    />
+                    <label>
+                      完成确认
+                      <ActionSelect
+                        value={step.confirmation || "automatic"}
+                        onChange={(event) =>
+                          updateStep({ confirmation: event.target.value })
+                        }
                       >
-                        删除步骤
-                      </ActionButton>
-                    </div>
-                    <p className="muted">
-                      仍被其他步骤依赖时，先调整前置和输入引用再删除。
-                    </p>
+                        <option value="automatic">满足条件后自动完成</option>
+                        <option value="human">等待人工确认</option>
+                      </ActionSelect>
+                    </label>
+                    <details>
+                      <summary>入口与完成条件</summary>
+                      <JsonField
+                        key={`${step.key}:condition`}
+                        label="入口条件"
+                        value={step.condition || { op: "always" }}
+                        onChange={(condition) => updateStep({ condition })}
+                      />
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={!!step.allow_completion_override}
+                          disabled={!draft.editing}
+                          onChange={(event) =>
+                            updateStep({
+                              allow_completion_override: event.target.checked,
+                            })
+                          }
+                        />
+                        允许人工说明理由后覆盖完成条件
+                      </label>
+                      <JsonField
+                        key={`${step.key}:completion`}
+                        label="完成条件"
+                        value={step.completion || { op: "always" }}
+                        onChange={(completion) => updateStep({ completion })}
+                      />
+                      <label>
+                        步骤标签
+                        <input
+                          value={(step.tags || []).join(", ")}
+                          onChange={(event) =>
+                            updateStep({ tags: splitPaths(event.target.value) })
+                          }
+                        />
+                      </label>
+                    </details>
+                    <details>
+                      <summary>执行范围与预算</summary>
+                      <label>
+                        工作空间输入名
+                        <input
+                          value={step.access?.workspace_input || ""}
+                          onChange={(event) =>
+                            updateStep({
+                              access: {
+                                ...step.access,
+                                workspace_input: event.target.value || null,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        工作目录（相对工作空间）
+                        <input
+                          value={step.access?.working_directory || ""}
+                          onChange={(event) =>
+                            updateStep({
+                              access: {
+                                ...step.access,
+                                working_directory: event.target.value || null,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <RevisionSelect
+                        label="本次可用 Tools"
+                        records={records.filter(
+                          (row) =>
+                            row.kind === "tool" &&
+                            row.data.schema_version === 2,
+                        )}
+                        multiple
+                        value={step.access?.tool_refs || []}
+                        onChange={(tool_refs) =>
+                          updateStep({ access: { ...step.access, tool_refs } })
+                        }
+                      />
+                      <label>
+                        可写相对目录
+                        <textarea
+                          value={(step.access?.writable_paths || []).join("\n")}
+                          onChange={(event) =>
+                            updateStep({
+                              access: {
+                                ...step.access,
+                                writable_paths: splitPaths(event.target.value),
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        只读相对目录
+                        <textarea
+                          value={(step.access?.read_only_paths || []).join(
+                            "\n",
+                          )}
+                          onChange={(event) =>
+                            updateStep({
+                              access: {
+                                ...step.access,
+                                read_only_paths: splitPaths(event.target.value),
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <JsonField
+                        key={`${step.key}:budget`}
+                        label="执行预算"
+                        value={
+                          step.budget || {
+                            max_turns: 8,
+                            timeout_seconds: 300,
+                            retry_limit: 3,
+                          }
+                        }
+                        onChange={(budget) => updateStep({ budget })}
+                      />
+                    </details>
+                    <ActionButton
+                      type="button"
+                      onClick={() => {
+                        const dependents = document.steps.filter((item: Row) =>
+                          item.dependencies?.includes(step.key),
+                        );
+                        if (dependents.length) {
+                          setError(
+                            "请先移除后续步骤对此步骤的依赖和材料引用。",
+                          );
+                          return;
+                        }
+                        update({
+                          steps: document.steps.filter(
+                            (item: Row) => item.key !== step.key,
+                          ),
+                        });
+                        setDraft((current) => ({
+                          ...current,
+                          node: "workflow",
+                        }));
+                      }}
+                    >
+                      删除步骤
+                    </ActionButton>
                   </>
-                )}
+                ) : null}
               </fieldset>
-              {step && requiresTask(step.kind) ? (
+              {step?.executor.type === "agent" ? (
                 <WorkflowTaskPreview
-                  key={`${draft.selected}:${step.key}`}
                   request={request}
-                  projectId={project?.id}
                   document={document}
                   step={step}
-                  agents={records.filter((r) => r.kind === "agent")}
-                  roles={records.filter((r) => r.kind === "role")}
-                  nodeKeys={(step.execution_recipe || [])
-                    .filter((n: Row) => agentNode(n.key))
-                    .map((n: Row) => n.key)}
+                  records={records}
+                  project={project}
+                  workflowId={draft.selected}
                 />
               ) : null}
             </div>
           </div>
-          {validation && (
-            <details open>
-              <summary>所需角色与规范预览</summary>
-              <p>
-                {validation.roles?.map((r: Row) => r.role.name).join("、") ||
-                  "系统流程，无需 Agent"}
-              </p>
-              {validation.specification_snapshot?.map((binding: Row) => (
-                <div className="document-row" key={binding.path}>
-                  <strong>{binding.path}</strong>
-                  <span>
-                    {binding.spec_refs
-                      .map(
-                        (id: string) =>
-                          specs.find((r) => r.id === id)?.name || "固定 Spec",
-                      )
-                      .join("、") || "系统动作"}
-                  </span>
-                </div>
-              ))}
-            </details>
-          )}
-        </section>
+          {validation ? (
+            <p role="status">
+              已解析 {validation.roles?.length || 0} 个 Role，
+              {validation.specification_snapshot?.length || 0} 个步骤。
+            </p>
+          ) : null}
+        </>
       )}
-      {error && (
+      {error ? (
         <p role="alert" className="error">
           {error}
         </p>
-      )}
-      {message && (
+      ) : null}
+      {message ? (
         <p role="status" className="notice">
           {message}
         </p>
-      )}
-    </>
-  );
-}
-function ConditionEditor({
-  condition,
-  steps,
-  onChange,
-}: {
-  condition: Row;
-  steps: Row[];
-  onChange: (value: Row) => void;
-}) {
-  return (
-    <fieldset>
-      <legend>推进条件</legend>
-      <label>
-        条件操作
-        <ActionSelect
-          aria-label="条件操作"
-          value={condition.op}
-          onChange={(e) =>
-            onChange(
-              e.target.value === "all" || e.target.value === "any"
-                ? { op: e.target.value, conditions: [{ op: "always" }] }
-                : e.target.value === "output_present"
-                  ? { op: e.target.value, step: "" }
-                  : e.target.value === "accepted"
-                    ? { op: e.target.value, kind: "requirement" }
-                    : { op: "always" },
-            )
-          }
-        >
-          <option value="always">总是</option>
-          <option value="output_present">前置步骤已有输出</option>
-          <option value="accepted">交付已接受</option>
-          <option value="all">全部条件</option>
-          <option value="any">任一条件</option>
-        </ActionSelect>
-      </label>
-      {condition.op === "output_present" && (
-        <label>
-          引用步骤
-          <ActionSelect
-            aria-label="引用步骤"
-            value={condition.step}
-            onChange={(e) => onChange({ ...condition, step: e.target.value })}
-          >
-            <option value="">请选择</option>
-            {steps.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.name}
-              </option>
-            ))}
-          </ActionSelect>
-        </label>
-      )}
-      {condition.op === "accepted" && (
-        <label>
-          接受的交付类型
-          <ActionSelect
-            aria-label="接受的交付类型"
-            value={condition.kind}
-            onChange={(e) => onChange({ ...condition, kind: e.target.value })}
-          >
-            {[
-              "requirement",
-              "plan",
-              "implementation",
-              "closure",
-              "merge_candidate",
-            ].map((kind) => (
-              <option key={kind}>{kind}</option>
-            ))}
-          </ActionSelect>
-        </label>
-      )}
-      {["all", "any"].includes(condition.op) && (
-        <>
-          {condition.conditions.map((c: Row, i: number) => (
-            <div key={i}>
-              <ConditionEditor
-                condition={c}
-                steps={steps}
-                onChange={(value) =>
-                  onChange({
-                    ...condition,
-                    conditions: condition.conditions.map(
-                      (c: Row, index: number) => (index === i ? value : c),
-                    ),
-                  })
-                }
-              />
-              <ActionButton
-                type="button"
-                onClick={() =>
-                  onChange({
-                    ...condition,
-                    conditions: condition.conditions.filter(
-                      (_: Row, index: number) => i !== index,
-                    ),
-                  })
-                }
-              >
-                删除子条件
-              </ActionButton>
-            </div>
-          ))}
-          <ActionButton
-            type="button"
-            onClick={() =>
-              onChange({
-                ...condition,
-                conditions: [...condition.conditions, { op: "always" }],
-              })
-            }
-          >
-            添加子条件
-          </ActionButton>
-        </>
-      )}
-    </fieldset>
+      ) : null}
+    </section>
   );
 }

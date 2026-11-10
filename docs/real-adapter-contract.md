@@ -1,34 +1,37 @@
 # 工程适配器接入契约
 
-产品只执行原生 Codex/DSH、Git、Docker 测试和 GitHub 操作。原型模拟执行器及其回退、故障场景、逻辑资源和受控继续操作已移除。系统仅接受当前结构和原生来源，旧数据结构与执行合同被明确拒绝。
+产品执行原生 Codex / DSH、Git、Docker 测试和 GitHub 操作；测试替身不进入运行产品。当前业务编排见 [领域规范](domain.md)，字段见 [Schema](../schemas/README.md)。
 
 ## 接口与装配
 
-公共接口位于 `devdesk_core::ports`：
-
-| 接口 | 当前实现 | 职责 |
+| `devdesk_core::ports` 接口 | 实现 | 职责 |
 |---|---|---|
-| `Harness` | `RoutingHarness` → `CodexHarness` / `DshHarness` | 按 Session 冻结的供应商打开 worker、派发轮次、读取事件、回答交互、停止及清理 |
-| `Git` | `CliGit` | 管理仓库/worktree，读取冻结版本，构造候选，按预期目标 CAS 推进及核对 |
-| `Tests` | `CommandTests` | 对冻结代码、测试定义和运行实例异步执行测试、停止与清理 |
-| `PullRequests` | `GitHubPullRequests` | 查询或创建固定候选对应的 PR，记录远端交付事实 |
+| Harness | RoutingHarness → CodexHarness / DshHarness | 固定供应商会话、轮次、事件、工具回复、停止及清理。 |
+| Git | CliGit | 受管理仓库 / worktree、版本导出、父提交、diff、候选、CAS 和发布核对。 |
+| Tests | CommandTests | 对确切代码和配方异步执行测试、停止及清理。 |
+| PullRequests | GitHubPullRequests | 固定候选对应的幂等 PR 创建与远端状态核对。 |
+| ToolExecutor | NativeTools | 离线 Schema 校验及已授权 HTTP / MCP 工具调用。 |
 
-`devdesk_adapters::execution_adapters(root)` 创建原生实现集合；构造过程不调用 Docker、GitHub 或模型。`Engine::new(store, artifacts, adapters)` 和 Host 的 `Workspace::open_with_adapters(root, adapters)` 保留依赖注入，切换项目共享同一组执行器。Docker 容器由 `DockerSandbox` 管理，不再存在描述逻辑资源的 Sandbox 抽象或同步假测试接口。
+`execution_adapters(root)` 创建实际实现，构造过程不调用 Docker、模型或 GitHub。`Engine::new` 和 `Workspace::open_with_adapters` 支持注入，切换项目共享执行器。DockerSandbox 管理真实容器，领域中的 Harness / Sandbox 是配置和历史描述。
 
-## 执行、接纳与恢复
+## 执行与回执
 
-- 先持久化操作意图，事务外调用供应商，再保存回执并由 Core 接纳。适配器不能直接推进业务终态。
-- Attempt 冻结范围、文档、配置、GitContext、代码基线与原生阶段 Session。缺少真实仓库或冻结 Session 时拒绝执行，不生成替代结果。
-- Harness 使用原生轮次和 `RuntimeExecution` 记录准入、输入消费、worker 归属、停止证明及协议产物。取消或传输不确定时保留未知状态，不能把迟到结果当作新的执行成功。
-- TestRequest 包含操作 ID、阶段、候选、测试定义、GitContext 与执行实例。Node 报告器位于 `tests/reporters/node-reporter.mjs`，编译嵌入 Host；它只接纳 Node 测试事件，区分断言失败与环境失败，忽略 stdout 中伪造的报告。
-- 测试请求和回执存入 EffectRecord。恢复使用已记录请求及原操作 ID；先确认写入者停止并封存证据，再清理容器。技术重试保留原执行历史。
-- 适配器身份必须稳定且包含不可变资产摘要。测试执行器及 reporter 必须匹配当前冻结身份；不再接受历史路由包装身份。
-- Git 目标推进使用 MergeAdvance。`reconcile_advance` 明确返回 applied、not_applied 或 unknown；未知结果不得盲目重发推进。
-- 本地 CAS 与远端精确 lease、PR merged 核对分别记录。只有远端事实与冻结候选一致时才完成工程交付。
-- Artifact 使用不可变 ID、相对路径与 SHA-256；暂存、fsync、rename 后再提交引用。导出失败不能提前清理执行环境。
+执行前持久化确切意图；事务外调用实际实现；core 核对身份、归属、摘要和终态后接纳。适配器不得直接设置业务完成。StepExecution 关联完整路径、轮次、输入及实际 Session / Turn / ToolCall，平台工具可以没有模型会话。
 
-## 回归与真实验收
+Harness 接收 canonical `agent-task/v4`，包括任务、职责、Skill、Spec、输入来源、逐端口输出 Schema、预算及授权。Codex 和 DSH 使用同一任务正文，协议编码由各适配器负责。原生准入、消费、终态和 writer 停止证明缺一不可；不确定输入不自动重发。
 
-模块与适配器回归位于 `crates/`，跨进程入口位于 `tests/entrypoints/`，浏览器回归位于 `web/tests/`。`tests/support/runtime.rs` 只编译进测试，提供显式原生接口替身；没有产品模式开关或对外模拟入口。当前数据库直接使用结构基线，测试覆盖旧结构拒绝、当前产物完整性及版本化冻结。
+Codex 的平台工具桥核对当前原生 worker、Session、Turn、请求和调用 ID，以及冻结 Capability / Step / Permission 的交集。它与独立 Tool Step 共用平台处理器；请求、实际回执与回复交付分开记录。DSH 不支持该动态桥，配置时拒绝；普通讨论不提供需要 Workflow 归属的平台工具。
 
-真实供应商、Docker、GitHub、凭据及浏览器验收位于 `tests/live/`，使用专用项目、仓库和容器。当前操作流程与平台证据见 [真实工程接入](real-engineering.md) 和 [测试索引](../tests/README.md)。
+TestRequest 固定操作 ID、候选、环境、GitContext、实际实例和 TestRecipe。回执须逐项对应；Node 报告器只接纳真实测试事件，区分断言与环境失败，不信任 stdout 伪造报告。测试环境不挂载模型凭据，代码只读且禁网。
+
+目录来自明确授权，不要求 `tests/` 前缀。适配器校验路径规范化、symlink、受保护元数据、读写冲突和实际工作副本。只读根目录不生成重复的点路径挂载，局部只读覆盖不能被更宽的写授权突破。
+
+Git 候选是基于预期目标的实际单父提交，并返回平台读取的父提交和 diff。接纳只使用本次运行的实际候选、对应测试与确切人工确认。本地 CAS、远端 lease、PR head / merged / merge_commit 分别核对；本地推进不能冒充远端交付。
+
+取消等待真实停止，封存与清理分开确认。未知副作用进入核对，不盲目重试；技术重试使用新执行身份并保留原请求和结果。输出合同拒绝实际回执时保留观察证据并及时失败，不让步骤永久停留在运行状态。
+
+Artifact 使用不可变 ID、相对路径和 SHA-256，先暂存、fsync、rename，再提交引用。执行和策略身份包含固定版本与资产摘要，缺失能力不能用模拟结果替代。
+
+## 验证
+
+默认回归、HTTP、浏览器、真实资源与付费模型入口见 [测试索引](../tests/README.md)。真实探针使用隔离数据集、二进制副本和专用测试仓库，退出后清理临时登录文件。接口替身、DSH 本地 SDK 夹具与真实云模型结果分开报告；当前证据见 [执行记录](plans/workflow-business-configuration/EXECUTION.md)。

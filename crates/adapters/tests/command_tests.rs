@@ -62,44 +62,29 @@ fn git_fixture(root: &Path, body: &str) -> (GitContext, String) {
 }
 fn fixture(root: &Path, body: &str, phase: &str) -> TestRequest {
     let (code, candidate) = git_fixture(root, body);
-    let document = Document {
-        id: id(),
-        project_id: None,
-        feature_id: Some(id()),
-        task_id: Some(code.source.owner.clone()),
-        kind: "test".into(),
-        title: "Actual test fixture".into(),
-        body: "Node assert fixture".into(),
-        version: 1,
-        supersedes: None,
-        requirement_id: None,
-        design_id: None,
-        origin: Origin::Human,
-        acceptance: vec![],
-        verifies: vec![],
-        artifact_id: None,
-        test_recipe: Some(TestRecipe {
-            runner: TestRunner::NodeTest,
-            files: vec!["tests/actual.test.mjs".into()],
-            image: support::image("codex"),
-            timeout_seconds: 30,
-        }),
+    let recipe = TestRecipe {
+        runner: TestRunner::NodeTest,
+        files: vec!["tests/actual.test.mjs".into()],
+        image: support::image("codex"),
+        timeout_seconds: 30,
     };
     let operation = id();
     let environment = id();
     TestRequest {
+        expect_assertion_failure: phase == "red",
+        recipe: Some(recipe.clone()),
         operation_id: operation.clone(),
         session_id: Some(id()),
-        phase: phase.into(),
+
         candidate,
-        test_definitions: vec![document.id.clone()],
+
         environment: environment.clone(),
         origin: Origin::External,
-        definitions: vec![document],
+
         code: Some(code),
         runtime: Some(ExecutionInstance {
             id: environment,
-            run_id: operation,
+            operation_id: operation,
             harness: Harness {
                 permission: None,
                 id: "node-test-fixture".into(),

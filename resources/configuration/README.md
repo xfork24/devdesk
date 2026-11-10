@@ -1,59 +1,31 @@
 # 默认配置目录
 
-默认条目是普通、独立版本化定义。`manifest.json` 与各类型 JSON 发布当前目录：6 个 Agent、7 个 Capability、2 个 v3 Workflow、8 个阶段 Spec、9 个 Skill，以及 Model、Harness、Sandbox、Permission 和 Delivery。Markdown 引用在编译时嵌入，启动不执行旧版本生成、投影或转换链。项目页预填当前目录，保存后用于后续 Feature。空库从嵌入资源建立数据库副本，UI 编辑只写数据库。应用更新不覆盖已有副本；设置中的“重置模板定义”在预览和确认后恢复整套默认，自建定义与草稿退出当前目录，历史、已保存项目绑定、执行锁和凭据保留。
+`manifest.json` 发布随二进制嵌入的普通配置修订；`defaults.json` 声明默认 Workflow、Role → Agent 绑定、能力和编辑预算。空数据集建立数据库副本，界面编辑和发布写入数据库。源码资源是出厂默认，修改资源不会覆盖已有修订。设置中的模板重置以目录代次切换当前配置，不回写已经冻结的流程。
 
-| Role / Agent | Capability 中的专用 Skill | 主要交付与阶段 Spec |
-|---|---|---|
-| 需求分析师 | [PRD](skills/prd.md) | PRD / [需求规范](specs/prd.md) |
-| 架构师 | [架构设计](skills/architecture.md) | Design Doc / [设计规范](specs/architecture.md)、[方案交付](specs/solution.md) |
-| 项目经理 | [项目管理](skills/project-planning.md) | Task Plan、依赖及 TestRecipe / [拆分规范](specs/project-planning.md) |
-| 开发 | [TDD 实现与文档](skills/tdd-implementation.md) | 代码、Markdown 说明 / [Task 实现](specs/implementation.md) |
-| 测试 | [独立测试](skills/test-design.md)、[Feature/候选验证](skills/release-verification.md) | Test Plan、真实 Red/Green/verify / [测试设计](specs/test-design.md)、[完整验收](specs/closure.md)、[候选合入](specs/release.md) |
-| 独立评审 | [分阶段评审](skills/independent-review.md) | 当前交付边界的逐项 Review / 对应 Step 的阶段 Spec |
+## 概念职责
 
-各 Capability 使用 GPT-6.1 Sol High、固定 Codex Harness、工程上下文 Skill、对应的专用 Skill，以及已有 `harness.native` 工具。AgentID 经验属于检索、定位 Feature/Task 问题与恢复现场的历史上下文，不是 Tool；应用保留经验查询与恢复入口。工具实际由原生 Harness 提供，工具名称不构成授权。Agent 固定默认 Harness/Sandbox Permissions，实际运行使用 Docker；默认镜像配方不是执行证据。
+| 概念 | 配置内容 |
+|---|---|
+| Role | 任意业务身份及职责说明，不决定执行权限。 |
+| Capability / Agent | 精确 Model、Harness、Skills、Tools、Permission 选择，以及明确的执行能力上限。 |
+| Workflow v4 / Stage | 输入输出、步骤依赖、业务分组、背景、阶段默认 Role。 |
+| Step | Agent 任务指令、必需 Skills、Spec、材料引用、输出合同、访问范围、预算及完成要求。 |
+| Delivery | 内容说明、格式及可选离线 JSON Schema；不是一组固定业务文档。 |
+| Spec v3 | 正文、Role/交付类型/标签选择器、任意内容检查项。 |
+| Standard v3 | 可选的 Spec 覆盖基线，使用选择器、必需规范与最低匹配数量。 |
 
-Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审、候选汇合和快照归档。阶段描述取自对应 Spec Markdown。讨论正文是 Markdown，requirement/design/task_plan/test_plan 仍通过已有结构化提案协议保存 ID、验收及测试配方。标准基线可选，Step 的显式 Spec 是实际执行规范来源。
+任务正文直接保存在 Workflow Step 的 `task_instructions`，只在 Agent Step 出现。Role 提供职责、Skill 提供方法、Spec 提供判断依据、Stage 提供背景。不存在标准动作目录、执行配方或任务文件选择分支。四种执行方式是 `agent`、`tool`、`workflow`、`control`；它们只规定执行协议。
 
+## 默认工程流程
 
-## 默认 Step 任务
+默认 Feature 流程配置需求、独立检查、设计、规划、创建 Task、逐项调用 Task 子流程、整体测试、文档和候选接纳。默认 Task 流程配置测试编写、工作空间快照、实际 Red、实现、实际 Green、文档、交付复验、独立评审与候选检查、人工确认及接纳。TDD 顺序、测试目录、职责和确认策略均在 JSON 或所引用的 Skill/Spec 中，可以发布自己的流程替代。
 
-`tasks/` 的 22 份 Markdown 在编译时嵌入，播种为 Workflow Schema v3 的 Feature/Task 定义。用户在 Workflow UI 编辑任务，发布后正文属于该修订；修改源码资源不会改写已有修订或 Feature 锁。任务没有模板插值；Role 是职责，Skill 是方法，Spec 是判准，阶段描述是背景，均独立保留来源。仅支持当前 v3 任务合同。
+默认六种职责是示例配置，不限制用户定义新 Role。所有引用在 `manifest.json` 中声明，模板重置按身份重建完整引用图，不通过 builtin ID 前缀猜测默认对象。`projections/` 保存当前执行配置的投影；`initial/` 只负责首次初始化 Agent 身份。
 
-| 原业务提示入口 | 新任务文件 | 保留的系统合同 |
-|---|---|---|
-| workflow_runtime 讨论 goal | prd / design / planning / discussion-tests / feature | ProposalContent、主题、轮数、显式采纳 |
-| requirement_validate / plan_validate / test_plan_validate | validate-requirement / validate-plan / validate-tests；对应 attempt 公共任务 | evidence-checks/v2、模型 Approve 与人类 Approve、只读范围 |
-| Task / Feature 测试编写 | author-task-tests / author-feature-tests | 冻结测试写范围、真实测试执行与封存 |
-| 实现与文档 | implement / docs；attempt-implementation / attempt-closure | work-summary/v1 / implementation-document/v1、代码写范围与协调器 Git |
-| 阶段交付评审 | review-requirement / review-plan / review-task / review-feature | 独立评审身份、四类 checks 与真实证据 |
-| 候选评审 | review-candidate-task / review-candidate-feature | 候选来源、只读代码与合入门禁 |
+平台工具包含 `workspace.current`、`workspace.snapshot`、`materials.capture`、`tasks.create`、`tasks.complete`、`tests.run`、`git.candidate`、`git.advance`、`git.publish`。这些处理器需要代码提供真实能力；业务流程选择哪个工具、参数来自哪里、如何等待确认属于配置。测试工具需要明确的运行环境，不创建占位 Agent 或 Session。
 
-新 v3 路径只传这些已冻结正文和受控材料，不再从 live_runs 的旧分支追加业务提示。系统只接受 v3 Workflow 的显式任务指令。系统测试和 merge.prepare 不调用 Agent。
+Codex Agent 可在 Capability 和当前 Step 中显式选择平台工具，通过真实原生调用进入同一处理器；函数名称使用 `devdesk_` 加处理器名称的可移植映射。当前 DSH 不支持动态工具桥。需要批准的平台写入使用显式工具步骤和确认门禁。Git 候选返回实际父提交及确切 diff，供配置中的独立评审引用。
 
-工程上下文、职责、阶段方法、Spec、Standard 与任务正文维护在对应 Markdown 目录，清单与 `defaults.json` 声明当前发布版本及精确引用。只读内容与引用的摘要在发布时计算。DSH 原生工具组通过明确的 Harness 标识限制适用后端。
+内容检查输出按 Spec 的动态 key 提交 `approve`、`summary`、`checks[{key,passed,evidence}]`，检查集合须精确匹配。模型拒绝保留原报告；人工决定绑定确切输入及输出，只有 Step 明确允许时才能说明理由覆盖完成条件。
 
-## 内容校验、提示词与双重 Approve
-
-所有业务任务、内容检查重点和阶段边界说明都存放在对应 Step 的 `task_instructions` 或其 `execution_recipe` 节点任务中，Workflow 编辑器可编辑、预览、发布。代码只规定输出结构和执行协议。Role、Skill、Spec 仍按所选精确修订提供；Skill 内容不被固化成一组写死的标题或关键词条件。
-
-| 阶段 | 内容判断依据 | 可配置任务 |
-|---|---|---|
-| PRD 讨论、需求正式校验与评审 | PRD Skill 的目标、用户、范围、可观察验收、失败恢复与未决事项 | prd、attempt-requirement、validate-requirement、review-requirement |
-| Design Doc | 架构 Skill 的接口、状态、边界、方案取舍与验证策略 | design |
-| Task Plan | 项目管理 Skill 的任务范围、AC 责任、依赖 DAG、配方与汇合条件 | planning |
-| Test Plan | 测试 Skill 的用例预期、覆盖、环境与失败分类 | discussion-tests |
-| 方案正式校验与评审 | 当前 PRD、Design、Task、TestPlan 的内容和跨材料一致性 | attempt-planning、validate-plan、validate-tests、review-plan |
-| Task TDD 实现与文档 | 测试/实现 Skill、冻结测试、实际代码及 Red/Green/verify | attempt-implementation、author-task-tests、implement、docs、review-task |
-| Feature 收尾 | Feature 验证 Skill、完整 AC、跨 Task 行为、实际测试及交付局限 | attempt-closure、author-feature-tests、docs、review-feature |
-| Task/Feature 候选评审 | 候选验证及评审 Skill、精确 SHA、来源、目标和实际证据 | review-candidate-task、review-candidate-feature |
-
-校验模型输出单个 JSON：`approve`（布尔结论）、`summary`（内容判断及原因）、`checks`（traceability、scope、tests、failure_paths 四项，各含 key、passed、evidence）。具体质量要求来自当前任务与 Skill/Spec；结构合法本身不代表内容通过。缺口应说明具体材料位置及改进内容。
-
-有效报告保存为完成的模型执行，模型 Reject 不会伪装成调用故障。模型 Approve 和 Reject 都等待人类 Approve；人类覆盖 Reject 时必须明确选择覆盖并填写理由。模型原始结论、逐项证据、关联版本和人类覆盖记录均保留。独立评审的 Delivery 只有取得人类决定后才会被接受；旧版本、未停止的 writer 和真实执行证据仍按内核规则核对。
-
-内置正文按目标与边界、输入、交付内容、一致性检查、完成标准和工具证据组织。职责、技能、规范、任务与交付定义分别说明本层责任，避免把计划当作执行证据。新增内容位于 `deliveries/`。
-
-发布默认目录时应同步更新内容、版本及依赖引用；启动只补齐缺失身份，不推断或转换旧定义。新项目的默认选择使用当前发布目录。已有 Workflow、Feature 与任务输入保持冻结；编辑任务或 Skill 后，发布并明确选择新修订，不隐式替换在途执行。
-
-各模板通过 `text_files` 声明 Markdown 字段，通过 `references` 声明精确依赖。`projections/` 与 `initial/` 仅承载当前实体的选择器投影和首次初始化的默认 AgentInstance；重置不新增运行实例。MCP/HTTP 默认清单为空，用户服务、密钥和机器授权保存在数据库或凭据库。资源随二进制嵌入，独立发布包可在无源码目录编辑和重置。
+模型显示名称与默认地址在 `model-provider-defaults.json`，实际 SDK 协议、认证与安全校验仍由适配器实现。MCP/HTTP 服务及凭据引用在数据库中配置；资源目录不包含密钥。

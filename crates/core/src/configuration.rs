@@ -1,5 +1,5 @@
 //! Explicit reusable capabilities, visibility and configuration reference checks.
-use crate::governance::{reference, validate_composition};
+use crate::governance::reference;
 use crate::*;
 
 pub(crate) fn role_record<'a>(
@@ -48,34 +48,6 @@ pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&s
     }
     true
 }
-pub(crate) fn compose_capability(
-    s: &EngineeringState,
-    capability: &CapabilityDefinition,
-) -> AgentComposition {
-    AgentComposition {
-        permission_selection: Some(AgentPermissionSelection {
-            sandbox_ref: current_template_defaults(s)
-                .and_then(|d| d["permission_sandbox_ref"].as_str().map(str::to_owned))
-                .or_else(|| {
-                    s.governance
-                        .iter()
-                        .find(|r| r.kind == "sandbox" && template_record_current(s, r))
-                        .map(|r| r.id.clone())
-                })
-                .unwrap_or_else(|| DEFAULT_PERMISSION_SANDBOX.into()),
-            harness: PermissionSelection::FollowTarget,
-            sandbox: PermissionSelection::FollowTarget,
-        }),
-        capability_ref: None,
-        role: AgentRole::Analyst,
-        role_ref: None,
-        instructions: "Capability compatibility validation".into(),
-        model_ref: capability.model_ref.clone(),
-        harness_ref: capability.harness_ref.clone(),
-        skills: capability.skills.clone(),
-        tools: capability.tools.clone(),
-    }
-}
 pub(crate) fn normalize_agent(s: &EngineeringState, data: &mut Value, scope: &Scope) -> Result<()> {
     let role_ref = text(data, "role_ref")?;
     let r = reference(s, &role_ref, "role", scope)?;
@@ -101,7 +73,7 @@ pub(crate) fn normalize_agent(s: &EngineeringState, data: &mut Value, scope: &Sc
         data.get("permissions").is_none() && data.get("approval").is_none(),
         "旧权限字段已移除，请使用 permission_selection",
     )?;
-    data["role"] = json!(role.execution_role);
+    data["role"] = json!(r.definition_id);
     if data.get("instructions").is_none() {
         data["instructions"] = json!(role.instructions);
     }
@@ -129,7 +101,75 @@ pub(crate) fn validate_capability(s: &EngineeringState, data: &Value, scope: &Sc
             }
         }
     }
-    validate_composition(s, &compose_capability(s, &cap), scope)
+    let a = &cap;
+    let model: ModelDefinition = reference(s, &cap.model_ref, "model", scope)?.decode()?;
+    let harness: HarnessDefinition = reference(s, &cap.harness_ref, "harness", scope)?.decode()?;
+    require(
+        !model.model.trim().is_empty() && !model.provider.trim().is_empty(),
+        "Model 后端与标识不能为空",
+    )?;
+    require(
+        harness.model_providers.is_empty() || harness.model_providers.contains(&model.provider),
+        "Harness 不支持该 Model 后端",
+    )?;
+
+    resolve_model_connection(&model, &harness)?;
+
+    for tool in &a.tools {
+        let record = reference(s, tool, "tool", scope)?;
+        if record.data["schema_version"] == 2 {
+            let t: ExternalTool = record.decode()?;
+            t.validate()?;
+            reference(s, &t.integration_ref, "integration", scope)?;
+            require(harness.provider == "codex", "此 Harness 尚不支持外部工具")?;
+            continue;
+        }
+        let t: ToolDefinition = record.decode()?;
+        if t.implementation == "platform" {
+            require(harness.provider == "codex", "此 Harness 尚不支持平台工具桥")?;
+            require(
+                crate::platform_tools::PLATFORM_HANDLERS.contains(&t.qualified_name.as_str()),
+                "平台工具处理器不可用",
+            )?;
+            continue;
+        }
+        require(
+            t.implementation == "harness.native",
+            "Tool 尚无可执行处理器",
+        )?;
+        require(
+            t.harness_provider
+                .as_ref()
+                .is_none_or(|p| p == &harness.provider),
+            "原生工具组不适用于所选 Harness",
+        )?;
+        require(
+            t.capabilities
+                .iter()
+                .all(|c| harness.capabilities.contains(c)),
+            "Harness 不支持 Tool 所需能力",
+        )?;
+    }
+    require(
+        a.tools
+            .iter()
+            .filter_map(|id| s.configuration(id).ok())
+            .filter_map(|r| r.decode::<ToolDefinition>().ok())
+            .any(|t| t.implementation == "harness.native"),
+        "当前 Harness 必须显式声明原生 Tool 集合",
+    )?;
+    for skill in &a.skills {
+        require(
+            s.definitions
+                .iter()
+                .any(|d| &d.id == skill && d.family == "skill")
+                || s.governance
+                    .iter()
+                    .any(|r| &r.id == skill && r.kind == "skill" && r.scope.visible_from(scope)),
+            "Skill 修订不存在",
+        )?;
+    }
+    Ok(())
 }
 fn references_value(value: &Value, ids: &[&str]) -> bool {
     match value {

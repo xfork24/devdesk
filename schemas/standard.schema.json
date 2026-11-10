@@ -1,5 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "DevDesk StandardDefinition",
-  "$ref": "rpc.schema.json#/$defs/StandardDefinition"
+  "title": "DevDesk Standard v3",
+  "$ref": "rpc.schema.json#/$defs/ConfiguredStandard"
 }

@@ -12,28 +12,6 @@ import { useCatalogGeneration } from "../template-catalog";
 const RenderMarkdown = lazy(() => import("./MarkdownPreview"));
 export type Row = Record<string, any>;
 export type Request = (method: string, params?: Row) => Promise<any>;
-export const dutyLabels: Record<string, string> = {
-  analyst: "需求分析",
-  architect: "架构设计",
-  developer: "开发实现",
-  tester: "测试验证",
-  reviewer: "独立评审",
-};
-export const actionLabels: Record<string, string> = {
-  "agent.interact": "角色讨论",
-  "proposal.adopt": "采纳提案",
-  "attempt.execute": "正式执行",
-  "delivery.review": "交付评审",
-  "merge.prepare": "准备候选",
-  "merge.review": "候选评审",
-  "merge.apply": "应用合入",
-  "snapshot.capture": "上下文快照",
-  "resource.cleanup": "资源释放",
-  "tasks.foreach": "Task 子流程",
-  "workflow.call": "调用子流程",
-  branch: "条件分支",
-  join: "汇合",
-};
 export const templateSourceLabel = (row?: Row) =>
   (
     ({

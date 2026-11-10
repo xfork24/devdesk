@@ -51,6 +51,10 @@ const test = base.extend<{ appUrl: string }>({
   },
 });
 
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 async function rpc(page: Page, url: string, method: string, params = {}) {
   const value = await page.request
     .post(`${url}/rpc`, { data: { jsonrpc: "2.0", id: 1, method, params } })
@@ -160,6 +164,7 @@ test("重置失败可重试，确认前并发修改要求重新预览", async ({
   await page.goto(`${appUrl}/?tab=settings`);
   await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "确认重置模板定义" });
+  await expect(dialog.getByRole("button", { name: "确认重置", exact: true })).toBeEnabled();
   await rpc(page, appUrl, "delivery_type.create", {
     command_id: crypto.randomUUID(),
     payload: {
@@ -204,85 +209,4 @@ test("重置失败可重试，确认前并发修改要求重新预览", async ({
   expect((await rpc(page, appUrl, "query.template_catalog")).generation).toBe(
     2,
   );
-});
-
-test("重置刷新设置选择器并保留项目已固定的 Model 和 Harness", async ({
-  page,
-  appUrl,
-}) => {
-  await page.goto(`${appUrl}/?tab=settings`);
-  await expect(
-    page.getByRole("button", { name: "重置模板定义", exact: true }),
-  ).toBeVisible();
-  const project = await rpc(page, appUrl, "project.create", {
-    command_id: crypto.randomUUID(),
-    payload: { title: "Preference continuity" },
-  });
-  await rpc(page, appUrl, "project.open", {
-    command_id: crypto.randomUUID(),
-    target: project.id,
-    payload: {},
-  });
-  const defaults = await rpc(page, appUrl, "query.configuration_defaults");
-  const preferences = {
-    default: {
-      provider: "codex",
-      model_ref: defaults.model_ref,
-      harness_ref: defaults.harness_ref,
-    },
-    roles: [],
-  };
-  await rpc(page, appUrl, "project.update", {
-    command_id: crypto.randomUUID(),
-    target: project.id,
-    project_id: project.id,
-    expected_revision: 1,
-    payload: { runtime_preferences: preferences },
-  });
-  await rpc(page, appUrl, "delivery_type.create", {
-    command_id: crypto.randomUUID(),
-    payload: {
-      name: "Preference reset fixture",
-      data: { format: "markdown", body: "custom" },
-    },
-  });
-  // Expose this backend-only fixture project in the Web without cloning or accessing GitHub.
-  await page.route("**/rpc", async (route) => {
-    const call = route.request().postDataJSON();
-    if (call.method !== "query.workspace") return route.fallback();
-    const response = await route.fetch();
-    const body = await response.json();
-    if (body.result?.active_project) {
-      body.result.active_project.workspace_definition = {
-        repository: "fixture/templates",
-        mainline: "main",
-      };
-    }
-    return route.fulfill({ response, json: body });
-  });
-  await page.goto(`${appUrl}/?tab=settings`);
-  const model = page.getByLabel("项目角色模型", { exact: true }),
-    harness = page.getByLabel("项目角色 Harness", { exact: true });
-  await expect(model).toHaveValue(defaults.model_ref);
-  await expect(harness).toHaveValue(defaults.harness_ref);
-  await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "确认重置模板定义" })
-    .getByRole("button", { name: "确认重置", exact: true })
-    .click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "模板定义已恢复默认" }),
-  ).toBeVisible();
-  await expect(model).toHaveValue(defaults.model_ref);
-  await expect(harness).toHaveValue(defaults.harness_ref);
-  await expect(harness.locator("option:checked")).toContainText(
-    "重置前固定版本",
-  );
-  expect(
-    (await rpc(page, appUrl, "query.workspace")).active_project
-      .runtime_preferences,
-  ).toMatchObject(preferences);
-  await page.reload();
-  await expect(model).toHaveValue(defaults.model_ref);
-  await expect(harness).toHaveValue(defaults.harness_ref);
 });

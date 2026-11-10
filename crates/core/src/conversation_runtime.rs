@@ -61,8 +61,7 @@ impl Engine {
             .turns
             .iter()
             .filter(|t| {
-                t.run_id.is_none()
-                    && t.status != TurnStatus::Queued
+                t.status != TurnStatus::Queued
                     && t.status.active()
                     && state
                         .executions
@@ -70,19 +69,7 @@ impl Engine {
                         .any(|e| e.session_id == t.session_id && !e.writer_revoked)
             })
             .count();
-        let stranded: std::collections::HashSet<_> = state
-            .executions
-            .iter()
-            .filter(|e| !e.writer_revoked)
-            .filter_map(|e| e.run_id.as_ref())
-            .filter(|id| {
-                state
-                    .runs
-                    .iter()
-                    .any(|r| &r.id == *id && r.status != Status::Running)
-            })
-            .collect();
-        Ok(standalone + stranded.len())
+        Ok(standalone)
     }
     pub fn tick_conversations(&self, limit: usize) -> Result<()> {
         let state = self.store.snapshot()?;
@@ -202,37 +189,54 @@ impl Engine {
             }
         }
         let snapshot = self.store.snapshot()?;
-        let occupied = snapshot
-            .runs
-            .iter()
-            .filter(|r| r.status == Status::Running)
-            .count()
-            + self.conversation_running()?;
+        let occupied = self.conversation_running()?;
         let project_limit = snapshot
             .projects
             .first()
             .map(|p| p.concurrency as usize)
             .unwrap_or(limit);
         let mut available = limit.min(project_limit).saturating_sub(occupied);
+        let mut writers = std::collections::BTreeSet::new();
+        for execution in snapshot.executions.iter().filter(|e| !e.writer_revoked) {
+            if let Some(turn) = snapshot
+                .turns
+                .iter()
+                .rev()
+                .find(|t| t.session_id == execution.session_id && t.code_view.is_some())
+            {
+                if snapshot.turn_runtime_binding(turn)?.tool_policy != ToolPolicy::ReadOnly {
+                    writers.insert(
+                        turn.code_view
+                            .as_ref()
+                            .unwrap()
+                            .context
+                            .source
+                            .worktree
+                            .clone(),
+                    );
+                }
+            }
+        }
         for turn in snapshot
             .turns
             .iter()
             .filter(|t| t.status == TurnStatus::Queued)
         {
-            if let Some(run) = turn
-                .run_id
-                .as_ref()
-                .and_then(|id| snapshot.runs.iter().find(|r| &r.id == id))
-            {
-                if run.status != Status::Running || run.cancel_requested {
-                    continue;
-                }
-            } else {
-                if available == 0 {
-                    continue;
-                }
-                available -= 1;
+            if available == 0 {
+                continue;
             }
+            let binding = snapshot.turn_runtime_binding(turn)?;
+            if binding.tool_policy != ToolPolicy::ReadOnly {
+                let view = turn
+                    .code_view
+                    .as_ref()
+                    .ok_or_else(|| err("scope_violation", "写入任务没有明确工作空间"))?;
+                if writers.contains(&view.context.source.worktree) {
+                    continue;
+                }
+                writers.insert(view.context.source.worktree.clone());
+            }
+            available -= 1;
 
             let session = snapshot
                 .sessions
@@ -255,7 +259,6 @@ impl Engine {
                 kind: RuntimeExecutionKind::Harness,
                 id: id(),
                 session_id: session.id.clone(),
-                run_id: turn.run_id.clone(),
                 operation_id: id(),
                 container_id: None,
                 image_digest: image,
@@ -281,7 +284,7 @@ impl Engine {
             })?;
             let result = (|| -> Result<()> {
                 let request = SessionStart {
-                    task_base: self.frozen_turn_task(&snapshot, &turn.id)?.map(|t| t.base),
+                    configured_task: self.configured_task(&snapshot, &turn.id)?,
                     code_view: turn.code_view.clone(),
                     session: session.clone(),
                     agent: snapshot
@@ -390,7 +393,7 @@ impl Engine {
                 let specifications = serde_json::from_value(specifications)
                     .map_err(|e| err("invalid_configuration", e.to_string()))?;
                 self.harness.dispatch_turn(&TurnDispatch {
-                    task: self.frozen_turn_task(&snapshot, &turn.id)?,
+                    configured_task: self.configured_task(&snapshot, &turn.id)?,
                     specifications,
                     session: {
                         let mut effective = updated.clone();
@@ -628,11 +631,7 @@ impl Engine {
                     .unwrap();
                 row.writer_revoked = true;
                 row.finished = Some(now());
-                row.status = if execution.run_id.is_some() {
-                    Status::Succeeded
-                } else {
-                    Status::Released
-                };
+                row.status = Status::Released;
                 row.protocol_artifact = artifact.as_ref().map(|a| a.id.clone());
                 append(
                     s,
@@ -665,33 +664,16 @@ impl Engine {
             );
             if s.turns
                 .iter()
-                .any(|t| t.id == tid && t.run_id.is_none() && t.status == TurnStatus::Completed)
+                .any(|t| t.id == tid && t.status == TurnStatus::Completed)
                 && s.governance
                     .iter()
                     .any(|r| r.kind == "agent_session" && r.definition_id == session.id)
             {
-                let task_source = s
-                    .governance
-                    .iter()
-                    .find(|record| record.kind == "execution_task" && record.definition_id == tid)
-                    .and_then(|record| record.data["source_binding_id"].as_str())
-                    .and_then(|id| s.configuration(id).ok())
-                    .cloned();
-                self.capture_conversation(
-                    s,
-                    session,
-                    "conversation_completed",
-                    None,
-                    None,
-                    task_source.as_ref(),
-                )?;
+                self.capture_conversation(s, session, "conversation_completed", None)?;
             }
             Ok(json!({"ok":true}))
         })?;
         for (execution, _, _) in results {
-            if execution.run_id.is_some() {
-                continue;
-            }
             if let Err(error) = self.harness.cleanup_worker(session, &execution) {
                 self.store.transact(None, &mut |s| {
                     s.executions

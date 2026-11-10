@@ -342,11 +342,28 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
         ),
       ]),
     );
+  let releaseDefaults!: () => void;
+  let defaultsRequested!: () => void;
+  const defaultsGate = new Promise<void>((resolve) => { releaseDefaults = resolve; });
+  const defaultsPending = new Promise<void>((resolve) => { defaultsRequested = resolve; });
+  await page.route("**/rpc", async (route) => {
+    if (route.request().postDataJSON().method === "query.configuration_defaults") {
+      defaultsRequested();
+      await defaultsGate;
+    }
+    return route.fallback();
+  });
   await creator
     .getByRole("button", { name: "创建接入源", exact: true })
     .click();
   await expect(creator.getByRole("status")).toContainText("接入定义已保存");
   const account = page.getByRole("region", { name: "接入绑定管理" });
+  await defaultsPending;
+  try {
+    await expect(account.getByLabel("绑定名称", { exact: true })).toBeDisabled();
+  } finally {
+    releaseDefaults();
+  }
   await account
     .getByLabel("绑定名称", { exact: true })
     .fill("MCP Account " + name);
@@ -413,8 +430,8 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
     )
     .toBe("succeeded");
   await page.getByRole("button", { name: "历史记录", exact: true }).click();
-  await page.getByLabel("历史范围", { exact: true }).selectOption("tools");
-  const history = page.getByRole("region", { name: "工具调用记录" });
+  await page.getByLabel("历史范围", { exact: true }).selectOption("global");
+  const history = page.getByRole("region", { name: "历史记录" });
   await history.getByRole("button", { name: new RegExp(tool.name) }).click();
   await expect(
     history.getByRole("article", { name: "调用详情" }),

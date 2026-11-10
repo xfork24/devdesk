@@ -8,17 +8,8 @@
     "version": 3,
     "supersedes": null,
     "body": "",
-    "slots": [],
-    "rules": [],
     "agent_profile": {
-      "allowed_work": [
-        "discussion"
-      ],
-      "output_schemas": [
-        "requirement/v1",
-        "feature/v1"
-      ],
-      "role": "analyst",
+      "role": "builtin-role-analyst",
       "skill_revisions": [
         "builtin-skill-engineering-context-v2",
         "builtin-skill-prd-v2"
@@ -37,6 +28,10 @@
     "/agent_profile/skill_revisions/1": {
       "template_ref": "governance.builtin-skill-prd-v2",
       "target": "revision"
+    },
+    "/agent_profile/role": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
     }
   },
   "initial_only": false

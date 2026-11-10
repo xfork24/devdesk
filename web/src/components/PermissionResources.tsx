@@ -6,6 +6,7 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { useEffect, useState } from "react";
+import { DirectoryPicker } from "./DirectoryPicker";
 
 type Request = (
   method: string,
@@ -44,7 +45,7 @@ type Catalog = {
   profiles: Profile[];
   targets: Target[];
   bindings: unknown[];
-  sources: string[];
+  source: { path: string; builtin_path: string; is_builtin: boolean };
   origins: unknown[];
   agents?: {
     id: string;
@@ -82,7 +83,7 @@ export function PermissionResources({
 
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<unknown>();
-  const [source, setSource] = useState("");
+  const [choosingSource, setChoosingSource] = useState(false);
   const [scope, setScope] = useState(
     '{"work_type":"discussion","writable_paths":[],"read_only_paths":[]}',
   );
@@ -588,53 +589,73 @@ export function PermissionResources({
         ) : null}
         <details>
           <summary>预定义来源与历史</summary>
-          <ul>
-            {catalog.sources.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-          <ActionButton
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              captureFeedback();
-              return action(async () => {
-                const result = await command("permission.profile.reload", {});
-                await reload();
-                setMessage(
-                  `预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}；活动绑定保持不变。`,
-                );
-              });
-            }}
-          >
-            重新加载预设
-          </ActionButton>
-          <label>
-            新增预设来源目录
-            <input
-              value={source}
-              onChange={(e) => {
+          <p>
+            当前预设目录（{catalog.source.is_builtin ? "内置" : "自定义"}）：
+            <span className="permission-source-path" aria-label="当前预设目录">
+              {catalog.source.path}
+            </span>
+          </p>
+          <p className="muted">
+            仅从当前目录加载预设。切换目录后点击“重新加载预设”；“重新加载内置预设”会恢复内置目录并加载。已导入的权限版本与活动绑定保持不变。
+          </p>
+          <div className="actions">
+            <ActionButton
+              type="button"
+              disabled={busy}
+              onClick={() => {
                 captureFeedback();
-                return setSource(e.target.value);
+                setChoosingSource(true);
               }}
-              placeholder="绝对目录"
-            />
-          </label>
-          <ActionButton
-            type="button"
-            disabled={busy || !source}
-            onClick={() => {
-              captureFeedback();
-              return action(async () => {
-                await command("permission.source.register", { path: source });
+            >
+              打开文件夹
+            </ActionButton>
+            <ActionButton
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                captureFeedback();
+                return action(async () => {
+                  const result = await command("permission.profile.reload", {});
+                  await reload();
+                  setMessage(
+                    `预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}；活动绑定保持不变。`,
+                  );
+                });
+              }}
+            >
+              重新加载预设
+            </ActionButton>
+            <ActionButton
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                captureFeedback();
+                return action(async () => {
+                  const result = await command("permission.profile.reload", {
+                    builtin: true,
+                  });
+                  await reload();
+                  setMessage(
+                    `内置预设重新加载完成：新增 ${result.added.length}，相同 ${result.unchanged.length}；已恢复内置目录，活动绑定保持不变。`,
+                  );
+                });
+              }}
+            >
+              重新加载内置预设
+            </ActionButton>
+          </div>
+          {choosingSource ? (
+            <DirectoryPicker
+              request={request}
+              initialPath={catalog.source.path}
+              onClose={() => setChoosingSource(false)}
+              onSelect={async (path) => {
+                await command("permission.source.select", { path });
                 await reload();
-                setSource("");
-                setMessage("来源已登记，可重新加载预设。");
-              });
-            }}
-          >
-            登记预设目录
-          </ActionButton>
+                setMessage("预设目录已替换，可重新加载预设。");
+              }}
+            />
+          ) : null}
           <pre>
             {JSON.stringify(
               { bindings: catalog.bindings, origins: catalog.origins },

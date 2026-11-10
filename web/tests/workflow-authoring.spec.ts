@@ -6,7 +6,10 @@ import { useMockCodexCatalog } from "./support/model-catalog";
 useMockCodexCatalog();
 async function setup(page: Page) {
   await page.goto("/");
-  if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
+  if (
+    (await page.request.get("/capabilities").then((r) => r.json()))
+      .setup_required
+  ) {
     await page
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-config-web-")));
@@ -67,9 +70,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   const role = page.getByRole("region", { name: "角色管理" });
   const name = "安全评审 " + crypto.randomUUID().slice(0, 6);
   await role.getByLabel("Role 名称", { exact: true }).fill(name);
-  await role
-    .getByRole("button", { name: "职责说明", exact: true })
-    .click();
+  await role.getByRole("button", { name: "职责说明", exact: true }).click();
   await role
     .getByRole("textbox", { name: "职责说明", exact: true })
     .fill("# Duties\n\nReview evidence and security boundaries.");
@@ -99,9 +100,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     role.getByRole("button", { name: new RegExp(name + " v2") }),
   ).toHaveCount(0);
 });
-test("原生工具目录提供独立当前入口且不编辑 Schema", async ({
-  page,
-}) => {
+test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ page }) => {
   await setup(page);
   await page.goto(
     "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native-v1",
@@ -130,7 +129,9 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   const name = "Browser Model " + crypto.randomUUID().slice(0, 5);
   await page.getByLabel("名称", { exact: true }).fill(name);
-  await page.getByLabel("模型标识", { exact: true }).selectOption("fixture-model");
+  await page
+    .getByLabel("模型标识", { exact: true })
+    .selectOption("fixture-model");
   await page.getByRole("button", { name: "创建 Model", exact: true }).click();
   await expect(
     page.getByRole("button", { name: new RegExp(name) }),
@@ -188,67 +189,99 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
     agentName + " · 未保存",
   );
 });
-test("Workflow 两列编辑器保存发布并恢复对象及草稿", async ({ page }, info) => {
+test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确切输入", async ({
+  page,
+}, info) => {
   await setup(page);
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
-  await page
-    .getByRole("button", { name: "新建 Workflow", exact: true })
-    .click();
-  const editor = page.getByRole("region", { name: "Workflow 编辑器" });
-  const name = "浏览器子流程 " + crypto.randomUUID().slice(0, 6);
-  await editor.getByLabel("Workflow 名称", { exact: true }).fill(name);
-  await editor
-    .getByLabel("流程用途", { exact: true })
-    .selectOption("subworkflow");
+  await page.getByRole("button", { name: "新建流程", exact: true }).click();
+  const editor = page.getByRole("region", { name: "工作流程管理" });
+  const name = "业务确认 " + crypto.randomUUID().slice(0, 6);
+  await editor.getByLabel("流程名称", { exact: true }).fill(name);
   await editor.getByRole("button", { name: "添加步骤", exact: true }).click();
-  await editor.getByLabel("步骤名称", { exact: true }).fill("确定性汇合");
-  await editor
-    .getByLabel("标准动作", { exact: true })
-    .selectOption("attempt.execute");
-  await editor
-    .getByLabel("执行 Role", { exact: true })
-    .selectOption("builtin-role-developer");
-  await editor
-    .getByLabel("步骤 Spec", { exact: true })
-    .selectOption("builtin-spec-stage-implementation-v1");
-  await editor.getByLabel("标准动作", { exact: true }).selectOption("join");
-
+  await editor.getByLabel("步骤名称", { exact: true }).fill("确认调查范围");
+  await editor.getByLabel("执行方式", { exact: true }).selectOption("control");
+  await editor.getByLabel("完成确认", { exact: true }).selectOption("human");
+  await expect(editor.getByLabel("标准动作", { exact: true })).toHaveCount(0);
   await editor.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText(/草稿已保存/);
+  await expect(
+    editor.getByRole("status").filter({ hasText: /已保存|已发布|校验通过/ }),
+  ).toHaveText(/草稿已保存/);
   await editor
     .getByLabel("步骤名称", { exact: true })
-    .fill("确定性汇合 · 未保存");
+    .fill("确认范围 · 本地草稿");
   await page.reload();
   await expect(editor.getByLabel("步骤名称", { exact: true })).toHaveValue(
-    "确定性汇合 · 未保存",
+    "确认范围 · 本地草稿",
   );
-  await editor
-    .getByRole("button", { name: "校验与规范预览", exact: true })
-    .click();
-  await expect(page.getByText(/校验通过/)).toBeVisible();
-  await editor
-    .getByRole("button", { name: "保存可用版本", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toHaveText(/可用版本已保存/);
+  await editor.getByRole("button", { name: "校验流程", exact: true }).click();
+  await expect(
+    editor.getByRole("status").filter({ hasText: /已保存|已发布|校验通过/ }),
+  ).toHaveText(/校验通过/);
+  await editor.getByRole("button", { name: "发布流程", exact: true }).click();
+  await expect(
+    editor.getByRole("status").filter({ hasText: /已保存|已发布|校验通过/ }),
+  ).toHaveText(/流程已发布/);
   await page.reload();
-  await expect(
-    page.getByRole("region", { name: "Workflow 编辑器" }),
-  ).toBeVisible();
-  await expect(page.getByLabel("Workflow 名称", { exact: true })).toHaveValue(
-    name,
+  const workflows = await rpc(page, "query.workflows", { limit: 100 });
+  const workflow = workflows.records.find(
+    (r: any) => r.kind === "workflow" && r.name === name,
   );
+  expect(workflow.data.schema_version).toBe(4);
+  expect(workflow.data.steps[0].executor.type).toBe("control");
+  const project = await rpc(page, "project.create", {
+    command_id: crypto.randomUUID(),
+    payload: { title: "浏览器执行闭环" },
+  });
+  const instance = await rpc(page, "workflow.start", {
+    project_id: project.id,
+    command_id: crypto.randomUUID(),
+    target: project.id,
+    expected_revision: (
+      await rpc(page, "query.workspace", { project_id: project.id })
+    ).active_project.revision,
+    payload: { workflow_ref: workflow.id, role_agent_bindings: {} },
+  });
+  await page.goto(`/?tab=execution&project_id=${project.id}`);
   await expect(
-    page.getByRole("button", { name: "编辑流程", exact: true }),
+    page.getByRole("button", { name: /确认范围 · 本地草稿/ }).first(),
   ).toBeVisible();
-  await expect(
-    page.getByText("正在连接本地内核...", { exact: false }),
-  ).toHaveCount(0);
-  await expect(page.locator(".workflow-editor-v2 > *")).toHaveCount(2);
+  await expect
+    .poll(async () => {
+      const result = await rpc(page, "query.workspace", {
+        project_id: project.id,
+      });
+      return result.configurations.find((r: any) => r.id === instance.id)?.data
+        .steps[0].status;
+    })
+    .toBe("waiting_confirmation");
+  const state = await rpc(page, "query.workspace", { project_id: project.id });
+  const row = state.configurations.find((r: any) => r.id === instance.id);
+  await rpc(page, "workflow.step.confirm", {
+    project_id: project.id,
+    command_id: crypto.randomUUID(),
+    target: row.id,
+    expected_revision: row.revision,
+    payload: {
+      step: row.data.steps[0].step,
+      input_digest: row.data.steps[0].input_digest,
+      outputs: {},
+    },
+  });
+  await expect
+    .poll(
+      async () =>
+        (
+          await rpc(page, "query.workspace", { project_id: project.id })
+        ).configurations.find((r: any) => r.id === instance.id)?.data.status,
+    )
+    .toBe("completed");
   await page.screenshot({
-    path: info.outputPath("configuration-workflow.png"),
+    path: info.outputPath("configured-workflow.png"),
     fullPage: true,
   });
 });
+
 test("规范与基础组件 Markdown 默认预览，源码修改后保存与重载不丢失", async ({
   page,
 }) => {
@@ -274,16 +307,15 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
     await page
       .getByLabel("名称", { exact: true })
       .fill(`${kind} Markdown ` + crypto.randomUUID().slice(0, 6));
-    await field
-      .getByRole("button", { name: "正文", exact: true })
-      .click();
+    await field.getByRole("button", { name: "正文", exact: true }).click();
+    await field.getByRole("textbox", { name: "正文", exact: true }).fill(body);
     await field
       .getByRole("textbox", { name: "正文", exact: true })
-      .fill(body);
-    await field
-      .getByRole("textbox", { name: "正文", exact: true }).press("Tab");
+      .press("Tab");
     await expect(field.getByRole("textbox")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /编辑.*源码|预览正文/ })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /编辑.*源码|预览正文/ }),
+    ).toHaveCount(0);
     await expect(
       field.getByRole("heading", { name: "Markdown 内容", level: 2 }),
     ).toBeVisible();
@@ -307,9 +339,7 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
       field.getByRole("heading", { name: "Markdown 内容", level: 2 }),
     ).toBeVisible();
     await expect(field.getByRole("textbox")).toHaveCount(0);
-    await field
-      .getByRole("button", { name: "正文", exact: true })
-      .click();
+    await field.getByRole("button", { name: "正文", exact: true }).click();
     await expect(
       field.getByRole("textbox", { name: "正文", exact: true }),
     ).toHaveValue(body);
@@ -319,224 +349,87 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
   }
 });
 
-test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程可建立新修订", async ({
-  page,
-}, info) => {
+test("阶段 Role 可继承，任务指令与子流程调用是独立配置", async ({ page }) => {
   await setup(page);
-  async function publish(name: string, document: any) {
-    const draft = await rpc(page, "workflow.create", {
-      command_id: crypto.randomUUID(),
-      payload: { name, document },
-    });
-    return rpc(page, "workflow.publish", {
-      command_id: crypto.randomUUID(),
-      target: draft.id,
-      expected_revision: draft.revision,
-      payload: {},
-    });
-  }
-  const child = await publish(
-    "可编辑子流程 " + crypto.randomUUID().slice(0, 6),
-    {
-      schema_version: 3,
-      process_kind: "subworkflow",
-      stages: [{ key: "work", name: "子流程阶段" }],
-      steps: [
-        { key: "finish", name: "子流程汇合", kind: "join", stage: "work" },
-      ],
-    },
-  );
-  const goal = "## 讨论目标\n\n完成 **PRD**。";
-  const topics = [
-    "## 场景\n\n覆盖正常流程、失败路径, 并保留来源。",
-    "- 需求\n- 验收",
-  ];
-  const parent = await publish(
-    "阶段与讨论 " + crypto.randomUUID().slice(0, 6),
-    {
-      schema_version: 3,
-      process_kind: "subworkflow",
-      stages: [
-        {
-          key: "plan",
-          name: "讨论与子流程",
-          description: "## 规划\n\n讨论后执行子流程。",
-        },
-        { key: "end", name: "完成阶段" },
-      ],
-      steps: [
-        {
-          key: "discuss",
-          name: "需求讨论",
-          kind: "agent.interact",
-          stage: "plan",
-          role_ref: "builtin-role-analyst",
-          contract_version: 2,
-          task_instructions: goal,
-          spec_refs: ["builtin-spec-stage-prd-v1"],
-          interaction: {
-            mode: "discussion",
-            required_topics: topics,
-            output_kind: "requirement",
-            max_turns: 8,
+  const child = await rpc(page, "workflow.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: "可复用确认 " + crypto.randomUUID().slice(0, 6),
+      document: {
+        schema_version: 4,
+        stages: [{ key: "work", name: "工作" }],
+        steps: [
+          {
+            key: "done",
+            name: "检查输入",
+            stage: "work",
+            executor: { type: "control" },
           },
-        },
-        {
-          key: "child",
-          name: "调用独立子流程",
-          kind: "workflow.call",
-          stage: "plan",
-          subworkflow_ref: child.id,
-          dependencies: ["discuss"],
-        },
-        {
-          key: "end",
-          name: "流程结束",
-          kind: "join",
-          stage: "end",
-          dependencies: ["child"],
-        },
-      ],
+        ],
+      },
     },
-  );
-  await page.goto(`/?tab=workflows&workflow_id=${parent.id}`);
-  const editor = page.getByRole("region", { name: "Workflow 编辑器" });
-  const collapse = editor.getByRole("button", {
-    name: "折叠阶段：讨论与子流程",
-    exact: true,
   });
-  await expect(collapse).toHaveAttribute("aria-expanded", "true");
-  await collapse.click();
-  await expect(
-    editor.getByRole("button", { name: "需求讨论 角色讨论", exact: true }),
-  ).toBeHidden();
-  await expect(
-    editor.getByRole("button", { name: /调用独立子流程/ }),
-  ).toBeHidden();
-  await expect(
-    editor.getByRole("button", { name: "流程结束 汇合", exact: true }),
-  ).toBeVisible();
-  await page.reload();
-  await expect(
-    editor.getByRole("button", { name: "展开阶段：讨论与子流程", exact: true }),
-  ).toHaveAttribute("aria-expanded", "false");
+  const published = await rpc(page, "workflow.publish", {
+    command_id: crypto.randomUUID(),
+    target: child.id,
+    expected_revision: child.revision,
+    payload: {},
+  });
+  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
+  await page.getByRole("button", { name: "新建流程", exact: true }).click();
+  const editor = page.getByRole("region", { name: "工作流程管理" });
+  const name = "继承与组合 " + crypto.randomUUID().slice(0, 6);
+  await editor.getByLabel("流程名称", { exact: true }).fill(name);
+  await editor.getByRole("button", { name: "工作", exact: true }).click();
   await editor
-    .getByRole("button", { name: "展开阶段：讨论与子流程", exact: true })
-    .click();
+    .getByLabel("阶段默认 Role", { exact: true })
+    .selectOption("builtin-role-analyst");
+  await editor.getByRole("button", { name: "添加步骤", exact: true }).click();
+  await editor.getByLabel("步骤名称", { exact: true }).fill("调查上下文");
   await editor
-    .getByRole("button", { name: "需求讨论 角色讨论", exact: true })
-    .click();
-  const goalField = editor.getByRole("group", {
-    name: "任务指令",
-    exact: true,
-  });
-  const topicsField = editor.getByRole("group", {
-    name: "必须讨论的主题",
-    exact: true,
-  });
-  await expect(
-    goalField.getByRole("heading", { name: "讨论目标", level: 2 }),
-  ).toBeVisible();
-  await expect(goalField.getByRole("textbox")).toHaveCount(0);
-  await expect(
-    topicsField.getByRole("heading", { name: "场景", level: 2 }),
-  ).toBeVisible();
-  const creation = page.waitForRequest(
-    (request) =>
-      request.url().endsWith("/rpc") &&
-      request.postDataJSON()?.method === "workflow.draft.create",
-  );
-  await editor.getByRole("button", { name: "编辑流程", exact: true }).click();
-  expect((await creation).postDataJSON().params.payload.base_revision_id).toBe(
-    parent.id,
-  );
-  await expect(
-    editor.getByRole("button", { name: "保存草稿", exact: true }),
-  ).toBeVisible();
-  await expect(editor.getByLabel("步骤名称", { exact: true })).toHaveValue(
-    "需求讨论",
-  );
-  const changedGoal = "## 新讨论目标\n\n产出 **PRD** 与验收说明。";
-  await goalField
+    .getByRole("group", { name: "任务指令", exact: true })
     .getByRole("button", { name: "任务指令", exact: true })
     .click();
-  await goalField
+  await editor
     .getByRole("textbox", { name: "任务指令", exact: true })
-    .fill(changedGoal);
-  await goalField
-    .getByRole("textbox", { name: "任务指令", exact: true }).press("Tab");
-  await expect(
-    goalField.getByRole("heading", { name: "新讨论目标", level: 2 }),
-  ).toBeVisible();
-  await topicsField
-    .getByRole("button", { name: "讨论主题 1", exact: true })
-    .click();
-  const changedTopic =
-    "## 场景与边界\n\n保留多行 Markdown, 包括逗号。\n\n- 正常\n- 失败";
-  await topicsField
-    .getByRole("textbox", { name: "讨论主题 1", exact: true })
-    .fill(changedTopic);
-  await topicsField
-    .getByRole("button", { name: "添加讨论主题", exact: true })
-    .click();
-  await topicsField
-    .getByRole("button", { name: "删除讨论主题 3", exact: true })
-    .click();
-  await editor.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText(/草稿已保存/);
-  const draftId = new URL(page.url()).searchParams.get("workflow_id");
-  const saved = await rpc(page, "query.workflow_draft", { id: draftId });
-  expect(saved.data.document.steps[0].task_instructions).toBe(changedGoal);
-  expect(saved.data.document.steps[0].interaction.required_topics).toEqual([
-    changedTopic,
-    topics[1],
-  ]);
-  expect(
-    (await rpc(page, "query.workflow", { id: parent.id })).data.steps[0]
-      .task_instructions,
-  ).toBe(goal);
-  await page.reload();
-  await expect(
-    goalField.getByRole("heading", { name: "新讨论目标", level: 2 }),
-  ).toBeVisible();
-  await expect(
-    topicsField.getByRole("heading", { name: "场景与边界", level: 2 }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("正在连接本地内核...", { exact: false }),
-  ).toHaveCount(0);
-  await expect(
-    editor.getByLabel("执行 Role", { exact: true }).locator("option:checked"),
-  ).toContainText("需求分析师");
-  await page.screenshot({
-    path: info.outputPath("workflow-markdown-preview.png"),
-    fullPage: true,
-  });
-  await editor.getByRole("button", { name: /调用独立子流程/ }).click();
+    .fill("## 目标\n\n按所加载的 Skill 调查给定材料。");
+  await editor.getByLabel("步骤名称", { exact: true }).click();
   await editor
-    .getByRole("link", { name: new RegExp(`编辑子流程：${child.name}`) })
+    .getByRole("button", { name: "折叠阶段：工作", exact: true })
     .click();
-  await editor
-    .getByRole("button", { name: "子流程汇合 汇合", exact: true })
-    .click();
-  await editor.getByRole("button", { name: "编辑流程", exact: true }).click();
-  await expect(editor.getByLabel("步骤名称", { exact: true })).toBeEnabled();
-  await editor
-    .getByLabel("步骤名称", { exact: true })
-    .fill("子流程汇合 · 已修正");
-  await editor
-    .getByRole("button", { name: "保存可用版本", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toHaveText(/可用版本已保存/);
-  await editor
-    .getByRole("button", { name: "子流程汇合 · 已修正 汇合", exact: true })
-    .click();
-  await expect(editor.getByLabel("步骤名称", { exact: true })).toHaveValue(
-    "子流程汇合 · 已修正",
+  await expect(editor.getByRole("button", { name: /^调查上下文/ })).toHaveCount(
+    0,
   );
-  expect(
-    (await rpc(page, "query.workflow", { id: child.id })).data.steps[0].name,
-  ).toBe("子流程汇合");
+  await editor
+    .getByRole("button", { name: "展开阶段：工作", exact: true })
+    .click();
+  await editor.getByRole("button", { name: /^调查上下文/ }).click();
+  await editor
+    .getByRole("button", { name: "添加子流程调用", exact: true })
+    .click();
+  await editor
+    .getByLabel("调用子流程", { exact: true })
+    .selectOption(published.id);
+  await expect(editor.getByLabel("任务指令", { exact: true })).toHaveCount(0);
+  await editor.getByRole("button", { name: "发布流程", exact: true }).click();
+  await expect(
+    editor.getByRole("status").filter({ hasText: /已保存|已发布|校验通过/ }),
+  ).toHaveText(/流程已发布/);
+  const records = await rpc(page, "query.workflows", { limit: 100 });
+  const workflow = records.records.find(
+    (r: any) => r.kind === "workflow" && r.name === name,
+  );
+  const preview = await rpc(page, "query.workflow_task_preview", {
+    id: workflow.id,
+    step: workflow.data.steps[0].key,
+  });
+  expect(preview.task.task_instructions).toContain("按所加载的 Skill");
+  expect(workflow.data.stages[0].default_role_ref).toBe("builtin-role-analyst");
+  expect(workflow.data.steps[1].executor.workflow_ref).toBe(published.id);
+  await page.reload();
+  await expect(editor.getByLabel("流程名称", { exact: true })).toHaveValue(
+    name,
+  );
 });
 
 test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async ({ page }) => {
@@ -558,7 +451,7 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
       role_agent_bindings: defaults.role_agent_bindings,
     },
   });
-  expect(config.data.schema_version).toBe(2);
+  expect(config.data.schema_version).toBe(3);
   expect(config.data.standard_ref).toBeNull();
   workspace = await rpc(page, "query.workspace");
   expect(workspace.configuration_ready).toBe(true);
@@ -572,49 +465,73 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
     feature_id: f.id,
   });
   const lock = state.configurations.find(
-    (r: any) => r.kind === "feature_lock" && r.definition_id === f.id,
+    (r: any) =>
+      r.kind === "feature_workflow_configuration" && r.definition_id === f.id,
   );
-  expect(lock.data.compiler_version).toBe(3);
+  expect(lock.data.schema_version).toBe(3);
+  expect(lock.data.configuration.role_agent_bindings).toEqual(
+    defaults.role_agent_bindings,
+  );
+  const instance = state.configurations.find(
+    (r: any) => r.id === lock.data.workflow_instance_id,
+  );
+  expect(instance.data.schema_version).toBe(4);
   expect(
-    lock.data.specification_snapshot
-      .filter((b: any) =>
-        [
-          "agent.interact",
-          "attempt.execute",
-          "delivery.review",
-          "merge.review",
-        ].includes(b.action),
-      )
-      .every((b: any) => b.task?.renderer_version === "agent-task/v3"),
+    instance.data.plan.document.steps.every(
+      (s: any) => s.executor && !s.action,
+    ),
   ).toBe(true);
-  expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
   await page.route("**/rpc", async (route) => {
-    if (route.request().postDataJSON().method !== "query.workspace") return route.fallback();
+    if (route.request().postDataJSON().method !== "query.workspace")
+      return route.fallback();
     const response = await route.fetch();
     const value = await response.json();
-    if (value.result?.active_project?.id === p.id) value.result.active_project.workspace_definition = {
-      repository: "fixture/layout", path: "/tmp/devdesk-layout-fixture", mainline: "main",
-    };
-    await route.fulfill({response,json:value});
+    if (value.result?.active_project?.id === p.id)
+      value.result.active_project.workspace_definition = {
+        repository: "fixture/layout",
+        path: "/tmp/devdesk-layout-fixture",
+        mainline: "main",
+      };
+    await route.fulfill({ response, json: value });
   });
   await page.goto(`/?tab=projects&project_id=${p.id}`);
-  const bindings = page.getByRole("group", { name: "流程所需 Role → Agent", exact: true });
+  const bindings = page.getByRole("group", {
+    name: "流程所需 Role → Agent",
+    exact: true,
+  });
   await expect(bindings.getByRole("combobox")).toHaveCount(6);
-  await bindings.screenshot({path:"/tmp/devdesk-role-binding-rows.png"});
-  const geometry = await bindings.locator(":scope > label").evaluateAll((rows) => rows.map((row) => {
-    const text = Array.from(row.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
-    const range = document.createRange(); range.selectNode(text!);
-    const label = range.getBoundingClientRect();
-    const select = row.querySelector("select")!.getBoundingClientRect();
-    return {labelLeft:label.x, labelRight:label.right, labelCenter:label.y+label.height/2, selectLeft:select.x, selectCenter:select.y+select.height/2, top:select.top, bottom:select.bottom};
-  }));
+  await bindings.screenshot({ path: "/tmp/devdesk-role-binding-rows.png" });
+  const geometry = await bindings
+    .locator(":scope > label")
+    .evaluateAll((rows) =>
+      rows.map((row) => {
+        const text = Array.from(row.childNodes).find(
+          (node) =>
+            node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+        );
+        const range = document.createRange();
+        range.selectNode(text!);
+        const label = range.getBoundingClientRect();
+        const select = row.querySelector("select")!.getBoundingClientRect();
+        return {
+          labelLeft: label.x,
+          labelRight: label.right,
+          labelCenter: label.y + label.height / 2,
+          selectLeft: select.x,
+          selectCenter: select.y + select.height / 2,
+          top: select.top,
+          bottom: select.bottom,
+        };
+      }),
+    );
   for (let i = 0; i < geometry.length; i++) {
-    expect(Math.abs(geometry[i].labelCenter - geometry[i].selectCenter)).toBeLessThan(8);
+    expect(
+      Math.abs(geometry[i].labelCenter - geometry[i].selectCenter),
+    ).toBeLessThan(8);
     expect(geometry[i].selectLeft).toBeGreaterThan(geometry[i].labelRight);
-    if (i) expect(geometry[i].top).toBeGreaterThan(geometry[i-1].bottom);
+    if (i) expect(geometry[i].top).toBeGreaterThan(geometry[i - 1].bottom);
   }
-  await page.unrouteAll({behavior:"wait"});
-
+  await page.unrouteAll({ behavior: "wait" });
 });
 
 test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录位于历史", async ({
@@ -637,7 +554,7 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
   ).toHaveText(["Workflow", "Delivery", "Spec", "Standard"]);
   await page.getByRole("tab", { name: "Workflow", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "新建 Workflow", exact: true }),
+    page.getByRole("button", { name: "新建流程", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await expect(
@@ -673,60 +590,103 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
   await expect(page).toHaveURL(/tab=components/);
   await page.goto("/?tab=history&history_scope=tools");
   await expect(page.getByLabel("历史范围", { exact: true })).toHaveValue(
-    "tools",
+    "project",
   );
   await expect(
-    page.getByRole("region", { name: "工具调用记录" }),
-  ).toBeVisible();
+    page.getByLabel("历史范围", { exact: true }).locator("option"),
+  ).toHaveText(["当前项目", "Global"]);
+  await expect(page.getByLabel("调用记录归属", { exact: true })).toHaveCount(0);
+  await page.getByLabel("历史范围", { exact: true }).selectOption("global");
+  await expect(page.getByRole("region", { name: "历史记录" })).toBeVisible();
   await expect(page).toHaveURL(/tab=history/);
   await page.reload();
   await expect(page.getByLabel("历史范围", { exact: true })).toHaveValue(
-    "tools",
+    "global",
   );
-  await page.getByLabel("调用记录归属", { exact: true }).selectOption("global");
   await expect(
-    page.getByRole("heading", { name: "Tools调用记录", exact: true }),
+    page.getByRole("region", { name: "历史记录", exact: true })
+      .getByRole("heading", { name: "历史记录", exact: true }),
   ).toBeVisible();
 });
 
-test("Delivery 定义可编辑，流程产出及前序引用保存后保留精确修订", async ({ page }, info) => {
+test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
+  page,
+}, info) => {
   await setup(page);
-  await page.getByRole("button", {name:"流程与规范",exact:true}).click();
-  await page.getByRole("tab", {name:"Delivery",exact:true}).click();
-  const name = "PRD browser " + crypto.randomUUID().slice(0,6);
-  await page.getByLabel("名称",{exact:true}).fill(name);
-  await page.getByRole("button",{name:"正文",exact:true}).click();
-  await page.getByRole("textbox",{name:"正文",exact:true}).fill("## 目标\n\n描述范围和可观察验收，引用采纳后的文档。");
-  await page.getByRole("button",{name:"创建 Delivery",exact:true}).click();
+  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
+  await page.getByRole("tab", { name: "Delivery", exact: true }).click();
+  const name = "风险材料 " + crypto.randomUUID().slice(0, 6);
+  await page.getByLabel("名称", { exact: true }).fill(name);
+  await page.getByRole("button", { name: "正文", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "正文", exact: true })
+    .fill("风险材料和真实来源。");
+  await page
+    .getByRole("button", { name: "创建 Delivery", exact: true })
+    .click();
   await expect(page.getByRole("status")).toHaveText(/新修订已保存/);
-  const types = await rpc(page,"query.configurations",{kind:"delivery_type",limit:100});
-  expect(types.records.map((r:any)=>r.name)).toEqual(expect.arrayContaining(["PRD","Design Doc","Diff","Test Report",name]));
-  const delivery = types.records.find((r:any)=>r.name === name);
-  const defaults = await rpc(page,"query.configuration_defaults");
-  const workflow = defaults.records.find((r:any)=>r.id === defaults.workflow_ref);
-  const producer = workflow.data.steps.find((s:any)=>s.key === "requirement_adopt");
-  const consumer = workflow.data.steps.find((s:any)=>s.key === "design_discussion");
-  await page.goto(`/?tab=workflows&config_tab=workflow&workflow_id=${workflow.id}`);
-  await page.getByRole("button",{name:"编辑流程",exact:true}).click();
-  const editor = page.getByRole("region",{name:"Workflow 编辑器"});
-  await expect(editor.getByRole("button",{name:"保存草稿",exact:true})).toBeEnabled();
-  await editor.locator(".workflow-node").filter({hasText:producer.name}).click();
-  await editor.getByRole("button",{name:"添加交付物产出",exact:true}).click();
-  await editor.getByLabel("产出名称",{exact:true}).fill("prd");
-  await editor.getByLabel("Delivery 类型修订",{exact:true}).selectOption(delivery.id);
-  await editor.locator(".workflow-node").filter({hasText:consumer.name}).click();
-  await editor.getByRole("button",{name:"引用前序交付物",exact:true}).click();
-  const source = JSON.stringify({step:producer.key,port:"prd"});
-  await editor.getByLabel("前序交付物",{exact:true}).selectOption(source);
-  expect(await editor.getByLabel("前置步骤",{exact:true}).evaluate((select: HTMLSelectElement) => Array.from(select.selectedOptions, option => option.value))).toContain(producer.key);
-  await editor.getByRole("button",{name:"保存可用版本",exact:true}).click();
-  await expect(page.getByRole("status")).toHaveText(/可用版本已保存/);
+  const types = await rpc(page, "query.configurations", {
+    kind: "delivery_type",
+    limit: 100,
+  });
+  const delivery = types.records.find((r: any) => r.name === name);
+  await page.getByRole("tab", { name: "Workflow", exact: true }).click();
+  await page.getByRole("button", { name: "新建流程", exact: true }).click();
+  const editor = page.getByRole("region", { name: "工作流程管理" });
+  await editor.getByLabel("流程名称", { exact: true }).fill(name + " 流程");
+  await editor.getByRole("button", { name: "添加步骤", exact: true }).click();
+  await editor.getByLabel("步骤名称", { exact: true }).fill("产生材料");
+  await editor
+    .getByLabel("执行 Role（留空继承阶段）", { exact: true })
+    .selectOption("builtin-role-analyst");
+  await editor
+    .getByRole("group", { name: "任务指令", exact: true })
+    .getByRole("button", { name: "任务指令", exact: true })
+    .click();
+  await editor
+    .getByRole("textbox", { name: "任务指令", exact: true })
+    .fill("提交输入材料中的风险。");
+  await editor.getByLabel("步骤名称", { exact: true }).click();
+  await editor.getByRole("button", { name: "添加输出", exact: true }).click();
+  await editor.getByLabel("输出名称", { exact: true }).fill("risks");
+  await editor.getByLabel("步骤名称", { exact: true }).click();
+  await editor
+    .getByLabel("交付类型 · risks", { exact: true })
+    .selectOption(delivery.id);
+  await editor.getByRole("button", { name: "添加步骤", exact: true }).click();
+  await editor.getByLabel("步骤名称", { exact: true }).fill("确认材料");
+  await editor.getByLabel("执行方式", { exact: true }).selectOption("control");
+  await editor.getByRole("button", { name: "添加输入", exact: true }).click();
+  const option = await editor
+    .getByLabel("材料来源 · input_1", { exact: true })
+    .locator("option")
+    .last()
+    .getAttribute("value");
+  await editor
+    .getByLabel("材料来源 · input_1", { exact: true })
+    .selectOption(option!);
+  await editor.getByRole("button", { name: "发布流程", exact: true }).click();
+  await expect(
+    editor.getByRole("status").filter({ hasText: /已保存|已发布|校验通过/ }),
+  ).toHaveText(/流程已发布/);
+  const catalog = await rpc(page, "query.workflows", { limit: 100 });
+  const saved = catalog.records.find(
+    (r: any) => r.kind === "workflow" && r.name === name + " 流程",
+  );
+  const [producer, consumer] = saved.data.steps;
+  expect(producer.outputs.risks.delivery_ref).toBe(delivery.id);
+  expect(consumer.inputs.input_1.source).toEqual({
+    step: producer.key,
+    port: "risks",
+  });
+  expect(consumer.dependencies).toContain(producer.key);
   await page.reload();
-  await editor.locator(".workflow-node").filter({hasText:consumer.name}).click();
-  await expect(editor.getByLabel("前序交付物",{exact:true})).toHaveValue(source);
-  const catalog = await rpc(page,"query.configurations",{kind:"workflow",include_history:true,limit:100});
-  const saved = catalog.records.find((r:any)=>r.data.steps?.some((s:any)=>s.delivery_inputs?.material_1?.delivery_ref === delivery.id));
-  expect(saved).toBeTruthy();
-  expect(saved.data.steps.find((s:any)=>s.key === producer.key).delivery_outputs.prd).toEqual({delivery_ref:delivery.id,source_port:"document"});
-  await page.screenshot({path:info.outputPath("delivery-reference.png"),fullPage:true});
+  await editor.getByRole("button", { name: /^确认材料/ }).click();
+  await expect(
+    editor.getByLabel("材料来源 · input_1", { exact: true }),
+  ).toHaveValue(`${producer.key}:risks`);
+  await page.screenshot({
+    path: info.outputPath("delivery-reference.png"),
+    fullPage: true,
+  });
 });

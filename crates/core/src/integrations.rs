@@ -43,6 +43,13 @@ pub fn freeze_integrations(
     let mut sources = BTreeMap::new();
     for key in &a.tools {
         let r = s.configuration(key)?;
+        if r.data["implementation"] == "platform" {
+            live(s, r)?;
+            let definition: ToolDefinition = r.decode()?;
+            require(names.insert(definition.call_name()), "工具名称冲突")?;
+            lock.platform_tools.push(r.clone());
+            continue;
+        }
         if r.data["schema_version"] != 2 {
             continue;
         }
@@ -117,16 +124,6 @@ pub fn freeze_integrations(
     }
     Ok(lock)
 }
-pub fn integration_feature_lock(
-    s: &EngineeringState,
-    agent: &str,
-    feature: Option<&str>,
-) -> Option<IntegrationLock> {
-    feature
-        .and_then(|f| s.feature_configuration(f))
-        .and_then(|c| c.integration_locks.get(agent).cloned())
-}
-
 /// Catalog deletion preserves immutable revisions and frozen execution history.
 /// Deleting a source also removes its own bindings/actions from future choices.
 pub fn integration_deletion_targets(
@@ -216,6 +213,21 @@ impl Engine {
             .agent_configuration
             .as_ref()
             .ok_or_else(|| err("invalid_configuration", "缺少 Agent 工具锁"))?;
+        if let Some(definition) = config.integration_lock.as_ref().and_then(|lock| {
+            lock.platform_tools.iter().find(|definition| {
+                definition
+                    .decode::<ToolDefinition>()
+                    .is_ok_and(|definition| definition.call_name() == *tool)
+            })
+        }) {
+            return self.project_agent_platform_call(
+                s,
+                session,
+                tid,
+                observation,
+                definition.clone(),
+            );
+        }
         let bound = config
             .integration_lock
             .as_ref()
@@ -250,7 +262,6 @@ impl Engine {
             agent_instance_id: Some(config.agent_instance_id.clone()),
             session_id: Some(session.id.clone()),
             turn_id: Some(tid.into()),
-            run_id: t.run_id.clone(),
             operation_id: Some(operation),
             request_id: Some(request.clone()),
             call_id: call.clone(),
@@ -381,6 +392,31 @@ impl Engine {
         self.store.transact(Some((&c.command_id, &fp)), &mut |s| {
             self.insert_tool_invocation(s, invocation)
         })
+    }
+    pub fn enqueue_configured_tool(
+        &self,
+        command: &Command,
+        invocation: &ToolInvocation,
+    ) -> Result<Value> {
+        let expected = self.configured_tool_request(command)?;
+        require(
+            invocation.operation_id.as_ref() == Some(&expected.execution_id)
+                && invocation.arguments == expected.arguments
+                && json!(invocation.tool) == json!(expected.tool)
+                && invocation.project_id.as_ref() == Some(&expected.project_id)
+                && invocation.session_id.is_none()
+                && invocation.turn_id.is_none(),
+            "工具调用改变了冻结步骤、参数或归属",
+        )?;
+        require(
+            invocation.permissions.binding_lock.as_ref() == Some(&expected.permissions),
+            "工具权限与冻结步骤不一致",
+        )?;
+        let fingerprint = command_fingerprint("workflow.tool.execute", command);
+        self.store
+            .transact(Some((&command.command_id, &fingerprint)), &mut |state| {
+                self.insert_tool_invocation(state, invocation)
+            })
     }
     pub fn record_tool_discovery(
         &self,
@@ -822,6 +858,25 @@ impl Engine {
             s.governance.push(r);
             return Ok(Some(value));
         }
+        if method == "tool.call.cancel"
+            && s.governance.iter().any(|record| {
+                record.id == c.target.as_deref().unwrap_or("") && record.kind == "platform_call"
+            })
+        {
+            let call = s
+                .governance
+                .iter_mut()
+                .find(|record| record.id == c.target.as_deref().unwrap_or(""))
+                .unwrap();
+            require(
+                ["prepared", "running"].contains(&call.data["status"].as_str().unwrap_or("")),
+                "平台调用已结束或需要工作流核对",
+            )?;
+            let mut data = call.data.clone();
+            data["cancel_requested"] = json!(true);
+            update_record(call, data);
+            return Ok(Some(json!(call)));
+        }
         if method == "tool.call.cancel" || method == "tool.call.reconcile" {
             let index = s
                 .governance
@@ -957,8 +1012,7 @@ impl Engine {
                 version: r.version,
                 supersedes: r.supersedes.clone(),
                 body: package.body.clone(),
-                rules: vec![],
-                slots: vec![],
+
                 agent_profile: None,
             });
             let bundle = record(
@@ -1203,75 +1257,7 @@ impl Engine {
                 let package=s.governance.iter().find(|r|r.kind=="skill_package"&&r.definition_id==key).map(|r|r.data.clone()).unwrap_or_else(||json!({"body":r.data["body"],"description":r.name,"files":[],"requires_tools":[],"source":"inline_markdown","scripts_disabled":false}));
                 return Ok(package);
             }
-            let rows: Vec<_> = s
-                .governance
-                .iter()
-                .filter(|r| match method {
-                    "query.tool_calls" => r.kind == "tool_call",
-                    "query.integration_bindings" => {
-                        ["integration_binding", "integration_project_configuration"]
-                            .contains(&r.kind.as_str())
-                    }
-                    _ => [
-                        "integration",
-                        "integration_binding",
-                        "integration_discovery",
-                        "integration_disabled",
-                        "skill_package",
-                        "integration_operation",
-                    ]
-                    .contains(&r.kind.as_str()),
-                })
-                .filter(|r| p["include_archived"] == true || template_record_current(&s, r))
-                .filter(|r| crate::configuration::visible(&s, r, p["project_id"].as_str()))
-                .filter(|r| {
-                    p["include_history"] == true
-                        || r.kind == "tool_call"
-                        || latest(&s, &r.kind, &r.definition_id).is_none_or(|n| n.id == r.id)
-                })
-                .filter(|r| p["include_retired"] == true || !crate::configuration::retired(&s, r))
-                .filter(|r| {
-                    [
-                        "session_id",
-                        "turn_id",
-                        "feature_id",
-                        "task_id",
-                        "agent_instance_id",
-                        "run_id",
-                    ]
-                    .iter()
-                    .all(|key| p.get(*key).is_none_or(|v| r.data["invocation"][key] == *v))
-                })
-                .filter(|r| {
-                    p.get("tool_ref")
-                        .is_none_or(|v| r.data["invocation"]["tool"]["revision_id"] == *v)
-                })
-                .filter(|r| {
-                    p.get("integration_ref").is_none_or(|v| {
-                        r.data["invocation"]["tool"]["definition"]["integration_ref"] == *v
-                    })
-                })
-                .rev()
-                .map(|r| {
-                    let mut r = r.clone();
-                    if r.kind == "tool_call" {
-                        let pointers: Vec<String> = serde_json::from_value(
-                            r.data["invocation"]["tool"]["definition"]["sensitive_parameters"]
-                                .clone(),
-                        )
-                        .unwrap_or_default();
-                        for pointer in pointers {
-                            if let Some(value) =
-                                r.data["invocation"]["arguments"].pointer_mut(&pointer)
-                            {
-                                *value = json!("[redacted]");
-                            }
-                        }
-                        // Query projections do not expose raw remote error bodies or system credentials.
-                    }
-                    r
-                })
-                .collect();
+            let rows = integration_records(&s, method, p);
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let limit = p["limit"].as_u64().unwrap_or(100).min(100) as usize;
             Ok(
@@ -1279,4 +1265,82 @@ impl Engine {
             )
         })())
     }
+}
+
+// Use the same projections and redaction for tool lists and the combined history.
+pub(crate) fn integration_records(
+    s: &EngineeringState,
+    method: &str,
+    p: &Value,
+) -> Vec<ConfigurationRecord> {
+    s.governance
+        .iter()
+        .filter(|r| match method {
+            "query.tool_calls" => ["tool_call", "platform_call"].contains(&r.kind.as_str()),
+            "query.integration_bindings" => {
+                ["integration_binding", "integration_project_configuration"]
+                    .contains(&r.kind.as_str())
+            }
+            _ => [
+                "integration",
+                "integration_binding",
+                "integration_discovery",
+                "integration_disabled",
+                "skill_package",
+                "integration_operation",
+            ]
+            .contains(&r.kind.as_str()),
+        })
+        .map(|record| {
+            if record.kind == "platform_call" {
+                crate::platform_tools::project_platform_call(s, record)
+            } else {
+                record.clone()
+            }
+        })
+        .filter(|r| p["include_archived"] == true || template_record_current(s, r))
+        .filter(|r| crate::configuration::visible(s, r, p["project_id"].as_str()))
+        .filter(|r| {
+            p["include_history"] == true
+                || r.kind == "tool_call"
+                || latest(s, &r.kind, &r.definition_id).is_none_or(|n| n.id == r.id)
+        })
+        .filter(|r| p["include_retired"] == true || !crate::configuration::retired(s, r))
+        .filter(|r| {
+            [
+                "session_id",
+                "turn_id",
+                "feature_id",
+                "task_id",
+                "agent_instance_id",
+            ]
+            .iter()
+            .all(|key| p.get(*key).is_none_or(|v| r.data["invocation"][key] == *v))
+        })
+        .filter(|r| {
+            p.get("tool_ref")
+                .is_none_or(|v| r.data["invocation"]["tool"]["revision_id"] == *v)
+        })
+        .filter(|r| {
+            p.get("integration_ref")
+                .is_none_or(|v| r.data["invocation"]["tool"]["definition"]["integration_ref"] == *v)
+        })
+        .rev()
+        .map(|r| {
+            let mut r = r.clone();
+            if r.kind == "tool_call" {
+                let pointers: Vec<String> = serde_json::from_value(
+                    r.data["invocation"]["tool"]["definition"]["sensitive_parameters"].clone(),
+                )
+                .unwrap_or_default();
+                for pointer in pointers {
+                    if let Some(value) = r.data["invocation"]["arguments"].pointer_mut(&pointer) {
+                        *value = json!("[redacted]");
+                    }
+                }
+                // Query projections do not expose raw remote error bodies or system credentials.
+            }
+            r
+        })
+        .collect()
 }

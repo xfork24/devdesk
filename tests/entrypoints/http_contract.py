@@ -109,7 +109,11 @@ def run():
                 rpc('project.configuration.update', {'project_id':project_id,'command_id':'configure-'+project_id,'target':project_id,'expected_revision':workspace['active_project']['revision'],'payload':{'workflow_ref':defaults['workflow_ref'],'role_agent_bindings':defaults['role_agent_bindings']}})
             configure(pid)
             feature_a = rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}})
-            rpc('document.revise', {'project_id':pid,'command_id':'a-doc','target':feature_a['id'],'expected_revision':1,'payload':{'kind':'requirement','title':'A 需求','body':'A 的独立产物'}})
+            deadline = time.monotonic() + 5
+            while rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})['detail']['feature']['status'] == 'queued':
+                assert time.monotonic() < deadline, 'Feature runtime did not start'
+                time.sleep(.05)
+            rpc('document.revise', {'project_id':pid,'command_id':'a-doc','target':feature_a['id'],'expected_revision':rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})['detail']['feature']['revision'],'payload':{'kind':'requirement','title':'A 需求','body':'A 的独立产物'}})
             view_a = rpc('query.workspace', {'project_id':pid,'feature_id':feature_a['id']})
             artifact_a = next(document['artifact_id'] for document in view_a['detail']['documents'] if document['title']=='A 需求')
             project_b = rpc('project.create', {'command_id':'create-b','payload':{'title':'项目 B'}})['id']

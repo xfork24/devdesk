@@ -10,6 +10,113 @@ fn text(v: &Value, k: &str) -> Result<String> {
         .ok_or_else(|| err("invalid_params", format!("缺少 {k}")))
 }
 impl Workspace {
+    pub(super) fn execute_configured_tool(&self, e: &Engine, command: Command) -> Result<Value> {
+        let fingerprint = command_fingerprint("workflow.tool.execute", &command);
+        if let Some(result) = e.store.replay(&command.command_id, &fingerprint)? {
+            return Ok(result);
+        }
+        if let Some(mut request) = e.configured_platform_request(&command)? {
+            if let Some(runtime) = &request.definition.runtime {
+                let state = e.store.snapshot()?;
+                let harness = state.configuration(&runtime.harness_ref)?;
+                let installation = self.materialize_harness(e, harness)?;
+                let image = match installation.artifact {
+                    RuntimeArtifact::DockerImage { image_id } => image_id,
+                    _ => return Err(err("unsupported", "测试工具需要确切 Docker 镜像")),
+                };
+                let lock = request
+                    .permissions
+                    .as_ref()
+                    .ok_or_else(|| err("permission_unconfigured", "平台工具缺少冻结权限"))?;
+                let _ = permission_profiles::compile_permission_profiles(
+                    &state,
+                    lock,
+                    Some(ExecutionScope {
+                        work_type: WorkType::Workflow,
+                        writable_paths: vec![],
+                        read_only_paths: vec![],
+                    }),
+                )?;
+                request.runtime = Some(ExecutionInstance {
+                    id: request.execution_id.clone(),
+                    operation_id: request.execution_id.clone(),
+                    harness: Harness {
+                        id: runtime.harness_ref.clone(),
+                        provider: "docker".into(),
+                        version: installation.key.version.clone(),
+                        capabilities: vec![],
+                        origin: Origin::External,
+                        permission: None,
+                    },
+                    sandbox: Sandbox {
+                        id: runtime.permission_selection.sandbox_ref.clone(),
+                        provider: "docker".into(),
+                        version: installation.key.version,
+                        platform: "linux".into(),
+                        image: Some(image),
+                        network: false,
+                        origin: Origin::External,
+                        permission: None,
+                    },
+                    external_session: None,
+                    external_environment: None,
+                    status: Status::Prepared,
+                    started: None,
+                    finished: None,
+                });
+            }
+            return e.enqueue_platform_tool(&command, &request);
+        }
+        let request = e.configured_tool_request(&command)?;
+        let state = e.store.snapshot()?;
+        let harness = state.configuration(&request.tool.binding.harness_ref)?;
+        let installation = self.materialize_harness(e, harness)?;
+        let permissions = devdesk_adapters::permission_profiles::compile_permission_profiles(
+            &state,
+            &request.permissions,
+            Some(ExecutionScope {
+                work_type: WorkType::Discussion,
+                writable_paths: vec![],
+                read_only_paths: vec![],
+            }),
+        )?;
+        let image_id = match installation.artifact {
+            RuntimeArtifact::DockerImage { image_id } => image_id,
+            _ => return Err(err("unsupported", "工具需要固定 Docker 镜像")),
+        };
+        let task = state.tasks.iter().find(|t| t.id == request.owner_id);
+        let feature = task.map(|t| t.feature_id.clone()).or_else(|| {
+            state
+                .features
+                .iter()
+                .find(|f| f.id == request.owner_id)
+                .map(|f| f.id.clone())
+        });
+        let invocation = ToolInvocation {
+            id: format!(
+                "tool-call-{}",
+                configuration_hash(&(&command.command_id, &request.execution_id))
+            ),
+            project_id: Some(request.project_id.clone()),
+            feature_id: feature,
+            task_id: task.map(|t| t.id.clone()),
+            agent_instance_id: None,
+            session_id: None,
+            turn_id: None,
+
+            operation_id: Some(request.execution_id),
+            request_id: None,
+            call_id: command.command_id.clone(),
+            tool: request.tool,
+            input_hash: configuration_hash(&request.arguments),
+            arguments: request.arguments,
+            permissions,
+            image_id,
+            worktree: String::new(),
+        };
+        e.enqueue_configured_tool(&command, &invocation)
+    }
+
     fn integration_permissions(
         &self,
         e: &Engine,
@@ -412,7 +519,7 @@ impl Workspace {
                     agent_instance_id: None,
                     session_id: None,
                     turn_id: None,
-                    run_id: None,
+
                     operation_id: None,
                     request_id: None,
                     call_id: c.command_id.clone(),

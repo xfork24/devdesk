@@ -48,31 +48,6 @@ pub struct RuntimeBinding {
 }
 
 impl RuntimeBinding {
-    /// A Task may change node-local scope while retaining the same Agent and native thread.
-    pub fn same_task_agent(&self, other: &Self) -> bool {
-        let authority = |binding: &Self| {
-            binding.permissions.as_ref().map(|p| {
-                serde_json::json!([
-                    p.binding_lock,
-                    p.harness,
-                    p.sandbox,
-                    p.approval,
-                    p.isolation,
-                    p.limits
-                ])
-            })
-        };
-        self.installation == other.installation
-            && self.adapter_version == other.adapter_version
-            && self.model == other.model
-            && self.model_parameters == other.model_parameters
-            && self.model_connection == other.model_connection
-            && self.model_profile_digest == other.model_profile_digest
-            && self.agent_configuration == other.agent_configuration
-            && self.credential_ref == other.credential_ref
-            && authority(self) == authority(other)
-    }
-
     /// Complete Agents keep their frozen Model parameters as the execution authority.
     pub fn effective_model_parameters(&self) -> &std::collections::BTreeMap<String, Value> {
         match &self.agent_configuration {
@@ -128,7 +103,6 @@ pub struct ConversationTurn {
     pub cancel_requested: bool,
     pub started: Option<u64>,
     pub finished: Option<u64>,
-    pub run_id: Option<Id>,
     pub revision: u64,
 }
 
@@ -241,45 +215,13 @@ pub enum ProposalStatus {
     Stale,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProposedTask {
-    pub key: String,
+#[serde(deny_unknown_fields)]
+pub struct ProposalContent {
+    pub delivery_ref: Id,
     pub title: String,
-    pub acceptance: Vec<String>,
-    pub dependencies: Vec<String>,
+    pub value: Value,
     #[serde(default)]
-    pub test_recipe: Option<TestRecipe>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ProposalContent {
-    Requirement {
-        title: String,
-        body: String,
-        acceptance: Vec<AcceptanceCriterion>,
-    },
-    Feature {
-        title: String,
-        requirement: Id,
-    },
-    Design {
-        title: String,
-        body: String,
-        requirement: Id,
-    },
-    TaskPlan {
-        requirement: Id,
-        design: Id,
-        tasks: Vec<ProposedTask>,
-    },
-    TestPlan {
-        title: String,
-        body: String,
-        requirement: Id,
-        design: Id,
-        verifies: Vec<String>,
-        #[serde(default)]
-        test_recipe: Option<TestRecipe>,
-    },
+    pub input_refs: Vec<Id>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proposal {
@@ -295,8 +237,6 @@ pub struct Proposal {
     pub status: ProposalStatus,
     pub artifact_id: Option<Id>,
     pub adopted_objects: Vec<Id>,
-    #[serde(default)]
-    pub task_instances: std::collections::HashMap<String, Id>,
     pub supersedes: Option<Id>,
     pub revision: u64,
 }
@@ -317,7 +257,6 @@ pub struct RuntimeExecution {
     pub kind: RuntimeExecutionKind,
     pub id: Id,
     pub session_id: Id,
-    pub run_id: Option<Id>,
     pub operation_id: Id,
     pub container_id: Option<String>,
     pub image_digest: String,
@@ -330,100 +269,21 @@ pub struct RuntimeExecution {
 }
 
 impl EngineeringState {
-    /// Node permissions are immutable per Turn; the Session keeps its original identity/base lock.
+    /// Every Step owns its Session and immutable runtime authority.
     pub fn turn_runtime_binding(&self, turn: &ConversationTurn) -> Result<RuntimeBinding> {
-        let session = self
-            .sessions
+        self.sessions
             .iter()
             .find(|session| session.id == turn.session_id)
-            .ok_or_else(|| err("not_found", "Turn 的 Session 不存在"))?;
-        let original = session
+            .ok_or_else(|| err("not_found", "Turn 的 Session 不存在"))?
             .runtime_binding
-            .as_ref()
-            .ok_or_else(|| err("blocked", "Session 缺少运行锁"))?;
-        let frozen = self
-            .governance
-            .iter()
-            .find(|r| r.kind == "execution_task" && r.definition_id == turn.id)
-            .and_then(|r| r.data.get("runtime_binding"));
-        let Some(frozen) = frozen else {
-            return Ok(original.clone());
-        };
-        let binding: RuntimeBinding = serde_json::from_value(frozen.clone())
-            .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
-        require(
-            session.scope == Some(SessionScope::Task) && original.same_task_agent(&binding),
-            "Task 轮次改变了 Agent、模型或权限基线",
-        )?;
-        self.validate_task_runtime(session, &binding)?;
-        Ok(binding)
-    }
-
-    pub fn validate_task_runtime(&self, session: &Session, binding: &RuntimeBinding) -> Result<()> {
-        require(
-            session.scope == Some(SessionScope::Task),
-            "节点运行锁仅适用于 Task",
-        )?;
-        let original = session
-            .runtime_binding
-            .as_ref()
-            .ok_or_else(|| err("blocked", "Session 缺少运行锁"))?;
-        require(
-            original.same_task_agent(binding),
-            "Task 节点改变了冻结 Agent 运行基线",
-        )?;
-        match binding.tool_policy {
-            ToolPolicy::ReadOnly => require(binding.writable_paths.is_empty(), "只读节点不能写入")?,
-            ToolPolicy::TaskWrite => require(
-                binding.writable_paths == vec!["."],
-                "实现节点只能写当前 Task",
-            )?,
-            ToolPolicy::TestWrite => require(
-                !binding.writable_paths.is_empty()
-                    && binding.writable_paths.iter().all(|path| {
-                        path.starts_with("tests/")
-                            && !path.contains(['\\', '\n', '\r'])
-                            && path
-                                .split('/')
-                                .all(|p| !p.is_empty() && p != "." && p != "..")
-                    }),
-                "测试节点写路径越界",
-            )?,
-        }
-        if let Some(permission) = &binding.permissions {
-            require(
-                permission.scope.work_type == binding.work_type
-                    && permission.scope.writable_paths == binding.writable_paths
-                    && permission.scope.read_only_paths == binding.read_only_paths,
-                "节点权限与执行范围不一致",
-            )?;
-            validate_frozen_permissions(self, permission)?;
-        }
-        let profile = self
-            .definitions
-            .iter()
-            .find(|d| d.id == session.agent)
-            .and_then(|d| d.agent_profile.as_ref())
-            .ok_or_else(|| err("blocked", "Task Agent 修订不存在"))?;
-        let policy = if [WorkType::Discussion, WorkType::Design, WorkType::Review]
-            .contains(&binding.work_type)
-        {
-            ToolPolicy::ReadOnly
-        } else {
-            profile.tool_policy
-        };
-        require(
-            profile.allowed_work.contains(&binding.work_type)
-                && policy == binding.tool_policy
-                && binding.configuration_digest.len() == 64,
-            "Agent 不支持节点工作类型或权限",
-        )
+            .clone()
+            .ok_or_else(|| err("blocked", "Session 缺少运行锁"))
     }
 }
 
 impl EngineeringState {
     pub fn validate_conversations(&self, before: &Self) -> Result<()> {
-        self.validate_agent_tasks(before)?;
+        self.validate_configured_tasks(before)?;
         self.validate_material_owners()?;
         self.validate_repositories(before)?;
         use std::collections::HashSet;
@@ -586,25 +446,25 @@ impl EngineeringState {
                 ToolPolicy::ReadOnly => {
                     require(binding.writable_paths.is_empty(), "只读角色不能有写路径")?
                 }
-                ToolPolicy::TaskWrite => require(
-                    scope == SessionScope::Task && binding.writable_paths == vec!["."],
-                    "开发写权限只能属于当前 Task 根目录",
+                ToolPolicy::WorkspaceWrite => require(
+                    [SessionScope::Task, SessionScope::Feature].contains(&scope)
+                        && binding.writable_paths == vec!["."],
+                    "工作空间写权限需要明确的工程归属及根目录授权",
                 )?,
-                ToolPolicy::TestWrite => {
+                ToolPolicy::ScopedWrite => {
                     require(
                         [SessionScope::Task, SessionScope::Feature].contains(&scope)
                             && !binding.writable_paths.is_empty(),
-                        "测试作者只能写当前 Task 的明确测试目录",
+                        "局部写权限需要明确的工程归属及路径",
                     )?;
                     for path in &binding.writable_paths {
                         require(
-                            path.starts_with("tests/")
-                                && path.split('/').count() >= 2
-                                && !path.contains(['\\', '\n', '\r'])
+                            !path.starts_with(['/', '-'])
+                                && !path.contains(['\\', '\n', '\r', '\0', ','])
                                 && path
                                     .split('/')
                                     .all(|v| !v.is_empty() && v != "." && v != ".."),
-                            "测试写目录越界",
+                            "授权写目录越界",
                         )?;
                     }
                 }
@@ -630,16 +490,13 @@ impl EngineeringState {
                 .find(|d| d.id == session.agent)
                 .and_then(|d| d.agent_profile.as_ref())
                 .ok_or_else(|| err("blocked", "讨论 Session 必须绑定明确角色修订"))?;
-            let effective_policy = if [WorkType::Discussion, WorkType::Design, WorkType::Review]
-                .contains(&binding.work_type)
-            {
+            let effective_policy = if [WorkType::Discussion].contains(&binding.work_type) {
                 ToolPolicy::ReadOnly
             } else {
                 agent.tool_policy
             };
             require(
-                agent.allowed_work.contains(&binding.work_type)
-                    && effective_policy == binding.tool_policy,
+                effective_policy.permits(binding.tool_policy),
                 "角色工作类型或工具权限与冻结绑定不符",
             )?;
             require(
@@ -669,7 +526,41 @@ impl EngineeringState {
                     view.context.origin == Origin::External
                         && view.context.project == turn.project_id
                         && self.sessions.iter().any(|s| {
-                            s.id == turn.session_id && s.owner_id == view.context.source.owner
+                            if s.id != turn.session_id {
+                                return false;
+                            }
+                            if s.owner_id == view.context.source.owner {
+                                return true;
+                            }
+                            let task = self
+                                .governance
+                                .iter()
+                                .find(|r| {
+                                    r.kind == "configured_execution_task"
+                                        && r.definition_id == turn.id
+                                })
+                                .map(|r| &r.data["task"]);
+                            let grant = task.and_then(|task| {
+                                task["authorization"]["workspace_input"]
+                                    .as_str()
+                                    .map(|key| &task["inputs"][key])
+                            });
+                            grant.is_some_and(|grant| {
+                                grant["owner_id"] == view.context.source.owner
+                                    && grant["revision"] == view.revision
+                                    && self.repository_worktrees.iter().any(|w| {
+                                        grant["workspace_id"] == w.id
+                                            && w.owner_id == view.context.source.owner
+                                            && w.project_id == turn.project_id
+                                            && w.path == view.context.source.worktree
+                                            && w.branch == view.context.source.branch
+                                    })
+                                    && (view.context.source.owner == turn.project_id
+                                        || self.tasks.iter().any(|task| {
+                                            task.id == view.context.source.owner
+                                                && task.feature_id == s.owner_id
+                                        }))
+                            })
                         }),
                     "代码输入视图跨项目或归属不符",
                 )?;
@@ -705,7 +596,9 @@ impl EngineeringState {
                 !turn.client_message_id.is_empty()
                     && !turn.input.trim().is_empty()
                     && turn.input.len()
-                        <= if turn.run_id.is_some() {
+                        <= if self.governance.iter().any(|r| {
+                            r.kind == "configured_session" && r.definition_id == turn.session_id
+                        }) {
                             512 * 1024
                         } else {
                             65536
@@ -727,14 +620,6 @@ impl EngineeringState {
                 require(
                     turn.consumed && turn.finished.is_some() && session.external_session.is_some(),
                     "轮次完成需要真实消费、外部会话和终态边界",
-                )?;
-            }
-            if let Some(id) = &turn.run_id {
-                require(
-                    self.runs
-                        .iter()
-                        .any(|r| &r.id == id && r.session_id == turn.session_id),
-                    "讨论轮次不能引用其他 Session 的 Run",
                 )?;
             }
             if let Some(old) = before.turns.iter().find(|t| t.id == turn.id) {
@@ -902,30 +787,8 @@ impl EngineeringState {
                         || old.adopted_objects == proposal.adopted_objects,
                     "采纳对象不可替换",
                 )?;
-                require(
-                    old.task_instances
-                        .iter()
-                        .all(|(key, id)| proposal.task_instances.get(key) == Some(id)),
-                    "TaskPlan 实例映射不可覆盖",
-                )?;
             }
-            if !proposal.task_instances.is_empty() {
-                let ProposalContent::TaskPlan { tasks, .. } = &proposal.content else {
-                    return Err(err("blocked", "非 TaskPlan 不能关联 Task 实例"));
-                };
-                require(
-                    proposal.status == ProposalStatus::Accepted
-                        && proposal.task_instances.len() == tasks.len()
-                        && tasks.iter().all(|entry| {
-                            proposal.task_instances.get(&entry.key).is_some_and(|id| {
-                                self.tasks.iter().any(|t| {
-                                    &t.id == id && Some(&t.feature_id) == proposal.target.as_ref()
-                                })
-                            })
-                        }),
-                    "TaskPlan 实例不完整或跨 Feature",
-                )?;
-            }
+
             require(
                 self.turns.iter().any(|t| {
                     t.id == proposal.turn_id
@@ -935,7 +798,7 @@ impl EngineeringState {
                 }),
                 "提案必须来自同项目的已完成讨论轮次",
             )?;
-            require(proposal.schema_version == 1, "不支持的提案 schema 版本")?;
+            require(proposal.schema_version == 2, "不支持的提案 schema 版本")?;
             require(
                 (proposal.status == ProposalStatus::Accepted)
                     == !proposal.adopted_objects.is_empty(),
@@ -950,49 +813,12 @@ impl EngineeringState {
                 )?;
             }
         }
-        for attempt in &self.attempts {
-            if let Some(old) = before.attempts.iter().find(|a| a.id == attempt.id) {
-                require(
-                    old.source_base == attempt.source_base
-                        && old.live_sessions == attempt.live_sessions,
-                    "Attempt 原始代码与角色 Session 映射不可重写",
-                )?;
-                if attempt.source_base.is_some() {
-                    require(
-                        old.baseline
-                            .as_ref()
-                            .is_none_or(|v| Some(v) == attempt.baseline.as_ref()),
-                        "真实 Red baseline 不可重写",
-                    )?;
-                }
-            }
-            for sid in attempt.live_sessions.values() {
-                require(
-                    self.sessions.iter().any(|v| {
-                        &v.id == sid
-                            && v.owner_id
-                                == attempt.task_id.as_deref().unwrap_or(&attempt.feature_id)
-                            && v.project_id.as_ref()
-                                == Some(&self.feature(&attempt.feature_id).unwrap().project_id)
-                            && v.runtime_binding.is_some()
-                    }),
-                    "Attempt 角色 Session 绑定跨范围或缺失",
-                )?;
-            }
-        }
+
         for execution in &self.executions {
             require(
                 self.sessions.iter().any(|s| s.id == execution.session_id),
                 "运行实例缺少 Session",
             )?;
-            if let Some(id) = &execution.run_id {
-                require(
-                    self.runs
-                        .iter()
-                        .any(|r| &r.id == id && r.session_id == execution.session_id),
-                    "运行实例引用错误工程 Run",
-                )?;
-            }
             require(
                 execution.status != Status::Released
                     || (execution.writer_revoked && execution.finished.is_some()),
@@ -1004,12 +830,12 @@ impl EngineeringState {
                         && old.kind == execution.kind
                         && old.session_id == execution.session_id
                         && old.operation_id == execution.operation_id
-                        && old.image_digest == execution.image_digest
-                        && old.run_id == execution.run_id,
+                        && old.image_digest == execution.image_digest,
                     "运行实例归属不可覆盖",
                 )?;
             }
         }
+
         Ok(())
     }
 }
@@ -1036,48 +862,36 @@ impl EngineeringState {
     }
     pub fn validate_material_owners(&self) -> Result<()> {
         for document in &self.documents {
-            if let Some(recipe) = &document.test_recipe {
-                require(document.kind == "test", "测试配方只适用于 Test 定义")?;
-                recipe.validate()?;
-            }
             let owner = material_owner(
                 document.project_id.as_deref(),
                 document.feature_id.as_deref(),
                 document.task_id.as_deref(),
             )?;
             let project = self.material_project(&owner)?;
-            if matches!(owner, MaterialOwner::Project { .. }) {
-                require(
-                    document.kind == "requirement",
-                    "Project 正式文档必须是 Requirement 修订",
-                )?;
-            }
-            for (reference, kind) in [
-                (&document.requirement_id, "requirement"),
-                (&document.design_id, "design"),
-            ] {
-                if let Some(id) = reference {
-                    let input = self
-                        .documents
-                        .iter()
-                        .find(|d| &d.id == id && d.kind == kind)
-                        .ok_or_else(|| err("blocked", "文档输入修订不存在"))?;
-                    let input_owner = material_owner(
-                        input.project_id.as_deref(),
-                        input.feature_id.as_deref(),
-                        input.task_id.as_deref(),
-                    )?;
+            for reference in &document.input_refs {
+                if let Ok(output) = self.configuration(reference) {
                     require(
-                        self.material_project(&input_owner)? == project,
-                        "文档输入跨项目",
+                        output.kind == "workflow_output"
+                            && output.immutable
+                            && output.scope.project() == Some(project),
+                        "材料输入跨项目或不是可信产物",
                     )?;
-                    if let Some(feature) = &document.feature_id {
-                        require(
-                            self.document_in_feature(input, feature),
-                            "文档输入不属于当前 Feature 的冻结范围",
-                        )?;
-                    }
+                    continue;
                 }
+                let input = self
+                    .documents
+                    .iter()
+                    .find(|d| &d.id == reference)
+                    .ok_or_else(|| err("scope_violation", "材料输入不存在"))?;
+                let input_owner = material_owner(
+                    input.project_id.as_deref(),
+                    input.feature_id.as_deref(),
+                    input.task_id.as_deref(),
+                )?;
+                require(
+                    self.material_project(&input_owner)? == project,
+                    "材料输入跨项目",
+                )?;
             }
             if let Some(id) = &document.artifact_id {
                 let artifact = self
@@ -1133,14 +947,12 @@ impl EngineeringState {
             )?)?;
         }
         for feature in &self.features {
-            if let Some(id) = &feature.source_requirement {
+            for id in &feature.source_materials {
                 require(
-                    self.documents.iter().any(|d| {
-                        &d.id == id
-                            && d.project_id.as_ref() == Some(&feature.project_id)
-                            && d.kind == "requirement"
-                    }),
-                    "Feature 需求修订归属无效",
+                    self.documents
+                        .iter()
+                        .any(|d| &d.id == id && d.project_id.as_ref() == Some(&feature.project_id)),
+                    "Feature 输入材料不属于同项目",
                 )?;
             }
         }

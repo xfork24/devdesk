@@ -13,21 +13,25 @@
     "supersedes": null,
     "content_hash": "",
     "data": {
-      "applicable_actions": [
+      "schema_version": 3,
+      "body": "",
+      "applicable_to": [],
+      "checks": [
         {
-          "kind": "attempt.execute",
-          "phase": "closure"
+          "key": "scope",
+          "name": "范围与追溯",
+          "instructions": "判断输入、结论和产物是否符合本规范及本次明确的范围；提供具体材料位置作为依据。"
         },
         {
-          "delivery_kind": "closure",
-          "kind": "delivery.review"
+          "key": "content",
+          "name": "内容完整性",
+          "instructions": "按本规范正文逐项核对需要的内容、接口和异常行为；证据不足时拒绝通过。"
+        },
+        {
+          "key": "evidence",
+          "name": "证据有效性",
+          "instructions": "核对被评审产物版本、实际工具回执和未执行范围；模型的自述不能替代真实测试或 Git 回执。"
         }
-      ],
-      "body": "",
-      "rules": [
-        "traceability",
-        "failure_paths",
-        "sections"
       ]
     },
     "immutable": true,

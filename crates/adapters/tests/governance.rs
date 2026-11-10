@@ -1,3 +1,6 @@
+#[path = "../../../tests/support/defaults.rs"]
+mod default_fixture;
+use default_fixture::*;
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
 #[path = "../../../tests/support/workflows.rs"]
@@ -136,242 +139,6 @@ fn agent_instances_pin_composition_and_choose_independent_scope() {
         agent
     );
 }
-#[test]
-fn workflow_publication_is_immutable_and_replay_does_not_publish_twice() {
-    let root = tempfile::tempdir().unwrap();
-    let e = engine(root.path());
-    let draft = command(
-        &e,
-        "workflow.create",
-        None,
-        json!({"name":"项目开发流程","template_ref":"builtin-workflow-feature-sol-high-v4"}),
-    )
-    .unwrap();
-    let did = draft["id"].as_str().unwrap();
-    let c = Command {
-        command_id: id(),
-        target: Some(did.into()),
-        expected_revision: Some(1),
-        payload: json!({}),
-    };
-    let published = e.execute("workflow.publish", c.clone()).unwrap();
-    assert_eq!(published, e.execute("workflow.publish", c).unwrap());
-    assert!(
-        command(
-            &e,
-            "workflow.draft.update",
-            Some(did),
-            json!({"document":draft["data"]["document"]})
-        )
-        .is_err()
-    );
-    let db = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
-    assert!(
-        db.execute(
-            "UPDATE governance_records SET name='changed' WHERE id=?1",
-            [published["id"].as_str().unwrap()]
-        )
-        .is_err()
-    );
-    drop(e);
-    let reopened = engine(root.path());
-    assert_eq!(
-        reopened
-            .store
-            .snapshot()
-            .unwrap()
-            .configuration(published["id"].as_str().unwrap())
-            .unwrap()
-            .content_hash,
-        published["content_hash"]
-    );
-}
-#[test]
-fn feature_freezes_defaults_and_cannot_rebind_after_project_updates() {
-    let root = tempfile::tempdir().unwrap();
-    let e = engine(root.path());
-    let project = command(
-        &e,
-        "project.create",
-        None,
-        json!({"title":"P","workspace":"logical"}),
-    )
-    .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let mut agents = serde_json::Map::new();
-    for role in ["analyst", "architect", "developer", "tester", "reviewer"] {
-        agents.insert(role.into(), json!(setup_agent(&e, role)));
-    }
-    let standard = e
-        .store
-        .snapshot()
-        .unwrap()
-        .definitions
-        .iter()
-        .find(|d| d.family == "standard")
-        .unwrap()
-        .id
-        .clone();
-    let binding = json!({"workflow_ref":"builtin-workflow-feature-sol-high-v4","standard_ref":standard,"agent_refs":agents});
-    let original = command(
-        &e,
-        "project.configuration.update",
-        Some(&project),
-        binding.clone(),
-    )
-    .unwrap();
-    let feature = command(
-        &e,
-        "feature.create",
-        None,
-        json!({"project_id":project,"title":"A","require_configuration":true}),
-    )
-    .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let before = e
-        .store
-        .snapshot()
-        .unwrap()
-        .feature_configuration(&feature)
-        .unwrap();
-    let next = command(&e, "project.configuration.update", Some(&project), binding).unwrap();
-    assert_ne!(original["id"], next["id"]);
-    assert_eq!(
-        e.store
-            .snapshot()
-            .unwrap()
-            .feature_configuration(&feature)
-            .unwrap()
-            .project_configuration_id,
-        before.project_configuration_id
-    );
-    let raw = json!(
-        e.store
-            .snapshot()
-            .unwrap()
-            .feature(&feature)
-            .unwrap()
-            .binding
-    );
-    assert!(command(&e, "binding.update", Some(&feature), raw).is_err());
-}
-#[test]
-fn publication_rejects_cycle_and_cross_project_scope() {
-    let root = tempfile::tempdir().unwrap();
-    let e = engine(root.path());
-    let mut doc = e
-        .store
-        .snapshot()
-        .unwrap()
-        .configuration("builtin-workflow-feature-sol-high-v4")
-        .unwrap()
-        .data
-        .clone();
-    doc["steps"][0]["dependencies"] = json!(["cleanup"]);
-    let draft = command(
-        &e,
-        "workflow.create",
-        None,
-        json!({"name":"bad","document":doc}),
-    )
-    .unwrap();
-    assert!(command(&e, "workflow.publish", draft["id"].as_str(), json!({})).is_err());
-    let agent = setup_agent(&e, "analyst");
-    assert!(command(&e,"agent.instance.create",None,json!({"name":"bad scope","agent_revision_id":agent,"scope":{"kind":"project","project_id":"missing"}})).is_err());
-}
-
-fn configured(e: &Engine) -> (String, String) {
-    let pid = command(
-        e,
-        "project.create",
-        None,
-        json!({"title":"Workflow project"}),
-    )
-    .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let mut agents = serde_json::Map::new();
-    for role in ["analyst", "architect", "developer", "tester", "reviewer"] {
-        agents.insert(role.into(), json!(setup_agent(e, role)));
-    }
-    command(e,"project.configuration.update",Some(&pid),json!({"workflow_ref":"builtin-workflow-feature-sol-high-v4","standard_ref":e.store.snapshot().unwrap().definitions.iter().find(|d|d.family=="standard").unwrap().id,"agent_refs":agents})).unwrap();
-    let fid = command(
-        e,
-        "feature.create",
-        None,
-        json!({"project_id":pid,"title":"Workflow Feature","require_configuration":true}),
-    )
-    .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    (pid, fid)
-}
-
-fn runtime(e: &Engine, fid: &str) -> WorkflowRuntime {
-    e.store
-        .snapshot()
-        .unwrap()
-        .governance
-        .iter()
-        .rev()
-        .find(|r| {
-            r.kind == "workflow_instance"
-                && r.definition_id == fid
-                && r.data["status"] != "cancelled"
-        })
-        .unwrap()
-        .decode()
-        .unwrap()
-}
-
-#[test]
-fn old_workflow_round_confirmation_and_direct_merge_cannot_bypass_preconditions() {
-    let root = tempfile::tempdir().unwrap();
-    let e = engine(root.path());
-    let (_, fid) = configured(&e);
-    let r = runtime(&e, &fid);
-    let step = r.steps.iter().find(|s| s.key == "merge_review").unwrap();
-    assert!(
-        e.execute(
-            "workflow.step.confirm",
-            Command {
-                command_id: id(),
-                target: Some(step.id.clone()),
-                expected_revision: Some(step.revision),
-                payload: json!({"input_hash":step.input_hash})
-            }
-        )
-        .is_err()
-    );
-    assert!(command(&e, "merge.request", Some(&fid), json!({})).is_err());
-    let instance = e
-        .store
-        .snapshot()
-        .unwrap()
-        .governance
-        .iter()
-        .find(|r| r.kind == "workflow_instance" && r.definition_id == fid)
-        .unwrap()
-        .clone();
-    command(&e, "workflow.pause", Some(&instance.id), json!({})).unwrap();
-    assert!(e.pending_workflow_intents().unwrap().is_empty());
-    assert!(e.store.snapshot().unwrap().workflow_paused(&fid));
-    assert!(
-        command(
-            &e,
-            "attempt.start",
-            Some(&fid),
-            json!({"phase":"requirement_definition"})
-        )
-        .is_err()
-    );
-}
 
 #[test]
 fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_integrity() {
@@ -381,7 +148,10 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         global.clone(),
         Arc::new(FileArtifacts::new(root.path().into())),
         runtime::adapters(),
-    );
+    )
+    .with_tool_executor(Arc::new(
+        devdesk_adapters::integrations::NativeTools::new(&root).unwrap(),
+    ));
     shared.bootstrap().unwrap();
     let agent = setup_agent(&shared, "analyst");
     let instance = command(
@@ -761,8 +531,8 @@ fn custom_role_create_edit_delete_preserves_history_without_deriving_agents() {
     let root = tempfile::tempdir().unwrap();
     let e = engine(root.path());
     let before = e.store.snapshot().unwrap();
-    let role=command(&e,"role.create",None,json!({"name":"安全评审员","data":{"execution_role":"reviewer","instructions":"# Duty\nReview security evidence.","visibility":{"kind":"global"}}})).unwrap();
-    let revised=command(&e,"role.revise",role["id"].as_str(),json!({"name":"高级安全评审员","data":{"execution_role":"reviewer","instructions":"Review failure handling.","visibility":{"kind":"global"}}})).unwrap();
+    let role=command(&e,"role.create",None,json!({"name":"安全评审员","data":{"instructions":"# Duty\nReview security evidence.","visibility":{"kind":"global"}}})).unwrap();
+    let revised=command(&e,"role.revise",role["id"].as_str(),json!({"name":"高级安全评审员","data":{"instructions":"Review failure handling.","visibility":{"kind":"global"}}})).unwrap();
     command(&e, "role.delete", revised["id"].as_str(), json!({})).unwrap();
     let state = e.store.snapshot().unwrap();
     assert_eq!(before.definitions.len(), state.definitions.len());

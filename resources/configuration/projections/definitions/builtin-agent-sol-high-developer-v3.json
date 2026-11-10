@@ -8,22 +8,13 @@
     "version": 3,
     "supersedes": null,
     "body": "",
-    "slots": [],
-    "rules": [],
     "agent_profile": {
-      "allowed_work": [
-        "discussion",
-        "implementation"
-      ],
-      "output_schemas": [
-        "implementation/v1"
-      ],
-      "role": "developer",
+      "role": "builtin-role-developer",
       "skill_revisions": [
         "builtin-skill-engineering-context-v2",
         "builtin-skill-tdd-implementation-v2"
       ],
-      "tool_policy": "task_write"
+      "tool_policy": "workspace_write"
     }
   },
   "text_files": {
@@ -37,6 +28,10 @@
     "/agent_profile/skill_revisions/1": {
       "template_ref": "governance.builtin-skill-tdd-implementation-v2",
       "target": "revision"
+    },
+    "/agent_profile/role": {
+      "template_ref": "governance.builtin-role-developer-v1",
+      "target": "identity"
     }
   },
   "initial_only": false

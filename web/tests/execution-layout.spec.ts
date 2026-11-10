@@ -75,7 +75,10 @@ async function rpc(page: Page, method: string, params: any = {}) {
 }
 async function setup(page: Page) {
   await page.goto("/");
-  if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
+  if (
+    (await page.request.get("/capabilities").then((r) => r.json()))
+      .setup_required
+  ) {
     await page
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-stage-rows-")));
@@ -85,219 +88,110 @@ async function setup(page: Page) {
 test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
-test("执行与交付每行一个阶段，调用的子流程在阶段内展开且折叠状态可恢复", async ({
+
+test("通用工作流按阶段排列，真实子流程内联展开且折叠可恢复", async ({
   page,
 }, info) => {
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(e.message));
   await setup(page);
-  const publish = async (name: string, document: any) => {
-    const draft = await rpc(page, "workflow.create", {
+  const command = (
+    method: string,
+    payload: any,
+    target?: string,
+    revision?: number,
+  ) =>
+    rpc(page, method, {
       command_id: crypto.randomUUID(),
-      payload: { name, document },
+      target,
+      expected_revision: revision,
+      payload,
     });
-    return rpc(page, "workflow.publish", {
-      command_id: crypto.randomUUID(),
-      target: draft.id,
-      expected_revision: draft.revision,
-      payload: {},
-    });
-  };
-  const child = await publish("阶段行子流程", {
-    schema_version: 3,
-    process_kind: "subworkflow",
-    stages: [{ key: "check", name: "子流程检查" }],
+  async function publish(name: string, document: any) {
+    const draft = await command("workflow.create", { name, document });
+    return command("workflow.publish", {}, draft.id, draft.revision);
+  }
+  const child = await publish("可复用确认", {
+    schema_version: 4,
+    stages: [{ key: "inside", name: "内部阶段" }],
     steps: [
       {
-        key: "snapshot",
-        name: "子流程快照节点",
-        stage: "check",
-        kind: "snapshot.capture",
-        advance_mode: "human_confirmation",
+        key: "inspect",
+        name: "检查原始材料",
+        stage: "inside",
+        executor: { type: "control" },
+        confirmation: "human",
       },
     ],
   });
-  const defaults = await rpc(page, "query.configuration_defaults");
-  const template = (
-    await rpc(page, "query.workflow", { id: defaults.workflow_ref })
-  ).data;
-  const phaseKeys = template.stages.map((stage: any) => stage.key);
-  const originalSteps = template.steps.map((step: any) => ({
-    ...step,
-    stage:
-      phaseKeys.indexOf(step.stage) < 2
-        ? "requirements"
-        : phaseKeys.indexOf(step.stage) < 5
-          ? "implementation"
-          : "release",
-    dependencies: step.dependencies.length
-      ? step.dependencies
-      : ["layout_child"],
-  }));
-  const workflow = await publish("单行阶段流程", {
-    ...template,
+  const parent = await publish("布局流程", {
+    schema_version: 4,
     stages: [
-      { key: "requirements", name: "需求阶段" },
-      { key: "implementation", name: "实现阶段" },
-      { key: "release", name: "交付阶段" },
+      { key: "one", name: "业务阶段一" },
+      { key: "two", name: "业务阶段二" },
     ],
     steps: [
       {
-        key: "layout_child",
-        name: "需求内嵌子流程",
-        stage: "requirements",
-        kind: "workflow.call",
-        subworkflow_ref: child.id,
+        key: "nested",
+        name: "处理子流程",
+        stage: "one",
+        executor: { type: "workflow", workflow_ref: child.id },
       },
-      ...originalSteps,
+      {
+        key: "done",
+        name: "结束处理",
+        stage: "two",
+        executor: { type: "control" },
+        dependencies: ["nested"],
+      },
     ],
   });
-  const p = await rpc(page, "project.create", {
-    command_id: crypto.randomUUID(),
-    payload: { title: "阶段布局", repository: "fixture/stage-layout" },
-  });
-  const before = await rpc(page, "query.workspace", { project_id: p.id });
-  await rpc(page, "project.configuration.update", {
-    project_id: p.id,
-    command_id: crypto.randomUUID(),
-    target: p.id,
-    expected_revision: before.active_project.revision,
-    payload: {
-      workflow_ref: workflow.id,
-      role_agent_bindings: defaults.role_agent_bindings,
-    },
-  });
-  const feature = await rpc(page, "feature.create", {
-    project_id: p.id,
-    command_id: crypto.randomUUID(),
-    payload: { project_id: p.id, title: "阶段行验证" },
-  });
-  const workspace = await rpc(page, "query.workspace", {
-    project_id: p.id,
-    feature_id: feature.id,
-  });
-  const runtime = workspace.configurations.find(
-    (r: any) =>
-      r.kind === "workflow_instance" && r.definition_id === feature.id,
+  const project = await command("project.create", { title: "布局项目" });
+  await command(
+    "workflow.start",
+    { workflow_ref: parent.id, role_agent_bindings: {} },
+    project.id,
+    (await rpc(page, "query.workspace", { project_id: project.id }))
+      .active_project.revision,
   );
-  const childId = crypto.randomUUID();
-  const parentStep = runtime.data.steps[0].id;
-  await page.route("**/rpc", async (route) => {
-    const c = route.request().postDataJSON();
-    if (c.method === "query.workflow_instance" && c.params.id === childId) {
-      return route.fulfill({
-        json: {
-          jsonrpc: "2.0",
-          id: c.id,
-          result: {
-            record: {
-              id: childId,
-              revision: 1,
-              data: {
-                owner_id: crypto.randomUUID(),
-                status: "waiting",
-                paused: true,
-                task_members: [],
-                steps: [
-                  {
-                    id: "child-step",
-                    key: "inspect",
-                    round: 1,
-                    status: "pending",
-                    outputs: {},
-                    revision: 1,
-                  },
-                ],
-              },
-            },
-            plan: {
-              stages: [{ key: "work", name: "Task 阶段" }],
-              steps: [
-                {
-                  key: "inspect",
-                  name: "Task 子流程节点",
-                  stage: "work",
-                  kind: "snapshot.capture",
-                  interaction: {},
-                },
-              ],
-            },
-            configuration: {},
-            actions: [],
-            children: [],
-          },
-        },
-      });
-    }
-    if (!["query.workspace", "query.workflow_instance"].includes(c.method))
-      return route.continue();
-    const response = await route.fetch();
-    const body = await response.json();
-    if (c.method === "query.workspace") body.result.repository_ready = true;
-    else if (c.params.id === runtime.id)
-      body.result.children = [
-        {
-          record: {
-            id: childId,
-            revision: 1,
-            data: { status: "waiting", paused: true, task_members: [] },
-          },
-          title: "任务子流程",
-          parent_step_id: parentStep,
-        },
-      ];
-    return route.fulfill({ response, json: body });
-  });
-  await page.goto(
-    `/?tab=execution&feature_id=${feature.id}&project_id=${p.id}`,
-  );
-  const stages = page
-    .locator(".workflow-runtime-stages")
-    .first()
-    .locator(":scope > .workflow-runtime-stage");
-  await expect(stages).toHaveCount(3);
-  const boxes = await stages.evaluateAll((nodes) =>
-    nodes.map((n) => {
-      const b = n.getBoundingClientRect();
-      return { x: b.x, y: b.y, width: b.width, bottom: b.bottom };
-    }),
-  );
-  expect(boxes[0].x).toBe(boxes[1].x);
-  expect(boxes[0].width).toBe(boxes[2].width);
-  expect(boxes[1].y).toBeGreaterThanOrEqual(boxes[0].bottom);
-  expect(boxes[2].y).toBeGreaterThanOrEqual(boxes[1].bottom);
-  const first = page.getByRole("button", {
-    name: "阶段 需求阶段",
-    exact: true,
-  });
-  if ((await first.getAttribute("aria-expanded")) === "false")
-    await first.click();
+  await page.goto(`/?tab=execution&project_id=${project.id}`);
+  const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
   await expect(
-    stages
-      .first()
-      .getByRole("button", { name: /^子流程 · 子流程检查 子流程快照节点/ }),
+    runtime.getByRole("heading", { name: "业务阶段一" }),
   ).toBeVisible();
-  await expect(stages.first()).toContainText("子流程 · 子流程检查");
-  await stages
+  await expect(
+    runtime.getByRole("heading", { name: "业务阶段二" }),
+  ).toBeVisible();
+  const stages = await runtime
+    .locator(":scope > .workflow-stage-row")
     .first()
-    .getByRole("button", {
-      name: /子流程 · 任务子流程.*展开/,
-    })
+    .boundingBox();
+  expect(stages).toBeTruthy();
+  await expect(
+    runtime.getByRole("button", { name: /子流程 ·.*展开/ }),
+  ).toBeVisible();
+  await runtime.getByRole("button", { name: /子流程 ·.*展开/ }).click();
+  await expect(
+    page.getByRole("region", { name: "子流程进度", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /检查原始材料/ }),
+  ).toBeVisible();
+  await runtime
+    .getByRole("button", { name: "折叠阶段", exact: true })
+    .first()
     .click();
-  await expect(
-    stages.first().getByRole("button", { name: /Task 子流程节点/ }),
-  ).toBeVisible();
-  await first.click();
-  await expect(first).toHaveAttribute("aria-expanded", "false");
-  await expect(
-    page.getByRole("button", { name: /^子流程 · 子流程检查 子流程快照节点/ }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /检查原始材料/ })).toHaveCount(
+    0,
+  );
   await page.reload();
-  await expect(first).toHaveAttribute("aria-expanded", "false");
-  await first.click();
+  await expect(
+    runtime.getByRole("button", { name: "展开阶段", exact: true }),
+  ).toBeVisible();
+  await runtime.getByRole("button", { name: "展开阶段", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /检查原始材料/ }),
+  ).toBeVisible();
   await page.screenshot({
-    path: info.outputPath("execution-stage-rows.png"),
+    path: info.outputPath("workflow-stages.png"),
     fullPage: true,
   });
-  expect(errors).toEqual([]);
 });

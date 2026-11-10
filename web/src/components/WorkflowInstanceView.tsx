@@ -1,92 +1,27 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
 import { useEffect, useRef, useState } from "react";
-import { MarkdownPreview } from "./configuration-ui";
-type Row = Record<string, any>;
+import { ActionButton, useActionFeedback } from "./ActionFeedback";
+import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
+
 type Props = {
   nested?: boolean;
-  request: (method: string, params?: Row) => Promise<any>;
+  request: Request;
   record: Row;
   projectId: string;
   refresh: () => Promise<void>;
   onDiscussion: (id: string, owner: string) => void;
 };
 const stateLabels: Record<string, string> = {
-  pending: "等待前置",
-  waiting: "等待子流程",
-  waiting_dependencies: "等待前置",
-  waiting_condition: "等待条件",
-  active: "执行中",
+  queued: "等待前置",
+  running: "执行中",
+  waiting_input: "等待输入",
+  waiting_confirmation: "等待确认",
   completed: "已完成",
-  skipped: "已跳过",
-  waiting_input: "等待讨论 / 采纳",
-  waiting_confirmation: "等待人确认",
-  blocked: "已阻塞",
   failed: "失败",
   cancelled: "已取消",
+  skipped: "已跳过",
+  needs_reconciliation: "需要核对",
 };
-function stageRows(plan: Row | undefined, steps: Row[]) {
-  const definitions = new Map<string, Row>(
-    (plan?.steps || []).map((step: Row) => [step.key, step]),
-  );
-  const stages: Row[] = plan?.stages || [];
-  const parents = new Map<string, string>();
-  for (const step of plan?.steps || []) {
-    const guard = (step.parameters?.call_guards || [])
-      .map((key: string) => definitions.get(key))
-      .find(
-        (entry: Row | undefined) => entry?.stage && entry.stage !== step.stage,
-      );
-    if (guard && !parents.has(step.stage)) parents.set(step.stage, guard.stage);
-  }
-  const root = (key: string) => {
-    const seen = new Set<string>();
-    while (parents.has(key) && !seen.has(key)) {
-      seen.add(key);
-      key = parents.get(key)!;
-    }
-    return key;
-  };
-  const rows = new Map<string, Row>();
-  for (const stage of stages.filter((stage) => !parents.has(stage.key)))
-    rows.set(stage.key, { ...stage, steps: [] });
-  for (const step of steps) {
-    const key = root(definitions.get(step.key)?.stage || "workflow");
-    if (!rows.has(key))
-      rows.set(key, {
-        ...(stages.find((stage) => stage.key === key) || {
-          key,
-          name: "流程阶段",
-        }),
-        steps: [],
-      });
-    rows.get(key)!.steps.push(step);
-  }
-  return [...rows.values()];
-}
-function stageStatus(steps: Row[]) {
-  if (!steps.length) return "pending";
-  if (steps.every((step) => ["completed", "skipped"].includes(step.status)))
-    return steps.every((step) => step.status === "skipped")
-      ? "skipped"
-      : "completed";
-  return (
-    [
-      "failed",
-      "blocked",
-      "waiting_confirmation",
-      "waiting_input",
-      "active",
-      "waiting_dependencies",
-      "waiting_condition",
-    ].find((status) => steps.some((step) => step.status === status)) ||
-    "pending"
-  );
-}
+
 export function WorkflowInstanceView({
   request,
   record,
@@ -95,452 +30,358 @@ export function WorkflowInstanceView({
   refresh,
   onDiscussion,
 }: Props) {
-  const {
-    error,
-    setError,
-    capture: captureFeedback,
-    beginFeedback,
-    endFeedback,
-  } = useActionFeedback();
-
+  const { error, setError, capture, beginFeedback, endFeedback } =
+    useActionFeedback();
   const [data, setData] = useState<Row>(),
     [busy, setBusy] = useState(false),
     [selected, setSelected] = useState("");
-  const [overwriteReasons, setOverwriteReasons] = useState<
-    Record<string, string>
-  >({});
-  const storageKey = `devdesk:runtime-stages:${projectId}:${record.id}`;
+  const [input, setInput] = useState(""),
+    [reason, setReason] = useState(""),
+    [override, setOverride] = useState(false);
+  const storageKey = `devdesk:v4:runtime:${projectId}:${record.id}`;
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
-      const value = JSON.parse(localStorage.getItem(storageKey) || "{}");
-      return Object.fromEntries(
-        Object.entries(value || {}).filter(
-          ([, flag]) => typeof flag === "boolean",
-        ),
-      ) as Record<string, boolean>;
+      return JSON.parse(localStorage.getItem(storageKey) || "{}");
     } catch {
       return {};
     }
   });
+  const epoch = useRef(0);
+  async function load() {
+    const current = ++epoch.current;
+    const result = await request("query.workflow_instance", {
+      id: record.id,
+      project_id: projectId,
+    });
+    if (epoch.current === current) setData(result);
+  }
+  useEffect(() => {
+    void load().catch((error) => setError(String(error)));
+    return () => {
+      epoch.current++;
+    };
+  }, [record, projectId, request]);
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(expanded));
     } catch {}
   }, [storageKey, expanded]);
-  const generation = useRef(0);
-  useEffect(() => {
-    const g = ++generation.current;
-    let pending = false;
-    const load = async () => {
-      if (pending) return;
-      pending = true;
-      try {
-        const value = await request("query.workflow_instance", {
-          id: record.id,
-          project_id: projectId,
-        });
-        if (g === generation.current)
-          setData((old) =>
-            old?.record.revision === value.record.revision &&
-            JSON.stringify(
-              (old?.children || []).map((child: Row) => [
-                child.record.id,
-                child.record.revision,
-              ]),
-            ) ===
-              JSON.stringify(
-                (value.children || []).map((child: Row) => [
-                  child.record.id,
-                  child.record.revision,
-                ]),
-              )
-              ? old
-              : value,
-          );
-      } catch (e) {
-        if (g === generation.current) setError(String(e));
-      } finally {
-        pending = false;
-      }
-    };
-    void load();
-    const timer =
-      nested || record.data.task_members?.length
-        ? window.setInterval(load, 1000)
-        : undefined;
-    return () => {
-      ++generation.current;
-      if (timer) window.clearInterval(timer);
-    };
-  }, [request, record.id, record.revision, projectId, nested]);
-  async function command(
-    method: string,
-    target: string,
-    revision: number,
-    payload: Row = {},
-  ) {
-    captureFeedback();
-
-    (beginFeedback(), setBusy(true));
+  const runtime = data?.runtime || record.data,
+    current = data?.record || record,
+    plan = data?.plan || runtime.plan?.document;
+  async function act(method: string, payload: Row = {}) {
+    capture();
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
       await request(method, {
         project_id: projectId,
         command_id: crypto.randomUUID(),
-        target,
-        expected_revision: revision,
+        target: current.id,
+        expected_revision: current.revision,
         payload,
       });
+      await load();
       await refresh();
-    } catch (e) {
-      setError(String(e));
+      setInput("");
+      setReason("");
+      setOverride(false);
+    } catch (error) {
+      setError(String(error));
     } finally {
-      (endFeedback(), setBusy(false));
+      setBusy(false);
+      endFeedback();
     }
   }
-  const currentRecord = data?.record || record;
-  const Heading = nested ? "h3" : "h2";
-  const runtime = data?.record.data,
-    active = runtime?.steps.find((s: Row) =>
-      [
-        "failed",
-        "blocked",
-        "waiting_confirmation",
-        "waiting_input",
-        "active",
-      ].includes(s.status),
-    );
-  const renderStep = (step: Row, stage: Row) => {
-    const definition = data?.plan.steps.find((s: Row) => s.key === step.key);
-    const action = data?.actions.find((a: Row) => a.id === step.id);
-    const approvals: Row[] = action?.model_approvals || [];
-    const modelRejected = approvals.some((report) => !report.approve);
-    return (
-      <article key={step.id} className={`workflow-node status-${step.status}`}>
-        <ActionButton
-          aria-expanded={selected === step.id}
-          onClick={() => {
-            captureFeedback();
-            return setSelected(selected === step.id ? "" : step.id);
-          }}
-        >
-          {definition?.stage !== stage.key && (
-            <small className="workflow-subflow-label">
-              子流程 ·{" "}
-              {data?.plan.stages
-                .find((source: Row) => source.key === definition?.stage)
-                ?.name.split(" / ")
-                .at(-1)}
-            </small>
-          )}
-          <strong>{definition?.name || step.key}</strong>
-          <span>
-            {stateLabels[step.status] || step.status} · 第 {step.round} 轮
-          </span>
-        </ActionButton>
-        {step.reason && <p>{step.reason}</p>}
-        {approvals.length > 0 && (
-          <section aria-label="内容校验与 Approve">
-            <h4>模型 {modelRejected ? "Reject" : "Approve"}</h4>
-            {approvals.map((report) => (
-              <details
-                key={report.run_id}
-                open={step.status === "waiting_confirmation"}
-              >
-                <summary>
-                  {report.node} · {report.approve ? "Approve" : "Reject"}
-                </summary>
-                <p>{report.summary}</p>
-                <ul>
-                  {report.checks.map((check: Row) => (
-                    <li key={check.key}>
-                      <strong>
-                        {check.key} · {check.passed ? "通过" : "未通过"}
-                      </strong>
-                      <p>{check.evidence}</p>
-                    </li>
-                  ))}
-                </ul>
-                <p className="muted">Skill 修订：{report.skills.join("、")}</p>
-              </details>
-            ))}
-            {step.confirmation?.human_approve && (
-              <p>
-                人类已 Approve
-                {step.confirmation.overwrite_model
-                  ? `，覆盖理由：${step.confirmation.reason}`
-                  : ""}
-              </p>
-            )}
-            {modelRejected && step.status === "waiting_confirmation" && (
-              <label>
-                覆盖模型结论的理由
-                <textarea
-                  value={overwriteReasons[step.id] || ""}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setOverwriteReasons((old) => ({
-                      ...old,
-                      [step.id]: value,
-                    }));
-                  }}
-                />
-              </label>
-            )}
-          </section>
-        )}
-        {step.outputs.session && (
-          <ActionButton
-            onClick={() => {
-              captureFeedback();
-              return onDiscussion(step.outputs.session, runtime.owner_id);
-            }}
-          >
-            {definition?.kind === "agent.interact"
-              ? "继续讨论 / 查看提案"
-              : "查看执行会话"}
-          </ActionButton>
-        )}
-        {["attempt.execute", "delivery.review", "merge.review"].includes(
-          definition?.kind,
-        ) &&
-          !approvals.length &&
-          !["completed", "skipped"].includes(step.status) && (
-            <p className="muted">
-              模型报告完成后，本步骤会显示“人类 Approve”；当前无需再次采纳提案。
-            </p>
-          )}
-        {(data?.actions.find((a: Row) => a.id === step.id)?.allowed || []).map(
-          (method: string) => (
-            <ActionButton
-              key={method}
-              disabled={
-                busy ||
-                runtime.paused ||
-                (method === "workflow.step.confirm" &&
-                  modelRejected &&
-                  !overwriteReasons[step.id]?.trim())
-              }
-              onClick={() => {
-                captureFeedback();
-                return command(
-                  method,
-                  step.id,
-                  step.revision,
-                  method === "workflow.step.confirm"
-                    ? {
-                        input_hash: step.input_hash,
-                        ...(modelRejected
-                          ? {
-                              overwrite_model: true,
-                              reason: overwriteReasons[step.id],
-                            }
-                          : {}),
-                      }
-                    : method === "workflow.step.rework"
-                      ? {
-                          from_step:
-                            data?.actions.find((a: Row) => a.id === step.id)
-                              ?.rework_entries?.[0] || step.key,
-                        }
-                      : {},
-                );
-              }}
-            >
-              {method.endsWith("confirm")
-                ? approvals.length
-                  ? modelRejected
-                    ? "覆盖模型结论并 Approve"
-                    : "人类 Approve"
-                  : "确认结果后继续"
-                : method.endsWith("retry")
-                  ? "技术重试"
-                  : `从${data?.plan.steps.find((definition: Row) => definition.key === data?.actions.find((action: Row) => action.id === step.id)?.rework_entries?.[0])?.name || "本步骤"}返工`}
-            </ActionButton>
-          ),
-        )}
-        {selected === step.id && (
-          <>
-            <p>
-              职责 {definition?.participant_slot || "协调器"} ·{" "}
-              {approvals.length
-                ? "模型给出内容判断后，等待人类 Approve"
-                : definition?.advance_mode === "automatic"
-                  ? "自动推进"
-                  : "结果完成后等待人确认"}
-            </p>
-            {definition?.task_instructions && <MarkdownPreview text={definition.task_instructions} />}
-            <details>
-              <summary>该轮输入、证据和输出引用</summary>
-              <pre>{JSON.stringify(step, null, 2)}</pre>
-            </details>
-          </>
-        )}
-      </article>
-    );
-  };
-  const stages = stageRows(data?.plan, runtime?.steps || []);
-  const activeStage =
-    stages.find((stage) =>
-      stage.steps.some((step: Row) => step.id === active?.id),
-    )?.key || stages.find((stage) => stage.steps.length)?.key;
-  const toggle = (key: string, initial = false) =>
-    setExpanded((previous) => ({
-      ...previous,
-      [key]: !(previous[key] ?? initial),
-    }));
+  const toggle = (key: string) =>
+    setExpanded((previous) => ({ ...previous, [key]: !previous[key] }));
   return (
     <section
       className={`panel workflow-instance${nested ? " workflow-instance-child" : ""}`}
+      aria-label={nested ? "子流程进度" : "当前工作流"}
     >
       <div className="panel-heading">
         <div>
-          <Heading>{nested ? "子流程进度" : "当前工作流"}</Heading>
+          <h3>{current.name || "工作流程"}</h3>
           <p>
-            {active
-              ? `${data?.plan.steps.find((s: Row) => s.key === active.key)?.name} · ${stateLabels[active.status]}`
-              : stateLabels[currentRecord.data.status] ||
-                currentRecord.data.status}
+            {stateLabels[runtime.status] || runtime.status}
+            {runtime.paused ? " · 已暂停" : ""}
           </p>
         </div>
-        {!["completed", "cancelled"].includes(currentRecord.data.status) && (
+        <div className="actions">
           <ActionButton
+            type="button"
             disabled={busy}
-            onClick={() => {
-              captureFeedback();
-              return command(
-                currentRecord.data.paused
-                  ? "workflow.resume"
-                  : "workflow.pause",
-                currentRecord.id,
-                currentRecord.revision,
-              );
-            }}
+            onClick={() =>
+              void load().catch((error) => setError(String(error)))
+            }
           >
-            {currentRecord.data.paused ? "恢复流程" : "暂停流程"}
+            刷新进度
           </ActionButton>
-        )}
-      </div>
-      {!data && !error && <p role="status">正在读取流程与配置锁…</p>}
-      <div className="workflow-runtime workflow-runtime-stages">
-        {stages.map((stage, index) => {
-          const status = stageStatus(stage.steps);
-          const open = expanded[stage.key] ?? stage.key === activeStage;
-          const panelId = `stage-${record.id}-${encodeURIComponent(stage.key)}`;
-          const children = (data?.children || []).filter((child: Row) =>
-            stage.steps.some((step: Row) =>
-              child.parent_step_id
-                ? step.id === child.parent_step_id
-                : data?.plan.steps.find(
-                    (definition: Row) => definition.key === step.key,
-                  )?.kind === "tasks.foreach",
-            ),
-          );
-          return (
-            <section
-              key={stage.key}
-              className={`workflow-runtime-stage status-${status}`}
-              aria-label={`阶段 ${stage.name}`}
-            >
+          {!["completed", "cancelled"].includes(runtime.status) ? (
+            <>
               <ActionButton
                 type="button"
-                className="workflow-runtime-stage-toggle"
                 disabled={busy}
-                aria-label={`阶段 ${stage.name}`}
-                aria-expanded={open}
-                aria-controls={panelId}
-                aria-describedby={`${panelId}-status`}
-                onClick={() => toggle(stage.key, stage.key === activeStage)}
+                onClick={() =>
+                  void act(
+                    runtime.paused ? "workflow.resume" : "workflow.pause",
+                  )
+                }
               >
-                <strong>
-                  {index + 1}. {stage.name}
-                </strong>
-                <span id={`${panelId}-status`}>
-                  {stateLabels[status]} ·{" "}
-                  {
-                    stage.steps.filter((step: Row) =>
-                      ["completed", "skipped"].includes(step.status),
-                    ).length
-                  }
-                  /{stage.steps.length} 步骤 · {open ? "收起" : "展开"}
-                </span>
+                {runtime.paused ? "恢复流程" : "暂停流程"}
               </ActionButton>
-              {open && (
-                <div className="workflow-runtime-stage-body" id={panelId}>
-                  {stage.description && (
-                    <details className="workflow-runtime-stage-description">
-                      <summary>阶段说明</summary>
-                      <MarkdownPreview text={stage.description} />
-                    </details>
-                  )}
-                  {stage.steps.length ? (
-                    <div className="workflow-stage-nodes">
-                      {stage.steps.map((step: Row) => renderStep(step, stage))}
-                    </div>
-                  ) : (
-                    <p className="muted">此阶段尚无步骤。</p>
-                  )}
-                  {children.map((child: Row) => (
-                    <div
-                      className="workflow-inline-subflow"
-                      key={child.record.id}
-                    >
-                      <ActionButton
-                        type="button"
-                        className="workflow-child-toggle"
-                        aria-expanded={
-                          expanded[`child:${child.record.id}`] || false
-                        }
-                        onClick={() => toggle(`child:${child.record.id}`)}
-                      >
-                        <strong>子流程 · {child.title}</strong>
-                        <span>
-                          {stateLabels[child.record.data.status] ||
-                            child.record.data.status}{" "}
-                          ·{" "}
-                          {expanded[`child:${child.record.id}`]
-                            ? "收起"
-                            : "展开"}
-                        </span>
-                      </ActionButton>
-                      {expanded[`child:${child.record.id}`] && (
-                        <WorkflowInstanceView
-                          nested
-                          record={child.record}
-                          request={request}
-                          projectId={projectId}
-                          refresh={refresh}
-                          onDiscussion={onDiscussion}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
+              <ActionButton
+                type="button"
+                disabled={busy || runtime.cancel_requested}
+                onClick={() => void act("workflow.cancel")}
+              >
+                停止流程
+              </ActionButton>
+            </>
+          ) : null}
+        </div>
       </div>
-      <details>
-        <summary>Feature 冻结配置（只读）</summary>
-        <p>
-          Workflow {data?.configuration.workflow_ref} · Standard{" "}
-          {data?.configuration.standard_ref} · 来源 Project 配置{" "}
-          {data?.configuration.project_configuration_id}
-        </p>
-        <pre>{JSON.stringify(data?.configuration, null, 2)}</pre>
-      </details>
-      {runtime?.task_members.length > 0 && (
-        <p>
-          TaskGroup generation {runtime.generation} · 固定{" "}
-          {runtime.task_members.length} 个成员
-        </p>
-      )}
-      {error && (
-        <p className="error" role="alert">
+      {(plan?.stages || []).map((stage: Row) => {
+        const definitions = plan.steps.filter(
+          (step: Row) => step.stage === stage.key,
+        );
+        const executions = definitions
+          .map((definition: Row) => ({
+            definition,
+            execution: runtime.steps?.find(
+              (execution: Row) => execution.step === definition.key,
+            ),
+          }))
+          .filter((row: Row) => row.execution);
+        const completed = executions.filter((row: Row) =>
+          ["completed", "skipped"].includes(row.execution.status),
+        ).length;
+        return (
+          <section className="workflow-stage-row" key={stage.key}>
+            <div className="panel-heading">
+              <div>
+                <h4>{stage.name}</h4>
+                <p>
+                  {completed} / {executions.length}
+                </p>
+              </div>
+              <ActionButton
+                type="button"
+                onClick={() => toggle(`stage:${stage.key}`)}
+              >
+                {expanded[`stage:${stage.key}`] ? "展开阶段" : "折叠阶段"}
+              </ActionButton>
+            </div>
+            {!expanded[`stage:${stage.key}`] ? (
+              <>
+                {stage.description ? (
+                  <MarkdownPreview text={stage.description} />
+                ) : null}
+                {executions.map(({ definition, execution }: Row) => (
+                  <article
+                    key={execution.id}
+                    className={`workflow-step-runtime status-${execution.status}`}
+                  >
+                    <ActionButton
+                      type="button"
+                      onClick={() => {
+                        setSelected((previous) =>
+                          previous === execution.id ? "" : execution.id,
+                        );
+                        setReason("");
+                        setOverride(false);
+                      }}
+                    >
+                      {definition.name} ·{" "}
+                      {stateLabels[execution.status] || execution.status}
+                    </ActionButton>
+                    {execution.reason ? <p>{execution.reason}</p> : null}
+                    <div className="actions">
+                      {execution.session_id ? (
+                        <ActionButton
+                          type="button"
+                          onClick={() =>
+                            onDiscussion(execution.session_id, runtime.owner_id)
+                          }
+                        >
+                          打开 Agent 讨论
+                        </ActionButton>
+                      ) : null}
+                      {["failed", "cancelled"].includes(execution.status) ? (
+                        <ActionButton
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            void act("workflow.step.retry", {
+                              step: execution.step,
+                            })
+                          }
+                        >
+                          技术重试
+                        </ActionButton>
+                      ) : null}
+                      {["completed", "failed", "cancelled"].includes(
+                        execution.status,
+                      ) ? (
+                        <ActionButton
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            void act("workflow.step.rework", {
+                              step: execution.step,
+                            })
+                          }
+                        >
+                          从此步骤返工
+                        </ActionButton>
+                      ) : null}
+                    </div>
+                    {execution.status === "needs_reconciliation" ? (
+                      <ActionButton
+                        disabled={busy}
+                        onClick={() =>
+                          void act("workflow.step.reconcile", {
+                            step: execution.step,
+                          })
+                        }
+                      >
+                        核对执行结果
+                      </ActionButton>
+                    ) : null}
+                    {execution.status === "waiting_input" ? (
+                      <label>
+                        补充本次任务
+                        <textarea
+                          value={selected === execution.id ? input : ""}
+                          onFocus={() => setSelected(execution.id)}
+                          onChange={(event) => setInput(event.target.value)}
+                        />
+                        <ActionButton
+                          type="button"
+                          disabled={
+                            busy || selected !== execution.id || !input.trim()
+                          }
+                          onClick={() =>
+                            void act("workflow.step.input", {
+                              step: execution.step,
+                              input,
+                            })
+                          }
+                        >
+                          提交补充输入
+                        </ActionButton>
+                      </label>
+                    ) : null}
+                    {execution.status === "waiting_confirmation" &&
+                    (definition.confirmation === "human" ||
+                      definition.allow_completion_override) ? (
+                      <div>
+                        {definition.allow_completion_override ? (
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={selected === execution.id && override}
+                              onChange={(event) => {
+                                setSelected(execution.id);
+                                setOverride(event.target.checked);
+                              }}
+                            />
+                            明确覆盖未满足的完成条件
+                          </label>
+                        ) : null}
+                        <label>
+                          确认说明
+                          <textarea
+                            value={selected === execution.id ? reason : ""}
+                            onFocus={() => setSelected(execution.id)}
+                            onChange={(event) => setReason(event.target.value)}
+                          />
+                        </label>
+                        <ActionButton
+                          type="button"
+                          disabled={busy || (override && !reason.trim())}
+                          onClick={() =>
+                            void act("workflow.step.confirm", {
+                              step: execution.step,
+                              input_digest: execution.input_digest,
+                              outputs: execution.outputs,
+                              reason,
+                              override_completion: override,
+                            })
+                          }
+                        >
+                          确认此版本结果
+                        </ActionButton>
+                      </div>
+                    ) : null}
+                    {Object.entries(execution.outputs || {}).map(
+                      ([port, id]) => {
+                        const output = data?.outputs?.[id as string];
+                        return output ? (
+                          <details key={port}>
+                            <summary>产物 · {port}</summary>
+                            {typeof output.value === "string" ? (
+                              <MarkdownPreview text={output.value} />
+                            ) : (
+                              <pre>{JSON.stringify(output.value, null, 2)}</pre>
+                            )}
+                          </details>
+                        ) : null;
+                      },
+                    )}
+                    {selected === execution.id ? (
+                      <>
+                        <MarkdownPreview
+                          text={definition.task_instructions || ""}
+                        />
+                        <details>
+                          <summary>本轮任务来源与执行记录</summary>
+                          <pre>{JSON.stringify(execution, null, 2)}</pre>
+                        </details>
+                      </>
+                    ) : null}
+                    {(data?.children || [])
+                      .filter(
+                        (child: Row) =>
+                          child.data.parent_execution_id === execution.id,
+                      )
+                      .map((child: Row) => (
+                        <div key={child.id}>
+                          <ActionButton
+                            type="button"
+                            onClick={() => toggle(child.id)}
+                          >
+                            子流程 · {child.name} ·{" "}
+                            {stateLabels[child.data.status] ||
+                              child.data.status}{" "}
+                            · {expanded[child.id] ? "折叠" : "展开"}
+                          </ActionButton>
+                          {expanded[child.id] ? (
+                            <WorkflowInstanceView
+                              nested
+                              request={request}
+                              record={child}
+                              projectId={projectId}
+                              refresh={refresh}
+                              onDiscussion={onDiscussion}
+                            />
+                          ) : null}
+                        </div>
+                      ))}
+                  </article>
+                ))}
+              </>
+            ) : null}
+          </section>
+        );
+      })}
+      {error ? (
+        <p role="alert" className="error">
           {error}
         </p>
-      )}
+      ) : null}
     </section>
   );
 }

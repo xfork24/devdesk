@@ -225,7 +225,7 @@ test("打开 GitHub 项目自动接入，完成前阻止工程操作，重载保
     page.getByRole("button", { name: "新 Feature", exact: true }),
   ).toBeDisabled();
   expect(fixture.commands[0].method).toBe("project.open_github");
-  expect(fixture.commands[0].params.payload).toMatchObject({
+  expect(fixture.commands.find((call) => call.params.payload.repository)?.params.payload).toMatchObject({
     repository: "fixture/repository",
     mainline: "main",
   });
@@ -236,6 +236,8 @@ test("打开 GitHub 项目自动接入，完成前阻止工程操作，重载保
   await expect(page.getByText("GitHub 已接入", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const repository = page.getByRole("region", { name: "GitHub 仓库状态", exact: true });
+  await expect(repository.getByText("打开项目时自动检查权限、登记并克隆仓库。", { exact: true })).toHaveCount(0);
+  await expect(repository.locator(".panel-heading")).toHaveCSS("border-bottom-width", "0px");
   await expect(repository.getByRole("status")).toHaveText("仓库已接入");
   await expect(repository.getByText("仓库接入 · 已完成", { exact: true })).toHaveCount(0);
   const link = await repository.getByRole("link", { name: "fixture/repository", exact: true }).boundingBox();

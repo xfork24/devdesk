@@ -1,0 +1,50 @@
+{
+  "template_key": "governance.builtin-tool-git-advance-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-git-advance-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-git-advance",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "接纳确切候选",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "git.advance",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "object"
+          },
+          "candidate": {
+            "type": "object"
+          },
+          "test_receipt": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "workspace",
+          "candidate",
+          "test_receipt"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

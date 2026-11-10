@@ -66,79 +66,17 @@
         }
       }
     },
-    "BindingLock": {
-      "type": "object",
-      "required": [
-        "agent",
-        "skills",
-        "standard",
-        "harness",
-        "sandbox"
-      ],
-      "properties": {
-        "agent": {
-          "type": "string"
-        },
-        "skills": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "standard": {
-          "type": "string"
-        },
-        "harness": {
-          "type": "string",
-          "description": "May be empty before native runtime preparation; the concrete installation is frozen in RuntimeBinding."
-        },
-        "sandbox": {
-          "type": "string",
-          "description": "May be empty before native runtime preparation; the concrete installation is frozen in RuntimeBinding."
-        }
-      }
-    },
-    "SpecSlot": {
-      "type": "object",
-      "required": [
-        "purpose",
-        "spec"
-      ],
-      "properties": {
-        "purpose": {
-          "enum": [
-            "planning",
-            "implementation",
-            "merge"
-          ]
-        },
-        "spec": {
-          "type": "string"
-        }
-      }
-    },
     "TestRequest": {
       "type": "object",
       "required": [
         "operation_id",
-        "phase",
         "candidate",
-        "test_definitions",
         "environment",
         "origin"
       ],
       "properties": {
-        "phase": {
-          "type": "string"
-        },
         "candidate": {
           "type": "string"
-        },
-        "test_definitions": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
         },
         "environment": {
           "type": "string"
@@ -159,12 +97,6 @@
             }
           ]
         },
-        "definitions": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Document"
-          }
-        },
         "code": {
           "anyOf": [
             {
@@ -179,6 +111,19 @@
           "anyOf": [
             {
               "$ref": "#/$defs/ExecutionInstance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expect_assertion_failure": {
+          "type": "boolean"
+        },
+        "recipe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestRecipe"
             },
             {
               "type": "null"
@@ -354,19 +299,12 @@
       "required": [
         "role",
         "skill_revisions",
-        "tool_policy",
-        "allowed_work",
-        "output_schemas"
+        "tool_policy"
       ],
       "properties": {
         "role": {
-          "enum": [
-            "analyst",
-            "architect",
-            "developer",
-            "tester",
-            "reviewer"
-          ]
+          "type": "string",
+          "minLength": 1
         },
         "skill_revisions": {
           "type": "array",
@@ -377,255 +315,38 @@
         "tool_policy": {
           "enum": [
             "read_only",
-            "task_write",
-            "test_write"
+            "workspace_write",
+            "scoped_write"
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProposalContent": {
+      "type": "object",
+      "properties": {
+        "delivery_ref": {
+          "type": "string",
+          "minLength": 1
         },
-        "allowed_work": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "enum": [
-              "discussion",
-              "design",
-              "implementation",
-              "testing",
-              "review"
-            ]
-          }
+        "title": {
+          "type": "string",
+          "minLength": 1
         },
-        "output_schemas": {
+        "value": {},
+        "input_refs": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "string"
           }
         }
       },
-      "additionalProperties": false
-    },
-    "AcceptanceCriterion": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string",
-          "minLength": 1
-        },
-        "description": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
       "required": [
-        "key",
-        "description"
+        "delivery_ref",
+        "title",
+        "value"
       ],
       "additionalProperties": false
-    },
-    "ProposalContent": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "requirement"
-            },
-            "title": {
-              "type": "string",
-              "minLength": 1
-            },
-            "body": {
-              "type": "string",
-              "minLength": 1
-            },
-            "acceptance": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "#/$defs/AcceptanceCriterion"
-              }
-            }
-          },
-          "required": [
-            "kind",
-            "title",
-            "body",
-            "acceptance"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "feature"
-            },
-            "title": {
-              "type": "string",
-              "minLength": 1
-            },
-            "requirement": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "kind",
-            "title",
-            "requirement"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "design"
-            },
-            "title": {
-              "type": "string",
-              "minLength": 1
-            },
-            "body": {
-              "type": "string",
-              "minLength": 1
-            },
-            "requirement": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "required": [
-            "kind",
-            "title",
-            "body",
-            "requirement"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "task_plan"
-            },
-            "requirement": {
-              "type": "string",
-              "minLength": 1
-            },
-            "design": {
-              "type": "string",
-              "minLength": 1
-            },
-            "tasks": {
-              "type": "array",
-              "minItems": 1,
-              "maxItems": 100,
-              "items": {
-                "type": "object",
-                "properties": {
-                  "key": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "title": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "acceptance": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    }
-                  },
-                  "dependencies": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    }
-                  },
-                  "test_recipe": {
-                    "oneOf": [
-                      {
-                        "$ref": "#/$defs/TestRecipe"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "key",
-                  "title",
-                  "acceptance",
-                  "dependencies"
-                ],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": [
-            "kind",
-            "requirement",
-            "design",
-            "tasks"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "test_plan"
-            },
-            "title": {
-              "type": "string",
-              "minLength": 1
-            },
-            "body": {
-              "type": "string",
-              "minLength": 1
-            },
-            "requirement": {
-              "type": "string",
-              "minLength": 1
-            },
-            "design": {
-              "type": "string",
-              "minLength": 1
-            },
-            "verifies": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "test_recipe": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/TestRecipe"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "kind",
-            "title",
-            "body",
-            "requirement",
-            "design",
-            "verifies"
-          ],
-          "additionalProperties": false
-        }
-      ]
     },
     "SessionScope": {
       "enum": [
@@ -668,18 +389,12 @@
         "tool_policy": {
           "enum": [
             "read_only",
-            "task_write",
-            "test_write"
+            "workspace_write",
+            "scoped_write"
           ]
         },
         "work_type": {
-          "enum": [
-            "discussion",
-            "design",
-            "implementation",
-            "testing",
-            "review"
-          ]
+          "$ref": "#/$defs/WorkType"
         },
         "configuration_digest": {
           "type": "string",
@@ -971,12 +686,6 @@
         "session_id": {
           "type": "string"
         },
-        "run_id": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "operation_id": {
           "type": "string"
         },
@@ -1107,15 +816,6 @@
       ],
       "additionalProperties": false
     },
-    "DeliverySources": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "description": "Immutable direct source Delivery IDs. Live closure requires completed Task implementation deliveries; a merge candidate requires its original source Delivery. Recursive evidence is frozen before review dispatch."
-    },
     "ExecutionRetryCleanup": {
       "allOf": [
         {
@@ -1124,16 +824,8 @@
       ],
       "description": "execution.retry_cleanup: target is a stopped and sealed RuntimeExecution with cleanup_failed status; never deletes a shared installation."
     },
-    "MergeCaptureSnapshot": {
-      "allOf": [
-        {
-          "$ref": "#/$defs/Command"
-        }
-      ],
-      "description": "merge.capture_snapshot: append an audit snapshot for a completed merge; original snapshots remain immutable."
-    },
     "NativeInputLimits": {
-      "description": "Ordinary conversation input is at most 65536 UTF-8 bytes; a host-created formal Run evidence envelope is at most 524288 bytes. A native execution budget is fifteen minutes, excluding pending human decisions. Errors never switch execution providers implicitly."
+      "description": "Ordinary conversation input is at most 65536 UTF-8 bytes; a canonical configured Workflow task envelope is at most 524288 bytes. Step budgets are configuration. Unknown native outcomes require reconciliation and never switch execution providers implicitly."
     },
     "PermissionPolicy": {
       "type": "object",
@@ -1345,13 +1037,7 @@
       "type": "object",
       "properties": {
         "work_type": {
-          "enum": [
-            "discussion",
-            "design",
-            "implementation",
-            "testing",
-            "review"
-          ]
+          "$ref": "#/$defs/WorkType"
         },
         "writable_paths": {
           "type": "array",
@@ -1846,13 +1532,8 @@
       "type": "object",
       "properties": {
         "role": {
-          "enum": [
-            "analyst",
-            "architect",
-            "developer",
-            "tester",
-            "reviewer"
-          ]
+          "type": "string",
+          "minLength": 1
         },
         "instructions": {
           "type": "string",
@@ -1896,6 +1577,9 @@
         },
         "permission_selection": {
           "$ref": "permission-binding.schema.json#/$defs/AgentPermissionSelection"
+        },
+        "execution": {
+          "$ref": "#/$defs/AgentWorkProfile"
         }
       },
       "required": [
@@ -1932,710 +1616,11 @@
       ],
       "additionalProperties": false
     },
-    "WorkflowCondition": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "op": {
-              "const": "always"
-            }
-          },
-          "required": [
-            "op"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "op": {
-              "enum": [
-                "all",
-                "any"
-              ]
-            },
-            "conditions": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/WorkflowCondition"
-              },
-              "minItems": 1,
-              "maxItems": 20
-            }
-          },
-          "required": [
-            "op",
-            "conditions"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "op": {
-              "const": "output_present"
-            },
-            "step": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "op",
-            "step"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "op": {
-              "const": "accepted"
-            },
-            "kind": {
-              "enum": [
-                "requirement",
-                "plan",
-                "implementation",
-                "closure",
-                "merge_candidate"
-              ]
-            }
-          },
-          "required": [
-            "op",
-            "kind"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "WorkflowPortReference": {
-      "type": "object",
-      "properties": {
-        "step": {
-          "type": "string"
-        },
-        "port": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "step",
-        "port"
-      ],
-      "additionalProperties": false
-    },
-    "WorkflowRunNode": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        },
-        "role": {
-          "enum": [
-            "analyst",
-            "architect",
-            "developer",
-            "tester",
-            "reviewer"
-          ]
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "writes": {
-          "type": "boolean"
-        },
-        "role_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "task_instructions": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 32768,
-          "pattern": "\\S"
-        }
-      },
-      "required": [
-        "key",
-        "role"
-      ],
-      "additionalProperties": false
-    },
     "WorkflowStep": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]{1,80}$"
-        },
-        "name": {
-          "type": "string"
-        },
-        "stage": {
-          "type": "string"
-        },
-        "kind": {
-          "enum": [
-            "agent.interact",
-            "proposal.adopt",
-            "attempt.execute",
-            "delivery.review",
-            "merge.prepare",
-            "merge.review",
-            "merge.apply",
-            "snapshot.capture",
-            "resource.cleanup",
-            "tasks.foreach",
-            "branch",
-            "join",
-            "workflow.call"
-          ]
-        },
-        "contract_version": {
-          "enum": [
-            1,
-            2
-          ]
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "participant_slot": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "inputs": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/WorkflowPortReference"
-          }
-        },
-        "interaction": {
-          "type": "object",
-          "properties": {
-            "mode": {
-              "type": "string"
-            },
-            "required_topics": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "output_kind": {
-              "type": "string"
-            },
-            "max_turns": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          "additionalProperties": false
-        },
-        "advance_mode": {
-          "enum": [
-            "automatic",
-            "human_confirmation"
-          ]
-        },
-        "condition": {
-          "$ref": "#/$defs/WorkflowCondition"
-        },
-        "parameters": {
-          "type": "object"
-        },
-        "execution_recipe": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/WorkflowRunNode"
-          }
-        },
-        "rework_scope": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "retry_limit": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10
-        },
-        "role_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "spec_refs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "uniqueItems": true
-        },
-        "subworkflow_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "task_instructions": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 32768,
-          "pattern": "\\S"
-        },
-        "delivery_inputs": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/WorkflowDeliveryInput"
-          }
-        },
-        "delivery_outputs": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/WorkflowDeliveryOutput"
-          }
-        }
-      },
-      "required": [
-        "key",
-        "name",
-        "stage",
-        "kind"
-      ],
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "agent.interact"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "interaction"
-            ],
-            "properties": {
-              "participant_slot": {
-                "type": "string"
-              },
-              "interaction": {
-                "required": [
-                  "output_kind",
-                  "max_turns"
-                ],
-                "properties": {
-                  "max_turns": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 100
-                  },
-                  "output_kind": {
-                    "enum": [
-                      "requirement",
-                      "feature",
-                      "design",
-                      "task_plan",
-                      "test_plan"
-                    ]
-                  }
-                }
-              }
-            },
-            "anyOf": [
-              {
-                "required": [
-                  "participant_slot"
-                ],
-                "properties": {
-                  "participant_slot": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                }
-              },
-              {
-                "required": [
-                  "role_ref"
-                ],
-                "properties": {
-                  "role_ref": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                }
-              }
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "agent.interact"
-              },
-              "contract_version": {
-                "const": 1
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "interaction": {
-                "required": [
-                  "goal"
-                ],
-                "properties": {
-                  "goal": {
-                    "type": "string",
-                    "pattern": "\\S"
-                  }
-                }
-              }
-            }
-          }
-        }
-      ]
+      "$ref": "#/$defs/StepDefinition"
     },
     "WorkflowDocument": {
-      "type": "object",
-      "properties": {
-        "schema_version": {
-          "const": 3
-        },
-        "process_kind": {
-          "enum": [
-            "project_intake",
-            "feature",
-            "task",
-            "subworkflow"
-          ]
-        },
-        "stages": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "key",
-              "name"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "binding_slots": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "properties": {
-              "role": {
-                "enum": [
-                  "analyst",
-                  "architect",
-                  "developer",
-                  "tester",
-                  "reviewer"
-                ]
-              },
-              "agent_ref": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "capabilities": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "role"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "steps": {
-          "type": "array",
-          "maxItems": 1000,
-          "items": {
-            "$ref": "#/$defs/WorkflowStep"
-          },
-          "minItems": 1
-        },
-        "subworkflow_refs": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "input_ports": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "output_ports": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/WorkflowPortReference"
-          }
-        }
-      },
-      "required": [
-        "schema_version",
-        "process_kind",
-        "stages",
-        "steps"
-      ],
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "schema_version": {
-                "enum": [
-                  2,
-                  3
-                ]
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "steps": {
-                "items": {
-                  "allOf": [
-                    {
-                      "if": {
-                        "properties": {
-                          "kind": {
-                            "enum": [
-                              "agent.interact",
-                              "attempt.execute",
-                              "delivery.review",
-                              "merge.prepare",
-                              "merge.review"
-                            ]
-                          }
-                        }
-                      },
-                      "then": {
-                        "required": [
-                          "role_ref",
-                          "spec_refs"
-                        ],
-                        "properties": {
-                          "role_ref": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "spec_refs": {
-                            "minItems": 1
-                          }
-                        }
-                      }
-                    },
-                    {
-                      "if": {
-                        "properties": {
-                          "kind": {
-                            "const": "workflow.call"
-                          }
-                        }
-                      },
-                      "then": {
-                        "required": [
-                          "subworkflow_ref"
-                        ],
-                        "properties": {
-                          "subworkflow_ref": {
-                            "type": "string",
-                            "minLength": 1
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "schema_version": {
-                "const": 3
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "steps": {
-                "items": {
-                  "allOf": [
-                    {
-                      "if": {
-                        "properties": {
-                          "kind": {
-                            "enum": [
-                              "agent.interact",
-                              "attempt.execute",
-                              "delivery.review",
-                              "merge.review"
-                            ]
-                          }
-                        }
-                      },
-                      "then": {
-                        "required": [
-                          "task_instructions",
-                          "contract_version"
-                        ],
-                        "properties": {
-                          "contract_version": {
-                            "const": 2
-                          }
-                        }
-                      },
-                      "else": {
-                        "properties": {
-                          "contract_version": {
-                            "const": 1
-                          }
-                        },
-                        "not": {
-                          "required": [
-                            "task_instructions"
-                          ]
-                        }
-                      }
-                    },
-                    {
-                      "properties": {
-                        "interaction": {
-                          "properties": {
-                            "goal": {
-                              "const": ""
-                            }
-                          }
-                        },
-                        "execution_recipe": {
-                          "items": {
-                            "allOf": [
-                              {
-                                "if": {
-                                  "properties": {
-                                    "key": {
-                                      "enum": [
-                                        "requirement_validate",
-                                        "plan_validate",
-                                        "test_plan_validate",
-                                        "test_author",
-                                        "implement",
-                                        "docs"
-                                      ]
-                                    }
-                                  }
-                                },
-                                "then": {
-                                  "required": [
-                                    "task_instructions"
-                                  ]
-                                },
-                                "else": {
-                                  "not": {
-                                    "required": [
-                                      "task_instructions"
-                                    ]
-                                  }
-                                }
-                              }
-                            ]
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "else": {
-            "properties": {
-              "steps": {
-                "items": {
-                  "properties": {
-                    "contract_version": {
-                      "const": 1
-                    },
-                    "execution_recipe": {
-                      "items": {
-                        "not": {
-                          "required": [
-                            "task_instructions"
-                          ]
-                        }
-                      }
-                    }
-                  },
-                  "not": {
-                    "required": [
-                      "task_instructions"
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        }
-      ]
+      "$ref": "#/$defs/WorkflowDefinition"
     },
     "ConfigurationRecord": {
       "type": "object",
@@ -2752,19 +1737,9 @@
     "RoleDefinition": {
       "type": "object",
       "required": [
-        "execution_role",
         "instructions"
       ],
       "properties": {
-        "execution_role": {
-          "enum": [
-            "analyst",
-            "architect",
-            "developer",
-            "tester",
-            "reviewer"
-          ]
-        },
         "instructions": {
           "type": "string",
           "minLength": 1
@@ -2792,17 +1767,9 @@
     "Status": {
       "enum": [
         "draft",
-        "planning",
-        "ready",
-        "developing",
-        "validating",
-        "accepted",
-        "merging",
         "completed",
         "prepared",
         "running",
-        "waiting_review",
-        "rejected",
         "failed",
         "cancelled",
         "interrupted",
@@ -2937,40 +1904,8 @@
             }
           ]
         },
-        "requirement_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "design_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "origin": {
           "$ref": "#/$defs/Origin"
-        },
-        "acceptance": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/AcceptanceCriterion"
-          }
-        },
-        "verifies": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
         },
         "artifact_id": {
           "anyOf": [
@@ -2982,15 +1917,11 @@
             }
           ]
         },
-        "test_recipe": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TestRecipe"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "input_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -2999,9 +1930,7 @@
         "title",
         "body",
         "version",
-        "origin",
-        "acceptance",
-        "verifies"
+        "origin"
       ]
     },
     "Harness": {
@@ -3101,9 +2030,6 @@
         "id": {
           "type": "string"
         },
-        "run_id": {
-          "type": "string"
-        },
         "harness": {
           "$ref": "#/$defs/Harness"
         },
@@ -3154,11 +2080,14 @@
               "type": "null"
             }
           ]
+        },
+        "operation_id": {
+          "type": "string"
         }
       },
       "required": [
         "id",
-        "run_id",
+        "operation_id",
         "harness",
         "sandbox",
         "status"
@@ -3284,325 +2213,16 @@
         "instructions": {
           "type": "string"
         },
-        "permissions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1,
-          "maxItems": 2
+        "permission_selection": {
+          "$ref": "permission-binding.schema.json#/$defs/AgentPermissionSelection"
         },
-        "approval": {
-          "enum": [
-            "never",
-            "on_request"
-          ]
+        "execution": {
+          "$ref": "#/$defs/AgentWorkProfile"
         }
       },
       "required": [
         "role_ref",
         "capability_ref"
-      ],
-      "additionalProperties": false
-    },
-    "ActionSelector": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "enum": [
-            "agent.interact",
-            "proposal.adopt",
-            "attempt.execute",
-            "delivery.review",
-            "merge.prepare",
-            "merge.review",
-            "merge.apply",
-            "snapshot.capture",
-            "resource.cleanup",
-            "tasks.foreach",
-            "branch",
-            "join",
-            "workflow.call"
-          ]
-        },
-        "phase": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "delivery_kind": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "kind"
-      ],
-      "additionalProperties": false
-    },
-    "SpecificationDefinition": {
-      "type": "object",
-      "properties": {
-        "body": {
-          "type": "string",
-          "minLength": 1
-        },
-        "applicable_actions": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ActionSelector"
-          }
-        },
-        "rules": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "traceability",
-              "failure_paths",
-              "sections"
-            ]
-          }
-        }
-      },
-      "required": [
-        "body"
-      ],
-      "additionalProperties": false
-    },
-    "BaselineRule": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "$ref": "#/$defs/ActionSelector"
-        },
-        "required_spec_refs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "minItems": 1,
-          "uniqueItems": true
-        },
-        "min_matches": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "required": [
-        "selector",
-        "required_spec_refs",
-        "min_matches"
-      ],
-      "additionalProperties": false
-    },
-    "StandardDefinition": {
-      "type": "object",
-      "properties": {
-        "body": {
-          "type": "string",
-          "minLength": 1
-        },
-        "baseline_rules": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/BaselineRule"
-          },
-          "minItems": 1
-        }
-      },
-      "required": [
-        "body",
-        "baseline_rules"
-      ],
-      "additionalProperties": false
-    },
-    "SpecificationBinding": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "step": {
-          "type": "string",
-          "minLength": 1
-        },
-        "action": {
-          "enum": [
-            "agent.interact",
-            "proposal.adopt",
-            "attempt.execute",
-            "delivery.review",
-            "merge.prepare",
-            "merge.review",
-            "merge.apply",
-            "snapshot.capture",
-            "resource.cleanup",
-            "tasks.foreach",
-            "branch",
-            "join",
-            "workflow.call"
-          ]
-        },
-        "phase": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "delivery_kind": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "spec_refs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "checks": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        },
-        "output_contract": {},
-        "task": {
-          "$ref": "#/$defs/WorkflowTaskDefinition"
-        }
-      },
-      "required": [
-        "path",
-        "step",
-        "action",
-        "spec_refs",
-        "checks",
-        "output_contract"
-      ],
-      "additionalProperties": false
-    },
-    "BaselineCheck": {
-      "type": "object",
-      "properties": {
-        "standard_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "valid": {
-          "type": "boolean"
-        },
-        "errors": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "standard_ref",
-        "valid",
-        "errors"
-      ],
-      "additionalProperties": false
-    },
-    "ProjectConfigurationV2": {
-      "type": "object",
-      "properties": {
-        "schema_version": {
-          "const": 2
-        },
-        "workflow_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "standard_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role_agent_bindings": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "specification_snapshot": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/SpecificationBinding"
-          }
-        },
-        "baseline_check": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BaselineCheck"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "definition_hashes": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "schema_version",
-        "workflow_ref",
-        "role_agent_bindings"
       ],
       "additionalProperties": false
     },
@@ -4298,6 +2918,12 @@
           "additionalProperties": {
             "$ref": "#/$defs/SkillPackage"
           }
+        },
+        "platform_tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigurationRecord"
+          }
         }
       },
       "required": [],
@@ -4357,16 +2983,6 @@
           ]
         },
         "turn_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "run_id": {
           "anyOf": [
             {
               "type": "string"
@@ -4457,294 +3073,6 @@
       ],
       "additionalProperties": false
     },
-    "FeatureConfiguration": {
-      "type": "object",
-      "properties": {
-        "integration_locks": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/IntegrationLock"
-          }
-        },
-        "specification_snapshot": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/SpecificationBinding"
-          }
-        },
-        "baseline_check": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BaselineCheck"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role_agent_bindings": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "project_configuration_id": {
-          "type": "string"
-        },
-        "workflow_ref": {
-          "type": "string"
-        },
-        "standard_ref": {
-          "type": "string"
-        },
-        "agent_refs": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "definition_hashes": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "plan": {
-          "$ref": "#/$defs/WorkflowDocument"
-        },
-        "task_plan": {
-          "$ref": "#/$defs/WorkflowDocument"
-        },
-        "compiler_version": {
-          "const": 3
-        }
-      },
-      "required": [
-        "project_configuration_id",
-        "workflow_ref",
-        "standard_ref",
-        "agent_refs",
-        "definition_hashes",
-        "plan",
-        "task_plan",
-        "compiler_version"
-      ],
-      "additionalProperties": false
-    },
-    "TaskDefinitionResource": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "family": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "supersedes": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "body": {
-          "type": "string"
-        },
-        "slots": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "purpose": {
-                "type": "string"
-              },
-              "spec": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "purpose",
-              "spec"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "rules": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "agent_profile": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AgentProfile"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "id",
-        "family",
-        "name",
-        "version",
-        "supersedes",
-        "body",
-        "slots",
-        "rules"
-      ],
-      "additionalProperties": false
-    },
-    "WorkflowTaskDefinition": {
-      "type": "object",
-      "properties": {
-        "renderer_version": {
-          "const": "agent-task/v3"
-        },
-        "workflow_revision_id": {
-          "type": "string"
-        },
-        "source_step": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        },
-        "step": {
-          "$ref": "#/$defs/WorkflowStep"
-        },
-        "stage": {
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "delivery_types": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ConfigurationRecord"
-          }
-        }
-      },
-      "required": [
-        "renderer_version",
-        "workflow_revision_id",
-        "source_step",
-        "path",
-        "step",
-        "stage"
-      ],
-      "additionalProperties": false
-    },
-    "AgentTaskBase": {
-      "type": "object",
-      "properties": {
-        "agent": {
-          "$ref": "#/$defs/TaskDefinitionResource"
-        },
-        "skills": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/TaskDefinitionResource"
-          }
-        },
-        "role": {
-          "type": [
-            "object",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "agent",
-        "skills",
-        "role"
-      ],
-      "additionalProperties": false
-    },
-    "FrozenAgentTask": {
-      "type": "object",
-      "properties": {
-        "renderer_version": {
-          "const": "agent-task/v3"
-        },
-        "definition": {
-          "$ref": "#/$defs/WorkflowTaskDefinition"
-        },
-        "definition_digest": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "base": {
-          "$ref": "#/$defs/AgentTaskBase"
-        },
-        "base_digest": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "content": {
-          "type": "object"
-        },
-        "rendered_input": {
-          "type": "string"
-        },
-        "input_digest": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        }
-      },
-      "required": [
-        "renderer_version",
-        "definition",
-        "definition_digest",
-        "base",
-        "base_digest",
-        "content",
-        "rendered_input",
-        "input_digest",
-        "digest"
-      ],
-      "additionalProperties": false
-    },
-    "HarnessPreference": {
-      "type": "object",
-      "description": "Project creation preferences reference exact Model and Harness component revisions. Executions use the selected Agent composition.",
-      "properties": {
-        "model_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "harness_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider": {
-          "enum": [
-            "codex",
-            "dsh"
-          ]
-        }
-      },
-      "required": [
-        "provider",
-        "model_ref",
-        "harness_ref"
-      ],
-      "additionalProperties": false
-    },
     "DeliveryTypeDefinition": {
       "type": "object",
       "properties": {
@@ -4760,46 +3088,24 @@
             "json",
             "text"
           ]
+        },
+        "content_schema": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "body",
         "format"
-      ],
-      "additionalProperties": false
-    },
-    "WorkflowDeliveryOutput": {
-      "type": "object",
-      "properties": {
-        "delivery_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source_port": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "delivery_ref",
-        "source_port"
-      ],
-      "additionalProperties": false
-    },
-    "WorkflowDeliveryInput": {
-      "type": "object",
-      "properties": {
-        "delivery_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source": {
-          "$ref": "#/$defs/WorkflowPortReference"
-        }
-      },
-      "required": [
-        "delivery_ref",
-        "source"
       ],
       "additionalProperties": false
     },
@@ -4812,7 +3118,10 @@
           "minLength": 1
         },
         "implementation": {
-          "type": "string"
+          "enum": [
+            "harness.native",
+            "platform"
+          ]
         },
         "input_schema": {
           "type": "object"
@@ -4830,6 +3139,16 @@
           "enum": [
             "codex",
             "dsh"
+          ]
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlatformToolRuntime"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -4947,6 +3266,1273 @@
           }
         }
       ]
+    },
+    "AgentRole": {
+      "type": "string",
+      "minLength": 1
+    },
+    "AgentWorkProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool_policy"
+      ],
+      "properties": {
+        "tool_policy": {
+          "enum": [
+            "read_only",
+            "workspace_write",
+            "scoped_write"
+          ]
+        }
+      }
+    },
+    "PortSource": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pointer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "port"
+      ],
+      "additionalProperties": false
+    },
+    "PortDefinition": {
+      "type": "object",
+      "properties": {
+        "delivery_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "content_checks": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "delivery_ref"
+      ],
+      "additionalProperties": false
+    },
+    "InputBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "source"
+            },
+            "source": {
+              "$ref": "#/$defs/PortSource"
+            }
+          },
+          "required": [
+            "type",
+            "source"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "constant"
+            },
+            "value": {}
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CompletionRule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "always"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "all"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CompletionRule"
+              }
+            }
+          },
+          "required": [
+            "op",
+            "rules"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "any"
+            },
+            "rules": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CompletionRule"
+              }
+            }
+          },
+          "required": [
+            "op",
+            "rules"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "exists"
+            },
+            "source": {
+              "$ref": "#/$defs/PortSource"
+            }
+          },
+          "required": [
+            "op",
+            "source"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "equals"
+            },
+            "source": {
+              "$ref": "#/$defs/PortSource"
+            },
+            "value": {}
+          },
+          "required": [
+            "op",
+            "source",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "same"
+            },
+            "left": {
+              "$ref": "#/$defs/PortSource"
+            },
+            "right": {
+              "$ref": "#/$defs/PortSource"
+            }
+          },
+          "required": [
+            "op",
+            "left",
+            "right"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "covers"
+            },
+            "available": {
+              "$ref": "#/$defs/PortSource"
+            },
+            "required": {
+              "$ref": "#/$defs/PortSource"
+            }
+          },
+          "required": [
+            "op",
+            "available",
+            "required"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "before"
+            },
+            "first": {
+              "type": "string",
+              "minLength": 1
+            },
+            "second": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "op",
+            "first",
+            "second"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "independent"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reviewer": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "op",
+            "author",
+            "reviewer"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "outcome"
+            },
+            "step": {
+              "type": "string",
+              "minLength": 1
+            },
+            "outcome": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "op",
+            "step",
+            "outcome"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "approved"
+            },
+            "step": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "op",
+            "step"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CollectionExecution": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/PortSource"
+        },
+        "item_input": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "min_items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "source",
+        "item_input",
+        "max_concurrency",
+        "min_items"
+      ],
+      "additionalProperties": false
+    },
+    "StepExecutor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "agent"
+            },
+            "role_ref": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool"
+            },
+            "tool_ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "arguments": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/InputBinding"
+              }
+            },
+            "output_mapping": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "tool_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "workflow"
+            },
+            "workflow_ref": {
+              "type": "string",
+              "minLength": 1
+            },
+            "foreach": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CollectionExecution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "workflow_ref"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "control"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "StepAccess": {
+      "type": "object",
+      "properties": {
+        "workspace_input": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "working_directory": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "writable_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "read_only_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tool_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ExecutionBudget": {
+      "type": "object",
+      "properties": {
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1800
+        },
+        "retry_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      },
+      "required": [
+        "max_turns",
+        "timeout_seconds",
+        "retry_limit"
+      ],
+      "additionalProperties": false
+    },
+    "StepDefinition": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executor": {
+          "$ref": "#/$defs/StepExecutor"
+        },
+        "task_instructions": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 32768
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_skill_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "spec_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/InputBinding"
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PortDefinition"
+          }
+        },
+        "access": {
+          "$ref": "#/$defs/StepAccess"
+        },
+        "budget": {
+          "$ref": "#/$defs/ExecutionBudget"
+        },
+        "condition": {
+          "$ref": "#/$defs/CompletionRule"
+        },
+        "completion": {
+          "$ref": "#/$defs/CompletionRule"
+        },
+        "confirmation": {
+          "enum": [
+            "automatic",
+            "human"
+          ]
+        },
+        "allow_completion_override": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "stage",
+        "executor"
+      ],
+      "additionalProperties": false
+    },
+    "StageDefinition": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "default_role_ref": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowDefinition": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 4
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StageDefinition"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepDefinition"
+          },
+          "minItems": 1,
+          "maxItems": 1000
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PortDefinition"
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PortSource"
+          }
+        },
+        "completion": {
+          "$ref": "#/$defs/CompletionRule"
+        }
+      },
+      "required": [
+        "schema_version",
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "StepSelector": {
+      "type": "object",
+      "properties": {
+        "role_ref": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery_ref": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "ContentCheckDefinition": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "instructions"
+      ],
+      "additionalProperties": false
+    },
+    "ConfiguredSpecification": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "applicable_to": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepSelector"
+          }
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContentCheckDefinition"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "ConfiguredBaselineRule": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "$ref": "#/$defs/StepSelector"
+        },
+        "required_spec_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "min_matches": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "selector",
+        "required_spec_refs",
+        "min_matches"
+      ],
+      "additionalProperties": false
+    },
+    "ConfiguredStandard": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseline_rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfiguredBaselineRule"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "PlatformToolRuntime": {
+      "type": "object",
+      "properties": {
+        "harness_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permission_selection": {
+          "$ref": "permission-binding.schema.json#/$defs/AgentPermissionSelection"
+        }
+      },
+      "required": [
+        "harness_ref",
+        "permission_selection"
+      ],
+      "additionalProperties": false
+    },
+    "WorkType": {
+      "enum": [
+        "workflow",
+        "discussion"
+      ]
+    },
+    "ConfiguredAgentTask": {
+      "type": "object",
+      "properties": {
+        "renderer_version": {
+          "const": "agent-task/v4"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "agent_revision_id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object"
+        },
+        "task": {
+          "type": "object"
+        },
+        "rendered_input": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "renderer_version",
+        "turn_id",
+        "agent_revision_id",
+        "source",
+        "task",
+        "rendered_input",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "AgentOutput": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "completed",
+            "needs_input",
+            "blocked"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outputs": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "ContentCheckReport": {
+      "type": "object",
+      "properties": {
+        "approve": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "passed": {
+                "type": "boolean"
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "key",
+              "passed",
+              "evidence"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "approve",
+        "summary",
+        "checks"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectConfiguration": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "workflow_ref": {
+          "type": "string"
+        },
+        "role_agent_bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "standard_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "specification_snapshot": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "baseline_check": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "workflow_ref",
+        "role_agent_bindings"
+      ],
+      "additionalProperties": false
+    },
+    "FeatureWorkflowConfiguration": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 3
+        },
+        "project_configuration_id": {
+          "type": "string"
+        },
+        "workflow_instance_id": {
+          "type": "string"
+        },
+        "configuration": {
+          "$ref": "#/$defs/ProjectConfiguration"
+        }
+      },
+      "required": [
+        "schema_version",
+        "project_configuration_id",
+        "workflow_instance_id",
+        "configuration"
+      ],
+      "additionalProperties": false
+    },
+    "StepExecutionStatus": {
+      "enum": [
+        "queued",
+        "running",
+        "waiting_input",
+        "waiting_confirmation",
+        "completed",
+        "failed",
+        "cancelled",
+        "skipped",
+        "needs_reconciliation"
+      ]
+    },
+    "StepExecution": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workflow_instance_id": {
+          "type": "string"
+        },
+        "workflow_revision_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "input_digest": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "$ref": "#/$defs/StepExecutionStatus"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "agent_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_call_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "finished": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "budget_wait_started": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "budget_waited_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "workflow_instance_id",
+        "workflow_revision_id",
+        "path",
+        "step",
+        "input_digest",
+        "reason",
+        "round",
+        "sequence",
+        "status",
+        "inputs",
+        "outputs",
+        "agent_revision_id",
+        "session_id",
+        "turn_id",
+        "tool_call_id",
+        "started",
+        "finished"
+      ],
+      "additionalProperties": false
+    },
+    "ConfiguredWorkflowPlan": {
+      "type": "object",
+      "properties": {
+        "workflow_revision_id": {
+          "type": "string"
+        },
+        "document": {
+          "$ref": "#/$defs/WorkflowDefinition"
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "definitions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ConfigurationRecord"
+          }
+        },
+        "permission_locks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "permission-binding.schema.json#/$defs/VersionedPermissionLock"
+          }
+        },
+        "tool_bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/BoundTool"
+          }
+        },
+        "integration_locks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/IntegrationLock"
+          }
+        },
+        "specification_snapshot": {
+          "type": "array",
+          "items": {}
+        }
+      },
+      "required": [
+        "workflow_revision_id",
+        "document",
+        "roles",
+        "definitions",
+        "permission_locks",
+        "tool_bindings",
+        "integration_locks",
+        "specification_snapshot"
+      ],
+      "additionalProperties": false
+    },
+    "ConfiguredWorkflowInstance": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 4
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "workflow_ref": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "root_instance_id": {
+          "type": "string"
+        },
+        "plan": {
+          "$ref": "#/$defs/ConfiguredWorkflowPlan"
+        },
+        "role_agent_bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StepExecution"
+          },
+          "maxItems": 1000
+        },
+        "status": {
+          "$ref": "#/$defs/StepExecutionStatus"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "parent_execution_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cancel_requested": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "owner_id",
+        "workflow_ref",
+        "project_id",
+        "root_instance_id",
+        "plan",
+        "role_agent_bindings",
+        "inputs",
+        "steps",
+        "status",
+        "paused"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -4954,7 +4540,7 @@
       "if": {
         "properties": {
           "method": {
-            "pattern": "^(agent|project|feature|document|definition|binding|task|attempt|run|delivery|review|override|merge|context|snapshot)\\."
+            "pattern": "^(agent|project|feature|document|context|snapshot)\\."
           }
         }
       },
@@ -5040,7 +4626,6 @@
               "proposal.revise",
               "proposal.adopt",
               "proposal.reject",
-              "proposal.instantiate",
               "execution.retry_cleanup"
             ]
           }
@@ -5066,7 +4651,7 @@
               "permission.profile.revise",
               "permission.profile.import",
               "permission.profile.reload",
-              "permission.source.register",
+              "permission.source.select",
               "permission.bindings.apply"
             ]
           }
@@ -5298,27 +4883,27 @@
                 "type": "string"
               },
               "document": {
-                "$ref": "#/$defs/WorkflowDocument"
+                "$ref": "#/$defs/WorkflowDefinition"
               },
               "id": {
                 "type": "string"
               },
-              "path": {
+              "step": {
                 "type": "string",
                 "minLength": 1
               },
-              "recipe_node": {
+              "preview_agent_ref": {
                 "type": "string"
               },
-              "agent_revision_id": {
-                "type": "string"
+              "local": {
+                "type": "boolean"
               }
             },
             "required": [
-              "path"
+              "step"
             ],
             "additionalProperties": false,
-            "anyOf": [
+            "oneOf": [
               {
                 "required": [
                   "id"
@@ -5352,25 +4937,12 @@
               },
               "turn_id": {
                 "type": "string"
-              },
-              "run_id": {
-                "type": "string"
               }
             },
-            "required": [],
-            "additionalProperties": false,
-            "oneOf": [
-              {
-                "required": [
-                  "turn_id"
-                ]
-              },
-              {
-                "required": [
-                  "run_id"
-                ]
-              }
-            ]
+            "required": [
+              "turn_id"
+            ],
+            "additionalProperties": false
           }
         }
       }

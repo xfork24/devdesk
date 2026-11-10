@@ -48,28 +48,12 @@ impl CommandTests {
         Ok((root, job))
     }
     fn recipe(&self, r: &TestRequest) -> Result<TestRecipe> {
-        require(
-            !r.test_definitions.is_empty() && r.definitions.len() == r.test_definitions.len(),
-            "测试定义不完整",
-        )?;
-        let mut recipe = None;
-        let mut ids = std::collections::HashSet::new();
-        for d in &r.definitions {
-            require(
-                d.kind == "test" && r.test_definitions.contains(&d.id) && ids.insert(&d.id),
-                "测试定义引用冲突",
-            )?;
-            let next = d
-                .test_recipe
-                .as_ref()
-                .ok_or_else(|| err("configuration_required", "Test 定义缺少可执行 TestRecipe"))?;
-            next.validate()?;
-            if let Some(current) = &recipe {
-                require(current == next, "同一 Run 的测试定义配方不一致")?;
-            }
-            recipe = Some(next.clone());
-        }
-        Ok(recipe.unwrap())
+        let recipe = r
+            .recipe
+            .as_ref()
+            .ok_or_else(|| err("configuration_required", "测试工具需要明确执行配方"))?;
+        recipe.validate()?;
+        Ok(recipe.clone())
     }
     fn write(path: &Path, value: &impl Serialize) -> Result<()> {
         let bytes = serde_json::to_vec(value).map_err(storage)?;
@@ -169,7 +153,7 @@ impl CommandTests {
                 "测试环境定义与固定镜像不符",
             )?;
             require(
-                session.run_id == r.operation_id && session.id == r.environment,
+                session.operation_id == r.operation_id && session.id == r.environment,
                 "测试执行实例身份不符",
             )?;
             let created = sandbox.create(&ContainerSpec {
@@ -180,7 +164,7 @@ impl CommandTests {
                 session_id: r
                     .session_id
                     .clone()
-                    .ok_or_else(|| err("blocked", "测试缺少 Session 归属"))?,
+                    .unwrap_or_else(|| r.operation_id.clone()),
                 operation_id: r.operation_id.clone(),
                 image_id: recipe.image.clone(),
                 worktree: work,
@@ -267,7 +251,7 @@ impl CommandTests {
             || (receipt.exit_code != 0 && failed == 0)
             || (failed > 0 && assertions == 0);
         let assertion_failed = !environment && failed > 0;
-        let expected_failure = r.phase == "red" && assertion_failed;
+        let expected_failure = r.expect_assertion_failure && assertion_failed;
         let passed = !environment && (receipt.exit_code == 0 || expected_failure);
         let result = TestResult {
             operation_id: r.operation_id.clone(),
@@ -277,8 +261,6 @@ impl CommandTests {
                 TestOutcome::Failed
             },
             candidate: r.candidate.clone(),
-            test_phase: r.phase.clone(),
-            test_definitions: r.test_definitions.clone(),
             environment: r.environment.clone(),
             origin: Origin::External,
             assertion_failed,

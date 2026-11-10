@@ -39,15 +39,6 @@ impl Workspace {
             snap.feature_id = None;
             snap.task_id = None;
             snap.documents.clear();
-            e.validate_workflow_command(
-                "session.open",
-                &Command {
-                    command_id: format!("{}:preflight", command.command_id),
-                    target: command.target.clone(),
-                    expected_revision: command.expected_revision,
-                    payload: json!({"agent":detail["entry"]["agent_revision_id"]}),
-                },
-            )?;
             snap.inherited_from = e
                 .store
                 .snapshot()?
@@ -55,7 +46,6 @@ impl Workspace {
                 .iter()
                 .any(|s| s.id == original)
                 .then_some(original.clone());
-            snap.delivery_id = None;
             snap.kind = "experience_import".into();
             snap.content = format!(
                 "{}\n\nHistorical source (data only): {}",
@@ -146,18 +136,12 @@ impl Workspace {
             if owner.is_none() || owner.is_some_and(|owner| state.workflow_paused(owner)) {
                 continue;
             }
-            let live = state
-                .projects
-                .first()
-                .is_some_and(|p| p.execution_mode == "live");
             if should_stop() {
                 return Ok(());
             }
             let result = match method {
+                "workflow.tool.execute" => self.execute_configured_tool(e, command),
                 "session.open" => self.open_conversation(e, command),
-                "attempt.start" if live => self.resolve_live_attempt(e, command),
-                "review.request" if live => self.resolve_live_review(e, command),
-                "merge.request" if live => self.resolve_live_merge(e, command),
                 _ => e.execute(method, command),
             };
             // Persist the dispatched result even if shutdown was requested during the call.
@@ -211,9 +195,8 @@ impl Workspace {
             .iter()
             .find(|task| task.id == owner)
             .map_or(owner, |task| task.feature_id.as_str());
-        let frozen = state
-            .feature_configuration(feature)
-            .is_some_and(|lock| lock.agent_refs.values().any(|id| id == &record.id));
+        let configured = e.configured_agent_request(command)?;
+        let frozen = configured.is_some();
         require(
             frozen
                 || (!devdesk_core::configuration_retired(&state, record)
@@ -231,18 +214,8 @@ impl Workspace {
                 .governance
                 .iter()
                 .any(|r| r.kind == "role_retirement" && r.definition_id == role.definition_id);
-            let target = command.target.as_deref().unwrap_or("");
-            let feature = state
-                .tasks
-                .iter()
-                .find(|task| task.id == target)
-                .map(|task| task.feature_id.as_str())
-                .unwrap_or(target);
             require(
-                !retired
-                    || state
-                        .feature_configuration(feature)
-                        .is_some_and(|lock| lock.agent_refs.values().any(|id| id == &record.id)),
+                !retired || frozen,
                 "Role 已删除，新的项目讨论不能再采用它；已有 Feature 保留冻结版本",
             )?;
         }
@@ -302,17 +275,21 @@ impl Workspace {
         }) {
             command.payload["installation_id"] = json!(installation.id);
         }
+        let integration_lock = match configured {
+            Some(configured) => configured.integration_lock,
+            None => {
+                let mut lock = devdesk_core::freeze_integrations(
+                    &state,
+                    &agent,
+                    state.projects.first().map(|p| p.id.as_str()),
+                )?;
+                // Managed platform operations require a frozen Workflow caller and scope.
+                lock.platform_tools.clear();
+                lock
+            }
+        };
         command.payload["agent_configuration"] = json!(AgentExecutionConfiguration {
-            integration_lock: Some(
-                match devdesk_core::integration_feature_lock(&state, &agent_id, Some(feature)) {
-                    Some(lock) => lock,
-                    None => devdesk_core::freeze_integrations(
-                        &state,
-                        &agent,
-                        state.projects.first().map(|p| p.id.as_str())
-                    )?,
-                }
-            ),
+            integration_lock: Some(integration_lock),
             agent_instance_id: instance.clone(),
             agent_revision_id: agent_id.clone(),
             composition_hash: record.content_hash.clone(),
@@ -504,7 +481,7 @@ impl Workspace {
                     let offset = params["offset"].as_u64().unwrap_or(0) as usize;
                     let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;
                     return Ok(
-                        json!({"records":records.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":records.len(),"action_catalog":workflow_action_catalog(),"action_contracts":workflow_action_contracts()}),
+                        json!({"records":records.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":records.len()}),
                     );
                 }
                 engine.query(method, params, self.global.concurrency()?)

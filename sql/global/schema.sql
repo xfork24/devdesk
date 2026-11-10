@@ -6,9 +6,7 @@ CREATE TABLE definitions (
     name TEXT NOT NULL,
     version INTEGER NOT NULL,
     supersedes TEXT REFERENCES definitions(id) DEFERRABLE INITIALLY DEFERRED,
-    body TEXT NOT NULL,
-    slots JSON NOT NULL CHECK(json_valid(slots)),
-    rules JSON NOT NULL CHECK(json_valid(rules))
+    body TEXT NOT NULL
 , agent_profile JSON CHECK(agent_profile IS NULL OR json_valid(agent_profile)));
 
 CREATE TABLE events (id INTEGER PRIMARY KEY, target TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, time INTEGER NOT NULL);
@@ -84,5 +82,11 @@ CREATE TRIGGER governance_identity_update BEFORE UPDATE ON governance_records WH
 CREATE TRIGGER governance_immutable_update BEFORE UPDATE ON governance_records WHEN OLD.immutable=1 BEGIN SELECT RAISE(ABORT,'immutable configuration'); END;
 
 CREATE TRIGGER governance_no_delete BEFORE DELETE ON governance_records BEGIN SELECT RAISE(ABORT,'configuration history cannot be deleted'); END;
-PRAGMA user_version=10;
+
+-- Catalog metadata uses the existing immutable record ledger and transaction boundary.
+CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(kind) WHERE kind='template_catalog_state';
+CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id) WHERE kind='template_catalog_member';
+CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
+
+PRAGMA user_version=13;
 COMMIT;

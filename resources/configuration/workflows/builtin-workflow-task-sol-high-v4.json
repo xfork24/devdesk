@@ -13,440 +13,1388 @@
     "supersedes": null,
     "content_hash": "",
     "data": {
-      "binding_slots": {},
-      "process_kind": "task",
-      "schema_version": 3,
+      "schema_version": 4,
       "stages": [
         {
-          "description": "",
-          "key": "implementation",
-          "name": "Task TDD 实现"
-        },
-        {
-          "description": "",
-          "key": "review",
-          "name": "Task 独立评审"
-        },
-        {
-          "description": "",
-          "key": "integration",
-          "name": "候选验证与汇合"
-        },
-        {
-          "description": "",
-          "key": "snapshot",
-          "name": "交付快照"
+          "key": "work",
+          "name": "Task 交付",
+          "description": "显式 TDD、独立检查、确切代码候选与人工确认。"
         }
       ],
+      "inputs": {
+        "item": {
+          "delivery_ref": "builtin-delivery-object-v1"
+        },
+        "design": {
+          "delivery_ref": "builtin-delivery-design-v1"
+        }
+      },
       "steps": [
         {
-          "advance_mode": "automatic",
-          "condition": {
-            "op": "always"
-          },
-          "contract_version": 2,
+          "key": "workspace",
+          "name": "读取工作空间",
+          "stage": "work",
           "dependencies": [],
-          "execution_recipe": [
-            {
-              "dependencies": [],
-              "key": "test_author",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "task_instructions": "",
-              "writes": true
-            },
-            {
-              "dependencies": [
-                "test_author"
-              ],
-              "key": "red",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "writes": false
-            },
-            {
-              "dependencies": [
-                "red"
-              ],
-              "key": "implement",
-              "role": "developer",
-              "role_ref": "builtin-role-developer",
-              "task_instructions": "",
-              "writes": true
-            },
-            {
-              "dependencies": [
-                "implement"
-              ],
-              "key": "green",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "writes": false
-            },
-            {
-              "dependencies": [
-                "implement"
-              ],
-              "key": "docs",
-              "role": "developer",
-              "role_ref": "builtin-role-developer",
-              "task_instructions": "",
-              "writes": false
-            },
-            {
-              "dependencies": [
-                "green",
-                "docs"
-              ],
-              "key": "verify",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "writes": false
-            }
-          ],
           "inputs": {},
-          "interaction": {
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          },
+          "budget": {
             "max_turns": 30,
-            "mode": "discussion",
-            "output_kind": "implementation",
-            "required_topics": []
+            "timeout_seconds": 1800,
+            "retry_limit": 3
           },
-          "key": "implementation",
-          "kind": "attempt.execute",
-          "name": "TDD 与实现",
-          "parameters": {
-            "phase": "implementation"
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-workspace-current-v1",
+            "arguments": {
+              "owner_id": {
+                "type": "source",
+                "source": {
+                  "step": "$input",
+                  "port": "item",
+                  "pointer": "/id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "key": "tests",
+          "name": "编写独立行为测试",
+          "stage": "work",
+          "dependencies": [
+            "workspace"
+          ],
+          "inputs": {
+            "task": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": ""
+              }
+            },
+            "design": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "design",
+                "pointer": ""
+              }
+            },
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
           },
-          "participant_slot": "builtin-role-developer",
-          "retry_limit": 3,
-          "rework_scope": [],
-          "role_ref": "builtin-role-developer",
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-test-recipe-v1"
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "agent",
+            "role_ref": "builtin-role-tester"
+          },
+          "task_instructions": "依据 Task 与设计，使用测试设计 Skill，在授权的 tests 目录编写行为断言。提交可由 node --test 执行的文件配方；无需指定镜像，平台会绑定确切环境。",
+          "required_skill_refs": [
+            "builtin-skill-test-design-v2"
+          ],
           "spec_refs": [
             "builtin-spec-stage-implementation-v1"
           ],
-          "stage": "implementation",
-          "task_instructions": ""
+          "tags": [
+            "tests"
+          ],
+          "access": {
+            "workspace_input": "workspace",
+            "writable_paths": [
+              "tests"
+            ],
+            "read_only_paths": [],
+            "tool_refs": [
+              "builtin-tool-codex-native-v1"
+            ]
+          }
         },
         {
-          "advance_mode": "automatic",
-          "condition": {
-            "op": "always"
+          "key": "tests_snapshot",
+          "name": "固定代码版本",
+          "stage": "work",
+          "dependencies": [
+            "tests"
+          ],
+          "inputs": {},
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
           },
-          "contract_version": 2,
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-workspace-snapshot-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "workspace",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "allowed_paths": {
+                "type": "constant",
+                "value": [
+                  "tests"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "key": "red",
+          "name": "执行测试",
+          "stage": "work",
+          "dependencies": [
+            "tests_snapshot"
+          ],
+          "inputs": {},
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-tests-run-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "tests_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "recipe": {
+                "type": "source",
+                "source": {
+                  "step": "tests",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "expect_assertion_failure": {
+                "type": "constant",
+                "value": true
+              }
+            }
+          },
+          "completion": {
+            "op": "all",
+            "rules": [
+              {
+                "op": "equals",
+                "source": {
+                  "step": "red",
+                  "port": "result",
+                  "pointer": "/status"
+                },
+                "value": "succeeded"
+              },
+              {
+                "op": "equals",
+                "source": {
+                  "step": "red",
+                  "port": "result",
+                  "pointer": "/expected_failure"
+                },
+                "value": true
+              },
+              {
+                "op": "equals",
+                "source": {
+                  "step": "red",
+                  "port": "result",
+                  "pointer": "/assertion_failed"
+                },
+                "value": true
+              }
+            ]
+          }
+        },
+        {
+          "key": "implementation",
+          "name": "实现 Task",
+          "stage": "work",
+          "dependencies": [
+            "red"
+          ],
+          "inputs": {
+            "task": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": ""
+              }
+            },
+            "design": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "design",
+                "pointer": ""
+              }
+            },
+            "recipe": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "red": {
+              "type": "source",
+              "source": {
+                "step": "red",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-prd-v1"
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "agent",
+            "role_ref": "builtin-role-developer"
+          },
+          "task_instructions": "按 TDD Skill 实现当前 Task。使用独立测试及真实 Red 回执；保留 tests 目录中的断言，只修改其余授权文件。提交实现摘要与范围说明。",
+          "required_skill_refs": [
+            "builtin-skill-tdd-implementation-v2"
+          ],
+          "spec_refs": [
+            "builtin-spec-stage-implementation-v1"
+          ],
+          "tags": [
+            "implementation"
+          ],
+          "access": {
+            "workspace_input": "workspace",
+            "writable_paths": [
+              "."
+            ],
+            "read_only_paths": [
+              "tests"
+            ],
+            "tool_refs": [
+              "builtin-tool-codex-native-v1"
+            ]
+          }
+        },
+        {
+          "key": "implementation_snapshot",
+          "name": "固定代码版本",
+          "stage": "work",
           "dependencies": [
             "implementation"
           ],
-          "execution_recipe": [
-            {
-              "dependencies": [],
-              "key": "test_author",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "task_instructions": "",
-              "writes": true
-            },
-            {
-              "dependencies": [
-                "test_author"
-              ],
-              "key": "red",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "writes": false
-            },
-            {
-              "dependencies": [
-                "red"
-              ],
-              "key": "implement",
-              "role": "developer",
-              "role_ref": "builtin-role-developer",
-              "task_instructions": "",
-              "writes": true
-            },
-            {
-              "dependencies": [
-                "implement"
-              ],
-              "key": "green",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "writes": false
-            },
-            {
-              "dependencies": [
-                "implement"
-              ],
-              "key": "docs",
-              "role": "developer",
-              "role_ref": "builtin-role-developer",
-              "task_instructions": "",
-              "writes": false
-            },
-            {
-              "dependencies": [
-                "green",
-                "docs"
-              ],
-              "key": "verify",
-              "role": "tester",
-              "role_ref": "builtin-role-tester",
-              "writes": false
+          "inputs": {},
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
             }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-workspace-snapshot-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "tests_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "allowed_paths": {
+                "type": "constant",
+                "value": [
+                  "."
+                ]
+              },
+              "protected_paths": {
+                "type": "constant",
+                "value": [
+                  "tests"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "key": "green",
+          "name": "执行测试",
+          "stage": "work",
+          "dependencies": [
+            "implementation_snapshot"
           ],
           "inputs": {},
-          "interaction": {
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          },
+          "budget": {
             "max_turns": 30,
-            "mode": "discussion",
-            "output_kind": "implementation",
-            "required_topics": []
+            "timeout_seconds": 1800,
+            "retry_limit": 3
           },
-          "key": "review",
-          "kind": "delivery.review",
-          "name": "Task 交付评审",
-          "parameters": {
-            "phase": "implementation"
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-tests-run-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "implementation_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "recipe": {
+                "type": "source",
+                "source": {
+                  "step": "tests",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "expect_assertion_failure": {
+                "type": "constant",
+                "value": false
+              }
+            }
           },
-          "participant_slot": "builtin-role-reviewer",
-          "retry_limit": 3,
-          "rework_scope": [],
-          "role_ref": "builtin-role-reviewer",
+          "completion": {
+            "op": "equals",
+            "source": {
+              "step": "green",
+              "port": "result",
+              "pointer": "/status"
+            },
+            "value": "succeeded"
+          }
+        },
+        {
+          "key": "documentation",
+          "name": "补充交付说明",
+          "stage": "work",
+          "dependencies": [
+            "green"
+          ],
+          "inputs": {
+            "task": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": ""
+              }
+            },
+            "implementation": {
+              "type": "source",
+              "source": {
+                "step": "implementation",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "green": {
+              "type": "source",
+              "source": {
+                "step": "green",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-prd-v1"
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "agent",
+            "role_ref": "builtin-role-developer"
+          },
+          "task_instructions": "依据 Task、实际代码版本和 Green 回执补充接口、使用方式、验收追溯与已知限制。",
+          "required_skill_refs": [
+            "builtin-skill-tdd-implementation-v2"
+          ],
           "spec_refs": [
             "builtin-spec-stage-implementation-v1"
           ],
-          "stage": "review",
-          "task_instructions": ""
+          "tags": [
+            "documentation"
+          ],
+          "access": {
+            "workspace_input": "workspace",
+            "writable_paths": [],
+            "read_only_paths": [
+              "."
+            ],
+            "tool_refs": []
+          }
         },
         {
-          "advance_mode": "automatic",
-          "condition": {
-            "op": "always"
+          "key": "verify",
+          "name": "复验交付",
+          "stage": "work",
+          "dependencies": [
+            "documentation"
+          ],
+          "inputs": {},
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
           },
-          "contract_version": 1,
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-tests-run-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "implementation_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "recipe": {
+                "type": "source",
+                "source": {
+                  "step": "tests",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "expect_assertion_failure": {
+                "type": "constant",
+                "value": false
+              }
+            }
+          },
+          "completion": {
+            "op": "equals",
+            "source": {
+              "step": "verify",
+              "port": "result",
+              "pointer": "/status"
+            },
+            "value": "succeeded"
+          }
+        },
+        {
+          "key": "review",
+          "name": "独立核对 · implementation",
+          "stage": "work",
+          "dependencies": [
+            "verify"
+          ],
+          "inputs": {
+            "task": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": ""
+              }
+            },
+            "implementation": {
+              "type": "source",
+              "source": {
+                "step": "implementation",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "documentation": {
+              "type": "source",
+              "source": {
+                "step": "documentation",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "red": {
+              "type": "source",
+              "source": {
+                "step": "red",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "green": {
+              "type": "source",
+              "source": {
+                "step": "green",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "implementation_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "verify": {
+              "type": "source",
+              "source": {
+                "step": "verify",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-review-v1",
+              "content_checks": true
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "agent",
+            "role_ref": "builtin-role-reviewer"
+          },
+          "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。",
+          "required_skill_refs": [
+            "builtin-skill-independent-review-v2"
+          ],
+          "spec_refs": [
+            "builtin-spec-stage-implementation-v1"
+          ],
+          "tags": [
+            "review"
+          ],
+          "completion": {
+            "op": "all",
+            "rules": [
+              {
+                "op": "equals",
+                "source": {
+                  "step": "review",
+                  "port": "result",
+                  "pointer": "/approve"
+                },
+                "value": true
+              },
+              {
+                "op": "independent",
+                "author": "documentation",
+                "reviewer": "review"
+              }
+            ]
+          },
+          "access": {
+            "workspace_input": "workspace",
+            "writable_paths": [],
+            "read_only_paths": [],
+            "tool_refs": [
+              "builtin-tool-codex-native-v1"
+            ]
+          }
+        },
+        {
+          "key": "target",
+          "name": "读取工作空间",
+          "stage": "work",
           "dependencies": [
             "review"
           ],
-          "execution_recipe": [],
           "inputs": {},
-          "interaction": {
-            "max_turns": 30,
-            "mode": "discussion",
-            "output_kind": "",
-            "required_topics": []
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
           },
-          "key": "merge_prepare",
-          "kind": "merge.prepare",
-          "name": "准备 Task 合入候选",
-          "parameters": {},
-          "participant_slot": "builtin-role-tester",
-          "retry_limit": 3,
-          "rework_scope": [],
-          "role_ref": "builtin-role-tester",
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-workspace-current-v1",
+            "arguments": {
+              "owner_id": {
+                "type": "source",
+                "source": {
+                  "step": "$input",
+                  "port": "item",
+                  "pointer": "/feature_id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "key": "candidate",
+          "name": "准备代码候选",
+          "stage": "work",
+          "dependencies": [
+            "target"
+          ],
+          "inputs": {},
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-git-candidate-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "implementation_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "target_revision": {
+                "type": "source",
+                "source": {
+                  "step": "target",
+                  "port": "result",
+                  "pointer": "/revision"
+                }
+              }
+            }
+          }
+        },
+        {
+          "key": "candidate_tests",
+          "name": "验证确切候选",
+          "stage": "work",
+          "dependencies": [
+            "candidate"
+          ],
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-tests-run-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "candidate",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "recipe": {
+                "type": "source",
+                "source": {
+                  "step": "tests",
+                  "port": "result",
+                  "pointer": ""
+                }
+              }
+            }
+          },
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          },
+          "completion": {
+            "op": "equals",
+            "source": {
+              "step": "candidate_tests",
+              "port": "result",
+              "pointer": "/status"
+            },
+            "value": "succeeded"
+          }
+        },
+        {
+          "key": "candidate_review",
+          "name": "独立核对并确认候选",
+          "stage": "work",
+          "dependencies": [
+            "candidate_tests"
+          ],
+          "executor": {
+            "type": "agent",
+            "role_ref": "builtin-role-reviewer"
+          },
+          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。由人类确认确切输入版本后再接纳。",
+          "required_skill_refs": [
+            "builtin-skill-independent-review-v2"
+          ],
           "spec_refs": [
             "builtin-spec-stage-release-v1"
           ],
-          "stage": "integration"
+          "inputs": {
+            "candidate": {
+              "type": "source",
+              "source": {
+                "step": "candidate",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "tests": {
+              "type": "source",
+              "source": {
+                "step": "candidate_tests",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "delivery": {
+              "type": "source",
+              "source": {
+                "step": "documentation",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "candidate",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "task": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": ""
+              }
+            },
+            "source_review": {
+              "type": "source",
+              "source": {
+                "step": "review",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "verification": {
+              "type": "source",
+              "source": {
+                "step": "verify",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-review-v1",
+              "content_checks": true
+            }
+          },
+          "access": {
+            "workspace_input": "workspace",
+            "writable_paths": [],
+            "read_only_paths": [],
+            "tool_refs": [
+              "builtin-tool-codex-native-v1"
+            ]
+          },
+          "completion": {
+            "op": "all",
+            "rules": [
+              {
+                "op": "equals",
+                "source": {
+                  "step": "candidate_review",
+                  "port": "result",
+                  "pointer": "/approve"
+                },
+                "value": true
+              },
+              {
+                "op": "independent",
+                "author": "implementation",
+                "reviewer": "candidate_review"
+              }
+            ]
+          },
+          "confirmation": "human",
+          "budget": {
+            "max_turns": 8,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          }
         },
         {
-          "advance_mode": "automatic",
-          "condition": {
-            "op": "always"
-          },
-          "contract_version": 2,
+          "key": "advance",
+          "name": "接纳确切候选",
+          "stage": "work",
           "dependencies": [
-            "merge_prepare"
+            "candidate_review"
           ],
-          "execution_recipe": [],
           "inputs": {},
-          "interaction": {
-            "max_turns": 30,
-            "mode": "discussion",
-            "output_kind": "",
-            "required_topics": []
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
           },
-          "key": "merge_review",
-          "kind": "merge.review",
-          "name": "Task 候选评审",
-          "parameters": {},
-          "participant_slot": "builtin-role-reviewer",
-          "retry_limit": 3,
-          "rework_scope": [],
-          "role_ref": "builtin-role-reviewer",
-          "spec_refs": [
-            "builtin-spec-stage-release-v1"
-          ],
-          "stage": "integration",
-          "task_instructions": ""
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-git-advance-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "implementation_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "candidate": {
+                "type": "source",
+                "source": {
+                  "step": "candidate",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "test_receipt": {
+                "type": "source",
+                "source": {
+                  "step": "candidate_tests",
+                  "port": "result",
+                  "pointer": ""
+                }
+              }
+            }
+          }
         },
         {
-          "advance_mode": "automatic",
-          "condition": {
-            "op": "always"
-          },
-          "contract_version": 1,
+          "key": "publish",
+          "name": "同步并核对 GitHub",
+          "stage": "work",
           "dependencies": [
-            "merge_review"
+            "advance"
           ],
-          "execution_recipe": [],
-          "inputs": {},
-          "interaction": {
-            "max_turns": 30,
-            "mode": "discussion",
-            "output_kind": "",
-            "required_topics": []
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-git-publish-v1",
+            "arguments": {
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "implementation_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "candidate": {
+                "type": "source",
+                "source": {
+                  "step": "candidate",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "accepted": {
+                "type": "source",
+                "source": {
+                  "step": "advance",
+                  "port": "result",
+                  "pointer": ""
+                }
+              }
+            }
           },
-          "key": "merge_apply",
-          "kind": "merge.apply",
-          "name": "应用 Task 合入",
-          "parameters": {},
-          "participant_slot": null,
-          "retry_limit": 3,
-          "rework_scope": [],
-          "stage": "integration"
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          },
+          "budget": {
+            "max_turns": 8,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          }
         },
         {
-          "advance_mode": "automatic",
-          "condition": {
-            "op": "always"
+          "key": "handoff",
+          "name": "封存 Task 交付证据",
+          "stage": "work",
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-materials-capture-v1",
+            "arguments": {
+              "task": {
+                "type": "source",
+                "source": {
+                  "step": "$input",
+                  "port": "item",
+                  "pointer": ""
+                }
+              },
+              "workspace": {
+                "type": "source",
+                "source": {
+                  "step": "implementation_snapshot",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "red": {
+                "type": "source",
+                "source": {
+                  "step": "red",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "green": {
+                "type": "source",
+                "source": {
+                  "step": "green",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "documentation": {
+                "type": "source",
+                "source": {
+                  "step": "documentation",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "review": {
+                "type": "source",
+                "source": {
+                  "step": "review",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "candidate": {
+                "type": "source",
+                "source": {
+                  "step": "candidate",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "candidate_tests": {
+                "type": "source",
+                "source": {
+                  "step": "candidate_tests",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "candidate_review": {
+                "type": "source",
+                "source": {
+                  "step": "candidate_review",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "publication": {
+                "type": "source",
+                "source": {
+                  "step": "publish",
+                  "port": "result",
+                  "pointer": ""
+                }
+              },
+              "verify": {
+                "type": "source",
+                "source": {
+                  "step": "verify",
+                  "port": "result",
+                  "pointer": ""
+                }
+              }
+            }
           },
-          "contract_version": 1,
           "dependencies": [
-            "merge_apply"
+            "publish"
           ],
-          "execution_recipe": [],
-          "inputs": {},
-          "interaction": {
-            "max_turns": 30,
-            "mode": "discussion",
-            "output_kind": "",
-            "required_topics": []
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          }
+        },
+        {
+          "key": "complete",
+          "name": "完成任务",
+          "stage": "work",
+          "executor": {
+            "type": "tool",
+            "tool_ref": "builtin-tool-tasks-complete-v1",
+            "arguments": {
+              "task_id": {
+                "type": "source",
+                "source": {
+                  "step": "$input",
+                  "port": "item",
+                  "pointer": "/id"
+                }
+              }
+            }
           },
-          "key": "snapshot",
-          "kind": "snapshot.capture",
-          "name": "Task 最终快照",
-          "parameters": {},
-          "participant_slot": null,
-          "retry_limit": 3,
-          "rework_scope": [],
-          "stage": "snapshot"
+          "dependencies": [
+            "handoff"
+          ],
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-object-v1"
+            }
+          }
         }
       ],
-      "subworkflow_refs": {}
+      "outputs": {
+        "result": {
+          "step": "handoff",
+          "port": "result",
+          "pointer": ""
+        }
+      },
+      "completion": {
+        "op": "all",
+        "rules": [
+          {
+            "op": "before",
+            "first": "red",
+            "second": "implementation"
+          },
+          {
+            "op": "independent",
+            "author": "tests",
+            "reviewer": "implementation"
+          },
+          {
+            "op": "independent",
+            "author": "implementation",
+            "reviewer": "review"
+          },
+          {
+            "op": "same",
+            "left": {
+              "step": "green",
+              "port": "result",
+              "pointer": "/candidate"
+            },
+            "right": {
+              "step": "implementation_snapshot",
+              "port": "result",
+              "pointer": "/revision"
+            }
+          }
+        ]
+      }
     },
     "immutable": true,
     "revision": 1,
     "created_at": 0
   },
-  "text_files": {
-    "/data/stages/0/description": "specs/implementation.md",
-    "/data/stages/1/description": "specs/implementation.md",
-    "/data/stages/2/description": "specs/release.md",
-    "/data/stages/3/description": "specs/release.md",
-    "/data/steps/0/execution_recipe/0/task_instructions": "tasks/author-task-tests.md",
-    "/data/steps/0/execution_recipe/2/task_instructions": "tasks/implement.md",
-    "/data/steps/0/execution_recipe/4/task_instructions": "tasks/docs.md",
-    "/data/steps/0/task_instructions": "tasks/attempt-implementation.md",
-    "/data/steps/1/execution_recipe/0/task_instructions": "tasks/author-task-tests.md",
-    "/data/steps/1/execution_recipe/2/task_instructions": "tasks/implement.md",
-    "/data/steps/1/execution_recipe/4/task_instructions": "tasks/docs.md",
-    "/data/steps/1/task_instructions": "tasks/review-task.md",
-    "/data/steps/3/task_instructions": "tasks/review-candidate-task.md"
-  },
+  "text_files": {},
   "references": {
-    "/data/steps/0/execution_recipe/0/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/execution_recipe/1/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/execution_recipe/2/role_ref": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/execution_recipe/3/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/execution_recipe/4/role_ref": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/execution_recipe/5/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/participant_slot": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/role_ref": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/0/spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+    "/data/inputs/item/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
-    "/data/steps/1/execution_recipe/0/role_ref": {
+    "/data/inputs/design/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-design-v1",
+      "target": "revision"
+    },
+    "/data/steps/0/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/0/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-workspace-current-v1",
+      "target": "revision"
+    },
+    "/data/steps/1/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-test-recipe-v1",
+      "target": "revision"
+    },
+    "/data/steps/1/executor/role_ref": {
       "template_ref": "governance.builtin-role-tester-v1",
       "target": "identity"
     },
-    "/data/steps/1/execution_recipe/1/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
-      "target": "identity"
-    },
-    "/data/steps/1/execution_recipe/2/role_ref": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/1/execution_recipe/3/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
-      "target": "identity"
-    },
-    "/data/steps/1/execution_recipe/4/role_ref": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/1/execution_recipe/5/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
-      "target": "identity"
-    },
-    "/data/steps/1/participant_slot": {
-      "template_ref": "governance.builtin-role-reviewer-v1",
-      "target": "identity"
-    },
-    "/data/steps/1/role_ref": {
-      "template_ref": "governance.builtin-role-reviewer-v1",
-      "target": "identity"
+    "/data/steps/1/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-test-design-v2",
+      "target": "revision"
     },
     "/data/steps/1/spec_refs/0": {
       "template_ref": "governance.builtin-spec-stage-implementation-v1",
       "target": "revision"
     },
-    "/data/steps/2/participant_slot": {
-      "template_ref": "governance.builtin-role-tester-v1",
+    "/data/steps/1/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
+      "target": "revision"
+    },
+    "/data/steps/2/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/2/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-workspace-snapshot-v1",
+      "target": "revision"
+    },
+    "/data/steps/3/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/3/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "target": "revision"
+    },
+    "/data/steps/4/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-prd-v1",
+      "target": "revision"
+    },
+    "/data/steps/4/executor/role_ref": {
+      "template_ref": "governance.builtin-role-developer-v1",
       "target": "identity"
     },
-    "/data/steps/2/role_ref": {
-      "template_ref": "governance.builtin-role-tester-v1",
+    "/data/steps/4/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
+      "target": "revision"
+    },
+    "/data/steps/4/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/steps/4/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
+      "target": "revision"
+    },
+    "/data/steps/5/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/5/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-workspace-snapshot-v1",
+      "target": "revision"
+    },
+    "/data/steps/6/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/6/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "target": "revision"
+    },
+    "/data/steps/7/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-prd-v1",
+      "target": "revision"
+    },
+    "/data/steps/7/executor/role_ref": {
+      "template_ref": "governance.builtin-role-developer-v1",
       "target": "identity"
     },
-    "/data/steps/2/spec_refs/0": {
+    "/data/steps/7/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
+      "target": "revision"
+    },
+    "/data/steps/7/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/steps/8/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/8/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "target": "revision"
+    },
+    "/data/steps/9/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-review-v1",
+      "target": "revision"
+    },
+    "/data/steps/9/executor/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/9/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-independent-review-v2",
+      "target": "revision"
+    },
+    "/data/steps/9/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/steps/9/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
+      "target": "revision"
+    },
+    "/data/steps/10/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/10/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-workspace-current-v1",
+      "target": "revision"
+    },
+    "/data/steps/11/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/11/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-git-candidate-v1",
+      "target": "revision"
+    },
+    "/data/steps/12/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "target": "revision"
+    },
+    "/data/steps/12/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/13/executor/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/13/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-independent-review-v2",
+      "target": "revision"
+    },
+    "/data/steps/13/spec_refs/0": {
       "template_ref": "governance.builtin-spec-stage-release-v1",
       "target": "revision"
     },
-    "/data/steps/3/participant_slot": {
-      "template_ref": "governance.builtin-role-reviewer-v1",
-      "target": "identity"
+    "/data/steps/13/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-review-v1",
+      "target": "revision"
     },
-    "/data/steps/3/role_ref": {
-      "template_ref": "governance.builtin-role-reviewer-v1",
-      "target": "identity"
+    "/data/steps/13/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
+      "target": "revision"
     },
-    "/data/steps/3/spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-release-v1",
+    "/data/steps/14/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/14/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-git-advance-v1",
+      "target": "revision"
+    },
+    "/data/steps/15/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-git-publish-v1",
+      "target": "revision"
+    },
+    "/data/steps/15/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/16/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-materials-capture-v1",
+      "target": "revision"
+    },
+    "/data/steps/16/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/17/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tasks-complete-v1",
+      "target": "revision"
+    },
+    "/data/steps/17/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     }
   },

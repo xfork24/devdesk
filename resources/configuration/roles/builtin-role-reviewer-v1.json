@@ -13,7 +13,6 @@
     "supersedes": null,
     "content_hash": "",
     "data": {
-      "execution_role": "reviewer",
       "instructions": ""
     },
     "immutable": true,

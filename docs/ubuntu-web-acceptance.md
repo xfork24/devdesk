@@ -24,7 +24,7 @@ cargo build --locked -p devdesk-host
 ./target/debug/devdesk-host --data /absolute/path/to/dedicated-live-data --port 51751
 ```
 
-打开终端显示的 Web 地址，在设置页登记本机 Codex、完成官方 OAuth；通过密钥输入框保存 DeepSeek key 到本机 Secret Service。登记两套 Linux Docker 镜像，检查默认 Codex/角色偏好、凭据访问和 GitHub 仓库诊断。不要把密钥发送到聊天或写进验收脚本。
+打开终端显示的 Web 地址，在设置页登记本机 Codex、完成官方 OAuth；通过密钥输入框保存 DeepSeek key 到本机 Secret Service。登记两套 Linux Docker 镜像，检查完整 Agent 的 Model/Harness 配置、凭据访问和 GitHub 仓库诊断。不要把密钥发送到聊天或写进验收脚本。
 
 macOS/aarch64、Linux/aarch64、Linux/x86_64 是不同安装键。不能复制旧的本机安装 ID 或用另一平台的固定镜像 ID 代替本机产物。真实资源测试默认解析本机固定版本镜像，再冻结不可变 ID；也可显式设置 `DEVDESK_TEST_CODEX_IMAGE`、`DEVDESK_TEST_DSH_IMAGE`。
 

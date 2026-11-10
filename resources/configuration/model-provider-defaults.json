@@ -1,0 +1,23 @@
+{
+  "openai": {
+    "label": "OpenAI / ChatGPT",
+    "harness": "codex",
+    "auth_kind": "oauth"
+  },
+  "deepseek": {
+    "label": "DeepSeek 官方 API",
+    "endpoint": "https://api.deepseek.com"
+  },
+  "zai-coding-cn": {
+    "label": "智谱 AI 编程订阅 国内",
+    "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4"
+  },
+  "minimax-cn": {
+    "label": "MiniMax 订阅 国内",
+    "endpoint": "https://api.minimax.cn/anthropic"
+  },
+  "ollama": {
+    "label": "本机 Ollama",
+    "endpoint": "http://127.0.0.1:11434/v1"
+  }
+}

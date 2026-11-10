@@ -42,7 +42,12 @@
       "deliveries/builtin-delivery-prd-v1.json",
       "deliveries/builtin-delivery-design-v1.json",
       "deliveries/builtin-delivery-diff-v1.json",
-      "deliveries/builtin-delivery-test-report-v1.json"
+      "deliveries/builtin-delivery-test-report-v1.json",
+      "deliveries/builtin-delivery-object-v1.json",
+      "deliveries/builtin-delivery-review-v1.json",
+      "deliveries/builtin-delivery-task-plan-v1.json",
+      "deliveries/builtin-delivery-test-recipe-v1.json",
+      "deliveries/builtin-delivery-collection-v1.json"
     ],
     "capability": [
       "capabilities/builtin-capability-sol-high-codex-v2.json",
@@ -73,7 +78,16 @@
     ],
     "tool": [
       "tools/builtin-tool-codex-native-v1.json",
-      "tools/builtin-tool-dsh-native-v1.json"
+      "tools/builtin-tool-dsh-native-v1.json",
+      "tools/builtin-tool-workspace-current-v1.json",
+      "tools/builtin-tool-workspace-snapshot-v1.json",
+      "tools/builtin-tool-tasks-create-v1.json",
+      "tools/builtin-tool-materials-capture-v1.json",
+      "tools/builtin-tool-tests-run-v1.json",
+      "tools/builtin-tool-git-candidate-v1.json",
+      "tools/builtin-tool-git-advance-v1.json",
+      "tools/builtin-tool-git-publish-v1.json",
+      "tools/builtin-tool-tasks-complete-v1.json"
     ],
     "permission_profile": [
       "permission-profiles/permission-harness-full-access-v2-r1.json",
@@ -84,7 +98,6 @@
     "http": [],
     "projections": [
       "projections/definitions/builtin-skill-engineering-context-v2.json",
-      "projections/definitions/builtin-standard-engineering-v1.json",
       "projections/definitions/builtin-skill-engineering-method-v1.json",
       "projections/definitions/builtin-skill-prd-v2.json",
       "projections/definitions/builtin-skill-architecture-v2.json",
@@ -93,14 +106,6 @@
       "projections/definitions/builtin-skill-tdd-implementation-v2.json",
       "projections/definitions/builtin-skill-release-verification-v2.json",
       "projections/definitions/builtin-skill-independent-review-v2.json",
-      "projections/definitions/builtin-spec-stage-prd-v1.json",
-      "projections/definitions/builtin-spec-stage-architecture-v1.json",
-      "projections/definitions/builtin-spec-stage-project-planning-v1.json",
-      "projections/definitions/builtin-spec-stage-test-design-v1.json",
-      "projections/definitions/builtin-spec-stage-solution-v1.json",
-      "projections/definitions/builtin-spec-stage-implementation-v1.json",
-      "projections/definitions/builtin-spec-stage-closure-v1.json",
-      "projections/definitions/builtin-spec-stage-release-v1.json",
       "projections/definitions/builtin-agent-sol-high-analyst-v3.json",
       "projections/definitions/builtin-agent-sol-high-architect-v3.json",
       "projections/definitions/builtin-agent-sol-high-project-manager-v3.json",
