@@ -185,6 +185,22 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 
 `query.configurations`、`query.agent_instances`、`query.workflows` 支持 offset/limit 和 Scope；活动项目查询使用 local:true/project_id，可见 Global 发布版本及本项目定义。`query.workflow`、`query.workflow_draft`、`query.agent_revision` 按精确 id 读取，不依赖列表当前页。
 
+### 默认模板目录与恢复
+
+`resources/configuration/manifest.json` 声明应用发布的完整默认资源。空库初始化生成数据库副本，所有 UI 编辑继续写入数据库修订或草稿；应用升级不改写已有当前目录。`query.configuration_defaults` 从当前目录保存的映射提供新项目预填配置。
+
+| 接口 | 参数和结果 |
+|---|---|
+| query.template_catalog | 当前 generation、内嵌默认 bundle_version/bundle_hash、当前来源版本和数量 |
+| query.template_reset_preview | 全局和全部项目的定义/草稿数量、恢复后的准确逻辑定义数量、固定旧绑定的项目摘要及 catalog_fingerprint |
+| configuration.templates.reset | Command payload 为 expected_catalog_generation、catalog_fingerprint、bundle_hash；返回 generation、changed、各类型 counts 和提交回执 |
+
+重置在一个全局事务中构建完整默认及精确依赖，并切换目录代次。自建定义、自定义修订和流程草稿退出当前目录；旧项目绑定、Feature 锁、运行、会话、经验、凭据、安装和偏好保留。已提交的相同 command_id 重放原结果；目录已与同一默认一致时返回 changed:false。提交前定义或默认资源发生变化时返回 catalog_changed，需要重新预览。
+
+定义写入 RPC 在 Command 顶层携带 expected_catalog_generation。首次重置后必须提供该字段，旧页面不能重新发布旧代次定义。相关目录查询返回 catalog_generation 与 template_sources；分页结果的代次变化时重新加载。include_history 只查询当前代次的修订，include_archived 显式包含旧代次。精确 ID 的工程和历史查询继续读取旧记录。
+
+query.project_configuration 附带 pinned_records 与 uses_archived_templates，供项目页显示其固定的旧定义。归档不等于原有的禁用或撤销。具体存储与兼容合同见 [模板目录合同](plans/configuration-template-reset/CONTRACT.md)。
+
 `query.workflow_validation` / `query.workflow_preview` 接收 document 或 id，返回 valid/errors、document_hash、顺序及演练状态，不调用模型、Docker、Git、测试或 Merge。sample.outputs 和 sample.accepted 表示演练事实；通过预演不代表真实证据成立。动作及 DSL 结构见 schemas/rpc.schema.json，只接受当前 v3 契约和编译器。
 
 `query.workflow_instance` / `query.workflow_actions` 返回运行记录、冻结计划/配置及可用动作。运行实例 ID、步骤 key、步骤实例 ID 和 round 分别表示不同概念；旧 round 的确认不能用于新 round。

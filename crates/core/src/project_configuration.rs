@@ -11,7 +11,11 @@ fn bind(
     scope: &Scope,
 ) -> Result<BTreeMap<Id, Id>> {
     let mut resolved = BTreeMap::new();
-    if let Some(sandbox) = s.sandboxes.iter().find(|b| b.id == DEFAULT_SANDBOX_ID) {
+    if let Some(sandbox) = s
+        .sandboxes
+        .iter()
+        .find(|b| current_template_defaults(s).is_some_and(|d| d["sandbox_ref"] == b.id))
+    {
         compilation
             .hashes
             .insert(sandbox.id.clone(), configuration_hash(sandbox));

@@ -1,0 +1,1009 @@
+{
+  "template_key": "governance.builtin-workflow-feature-sol-high-v4",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-workflow-feature-sol-high-v4",
+    "kind": "workflow",
+    "definition_id": "builtin-workflow-feature-sol-high",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "默认 Feature 开发流程",
+    "version": 4,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "binding_slots": {},
+      "process_kind": "feature",
+      "schema_version": 3,
+      "stages": [
+        {
+          "description": "",
+          "key": "requirements",
+          "name": "需求分析与 PRD"
+        },
+        {
+          "description": "",
+          "key": "architecture",
+          "name": "架构设计与 Design Doc"
+        },
+        {
+          "description": "",
+          "key": "planning",
+          "name": "项目管理与 Task Plan"
+        },
+        {
+          "description": "",
+          "key": "test_design",
+          "name": "测试设计与 Test Plan"
+        },
+        {
+          "description": "",
+          "key": "solution_validation",
+          "name": "方案交付与评审"
+        },
+        {
+          "description": "",
+          "key": "development",
+          "name": "Task 并行开发"
+        },
+        {
+          "description": "",
+          "key": "closure",
+          "name": "Feature 收尾与验收"
+        },
+        {
+          "description": "",
+          "key": "release",
+          "name": "候选、确认与交付"
+        }
+      ],
+      "steps": [
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "",
+            "required_topics": []
+          },
+          "key": "initial_snapshot",
+          "kind": "snapshot.capture",
+          "name": "建立初始上下文快照",
+          "parameters": {},
+          "participant_slot": null,
+          "retry_limit": 3,
+          "rework_scope": [],
+          "stage": "requirements"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "initial_snapshot"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "brainstorm",
+            "output_kind": "requirement",
+            "required_topics": []
+          },
+          "key": "requirement_discussion",
+          "kind": "agent.interact",
+          "name": "需求头脑风暴",
+          "parameters": {
+            "phase": "requirement"
+          },
+          "participant_slot": "builtin-role-analyst",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-analyst",
+          "spec_refs": [
+            "builtin-spec-stage-prd-v1"
+          ],
+          "stage": "requirements",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "requirement_discussion"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "brainstorm",
+            "output_kind": "requirement",
+            "required_topics": []
+          },
+          "key": "requirement_adopt",
+          "kind": "proposal.adopt",
+          "name": "采纳需求",
+          "parameters": {
+            "phase": "requirement"
+          },
+          "participant_slot": "builtin-role-analyst",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-analyst",
+          "stage": "requirements"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "requirement_adopt"
+          ],
+          "execution_recipe": [
+            {
+              "dependencies": [],
+              "key": "requirement_validate",
+              "role": "analyst",
+              "role_ref": "builtin-role-analyst",
+              "task_instructions": "",
+              "writes": false
+            }
+          ],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "requirement_definition",
+            "required_topics": []
+          },
+          "key": "requirement_execute",
+          "kind": "attempt.execute",
+          "name": "需求正式交付",
+          "parameters": {
+            "phase": "requirement_definition"
+          },
+          "participant_slot": "builtin-role-analyst",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-analyst",
+          "spec_refs": [
+            "builtin-spec-stage-prd-v1"
+          ],
+          "stage": "requirements",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "requirement_execute"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "brainstorm",
+            "output_kind": "requirement",
+            "required_topics": []
+          },
+          "key": "requirement_review",
+          "kind": "delivery.review",
+          "name": "需求评审",
+          "parameters": {
+            "phase": "requirement"
+          },
+          "participant_slot": "builtin-role-reviewer",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-reviewer",
+          "spec_refs": [
+            "builtin-spec-stage-prd-v1"
+          ],
+          "stage": "requirements",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "requirement_review"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "design",
+            "required_topics": []
+          },
+          "key": "design_discussion",
+          "kind": "agent.interact",
+          "name": "讨论方案设计",
+          "parameters": {
+            "phase": "design"
+          },
+          "participant_slot": "builtin-role-architect",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-architect",
+          "spec_refs": [
+            "builtin-spec-stage-architecture-v1"
+          ],
+          "stage": "architecture",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "design_discussion"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "design",
+            "required_topics": []
+          },
+          "key": "design_adopt",
+          "kind": "proposal.adopt",
+          "name": "采纳设计",
+          "parameters": {
+            "phase": "design"
+          },
+          "participant_slot": "builtin-role-architect",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-architect",
+          "stage": "architecture"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "design_adopt"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "task_plan",
+            "required_topics": []
+          },
+          "key": "task_discussion",
+          "kind": "agent.interact",
+          "name": "项目经理拆分 Task Plan",
+          "parameters": {
+            "phase": "task_plan"
+          },
+          "participant_slot": "builtin-role-project-manager",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-project-manager",
+          "spec_refs": [
+            "builtin-spec-stage-project-planning-v1"
+          ],
+          "stage": "planning",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "task_discussion"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "task_plan",
+            "required_topics": []
+          },
+          "key": "task_adopt",
+          "kind": "proposal.adopt",
+          "name": "采纳 Task Plan",
+          "parameters": {
+            "phase": "task_plan"
+          },
+          "participant_slot": "builtin-role-project-manager",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-project-manager",
+          "stage": "planning"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "task_adopt"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "test_plan",
+            "required_topics": []
+          },
+          "key": "test_discussion",
+          "kind": "agent.interact",
+          "name": "讨论 Feature 测试计划",
+          "parameters": {
+            "phase": "test_plan"
+          },
+          "participant_slot": "builtin-role-tester",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-tester",
+          "spec_refs": [
+            "builtin-spec-stage-test-design-v1"
+          ],
+          "stage": "test_design",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "test_discussion"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "test_plan",
+            "required_topics": []
+          },
+          "key": "test_adopt",
+          "kind": "proposal.adopt",
+          "name": "采纳 Feature 测试计划",
+          "parameters": {
+            "phase": "test_plan"
+          },
+          "participant_slot": "builtin-role-tester",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-tester",
+          "stage": "test_design"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "test_adopt"
+          ],
+          "execution_recipe": [
+            {
+              "dependencies": [],
+              "key": "plan_validate",
+              "role": "architect",
+              "role_ref": "builtin-role-architect",
+              "task_instructions": "",
+              "writes": false
+            },
+            {
+              "dependencies": [
+                "plan_validate"
+              ],
+              "key": "test_plan_validate",
+              "role": "tester",
+              "role_ref": "builtin-role-tester",
+              "task_instructions": "",
+              "writes": false
+            }
+          ],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "solution_planning",
+            "required_topics": []
+          },
+          "key": "solution_execute",
+          "kind": "attempt.execute",
+          "name": "方案规划交付",
+          "parameters": {
+            "phase": "solution_planning"
+          },
+          "participant_slot": "builtin-role-architect",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-architect",
+          "spec_refs": [
+            "builtin-spec-stage-solution-v1"
+          ],
+          "stage": "solution_validation",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "solution_execute"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "plan",
+            "required_topics": []
+          },
+          "key": "solution_review",
+          "kind": "delivery.review",
+          "name": "方案规划评审",
+          "parameters": {
+            "phase": "plan"
+          },
+          "participant_slot": "builtin-role-reviewer",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-reviewer",
+          "spec_refs": [
+            "builtin-spec-stage-solution-v1"
+          ],
+          "stage": "solution_validation",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "solution_review"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "",
+            "required_topics": []
+          },
+          "key": "tasks",
+          "kind": "tasks.foreach",
+          "name": "并行 Task 子流程",
+          "parameters": {},
+          "participant_slot": null,
+          "retry_limit": 3,
+          "rework_scope": [],
+          "stage": "development"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "tasks"
+          ],
+          "execution_recipe": [
+            {
+              "dependencies": [],
+              "key": "test_author",
+              "role": "tester",
+              "role_ref": "builtin-role-tester",
+              "task_instructions": "",
+              "writes": true
+            },
+            {
+              "dependencies": [
+                "test_author"
+              ],
+              "key": "feature_tests",
+              "role": "tester",
+              "role_ref": "builtin-role-tester",
+              "writes": false
+            },
+            {
+              "dependencies": [
+                "feature_tests"
+              ],
+              "key": "docs",
+              "role": "developer",
+              "role_ref": "builtin-role-developer",
+              "task_instructions": "",
+              "writes": false
+            },
+            {
+              "dependencies": [
+                "feature_tests",
+                "docs"
+              ],
+              "key": "verify",
+              "role": "tester",
+              "role_ref": "builtin-role-tester",
+              "writes": false
+            }
+          ],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "closure",
+            "required_topics": []
+          },
+          "key": "closure",
+          "kind": "attempt.execute",
+          "name": "Feature 完整测试与文档",
+          "parameters": {
+            "phase": "closure"
+          },
+          "participant_slot": "builtin-role-tester",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-tester",
+          "spec_refs": [
+            "builtin-spec-stage-closure-v1"
+          ],
+          "stage": "closure",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "closure"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "closure",
+            "required_topics": []
+          },
+          "key": "closure_review",
+          "kind": "delivery.review",
+          "name": "Feature 交付评审",
+          "parameters": {
+            "phase": "closure"
+          },
+          "participant_slot": "builtin-role-reviewer",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-reviewer",
+          "spec_refs": [
+            "builtin-spec-stage-closure-v1"
+          ],
+          "stage": "closure",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "closure_review"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "",
+            "required_topics": []
+          },
+          "key": "merge_prepare",
+          "kind": "merge.prepare",
+          "name": "准备主干候选",
+          "parameters": {},
+          "participant_slot": "builtin-role-tester",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-tester",
+          "spec_refs": [
+            "builtin-spec-stage-release-v1"
+          ],
+          "stage": "release"
+        },
+        {
+          "advance_mode": "human_confirmation",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 2,
+          "dependencies": [
+            "merge_prepare"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "",
+            "required_topics": []
+          },
+          "key": "merge_review",
+          "kind": "merge.review",
+          "name": "主干候选评审并确认",
+          "parameters": {},
+          "participant_slot": "builtin-role-reviewer",
+          "retry_limit": 3,
+          "rework_scope": [],
+          "role_ref": "builtin-role-reviewer",
+          "spec_refs": [
+            "builtin-spec-stage-release-v1"
+          ],
+          "stage": "release",
+          "task_instructions": ""
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "merge_review"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "",
+            "required_topics": []
+          },
+          "key": "merge_apply",
+          "kind": "merge.apply",
+          "name": "应用主干合入",
+          "parameters": {},
+          "participant_slot": null,
+          "retry_limit": 3,
+          "rework_scope": [],
+          "stage": "release"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "merge_apply"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "",
+            "required_topics": []
+          },
+          "key": "snapshot",
+          "kind": "snapshot.capture",
+          "name": "Feature 最终快照",
+          "parameters": {},
+          "participant_slot": null,
+          "retry_limit": 3,
+          "rework_scope": [],
+          "stage": "release"
+        },
+        {
+          "advance_mode": "automatic",
+          "condition": {
+            "op": "always"
+          },
+          "contract_version": 1,
+          "dependencies": [
+            "snapshot"
+          ],
+          "execution_recipe": [],
+          "inputs": {},
+          "interaction": {
+            "max_turns": 30,
+            "mode": "discussion",
+            "output_kind": "",
+            "required_topics": []
+          },
+          "key": "cleanup",
+          "kind": "resource.cleanup",
+          "name": "资源处置",
+          "parameters": {},
+          "participant_slot": null,
+          "retry_limit": 3,
+          "rework_scope": [],
+          "stage": "release"
+        }
+      ],
+      "subworkflow_refs": {
+        "task": "builtin-workflow-task-sol-high-v4"
+      }
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/stages/0/description": "specs/prd.md",
+    "/data/stages/1/description": "specs/architecture.md",
+    "/data/stages/2/description": "specs/project-planning.md",
+    "/data/stages/3/description": "specs/test-design.md",
+    "/data/stages/4/description": "specs/solution.md",
+    "/data/stages/5/description": "specs/implementation.md",
+    "/data/stages/6/description": "specs/closure.md",
+    "/data/stages/7/description": "specs/release.md",
+    "/data/steps/1/task_instructions": "tasks/prd.md",
+    "/data/steps/3/execution_recipe/0/task_instructions": "tasks/validate-requirement.md",
+    "/data/steps/3/task_instructions": "tasks/attempt-requirement.md",
+    "/data/steps/4/task_instructions": "tasks/review-requirement.md",
+    "/data/steps/5/task_instructions": "tasks/design.md",
+    "/data/steps/7/task_instructions": "tasks/planning.md",
+    "/data/steps/9/task_instructions": "tasks/discussion-tests.md",
+    "/data/steps/11/execution_recipe/0/task_instructions": "tasks/validate-plan.md",
+    "/data/steps/11/execution_recipe/1/task_instructions": "tasks/validate-tests.md",
+    "/data/steps/11/task_instructions": "tasks/attempt-planning.md",
+    "/data/steps/12/task_instructions": "tasks/review-plan.md",
+    "/data/steps/14/execution_recipe/0/task_instructions": "tasks/author-feature-tests.md",
+    "/data/steps/14/execution_recipe/2/task_instructions": "tasks/docs.md",
+    "/data/steps/14/task_instructions": "tasks/attempt-closure.md",
+    "/data/steps/15/task_instructions": "tasks/review-feature.md",
+    "/data/steps/17/task_instructions": "tasks/review-candidate-feature.md"
+  },
+  "references": {
+    "/data/steps/1/participant_slot": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
+    },
+    "/data/steps/1/role_ref": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
+    },
+    "/data/steps/1/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-prd-v1",
+      "target": "revision"
+    },
+    "/data/steps/2/participant_slot": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
+    },
+    "/data/steps/2/role_ref": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
+    },
+    "/data/steps/3/execution_recipe/0/role_ref": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
+    },
+    "/data/steps/3/participant_slot": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
+    },
+    "/data/steps/3/role_ref": {
+      "template_ref": "governance.builtin-role-analyst-v1",
+      "target": "identity"
+    },
+    "/data/steps/3/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-prd-v1",
+      "target": "revision"
+    },
+    "/data/steps/4/participant_slot": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/4/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/4/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-prd-v1",
+      "target": "revision"
+    },
+    "/data/steps/5/participant_slot": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
+    },
+    "/data/steps/5/role_ref": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
+    },
+    "/data/steps/5/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-architecture-v1",
+      "target": "revision"
+    },
+    "/data/steps/6/participant_slot": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
+    },
+    "/data/steps/6/role_ref": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
+    },
+    "/data/steps/7/participant_slot": {
+      "template_ref": "governance.builtin-role-project-manager-v1",
+      "target": "identity"
+    },
+    "/data/steps/7/role_ref": {
+      "template_ref": "governance.builtin-role-project-manager-v1",
+      "target": "identity"
+    },
+    "/data/steps/7/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-project-planning-v1",
+      "target": "revision"
+    },
+    "/data/steps/8/participant_slot": {
+      "template_ref": "governance.builtin-role-project-manager-v1",
+      "target": "identity"
+    },
+    "/data/steps/8/role_ref": {
+      "template_ref": "governance.builtin-role-project-manager-v1",
+      "target": "identity"
+    },
+    "/data/steps/9/participant_slot": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/9/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/9/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-test-design-v1",
+      "target": "revision"
+    },
+    "/data/steps/10/participant_slot": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/10/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/11/execution_recipe/0/role_ref": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
+    },
+    "/data/steps/11/execution_recipe/1/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/11/participant_slot": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
+    },
+    "/data/steps/11/role_ref": {
+      "template_ref": "governance.builtin-role-architect-v1",
+      "target": "identity"
+    },
+    "/data/steps/11/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-solution-v1",
+      "target": "revision"
+    },
+    "/data/steps/12/participant_slot": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/12/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/12/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-solution-v1",
+      "target": "revision"
+    },
+    "/data/steps/14/execution_recipe/0/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/14/execution_recipe/1/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/14/execution_recipe/2/role_ref": {
+      "template_ref": "governance.builtin-role-developer-v1",
+      "target": "identity"
+    },
+    "/data/steps/14/execution_recipe/3/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/14/participant_slot": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/14/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/14/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-closure-v1",
+      "target": "revision"
+    },
+    "/data/steps/15/participant_slot": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/15/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/15/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-closure-v1",
+      "target": "revision"
+    },
+    "/data/steps/16/participant_slot": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/16/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "identity"
+    },
+    "/data/steps/16/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-release-v1",
+      "target": "revision"
+    },
+    "/data/steps/17/participant_slot": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/17/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/17/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-release-v1",
+      "target": "revision"
+    },
+    "/data/subworkflow_refs/task": {
+      "template_ref": "governance.builtin-workflow-task-sol-high-v4",
+      "target": "revision"
+    }
+  },
+  "initial_only": false
+}

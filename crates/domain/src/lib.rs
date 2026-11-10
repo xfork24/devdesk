@@ -2,6 +2,8 @@ mod integrations;
 pub use integrations::*;
 mod configuration;
 pub use configuration::*;
+mod template_catalog;
+pub use template_catalog::*;
 mod deliverable;
 pub use deliverable::*;
 mod agent_task;

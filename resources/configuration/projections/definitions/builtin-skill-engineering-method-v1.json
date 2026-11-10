@@ -1,0 +1,20 @@
+{
+  "template_key": "definitions.builtin-skill-engineering-method-v1",
+  "storage": "definitions",
+  "record": {
+    "id": "builtin-skill-engineering-method-v1",
+    "family": "skill",
+    "name": "默认分阶段开发方法",
+    "version": 1,
+    "supersedes": null,
+    "body": "",
+    "slots": [],
+    "rules": [],
+    "agent_profile": null
+  },
+  "text_files": {
+    "/body": "skills/engineering-method.md"
+  },
+  "references": {},
+  "initial_only": false
+}

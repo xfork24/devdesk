@@ -1318,3 +1318,6 @@ pre { overflow: auto; max-width: 100%; }
 .project-role-bindings { display:flex; flex-direction:column; gap:12px; margin:16px 0; }
 .project-role-bindings > label { display:grid; grid-template-columns:minmax(130px,220px) minmax(0,1fr); align-items:center; gap:16px; margin:0; }
 .project-role-bindings select { min-width:0; width:100%; }
+.template-reset-dialog { max-width: 620px; width: calc(100% - 48px); max-height: 85vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 24px; color: inherit; background: var(--surface, #fff); }
+.template-reset-dialog::backdrop { background: rgb(15 23 42 / 45%); }
+.template-reset-dialog .actions { justify-content: flex-end; margin-top: 20px; }

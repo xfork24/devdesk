@@ -13,6 +13,7 @@ import {
   dutyLabels,
   latest,
   loadCatalog,
+  templateSourceLabel,
   loadIntegrationRecords,
   MarkdownField,
   MarkdownPreview,
@@ -299,8 +300,7 @@ export function ResourceEditor({
       const role = records.find((r) => r.id === value.role_ref);
       value = {
         role_ref: value.role_ref || "",
-        capability_ref:
-          value.capability_ref || "",
+        capability_ref: value.capability_ref || "",
         ...(value.permission_selection
           ? { permission_selection: value.permission_selection }
           : {}),
@@ -328,8 +328,13 @@ export function ResourceEditor({
     if (routeConsumed.current || !records.length) return;
     const selected = new URLSearchParams(location.search).get("config_object");
     if (selected) {
-      const instance = records.find((r) => r.id === selected && r.kind === "agent_instance");
-      const revision = kind === "agent" && instance ? instance.data.agent_revision_id : selected;
+      const instance = records.find(
+        (r) => r.id === selected && r.kind === "agent_instance",
+      );
+      const revision =
+        kind === "agent" && instance
+          ? instance.data.agent_revision_id
+          : selected;
       const row = records.find((r) => r.id === revision && r.kind === kind);
       if (row) {
         routeConsumed.current = true;
@@ -427,6 +432,9 @@ export function ResourceEditor({
       <div className="panel-heading">
         <div>
           <h2>{labels[kind]} 管理</h2>
+          {templateSourceLabel(old) && (
+            <span className="muted">{templateSourceLabel(old)}</span>
+          )}
           <p>
             {kind === "agent"
               ? "给一个 Role 与一个 Capability 的组合命名。"
@@ -1108,9 +1116,21 @@ export function ResourceEditor({
                 )}
               </>
             )}
-            {kind === "delivery_type" && <label>交付物格式<ActionSelect value={data.format} onChange={(event) => patch({format: event.target.value})}>
-              <option value="markdown">文档</option><option value="diff">Diff</option><option value="test_report">Test Report</option><option value="json">JSON</option><option value="text">文本</option>
-            </ActionSelect></label>}
+            {kind === "delivery_type" && (
+              <label>
+                交付物格式
+                <ActionSelect
+                  value={data.format}
+                  onChange={(event) => patch({ format: event.target.value })}
+                >
+                  <option value="markdown">文档</option>
+                  <option value="diff">Diff</option>
+                  <option value="test_report">Test Report</option>
+                  <option value="json">JSON</option>
+                  <option value="text">文本</option>
+                </ActionSelect>
+              </label>
+            )}
             {["skill", "spec", "standard", "delivery_type"].includes(kind) && (
               <MarkdownField
                 key={draft.selected || "new"}
@@ -1330,7 +1350,9 @@ export function ResourceEditor({
               disabled={
                 busy ||
                 !draft.name.trim() ||
-                (["skill", "spec", "standard", "delivery_type"].includes(kind) &&
+                (["skill", "spec", "standard", "delivery_type"].includes(
+                  kind,
+                ) &&
                   !data.body?.trim())
               }
             >

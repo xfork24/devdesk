@@ -58,6 +58,11 @@
             "null"
           ],
           "description": "Optional active-project scope; mismatches are rejected before dispatch."
+        },
+        "expected_catalog_generation": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Required for definition writes after the first reset. Prevents an editor from publishing into an obsolete catalog."
         }
       }
     },
@@ -4835,6 +4840,113 @@
         "output_schema"
       ],
       "additionalProperties": false
+    },
+    "TemplateCatalogState": {
+      "type": "object",
+      "required": [
+        "generation",
+        "initial_generation",
+        "bundle_version",
+        "bundle_hash",
+        "defaults"
+      ],
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bundle_version": {
+          "type": "string"
+        },
+        "bundle_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "defaults": {
+          "type": "object"
+        },
+        "initial_generation": {
+          "const": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "TemplateCatalogMember": {
+      "type": "object",
+      "required": [
+        "kind",
+        "generation",
+        "template_key",
+        "source_hash",
+        "origin"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "template_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "default",
+            "custom",
+            "existing"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "TemplateResetCommand": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Command"
+        },
+        {
+          "type": "object",
+          "required": [
+            "payload"
+          ],
+          "properties": {
+            "payload": {
+              "type": "object",
+              "required": [
+                "expected_catalog_generation",
+                "catalog_fingerprint",
+                "bundle_hash"
+              ],
+              "properties": {
+                "expected_catalog_generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "catalog_fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bundle_hash": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
     }
   },
   "allOf": [
@@ -5261,6 +5373,28 @@
             ]
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "configuration.templates.reset"
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/TemplateResetCommand"
+          }
+        },
+        "required": [
+          "params"
+        ]
       }
     }
   ]

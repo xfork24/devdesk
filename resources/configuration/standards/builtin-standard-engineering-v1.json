@@ -1,0 +1,224 @@
+{
+  "template_key": "governance.builtin-standard-engineering-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-standard-engineering-v1",
+    "kind": "standard",
+    "definition_id": "builtin-standard-engineering",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "默认工程 Standard",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "body": "",
+      "baseline_rules": [
+        {
+          "selector": {
+            "kind": "agent.interact",
+            "phase": "requirement"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-prd-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "attempt.execute",
+            "phase": "requirement_definition"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-prd-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "delivery_kind": "requirement",
+            "kind": "delivery.review"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-prd-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "agent.interact",
+            "phase": "design"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-architecture-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "agent.interact",
+            "phase": "task_plan"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-project-planning-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "agent.interact",
+            "phase": "test_plan"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-test-design-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "attempt.execute",
+            "phase": "solution_planning"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-solution-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "delivery_kind": "plan",
+            "kind": "delivery.review"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-solution-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "attempt.execute",
+            "phase": "implementation"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-implementation-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "delivery_kind": "implementation",
+            "kind": "delivery.review"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-implementation-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "attempt.execute",
+            "phase": "closure"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-closure-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "delivery_kind": "closure",
+            "kind": "delivery.review"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-closure-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "merge.prepare"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-release-v1"
+          ],
+          "min_matches": 1
+        },
+        {
+          "selector": {
+            "kind": "merge.review"
+          },
+          "required_spec_refs": [
+            "builtin-spec-stage-release-v1"
+          ],
+          "min_matches": 1
+        }
+      ]
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "standards/engineering.md"
+  },
+  "references": {
+    "/data/baseline_rules/0/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-prd-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/1/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-prd-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/2/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-prd-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/3/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-architecture-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/4/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-project-planning-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/5/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-test-design-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/6/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-solution-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/7/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-solution-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/8/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/9/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/10/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-closure-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/11/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-closure-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/12/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-release-v1",
+      "target": "revision"
+    },
+    "/data/baseline_rules/13/required_spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-release-v1",
+      "target": "revision"
+    }
+  },
+  "initial_only": false
+}

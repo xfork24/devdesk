@@ -1,0 +1,17 @@
+{
+  "template_key": "sandboxes.builtin-sandbox-codex-docker-v1",
+  "storage": "sandboxes",
+  "record": {
+    "id": "builtin-sandbox-codex-docker-v1",
+    "provider": "docker",
+    "version": "docker-worker/v1",
+    "platform": "linux",
+    "image": null,
+    "network": true,
+    "origin": "external",
+    "permission": null
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

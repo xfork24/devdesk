@@ -59,7 +59,7 @@ export function RoleManager({
         limit: 100,
       }),
     ]);
-    setRows(roles.records || []);
+    setRows((roles.records || []).map((row:Row)=>({...row,template_source:roles.template_sources?.[row.id]})));
     setProjects(workspace.projects || []);
   }, [request, project?.id]);
   useEffect(() => {

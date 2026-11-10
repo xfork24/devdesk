@@ -1,0 +1,34 @@
+{
+  "template_key": "governance.builtin-tool-codex-native-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-codex-native-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-codex-native",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Codex 原生工具组",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "capabilities": [],
+      "implementation": "harness.native",
+      "input_schema": {
+        "description": "Native Codex tool contracts, constrained by the frozen role/work scope and Permission",
+        "type": "object"
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "qualified_name": "harness.native"
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

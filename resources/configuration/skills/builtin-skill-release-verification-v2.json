@@ -1,0 +1,28 @@
+{
+  "template_key": "governance.builtin-skill-release-verification-v2",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-skill-release-verification-v2",
+    "kind": "skill",
+    "definition_id": "builtin-skill-release-verification",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Feature 与候选验证",
+    "version": 2,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "body": "",
+      "rules": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "skills/release-verification.md"
+  },
+  "references": {},
+  "initial_only": false
+}

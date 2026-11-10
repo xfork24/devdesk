@@ -1,0 +1,34 @@
+{
+  "template_key": "governance.builtin-instance-sol-high-analyst-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-instance-sol-high-analyst-v1",
+    "kind": "agent_instance",
+    "definition_id": "builtin-instance-sol-high-analyst",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "需求分析师 · 默认全局实例",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "agent_revision_id": "builtin-agent-sol-high-analyst-v3",
+      "scope": {
+        "kind": "global"
+      },
+      "source_instance_id": null
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {
+    "/data/agent_revision_id": {
+      "template_ref": "governance.builtin-agent-sol-high-analyst-v3",
+      "target": "revision"
+    }
+  },
+  "initial_only": true
+}

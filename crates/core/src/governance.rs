@@ -38,7 +38,8 @@ fn decode<T: serde::de::DeserializeOwned>(v: &Value) -> Result<T> {
     serde_json::from_value(v.clone()).map_err(|e| err("invalid_params", e.to_string()))
 }
 pub(crate) fn default_workflow(task: bool) -> WorkflowDocument {
-    let s = crate::current_catalog::catalog();
+    let mut s = EngineeringState::default();
+    seed_configuration(&mut s);
     s.governance
         .iter()
         .find(|r| {
@@ -1188,6 +1189,7 @@ impl Engine {
                     .iter()
                     .filter(|r| {
                         r.kind == "role"
+                            && (p["include_archived"] == true || template_record_current(&s, r))
                             && crate::configuration::visible(&s, r, p["project_id"].as_str())
                             && (p["include_deleted"] == true
                                 || !crate::builtin_defaults::role_deleted(&s, r))
@@ -1403,13 +1405,28 @@ impl Engine {
                 return Ok(json!(r));
             }
             if method == "query.project_configuration" {
-                return Ok(
-                    json!({"configuration":s.governance.iter().filter(|r|r.kind=="project_configuration"&&p["project_id"].as_str().is_none_or(|pid|r.definition_id==pid)).max_by_key(|r|r.version),"standards":s.definitions.iter().filter(|d|d.family=="standard").collect::<Vec<_>>()}),
-                );
+                return Ok({
+                    let configuration = s
+                        .governance
+                        .iter()
+                        .filter(|r| {
+                            r.kind == "project_configuration"
+                                && p["project_id"]
+                                    .as_str()
+                                    .is_none_or(|pid| r.definition_id == pid)
+                        })
+                        .max_by_key(|r| r.version);
+                    let pinned = crate::templates::pinned_template_records(
+                        &s,
+                        configuration.map(|r| &r.data),
+                    );
+                    json!({"configuration":configuration,"pinned_records":pinned,"uses_archived_templates":pinned.iter().any(|r|!template_record_current(&s,r)),"standards":s.definitions.iter().filter(|d|d.family=="standard").collect::<Vec<_>>()})
+                });
             }
             let rows: Vec<_> = s
                 .governance
                 .iter()
+                .filter(|r| p["include_archived"] == true || template_record_current(&s, r))
                 .filter(|r| crate::configuration::visible(&s, r, p["project_id"].as_str()))
                 .rev()
                 .filter(|r| p["include_deleted"] == true || !crate::configuration::retired(&s, r))
@@ -1425,11 +1442,13 @@ impl Engine {
                     "query.workflows" => ["workflow", "workflow_draft"].contains(&r.kind.as_str()),
                     "query.agent_instances" => r.kind == "agent_instance",
                     "query.project_workflow_summary" => r.kind == "workflow_instance",
-                    _ => p["kind"]
-                        .as_str()
-                        .map_or(r.is_definition() || r.kind == "agent_instance", |kind| {
+                    _ => p["kind"].as_str().map_or(
+                        r.is_definition() || r.kind == "agent_instance",
+                        |kind| {
                             r.kind == kind
-                        }),
+                                && (p["include_archived"] == true || template_record_current(&s, r))
+                        },
+                    ),
                 })
                 .filter(|r| {
                     p.get("scope")

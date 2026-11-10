@@ -1,0 +1,38 @@
+{
+  "template_key": "governance.builtin-spec-stage-architecture-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-spec-stage-architecture-v1",
+    "kind": "spec",
+    "definition_id": "builtin-spec-stage-architecture",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Design Doc 设计规范",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "applicable_actions": [
+        {
+          "kind": "agent.interact",
+          "phase": "design"
+        }
+      ],
+      "body": "",
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ]
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "specs/architecture.md"
+  },
+  "references": {},
+  "initial_only": false
+}

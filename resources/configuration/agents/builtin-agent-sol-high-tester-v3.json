@@ -1,0 +1,86 @@
+{
+  "template_key": "governance.builtin-agent-sol-high-tester-v3",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-agent-sol-high-tester-v3",
+    "kind": "agent",
+    "definition_id": "builtin-agent-sol-high-tester",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "测试 · Sol High / Codex",
+    "version": 3,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "capability_ref": "builtin-capability-tester-codex-v2",
+      "harness_ref": "builtin-harness-codex-managed-v1",
+      "instructions": "",
+      "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+      "permission_selection": {
+        "harness": {
+          "mode": "follow_target"
+        },
+        "sandbox": {
+          "mode": "follow_target"
+        },
+        "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+      },
+      "role": "tester",
+      "role_ref": "builtin-role-tester-v1",
+      "skills": [
+        "builtin-skill-engineering-context-v2",
+        "builtin-skill-test-design-v2",
+        "builtin-skill-release-verification-v2"
+      ],
+      "tools": [
+        "builtin-tool-codex-native-v1"
+      ]
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/instructions": "roles/tester.md"
+  },
+  "references": {
+    "/data/capability_ref": {
+      "template_ref": "governance.builtin-capability-tester-codex-v2",
+      "target": "revision"
+    },
+    "/data/harness_ref": {
+      "template_ref": "governance.builtin-harness-codex-managed-v1",
+      "target": "revision"
+    },
+    "/data/model_ref": {
+      "template_ref": "governance.builtin-model-gpt-6-1-sol-high-v1",
+      "target": "revision"
+    },
+    "/data/permission_selection/sandbox_ref": {
+      "template_ref": "governance.builtin-permission-sandbox-docker-v1",
+      "target": "revision"
+    },
+    "/data/role_ref": {
+      "template_ref": "governance.builtin-role-tester-v1",
+      "target": "revision"
+    },
+    "/data/skills/0": {
+      "template_ref": "governance.builtin-skill-engineering-context-v2",
+      "target": "revision"
+    },
+    "/data/skills/1": {
+      "template_ref": "governance.builtin-skill-test-design-v2",
+      "target": "revision"
+    },
+    "/data/skills/2": {
+      "template_ref": "governance.builtin-skill-release-verification-v2",
+      "target": "revision"
+    },
+    "/data/tools/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
+      "target": "revision"
+    }
+  },
+  "initial_only": false
+}

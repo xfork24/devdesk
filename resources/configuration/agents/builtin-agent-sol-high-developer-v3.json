@@ -1,0 +1,81 @@
+{
+  "template_key": "governance.builtin-agent-sol-high-developer-v3",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-agent-sol-high-developer-v3",
+    "kind": "agent",
+    "definition_id": "builtin-agent-sol-high-developer",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "开发 · Sol High / Codex",
+    "version": 3,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "capability_ref": "builtin-capability-developer-codex-v2",
+      "harness_ref": "builtin-harness-codex-managed-v1",
+      "instructions": "",
+      "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+      "permission_selection": {
+        "harness": {
+          "mode": "follow_target"
+        },
+        "sandbox": {
+          "mode": "follow_target"
+        },
+        "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+      },
+      "role": "developer",
+      "role_ref": "builtin-role-developer-v1",
+      "skills": [
+        "builtin-skill-engineering-context-v2",
+        "builtin-skill-tdd-implementation-v2"
+      ],
+      "tools": [
+        "builtin-tool-codex-native-v1"
+      ]
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/instructions": "roles/developer.md"
+  },
+  "references": {
+    "/data/capability_ref": {
+      "template_ref": "governance.builtin-capability-developer-codex-v2",
+      "target": "revision"
+    },
+    "/data/harness_ref": {
+      "template_ref": "governance.builtin-harness-codex-managed-v1",
+      "target": "revision"
+    },
+    "/data/model_ref": {
+      "template_ref": "governance.builtin-model-gpt-6-1-sol-high-v1",
+      "target": "revision"
+    },
+    "/data/permission_selection/sandbox_ref": {
+      "template_ref": "governance.builtin-permission-sandbox-docker-v1",
+      "target": "revision"
+    },
+    "/data/role_ref": {
+      "template_ref": "governance.builtin-role-developer-v1",
+      "target": "revision"
+    },
+    "/data/skills/0": {
+      "template_ref": "governance.builtin-skill-engineering-context-v2",
+      "target": "revision"
+    },
+    "/data/skills/1": {
+      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
+      "target": "revision"
+    },
+    "/data/tools/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
+      "target": "revision"
+    }
+  },
+  "initial_only": false
+}

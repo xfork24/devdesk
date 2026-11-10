@@ -1,0 +1,28 @@
+{
+  "template_key": "governance.builtin-skill-project-planning-v2",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-skill-project-planning-v2",
+    "kind": "skill",
+    "definition_id": "builtin-skill-project-planning",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Task Plan 项目管理",
+    "version": 2,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "body": "",
+      "rules": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "skills/project-planning.md"
+  },
+  "references": {},
+  "initial_only": false
+}

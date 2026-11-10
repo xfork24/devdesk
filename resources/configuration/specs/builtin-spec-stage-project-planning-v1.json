@@ -1,0 +1,38 @@
+{
+  "template_key": "governance.builtin-spec-stage-project-planning-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-spec-stage-project-planning-v1",
+    "kind": "spec",
+    "definition_id": "builtin-spec-stage-project-planning",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Task Plan 拆分规范",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "applicable_actions": [
+        {
+          "kind": "agent.interact",
+          "phase": "task_plan"
+        }
+      ],
+      "body": "",
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ]
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "specs/project-planning.md"
+  },
+  "references": {},
+  "initial_only": false
+}

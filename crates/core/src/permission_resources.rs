@@ -179,72 +179,78 @@ impl Engine {
                     .as_array()
                     .filter(|v| !v.is_empty() && v.len() <= 64)
                     .ok_or_else(|| err("invalid_params", "需要 1—64 项绑定"))?;
-                let mut seen = std::collections::BTreeSet::new();
-                let mut result = Vec::new();
-                for change in changes {
-                    let target: PermissionTargetRef =
-                        serde_json::from_value(change["target"].clone())
-                            .map_err(|e| err("invalid_params", e.to_string()))?;
-                    if !seen.insert(target.revision_id.clone()) {
-                        return Err(err("invalid_params", "批次中目标重复"));
-                    }
-                    if permission_target(s, target.kind, &target.revision_id)? != target {
-                        return Err(err("revision_conflict", "目标摘要已变化"));
-                    }
-                    let current = active_permission_binding(s, &target);
-                    let version = current.map_or(0, |r| r.version);
-                    if change["expected_revision"].as_u64() != Some(version) {
-                        return Err(err("revision_conflict", "目标活动绑定已变化"));
-                    }
-                    let profile_id = text(change, "permission_revision_id")?;
-                    let target_scope = s.configuration(&target.revision_id)?.scope.clone();
-                    let pr = s.configuration(&profile_id)?;
-                    let mut profile: PermissionProfile = pr.decode()?;
-                    profile.normalize()?;
-                    if pr.kind != "permission_profile" || profile.target_kind != target.kind {
-                        return Err(err("permission_inapplicable", "profile 不适用于目标"));
-                    }
-                    let contract = text(change, "enforcement_contract")?;
-                    let binding = VersionedPermissionBinding {
-                        target: target.clone(),
-                        permission_revision_id: profile_id,
-                        enforcement_contract: contract,
-                    };
-                    let identity = format!("permission-binding:{}", target.revision_id);
-                    let previous = s
-                        .governance
-                        .iter()
-                        .filter(|r| r.kind == "permission_binding" && r.definition_id == identity)
-                        .max_by_key(|r| r.version)
-                        .cloned();
-                    let r = record(
-                        "permission_binding",
-                        identity,
-                        target_scope.clone(),
-                        pr.name.clone(),
-                        previous.as_ref().map_or(1, |r| r.version + 1),
-                        previous.map(|r| r.id),
-                        json!(binding),
-                        true,
-                    );
-                    let assignment = record(
-                        "permission_assignment",
-                        format!("permission-target:{}", target.revision_id),
-                        target_scope,
-                        r.name.clone(),
-                        version + 1,
-                        current.map(|r| r.id.clone()),
-                        json!({"target":target,"binding_revision_id":r.id}),
-                        true,
-                    );
-                    result.push(json!({"target":target,"binding_revision_id":r.id,"revision":assignment.version}));
-                    s.governance.push(r);
-                    s.governance.push(assignment);
-                }
-                json!({"bindings":result})
+                apply_permission_bindings(s, changes)?
             }
             _ => return Ok(None),
         };
         Ok(Some(result))
     }
+}
+
+/// Apply prevalidated target contracts in the caller's transaction.
+pub fn apply_permission_bindings(s: &mut EngineeringState, changes: &[Value]) -> Result<Value> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut result = Vec::new();
+    for change in changes {
+        let target: PermissionTargetRef = serde_json::from_value(change["target"].clone())
+            .map_err(|e| err("invalid_params", e.to_string()))?;
+        if !seen.insert(target.revision_id.clone()) {
+            return Err(err("invalid_params", "批次中目标重复"));
+        }
+        if permission_target(s, target.kind, &target.revision_id)? != target {
+            return Err(err("revision_conflict", "目标摘要已变化"));
+        }
+        let current = active_permission_binding(s, &target);
+        let version = current.map_or(0, |r| r.version);
+        if change["expected_revision"].as_u64() != Some(version) {
+            return Err(err("revision_conflict", "目标活动绑定已变化"));
+        }
+        let profile_id = text(change, "permission_revision_id")?;
+        let target_scope = s.configuration(&target.revision_id)?.scope.clone();
+        let pr = s.configuration(&profile_id)?;
+        let mut profile: PermissionProfile = pr.decode()?;
+        profile.normalize()?;
+        if pr.kind != "permission_profile" || profile.target_kind != target.kind {
+            return Err(err("permission_inapplicable", "profile 不适用于目标"));
+        }
+        let contract = text(change, "enforcement_contract")?;
+        let binding = VersionedPermissionBinding {
+            target: target.clone(),
+            permission_revision_id: profile_id,
+            enforcement_contract: contract,
+        };
+        let identity = format!("permission-binding:{}", target.revision_id);
+        let previous = s
+            .governance
+            .iter()
+            .filter(|r| r.kind == "permission_binding" && r.definition_id == identity)
+            .max_by_key(|r| r.version)
+            .cloned();
+        let r = record(
+            "permission_binding",
+            identity,
+            target_scope.clone(),
+            pr.name.clone(),
+            previous.as_ref().map_or(1, |r| r.version + 1),
+            previous.map(|r| r.id),
+            json!(binding),
+            true,
+        );
+        let assignment = record(
+            "permission_assignment",
+            format!("permission-target:{}", target.revision_id),
+            target_scope,
+            r.name.clone(),
+            version + 1,
+            current.map(|r| r.id.clone()),
+            json!({"target":target,"binding_revision_id":r.id}),
+            true,
+        );
+        result.push(
+            json!({"target":target,"binding_revision_id":r.id,"revision":assignment.version}),
+        );
+        s.governance.push(r);
+        s.governance.push(assignment);
+    }
+    Ok(json!({"bindings":result}))
 }

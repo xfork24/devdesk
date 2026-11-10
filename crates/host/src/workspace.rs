@@ -10,6 +10,8 @@ mod model_providers;
 mod permission_resources;
 #[path = "runtime_setup.rs"]
 mod runtime_setup;
+#[path = "templates.rs"]
+mod templates;
 // Project selection pins every request to one Engine and therefore one database.
 use devdesk_adapters::*;
 use devdesk_core::*;
@@ -30,6 +32,7 @@ pub struct Workspace {
     active: RwLock<Active>,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
     switching: Mutex<()>,
+    template_gate: Mutex<()>,
     runtime_setup: runtime_setup::RuntimeSetup,
 }
 fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters) -> Arc<Engine> {
@@ -40,35 +43,33 @@ fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters)
     );
     Arc::new(Engine::new(store, artifacts, adapters.clone()).with_tool_executor(tools))
 }
-fn workspace_defaults(e: &Engine) -> Result<()> {
-    let s = e.store.snapshot()?;
+fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
+    let defaults = current_template_defaults(s)
+        .ok_or_else(|| err("configuration_required", "默认模板目录未初始化"))?;
     let mut targets = std::collections::BTreeSet::new();
-    if s.configuration(DEFAULT_HARNESS_ID).is_ok() {
-        targets.insert(DEFAULT_HARNESS_ID.to_owned());
-    }
-    if s.configuration("builtin-harness-dsh-multi-provider-v1")
-        .is_ok()
-    {
-        targets.insert("builtin-harness-dsh-multi-provider-v1".to_owned());
+    for r in s.governance.iter().filter(|r| {
+        r.kind == "agent"
+            && template_record_current(s, r)
+            && (r.definition_id.starts_with("builtin-agent-")
+                || template_catalog_member(s, r)
+                    .is_some_and(|m| m.data["template_key"].is_string()))
+    }) {
+        let agent: AgentComposition = r.decode()?;
+        targets.insert(agent.harness_ref);
     }
     for r in s
         .governance
         .iter()
-        .filter(|r| r.kind == "agent" && r.definition_id.starts_with("builtin-agent-"))
+        .filter(|r| r.kind == "harness" && template_record_current(s, r))
     {
-        let a: AgentComposition = r.decode()?;
-        if a.permission_selection.is_some() {
-            targets.insert(a.harness_ref);
-        }
-    }
-    for r in s.governance.iter().filter(|r| {
-        r.kind == "harness"
-            && r.definition_id.starts_with("builtin-harness-")
+        if (r.definition_id.starts_with("builtin-harness-")
+            || template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string()))
             && !s.governance.iter().any(|n| {
                 n.kind == r.kind && n.definition_id == r.definition_id && n.version > r.version
             })
-    }) {
-        targets.insert(r.id.clone());
+        {
+            targets.insert(r.id.clone());
+        }
     }
     let mut changes = Vec::new();
     for (kind, id, profile) in targets
@@ -77,31 +78,33 @@ fn workspace_defaults(e: &Engine) -> Result<()> {
             (
                 PermissionTargetKind::Harness,
                 id,
-                "permission-harness-full-access-v2-r1",
+                defaults["harness_permission_ref"].as_str().unwrap(),
             )
         })
         .chain(std::iter::once((
             PermissionTargetKind::Sandbox,
-            DEFAULT_PERMISSION_SANDBOX.into(),
-            "permission-sandbox-full-access-v2-r1",
+            defaults["permission_sandbox_ref"]
+                .as_str()
+                .ok_or_else(|| err("invalid_template", "默认 Sandbox 缺失"))?
+                .to_owned(),
+            defaults["sandbox_permission_ref"].as_str().unwrap(),
         )))
     {
-        let target = permission_target(&s, kind, &id)?;
-        if active_permission_binding(&s, &target).is_none() {
-            changes.push(json!({"target":target,"permission_revision_id":profile,"expected_revision":0,"enforcement_contract":permission_profiles::permission_contract(&s,&target)?}));
+        let target = permission_target(s, kind, &id)?;
+        if active_permission_binding(s, &target).is_none() {
+            changes.push(json!({"target":target,"permission_revision_id":profile,"expected_revision":0,"enforcement_contract":permission_profiles::permission_contract(s,&target)?}));
         }
     }
     if !changes.is_empty() {
-        e.execute(
-            "permission.bindings.apply",
-            Command {
-                command_id: id(),
-                target: None,
-                expected_revision: None,
-                payload: json!({"bindings":changes}),
-            },
-        )?;
+        apply_permission_bindings(s, &changes)?;
     }
+    Ok(())
+}
+fn workspace_defaults(e: &Engine) -> Result<()> {
+    e.store.transact(None, &mut |s| {
+        template_permission_defaults(s)?;
+        Ok(json!({"ok":true}))
+    })?;
     Ok(())
 }
 
@@ -680,12 +683,14 @@ impl Workspace {
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
         configuration.recover_tool_receipts()?;
-        global.reload_permission_presets(&Command {
-            command_id: id(),
-            target: None,
-            expected_revision: None,
-            payload: json!({}),
-        })?;
+        if template_catalog_generation(&global.snapshot()?) == TEMPLATE_INITIAL_GENERATION {
+            global.reload_permission_presets(&Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: json!({}),
+            })?;
+        }
         workspace_defaults(&configuration)?;
         let workspace = Arc::new(Self {
             codex_auth: codex_auth::CodexAuthentication::new(root)?,
@@ -695,6 +700,7 @@ impl Workspace {
             active: RwLock::new(None),
             opened: Mutex::new(BTreeMap::new()),
             switching: Mutex::new(()),
+            template_gate: Mutex::new(()),
             runtime_setup: runtime_setup::RuntimeSetup::default(),
         });
         let mut offset = 0;
@@ -754,25 +760,26 @@ impl Workspace {
         if existing.projects.iter().any(|p| p.execution_mode != "live") {
             return Ok(());
         }
-        if shared
-            .governance
-            .iter()
-            .filter(|r| {
-                r.immutable
-                    && (r.kind == "role"
-                        || r.kind == "role_retirement"
-                        || devdesk_core::configuration_visible(
-                            &shared,
-                            r,
-                            e.store.project_id().as_deref(),
-                        ))
-            })
-            .all(|r| {
-                existing
-                    .governance
-                    .iter()
-                    .any(|v| v.id == r.id && v.content_hash == r.content_hash)
-            })
+        if template_catalog_state(&shared) == template_catalog_state(&existing)
+            && shared
+                .governance
+                .iter()
+                .filter(|r| {
+                    r.immutable
+                        && (r.kind == "role"
+                            || r.kind == "role_retirement"
+                            || devdesk_core::configuration_visible(
+                                &shared,
+                                r,
+                                e.store.project_id().as_deref(),
+                            ))
+                })
+                .all(|r| {
+                    existing
+                        .governance
+                        .iter()
+                        .any(|v| v.id == r.id && v.content_hash == r.content_hash)
+                })
             && shared.definitions.iter().all(|d| {
                 existing.definitions.iter().any(|v| {
                     v.id == d.id
@@ -828,6 +835,7 @@ impl Workspace {
                     s.sandboxes.push(b.clone());
                 }
             }
+            copy_template_catalog(&shared, s)?;
             Ok(json!({"ok":true}))
         })?;
         Ok(())
@@ -940,6 +948,77 @@ impl Workspace {
         )
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        let coordinated = template_definition_write(method)
+            || template_catalog_query(method)
+            || method == "configuration.templates.reset"
+            || matches!(
+                method,
+                "project.create" | "project.open" | "project.open_github"
+            );
+        let _guard = if coordinated {
+            Some(
+                self.template_gate
+                    .lock()
+                    .map_err(|e| err("storage", e.to_string()))?,
+            )
+        } else {
+            None
+        };
+        if let Some(result) = self.template_dispatch(method, &params) {
+            return result;
+        }
+        if template_definition_write(method) {
+            if let Ok(command) = serde_json::from_value::<Command>(params.clone()) {
+                let fingerprint = command_fingerprint(method, &command);
+                if let Some(saved) = self.global.replay(&command.command_id, &fingerprint)? {
+                    return Ok(saved);
+                }
+                if let Ok(engine) = self.active_engine(params["project_id"].as_str()) {
+                    if let Some(saved) = engine.store.replay(&command.command_id, &fingerprint)? {
+                        return Ok(saved);
+                    }
+                }
+            }
+            let generation = template_catalog_generation(&self.global.snapshot()?);
+            if params.get("expected_catalog_generation").is_some()
+                || generation > TEMPLATE_INITIAL_GENERATION
+            {
+                if params["expected_catalog_generation"].as_u64() != Some(generation) {
+                    return Err(err("catalog_changed", "模板目录已重置，请重新载入后再编辑"));
+                }
+            }
+        }
+        let params_for_sources = params.clone();
+        let mut result = self.dispatch_inner(method, params)?;
+        if template_catalog_query(method) {
+            let global = self.global.snapshot()?;
+            let local = if params_for_sources["local"] == true
+                || params_for_sources["project_id"].is_string()
+            {
+                self.active_engine(params_for_sources["project_id"].as_str())
+                    .ok()
+                    .and_then(|e| e.store.snapshot().ok())
+            } else {
+                None
+            };
+            let directory = local.as_ref().unwrap_or(&global);
+            let sources=result["records"].as_array().map(|rows|rows.iter().filter_map(|row|{
+                let r=directory.configuration(row["id"].as_str()?).ok().or_else(||global.configuration(row["id"].as_str()?).ok())?;
+                let member=template_catalog_member(directory,r).or_else(||template_catalog_member(&global,r));
+                let origin=if !template_record_current(directory,r){"archived"}else if member.is_some_and(|m|m.data["template_key"].is_string()){if member.unwrap().data["source_hash"]==template_source_hash(r) {"default"}else{"modified"}}else if member.is_some_and(|m|m.data["origin"]=="existing"){"existing"}else{"custom"};
+                Some((r.id.clone(),json!({"origin":origin,"template_key":member.map(|m|&m.data["template_key"])})))
+            }).collect::<serde_json::Map<String,Value>>()).unwrap_or_default();
+            if let Some(object) = result.as_object_mut() {
+                object.insert(
+                    "catalog_generation".into(),
+                    json!(template_catalog_generation(&global)),
+                );
+                object.insert("template_sources".into(), json!(sources));
+            }
+        }
+        Ok(result)
+    }
+    fn dispatch_inner(&self, method: &str, params: Value) -> Result<Value> {
         if [
             "query.permissions",
             "permission.create",

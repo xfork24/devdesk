@@ -1,0 +1,28 @@
+{
+  "template_key": "governance.builtin-role-architect-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-role-architect-v1",
+    "kind": "role",
+    "definition_id": "builtin-role-architect",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "架构师",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "execution_role": "architect",
+      "instructions": ""
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/instructions": "roles/architect.md"
+  },
+  "references": {},
+  "initial_only": false
+}

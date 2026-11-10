@@ -108,7 +108,19 @@ fn role_crud_has_no_derived_agent_or_skill_side_effects() {
     let role=command(&e,"role.create",None,json!({"name":"Domain expert","data":{"execution_role":"analyst","instructions":"# Duty\nClarify inputs","visibility":{"kind":"global"}}})).unwrap();
     let after = e.store.snapshot().unwrap();
     assert_eq!(after.definitions.len(), before.definitions.len());
-    assert_eq!(after.governance.len(), before.governance.len() + 1);
+    assert_eq!(
+        after
+            .governance
+            .iter()
+            .filter(|r| r.is_definition())
+            .count(),
+        before
+            .governance
+            .iter()
+            .filter(|r| r.is_definition())
+            .count()
+            + 1
+    );
     command(&e, "role.delete", role["id"].as_str(), json!({})).unwrap();
     assert_eq!(
         e.store.snapshot().unwrap().definitions.len(),

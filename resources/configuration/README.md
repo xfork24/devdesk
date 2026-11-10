@@ -1,6 +1,6 @@
 # 默认配置目录
 
-默认条目是普通、独立版本化定义。`catalog.json` 直接发布当前目录：6 个 Agent、7 个 Capability、2 个 v3 Workflow、8 个阶段 Spec、9 个 Skill，以及 Model、Harness、Sandbox、Permission 和 Delivery。Markdown 引用在编译时嵌入，启动不执行旧版本生成、投影或转换链。项目页预填当前目录，保存后用于后续 Feature。编辑资源不回写其他定义或已有执行锁。
+默认条目是普通、独立版本化定义。`manifest.json` 与各类型 JSON 发布当前目录：6 个 Agent、7 个 Capability、2 个 v3 Workflow、8 个阶段 Spec、9 个 Skill，以及 Model、Harness、Sandbox、Permission 和 Delivery。Markdown 引用在编译时嵌入，启动不执行旧版本生成、投影或转换链。项目页预填当前目录，保存后用于后续 Feature。空库从嵌入资源建立数据库副本，UI 编辑只写数据库。应用更新不覆盖已有副本；设置中的“重置模板定义”在预览和确认后恢复整套默认，自建定义与草稿退出当前目录，历史、已保存项目绑定、执行锁和凭据保留。
 
 | Role / Agent | Capability 中的专用 Skill | 主要交付与阶段 Spec |
 |---|---|---|
@@ -31,7 +31,7 @@ Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审�
 
 新 v3 路径只传这些已冻结正文和受控材料，不再从 live_runs 的旧分支追加业务提示。系统只接受 v3 Workflow 的显式任务指令。系统测试和 merge.prepare 不调用 Agent。
 
-工程上下文、职责、阶段方法、Spec、Standard 与任务正文维护在对应 Markdown 目录，`catalog.json` 声明当前发布版本及精确引用。只读内容与引用的摘要在发布时计算。DSH 原生工具组通过明确的 Harness 标识限制适用后端。
+工程上下文、职责、阶段方法、Spec、Standard 与任务正文维护在对应 Markdown 目录，清单与 `defaults.json` 声明当前发布版本及精确引用。只读内容与引用的摘要在发布时计算。DSH 原生工具组通过明确的 Harness 标识限制适用后端。
 
 ## 内容校验、提示词与双重 Approve
 
@@ -55,3 +55,5 @@ Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审�
 内置正文按目标与边界、输入、交付内容、一致性检查、完成标准和工具证据组织。职责、技能、规范、任务与交付定义分别说明本层责任，避免把计划当作执行证据。新增内容位于 `deliveries/`。
 
 发布默认目录时应同步更新内容、版本及依赖引用；启动只补齐缺失身份，不推断或转换旧定义。新项目的默认选择使用当前发布目录。已有 Workflow、Feature 与任务输入保持冻结；编辑任务或 Skill 后，发布并明确选择新修订，不隐式替换在途执行。
+
+各模板通过 `text_files` 声明 Markdown 字段，通过 `references` 声明精确依赖。`projections/` 与 `initial/` 仅承载当前实体的选择器投影和首次初始化的默认 AgentInstance；重置不新增运行实例。MCP/HTTP 默认清单为空，用户服务、密钥和机器授权保存在数据库或凭据库。资源随二进制嵌入，独立发布包可在无源码目录编辑和重置。

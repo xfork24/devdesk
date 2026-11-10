@@ -1,0 +1,20 @@
+{
+  "template_key": "definitions.builtin-skill-prd-v2",
+  "storage": "definitions",
+  "record": {
+    "id": "builtin-skill-prd-v2",
+    "family": "skill",
+    "name": "PRD 需求分析",
+    "version": 2,
+    "supersedes": null,
+    "body": "",
+    "slots": [],
+    "rules": [],
+    "agent_profile": null
+  },
+  "text_files": {
+    "/body": "skills/prd.md"
+  },
+  "references": {},
+  "initial_only": false
+}

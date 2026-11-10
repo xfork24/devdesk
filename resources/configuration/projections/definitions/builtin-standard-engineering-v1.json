@@ -1,0 +1,20 @@
+{
+  "template_key": "definitions.builtin-standard-engineering-v1",
+  "storage": "definitions",
+  "record": {
+    "id": "builtin-standard-engineering-v1",
+    "family": "standard",
+    "name": "默认工程 Standard",
+    "version": 1,
+    "supersedes": null,
+    "body": "",
+    "slots": [],
+    "rules": [],
+    "agent_profile": null
+  },
+  "text_files": {
+    "/body": "standards/engineering.md"
+  },
+  "references": {},
+  "initial_only": false
+}

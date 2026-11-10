@@ -1,0 +1,36 @@
+{
+  "template_key": "governance.builtin-harness-codex-managed-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-harness-codex-managed-v1",
+    "kind": "harness",
+    "definition_id": "builtin-harness-codex-managed",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Codex 默认 Harness",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "capabilities": [
+        "structured-output",
+        "tool-calling",
+        "cancel",
+        "poll"
+      ],
+      "model_providers": [
+        "openai"
+      ],
+      "provider": "codex",
+      "recipe_digest": "e38e18dcedc553809e45adb2dc8711c0b6302773b5356f67062ad02db922a570",
+      "runtime_version": "0.167.0"
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

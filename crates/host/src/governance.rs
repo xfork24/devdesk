@@ -452,6 +452,11 @@ impl Workspace {
                         }
                     }
                     records.retain(|r| {
+                        if params["include_archived"] != true
+                            && !template_record_current(&directory, r)
+                        {
+                            return false;
+                        }
                         if !devdesk_core::configuration_visible(
                             &directory,
                             r,

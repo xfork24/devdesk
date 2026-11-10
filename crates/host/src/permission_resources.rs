@@ -215,7 +215,7 @@ impl Workspace {
             match method {
                 "query.permission_resources" => {
                     let installations = self.global.runtime_installations()?;
-                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.kind.as_str()) && r.immutable)
+                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.kind.as_str()) && r.immutable && template_record_current(&s,r))
                         .filter_map(|r| {
                             let kind=if r.kind=="harness" {PermissionTargetKind::Harness}else{PermissionTargetKind::Sandbox};
                             let target=permission_target(&s,kind,&r.id).ok()?;
@@ -224,7 +224,7 @@ impl Workspace {
                             let registered:Vec<_>=installations.iter().filter(|i|r.kind=="harness" && json!(i.key.provider)==r.data["provider"] &&
                                 (json!(i.key.version)==r.data["runtime_version"] || (r.data["recipe_digest"].is_string() && i.key.version.starts_with(&format!("{}+docker.",r.data["runtime_version"].as_str().unwrap_or("")))))).collect();
                             let materializations:Vec<_>=s.governance.iter().filter(|m|m.kind=="harness_materialization" && m.definition_id==r.id).map(|m|&m.data).collect();
-                            let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.kind=="permission_profile")
+                            let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.kind=="permission_profile" && template_record_current(&s,p))
                                 .filter_map(|p|p.decode::<PermissionProfile>().ok().filter(|profile|preflight_profile(&s,&target,profile).is_ok()).map(|profile|profile.id)).collect();
                             Some(json!({"target":target,"name":r.name,"version":r.version,"provider":r.data["provider"],"runtime_version":r.data["runtime_version"],
                                 "platforms":if r.kind=="sandbox" {r.data["platforms"].clone()}else{json!(["linux/aarch64","linux/x86_64"])},"recipe_digest":r.data["recipe_digest"],"registered_installations":registered,"materializations":materializations,
@@ -234,7 +234,7 @@ impl Workspace {
                     let records = |kind: &str| {
                         s.governance
                             .iter()
-                            .filter(|r| r.kind == kind)
+                            .filter(|r| r.kind == kind && template_record_current(&s, r))
                             .collect::<Vec<_>>()
                     };
                     let agents:Vec<_>=records("agent").into_iter().filter(|r|!s.governance.iter().any(|n|n.kind=="agent" && n.definition_id==r.definition_id && n.version>r.version))
@@ -247,7 +247,7 @@ impl Workspace {
                     Ok(
                         json!({"profiles":records("permission_profile").iter().map(|r|&r.data).collect::<Vec<_>>(),
                         "bindings":records("permission_binding"),"origins":records("permission_origin").into_iter().chain(records("permission_file_origin")).collect::<Vec<_>>(),"targets":targets,"agents":agents,
-                        "sources":self.global.permission_preset_sources()?,"default_sandbox_ref":DEFAULT_PERMISSION_SANDBOX}),
+                        "sources":self.global.permission_preset_sources()?,"default_sandbox_ref":current_template_defaults(&s).map(|d| d["permission_sandbox_ref"].clone())}),
                     )
                 }
                 "permission.profile.export" => permission_profile_export(

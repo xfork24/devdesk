@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "bundle_version": "2026.11.10-current",
+  "types": {
+    "role": [
+      "roles/builtin-role-analyst-v1.json",
+      "roles/builtin-role-architect-v1.json",
+      "roles/builtin-role-developer-v1.json",
+      "roles/builtin-role-tester-v1.json",
+      "roles/builtin-role-reviewer-v1.json",
+      "roles/builtin-role-project-manager-v1.json"
+    ],
+    "skill": [
+      "skills/builtin-skill-engineering-context-v2.json",
+      "skills/builtin-skill-engineering-method-v1.json",
+      "skills/builtin-skill-prd-v2.json",
+      "skills/builtin-skill-architecture-v2.json",
+      "skills/builtin-skill-project-planning-v2.json",
+      "skills/builtin-skill-test-design-v2.json",
+      "skills/builtin-skill-tdd-implementation-v2.json",
+      "skills/builtin-skill-release-verification-v2.json",
+      "skills/builtin-skill-independent-review-v2.json"
+    ],
+    "spec": [
+      "specs/builtin-spec-stage-prd-v1.json",
+      "specs/builtin-spec-stage-architecture-v1.json",
+      "specs/builtin-spec-stage-project-planning-v1.json",
+      "specs/builtin-spec-stage-test-design-v1.json",
+      "specs/builtin-spec-stage-solution-v1.json",
+      "specs/builtin-spec-stage-implementation-v1.json",
+      "specs/builtin-spec-stage-closure-v1.json",
+      "specs/builtin-spec-stage-release-v1.json"
+    ],
+    "standard": [
+      "standards/builtin-standard-engineering-v1.json"
+    ],
+    "workflow": [
+      "workflows/builtin-workflow-task-sol-high-v4.json",
+      "workflows/builtin-workflow-feature-sol-high-v4.json"
+    ],
+    "delivery_type": [
+      "deliveries/builtin-delivery-prd-v1.json",
+      "deliveries/builtin-delivery-design-v1.json",
+      "deliveries/builtin-delivery-diff-v1.json",
+      "deliveries/builtin-delivery-test-report-v1.json"
+    ],
+    "capability": [
+      "capabilities/builtin-capability-sol-high-codex-v2.json",
+      "capabilities/builtin-capability-analyst-codex-v2.json",
+      "capabilities/builtin-capability-architect-codex-v2.json",
+      "capabilities/builtin-capability-project-manager-codex-v2.json",
+      "capabilities/builtin-capability-developer-codex-v2.json",
+      "capabilities/builtin-capability-tester-codex-v2.json",
+      "capabilities/builtin-capability-reviewer-codex-v2.json"
+    ],
+    "agent": [
+      "agents/builtin-agent-sol-high-analyst-v3.json",
+      "agents/builtin-agent-sol-high-architect-v3.json",
+      "agents/builtin-agent-sol-high-project-manager-v3.json",
+      "agents/builtin-agent-sol-high-developer-v3.json",
+      "agents/builtin-agent-sol-high-tester-v3.json",
+      "agents/builtin-agent-sol-high-reviewer-v3.json"
+    ],
+    "model": [
+      "models/builtin-model-gpt-6-1-sol-high-v1.json"
+    ],
+    "harness": [
+      "harnesses/builtin-harness-dsh-multi-provider-v1.json",
+      "harnesses/builtin-harness-codex-managed-v1.json"
+    ],
+    "sandbox": [
+      "sandboxes/builtin-permission-sandbox-docker-v1.json"
+    ],
+    "tool": [
+      "tools/builtin-tool-codex-native-v1.json",
+      "tools/builtin-tool-dsh-native-v1.json"
+    ],
+    "permission_profile": [
+      "permission-profiles/permission-harness-full-access-v2-r1.json",
+      "permission-profiles/permission-harness-read-only-v2-r1.json",
+      "permission-profiles/permission-sandbox-full-access-v2-r1.json"
+    ],
+    "mcp": [],
+    "http": [],
+    "projections": [
+      "projections/definitions/builtin-skill-engineering-context-v2.json",
+      "projections/definitions/builtin-standard-engineering-v1.json",
+      "projections/definitions/builtin-skill-engineering-method-v1.json",
+      "projections/definitions/builtin-skill-prd-v2.json",
+      "projections/definitions/builtin-skill-architecture-v2.json",
+      "projections/definitions/builtin-skill-project-planning-v2.json",
+      "projections/definitions/builtin-skill-test-design-v2.json",
+      "projections/definitions/builtin-skill-tdd-implementation-v2.json",
+      "projections/definitions/builtin-skill-release-verification-v2.json",
+      "projections/definitions/builtin-skill-independent-review-v2.json",
+      "projections/definitions/builtin-spec-stage-prd-v1.json",
+      "projections/definitions/builtin-spec-stage-architecture-v1.json",
+      "projections/definitions/builtin-spec-stage-project-planning-v1.json",
+      "projections/definitions/builtin-spec-stage-test-design-v1.json",
+      "projections/definitions/builtin-spec-stage-solution-v1.json",
+      "projections/definitions/builtin-spec-stage-implementation-v1.json",
+      "projections/definitions/builtin-spec-stage-closure-v1.json",
+      "projections/definitions/builtin-spec-stage-release-v1.json",
+      "projections/definitions/builtin-agent-sol-high-analyst-v3.json",
+      "projections/definitions/builtin-agent-sol-high-architect-v3.json",
+      "projections/definitions/builtin-agent-sol-high-project-manager-v3.json",
+      "projections/definitions/builtin-agent-sol-high-developer-v3.json",
+      "projections/definitions/builtin-agent-sol-high-tester-v3.json",
+      "projections/definitions/builtin-agent-sol-high-reviewer-v3.json",
+      "projections/harnesses/builtin-harness-codex-managed-v1.json",
+      "projections/sandboxes/builtin-sandbox-codex-docker-v1.json"
+    ],
+    "initial": [
+      "initial/agent_instance/builtin-instance-sol-high-analyst-v1.json",
+      "initial/agent_instance/builtin-instance-sol-high-architect-v1.json",
+      "initial/agent_instance/builtin-instance-sol-high-developer-v1.json",
+      "initial/agent_instance/builtin-instance-sol-high-tester-v1.json",
+      "initial/agent_instance/builtin-instance-sol-high-reviewer-v1.json"
+    ]
+  },
+  "defaults": "defaults.json"
+}

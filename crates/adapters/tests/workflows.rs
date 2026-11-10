@@ -180,12 +180,12 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 10),
+        (dir.path().join("global.sqlite3"), 11),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            41,
+            42,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -195,6 +195,78 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
             version
         );
         assert_eq!(db.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('permissions','idx_governance_conversion_source')", [], |r|r.get::<_, u32>(0)).unwrap(), 0);
+    }
+}
+
+#[test]
+fn template_index_migration_preserves_main_catalog_and_edited_defaults() {
+    for global in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let store: Arc<dyn EngineeringStore> = if global {
+            Arc::new(GlobalStore::open(dir.path()).unwrap())
+        } else {
+            Arc::new(SqliteStore::open(dir.path()).unwrap())
+        };
+        store
+            .transact(None, &mut |s| {
+                seed_configuration(s);
+                s.governance
+                    .retain(|r| !r.kind.starts_with("template_catalog_"));
+                s.governance
+                    .iter_mut()
+                    .find(|r| r.id == default_role_id("analyst"))
+                    .unwrap()
+                    .name = "Main edited role".into();
+                Ok(json!({"ok":true}))
+            })
+            .unwrap();
+        let before = json!(store.snapshot().unwrap());
+        drop(store);
+        let path = dir.path().join(if global {
+            "global.sqlite3"
+        } else {
+            "engineering.sqlite3"
+        });
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute_batch(&format!("DROP INDEX idx_template_catalog_singleton; DROP INDEX idx_template_catalog_member; DROP INDEX idx_template_catalog_generation; PRAGMA user_version={};",if global {10}else{41})).unwrap();
+        drop(db);
+        let store: Arc<dyn EngineeringStore> = if global {
+            Arc::new(GlobalStore::open(dir.path()).unwrap())
+        } else {
+            Arc::new(SqliteStore::open(dir.path()).unwrap())
+        };
+        assert_eq!(json!(store.snapshot().unwrap()), before);
+        store
+            .transact(None, &mut |s| {
+                initialize_template_catalog(s)?;
+                Ok(json!({"ok":true}))
+            })
+            .unwrap();
+        let after = store.snapshot().unwrap();
+        assert_eq!(
+            after
+                .configuration(&default_role_id("analyst"))
+                .unwrap()
+                .name,
+            "Main edited role"
+        );
+        assert_eq!(template_catalog_generation(&after), 1);
+        assert_eq!(
+            after
+                .governance
+                .iter()
+                .filter(|r| r.kind == "workflow")
+                .count(),
+            2
+        );
+        assert_eq!(
+            after
+                .governance
+                .iter()
+                .filter(|r| r.kind == "agent")
+                .count(),
+            6
+        );
     }
 }
 

@@ -1,0 +1,42 @@
+{
+  "template_key": "governance.builtin-spec-stage-implementation-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-spec-stage-implementation-v1",
+    "kind": "spec",
+    "definition_id": "builtin-spec-stage-implementation",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Task TDD 交付规范",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "applicable_actions": [
+        {
+          "kind": "attempt.execute",
+          "phase": "implementation"
+        },
+        {
+          "delivery_kind": "implementation",
+          "kind": "delivery.review"
+        }
+      ],
+      "body": "",
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ]
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "specs/implementation.md"
+  },
+  "references": {},
+  "initial_only": false
+}

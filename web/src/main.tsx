@@ -1,4 +1,11 @@
 import {
+  getCatalogGeneration,
+  observeCatalogGeneration,
+  useCatalogGeneration,
+  isTemplateMutation,
+} from "./template-catalog";
+import { TemplateSettings } from "./components/TemplateSettings";
+import {
   ActionButton,
   ActionForm,
   ActionSelect,
@@ -130,6 +137,12 @@ const fmt = (time: number) =>
   new Date(time).toLocaleString("zh-CN", { hour12: false });
 let sequence = 0;
 async function rpc(method: string, params: RecordData = {}) {
+  if (isTemplateMutation(method)) {
+    if (getCatalogGeneration() === undefined)
+      await rpc("query.template_catalog");
+    params = { ...params, expected_catalog_generation: getCatalogGeneration() };
+  }
+
   const res = await fetch("/rpc", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -153,6 +166,14 @@ async function rpc(method: string, params: RecordData = {}) {
   const data = await res.json();
   if (data.error)
     throw new Error(`${data.error.data?.code || ""} · ${data.error.message}`);
+  observeCatalogGeneration(
+    data.result?.catalog_generation ??
+      (["query.template_catalog", "configuration.templates.reset"].includes(
+        method,
+      )
+        ? data.result?.generation
+        : undefined),
+  );
   return data.result;
 }
 function Badge({ value }: { value: string }) {
@@ -192,6 +213,7 @@ function routeTabValue(p: URLSearchParams) {
 const routeTab = routeTabValue(route);
 
 function App() {
+  const catalogGeneration = useCatalogGeneration();
   const requestGeneration = useRef(0);
   const projectGeneration = useRef(0);
   const kernelStopped = useRef(false);
@@ -2437,7 +2459,7 @@ function App() {
           )}
           {data && ["workflows", "components"].includes(tab) && (
             <ConfigurationPage
-              key={`${tab}:${projectId}`}
+              key={`${tab}:${projectId}:${catalogGeneration}`}
               group={tab === "workflows" ? "processes" : "foundations"}
               request={rpc}
               project={project}
@@ -2447,7 +2469,7 @@ function App() {
           )}
           {data && ["actors", "definitions"].includes(tab) && (
             <AgentCatalog
-              key={`actors:${projectId}`}
+              key={`actors:${projectId}:${catalogGeneration}`}
               request={rpc}
               project={project}
               installations={data.runtime_installations || []}
@@ -2456,7 +2478,7 @@ function App() {
           )}
           {data && tab === "projects" && (
             <ProjectManager
-              key={`project-manager:${projectId || "global"}`}
+              key={`project-manager:${projectId || "global"}:${catalogGeneration}`}
               request={rpc}
               project={project}
               refresh={load}
@@ -2583,7 +2605,7 @@ function App() {
                 )}
                 {project && (
                   <RepositorySettings
-                    key={project.id}
+                    key={`${project.id}:${catalogGeneration}`}
                     project={project}
                     ready={repositoryReady}
                     request={rpc}
@@ -2592,17 +2614,19 @@ function App() {
                 )}
                 {project && (
                   <RuntimePreferences
-                    key={project.id}
+                    key={`${project.id}:${catalogGeneration}`}
                     project={project}
                     request={rpc}
                     refresh={load}
                   />
                 )}
                 <PermissionSettings
+                  key={`permission-settings:${catalogGeneration}`}
                   request={rpc}
                   project={project ?? undefined}
                   refresh={load}
                 />
+                <TemplateSettings request={rpc} refresh={load} />
                 <RuntimeSettings
                   provider={data.default_harness || "codex"}
                   installations={data.runtime_installations || []}

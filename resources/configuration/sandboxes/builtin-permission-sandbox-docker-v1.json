@@ -1,0 +1,31 @@
+{
+  "template_key": "governance.builtin-permission-sandbox-docker-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-permission-sandbox-docker-v1",
+    "kind": "sandbox",
+    "definition_id": "builtin-docker-sandbox",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Docker Sandbox",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "enforcement": "docker-worker/v1",
+      "platforms": [
+        "linux/aarch64",
+        "linux/x86_64"
+      ],
+      "provider": "docker",
+      "runtime_version": "1"
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

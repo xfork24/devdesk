@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useCatalogGeneration } from "../template-catalog";
 const RenderMarkdown = lazy(() => import("./MarkdownPreview"));
 export type Row = Record<string, any>;
 export type Request = (method: string, params?: Row) => Promise<any>;
@@ -33,6 +34,16 @@ export const actionLabels: Record<string, string> = {
   branch: "条件分支",
   join: "汇合",
 };
+export const templateSourceLabel = (row?: Row) =>
+  (
+    ({
+      default: "默认副本",
+      modified: "已修改",
+      custom: "自建",
+      existing: "已有定义",
+      archived: "来自重置前定义",
+    }) as Record<string, string>
+  )[row?.template_source?.origin as string] || "";
 export function latest(records: Row[]) {
   const map = new Map<string, Row>();
   for (const r of records) {
@@ -41,18 +52,32 @@ export function latest(records: Row[]) {
   }
   return [...map.values()];
 }
-export async function loadCatalog(request: Request, project?: Row) {
+export async function loadCatalog(
+  request: Request,
+  project?: Row,
+  includeArchived = false,
+) {
   const result: Row[] = [];
   let offset = 0;
+  let generation: number | undefined;
   for (;;) {
     const page = await request("query.configurations", {
+      include_archived: includeArchived,
       local: !!project,
       project_id: project?.id,
       offset,
       limit: 100,
       include_history: true,
     });
-    result.push(...page.records);
+    if (generation !== undefined && page.catalog_generation !== generation)
+      throw new Error("模板目录已变化，请重新载入");
+    generation = page.catalog_generation;
+    result.push(
+      ...page.records.map((row: Row) => ({
+        ...row,
+        template_source: page.template_sources?.[row.id],
+      })),
+    );
     offset += page.records.length;
     if (offset >= page.total || page.records.length === 0) break;
   }
@@ -61,6 +86,7 @@ export async function loadCatalog(request: Request, project?: Row) {
 export async function loadIntegrationRecords(request: Request, project?: Row) {
   const result: Row[] = [];
   let offset = 0;
+  let generation: number | undefined;
   for (;;) {
     const page = await request("query.integrations", {
       local: !!project,
@@ -69,12 +95,22 @@ export async function loadIntegrationRecords(request: Request, project?: Row) {
       offset,
       limit: 100,
     });
-    result.push(...page.records);
+    if (generation !== undefined && page.catalog_generation !== generation)
+      throw new Error("模板目录已变化，请重新载入");
+    generation = page.catalog_generation;
+    result.push(
+      ...page.records.map((row: Row) => ({
+        ...row,
+        template_source: page.template_sources?.[row.id],
+      })),
+    );
     offset += page.records.length;
     if (offset >= page.total || !page.records.length) return result;
   }
 }
 export function useDraft<T>(key: string, initial: () => T) {
+  const generation = useCatalogGeneration();
+  key = generation > 1 ? `${key}:catalog:${generation}` : key;
   const cache = useRef<Record<string, T>>({});
   const [value, rawSet] = useState<T>(() => {
     try {
@@ -283,7 +319,10 @@ export function MarkdownField({
       aria-label={label}
       aria-disabled={disabled || undefined}
       onBlur={(event) => {
-        if (!outsidePointer.current && !event.currentTarget.contains(event.relatedTarget as Node | null))
+        if (
+          !outsidePointer.current &&
+          !event.currentTarget.contains(event.relatedTarget as Node | null)
+        )
           setEditing(false);
       }}
     >

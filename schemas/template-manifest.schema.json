@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk embedded template manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "bundle_version",
+    "types",
+    "defaults"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "bundle_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "types": {
+      "type": "object",
+      "required": [
+        "role",
+        "skill",
+        "spec",
+        "standard",
+        "workflow",
+        "delivery_type",
+        "capability",
+        "agent",
+        "model",
+        "harness",
+        "sandbox",
+        "mcp",
+        "http",
+        "tool",
+        "permission_profile",
+        "projections",
+        "initial"
+      ],
+      "additionalProperties": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "defaults": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

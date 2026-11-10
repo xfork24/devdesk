@@ -1222,6 +1222,7 @@ impl Engine {
                     ]
                     .contains(&r.kind.as_str()),
                 })
+                .filter(|r| p["include_archived"] == true || template_record_current(&s, r))
                 .filter(|r| crate::configuration::visible(&s, r, p["project_id"].as_str()))
                 .filter(|r| {
                     p["include_history"] == true

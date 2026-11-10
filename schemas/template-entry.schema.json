@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk embedded template entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "template_key",
+    "storage",
+    "record",
+    "text_files",
+    "references",
+    "initial_only"
+  ],
+  "properties": {
+    "template_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "storage": {
+      "enum": [
+        "governance",
+        "definitions",
+        "harnesses",
+        "sandboxes"
+      ]
+    },
+    "record": {
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
+    "text_files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "references": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "template_ref",
+          "target"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "template_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "enum": [
+              "revision",
+              "identity"
+            ]
+          }
+        }
+      }
+    },
+    "initial_only": {
+      "type": "boolean"
+    }
+  }
+}

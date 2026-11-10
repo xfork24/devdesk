@@ -1,0 +1,20 @@
+{
+  "template_key": "definitions.builtin-skill-tdd-implementation-v2",
+  "storage": "definitions",
+  "record": {
+    "id": "builtin-skill-tdd-implementation-v2",
+    "family": "skill",
+    "name": "Task 实现与文档",
+    "version": 2,
+    "supersedes": null,
+    "body": "",
+    "slots": [],
+    "rules": [],
+    "agent_profile": null
+  },
+  "text_files": {
+    "/body": "skills/tdd-implementation.md"
+  },
+  "references": {},
+  "initial_only": false
+}

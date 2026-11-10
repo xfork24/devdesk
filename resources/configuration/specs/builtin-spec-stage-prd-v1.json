@@ -1,0 +1,46 @@
+{
+  "template_key": "governance.builtin-spec-stage-prd-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-spec-stage-prd-v1",
+    "kind": "spec",
+    "definition_id": "builtin-spec-stage-prd",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "PRD 需求规范",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "applicable_actions": [
+        {
+          "kind": "agent.interact",
+          "phase": "requirement"
+        },
+        {
+          "kind": "attempt.execute",
+          "phase": "requirement_definition"
+        },
+        {
+          "delivery_kind": "requirement",
+          "kind": "delivery.review"
+        }
+      ],
+      "body": "",
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ]
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "specs/prd.md"
+  },
+  "references": {},
+  "initial_only": false
+}

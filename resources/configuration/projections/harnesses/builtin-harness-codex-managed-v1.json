@@ -1,0 +1,20 @@
+{
+  "template_key": "harnesses.builtin-harness-codex-managed-v1",
+  "storage": "harnesses",
+  "record": {
+    "id": "builtin-harness-codex-managed-v1",
+    "provider": "codex",
+    "version": "0.167.0",
+    "capabilities": [
+      "structured-output",
+      "tool-calling",
+      "cancel",
+      "poll"
+    ],
+    "origin": "external",
+    "permission": null
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

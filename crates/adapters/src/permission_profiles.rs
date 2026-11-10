@@ -204,6 +204,7 @@ pub fn preflight_profile(
             .iter()
             .find(|r| {
                 r.kind == "harness"
+                    && template_record_current(s, r)
                     && r.data["provider"] == "codex"
                     && permission_contract(
                         s,
@@ -226,16 +227,35 @@ pub fn preflight_profile(
     let sandbox_target = if target.kind == PermissionTargetKind::Sandbox {
         target.clone()
     } else {
-        permission_target(s, PermissionTargetKind::Sandbox, DEFAULT_PERMISSION_SANDBOX)?
+        permission_target(
+            s,
+            PermissionTargetKind::Sandbox,
+            devdesk_core::current_template_defaults(s)
+                .as_ref()
+                .and_then(|d| d["permission_sandbox_ref"].as_str())
+                .unwrap_or(DEFAULT_PERMISSION_SANDBOX),
+        )?
     };
-    let default = |id: &str| -> Result<PermissionProfile> { s.configuration(id)?.decode() };
+    let defaults = devdesk_core::current_template_defaults(s);
+    let default = |key: &str, id: &str| -> Result<PermissionProfile> {
+        s.configuration(
+            defaults
+                .as_ref()
+                .and_then(|d| d[key].as_str())
+                .unwrap_or(id),
+        )?
+        .decode()
+    };
     let lock = VersionedPermissionLock {
         harness: bound(
             harness_target,
             if target.kind == PermissionTargetKind::Harness {
                 checked.clone()
             } else {
-                default("permission-harness-full-access-v2-r1")?
+                default(
+                    "harness_permission_ref",
+                    "permission-harness-full-access-v2-r1",
+                )?
             },
         )?,
         sandbox: bound(
@@ -243,7 +263,10 @@ pub fn preflight_profile(
             if target.kind == PermissionTargetKind::Sandbox {
                 checked
             } else {
-                default("permission-sandbox-full-access-v2-r1")?
+                default(
+                    "sandbox_permission_ref",
+                    "permission-sandbox-full-access-v2-r1",
+                )?
             },
         )?,
     };
@@ -388,6 +411,7 @@ impl GlobalStore {
                     });
                 }
             }
+            devdesk_core::register_template_members(s, template_catalog_generation(s));
             Ok(result)
         })
     }

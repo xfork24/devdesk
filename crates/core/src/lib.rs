@@ -3,10 +3,15 @@ mod advances;
 mod agent_tasks;
 mod builtin_defaults;
 mod configuration;
-mod current_catalog;
+mod templates;
 pub use configuration::{
     project_configuration_references, retired as configuration_retired,
     visible as configuration_visible,
+};
+pub use templates::{
+    copy_template_catalog, current_template_defaults, initialize_template_catalog,
+    register_template_members, restore_template_catalog, template_bundle_info,
+    template_catalog_counts, template_catalog_pristine, template_factory_counts,
 };
 mod conversation_runtime;
 mod conversations;
@@ -21,7 +26,9 @@ mod live_merges;
 mod live_runs;
 mod model_approvals;
 mod permission_resources;
-pub use permission_resources::{insert_permission_profiles, permission_profile_export};
+pub use permission_resources::{
+    apply_permission_bindings, insert_permission_profiles, permission_profile_export,
+};
 mod permission_switch;
 pub use permission_switch::permission_switch_id;
 pub mod ports;
@@ -265,62 +272,7 @@ fn git_context(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Result<Git
 }
 /// Seed shared configuration without creating project or execution facts.
 pub fn seed_configuration(s: &mut EngineeringState) {
-    let mut catalog = current_catalog::catalog();
-    let mut aliases = std::collections::BTreeMap::new();
-    for source in &catalog.governance {
-        if let Some(existing) = s
-            .governance
-            .iter()
-            .filter(|r| r.kind == source.kind && r.definition_id == source.definition_id)
-            .max_by_key(|r| r.version)
-        {
-            aliases.insert(source.id.clone(), existing.id.clone());
-        }
-    }
-    fn remap(v: &mut Value, aliases: &std::collections::BTreeMap<String, String>) {
-        match v {
-            Value::String(id) => {
-                if let Some(next) = aliases.get(id) {
-                    *id = next.clone();
-                }
-            }
-            Value::Array(xs) => xs.iter_mut().for_each(|v| remap(v, aliases)),
-            Value::Object(xs) => xs.values_mut().for_each(|v| remap(v, aliases)),
-            _ => {}
-        }
-    }
-    let mut added = std::collections::BTreeSet::new();
-    for r in &mut catalog.governance {
-        if aliases.contains_key(&r.id) {
-            continue;
-        }
-        remap(&mut r.data, &aliases);
-        r.content_hash = configuration_hash(&r.data);
-        added.insert(r.id.clone());
-        s.governance.push(r.clone());
-    }
-    for definition in &catalog.definitions {
-        if !added.contains(&definition.id) {
-            continue;
-        }
-        let mut value = json!(definition);
-        remap(&mut value, &aliases);
-        s.definitions
-            .push(serde_json::from_value(value).expect("current definition"));
-    }
-    for mut harness in catalog.harnesses {
-        if let Some(target) = aliases.get(&harness.id) {
-            harness.id = target.clone();
-        }
-        if !s.harnesses.iter().any(|r| r.id == harness.id) {
-            s.harnesses.push(harness);
-        }
-    }
-    for sandbox in catalog.sandboxes {
-        if !s.sandboxes.iter().any(|r| r.id == sandbox.id) {
-            s.sandboxes.push(sandbox);
-        }
-    }
+    initialize_template_catalog(s).expect("validated embedded template catalog");
 }
 
 impl Engine {
@@ -615,8 +567,18 @@ impl Engine {
             .map(str::to_owned)
             .unwrap_or_else(|| command_fingerprint(method, &c));
         let mut action = |s: &mut EngineeringState| {
+            if template_definition_write(method) {
+                if let Some(target) = c.target.as_deref().and_then(|id| s.configuration(id).ok()) {
+                    require(
+                        template_record_current(s, target),
+                        "模板目录已重置，请重新载入后再编辑",
+                    )?;
+                }
+            }
+
             let result = self.apply_command(method, &c, s)?;
             self.governance_after_command(method, &c, s, &result)?;
+            register_template_members(s, template_catalog_generation(s));
             Ok(result)
         };
         let result = self
@@ -3480,7 +3442,7 @@ impl Engine {
                     None
                 };
                 Ok(
-                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":s.runs.iter().filter(|r|r.status==Status::Running).count(),"waiting_review":s.deliveries.iter().filter(|d|!d.stale&&s.delivery_inputs_current(d)&&!s.reviews.iter().any(|r|r.delivery_id==d.id&&[Decision::Pass,Decision::ChangesRequested].contains(&r.decision))&&!s.accepted(d)).count(),"waiting_confirmation":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|step.status=="waiting_confirmation").count(),"blocked":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|["blocked","failed"].contains(&step.status.as_str())).count()},"configurations":s.governance.iter().filter(|r|["feature_lock","workflow_instance","project_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),"total_projects":s.projects.len(),"definitions":s.definitions,"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live","repository_ready":s.projects.iter().any(|p| p.execution_mode=="live" && s.repository_worktrees.iter().any(|w|w.project_id==p.id && w.kind==WorktreeKind::Mainline)),"global_concurrency":global_limit}),
+                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":s.runs.iter().filter(|r|r.status==Status::Running).count(),"waiting_review":s.deliveries.iter().filter(|d|!d.stale&&s.delivery_inputs_current(d)&&!s.reviews.iter().any(|r|r.delivery_id==d.id&&[Decision::Pass,Decision::ChangesRequested].contains(&r.decision))&&!s.accepted(d)).count(),"waiting_confirmation":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|step.status=="waiting_confirmation").count(),"blocked":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|["blocked","failed"].contains(&step.status.as_str())).count()},"configurations":s.governance.iter().filter(|r|["feature_lock","workflow_instance","project_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),"total_projects":s.projects.len(),"definitions":s.definitions.iter().filter(|d|template_projection_current(&s,d)).collect::<Vec<_>>(),"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live","repository_ready":s.projects.iter().any(|p| p.execution_mode=="live" && s.repository_worktrees.iter().any(|w|w.project_id==p.id && w.kind==WorktreeKind::Mainline)),"global_concurrency":global_limit}),
                 )
             }
             "query.history" => {

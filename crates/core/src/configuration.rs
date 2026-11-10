@@ -49,11 +49,23 @@ pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&s
     true
 }
 pub(crate) fn compose_capability(
-    _s: &EngineeringState,
+    s: &EngineeringState,
     capability: &CapabilityDefinition,
 ) -> AgentComposition {
     AgentComposition {
-        permission_selection: Some(default_permission_selection()),
+        permission_selection: Some(AgentPermissionSelection {
+            sandbox_ref: current_template_defaults(s)
+                .and_then(|d| d["permission_sandbox_ref"].as_str().map(str::to_owned))
+                .or_else(|| {
+                    s.governance
+                        .iter()
+                        .find(|r| r.kind == "sandbox" && template_record_current(s, r))
+                        .map(|r| r.id.clone())
+                })
+                .unwrap_or_else(|| DEFAULT_PERMISSION_SANDBOX.into()),
+            harness: PermissionSelection::FollowTarget,
+            sandbox: PermissionSelection::FollowTarget,
+        }),
         capability_ref: None,
         role: AgentRole::Analyst,
         role_ref: None,
@@ -245,6 +257,7 @@ impl Engine {
                 .iter()
                 .filter(|r| {
                     r.kind == "capability"
+                        && (p["include_archived"] == true || template_record_current(&s, r))
                         && !retired(&s, r)
                         && visible(&s, r, p["project_id"].as_str())
                 })

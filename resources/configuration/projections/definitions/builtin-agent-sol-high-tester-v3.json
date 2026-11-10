@@ -1,0 +1,49 @@
+{
+  "template_key": "definitions.builtin-agent-sol-high-tester-v3",
+  "storage": "definitions",
+  "record": {
+    "id": "builtin-agent-sol-high-tester-v3",
+    "family": "agent",
+    "name": "测试 · Sol High / Codex",
+    "version": 3,
+    "supersedes": null,
+    "body": "",
+    "slots": [],
+    "rules": [],
+    "agent_profile": {
+      "allowed_work": [
+        "discussion",
+        "testing"
+      ],
+      "output_schemas": [
+        "test_plan/v1",
+        "test_result/v1"
+      ],
+      "role": "tester",
+      "skill_revisions": [
+        "builtin-skill-engineering-context-v2",
+        "builtin-skill-test-design-v2",
+        "builtin-skill-release-verification-v2"
+      ],
+      "tool_policy": "test_write"
+    }
+  },
+  "text_files": {
+    "/body": "roles/tester.md"
+  },
+  "references": {
+    "/agent_profile/skill_revisions/0": {
+      "template_ref": "governance.builtin-skill-engineering-context-v2",
+      "target": "revision"
+    },
+    "/agent_profile/skill_revisions/1": {
+      "template_ref": "governance.builtin-skill-test-design-v2",
+      "target": "revision"
+    },
+    "/agent_profile/skill_revisions/2": {
+      "template_ref": "governance.builtin-skill-release-verification-v2",
+      "target": "revision"
+    }
+  },
+  "initial_only": false
+}

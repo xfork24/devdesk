@@ -1,0 +1,28 @@
+{
+  "template_key": "governance.builtin-delivery-design-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-delivery-design-v1",
+    "kind": "delivery_type",
+    "definition_id": "builtin-delivery-design",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "Design Doc",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "body": "",
+      "format": "markdown"
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "deliveries/design.md"
+  },
+  "references": {},
+  "initial_only": false
+}

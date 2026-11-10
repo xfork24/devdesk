@@ -66,8 +66,21 @@ export function ProjectManager({
       }).catch(() => undefined),
     ]);
     setProjects(workspace.projects || []);
-    setRecords(records);
-    setConfiguration(configuration.configuration);
+    const ids = new Set(records.map((row: Row) => row.id));
+    setRecords([
+      ...records,
+      ...(configuration.pinned_records ?? [])
+        .filter((row: Row) => !ids.has(row.id))
+        .map((row: Row) => ({ ...row, template_archived: true })),
+    ]);
+    setConfiguration(
+      configuration.configuration
+        ? {
+            ...configuration.configuration,
+            uses_archived_templates: configuration.uses_archived_templates,
+          }
+        : undefined,
+    );
     setDefaults(preset);
     setHealth(workspace);
     if (configuration.configuration?.data.schema_version === 2)
@@ -307,6 +320,11 @@ export function ProjectManager({
           <div className="panel-heading">
             <div>
               <h2>{project.title} · 配置</h2>
+              {configuration?.uses_archived_templates && (
+                <p className="muted">
+                  来自重置前定义：当前项目继续使用已保存的精确版本。重新选择并保存后采用新的定义。
+                </p>
+              )}
               <p>
                 {configuration?.data.schema_version === 2
                   ? `已保存 v${configuration.version}`
@@ -375,38 +393,42 @@ export function ProjectManager({
             {requirements && (
               <>
                 <h3>流程所需 Role → Agent</h3>
-                <div className="project-role-bindings" role="group" aria-label="流程所需 Role → Agent">
-                {requirements.roles.map((item: Row) => {
-                  const agents = records.filter(
-                    (r) =>
-                      r.kind === "agent" &&
-                      records.some(
-                        (role) =>
-                          role.kind === "role" &&
-                          role.id === r.data.role_ref &&
-                          role.definition_id === item.role_id,
-                      ),
-                  );
-                  return (
-                    <RevisionSelect
-                      key={item.role_id}
-                      label={`${item.role.name} 的 Agent`}
-                      records={agents}
-                      required
-                      value={draft.role_agent_bindings[item.role_id] || ""}
-                      onChange={(value) => {
-                        captureFeedback();
-                        return setDraft({
-                          ...draft,
-                          role_agent_bindings: {
-                            ...draft.role_agent_bindings,
-                            [item.role_id]: value,
-                          },
-                        });
-                      }}
-                    />
-                  );
-                })}
+                <div
+                  className="project-role-bindings"
+                  role="group"
+                  aria-label="流程所需 Role → Agent"
+                >
+                  {requirements.roles.map((item: Row) => {
+                    const agents = records.filter(
+                      (r) =>
+                        r.kind === "agent" &&
+                        records.some(
+                          (role) =>
+                            role.kind === "role" &&
+                            role.id === r.data.role_ref &&
+                            role.definition_id === item.role_id,
+                        ),
+                    );
+                    return (
+                      <RevisionSelect
+                        key={item.role_id}
+                        label={`${item.role.name} 的 Agent`}
+                        records={agents}
+                        required
+                        value={draft.role_agent_bindings[item.role_id] || ""}
+                        onChange={(value) => {
+                          captureFeedback();
+                          return setDraft({
+                            ...draft,
+                            role_agent_bindings: {
+                              ...draft.role_agent_bindings,
+                              [item.role_id]: value,
+                            },
+                          });
+                        }}
+                      />
+                    );
+                  })}
                 </div>
                 <p className="notice">
                   已解析 {requirements.specification_snapshot.length}{" "}

@@ -59,11 +59,25 @@ export function RuntimePreferences({ project, request, refresh }: Props) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    loadCatalog(request, { id: project.id })
+    loadCatalog(request, { id: project.id }, true)
       .then((records) => {
         if (active) {
+          const preferences = JSON.parse(preferencesJson);
+          const selected = new Set(
+            [
+              preferences?.default,
+              ...(preferences?.roles ?? []).map((r: Row) => r.preference),
+            ]
+              .flatMap((p: Row | undefined) => [p?.model_ref, p?.harness_ref])
+              .filter(Boolean),
+          );
           setRecords(
-            records.filter((r) => ["model", "harness"].includes(r.kind)),
+            records.filter(
+              (r) =>
+                ["model", "harness"].includes(r.kind) &&
+                (r.template_source?.origin !== "archived" ||
+                  selected.has(r.id)),
+            ),
           );
           setLoadError("");
         }
@@ -77,7 +91,7 @@ export function RuntimePreferences({ project, request, refresh }: Props) {
     return () => {
       active = false;
     };
-  }, [request, project.id, revision]);
+  }, [request, project.id, revision, preferencesJson]);
 
   useEffect(() => {
     const changed = () => setRevision((value) => value + 1);
@@ -96,7 +110,9 @@ export function RuntimePreferences({ project, request, refresh }: Props) {
     !!harness &&
     !!model &&
     supportsModel(harness, model);
-  const currentRecords = latest(records);
+  const currentRecords = latest(
+    records.filter((r) => r.template_source?.origin !== "archived"),
+  );
   const choices = (kind: string, selected: string) =>
     records.filter(
       (r) =>
@@ -217,8 +233,11 @@ export function RuntimePreferences({ project, request, refresh }: Props) {
               )}
               {choices("harness", harnessRef).map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.name} · v{r.version} · {r.data.provider}{" "}
-                  {r.data.runtime_version}
+                  {r.name} · v{r.version}
+                  {r.template_source?.origin === "archived"
+                    ? " · 重置前固定版本"
+                    : ""}{" "}
+                  · {r.data.provider} {r.data.runtime_version}
                 </option>
               ))}
             </ActionSelect>
@@ -253,7 +272,11 @@ export function RuntimePreferences({ project, request, refresh }: Props) {
                     value={r.id}
                     disabled={!!harness && !supportsModel(harness, r)}
                   >
-                    {r.name} · v{r.version} · {r.data.model}
+                    {r.name} · v{r.version}
+                    {r.template_source?.origin === "archived"
+                      ? " · 重置前固定版本"
+                      : ""}{" "}
+                    · {r.data.model}
                   </option>
                 ))}
             </ActionSelect>

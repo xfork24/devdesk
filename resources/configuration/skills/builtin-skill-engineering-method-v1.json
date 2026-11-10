@@ -1,0 +1,29 @@
+{
+  "template_key": "governance.builtin-skill-engineering-method-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-skill-engineering-method-v1",
+    "kind": "skill",
+    "definition_id": "builtin-skill-engineering-method",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "默认分阶段开发方法",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "body": "",
+      "rules": [],
+      "slots": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {
+    "/data/body": "skills/engineering-method.md"
+  },
+  "references": {},
+  "initial_only": false
+}

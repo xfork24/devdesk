@@ -269,12 +269,19 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 41,
+        version == 0 || version == 41 || version == 42,
         "数据集不是当前项目结构，请先完成离线迁移",
     )?;
     if version == 0 {
         connection
             .execute_batch(include_str!("../../../sql/project/schema.sql"))
+            .map_err(storage)?;
+    }
+    if version < 42 {
+        connection
+            .execute_batch(include_str!(
+                "../../../sql/project/042_template_catalog.sql"
+            ))
             .map_err(storage)?;
     }
     Ok(connection)
