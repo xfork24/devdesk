@@ -1392,7 +1392,7 @@ impl Engine {
                 .collect();
             for row in rows {
                 let mut instance: ConfiguredWorkflowInstance = row.decode()?;
-                if state.workflow_instance_suspended(&row.id)
+                if (!instance.cancel_requested && state.workflow_instance_suspended(&row.id))
                     || matches!(
                         instance.status,
                         StepExecutionStatus::Completed | StepExecutionStatus::Cancelled

@@ -915,6 +915,87 @@ fn raw_evidence_contract_rejects_temp_paths_without_contents() {
 }
 
 #[test]
+fn cancelling_a_failed_workflow_remains_schedulable_and_allows_a_fresh_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    recorder
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"blocked","summary":"执行环境缺失","outputs":{}}));
+    let (role, agent) = research_agent(&engine);
+    let run = launch(&engine, &role, &agent, json!({}));
+    drive(&engine, 12);
+    let before = instance(&engine, &run["id"]);
+    assert_eq!(before["status"], "failed");
+    assert!(!engine.store.has_pending_work().unwrap());
+    command(&engine, "workflow.cancel", run["id"].as_str(), json!({})).unwrap();
+    assert!(
+        engine.store.has_pending_work().unwrap(),
+        "a failed workflow's cancellation must wake background scheduling"
+    );
+    engine.evaluate_workflows().unwrap();
+    assert_eq!(instance(&engine, &run["id"])["status"], "cancelled");
+    assert!(!engine.store.has_pending_work().unwrap());
+    command(&engine, "workflow.start", before["owner_id"].as_str(), json!({"workflow_ref":before["workflow_ref"],"role_agent_bindings":before["role_agent_bindings"]})).unwrap();
+}
+
+#[test]
+fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    let child = publish(
+        &engine,
+        json!({"schema_version":4,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"等待确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
+    );
+    let parent = publish(
+        &engine,
+        json!({"schema_version":4,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"child","name":"调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+    );
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"暂停中取消"}),
+    )
+    .unwrap();
+    let run = command(
+        &engine,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":parent["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    drive(&engine, 4);
+    let state = engine.store.snapshot().unwrap();
+    let child = state
+        .governance
+        .iter()
+        .find(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"].is_string())
+        .unwrap()
+        .clone();
+    command(&engine, "workflow.pause", run["id"].as_str(), json!({})).unwrap();
+    command(&engine, "workflow.cancel", Some(&child.id), json!({})).unwrap();
+    assert!(engine.store.has_pending_work().unwrap());
+    engine.evaluate_workflows().unwrap();
+    let state = engine.store.snapshot().unwrap();
+    assert_eq!(
+        state.configuration(&child.id).unwrap().data["status"],
+        "cancelled"
+    );
+    assert_eq!(
+        state
+            .configuration(run["id"].as_str().unwrap())
+            .unwrap()
+            .data["paused"],
+        true
+    );
+    assert!(!engine.store.has_pending_work().unwrap());
+}
+
+#[test]
 fn declared_delivery_inputs_carry_persisted_raw_evidence_without_other_outputs() {
     let dir = tempfile::tempdir().unwrap();
     let mut workbench = engine(dir.path());

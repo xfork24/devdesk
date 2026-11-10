@@ -385,7 +385,7 @@ impl EngineeringStore for SqliteStore {
         // Idle projects must not deserialize their complete protocol history on every tick.
         let conn = self.connection.lock().map_err(storage)?;
         conn.query_row("SELECT
-          EXISTS(SELECT 1 FROM governance_records WHERE kind='workflow_instance' AND json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('cancelled','completed','failed','needs_reconciliation')) OR
+          EXISTS(SELECT 1 FROM governance_records WHERE kind='workflow_instance' AND json_extract(data,'$.status') NOT IN ('cancelled','completed') AND (json_extract(data,'$.cancel_requested')=1 OR (json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('failed','needs_reconciliation')))) OR
           EXISTS(SELECT 1 FROM governance_records WHERE kind='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR
           EXISTS(SELECT 1 FROM governance_records WHERE kind='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
           EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
