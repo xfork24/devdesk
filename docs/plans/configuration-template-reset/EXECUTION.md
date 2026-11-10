@@ -1,6 +1,25 @@
 # 默认模板资源与重置验收记录
 
-日期：2026-11-10。状态：已 rebase 到 main `8a16686` 并完成复验，本轮以快进方式整合本地 main，不产生 merge commit。实现分支：`codex/configuration-template-reset`。独立工作区：`/Users/hengliu/workspace/devdesk-template-reset`。
+日期：2026-11-10。状态：已实施，Ubuntu 当前合同的 Codex 验收通过。macOS 实现曾 rebase 到 main `8a16686` 并完成复验，以快进方式整合本地 main，不产生 merge commit。当时实现分支为 `codex/configuration-template-reset`，独立工作区为 `/Users/hengliu/workspace/devdesk-template-reset`。
+
+## Ubuntu 当前合同复验（仅 Codex Harness）
+
+2026-11-10，在 main `ea74bd5` 的当前 Workflow v4、global 13 / project 44 合同上验收。宿主为 Ubuntu 24.04.5 LTS / x86_64，Rust 1.99.1、Node 24.13.0、Docker 29.9.3。本轮按用户要求仅验收 Codex Harness，不运行 DSH/Ollama 的真实供应商探针。全部使用隔离临时数据集，日常数据和源仓库保持原值。
+
+| 检查 | 本轮结果 |
+|---|---|
+| `DEVDESK_E2E_PORT=45330 ./scripts/check/check.sh` | 完整通过；Rust 154 项通过、0 失败、15 项环境用例默认忽略，debug/release 各 41 项 Chromium 通过。 |
+| 模板后端与浏览器 | 每类定义恢复、名称修改、MCP 绑定归档、跨项目一致、旧绑定、事务回滚、过期预览与页面、命令重放、无变化重置及资源文件摘要不变均通过。 |
+| debug/release 独立二进制 | 两种构建均从源码外临时目录通过重置、不可变历史、偏好保留、重放、重启及无变化重置。 |
+| 真实 Codex 的重置与重启 | 自建 Role/Skill/Agent/Delivery/Workflow 完成后保存项目配置，再将目录切到 generation 2。旧冻结任务、输出、项目配置、运行安装和凭据内容均保留；重启后仍能按归档绑定完成新 Feature，实际平台工具及后继消费通过。 |
+| Linux 发布包 | `probe_permission_package.py` 通过：7 个权限资产、3 个预设、Schema 44、编辑/发布/预览与实际独立工具流程；0 次模型调用、0 次自动下载。 |
+| 格式与空白 | `cargo fmt --all -- --check`、`git diff --check` 通过。 |
+
+真实 Codex 使用固定 0.167.0 镜像。重置前 Workflow 为 `b049c6b7-133a-4578-ba5d-d7ef39121814`；重置、重启后新 Workflow 为 `16bbbf7d-658c-4a8a-b6e7-c7f4d937278f`，Feature 为 `70d3a25c-9dc4-42d8-a949-66253206b120`。新旧执行均得到降序 `[3,3,2,1]` 与总和 `9`，实际调用 `materials.capture`，后继消费同一材料。原冻结任务及完整运行视图前后相等；全局与项目库的 `integrity_check`、`foreign_key_check` 通过。探针退出后删除临时登录副本。
+
+发布包为 `dist/devdesk-0.2.0-x86_64-unknown-linux-gnu.tar.gz`，SHA-256 为 `ce36fc6927e025d432d2790885c0e06dc1cb74ac2997637cff81dbae21f48625`；程序 SHA-256 为 `2c00400cc5e6b92bb267706316eda17f1eb83a0f2172dcd94d0ab813354b7576`。
+
+本轮临时证据位于 `/tmp/devdesk-ubuntu-acceptance.Cbt2NL/`，包含 `native-custom/reset-retention-report.json`、原生任务及产物、`package-report.json`；完整默认检查日志为 `/tmp/devdesk-ubuntu-acceptance-check.log`。这些临时产物不提交，也不承诺清理后仍可读取。默认工程的真实 Codex/Git/Docker/GitHub 验收另见 [Workflow 执行报告](../workflow-business-configuration/EXECUTION.md)。下列 rebase 与首轮记录保留其当时的数量和 Schema，旧库迁移结论不代表当前版本仍支持迁移。
 
 ## 最新 main 的 rebase 与复验
 

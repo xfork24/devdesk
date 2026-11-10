@@ -59,7 +59,7 @@
 
 旧 `data` 的 global 11 / project 42 数据已在停止旧 Host 后删除，保留 `credentials`、系统凭据和外部源码仓库。首次新数据集使用 global 12 / project 43，提交前复查清理后使用 global 13 / project 44；不保留转换或双版本运行路径。
 
-本机回归、真实 Git 和 Docker、独立发布包可分别核验；真实付费模型驱动完整工程发布以及 Ubuntu 新版本实机验证需单独记录。不能用历史版本报告替代此次证据。执行命令、结果与具体限制见 [EXECUTION.md](EXECUTION.md)。
+macOS 与 Ubuntu 当前合同的默认回归、真实 Git/Docker、独立发布包及真实 Codex 完整工程发布均已分别记录。本轮 Ubuntu 按用户要求仅验收 Codex Harness，DSH/Ollama 不在本轮真实供应商验收范围内。不能用历史版本报告替代此次证据。执行命令、确切 SHA、PR 及具体限制见 [EXECUTION.md](EXECUTION.md)。
 
 ## 提交前独立复查
 

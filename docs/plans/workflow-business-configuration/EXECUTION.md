@@ -1,6 +1,6 @@
 # Workflow 通用步骤改造执行记录
 
-日期：2026-11-10。状态：实施、硬编码审查、开发数据重建及本机最终验收完成。平台限制见文末。
+日期：2026-11-10。状态：实施、硬编码审查、开发数据重建、macOS 验收及 Ubuntu Codex 验收完成。本轮按用户要求仅验收 Codex Harness；平台限制见文末。
 
 用户批准 [PLAN.md](PLAN.md)，并明确无需迁移旧开发数据。工作分支为 `codex/workflow-business-configuration`，保留开始前的 README、界面导航、设置和历史相关修改。
 
@@ -14,6 +14,48 @@
 | P5 默认资源 | 工程方法迁入可编辑配置；清理旧提案约定和固定检查项，补齐代码基线、测试快照及 Task 证据传递。 |
 | P6 编辑器与工作台 | 通用步骤与子流程、Role 继承、任务预览、输入输出、目录授权、Spec/Standard、动态执行视图及草稿恢复。 |
 | P7 清理与验收 | 旧开发数据已删除重建，凭据及源仓库保留；本机回归、原生完整流程和独立包均通过。 |
+
+## Ubuntu 当前合同复验（仅 Codex Harness）
+
+2026-11-10，以 main `ea74bd5` 为源码基线，在 Ubuntu 24.04.5 LTS / x86_64 宿主验收，使用 Rust 1.99.1、Node 24.13.0、Docker 29.9.3。按本轮用户要求，真实供应商验收仅使用固定 Codex 0.167.0，不运行 DSH/Ollama 真实探针。默认检查中的多供应商协议替身不计作真实模型验收。
+
+| 检查 | 本轮结果 |
+|---|---|
+| 默认完整检查 | `DEVDESK_E2E_PORT=45330 ./scripts/check/check.sh` 通过；Rust 154 项通过、0 失败、15 项环境用例默认忽略；debug/release 各 41 项 Chromium 通过。 |
+| HTTP 与运行准备 | 双 profile 的鉴权、连接、SSE、项目分库、退出/重启、独立二进制模板重置均通过；运行准备的显式 Docker CLI 替身检查通过。 |
+| 真实 Git/Docker/Codex 权限 | `git_resources`、`command_tests`、`docker_resources`、`permissions` 共 13 项通过，包含 Node Red/Green、停止/清理、任意目录局部写及嵌套沙箱越界拒绝；显式排除 DSH 容器探针。宿主既有 AppArmor 策略摘要核验通过。 |
+| 自由业务原生模型 | 自建数据研究 Role、分析 Skill、Agent 与 JSON Delivery，实际 Codex 输出 `[3,3,2,1]` / `sum=9`，真实 `materials.capture` 回执及后继材料一致；canonical 任务为 `agent-task/v4`。Workflow `b049c6b7-133a-4578-ba5d-d7ef39121814`。 |
+| 重置后按旧绑定原生执行 | 目录恢复至 generation 2，原项目绑定、冻结任务、产物、凭据和运行安装保持原值；重启后新 Feature 按归档配置实际完成相同业务及平台工具调用，Workflow `16bbbf7d-658c-4a8a-b6e7-c7f4d937278f`。详见 [模板重置复验](../configuration-template-reset/EXECUTION.md#ubuntu-当前合同复验仅-codex-harness)。 |
+| 独立 Linux 发布包 | 源码外启动并通过权限资产、配置编辑/发布/预览、实际独立工具流程及 Schema 44 检查，0 次模型调用、0 次自动下载。包及程序摘要见模板重置报告。 |
+
+真实 Git/Docker/Codex 权限检查命令：
+
+```bash
+cargo test --locked -p devdesk-adapters \
+  --test git_resources --test command_tests --test docker_resources --test permissions \
+  -- --include-ignored --skip dsh_runner_masks_private_state_and_proc_without_expanding_docker_privileges
+```
+
+## Ubuntu 默认工程原生验收
+
+完整工程探针使用隔离数据集、私有二进制副本和既有专用测试仓库 `xfork24/devdesk-integration-test`。实际模型、Git、Docker 测试与 GitHub 结果分别核对，不用默认回归的替身代替。
+
+Feature 21/21 步、Task 18/18 步全部完成，实际 Task 状态为 completed。根实例 `476a3e96-1df9-46f3-a687-5aaa3b247557`，Task 子实例 `828fd3e8-47d5-41e6-a351-9072e7308de5`，Feature `3ff2c208-31f5-48ba-bab6-8da8e57c4a80`，Task `ce5417bf-a779-456b-8cee-4bc900ecc9b6`。三次确切版本确认分别接纳已通过的规划、Task 候选和 Feature 候选评审，没有覆盖失败条件或模型拒绝。
+
+| 事实 | 本轮确切版本 | 实际结果 |
+|---|---|---|
+| Task Red | `86a59b33cf57892285a3d61f17d596aad868ac4a` | 1 项实际断言失败，exit 1；预期失败成立。 |
+| Task Green / 文档后 verify | `479154e35119d2bc0211636edc4057f032188b07` | 各 6 项通过、0 失败、0 跳过，exit 0；具有独立 Docker 回执。 |
+| Task 候选测试与发布 | `9bd0306cf3d81857319f0d9c828e378c6f3459e1` | 6 项通过；[PR #29](https://github.com/xfork24/devdesk-integration-test/pull/29) merged，head / merge_commit 均等于该候选 SHA，另经 GitHub API 核对。 |
+| Feature 整体测试 | `496fed16ad0966deeb850e63a5cf62023105e753` | Task 与独立 Feature 套件共 12 项通过、0 失败、0 跳过，exit 0。 |
+| Feature 候选测试与发布 | `3d165e4635e82119788ccf625007e6a3e8bcd231` | 12 项通过；[PR #30](https://github.com/xfork24/devdesk-integration-test/pull/30) merged，head / merge_commit / 远端 main 均为该候选 SHA。 |
+| 显式 Task 完成 | Task `ce5417bf-a779-456b-8cee-4bc900ecc9b6` | `tasks.complete` 实际回执 completed，完整 18 步 Task 子流程通过。 |
+
+候选均核对真实父提交、diff、同 SHA 测试、输入和产物；PR #29/#30 及远端 main 另经 `gh api` 独立核对。两份原生数据集的 global 13 / project 44 均通过 SQLite `integrity_check`、`foreign_key_check`。退出后测试 Host 与 worker 已停止，无运行中的测试容器，临时 auth.json 为 0；日常数据、系统策略和原始登录文件未修改。
+
+复现使用本报告文末的两个原生探针，为各探针传入独立 `--report-directory`，工程探针另指定 `--github-repo xfork24/devdesk-integration-test`。本轮证据根目录为 `/tmp/devdesk-ubuntu-acceptance.Cbt2NL/`，含 `native-custom/`、`native-engineering/`、`codex-git-docker-permissions.log`、`package-report.json`、`database-checks.json`；默认完整检查日志为 `/tmp/devdesk-ubuntu-acceptance-check.log`。日志、数据库、JSON 和临时补验脚本不提交，清理后不保证可读取。
+
+本轮未发现需要修改产品代码的缺陷；提交补充两个计划的 Ubuntu 验收事实、当前状态及平台边界。`cargo fmt --all -- --check`、`git diff --check` 与新增文档链接检查通过。以下保留 macOS 首轮实施与提交前复查的历史结果，其数量和摘要不替代本轮 Ubuntu 证据。
 
 ## 首次实施验收
 
@@ -94,4 +136,4 @@ python3 tests/live/probe_default_engineering_workflow.py --binary target/debug/d
 ./scripts/release/package.sh
 ```
 
-真实模型探针只在显式调用时使用账户和专用测试资源。本次 macOS 完整检查、自由业务原生验收、默认工程图与独立包已通过；提交前复查后重跑的具体范围见上节。Ubuntu 新版本实机验收及真实 DSH 云模型工程运行尚未执行；DSH 的动态平台工具桥当前明确不支持，独立 Tool Step 不受此限制。不能将 SDK 本地夹具或历史版本报告当作这些范围的实机证明。
+真实模型探针只在显式调用时使用账户和专用测试资源。macOS 完整检查、自由业务原生验收、默认工程图与独立包已通过；Ubuntu 当前合同的 Codex 自由业务、模板重置后继续执行、完整默认工程图和独立 Linux 包本轮也已通过，确切结果见前文。按用户要求，本轮不验收 DSH/Ollama；真实 DSH 云模型工程运行仍未执行，DSH 的动态平台工具桥当前明确不支持，独立 Tool Step 不受此限制。不能将 SDK 本地夹具或历史版本报告当作这些范围的实机证明。

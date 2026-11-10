@@ -4,8 +4,8 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [Workflow 通用步骤与业务配置改造](workflow-business-configuration/PLAN.md) | [执行记录](workflow-business-configuration/EXECUTION.md)、[合同](workflow-business-configuration/CONTRACT.md)、[硬编码审查](workflow-business-configuration/AUDIT.md) | 实施中；取消标准动作与固定执行配方，配置化 Role、任务、交付和验收；过时开发数据删除重建，不迁移 |
-| [默认模板资源与重置模板定义](configuration-template-reset/PLAN.md) | [实施验收](configuration-template-reset/EXECUTION.md)、[合同](configuration-template-reset/CONTRACT.md) | 已实施；rebase 到 main 8a16686 后全量 Rust 181 项及最终 Host 24 项通过（去重 182 项）；debug/release 各 41 项浏览器与独立包通过，以快进方式整合本地 main |
+| [Workflow 通用步骤与业务配置改造](workflow-business-configuration/PLAN.md) | [执行记录](workflow-business-configuration/EXECUTION.md)、[合同](workflow-business-configuration/CONTRACT.md)、[硬编码审查](workflow-business-configuration/AUDIT.md) | 已实施；Ubuntu 当前合同仅 Codex 验收通过：154 项 Rust、debug/release 各 41 项浏览器、独立 Linux 包，真实 Feature 21 步 / Task 18 步及 PR #29/#30 完成；不迁移旧开发数据 |
+| [默认模板资源与重置模板定义](configuration-template-reset/PLAN.md) | [实施验收](configuration-template-reset/EXECUTION.md)、[合同](configuration-template-reset/CONTRACT.md) | 已实施；Ubuntu 当前 global 13 / project 44 合同通过完整检查与独立 Linux 包；重置、重启后真实 Codex 按归档项目绑定继续运行，旧任务、产物及凭据保留 |
 | [架构与实现基线 v0.4](devdesk-v0.4/PLAN.md) | [基线核对与验证记录](devdesk-v0.4/EXECUTION.md) | 当前源码 e4fbcae；Role/Capability、Workflow v3/任务配置、模型与人类 Approve、引用恢复、接入及全局讨论；macOS 179 项 Rust、双 profile 各 33 项浏览器通过，Ubuntu 历史验收与新增待验边界分别保留 |
 | [Ubuntu 六项改造验收](ubuntu-six-plan-acceptance/PLAN.md) | [执行记录](ubuntu-six-plan-acceptance/EXECUTION.md) | 已通过用户最终判据；165 项 Rust、双 profile 各 31 浏览器、Codex 完整闭环、独立 Linux 包；修复四项产品问题，MiniMax 模型能力限制单列 |
 | [设置、配置与执行工作台改进](settings-navigation-usability/PLAN.md) | [实施报告](settings-navigation-usability/REPORT.md)、[Ubuntu 补验](ubuntu-six-plan-acceptance/EXECUTION.md) | 已实施；Ubuntu 导航、反馈、连接、AgentID、阶段布局与完整 Codex 工程通过 |
