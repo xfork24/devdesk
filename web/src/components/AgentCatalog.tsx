@@ -505,7 +505,11 @@ export function ResourceEditor({
             </ActionButton>
           ))}
         </div>
-        {showAdditionalEditor && additionalEditor?.content}
+        {additionalEditor && (
+          <div hidden={!showAdditionalEditor}>
+            {additionalEditor.content}
+          </div>
+        )}
         <ActionForm
           hidden={showAdditionalEditor}
           onSubmit={(e) => {

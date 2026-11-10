@@ -289,6 +289,7 @@ function SourceManager({
   );
   const [sources, setSources] = useState<Row[]>([]),
     [catalog, setCatalog] = useState<Row[]>([]),
+    [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
     const [source, catalog] = await Promise.all([
@@ -299,11 +300,20 @@ function SourceManager({
     setCatalog(catalog);
   }, [request, project?.id]);
   useEffect(() => {
-    void load().catch((e) => setError(String(e)));
+    void load()
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
   }, [load]);
   const [deletedSource, setDeletedSource] = useState<Row>();
+  const sourceKind = kind === "http" ? "http_api" : "mcp";
   const selected =
-    sources.find((r) => r.id === draft.selected) || deletedSource;
+    sources.find(
+      (r) =>
+        r.id === draft.selected &&
+        r.kind === "integration" &&
+        r.data.source.kind === sourceKind,
+    ) || deletedSource;
+  const missingSource = !loading && !!draft.selected && !selected;
   const choose = (r: Row) => {
     setDeletedSource(undefined);
     const params = new URLSearchParams(location.search);
@@ -336,6 +346,7 @@ function SourceManager({
     const row = sources.find(
       (r) =>
         r.kind === "integration" &&
+        r.data.source.kind === sourceKind &&
         (r.id === target || r.id === tool?.data.integration_ref),
     );
     if (row) {
@@ -343,6 +354,18 @@ function SourceManager({
       choose(row);
     }
   }, [sources, catalog]);
+  const startNew = (copy = false) => {
+    routeConsumed.current = true;
+    setDeletedSource(undefined);
+    setDraft(
+      copy ? { ...draft, selected: "", name: `${draft.name} · 副本` } : fresh(),
+    );
+    setError("");
+    setMessage("");
+    const params = new URLSearchParams(location.search);
+    params.delete("config_object");
+    history.replaceState(null, "", `?${params}`);
+  };
   async function run(fn: () => Promise<void>) {
     captureFeedback();
 
@@ -373,14 +396,10 @@ function SourceManager({
           <div className="configuration-list">
             <ActionButton
               className={!selected ? "new-resource selected" : "new-resource"}
+              disabled={loading || busy}
               onClick={() => {
                 captureFeedback();
-                setDeletedSource(undefined);
-                setDraft(fresh());
-                setMessage("");
-                const params = new URLSearchParams(location.search);
-                params.delete("config_object");
-                history.replaceState(null, "", `?${params}`);
+                startNew();
               }}
             >
               新建 {names[kind]} 接入源
@@ -389,6 +408,7 @@ function SourceManager({
               <ActionButton
                 key={r.id}
                 className={r.id === selected?.id ? "selected" : ""}
+                disabled={loading || busy}
                 onClick={() => {
                   captureFeedback();
                   return choose(r);
@@ -406,6 +426,7 @@ function SourceManager({
               captureFeedback();
 
               e.preventDefault();
+              if (loading || busy || missingSource) return;
               void run(async () => {
                 const source =
                   kind === "http"
@@ -458,7 +479,7 @@ function SourceManager({
             }}
           >
             <fieldset
-              disabled={busy || !!deletedSource}
+              disabled={loading || busy || !!deletedSource || missingSource}
               className="integration-fields"
             >
               <label>
@@ -673,11 +694,7 @@ function SourceManager({
                       disabled={busy}
                       onClick={() => {
                         captureFeedback();
-                        return setDraft({
-                          ...draft,
-                          selected: "",
-                          name: `${draft.name} · 副本`,
-                        });
+                        startNew(true);
                       }}
                     >
                       复制接入源
@@ -756,6 +773,10 @@ function SourceManager({
             </fieldset>
           </ActionForm>
         </div>
+        {loading && <p role="status">正在读取接入源…</p>}
+        {missingSource && (
+          <p role="alert">原接入源不可用，请选择其他接入源或新建。</p>
+        )}
         {error && <p role="alert">{error}</p>}
         {message && <p role="status">{message}</p>}
       </section>

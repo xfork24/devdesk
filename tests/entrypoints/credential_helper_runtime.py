@@ -67,11 +67,18 @@ with tempfile.TemporaryDirectory(prefix="devdesk-helper-runtime-test-") as direc
         direct.stdin.close()
         direct.wait(timeout=10)
 
+    preset = root / "permissions/presets/review.json"
+    preset.parent.mkdir(parents=True)
+    preset.write_text('{"name":"packaged-preset"}\n')
     wrapped = start([sys.executable, str(ROOT / "scripts/dev/run-host.py"), str(binary), str(helper)])
     runtime = Path(wrapped.stdout.readline().strip())
     try:
         assert runtime != binary and runtime.is_file()
         assert runtime.parent.stat().st_mode & 0o077 == 0
+        copied_preset = runtime.parent / "permissions/presets/review.json"
+        assert copied_preset.read_text() == preset.read_text(), "Packaged permission presets were lost"
+        preset.write_text('{"name":"later-build-preset"}\n')
+        assert "packaged-preset" in copied_preset.read_text(), "Runtime resources changed with the build"
         assert probe(wrapped) == "invalid_params"
         rust.write_text(source)
         build()
@@ -98,4 +105,4 @@ with tempfile.TemporaryDirectory(prefix="devdesk-helper-runtime-test-") as direc
     assert not runtime.parent.exists(), "Runtime copy was not cleaned up"
 
 assert before == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (helper, manifest)}
-print("PASS reproduced overwritten Host rejection; isolated runtime survives rebuild; foreign caller denied; signal/cleanup; shared helper unchanged; no Keychain access")
+print("PASS reproduced overwritten Host rejection; isolated runtime and packaged presets survive rebuild; foreign caller denied; signal/cleanup; shared helper unchanged; no Keychain access")

@@ -75,7 +75,7 @@ DSH 多服务商离线验证：设置 DEVDESK_DSH_MOCK_IMAGE 为固定镜像 ID�
 
 macOS 源码启动兼容回归：在已配置同证书签名助手的开发机执行 `python3 tests/entrypoints/credential_helper_startup.py --launch`。兼容/拒绝检查使用隔离的助手副本，实际启动只打开空工作空间，不读取凭据、不调用模型，也不替换共享助手。
 
-macOS 运行中重建回归：`python3 tests/entrypoints/credential_helper_runtime.py` 使用临时签名探针复现直接启动后的构建覆盖错误，再验证 `scripts/dev/run-host.py` 启动的签名副本在重建后仍通过助手调用方核验，同时检查未受信调用者拒绝、信号转发与退出清理。请求使用无效参数，在访问 Keychain 之前返回，不读取或保存任何凭据，不替换共享助手。
+macOS 运行中重建回归：`python3 tests/entrypoints/credential_helper_runtime.py` 使用临时签名探针复现直接启动后的构建覆盖错误，再验证 `scripts/dev/run-host.py` 启动的签名副本在重建后仍通过助手调用方核验，同时检查随包权限预设保留且不受重建覆盖、未受信调用者拒绝、信号转发与退出清理。请求使用无效参数，在访问 Keychain 之前返回，不读取或保存任何凭据，不替换共享助手。
 
 
 Workflow 任务专项：`cargo test -p devdesk-adapters --test agent_tasks --locked` 覆盖所有 Agent 类别的记录端口派发、v3 校验、Markdown 原文、冻结恢复、正式 Run/重试、权限后继、子流程身份和伪造拒绝。所有执行夹具在提交命令前显式构造当前 v3 任务合同。

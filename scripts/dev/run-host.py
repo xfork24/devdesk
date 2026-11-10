@@ -21,10 +21,11 @@ def main():
         executable = runtime / "devdesk-host"
         shutil.copy2(binary, executable)
         executable.chmod(0o700)
-        # Preserve first-launch installation for builds containing a bundled helper.
-        helper = binary.parent / "credential-helper"
-        if helper.is_dir():
-            shutil.copytree(helper, runtime / "credential-helper")
+        # These resources are resolved beside current_exe(), including in a source-free bundle.
+        for name in ("credential-helper", "permissions"):
+            resource = binary.parent / name
+            if resource.is_dir():
+                shutil.copytree(resource, runtime / name)
         subprocess.run(
             ["/usr/bin/codesign", "--verify", "--strict", str(executable)],
             check=True,
