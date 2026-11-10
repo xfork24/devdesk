@@ -373,6 +373,8 @@ pub(crate) fn default_workflow(task: bool) -> WorkflowDocument {
             vec![]
         };
         doc.steps.push(WorkflowStep {
+            delivery_inputs: BTreeMap::new(),
+            delivery_outputs: BTreeMap::new(),
             task_instructions: None,
             role_ref: None,
             spec_refs: vec![],
@@ -791,7 +793,7 @@ impl Engine {
         if method == "session.open" {
             if let Some(instance_id) = opt(&c.payload, "agent_instance_id") {
                 let instance_record = s.configuration(&instance_id)?.clone();
-                require(instance_record.kind == "agent_instance", "无效 AgentID")?;
+                require(instance_record.kind == "agent_instance", "无效 Agent")?;
                 let instance: AgentInstance = instance_record.decode()?;
                 let session_id = text(result, "id")?;
                 let session = s
@@ -813,11 +815,11 @@ impl Engine {
                                 project_id: project.clone(),
                             }
                         }),
-                    "AgentID 不能用于其他项目",
+                    "Agent 不能用于其他项目",
                 )?;
                 require(
                     session.agent == instance.agent_revision_id,
-                    "AgentID 与 AgentRevision 不匹配",
+                    "Agent 与 AgentRevision 不匹配",
                 )?;
                 let agent: AgentComposition =
                     s.configuration(&instance.agent_revision_id)?.decode()?;
@@ -830,7 +832,7 @@ impl Engine {
                 require(
                     binding.model == model.model
                         && binding.installation.key.provider.as_str() == harness.provider,
-                    "执行绑定改变了 AgentID 的 Model/Harness",
+                    "执行绑定改变了 Agent 的 Model/Harness",
                 )?;
                 let resolved = resolve_model_connection(&model, &harness)?;
                 if binding.model_connection.is_some() {
@@ -851,10 +853,10 @@ impl Engine {
                 {
                     require(
                         old.data["agent_instance_id"] == instance_id,
-                        "不能将 Session 重新归属其他 AgentID",
+                        "不能将 Session 重新归属其他 Agent",
                     )?;
                 } else {
-                    s.governance.push(record("agent_session",session_id,if session.scope==Some(SessionScope::Global){Scope::Global}else{Scope::Project{project_id:project}},instance_record.name,1,None,json!({"agent_instance_id":instance_id,"agent_revision_id":instance.agent_revision_id,"composition_hash":s.configuration(&instance.agent_revision_id)?.content_hash,"model_ref":agent.model_ref,"harness_ref":agent.harness_ref,"binding":binding,"workflow_step_instance_id":c.payload["workflow_step_instance_id"]}),true));
+                    s.governance.push(record("agent_session",session_id,if session.scope==Some(SessionScope::Global){Scope::Global}else{Scope::Project{project_id:project}},instance_record.name,1,None,json!({"agent_instance_id":instance_id,"agent_revision_id":instance.agent_revision_id,"composition_hash":s.configuration(&instance.agent_revision_id)?.content_hash,"model_ref":agent.model_ref,"harness_ref":agent.harness_ref,"binding":binding,"workflow_step_instance_id":c.payload["workflow_step_instance_id"],"workflow_recipe_node":c.payload["workflow_recipe_node"]}),true));
                 }
             }
         }
@@ -1293,6 +1295,7 @@ impl Engine {
         }
         let family = method.split('.').next().unwrap_or("");
         let config_create = [
+            "delivery_type",
             "model",
             "tool",
             "harness",
@@ -1410,7 +1413,7 @@ impl Engine {
                     )?;
                     require(
                         t.implementation != "experience.lookup",
-                        "AgentID 经验属于可检索与恢复的上下文，不能定义为 Tool",
+                        "Agent 经验属于可检索与恢复的上下文，不能定义为 Tool",
                     )?;
                     require(
                         !t.qualified_name.is_empty()
@@ -1459,6 +1462,7 @@ impl Engine {
             if family == "agent" {
                 install_agent_profile(s, &r, &r.decode()?);
             }
+            if family == "delivery_type" { r.decode::<DeliveryTypeDefinition>()?.validate()?; }
             if family == "skill" {
                 if let Some(previous) = r.supersedes.as_ref().and_then(|key| {
                     s.governance

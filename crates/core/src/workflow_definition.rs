@@ -212,6 +212,9 @@ impl Builder<'_> {
         for original in &doc.steps {
             require(self.steps.len() < 1000, "展开子流程超过 1000 个步骤")?;
             let mut step = original.clone();
+            for (name, input) in &original.delivery_inputs {
+                step.inputs.entry(name.clone()).or_insert_with(|| input.source.clone());
+            }
             step.key = keys[&original.key].clone();
             step.stage = namespace(prefix, &original.stage);
             step.dependencies = original
@@ -240,6 +243,7 @@ impl Builder<'_> {
                     input.step = keys[&input.step].clone();
                 }
             }
+            for (name, input) in &mut step.delivery_inputs { input.source = step.inputs[name].clone(); }
             let path = if prefix.is_empty() {
                 original.key.clone()
             } else {
@@ -336,8 +340,11 @@ impl Builder<'_> {
                 }
                 checks.insert(spec.clone(), definition.rules.clone());
             }
+            let delivery_types = crate::deliverables::definitions(self.s, &step, self.scope)?;
+            for delivery in &delivery_types { self.hashes.insert(delivery.id.clone(), delivery.content_hash.clone()); }
             let task = if self.task_mode && action_requires_task(&step.kind) {
                 Some(WorkflowTaskDefinition {
+                    delivery_types,
                     renderer_version: TASK_RENDERER.into(),
                     workflow_revision_id: self.stack.last().cloned().unwrap(),
                     source_step: original.key.clone(),
@@ -379,6 +386,8 @@ impl Builder<'_> {
                 gate.name = format!("{} · 进入", step.name);
                 gate.subworkflow_ref = None;
                 gate.inputs.clear();
+                gate.delivery_inputs.clear();
+                gate.delivery_outputs.clear();
                 gate.parameters.clear();
                 gate.spec_refs.clear();
                 gate.role_ref = None;

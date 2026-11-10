@@ -52,6 +52,161 @@ pub(crate) fn binding_for_run<'a>(s: &'a EngineeringState, run: &Run) -> Option<
             .find(|r| r.kind == "execution_task_binding" && &r.definition_id == id)
     })
 }
+
+// A successor retains the task's meaning even in legacy sessions without a v3
+// task binding. Stop at a directly bound step so a later discussion is distinct.
+fn session_lineage<'a>(s: &'a EngineeringState, sid: &str) -> Vec<&'a Session> {
+    let mut lineage = vec![];
+    let mut current = s.sessions.iter().find(|session| session.id == sid);
+    while let Some(session) = current {
+        if lineage
+            .iter()
+            .any(|previous: &&Session| previous.id == session.id)
+        {
+            break;
+        }
+        lineage.push(session);
+        current = session.predecessor.as_ref().and_then(|id| {
+            s.sessions.iter().find(|previous| {
+                &previous.id == id
+                    && previous.owner_id == session.owner_id
+                    && previous.project_id == session.project_id
+                    && previous.agent == session.agent
+            })
+        });
+    }
+    lineage
+}
+
+pub(crate) fn session_workflow_task(
+    s: &EngineeringState,
+    sid: &str,
+) -> Option<(WorkflowStep, Option<String>)> {
+    for session in session_lineage(s, sid) {
+        let run = s.runs.iter().rev().find(|run| run.session_id == session.id);
+        let binding = s
+            .governance
+            .iter()
+            .find(|r| r.kind == "execution_task_binding" && r.definition_id == session.id)
+            .or_else(|| run.and_then(|run| binding_for_run(s, run)));
+        if let Some(binding) = binding {
+            let definition = definition(binding).ok()?;
+            return Some((
+                definition.decode_step().ok()?,
+                binding.data["recipe_node"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        run.filter(|r| !r.node.starts_with("review:"))
+                            .map(|r| r.node.clone())
+                    }),
+            ));
+        }
+        let source = [
+            Some(session.id.as_str()),
+            run.map(|r| r.id.as_str()),
+            run.and_then(|r| r.attempt_id.as_deref()),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(|target| {
+            s.governance
+                .iter()
+                .find(|r| r.kind == "execution_specification" && r.definition_id == target)
+        });
+        if let Some(source) = source {
+            let lock = session
+                .feature_id
+                .as_deref()
+                .and_then(|id| s.feature_configuration(id))?;
+            let plan = if session.task_id.is_some() {
+                &lock.task_plan
+            } else {
+                &lock.plan
+            };
+            let step = plan
+                .steps
+                .iter()
+                .find(|step| Some(step.key.as_str()) == source.data["step"].as_str())?;
+            return Some((
+                step.clone(),
+                run.filter(|r| !r.node.starts_with("review:"))
+                    .map(|r| r.node.clone()),
+            ));
+        }
+    }
+    None
+}
+
+pub(crate) fn session_workflow_context(s: &EngineeringState, sid: &str) -> Option<Value> {
+    for session in session_lineage(s, sid) {
+        let run = s.runs.iter().rev().find(|run| run.session_id == session.id);
+        let source = s
+            .governance
+            .iter()
+            .find(|r| r.kind == "execution_task_binding" && r.definition_id == session.id)
+            .or_else(|| run.and_then(|run| binding_for_run(s, run)))
+            .or_else(|| {
+                [
+                    Some(session.id.as_str()),
+                    run.map(|r| r.id.as_str()),
+                    run.and_then(|r| r.attempt_id.as_deref()),
+                ]
+                .into_iter()
+                .flatten()
+                .find_map(|target| {
+                    s.governance
+                        .iter()
+                        .find(|r| r.kind == "execution_specification" && r.definition_id == target)
+                })
+            })
+            .or_else(|| {
+                s.governance.iter().find(|r| {
+                    r.kind == "agent_session"
+                        && r.definition_id == session.id
+                        && r.data["workflow_step_instance_id"].is_string()
+                })
+            });
+        if let Some(source) = source {
+            let step_id = source.data["step_instance_id"]
+                .as_str()
+                .or(source.data["workflow_step_instance_id"].as_str())?;
+            let agent_session = s
+                .governance
+                .iter()
+                .find(|r| r.kind == "agent_session" && r.definition_id == session.id);
+            let recipe = source.data["recipe_node"]
+                .as_str()
+                .or_else(|| agent_session.and_then(|r| r.data["workflow_recipe_node"].as_str()))
+                .or_else(|| {
+                    run.filter(|r| !r.node.starts_with("review:"))
+                        .map(|r| r.node.as_str())
+                });
+            return Some(json!({"step_instance_id":step_id,"recipe_node":recipe,
+                "workflow_instance_id":source.data["workflow_instance_id"],"step":source.data["step"]}));
+        }
+    }
+    None
+}
+
+pub(crate) fn formal_session(s: &EngineeringState, sid: &str) -> bool {
+    session_workflow_task(s, sid).map_or_else(
+        || {
+            session_lineage(s, sid)
+                .iter()
+                .any(|session| s.runs.iter().any(|run| run.session_id == session.id))
+        },
+        |(step, _)| step.kind != "agent.interact",
+    )
+}
+
+pub(crate) fn session_has_formal_run(s: &EngineeringState, sid: &str) -> bool {
+    formal_session(s, sid)
+        && session_lineage(s, sid)
+            .iter()
+            .any(|session| s.runs.iter().any(|run| run.session_id == session.id))
+}
+
 fn task_base(
     s: &EngineeringState,
     session: &Session,
@@ -176,9 +331,12 @@ fn task_sections(def: &WorkflowTaskDefinition, node: Option<&str>) -> Result<Val
                 .ok_or_else(|| err("task_contract_mismatch", "Agent 配方任务缺失"))
         })
         .transpose()?;
-    Ok(
-        json!({"task":{"instructions":step.task_instructions.as_deref().ok_or_else(||err("task_contract_mismatch","步骤公共任务缺失"))?,"node_instructions":node_task,"required_topics":step.interaction.required_topics},"stage_context":def.stage,"output_contract":agent_task_output_contract(&step,node)}),
-    )
+    let mut sections = json!({"task":{"instructions":step.task_instructions.as_deref().ok_or_else(||err("task_contract_mismatch","步骤公共任务缺失"))?,"node_instructions":node_task,"required_topics":step.interaction.required_topics},"stage_context":def.stage,"output_contract":agent_task_output_contract(&step,node)});
+    if !def.delivery_types.is_empty() {
+        sections["delivery_types"] = json!(def.delivery_types);
+        sections["delivery_contracts"] = json!({"inputs":step.delivery_inputs,"outputs":step.delivery_outputs});
+    }
+    Ok(sections)
 }
 fn render(
     s: &EngineeringState,

@@ -34,6 +34,8 @@ pub struct RuntimeBinding {
     pub installation: RuntimeInstallation,
     pub adapter_version: String,
     pub model: String,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub model_parameters: std::collections::BTreeMap<String, Value>,
     pub tool_policy: ToolPolicy,
     #[serde(default)]
     pub writable_paths: Vec<String>,
@@ -43,6 +45,16 @@ pub struct RuntimeBinding {
     pub configuration_digest: String,
     #[serde(default)]
     pub credential_ref: Option<String>,
+}
+
+impl RuntimeBinding {
+    /// Complete Agents keep their frozen Model parameters as the execution authority.
+    pub fn effective_model_parameters(&self) -> &std::collections::BTreeMap<String, Value> {
+        match &self.agent_configuration {
+            Some(agent) => &agent.model_parameters,
+            None => &self.model_parameters,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -429,6 +441,23 @@ impl EngineeringState {
                 .as_ref()
                 .ok_or_else(|| err("blocked", "Session 缺少冻结运行时绑定"))?;
             binding.installation.key.validate()?;
+            if !binding.model_parameters.is_empty() {
+                require(
+                    binding.agent_configuration.is_none(),
+                    "完整 Agent 必须使用其冻结 Model 的参数",
+                )?;
+                if binding.installation.key.provider == HarnessProvider::Codex {
+                    let model: ModelDefinition = serde_json::from_value(serde_json::json!({"provider":"openai","model":binding.model,"parameters":binding.model_parameters}))
+                        .map_err(|e| err("invalid_configuration", e.to_string()))?;
+                    validate_model_definition(&model)?;
+                } else {
+                    binding
+                        .model_connection
+                        .as_ref()
+                        .ok_or_else(|| err("invalid_configuration", "模型参数缺少冻结连接"))?
+                        .validate(&binding.model, &binding.model_parameters)?;
+                }
+            }
             if let Some(p) = &binding.permissions {
                 require(
                     p.scope.work_type == binding.work_type

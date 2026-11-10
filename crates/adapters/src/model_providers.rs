@@ -6,11 +6,7 @@ pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnect
         binding.installation.key.provider == HarnessProvider::Dsh,
         "需要 DSH 绑定",
     )?;
-    let parameters = binding
-        .agent_configuration
-        .as_ref()
-        .map(|a| a.model_parameters.clone())
-        .unwrap_or_default();
+    let parameters = binding.effective_model_parameters();
     if let Some(connection) = &binding.model_connection {
         connection.validate(&binding.model, &parameters)?;
         require(

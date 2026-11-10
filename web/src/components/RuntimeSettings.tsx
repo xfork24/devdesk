@@ -6,12 +6,18 @@ import {
 } from "./ActionFeedback";
 import { useState } from "react";
 import { DshProviderSettings } from "./DshProviderSettings";
+import { isProjectRuntimeInstallation } from "./runtime-installations";
 
 type Provider = "codex" | "dsh";
 type Installation = {
   id: string;
   key: { provider: Provider; version: string; os: string; arch: string };
-  artifact: { canonical_path?: string; reference?: string; image_id?: string };
+  artifact: {
+    kind: string;
+    canonical_path?: string;
+    reference?: string;
+    image_id?: string;
+  };
 };
 type Props = {
   provider: Provider;
@@ -35,6 +41,9 @@ export function RuntimeSettings({
   } = useActionFeedback();
 
   const [busy, setBusy] = useState(false);
+  const projectInstallations = installations.filter(
+    isProjectRuntimeInstallation,
+  );
 
   const [login, setLogin] = useState<{ loginId: string; authUrl: string }>();
   return (
@@ -201,10 +210,10 @@ export function RuntimeSettings({
           <p className="muted">
             运行时由 DevDesk 按需下载、构建并复用，无需手动登记。
           </p>
-          {installations.length === 0 ? (
-            <p className="muted">尚未使用 Harness；首次执行时自动准备</p>
+          {projectInstallations.length === 0 ? (
+            <p className="muted">尚未准备项目执行运行时；首次执行时自动准备</p>
           ) : (
-            installations.map((runtime) => (
+            projectInstallations.map((runtime) => (
               <p key={runtime.id}>
                 {runtime.key.provider} · {runtime.key.version} ·{" "}
                 {runtime.key.os}/{runtime.key.arch}

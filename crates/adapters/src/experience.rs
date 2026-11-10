@@ -33,20 +33,20 @@ fn instance(root: &Path, current_project: &str, id: &str) -> Result<AgentInstanc
     let r = records
         .iter()
         .find(|r| r.id == id && r.kind == "agent_instance")
-        .ok_or_else(|| err("not_found", "AgentID 不存在"))?;
+        .ok_or_else(|| err("not_found", "Agent 不存在"))?;
     let i: AgentInstance = r.decode()?;
     require(
         i.scope.visible_from(&Scope::Project {
             project_id: current_project.into(),
         }),
-        "AgentID 不属于当前项目",
+        "Agent 不属于当前项目",
     )?;
     Ok(i)
 }
 pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value> {
     let id = params["agent_instance_id"]
         .as_str()
-        .ok_or_else(|| err("invalid_params", "需要 AgentID"))?;
+        .ok_or_else(|| err("invalid_params", "需要 Agent"))?;
     let i = instance(root, current_project, id)?;
     let mut rows: Vec<Value> = global_records(root)?
         .into_iter()
@@ -132,7 +132,7 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
                         .as_str()
                         .is_none_or(|pid| r["project_id"] == pid)
             })
-            .ok_or_else(|| err("not_found", "该 AgentID 没有此快照"))?;
+            .ok_or_else(|| err("not_found", "该 Agent 没有此快照"))?;
         let pid = entry["project_id"].as_str().unwrap();
         let global = pid == GLOBAL_DISCUSSION_NAMESPACE;
         let s = if global {

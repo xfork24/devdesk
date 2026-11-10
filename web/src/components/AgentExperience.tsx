@@ -5,6 +5,7 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { useEffect, useRef, useState } from "react";
+import { MarkdownPreview } from "./configuration-ui";
 type Row = Record<string, any>;
 type Props = {
   revision?: string;
@@ -134,9 +135,9 @@ export function AgentExperience({
   );
   return (
     <details className="experience-panel">
-      <summary>AgentID 经验 · 项目 / Feature / 时间</summary>
+      <summary>Agent 经验 · 项目 / Feature / 时间</summary>
       {!instanceId ? (
-        <p>选择 AgentID 后查看该实例的工作履历。</p>
+        <p>选择 Agent 后查看该实例的工作履历。</p>
       ) : (
         <>
           <p className="mono">
@@ -225,10 +226,7 @@ export function AgentExperience({
                 {detail.entry.binding?.installation?.key.provider} · 完整性{" "}
                 {detail.integrity}
               </p>
-              <pre>
-                {detail.snapshot.content ||
-                  "该快照没有附加文字上下文；文档与执行引用仍可读取。"}
-              </pre>
+              <MarkdownPreview text={detail.snapshot.content || "该快照没有附加文字上下文；文档与执行引用仍可读取。"} />
               <details>
                 <summary>完整快照与证据引用</summary>
                 <pre>{JSON.stringify(detail, null, 2)}</pre>

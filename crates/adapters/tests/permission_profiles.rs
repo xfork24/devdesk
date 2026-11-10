@@ -461,6 +461,7 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
         model_connection: None,
         model_profile_digest: None,
         agent_configuration: None,
+        model_parameters: Default::default(),
         permissions: None,
         installation: RuntimeInstallation {
             id: "fixture-runtime".into(),

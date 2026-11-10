@@ -279,7 +279,7 @@ test("内核地址校验与连接失败保留当前设置及重试入口", async
   ]) {
     await page.getByLabel("内核地址", { exact: true }).fill(address);
     await page.getByRole("button", { name: "连接内核", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("内核地址仅包含");
+    await expect(page.getByRole("region", { name: "内核连接" }).getByRole("alert")).toContainText("内核地址仅包含");
     expect(page.url()).toBe(original);
   }
   const target = "http://127.0.0.1:54329";
@@ -288,7 +288,7 @@ test("内核地址校验与连接失败保留当前设置及重试入口", async
   );
   await page.getByLabel("内核地址", { exact: true }).fill(target);
   await page.getByRole("button", { name: "连接内核", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("无法连接内核");
+  await expect(page.getByRole("region", { name: "内核连接" }).getByRole("alert")).toContainText("无法连接内核");
   expect(page.url()).toBe(original);
   await expect(
     page.getByRole("heading", { name: "全局并发额度", exact: true }),
@@ -301,7 +301,7 @@ test("内核地址校验与连接失败保留当前设置及重试入口", async
     }),
   );
   await page.getByRole("button", { name: "连接内核", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("协议版本不兼容");
+  await expect(page.getByRole("region", { name: "内核连接" }).getByRole("alert")).toContainText("协议版本不兼容");
   expect(page.url()).toBe(original);
   await expect(
     page.getByRole("button", { name: "连接内核", exact: true }),

@@ -21,6 +21,7 @@ mod governance;
 mod live_merges;
 mod live_runs;
 mod model_approvals;
+mod deliverables;
 mod permission_resources;
 mod permissions;
 pub use permission_resources::{insert_permission_profiles, permission_profile_export};
@@ -135,7 +136,8 @@ fn binding(s: &EngineeringState) -> BindingLock {
             .definitions
             .iter()
             .find(|d| d.id == "builtin-agent-developer-v1")
-            .unwrap()
+            .or_else(|| s.definitions.iter().filter(|d| d.agent_profile.as_ref().is_some_and(|profile| profile.role == AgentRole::Developer)).max_by_key(|d| d.version))
+            .expect("seeded developer definition")
             .id
             .clone(),
         skills: s
@@ -895,6 +897,21 @@ impl Engine {
                 json!({"id":pid})
             }
             "project.update" => {
+                let runtime_preferences = p.get("runtime_preferences").map(|value| {
+                    let preferences: Option<ProjectRuntimePreferences> = serde_json::from_value(value.clone())
+                        .map_err(|_| err("invalid_params", "无效项目运行时偏好"))?;
+                    if let Some(preferences) = &preferences {
+                        preferences.validate()?;
+                        preferences.validate_references(s)?;
+                        for preference in preferences.default.iter().chain(preferences.roles.iter().map(|r| &r.preference)) {
+                            for reference in preference.model_ref.iter().chain(preference.harness_ref.iter()) {
+                                let record = s.configuration(reference)?;
+                                require(configuration_visible(s, record, Some(target)) && !configuration_retired(s, record), "所选 Model 或 Harness 不适用于当前项目")?;
+                            }
+                        }
+                    }
+                    Ok::<_, Error>(preferences)
+                }).transpose()?;
                 let project = s
                     .projects
                     .iter_mut()
@@ -907,13 +924,7 @@ impl Engine {
                     project.permission_overrides = serde_json::from_value(value.clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?;
                 }
-                if let Some(value) = p.get("runtime_preferences") {
-                    let preferences: Option<ProjectRuntimePreferences> =
-                        serde_json::from_value(value.clone())
-                            .map_err(|_| err("invalid_params", "无效项目运行时偏好"))?;
-                    if let Some(p) = &preferences {
-                        p.validate()?;
-                    }
+                if let Some(preferences) = runtime_preferences {
                     project.runtime_preferences = preferences;
                 }
                 if let Some(workspace) = opt(p, "workspace") {

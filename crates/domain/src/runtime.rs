@@ -93,10 +93,17 @@ pub struct RuntimeIntegrity {
 #[serde(deny_unknown_fields)]
 pub struct HarnessPreference {
     pub provider: HarnessProvider,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_ref: Option<Id>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_ref: Option<Id>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub use_system_default: bool,
     pub installation_id: Option<Id>,
     pub model: Option<String>,
+    /// Legacy raw-model preferences only; ignored when model_ref selects a Model revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -132,6 +139,10 @@ impl ProjectRuntimePreferences {
             .iter()
             .chain(self.roles.iter().map(|r| &r.preference))
         {
+            require(
+                preference.model_ref.is_some() == preference.harness_ref.is_some(),
+                "Model 与 Harness 配置须一起选择",
+            )?;
             if preference.use_system_default {
                 require(
                     preference
@@ -149,6 +160,13 @@ impl ProjectRuntimePreferences {
                     .is_none_or(|m| !m.trim().is_empty() && m.len() <= 160),
                 "模型 ID 无效",
             )?;
+            if let Some(effort) = &preference.reasoning_effort {
+                require(
+                    preference.provider == HarnessProvider::Codex && preference.model.is_some(),
+                    "思考深度需要明确选择 Codex 模型",
+                )?;
+                validate_reasoning_effort(effort)?;
+            }
             if let Some(provider) = &preference.model_provider {
                 require(
                     (preference.provider == HarnessProvider::Codex && provider == "openai")
@@ -164,5 +182,74 @@ impl ProjectRuntimePreferences {
             }
         }
         Ok(())
+    }
+
+    pub fn validate_references(&self, state: &EngineeringState) -> Result<()> {
+        for preference in self
+            .default
+            .iter()
+            .chain(self.roles.iter().map(|r| &r.preference))
+        {
+            if let (Some(model_ref), Some(harness_ref)) =
+                (&preference.model_ref, &preference.harness_ref)
+            {
+                let model = state.configuration(model_ref)?;
+                let harness = state.configuration(harness_ref)?;
+                require(
+                    model.kind == "model" && harness.kind == "harness",
+                    "运行时偏好必须引用 Model 和 Harness 修订",
+                )?;
+                let model: ModelDefinition = model.decode()?;
+                let harness: HarnessDefinition = harness.decode()?;
+                require(
+                    harness.provider == preference.provider.as_str(),
+                    "Harness 配置与偏好后端不一致",
+                )?;
+                require(
+                    preference.model.as_deref().is_none_or(|id| id == model.model),
+                    "Model 配置与偏好模型不一致",
+                )?;
+                resolve_model_connection(&model, &harness)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn runtime_preferences_accept_catalog_efforts_and_keep_old_defaults() {
+        let mut value = json!({"default":{"provider":"codex","installation_id":null,"model":"catalog-model","model_provider":"openai"},"roles":[]});
+        let old: ProjectRuntimePreferences = serde_json::from_value(value.clone()).unwrap();
+        old.validate().unwrap();
+        assert!(old.default.unwrap().reasoning_effort.is_none());
+        for effort in ["high", "ultra", "future-effort"] {
+            value["default"]["reasoning_effort"] = json!(effort);
+            let preferences: ProjectRuntimePreferences =
+                serde_json::from_value(value.clone()).unwrap();
+            preferences.validate().unwrap();
+            assert_eq!(json!(preferences), value);
+        }
+    }
+
+    #[test]
+    fn runtime_preferences_reject_efforts_without_a_codex_model() {
+        let base = json!({"default":{"provider":"codex","model":"catalog-model","reasoning_effort":"high"},"roles":[]});
+        for invalid in [json!(""), json!("high\n"), json!("a".repeat(65))] {
+            let mut value = base.clone();
+            value["default"]["reasoning_effort"] = invalid;
+            let preferences: ProjectRuntimePreferences = serde_json::from_value(value).unwrap();
+            assert!(preferences.validate().is_err());
+        }
+        for (field, invalid) in [("provider", json!("dsh")), ("model", Value::Null)] {
+            let mut value = base.clone();
+            value["default"][field] = invalid;
+            let preferences: ProjectRuntimePreferences = serde_json::from_value(value).unwrap();
+            assert!(preferences.validate().is_err());
+        }
     }
 }

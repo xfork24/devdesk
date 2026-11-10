@@ -121,7 +121,7 @@ pub(crate) fn validate_capability(s: &EngineeringState, data: &Value, scope: &Sc
             s.configuration(id)
                 .is_ok_and(ConfigurationRecord::is_legacy_experience_tool)
         }),
-        "AgentID 经验属于上下文，请从 Capability 的 Tools 中移除",
+        "Agent 经验属于上下文，请从 Capability 的 Tools 中移除",
     )?;
     for skill in &cap.skills {
         if let Some(r) = s

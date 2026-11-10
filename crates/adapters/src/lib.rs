@@ -271,7 +271,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
-    require(version <= 39, "数据集版本比程序新")?;
+    require(version <= 40, "数据集版本比程序新")?;
     if version == 0 {
         let tx = connection.transaction().map_err(storage)?;
         tx.execute_batch(include_str!(
@@ -614,6 +614,11 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         connection
             .execute_batch("PRAGMA foreign_keys=ON;")
             .map_err(storage)?;
+    }
+    if version < 40 {
+        let tx = connection.transaction().map_err(storage)?;
+        tx.execute_batch(include_str!("../../../sql/project/configuration/040_delivery_types.sql")).map_err(storage)?;
+        tx.commit().map_err(storage)?;
     }
     Ok(connection)
 }

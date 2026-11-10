@@ -230,7 +230,9 @@ Agent 新建可提供 role_ref，省略模型与能力字段时填入 Sol High /
 
 RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。旧缺字段绑定只按原有 Codex/DeepSeek 语义读取，新服务商缺快照必须拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。
 
-`query.runtime_options` 只读取安装、受支持配方和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。偏好界面保存具体 `installation_id`、`model`、`model_provider` 与服务商容量；`use_system_default` 仅跟随 Harness 名称，默认后端改变后须重新明确安装及模型。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务；智谱与 MiniMax 返回固定 DSH 版本支持的目录，并在 `source` 中区分。读取目录不执行推理。
+`query.runtime_options` 只读取安装、受支持配方和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和基础组件 Harness 的安装列表仅展示项目执行用的 Linux Docker 安装；本机 Codex 登录与模型目录组件保留内部登记，不显示为项目安装。旧偏好的 `use_system_default` 仅跟随 Harness 名称，默认后端改变后须重新明确安装及模型。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务；智谱与 MiniMax 返回固定 DSH 版本支持的目录，并在 `source` 中区分。读取目录不执行推理。
+
+项目默认与角色运行时偏好可直接选择基础组件中的确切 `model_ref`、`harness_ref` 修订；保存前校验引用类型、项目可见性、退役状态和 Model/Harness 兼容性。Model 的模型标识、连接、容量与参数直接来自该修订；新会话按 Harness 的固定配方物化安装，旧版不含组件引用的偏好继续按明确安装及模型读取。设置页仅选择 Model 和 Harness，不提供思考深度覆盖或读取账号模型目录；思考深度等参数统一由所选 Model 修订决定。旧数据中的 `reasoning_effort` 仅在不含 `model_ref` 的原始模型偏好中兼容读取，引用 Model 时忽略该覆盖值，再次保存所选范围后省略它。新会话把有效参数冻结在 `RuntimeBinding.model_parameters`，纳入配置摘要，并在 Codex 每轮 `turn/start.effort` 或 DSH 输出预算中使用。完整 Agent 仍使用 `agent_configuration.model_parameters`；已有会话不随偏好更新。
 
 `integration.delete` 将接入源及所属工具、绑定从后续选择中删除，或单独删除已发布工具。操作原子检查在用引用，拒绝仍被 Capability、Agent、Skill 或项目配置使用的资源；修订和历史调用保留，紧急停用另由 `integration.disable` 处理。
 
@@ -263,3 +265,13 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 有效报告的 Run 记录 `model_approve`、`approval_required`，模型拒绝与执行失败分开。校验和独立评审均进入 `waiting_confirmation`，即使步骤配置自动推进也等待人类决定。`workflow.step.confirm` 携带当前 `input_hash`；覆盖模型拒绝还需 `overwrite_model:true` 和非空 `reason`。不可变确认记录保留模型报告、Skill 修订、轮次、操作者、原结论与覆盖理由；独立评审覆盖另外写入 Review Override，原模型 Review 不改写。报告或输入改变会使旧确认失效。
 
 取消中的旧 Run 返回 `run_cancellation_pending`。该错误仅表示启动前等待，工作流保留 prepared 意图，待 Run 和旧 writer 均停止后继续。旧版本留下的同类 failed 意图会重新核对；不会把尚未停止的执行者标成已停止。
+
+`query.session.formal_execution` 标识正式执行及其后继会话；旧 v1/v2 会话缺少逐轮任务绑定时，仍通过原 Run、冻结步骤及同归属的后继链解析输出合同。正式 Run 的后继不接受独立讨论输入或提案采纳，界面提供“查看执行会话”和“返回当前工作流”。模型报告尚未齐备时显示等待条件，报告完成后由对应步骤提供人类 Approve。
+
+正式 Turn 的 `needs_reconciliation` 不再使 Run 永久显示运行中。取得原执行的 writer 撤销和协议封存证明后，Run 记录为 `interrupted`，保留未知结果及原 Turn，并提供技术重试。显式重试创建使用原绑定/任务的新 Run 和后继 Session，原 Attempt 的 Session 映射保持冻结；旧输入不会自动重发，独立会话回复不会被补认成正式报告。
+
+Delivery 类型配置与跨步骤材料引用：`delivery_type.create/revise` 管理确切修订的 `{format, body}` 定义，与正式运行的 `Delivery` 业务实例分开。流程与规范的 Delivery 页提供 PRD、Design Doc、Diff、Test Report 默认定义。Workflow v3 的 `delivery_outputs.<name>={delivery_ref,source_port}` 将本步骤的真实输出命名为交付物；`delivery_inputs.<name>={delivery_ref,source:{step,port}}` 引用依赖链上同一类型修订的交付物。编辑器选择引用时自动加入生产步骤依赖；发布校验端口、依赖、作用域及类型修订，不用正文声明替代实际输出。子流程展开后保留来源映射；Agent 的冻结任务携带 Delivery 定义正文、产出/引用声明及真实材料。类型修订不会改写已冻结的 Feature 或 Turn。
+
+工作流讨论会话按 owner、步骤实例、Agent 和配方节点复用最新会话，保留其冻结运行绑定；不同步骤及节点互相隔离。`session.open` 仅在显式 `force_new` 时新增同一上下文的会话，活动轮次须先结束或核对。`query.sessions` 支持 `workflow_session_id` 锚定该步骤/节点的历史，或显式指定 `workflow_step_instance_id`、`workflow_recipe_node` 和 `agent_instance_id`；结果按新建顺序倒序。角色讨论默认选最新会话，也可手动查看历史或新建 Session。关闭及待核对执行不会因此重新发送输入；正式 Run 保留技术重试及人类 Approve 入口。
+
+角色与 Agent 界面保留 Role、Capability、Agent 三个页签；Agent 页用于组合 Role 与 Capability。内部 AgentID / `agent_instance_id` 身份协议不变，角色讨论中的“新建讨论身份”从所选 Agent 的确切修订创建全局或当前项目身份。每个身份独立保留会话和经验，重复打开同一执行上下文时复用最新会话。

@@ -193,6 +193,11 @@ impl Engine {
         c: &Command,
     ) -> Result<()> {
         let target = c.target.as_deref().unwrap_or("");
+        if method == "proposal.adopt" && s.proposals.iter().find(|p| p.id == target)
+            .is_some_and(|p| crate::agent_tasks::formal_session(s, &p.session_id))
+        {
+            return Err(err("blocked", "正式执行会话的回复不能再次采纳为需求提案；请在执行与交付的当前工作流查看执行状态，模型报告完成后执行人类 Approve；中断时使用技术重试"));
+        }
         let owner = if let Some(d) = s.deliveries.iter().find(|d| d.id == target) {
             d.task_id.as_deref().unwrap_or(&d.feature_id)
         } else if let Some(m) = s.merges.iter().find(|m| m.id == target) {
@@ -760,6 +765,9 @@ impl Engine {
                             let before = json!(state);
                             for port in ports {
                                 state.outputs.remove(port);
+                                for (name, output) in &step.delivery_outputs {
+                                    if &output.source_port == port { state.outputs.remove(name); }
+                                }
                             }
                             state.confirmation = None;
                             state.input_hash.clear();
@@ -792,6 +800,9 @@ impl Engine {
                     }
                     let mut state = runtime.steps[index].clone();
                     let before = json!(state);
+                    for (name, output) in &step.delivery_outputs {
+                        if name != &output.source_port { state.outputs.remove(name); }
+                    }
                     state.status = "active".into();
                     state.reason.clear();
                     let effect = s
@@ -820,6 +831,17 @@ impl Engine {
                         &lock,
                     )?;
                     if complete {
+                        let missing = step.delivery_outputs.iter().find(|(_, declaration)| !state.outputs.contains_key(&declaration.source_port));
+                        if let Some((name, declaration)) = missing {
+                            state.status = "blocked".into();
+                            state.reason = format!("交付物 {name} 尚未产生：缺少 {} 输出", declaration.source_port);
+                            if before != json!(state) { state.revision += 1; }
+                            runtime.steps[index] = state;
+                            continue;
+                        }
+                        for (name, declaration) in &step.delivery_outputs {
+                            state.outputs.insert(name.clone(), state.outputs[&declaration.source_port].clone());
+                        }
                         let reports = crate::model_approvals::reports(s, &state);
                         let input_hash = crate::model_approvals::input_hash(s, &runtime.configuration_lock_id, &state);
                         if state.input_hash != input_hash {
@@ -951,19 +973,15 @@ impl Engine {
         match step.kind.as_str() {
             "agent.interact" => {
                 let wanted = step.interaction.output_kind.as_str();
-                let session = state.outputs.get("session").cloned().or_else(|| {
-                    s.governance
-                        .iter()
-                        .rev()
-                        .find(|r| {
-                            r.kind == "agent_session"
-                                && r.data["workflow_step_instance_id"] == state.id
-                        })
-                        .map(|r| r.definition_id.clone())
-                });
+                let session = s.sessions.iter().rev().find(|session| {
+                    session.owner_id == owner
+                        && crate::agent_tasks::session_workflow_context(s, &session.id)
+                            .is_some_and(|context| context["step_instance_id"] == state.id && context["recipe_node"].is_null())
+                }).map(|session| session.id.clone()).or_else(|| state.outputs.get("session").cloned());
                 if let Some(session) = session {
                     let session = discussion_session(s, &session);
-                    if state.outputs.get("session").is_some_and(|old| old != &session)
+                    if state.outputs.get("session") != Some(&session)
+                        || (state.round == 1 && !state.outputs.contains_key("turn"))
                         || state
                             .outputs
                             .get("turn")
@@ -1100,6 +1118,9 @@ impl Engine {
                         .ok_or_else(|| err("not_found", "步骤提案不存在"))?;
                     state.outputs.insert("proposal".into(), p.id.clone());
                     if p.status == ProposalStatus::Accepted {
+                        if let Some(document) = p.adopted_objects.iter().find(|id| s.documents.iter().any(|d| &d.id == *id)) {
+                            state.outputs.insert("document".into(), document.clone());
+                        }
                         return Ok(true);
                     }
                     state.status = "waiting_input".into();
@@ -1151,6 +1172,22 @@ impl Engine {
 
                 if let Some(aid) = state.outputs.get("attempt").cloned() {
                     let a = s.attempt(&aid)?;
+                    let runs = s.latest_runs(Some(&aid), None);
+                    let current = runs.iter().find(|run| run.status == Status::Running)
+                        .or_else(|| runs.iter().find(|run| matches!(run.status, Status::Failed | Status::Interrupted | Status::Cancelled)))
+                        .or_else(|| runs.iter().find(|run| run.status == Status::Queued))
+                        .or_else(|| runs.iter().rev().find(|run| run.status == Status::Succeeded));
+                    if let Some(run) = current {
+                        state.outputs.insert("session".into(), run.session_id.clone());
+                        if s.turns.iter().any(|turn| turn.run_id.as_ref() == Some(&run.id)
+                            && turn.status == TurnStatus::NeedsReconciliation)
+                            && run.status == Status::Running
+                        {
+                            state.status = "blocked".into();
+                            state.reason = "原执行结果待核对，正在停止并封存执行者；停止后可在本步骤技术重试，无需再次采纳提案".into();
+                            return Ok(false);
+                        }
+                    }
                     if [
                         Status::Failed,
                         Status::Interrupted,
@@ -1160,7 +1197,9 @@ impl Engine {
                     .contains(&a.status)
                     {
                         state.status = "failed".into();
-                        state.reason = format!("执行 {:?}，需要显式重试或返工", a.status);
+                        state.reason = current.and_then(|run| run.result.as_ref())
+                            .and_then(|result| result["message"].as_str()).map(str::to_owned)
+                            .unwrap_or_else(|| format!("执行 {:?}，需要显式重试或返工", a.status));
                         return Ok(false);
                     }
                     let kind = match phase(step) {
@@ -1217,6 +1256,9 @@ impl Engine {
                 };
                 let d = s.delivery(&delivery)?.clone();
                 state.outputs.insert("delivery".into(), delivery.clone());
+                if let Some(run) = s.runs.iter().rev().find(|run| run.node == format!("review:{delivery}")) {
+                    state.outputs.insert("session".into(), run.session_id.clone());
+                }
                 if let Some(mid) = &d.merge_id {
                     state.outputs.insert("merge".into(), mid.clone());
                 }

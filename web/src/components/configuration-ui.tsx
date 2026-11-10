@@ -125,10 +125,14 @@ export function selectConfigurationObject(id: string, key = "config_object") {
 }
 export function useGroupTab(group: string, allowed: string[]) {
   const read = useCallback(() => {
-    const url = new URLSearchParams(location.search).get("config_tab");
+    const normalize = (value: string | null) =>
+      group === "actors" && value === "agent_instance" ? "agent" : value;
+    const url = normalize(
+      new URLSearchParams(location.search).get("config_tab"),
+    );
     let stored: string | null = null;
     try {
-      stored = localStorage.getItem(`devdesk:v2:tab:${group}`);
+      stored = normalize(localStorage.getItem(`devdesk:v2:tab:${group}`));
     } catch {}
     return allowed.includes(url || "")
       ? url!
@@ -138,6 +142,13 @@ export function useGroupTab(group: string, allowed: string[]) {
   }, [group, allowed.join("|")]);
   const [tab, setTab] = useState(read);
   useEffect(() => {
+    if (group === "actors") {
+      const params = new URLSearchParams(location.search);
+      if (params.get("config_tab") === "agent_instance") {
+        params.set("config_tab", "agent");
+        history.replaceState(null, "", `?${params}`);
+      }
+    }
     const pop = () => setTab(read());
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
@@ -211,8 +222,8 @@ export function RevisionSelect({
 }
 export function MarkdownPreview({ text }: { text: string }) {
   return (
-    <div className="markdown-preview" aria-label="Markdown 预览">
-      <Suspense fallback={<p>正在渲染 Markdown…</p>}>
+    <div className="markdown-preview" aria-label="内容预览">
+      <Suspense fallback={<p>正在加载内容…</p>}>
         <RenderMarkdown text={text} />
       </Suspense>
     </div>
@@ -224,6 +235,8 @@ export function MarkdownField({
   value,
   onChange,
   readOnly = false,
+  disabled = false,
+  maxLength,
   required = false,
   rows = 10,
 }: {
@@ -231,42 +244,96 @@ export function MarkdownField({
   value: string;
   onChange: (value: string) => void;
   readOnly?: boolean;
+  disabled?: boolean;
+  maxLength?: number;
   required?: boolean;
   rows?: number;
 }) {
   const [editing, setEditing] = useState(false);
+  const field = useRef<HTMLDivElement>(null);
+  const outsidePointer = useRef(false);
   const id = useId();
+  useEffect(() => {
+    if (!editing) return;
+    const pointerDown = (event: PointerEvent) => {
+      outsidePointer.current = !field.current?.contains(event.target as Node);
+    };
+    const finishClick = () => {
+      if (outsidePointer.current) {
+        outsidePointer.current = false;
+        setEditing(false);
+      }
+    };
+    // Let the outside control handle its click before changing the editor's height.
+    document.addEventListener("pointerdown", pointerDown, true);
+    document.addEventListener("click", finishClick);
+    document.addEventListener("pointercancel", finishClick);
+    return () => {
+      outsidePointer.current = false;
+      document.removeEventListener("pointerdown", pointerDown, true);
+      document.removeEventListener("click", finishClick);
+      document.removeEventListener("pointercancel", finishClick);
+    };
+  }, [editing]);
   return (
-    <div className="markdown-field full-width" role="group" aria-label={label}>
+    <div
+      ref={field}
+      className="markdown-field full-width"
+      role="group"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      onBlur={(event) => {
+        if (!outsidePointer.current && !event.currentTarget.contains(event.relatedTarget as Node | null))
+          setEditing(false);
+      }}
+    >
       <div className="markdown-field-heading">
-        {editing && !readOnly ? (
+        {editing && !readOnly && !disabled ? (
           <label htmlFor={id}>{label}</label>
         ) : (
           <span>{label}</span>
         )}
-        {!readOnly && (
-          <ActionButton
-            type="button"
-            aria-label={editing ? `预览${label}` : `编辑${label}源码`}
-            onClick={() => setEditing(!editing)}
-          >
-            {editing ? "完成编辑" : "编辑源码"}
-          </ActionButton>
-        )}
       </div>
-      {editing && !readOnly ? (
+      {editing && !readOnly && !disabled ? (
         <textarea
           id={id}
+          aria-label={label}
           autoFocus
           required={required}
+          maxLength={maxLength}
           rows={rows}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(event) => onChange(event.target.value)}
         />
-      ) : value.trim() ? (
-        <MarkdownPreview text={value} />
+      ) : readOnly || disabled ? (
+        value.trim() ? (
+          <MarkdownPreview text={value} />
+        ) : (
+          <p className="markdown-empty">暂无内容</p>
+        )
       ) : (
-        <p className="markdown-empty">暂无内容</p>
+        <div
+          className="markdown-editor-preview"
+          role="button"
+          tabIndex={0}
+          aria-label={label}
+          onClick={(event) => {
+            event.preventDefault();
+            setEditing(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setEditing(true);
+            }
+          }}
+        >
+          {value.trim() ? (
+            <MarkdownPreview text={value} />
+          ) : (
+            <p className="muted">点击填写内容</p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -281,63 +348,47 @@ export function MarkdownTopicsField({
   onChange: (value: string[]) => void;
   readOnly?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
-  const label = "必须讨论的主题";
   return (
-    <div className="markdown-field full-width" role="group" aria-label={label}>
+    <div
+      className="markdown-field full-width"
+      role="group"
+      aria-label="必须讨论的主题"
+    >
       <div className="markdown-field-heading">
-        <span>{label}</span>
-        {!readOnly && (
-          <ActionButton
-            type="button"
-            aria-label={editing ? `预览${label}` : `编辑${label}源码`}
-            onClick={() => setEditing(!editing)}
-          >
-            {editing ? "完成编辑" : "编辑源码"}
-          </ActionButton>
-        )}
+        <span>必须讨论的主题</span>
       </div>
-      {editing && !readOnly ? (
-        <>
-          {value.map((topic, index) => (
-            <div key={index} className="markdown-topic-source">
-              <label>
-                讨论主题 {index + 1}
-                <textarea
-                  rows={4}
-                  value={topic}
-                  onChange={(e) =>
-                    onChange(
-                      value.map((item, i) =>
-                        i === index ? e.target.value : item,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <ActionButton
-                type="button"
-                aria-label={`删除讨论主题 ${index + 1}`}
-                onClick={() => onChange(value.filter((_, i) => i !== index))}
-              >
-                删除主题
-              </ActionButton>
-            </div>
-          ))}
-          <ActionButton type="button" onClick={() => onChange([...value, ""])}>
-            添加讨论主题
-          </ActionButton>
-        </>
-      ) : value.length ? (
+      {value.length ? (
         <ol className="markdown-topics">
           {value.map((topic, index) => (
             <li key={index}>
-              <MarkdownPreview text={topic} />
+              <MarkdownField
+                label={`讨论主题 ${index + 1}`}
+                value={topic}
+                readOnly={readOnly}
+                rows={4}
+                onChange={(next) =>
+                  onChange(value.map((item, i) => (i === index ? next : item)))
+                }
+              />
+              {!readOnly && (
+                <ActionButton
+                  type="button"
+                  aria-label={`删除讨论主题 ${index + 1}`}
+                  onClick={() => onChange(value.filter((_, i) => i !== index))}
+                >
+                  删除主题
+                </ActionButton>
+              )}
             </li>
           ))}
         </ol>
       ) : (
-        <p className="markdown-empty">暂无主题</p>
+        <p className="muted">暂无主题</p>
+      )}
+      {!readOnly && (
+        <ActionButton type="button" onClick={() => onChange([...value, ""])}>
+          添加讨论主题
+        </ActionButton>
       )}
     </div>
   );

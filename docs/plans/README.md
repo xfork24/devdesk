@@ -4,6 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [默认模板资源与重置模板定义](configuration-template-reset/PLAN.md) | 待实施 | 完整默认资源、数据库编辑副本、设置页确认重置、目录代次及历史引用兼容；2026-11-10 设计方案 |
 | [架构与实现基线 v0.4](devdesk-v0.4/PLAN.md) | [基线核对与验证记录](devdesk-v0.4/EXECUTION.md) | 当前源码 e4fbcae；Role/Capability、Workflow v3/任务配置、模型与人类 Approve、引用恢复、接入及全局讨论；macOS 179 项 Rust、双 profile 各 33 项浏览器通过，Ubuntu 历史验收与新增待验边界分别保留 |
 | [Ubuntu 六项改造验收](ubuntu-six-plan-acceptance/PLAN.md) | [执行记录](ubuntu-six-plan-acceptance/EXECUTION.md) | 已通过用户最终判据；165 项 Rust、双 profile 各 31 浏览器、Codex 完整闭环、独立 Linux 包；修复四项产品问题，MiniMax 模型能力限制单列 |
 | [设置、配置与执行工作台改进](settings-navigation-usability/PLAN.md) | [实施报告](settings-navigation-usability/REPORT.md)、[Ubuntu 补验](ubuntu-six-plan-acceptance/EXECUTION.md) | 已实施；Ubuntu 导航、反馈、连接、AgentID、阶段布局与完整 Codex 工程通过 |

@@ -262,7 +262,7 @@ export function RoleManager({
           )}
           <MarkdownField
             key={draft.selected || "new"}
-            label="Markdown 职责说明"
+            label="职责说明"
             value={draft.instructions}
             required
             onChange={(instructions) => {

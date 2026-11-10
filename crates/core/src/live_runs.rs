@@ -481,6 +481,18 @@ impl Engine {
             self.enqueue_live_turn(r, session, &input, &documents, code)?;
             return Ok(None);
         };
+        if turn.status == TurnStatus::NeedsReconciliation {
+            let executions: Vec<_> = s.executions.iter()
+                .filter(|e| e.run_id.as_ref() == Some(&r.id)).collect();
+            if !executions.is_empty() && executions.iter()
+                .all(|e| e.writer_revoked && e.protocol_artifact.is_some())
+            {
+                return Ok(Some(json!({"status":"interrupted","failure_type":"needs_reconciliation",
+                    "message":"原执行结果未知，执行者已停止并封存。请在本步骤执行技术重试；旧输入和结果保留，不会自动重发，也无需再次采纳需求提案。",
+                    "turn_id":turn.id,"origin":"external"})));
+            }
+            return Ok(None);
+        }
         if turn.status.active() {
             return Ok(None);
         }
@@ -1253,12 +1265,18 @@ impl Engine {
         )?;
         require(
             !s.turns.iter().any(|t| {
-                t.status.active()
+                t.status.active() && t.status != TurnStatus::NeedsReconciliation
                     && (t.run_id.as_ref() == Some(&old.id)
                         || descendants.iter().any(|r| t.run_id.as_ref() == Some(&r.id)))
             }),
             "旧输入结果尚未核对，请先在原会话明确停止，不会重发该输入",
         )?;
+        require(s.turns.iter().filter(|t| t.status == TurnStatus::NeedsReconciliation
+            && (t.run_id.as_ref() == Some(&old.id)
+                || descendants.iter().any(|r| t.run_id.as_ref() == Some(&r.id))))
+            .all(|t| s.executions.iter().any(|e| e.session_id == t.session_id
+                && e.run_id == t.run_id && e.writer_revoked && e.protocol_artifact.is_some())),
+            "未知输入重试前须取得原执行的停止及协议封存证明")?;
         if let Some(aid) = &old.attempt_id {
             let a = s.attempt(aid)?;
             require(
@@ -1313,19 +1331,30 @@ impl Engine {
                 .clone()
                 .ok_or_else(|| err("blocked", "旧运行时锁缺失"))?;
             // Use the old exact binding; global/project/role defaults are intentionally not resolved again.
+            let snapshot = self.capture_conversation(s, &session, "run_retry_handoff", None, Some(&original.binding))?;
+            let instance = session.runtime_binding.as_ref()
+                .and_then(|binding| binding.agent_configuration.as_ref())
+                .map(|agent| agent.agent_instance_id.clone())
+                .or_else(|| s.governance.iter().find(|r| r.kind == "agent_session" && r.definition_id == session.id)
+                    .and_then(|r| r.data["agent_instance_id"].as_str()).map(str::to_owned));
+            let mut payload = json!({"agent":session.agent,"binding":binding,
+                "force_new":true,"predecessor":session.id,"snapshot_id":snapshot});
+            if let Some(instance) = instance { payload["agent_instance_id"] = json!(instance); }
             let command = Command {
                 command_id: format!("retry-session:{}", id()),
                 target: Some(session.owner_id.clone()),
                 expected_revision: revision(s, &session.owner_id),
-                payload: json!({"agent":session.agent,"binding":binding}),
+                payload,
             };
             let opened = self
                 .conversation_command("session.open", &command, s)?
                 .ok_or_else(|| err("blocked", "无法续用原角色会话"))?;
+            self.governance_after_command("session.open", &command, s, &opened)?;
             let mut next = original.clone();
             next.id = id();
             next.retry_of = Some(original.id);
             next.session_id = opened["id"].as_str().unwrap().into();
+            self.inherit_task_binding(s, &session.id, &next.session_id)?;
             next.status = Status::Queued;
             next.cancel_requested = false;
             next.started = None;

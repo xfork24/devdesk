@@ -2,9 +2,14 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { useMockCodexCatalog } from "./support/model-catalog";
+useMockCodexCatalog();
 async function setup(page: Page) {
   await page.goto("/");
-  if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
+  if (
+    (await page.request.get("/capabilities").then((r) => r.json()))
+      .setup_required
+  ) {
     await page
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-usability-")));
@@ -18,7 +23,15 @@ async function rpc(page: Page, method: string, params = {}) {
   expect(value.error, JSON.stringify(value)).toBeUndefined();
   return value.result;
 }
-async function near(button: Locator, text: string) {
+async function createGlobalAgent(page: Page, name: string) {
+  const defaults = await rpc(page, "query.configuration_defaults");
+  const definition = defaults.records.find((r: any) => r.kind === "agent" && r.data.role === "analyst");
+  const created = await rpc(page, "agent.instance.create", {
+    command_id: crypto.randomUUID(), payload: { name, scope: {kind:"global"}, agent_revision_id:definition.id },
+  });
+  return { instance: created.id, agent: definition.id };
+}
+async function rowFeedback(button: Locator, text: string) {
   const box = button.locator("..");
   const feedback = box.locator(".action-feedback");
   await expect(feedback).toContainText(text);
@@ -26,8 +39,16 @@ async function near(button: Locator, text: string) {
     f = await feedback.boundingBox();
   expect(f!.y - (b!.y + b!.height)).toBeLessThan(20);
   expect(f!.y).toBeGreaterThanOrEqual(b!.y + b!.height);
+  const rowLeft = await button.evaluate((element) => {
+    let row = element.parentElement!;
+    while (getComputedStyle(row).display === "contents") row = row.parentElement!;
+    return row.getBoundingClientRect().left + parseFloat(getComputedStyle(row).paddingLeft);
+  });
+  expect(Math.abs(f!.x - rowLeft)).toBeLessThan(1);
+  const style = await feedback.evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, border: getComputedStyle(element).borderTopWidth, padding: getComputedStyle(element).paddingLeft }));
+  expect(style).toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px", padding: "0px" });
 }
-test("反馈紧邻触发按钮，新建入口位于左侧顶部，运行版本来自目录", async ({
+test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶部", async ({
   page,
 }, info) => {
   await setup(page);
@@ -37,12 +58,12 @@ test("反馈紧邻触发按钮，新建入口位于左侧顶部，运行版本�
       return route.fulfill({
         json: { jsonrpc: "2.0", id: c.id, result: { authenticated: true } },
       });
-    return route.continue();
+    return route.fallback();
   });
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const login = page.getByRole("button", { name: "检查登录状态", exact: true });
   await login.click();
-  await near(login, "Codex OAuth 已登录");
+  await rowFeedback(login, "Codex OAuth 已登录");
   await page.screenshot({
     path: info.outputPath("login-feedback.png"),
     fullPage: true,
@@ -104,25 +125,20 @@ test("反馈紧邻触发按钮，新建入口位于左侧顶部，运行版本�
     );
   }
 });
-test("全局角色讨论按 AgentID 确定经验归属，无重复经验范围选择", async ({
+test("全局角色讨论按 Agent 确定经验归属，无重复经验范围选择", async ({
   page,
 }, info) => {
   await setup(page);
+  const created = await createGlobalAgent(page, "Global agent " + crypto.randomUUID());
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
-  await expect(page.getByText("新实例经验范围", { exact: true })).toHaveCount(
-    0,
-  );
-  const create = page.getByRole("button", {
-    name: "创建全局 AgentID",
-    exact: true,
-  });
-  await expect(create).toBeEnabled();
-  await create.click();
-  await expect(page.getByLabel("AgentID", { exact: true })).not.toHaveValue("");
+  await page.getByLabel("讨论角色", {exact:true}).selectOption(created.agent);
+  await page.getByLabel("Agent", { exact: true }).selectOption(created.instance);
+  await expect(page.getByText("新实例经验范围", {exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button", {name:/创建.*Agent/})).toHaveCount(0);
   await expect(
     page.getByText(
-      "该 AgentID 的经验范围：全局 / 跨项目；已有工作按此身份保留。",
+      "该 Agent 的经验范围：全局 / 跨项目；已有工作按此身份保留。",
       { exact: true },
     ),
   ).toBeVisible();
@@ -158,7 +174,7 @@ test("创建 Feature 提供全部同项目的前序选项，并说明关联语�
   );
   await page.route("**/rpc", async (route) => {
     const c = route.request().postDataJSON();
-    if (c.method !== "query.workspace") return route.continue();
+    if (c.method !== "query.workspace") return route.fallback();
     const p = {
       id: pid,
       title: "Fixture Project",
@@ -208,7 +224,7 @@ test("创建 Feature 提供全部同项目的前序选项，并说明关联语�
   ).toBeVisible();
 });
 
-test("运行时偏好只保存明确安装和模型，Codex 与已配置 DSH 模型目录可选择", async ({
+test("运行时偏好只选择 Model 和 Harness，项目与角色独立回显", async ({
   page,
 }, info) => {
   await setup(page);
@@ -221,30 +237,84 @@ test("运行时偏好只保存明确安装和模型，Codex 与已配置 DSH 模
     revision: 1,
     workspace_definition: { repository: "fixture/repo", mainline: "main" },
   };
-  const installation = (id: string, provider: string, os = "linux") => ({
-    id,
-    key: {
-      provider,
-      version: provider === "codex" ? "0.167.0" : "0.2.2-rc.1",
-      os,
-      arch: "aarch64",
-    },
-    artifact: {
-      kind: os === "linux" ? "docker_image" : "executable",
-      image_id: "fixture",
-    },
-    execution_supported: os === "linux",
-    usage_reason:
-      os === "macos"
-        ? "本机 Codex 用于登录及模型目录；项目执行使用隔离的 Docker worker"
-        : null,
-  });
-  const installs = [
-    installation("codex-docker", "codex"),
-    installation("codex-native", "codex", "macos"),
-    installation("dsh-docker", "dsh"),
-  ];
   const saved: any[] = [];
+  let catalogRequests = 0;
+  const records = [
+    {
+      id: "harness-codex",
+      kind: "harness",
+      name: "我的 Codex Harness",
+      data: {
+        provider: "codex",
+        runtime_version: "0.167.0",
+        model_providers: ["openai"],
+      },
+    },
+    {
+      id: "harness-dsh",
+      kind: "harness",
+      name: "我的 DSH Harness",
+      data: {
+        provider: "dsh",
+        runtime_version: "0.2.2-rc.1",
+        model_providers: ["zai-coding-cn"],
+      },
+    },
+    {
+      id: "model-sol",
+      kind: "model",
+      name: "我的 Sol High",
+      data: {
+        provider: "openai",
+        model: "gpt-6.1-sol",
+        parameters: { reasoning_effort: "high" },
+      },
+    },
+    {
+      id: "model-luna",
+      kind: "model",
+      name: "我的 Luna",
+      data: { provider: "openai", model: "gpt-6-luna", parameters: {} },
+    },
+    {
+      id: "model-glm",
+      kind: "model",
+      name: "我的 GLM",
+      data: {
+        provider: "zai-coding-cn",
+        model: "glm-5.3",
+        parameters: { max_tokens: 4096 },
+        context_window: 1000000,
+        max_output_tokens: 131072,
+      },
+    },
+  ].map((record) => ({ ...record, version: 1, definition_id: record.id }));
+  const installations = [
+    {
+      id: "codex-native",
+      key: {
+        provider: "codex",
+        os: "macos",
+        arch: "aarch64",
+        version: "0.167.0",
+      },
+      artifact: { kind: "executable" },
+    },
+    {
+      id: "codex-docker",
+      key: {
+        provider: "codex",
+        os: "linux",
+        arch: "aarch64",
+        version: "0.167.0+docker.fixture",
+      },
+      artifact: {
+        kind: "docker_image",
+        image_id: "sha256:project-execution-fixture",
+      },
+      execution_supported: true,
+    },
+  ];
   await page.route("**/capabilities", (route) =>
     route.fulfill({
       json: {
@@ -255,9 +325,19 @@ test("运行时偏好只保存明确安装和模型，Codex 与已配置 DSH 模
     }),
   );
   await page.route("**/rpc", async (route) => {
-    const c = route.request().postDataJSON();
+    const call = route.request().postDataJSON();
     let result: any;
-    if (c.method === "query.workspace")
+    if (call.method === "codex.auth.models") {
+      catalogRequests++;
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: { code: -32000, message: "Catalog unavailable" },
+        },
+      });
+    }
+    if (call.method === "query.workspace")
       result = {
         ...base,
         active_project: project,
@@ -266,141 +346,153 @@ test("运行时偏好只保存明确安装和模型，Codex 与已配置 DSH 模
         features: [],
         repository_ready: true,
         configuration_ready: true,
-        runtime_installations: installs,
+        runtime_installations: installations,
       };
-    else if (c.method === "query.runtime_options")
+    else if (call.method === "query.runtime_options")
       result = {
-        default_harness: "codex",
         host_os: "macos",
         host_arch: "aarch64",
-        installations: installs,
-        recipes: [
-          { provider: "codex", version: "0.167.0", arch: "aarch64" },
-          { provider: "dsh", version: "0.2.2-rc.1", arch: "aarch64" },
-        ],
-        model_providers: [
-          {
-            id: "deepseek",
-            label: "DeepSeek 官方 API",
-            configured: true,
-            available: true,
-            auth_kind: "api_key",
-          },
-          {
-            id: "zai-coding-cn",
-            label: "智谱 Coding 国内",
-            configured: true,
-            available: true,
-            auth_kind: "api_key",
-          },
-        ],
+        installations,
+        recipes: [],
+        model_providers: [],
+        default_harness: "codex",
       };
-    else if (c.method === "codex.auth.models")
-      result = {
-        models: [{ model: "gpt-6.1-sol", displayName: "GPT-6.1 Sol" }],
-      };
-    else if (c.method === "models.list")
-      result = {
-        source:
-          c.params.model_provider === "deepseek"
-            ? "provider_endpoint"
-            : "pinned_catalog",
-        models: [
-          {
-            id:
-              c.params.model_provider === "deepseek"
-                ? "deepseek-v4-pro"
-                : "glm-5.3",
-            context_window: 1000000,
-            max_output_tokens: 131072,
-          },
-        ],
-      };
-    else if (c.method === "project.update") {
-      saved.push(c.params.payload.runtime_preferences);
+    else if (call.method === "query.configurations") {
+      const filtered = records.filter(
+        (record) => !call.params.kind || call.params.kind === record.kind,
+      );
+      result = { records: filtered, total: filtered.length };
+    } else if (call.method === "project.update") {
+      saved.push(call.params.payload.runtime_preferences);
       project = {
         ...project,
-        ...c.params.payload,
+        ...call.params.payload,
         revision: project.revision + 1,
       };
       result = { id: pid };
-    } else if (c.params.project_id === pid) {
-      const params = { ...c.params };
+    } else if (call.params.project_id === pid) {
+      const params = { ...call.params };
       delete params.project_id;
       delete params.local;
-      const response = await route.fetch({
-        postData: JSON.stringify({ ...c, params }),
+      return route.fulfill({
+        response: await route.fetch({
+          postData: JSON.stringify({ ...call, params }),
+        }),
       });
-      return route.fulfill({ response });
-    } else return route.continue();
-    return route.fulfill({ json: { jsonrpc: "2.0", id: c.id, result } });
+    } else return route.fallback();
+    return route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
   await page.goto("/?tab=settings");
   const harness = page.getByLabel("项目角色 Harness", { exact: true });
-  await expect(harness.locator("option").first()).toContainText(
-    "系统默认Harness",
-  );
-  const installsSelect = page.getByLabel("项目角色安装", { exact: true });
+  const model = page.getByLabel("项目角色模型", { exact: true });
+  const scope = page.getByLabel("运行时偏好范围", { exact: true });
+  const save = page.getByRole("button", { name: "保存偏好", exact: true });
+  const preferences = page
+    .getByRole("heading", { name: "项目与角色运行时偏好", exact: true })
+    .locator("..");
+  const sharedInstallations = page
+    .getByRole("heading", { name: "共享运行时安装", exact: true })
+    .locator("..");
+  await expect(sharedInstallations).toContainText("linux/aarch64");
+  await expect(sharedInstallations).not.toContainText("macos/aarch64");
+  await expect(model).toBeDisabled();
+  await expect(preferences.getByRole("combobox")).toHaveCount(3);
   await expect(
-    installsSelect.locator('option[value="codex-native"]'),
-  ).toBeDisabled();
-  await expect(installsSelect).not.toContainText("按需准备并复用运行时");
-  await installsSelect.selectOption("codex-docker");
-  const model = page.getByRole("combobox", {
-    name: "项目角色模型",
-    exact: true,
-  });
-  await expect(model.locator('option[value="gpt-6.1-sol"]')).toHaveCount(1);
-  await model.selectOption("gpt-6.1-sol");
-  await page.getByRole("button", { name: "保存偏好", exact: true }).click();
+    preferences.getByLabel("项目角色思考深度", { exact: true }),
+  ).toHaveCount(0);
+  await harness.selectOption("harness-codex");
+  await expect(model.locator('option[value="model-glm"]')).toHaveCount(0);
+  await model.selectOption("model-sol");
+  await save.click();
+  await rowFeedback(save, "偏好已保存");
   expect(saved[0].default).toMatchObject({
     provider: "codex",
-    use_system_default: true,
-    installation_id: "codex-docker",
+    model_ref: "model-sol",
+    harness_ref: "harness-codex",
     model: "gpt-6.1-sol",
-    model_provider: "openai",
   });
-  await harness.selectOption("dsh");
-  await installsSelect.selectOption("dsh-docker");
-  await expect(model.locator('option[value="deepseek-v4-pro"]')).toHaveCount(1);
-  await page
-    .getByLabel("偏好模型服务商", { exact: true })
-    .selectOption("zai-coding-cn");
-  await expect(model.locator('option[value="glm-5.3"]')).toHaveCount(1);
-  await model.selectOption("glm-5.3");
-  const save = page.getByRole("button", { name: "保存偏好", exact: true });
+  expect(saved[0].default).not.toHaveProperty("reasoning_effort");
+
+  // Old per-project overrides disappear on save; the selected Model owns its parameters.
+  project.runtime_preferences.default.reasoning_effort = "low";
+  project.revision++;
+  await page.reload();
+  await expect(harness).toHaveValue("harness-codex");
+  await expect(model).toHaveValue("model-sol");
+  await expect(preferences.getByRole("combobox")).toHaveCount(3);
   await save.click();
-  await near(save, "偏好已保存");
-  expect(saved[1].default).toMatchObject({
+  await rowFeedback(save, "偏好已保存");
+  expect(saved[1].default).not.toHaveProperty("reasoning_effort");
+  expect(
+    records.find((record) => record.id === "model-sol")!.data.parameters,
+  ).toEqual({ reasoning_effort: "high" });
+
+  await scope.selectOption("developer");
+  await harness.selectOption("harness-codex");
+  await model.selectOption("model-luna");
+  await save.click();
+  await rowFeedback(save, "偏好已保存");
+  expect(saved[2].roles).toMatchObject([
+    {
+      role: "developer",
+      preference: { model_ref: "model-luna", harness_ref: "harness-codex" },
+    },
+  ]);
+  expect(saved[2].roles[0].preference).not.toHaveProperty("reasoning_effort");
+  expect(saved[2].default.model_ref).toBe("model-sol");
+  await page.reload();
+  await expect(model).toHaveValue("model-sol");
+  await scope.selectOption("developer");
+  await expect(model).toHaveValue("model-luna");
+  await scope.selectOption("project");
+  await expect(model).toHaveValue("model-sol");
+  await preferences.screenshot({
+    path: info.outputPath("runtime-component-selection.png"),
+  });
+
+  await harness.selectOption("harness-dsh");
+  await expect(model).toHaveValue("");
+  await expect(model.locator('option[value="model-sol"]')).toHaveCount(0);
+  await model.selectOption("model-glm");
+  await save.click();
+  await rowFeedback(save, "偏好已保存");
+  expect(saved[3].default).toMatchObject({
     provider: "dsh",
-    use_system_default: false,
-    installation_id: "dsh-docker",
-    model: "glm-5.3",
+    model_ref: "model-glm",
+    harness_ref: "harness-dsh",
     model_provider: "zai-coding-cn",
+    model: "glm-5.3",
     context_window: 1000000,
     max_output_tokens: 131072,
   });
-  await page.screenshot({
-    path: info.outputPath("explicit-runtime-models.png"),
-    fullPage: true,
-  });
+  expect(saved[3].default).not.toHaveProperty("reasoning_effort");
+  expect(saved[3].roles[0].preference.model_ref).toBe("model-luna");
+  await page.reload();
+  await expect(harness).toHaveValue("harness-dsh");
+  await expect(model).toHaveValue("model-glm");
+  expect(catalogRequests).toBe(0);
+  await page.goto(
+    "/?tab=components&config_tab=harness&config_object=harness-codex",
+  );
+  const registeredInstallations = page
+    .getByRole("heading", { name: "已登记安装", exact: true })
+    .locator("..");
+  await expect(registeredInstallations).toContainText("linux/aarch64");
+  await expect(registeredInstallations).not.toContainText("macos/aarch64");
+  await page.unrouteAll({ behavior: "wait" });
 });
 
-test("切换 AgentID 后清空原会话，历史按该身份查询", async ({ page }) => {
+test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page }) => {
   await setup(page);
+  const firstCreated = await createGlobalAgent(page, "First agent " + crypto.randomUUID());
+  const secondCreated = await createGlobalAgent(page, "Second agent " + crypto.randomUUID());
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
-  const create = page.getByRole("button", {
-    name: "创建全局 AgentID",
-    exact: true,
-  });
-  const identity = page.getByLabel("AgentID", { exact: true });
-  await expect(create).toBeEnabled();
-  const previous = await identity.inputValue();
-  await create.click();
-  await expect(identity).not.toHaveValue(previous);
-  const first = await identity.inputValue();
-  const agent = await page.getByLabel("讨论角色", { exact: true }).inputValue();
+  await page.getByLabel("讨论角色", {exact:true}).selectOption(firstCreated.agent);
+  const identity = page.getByLabel("Agent", { exact: true });
+  await identity.selectOption(firstCreated.instance);
+  const first = firstCreated.instance;
+  const agent = firstCreated.agent;
   const requests: any[] = [];
   const sessions: any[] = [];
   await page.route("**/rpc", async (route) => {
@@ -408,7 +500,7 @@ test("切换 AgentID 后清空原会话，历史按该身份查询", async ({ pa
     let result: any;
     if (c.method === "session.open") {
       requests.push(c);
-      let session = sessions.find(
+      let session = !c.params.payload.force_new && sessions.findLast(
         (s) =>
           s.runtime_binding.agent_configuration.agent_instance_id ===
           c.params.payload.agent_instance_id,
@@ -441,7 +533,7 @@ test("切换 AgentID 后清空原会话，历史按该身份查询", async ({ pa
           s.runtime_binding.agent_configuration.agent_instance_id ===
             c.params.agent_instance_id,
       );
-      result = { sessions: selected, total: selected.length };
+      result = { sessions: selected.toReversed(), total: selected.length };
     } else if (c.method === "query.session" && c.params.scope === "global") {
       const session = sessions.find((s) => s.id === c.params.id);
       result = {
@@ -466,7 +558,7 @@ test("切换 AgentID 后清空原会话，历史按该身份查询", async ({ pa
         interactions: [],
         proposals: [],
       };
-    } else return route.continue();
+    } else return route.fallback();
     return route.fulfill({ json: { jsonrpc: "2.0", id: c.id, result } });
   });
   const open = page.getByRole("button", {
@@ -477,7 +569,16 @@ test("切换 AgentID 后清空原会话，历史按该身份查询", async ({ pa
   await expect(
     page.getByText("第一个身份的已完成工作", { exact: true }),
   ).toBeVisible();
-  await create.click();
+  const firstSession = sessions.at(-1).id;
+  await page.getByRole("button", {name:"新建 Session",exact:true}).click();
+  await expect.poll(() => sessions.length).toBe(2);
+  const latestSession = sessions.at(-1).id;
+  expect(latestSession).not.toBe(firstSession);
+  await expect(page.getByLabel("讨论会话",{exact:true})).toHaveValue(latestSession);
+  await open.click();
+  await expect(page.getByLabel("讨论会话",{exact:true})).toHaveValue(latestSession);
+  expect(sessions).toHaveLength(2);
+  await identity.selectOption(secondCreated.instance);
   await expect(identity).not.toHaveValue(first);
   const second = await identity.inputValue();
   await expect(

@@ -5,7 +5,7 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { ExecutionTaskDetails } from "./WorkflowTaskPreview";
-import { loadCatalog } from "./configuration-ui";
+import { loadCatalog, MarkdownField, MarkdownPreview } from "./configuration-ui";
 import { AgentExperience } from "./AgentExperience";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -32,6 +32,16 @@ const labels: Record<string, string> = {
   tester: "测试",
   reviewer: "评审",
 };
+
+function structuredContent(content: string) {
+  if (!/^[\s]*[\[{]/.test(content)) return false;
+  try {
+    const value = JSON.parse(content);
+    return value !== null && typeof value === "object";
+  } catch {
+    return false;
+  }
+}
 
 export function RoleConversation({
   project = globalOwner,
@@ -70,7 +80,10 @@ export function RoleConversation({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const pendingFocus = useRef<{ owner: string; session: string } | null>(null);
+  const manualSession = useRef(false);
+  const [sessionAnchor, setSessionAnchor] = useState(initialSession || "");
   function clearSelectedSession() {
+    manualSession.current = false;
     generation.current += 1;
     setSessionId("");
     setDetail(undefined);
@@ -237,8 +250,9 @@ export function RoleConversation({
     (t: Row) => t.status === "completed",
   );
   const formalOutput = Boolean(
-    detail?.output_contract?.id &&
-    detail.output_contract.id !== "proposal-content/v1",
+    detail?.formal_execution ||
+    (detail?.output_contract?.id &&
+      detail.output_contract.id !== "proposal-content/v1"),
   );
   const scopedRequest = useCallback(
     (method: string, params: Row = {}) =>
@@ -260,19 +274,31 @@ export function RoleConversation({
       expected_revision,
       payload,
     });
+  const recommendedStepId = runtime?.data.steps.find((s: Row) => s.key === recommended?.key)?.id;
   const loadSessions = useCallback(async () => {
     const current = ++listGeneration.current;
     const result = await scopedRequest("query.sessions", {
       owner_id: owner,
       agent_instance_id: instanceId || undefined,
+      workflow_session_id: sessionAnchor || undefined,
+      workflow_step_instance_id: sessionAnchor ? undefined : recommendedStepId,
+      agent: agent || undefined,
     });
-    if (current === listGeneration.current) setSessions(result.sessions);
-  }, [scopedRequest, owner, instanceId]);
+    if (current === listGeneration.current) {
+      setSessions(result.sessions);
+      if (!manualSession.current && (instanceId || agent || sessionAnchor)) {
+        const latest = result.sessions.find((s: Row) => instanceId ? (s.agent_instance_id || s.runtime_binding?.agent_configuration?.agent_instance_id) === instanceId : agent ? s.agent === agent : !!sessionAnchor);
+        setSessionId(latest?.id || "");
+      }
+    }
+  }, [scopedRequest, owner, instanceId, sessionAnchor, agent, recommendedStepId]);
   useEffect(() => {
     ++generation.current;
     const focus =
       pendingFocus.current?.owner === owner ? pendingFocus.current : null;
     pendingFocus.current = null;
+    manualSession.current = false;
+    setSessionAnchor(focus?.session || (owner === initialOwner ? initialSession || "" : ""));
     setSessionId(
       focus?.session || (owner === initialOwner ? initialSession || "" : ""),
     );
@@ -341,10 +367,13 @@ export function RoleConversation({
       (endFeedback(), setBusy(false));
     }
   }
-  async function open() {
+  async function open(forceNew = false) {
     captureFeedback();
 
     if (!selectedOwner) return;
+    const context = detail?.workflow_context || sessions.find((s) => s.id === sessionAnchor)?.workflow_context;
+    const stepId = context?.step_instance_id || runtime?.data.steps.find((s: Row) => s.key === recommended?.key)?.id;
+    manualSession.current = true;
     await action(async () => {
       const result = await command(
         "session.open",
@@ -353,6 +382,9 @@ export function RoleConversation({
         {
           agent,
           ...(instanceId ? { agent_instance_id: instanceId } : {}),
+          ...(stepId ? {workflow_step_instance_id: stepId} : {}),
+          ...(context?.recipe_node ? {workflow_recipe_node: context.recipe_node} : {}),
+          ...(forceNew ? {force_new: true} : {}),
         },
       );
       await loadSessions();
@@ -406,7 +438,7 @@ export function RoleConversation({
         <div>
           <h2>角色讨论</h2>
           <p className="muted">
-            与选定 AgentID 直接沟通，并查看它积累的工作与快照。AgentID
+            与选定 Agent 直接沟通，并查看它积累的工作与快照。Agent
             的经验范围由其定义确定；全局讨论可跨项目保留。
           </p>
         </div>
@@ -467,35 +499,10 @@ export function RoleConversation({
         )}
         {composite && (
           <>
-            <ActionButton
-              disabled={busy}
-              onClick={() => {
-                captureFeedback();
-                return action(async () => {
-                  const instance = await command(
-                    "agent.instance.create",
-                    undefined,
-                    undefined,
-                    {
-                      name: `${composite.name} · ${global ? "全局" : project.title}`,
-                      agent_revision_id: agent,
-                      scope: global
-                        ? { kind: "global" }
-                        : { kind: "project", project_id: project.id },
-                    },
-                  );
-                  setCatalog((old) => [...old, instance]);
-                  clearSelectedSession();
-                  setInstanceId(instance.id);
-                });
-              }}
-            >
-              {global ? "创建全局 AgentID" : "创建当前项目 AgentID"}
-            </ActionButton>
             <label>
-              AgentID
+              Agent
               <ActionSelect
-                aria-label="AgentID"
+                aria-label="Agent"
                 disabled={busy}
                 value={instanceId}
                 onChange={(e) => {
@@ -505,7 +512,7 @@ export function RoleConversation({
                 }}
               >
                 <option value="" disabled>
-                  请选择已创建的 AgentID
+                  请选择已创建的 Agent
                 </option>
                 {instances.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -514,9 +521,27 @@ export function RoleConversation({
                 ))}
               </ActionSelect>
             </label>
+            <div className="actions">
+              <ActionButton type="button" disabled={busy} onClick={() => action(async () => {
+                const created = await request("agent.instance.create", {
+                  project_id: global ? undefined : project.id,
+                  command_id: crypto.randomUUID(),
+                  payload: {
+                    name: `${composite.name} · ${global ? "全局" : "项目"}讨论 ${instances.length + 1}`,
+                    agent_revision_id: composite.id,
+                    ...(!global && owner !== project.id && featureLock?.data.agent_refs && Object.values(featureLock.data.agent_refs).includes(composite.id) ? { frozen_feature_id: feature?.id } : {}),
+                    scope: global ? { kind: "global" } : { kind: "project", project_id: project.id },
+                  },
+                });
+                clearSelectedSession();
+                setCatalog(await loadCatalog(request, global ? undefined : project));
+                setInstanceId(created.id);
+              })}>新建讨论身份</ActionButton>
+              {!instances.length && <p className="muted">先创建讨论身份，即可独立保留该 Agent 的会话与经验。</p>}
+            </div>
             {instanceId && (
               <p className="muted">
-                该 AgentID 的经验范围：
+                该 Agent 的经验范围：
                 {instances.find((r) => r.id === instanceId)?.scope.kind ===
                 "global"
                   ? "全局 / 跨项目"
@@ -548,10 +573,12 @@ export function RoleConversation({
         )}
         <ActionButton
           disabled={busy || !selectedOwner || !composite || !instanceId}
-          onClick={open}
+          onClick={() => open()}
         >
           开始 / 续用讨论
         </ActionButton>
+        <ActionButton disabled={busy || !selectedOwner || !composite || !instanceId || formalOutput || !!active}
+          onClick={() => open(true)}>新建 Session</ActionButton>
       </div>
       {recommended && (
         <p className="notice">
@@ -574,12 +601,13 @@ export function RoleConversation({
         }
         owner={selectedOwner || project}
         onRestored={(id) => {
+          manualSession.current = true;
           void loadSessions();
           setSessionId(id);
         }}
         onLocate={(entry) => {
           if (entry.project_id === "00000000-0000-4000-8000-000000000000") {
-            if (global) setSessionId(entry.session_id);
+            if (global) { manualSession.current = true; setSessionId(entry.session_id); }
             else {
               pendingFocus.current = {
                 owner: "global",
@@ -598,6 +626,7 @@ export function RoleConversation({
           value={sessionId}
           onChange={(e) => {
             captureFeedback();
+            manualSession.current = true;
             return setSessionId(e.target.value);
           }}
         >
@@ -634,6 +663,7 @@ export function RoleConversation({
                 type="button"
                 onClick={() => {
                   captureFeedback();
+                  manualSession.current = true;
                   return setSessionId(detail.session.predecessor);
                 }}
               >
@@ -649,6 +679,7 @@ export function RoleConversation({
                 key={s.id}
                 onClick={() => {
                   captureFeedback();
+                  manualSession.current = true;
                   return setSessionId(s.id);
                 }}
               >
@@ -776,7 +807,9 @@ export function RoleConversation({
             {projected.map((e) => (
               <article key={e.id} className={`conversation-message ${e.kind}`}>
                 <strong>{e.kind}</strong>
-                <pre>{e.content}</pre>
+                {["user", "assistant"].includes(e.kind) && !structuredContent(e.content)
+                  ? <MarkdownPreview text={e.content} />
+                  : <pre>{e.content}</pre>}
               </article>
             ))}
           </div>
@@ -913,23 +946,23 @@ export function RoleConversation({
               </div>
             ))}
           <ActionForm onSubmit={send}>
-            <label>
-              发送给角色
-              <textarea
-                aria-label="讨论输入"
-                value={input}
-                onChange={(e) => {
-                  captureFeedback();
-                  return setInput(e.target.value);
-                }}
-                required
-                maxLength={65536}
-              />
-            </label>
+            <MarkdownField
+              label="讨论输入"
+              disabled={formalOutput}
+              value={input}
+              onChange={(value) => {
+                captureFeedback();
+                setInput(value);
+              }}
+              required
+              maxLength={65536}
+              rows={5}
+            />
             <ActionButton
               className="primary"
               disabled={
                 busy ||
+                formalOutput ||
                 !!active ||
                 ["implementation", "testing", "review"].includes(
                   detail.session.runtime_binding.work_type,
@@ -948,6 +981,21 @@ export function RoleConversation({
             <p className="muted">
               该会话用于正式执行或校验。请在“执行与交付”的对应步骤查看模型结论并执行人类
               Approve。
+              {detail.session.feature_id && (
+                <a
+                  href={`/?${new URLSearchParams({
+                    tab: "execution",
+                    detail: "overview",
+                    project_id: detail.session.project_id,
+                    feature_id: detail.session.feature_id,
+                    ...(detail.session.task_id
+                      ? { task_id: detail.session.task_id }
+                      : {}),
+                  })}`}
+                >
+                  返回当前工作流
+                </a>
+              )}
             </p>
           )}
           <details hidden={global || formalOutput}>

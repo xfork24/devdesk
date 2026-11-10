@@ -53,7 +53,7 @@ pub fn configuration_hash<T: Serialize>(value: &T) -> String {
 }
 
 /// Typed envelope shared by configuration stores. Mutable kinds are explicitly allowlisted.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigurationRecord {
     pub id: Id,
     pub kind: String,
@@ -87,6 +87,7 @@ impl ConfigurationRecord {
             "standard",
             "skill",
             "spec",
+            "delivery_type",
             "role",
             "capability",
             "integration",
@@ -260,6 +261,10 @@ pub struct WorkflowPortReference {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowStep {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub delivery_outputs: BTreeMap<String, WorkflowDeliveryOutput>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub delivery_inputs: BTreeMap<String, WorkflowDeliveryInput>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -357,6 +362,8 @@ pub fn workflow_action_catalog() -> Value {
     ])
 }
 pub fn validate_workflow(doc: &WorkflowDocument) -> Result<Vec<String>> {
+    require(doc.schema_version >= 3 || doc.steps.iter().all(|step| step.delivery_inputs.is_empty() && step.delivery_outputs.is_empty()),
+        "Delivery 产出与引用需要 Workflow Schema v3，请显式升级草稿")?;
     if doc.schema_version == 3 {
         return validate_workflow_v3(doc);
     }
@@ -794,7 +801,7 @@ impl EngineeringState {
                     require(
                         old.data["agent_revision_id"] == r.data["agent_revision_id"]
                             && old.data["scope"] == r.data["scope"],
-                        "AgentID 的组合和范围不可更改",
+                        "Agent 的组合和范围不可更改",
                     )?;
                 }
             }

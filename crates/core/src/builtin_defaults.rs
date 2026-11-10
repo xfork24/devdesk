@@ -45,7 +45,7 @@ pub(crate) fn discard_reintroduced_history(
             }
         }
     }
-    let aliases: BTreeMap<_, _> = s
+    let mut aliases: BTreeMap<_, _> = s
         .governance
         .iter()
         .filter_map(|r| {
@@ -57,10 +57,22 @@ pub(crate) fn discard_reintroduced_history(
             (version.parse::<u64>().ok()? < old.version).then(|| (r.id.clone(), old.id.clone()))
         })
         .collect();
-    if aliases.is_empty() {
-        return;
+    // Explicit offline compaction records what was removed. Ordinary startup must
+    // not recreate those compatibility definitions or their temporary projections.
+    let mut removed = BTreeSet::new();
+    for receipt in existing.iter().filter(|r| r.kind == "catalog_compaction") {
+        if let Some(values) = receipt.data["removed_ids"].as_array() {
+            removed.extend(values.iter().filter_map(Value::as_str).filter(|id| !ids.contains(*id)).map(str::to_owned));
+        }
+        if let Some(values) = receipt.data["aliases"].as_object() {
+            aliases.extend(values.iter().filter_map(|(old, target)| {
+                let target = target.as_str()?;
+                (!ids.contains(old) && ids.contains(target)).then(|| (old.clone(), target.to_owned()))
+            }));
+        }
     }
-    let mut removed: BTreeSet<_> = aliases.keys().cloned().collect();
+    removed.extend(aliases.keys().cloned());
+    if removed.is_empty() { return; }
     for r in &s.governance {
         if !ids.contains(&r.id)
             && r.kind == "configuration_conversion"
@@ -466,22 +478,34 @@ impl Engine {
     pub fn configuration_defaults(&self, project: Option<&str>) -> Result<Value> {
         let s = self.store.snapshot()?;
         let current = |id: &str| -> Result<String> {
-            if s.governance.iter().any(|r| r.id == id) {
-                return Ok(id.into());
-            }
-            let identity = id
-                .rsplit_once("-v")
-                .map(|(identity, _)| identity)
-                .unwrap_or(id);
-            s.governance
+            let exact = s.governance.iter().find(|r| r.id == id);
+            let identity = exact.map(|r| r.definition_id.as_str()).unwrap_or_else(|| {
+                id.rsplit_once("-v")
+                    .map(|(identity, _)| identity)
+                    .unwrap_or(id)
+            });
+            let latest = s
+                .governance
                 .iter()
                 .filter(|r| r.definition_id == identity && r.is_definition())
-                .max_by_key(|r| r.version)
+                .max_by_key(|r| r.version);
+            if let Some(revision) = latest.filter(|r| {
+                r.created_at == 0
+                    && r.id.contains("-prose-")
+                    && !crate::configuration::retired(&s, r)
+            }) {
+                return Ok(revision.id.clone());
+            }
+            exact
+                .or(latest)
                 .map(|r| r.id.clone())
                 .ok_or_else(|| err("not_found", format!("默认配置不存在: {id}")))
         };
         let model = current(DEFAULT_MODEL_ID)?;
         let harness = current(DEFAULT_HARNESS_ID)?;
+        let workflow = current(DEFAULT_FEATURE_WORKFLOW_V3_ID)?;
+        let task_workflow = current(DEFAULT_TASK_WORKFLOW_V3_ID)?;
+        let capability = current(DEFAULT_CAPABILITY_ID)?;
         let scope = project
             .map(|id| Scope::Project {
                 project_id: id.into(),
@@ -489,11 +513,11 @@ impl Engine {
             .unwrap_or(Scope::Global);
         let mut roles = serde_json::Map::new();
         let mut ids = vec![
-            DEFAULT_FEATURE_WORKFLOW_V3_ID.to_owned(),
-            DEFAULT_TASK_WORKFLOW_V3_ID.to_owned(),
+            workflow.clone(),
+            task_workflow.clone(),
             model.clone(),
             harness.clone(),
-            DEFAULT_CAPABILITY_ID.to_owned(),
+            capability.clone(),
         ];
         for role in [
             "analyst",
@@ -503,14 +527,14 @@ impl Engine {
             "tester",
             "reviewer",
         ] {
-            let r = s.configuration(&default_role_id(role))?;
-            let agent = default_configured_agent_id(role);
+            let r = s.configuration(&current(&default_role_id(role))?)?;
+            let agent = current(&default_configured_agent_id(role))?;
             let configured = crate::governance::reference(&s, &agent, "agent", &scope)?;
             crate::governance::validate_composition(&s, &configured.decode()?, &scope)?;
             roles.insert(r.definition_id.clone(), json!(agent));
             ids.push(agent);
         }
-        crate::governance::reference(&s, DEFAULT_FEATURE_WORKFLOW_V3_ID, "workflow", &scope)?;
+        crate::governance::reference(&s, &workflow, "workflow", &scope)?;
         fn collect(value: &Value, ids: &mut Vec<String>) {
             match value {
                 Value::String(id) => {
@@ -544,7 +568,43 @@ impl Engine {
         }
 
         Ok(
-            json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_V3_ID,"task_workflow_ref":DEFAULT_TASK_WORKFLOW_V3_ID,"role_agent_bindings":roles,"standard_ref":null,"capability_ref":DEFAULT_CAPABILITY_ID,"model_ref":model,"harness_ref":harness,"sandbox_ref":DEFAULT_SANDBOX_ID,"permission_refs":["permission-container-full-access-v1","permission-container-full-access-v1"],"records":s.governance.iter().filter(|r|ids.contains(&r.id)||ids.contains(&r.definition_id)).collect::<Vec<_>>(),"permissions":s.permissions.iter().filter(|p|ids.contains(&p.id)).collect::<Vec<_>>(),"sandboxes":s.sandboxes.iter().filter(|b|b.id==DEFAULT_SANDBOX_ID).collect::<Vec<_>>(),"materializations":s.governance.iter().filter(|r|r.kind=="harness_materialization"&&(r.definition_id==harness||r.definition_id==DEFAULT_HARNESS_ID)).collect::<Vec<_>>() }),
+            json!({"workflow_ref":workflow,"task_workflow_ref":task_workflow,"role_agent_bindings":roles,"standard_ref":null,"capability_ref":capability,"model_ref":model,"harness_ref":harness,"sandbox_ref":DEFAULT_SANDBOX_ID,"permission_refs":["permission-container-full-access-v1","permission-container-full-access-v1"],"records":s.governance.iter().filter(|r|ids.contains(&r.id)||ids.contains(&r.definition_id)).collect::<Vec<_>>(),"permissions":s.permissions.iter().filter(|p|ids.contains(&p.id)).collect::<Vec<_>>(),"sandboxes":s.sandboxes.iter().filter(|b|b.id==DEFAULT_SANDBOX_ID).collect::<Vec<_>>(),"materializations":s.governance.iter().filter(|r|r.kind=="harness_materialization"&&(r.definition_id==harness||r.definition_id==DEFAULT_HARNESS_ID)).collect::<Vec<_>>() }),
         )
+    }
+}
+
+#[cfg(test)]
+mod compaction_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_compaction_does_not_reintroduce_removed_compatibility_history() {
+        let mut state = EngineeringState::default();
+        crate::seed_configuration(&mut state);
+        let original = state.governance.clone();
+        let mut newest = BTreeMap::new();
+        for record in original.iter().filter(|r| r.is_definition()) {
+            let entry = newest.entry(record.definition_id.clone()).or_insert(record.clone());
+            if record.version > entry.version { *entry = record.clone(); }
+        }
+        let aliases: BTreeMap<_, _> = original.iter().filter(|r| r.is_definition())
+            .filter_map(|r| {let latest = &newest[&r.definition_id]; (latest.id != r.id).then(|| (r.id.clone(), latest.id.clone()))}).collect();
+        let mut removed: BTreeSet<_> = aliases.keys().cloned().collect();
+        let kept: BTreeSet<_> = newest.values().map(|r| r.id.clone()).collect();
+        removed.extend(state.definitions.iter().filter(|r| !kept.contains(&r.id)).map(|r| r.id.clone()));
+        state.governance.retain(|r| !removed.contains(&r.id));
+        state.definitions.retain(|r| kept.contains(&r.id));
+        for r in &mut state.governance { if r.supersedes.as_ref().is_some_and(|id| removed.contains(id)) {r.supersedes = None;} }
+        for r in &mut state.definitions { if r.supersedes.as_ref().is_some_and(|id| removed.contains(id)) {r.supersedes = None;} }
+        state.governance.push(record("catalog_compaction", "catalog-compaction".into(), Scope::Global,
+            "显式目录整理".into(), 1, None, json!({"removed_ids":removed,"aliases":aliases}), true));
+        assert!(state.definitions.iter().any(|definition| definition.id == crate::binding(&state).agent));
+        let before = state.clone();
+        crate::seed_configuration(&mut state);
+        state.validate_governance(&before).unwrap();
+        assert_eq!(json!(state.governance), json!(before.governance));
+        assert_eq!(json!(state.definitions), json!(before.definitions));
+        crate::seed_configuration(&mut state);
+        assert_eq!(json!(state.governance), json!(before.governance));
     }
 }

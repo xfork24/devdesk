@@ -95,6 +95,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Re
             .or_else(|| s.features.iter().find(|r| r.id == id).map(|r| r.revision))
             .or_else(|| s.tasks.iter().find(|r| r.id == id).map(|r| r.revision))
             .or_else(|| s.sessions.iter().find(|r| r.id == id).map(|r| r.revision))
+            .or_else(|| s.proposals.iter().find(|r| r.id == id).map(|r| r.revision))
     });
     e.execute(
         method,
@@ -139,6 +140,7 @@ fn binding() -> RuntimeBinding {
         model_connection: None,
         model_profile_digest: None,
         agent_configuration: None,
+        model_parameters: Default::default(),
         permissions: None,
         installation: RuntimeInstallation {
             id: "fixture-runtime".into(),
@@ -724,6 +726,7 @@ fn task_recipe_and_same_named_feature_review_keep_distinct_sources_for_two_tasks
                 .key
                 .clone();
             let sid = open(&e, &tid, &compiled_key, node);
+            assert_eq!(open(&e, &tid, &compiled_key, node), sid, "same Task, Agent and frozen node must reuse its session");
             let sent = send(&e, &sid, "Task input");
             let task = e
                 .query("query.execution_task", &json!({"turn_id":sent["id"]}), 4)
@@ -1271,4 +1274,219 @@ fn output_contract_describes_typed_evidence_checks_and_preserves_legacy_snapshot
     restored.validate().unwrap();
     assert_eq!(serde_json::to_vec(&restored).unwrap(), bytes);
     assert_eq!(restored.renderer_version, "agent-task/v1");
+}
+
+#[test]
+fn workflow_sessions_reuse_latest_per_step_agent_and_recipe_until_explicit_new() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path(), Arc::default());
+    let p = project(&e);
+    let f = feature(&e, &p);
+    let first = open(&e, &f, "requirement_discussion", None);
+    assert_eq!(open(&e, &f, "requirement_discussion", None), first);
+    let source =
+        e.query("query.session", &json!({"id":first}), 4).unwrap()["workflow_context"].clone();
+    let actor = e
+        .store
+        .snapshot()
+        .unwrap()
+        .sessions
+        .iter()
+        .find(|s| s.id == first)
+        .unwrap()
+        .agent
+        .clone();
+    let payload = json!({"agent":actor,"binding":binding(),"workflow_step_instance_id":source["step_instance_id"],"force_new":true});
+    let newest = command(&e, "session.open", Some(&f), payload.clone()).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(newest, first);
+    assert_eq!(open(&e, &f, "requirement_discussion", None), newest);
+    let other_step = open(&e, &f, "requirement_execute", Some("requirement_validate"));
+    assert_ne!(other_step, newest);
+    assert_eq!(
+        open(&e, &f, "requirement_execute", Some("requirement_validate")),
+        other_step
+    );
+    let other_node = open(&e, &f, "solution_execute", Some("test_plan_validate"));
+    assert_ne!(other_node, newest);
+    let other_feature = feature(&e, &p);
+    let unrelated = open(&e, &other_feature, "requirement_discussion", None);
+    let rows = e
+        .query(
+            "query.sessions",
+            &json!({"owner_id":f,"workflow_session_id":first}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(rows["sessions"][0]["id"], newest);
+    assert_eq!(rows["sessions"][1]["id"], first);
+    assert_eq!(rows["total"], 2);
+    assert!(!rows.to_string().contains(&unrelated));
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.kind == "execution_specification" && r.definition_id == newest)
+            .count(),
+        1
+    );
+    let _sent = send(&e, &newest, "Continue the same workflow step");
+    assert!(
+        command(&e, "session.open", Some(&f), payload)
+            .unwrap_err()
+            .message
+            .contains("活动轮次")
+    );
+    assert_eq!(open(&e, &f, "requirement_discussion", None), newest);
+}
+
+#[test]
+fn delivery_contracts_freeze_revisions_validate_sources_and_pass_real_materials() {
+    let root = tempfile::tempdir().unwrap();
+    let e = engine(root.path(), Arc::default());
+    let p = project(&e);
+    let delivery = command(&e,"delivery_type.create",None,json!({"name":"PRD fixture","data":{"format":"markdown","body":"## Goals\n\nDescribe observable acceptance."}})).unwrap();
+    schemas::SCHEMAS.assert_valid("delivery-type.schema.json", &delivery["data"]);
+    let mut doc = e
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(DEFAULT_FEATURE_WORKFLOW_V3_ID)
+        .unwrap()
+        .data
+        .clone();
+    for step in doc["steps"].as_array_mut().unwrap() {
+        if step["key"] == "requirement_adopt" {
+            step["delivery_outputs"] =
+                json!({"prd":{"delivery_ref":delivery["id"],"source_port":"document"}});
+        }
+        if step["key"] == "design_discussion" {
+            step["delivery_inputs"] = json!({"approved_prd":{"delivery_ref":delivery["id"],"source":{"step":"requirement_adopt","port":"prd"}}});
+        }
+    }
+    let parsed: WorkflowDocument = serde_json::from_value(doc.clone()).unwrap();
+    validate_workflow(&parsed).unwrap();
+    let mut invalid = parsed.clone();
+    invalid
+        .steps
+        .iter_mut()
+        .find(|s| s.key == "design_discussion")
+        .unwrap()
+        .delivery_inputs
+        .get_mut("approved_prd")
+        .unwrap()
+        .delivery_ref = "builtin-delivery-design-v1".into();
+    assert!(
+        validate_workflow(&invalid)
+            .unwrap_err()
+            .message
+            .contains("不匹配")
+    );
+    let mut invalid = parsed.clone();
+    let consumer = invalid
+        .steps
+        .iter_mut()
+        .find(|s| s.key == "design_discussion")
+        .unwrap();
+    consumer.dependencies.clear();
+    assert!(validate_workflow(&invalid).is_err());
+    let mut invalid = parsed.clone();
+    invalid
+        .steps
+        .iter_mut()
+        .find(|s| s.key == "requirement_adopt")
+        .unwrap()
+        .delivery_outputs
+        .get_mut("prd")
+        .unwrap()
+        .source_port = "made_up".into();
+    assert!(validate_workflow(&invalid).is_err());
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"Delivery fixture","document":doc}),
+    )
+    .unwrap();
+    let published = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let defaults = e.configuration_defaults(Some(&p)).unwrap();
+    command(&e,"project.configuration.update",Some(&p),json!({"workflow_ref":published["id"],"role_agent_bindings":defaults["role_agent_bindings"]})).unwrap();
+    let f = feature(&e, &p);
+    e.evaluate_workflows().unwrap();
+    for intent in e.pending_workflow_intents().unwrap() {
+        if intent.data["method"] == "snapshot.save" {
+            let result = e.execute(
+                "snapshot.save",
+                serde_json::from_value(intent.data["command"].clone()).unwrap(),
+            );
+            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            result.unwrap();
+        }
+    }
+    e.evaluate_workflows().unwrap();
+    let revised = command(&e,"delivery_type.revise",delivery["id"].as_str(),json!({"data":{"format":"markdown","body":"Later content must not change an existing Feature."}})).unwrap();
+    assert_ne!(revised["id"], delivery["id"]);
+    let preview = e
+        .query(
+            "query.workflow_task_preview",
+            &json!({"id":published["id"],"path":"design_discussion"}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(preview["delivery_types"][0]["data"], delivery["data"]);
+    let frozen = e
+        .store
+        .snapshot()
+        .unwrap()
+        .feature_configuration(&f)
+        .unwrap()
+        .clone();
+    assert_eq!(
+        frozen
+            .definition_hashes
+            .get(delivery["id"].as_str().unwrap()),
+        Some(&delivery["content_hash"].as_str().unwrap().to_owned())
+    );
+    let sid = open(&e, &f, "requirement_discussion", None);
+    let sent = send(&e, &sid, "Define the PRD fixture");
+    e.tick_conversations(4).unwrap();
+    e.tick_conversations(4).unwrap();
+    let proposal = command(&e,"proposal.create",None,json!({"turn_id":sent["id"],"target":f,"content":{"kind":"requirement","title":"Actual PRD","body":"A real adopted source document.","acceptance":[{"key":"A1","description":"Observable result"}]}})).unwrap();
+    e.evaluate_workflows().unwrap();
+    command(&e, "proposal.adopt", proposal["id"].as_str(), json!({})).unwrap();
+    e.evaluate_workflows().unwrap();
+    let state = e.store.snapshot().unwrap();
+    let runtime: WorkflowRuntime = state
+        .governance
+        .iter()
+        .find(|r| r.kind == "workflow_instance" && r.definition_id == f)
+        .unwrap()
+        .decode()
+        .unwrap();
+    let produced = &runtime
+        .steps
+        .iter()
+        .find(|s| s.key == "requirement_adopt")
+        .unwrap()
+        .outputs;
+    assert_eq!(produced["prd"], produced["document"]);
+    assert!(state.documents.iter().any(|d| d.id == produced["prd"]));
+    let sid = open(&e, &f, "design_discussion", None);
+    let turn = send(&e, &sid, "Use the accepted PRD");
+    let task = e
+        .query("query.execution_task", &json!({"turn_id":turn["id"]}), 4)
+        .unwrap();
+    schemas::SCHEMAS.assert_valid("agent-task.schema.json", &task["task"]);
+    assert_eq!(
+        task["task"]["content"]["delivery_types"][0]["data"],
+        delivery["data"]
+    );
+    assert!(
+        task["task"]["content"]["inputs"]
+            .to_string()
+            .contains("A real adopted source document.")
+    );
 }

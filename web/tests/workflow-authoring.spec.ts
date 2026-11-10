@@ -2,6 +2,8 @@ import { test, expect, Page } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { useMockCodexCatalog } from "./support/model-catalog";
+useMockCodexCatalog();
 async function setup(page: Page) {
   await page.goto("/");
   if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
@@ -66,10 +68,10 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   const name = "安全评审 " + crypto.randomUUID().slice(0, 6);
   await role.getByLabel("Role 名称", { exact: true }).fill(name);
   await role
-    .getByRole("button", { name: "编辑Markdown 职责说明源码", exact: true })
+    .getByRole("button", { name: "职责说明", exact: true })
     .click();
   await role
-    .getByRole("textbox", { name: "Markdown 职责说明", exact: true })
+    .getByRole("textbox", { name: "职责说明", exact: true })
     .fill("# Duties\n\nReview evidence and security boundaries.");
   await role.getByRole("button", { name: "创建 Role", exact: true }).click();
   await expect(role.getByRole("status")).toHaveText(/Role 已保存/);
@@ -77,7 +79,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     role.getByRole("heading", { name: "Duties", level: 1 }),
   ).toBeVisible();
   await expect(
-    role.getByRole("textbox", { name: "Markdown 职责说明", exact: true }),
+    role.getByRole("textbox", { name: "职责说明", exact: true }),
   ).toHaveCount(0);
   await role.getByLabel("Role 名称", { exact: true }).fill(name + " v2");
   await role
@@ -128,7 +130,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   const name = "Browser Model " + crypto.randomUUID().slice(0, 5);
   await page.getByLabel("名称", { exact: true }).fill(name);
-  await page.getByLabel("模型标识", { exact: true }).fill("fixture-model");
+  await page.getByLabel("模型标识", { exact: true }).selectOption("fixture-model");
   await page.getByRole("button", { name: "创建 Model", exact: true }).click();
   await expect(
     page.getByRole("button", { name: new RegExp(name) }),
@@ -265,7 +267,7 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
       .getByRole("button", { name: `新建 ${resourceKind}`, exact: true })
       .click();
     const field = page.getByRole("group", {
-      name: "Markdown 正文",
+      name: "正文",
       exact: true,
     });
     await expect(field.getByRole("textbox")).toHaveCount(0);
@@ -273,14 +275,15 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
       .getByLabel("名称", { exact: true })
       .fill(`${kind} Markdown ` + crypto.randomUUID().slice(0, 6));
     await field
-      .getByRole("button", { name: "编辑Markdown 正文源码", exact: true })
+      .getByRole("button", { name: "正文", exact: true })
       .click();
     await field
-      .getByRole("textbox", { name: "Markdown 正文", exact: true })
+      .getByRole("textbox", { name: "正文", exact: true })
       .fill(body);
     await field
-      .getByRole("button", { name: "预览Markdown 正文", exact: true })
-      .click();
+      .getByRole("textbox", { name: "正文", exact: true }).press("Tab");
+    await expect(field.getByRole("textbox")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /编辑.*源码|预览正文/ })).toHaveCount(0);
     await expect(
       field.getByRole("heading", { name: "Markdown 内容", level: 2 }),
     ).toBeVisible();
@@ -305,11 +308,14 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
     ).toBeVisible();
     await expect(field.getByRole("textbox")).toHaveCount(0);
     await field
-      .getByRole("button", { name: "编辑Markdown 正文源码", exact: true })
+      .getByRole("button", { name: "正文", exact: true })
       .click();
     await expect(
-      field.getByRole("textbox", { name: "Markdown 正文", exact: true }),
+      field.getByRole("textbox", { name: "正文", exact: true }),
     ).toHaveValue(body);
+    await page.getByLabel("名称", { exact: true }).click();
+    await expect(field.getByRole("textbox")).toHaveCount(0);
+    await expect(field.getByRole("table")).toBeVisible();
   }
 });
 
@@ -451,19 +457,18 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
   );
   const changedGoal = "## 新讨论目标\n\n产出 **PRD** 与验收说明。";
   await goalField
-    .getByRole("button", { name: "编辑讨论目标源码", exact: true })
+    .getByRole("button", { name: "讨论目标", exact: true })
     .click();
   await goalField
     .getByRole("textbox", { name: "讨论目标", exact: true })
     .fill(changedGoal);
   await goalField
-    .getByRole("button", { name: "预览讨论目标", exact: true })
-    .click();
+    .getByRole("textbox", { name: "讨论目标", exact: true }).press("Tab");
   await expect(
     goalField.getByRole("heading", { name: "新讨论目标", level: 2 }),
   ).toBeVisible();
   await topicsField
-    .getByRole("button", { name: "编辑必须讨论的主题源码", exact: true })
+    .getByRole("button", { name: "讨论主题 1", exact: true })
     .click();
   const changedTopic =
     "## 场景与边界\n\n保留多行 Markdown, 包括逗号。\n\n- 正常\n- 失败";
@@ -475,9 +480,6 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
     .click();
   await topicsField
     .getByRole("button", { name: "删除讨论主题 3", exact: true })
-    .click();
-  await topicsField
-    .getByRole("button", { name: "预览必须讨论的主题", exact: true })
     .click();
   await editor.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText(/草稿已保存/);
@@ -585,6 +587,33 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
       .every((b: any) => b.task?.renderer_version === "agent-task/v3"),
   ).toBe(true);
   expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
+  await page.route("**/rpc", async (route) => {
+    if (route.request().postDataJSON().method !== "query.workspace") return route.fallback();
+    const response = await route.fetch();
+    const value = await response.json();
+    if (value.result?.active_project?.id === p.id) value.result.active_project.workspace_definition = {
+      repository: "fixture/layout", path: "/tmp/devdesk-layout-fixture", mainline: "main",
+    };
+    await route.fulfill({response,json:value});
+  });
+  await page.goto(`/?tab=projects&project_id=${p.id}`);
+  const bindings = page.getByRole("group", { name: "流程所需 Role → Agent", exact: true });
+  await expect(bindings.getByRole("combobox")).toHaveCount(6);
+  await bindings.screenshot({path:"/tmp/devdesk-role-binding-rows.png"});
+  const geometry = await bindings.locator(":scope > label").evaluateAll((rows) => rows.map((row) => {
+    const text = Array.from(row.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
+    const range = document.createRange(); range.selectNode(text!);
+    const label = range.getBoundingClientRect();
+    const select = row.querySelector("select")!.getBoundingClientRect();
+    return {labelLeft:label.x, labelRight:label.right, labelCenter:label.y+label.height/2, selectLeft:select.x, selectCenter:select.y+select.height/2, top:select.top, bottom:select.bottom};
+  }));
+  for (let i = 0; i < geometry.length; i++) {
+    expect(Math.abs(geometry[i].labelCenter - geometry[i].selectCenter)).toBeLessThan(8);
+    expect(geometry[i].selectLeft).toBeGreaterThan(geometry[i].labelRight);
+    if (i) expect(geometry[i].top).toBeGreaterThan(geometry[i-1].bottom);
+  }
+  await page.unrouteAll({behavior:"wait"});
+
 });
 
 test("合并配置页面保持 Tab 顺序，旧链接定位且 Tools 调用记录迁至历史", async ({
@@ -604,7 +633,7 @@ test("合并配置页面保持 Tab 顺序，旧链接定位且 Tools 调用记�
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await expect(
     page.getByRole("tablist", { name: "配置类别" }).getByRole("tab"),
-  ).toHaveText(["Workflow", "Spec", "Standard"]);
+  ).toHaveText(["Workflow", "Delivery", "Spec", "Standard"]);
   await page.getByRole("tab", { name: "Workflow", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "新建 Workflow", exact: true }),
@@ -655,6 +684,48 @@ test("合并配置页面保持 Tab 顺序，旧链接定位且 Tools 调用记�
   );
   await page.getByLabel("调用记录归属", { exact: true }).selectOption("global");
   await expect(
-    page.getByRole("heading", { name: "实际调用记录", exact: true }),
+    page.getByRole("heading", { name: "Tools调用记录", exact: true }),
   ).toBeVisible();
+});
+
+test("Delivery 定义可编辑，流程产出及前序引用保存后保留精确修订", async ({ page }, info) => {
+  await setup(page);
+  await page.getByRole("button", {name:"流程与规范",exact:true}).click();
+  await page.getByRole("tab", {name:"Delivery",exact:true}).click();
+  const name = "PRD browser " + crypto.randomUUID().slice(0,6);
+  await page.getByLabel("名称",{exact:true}).fill(name);
+  await page.getByRole("button",{name:"正文",exact:true}).click();
+  await page.getByRole("textbox",{name:"正文",exact:true}).fill("## 目标\n\n描述范围和可观察验收，引用采纳后的文档。");
+  await page.getByRole("button",{name:"创建 Delivery",exact:true}).click();
+  await expect(page.getByRole("status")).toHaveText(/新修订已保存/);
+  const types = await rpc(page,"query.configurations",{kind:"delivery_type",limit:100});
+  expect(types.records.map((r:any)=>r.name)).toEqual(expect.arrayContaining(["PRD","Design Doc","Diff","Test Report",name]));
+  const delivery = types.records.find((r:any)=>r.name === name);
+  const defaults = await rpc(page,"query.configuration_defaults");
+  const workflow = defaults.records.find((r:any)=>r.id === defaults.workflow_ref);
+  const producer = workflow.data.steps.find((s:any)=>s.key === "requirement_adopt");
+  const consumer = workflow.data.steps.find((s:any)=>s.key === "design_discussion");
+  await page.goto(`/?tab=workflows&config_tab=workflow&workflow_id=${workflow.id}`);
+  await page.getByRole("button",{name:"编辑流程",exact:true}).click();
+  const editor = page.getByRole("region",{name:"Workflow 编辑器"});
+  await expect(editor.getByRole("button",{name:"保存草稿",exact:true})).toBeEnabled();
+  await editor.locator(".workflow-node").filter({hasText:producer.name}).click();
+  await editor.getByRole("button",{name:"添加交付物产出",exact:true}).click();
+  await editor.getByLabel("产出名称",{exact:true}).fill("prd");
+  await editor.getByLabel("Delivery 类型修订",{exact:true}).selectOption(delivery.id);
+  await editor.locator(".workflow-node").filter({hasText:consumer.name}).click();
+  await editor.getByRole("button",{name:"引用前序交付物",exact:true}).click();
+  const source = JSON.stringify({step:producer.key,port:"prd"});
+  await editor.getByLabel("前序交付物",{exact:true}).selectOption(source);
+  expect(await editor.getByLabel("前置步骤",{exact:true}).evaluate((select: HTMLSelectElement) => Array.from(select.selectedOptions, option => option.value))).toContain(producer.key);
+  await editor.getByRole("button",{name:"保存可用版本",exact:true}).click();
+  await expect(page.getByRole("status")).toHaveText(/可用版本已保存/);
+  await page.reload();
+  await editor.locator(".workflow-node").filter({hasText:consumer.name}).click();
+  await expect(editor.getByLabel("前序交付物",{exact:true})).toHaveValue(source);
+  const catalog = await rpc(page,"query.configurations",{kind:"workflow",include_history:true,limit:100});
+  const saved = catalog.records.find((r:any)=>r.data.steps?.some((s:any)=>s.delivery_inputs?.material_1?.delivery_ref === delivery.id));
+  expect(saved).toBeTruthy();
+  expect(saved.data.steps.find((s:any)=>s.key === producer.key).delivery_outputs.prd).toEqual({delivery_ref:delivery.id,source_port:"document"});
+  await page.screenshot({path:info.outputPath("delivery-reference.png"),fullPage:true});
 });

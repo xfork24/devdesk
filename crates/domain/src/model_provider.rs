@@ -166,6 +166,18 @@ pub fn ollama_endpoint(value: &str) -> Result<(String, String, bool)> {
     ))
 }
 
+/// The pinned Codex protocol advertises effort identifiers in its model catalog.
+pub fn validate_reasoning_effort(effort: &str) -> Result<()> {
+    require(
+        !effort.is_empty()
+            && effort.len() <= 64
+            && effort
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c)),
+        "思考深度标识无效",
+    )
+}
+
 /// Validates model fields without resolving a mutable account or starting any process.
 pub fn validate_model_definition(m: &ModelDefinition) -> Result<()> {
     require(
@@ -182,9 +194,9 @@ pub fn validate_model_definition(m: &ModelDefinition) -> Result<()> {
         for (key, value) in &m.parameters {
             require(
                 key == "reasoning_effort"
-                    && value.as_str().is_some_and(|v| {
-                        ["minimal", "low", "medium", "high", "xhigh", "max"].contains(&v)
-                    }),
+                    && value
+                        .as_str()
+                        .is_some_and(|v| validate_reasoning_effort(v).is_ok()),
                 "Codex 模型参数无效",
             )?;
         }

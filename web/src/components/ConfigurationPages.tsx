@@ -12,6 +12,7 @@ type Props = {
 };
 const processTabs = [
   ["workflow", "Workflow"],
+  ["delivery_type", "Delivery"],
   ["spec", "Spec"],
   ["standard", "Standard"],
 ];
@@ -70,7 +71,7 @@ export function ConfigurationPage({
           project={props.project}
           refresh={props.refresh}
         />
-      ) : ["model", "harness", "spec", "standard"].includes(tab) ? (
+      ) : ["model", "harness", "spec", "standard", "delivery_type"].includes(tab) ? (
         <ResourceEditor
           key={`${tab}:${props.project?.id}`}
           kind={tab}

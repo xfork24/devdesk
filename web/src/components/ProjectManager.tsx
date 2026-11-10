@@ -375,6 +375,7 @@ export function ProjectManager({
             {requirements && (
               <>
                 <h3>流程所需 Role → Agent</h3>
+                <div className="project-role-bindings" role="group" aria-label="流程所需 Role → Agent">
                 {requirements.roles.map((item: Row) => {
                   const agents = records.filter(
                     (r) =>
@@ -406,6 +407,7 @@ export function ProjectManager({
                     />
                   );
                 })}
+                </div>
                 <p className="notice">
                   已解析 {requirements.specification_snapshot.length}{" "}
                   个规范节点（包含子流程）。

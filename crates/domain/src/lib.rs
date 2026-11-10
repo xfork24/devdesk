@@ -2,6 +2,8 @@ mod integrations;
 pub use integrations::*;
 mod configuration;
 pub use configuration::*;
+mod deliverable;
+pub use deliverable::*;
 mod agent_task;
 pub use agent_task::*;
 mod stage_answer;

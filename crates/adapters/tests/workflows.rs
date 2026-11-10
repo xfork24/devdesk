@@ -472,6 +472,16 @@ fn recorded_native_stage_with_kind(
     cancelled: bool,
     kind: RuntimeExecutionKind,
 ) -> Id {
+    recorded_native_stage_with_status(e, answer, stopped, cancelled, kind, TurnStatus::Completed)
+}
+fn recorded_native_stage_with_status(
+    e: &Engine,
+    answer: &str,
+    stopped: bool,
+    cancelled: bool,
+    kind: RuntimeExecutionKind,
+    turn_status: TurnStatus,
+) -> Id {
     let fid = new_feature(e);
     call(
         e,
@@ -586,7 +596,7 @@ fn recorded_native_stage_with_kind(
                 input_snapshot: None,
                 code_view: None,
                 source_revision: Some(f.revision),
-                status: TurnStatus::Completed,
+                status: turn_status,
                 external_message: Some("fixture-admitted-message".into()),
                 external_turn: Some("fixture-turn".into()),
                 consumed: true,
@@ -638,6 +648,238 @@ fn native_stage_answer() -> String {
         .map(|key| json!({"key":key,"passed":true,"evidence":"Explicit fixture input"}));
     json!({"summary":"Recorded native validation","checks":checks}).to_string()
 }
+
+#[test]
+fn unknown_formal_run_stops_waiting_after_stop_proof_and_retries_in_its_own_successor() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let run = recorded_native_stage_with_status(
+        &e,
+        &approval_answer(true),
+        false,
+        false,
+        RuntimeExecutionKind::Harness,
+        TurnStatus::NeedsReconciliation,
+    );
+    let (feature, _) = attach_validation(&e, &run);
+    let before = e.store.snapshot().unwrap();
+    let old = before.runs.iter().find(|r| r.id == run).unwrap().clone();
+    let turn = before
+        .turns
+        .iter()
+        .find(|t| t.run_id.as_ref() == Some(&run))
+        .unwrap()
+        .clone();
+    e.tick(4).unwrap();
+    e.evaluate_workflows().unwrap();
+    let workflow = workflow_runtime(&e, &feature);
+    let step = workflow
+        .steps
+        .iter()
+        .find(|s| s.key == "requirement_execute")
+        .unwrap();
+    assert_eq!(step.status, "blocked");
+    assert_eq!(step.outputs["session"], old.session_id);
+    assert!(step.reason.contains("停止并封存"));
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|r| r.id == run)
+            .unwrap()
+            .status,
+        Status::Running
+    );
+
+    e.store
+        .transact(None, &mut |s| {
+            let protocol = s
+                .artifacts
+                .iter()
+                .find(|a| a.relative_path.split('/').any(|part| part == "protocol"))
+                .unwrap()
+                .id
+                .clone();
+            let execution = s
+                .executions
+                .iter_mut()
+                .find(|e| e.run_id.as_ref() == Some(&run))
+                .unwrap();
+            execution.writer_revoked = true;
+            execution.protocol_artifact = Some(protocol);
+            execution.status = Status::Released;
+            execution.finished = Some(3);
+            s.sessions
+                .iter_mut()
+                .find(|session| session.id == old.session_id)
+                .unwrap()
+                .lifecycle = Some(SessionLifecycle::RequiresSuccessor);
+            Ok(Value::Null)
+        })
+        .unwrap();
+    e.tick(4).unwrap();
+    e.evaluate_workflows().unwrap();
+    let stopped = e.store.snapshot().unwrap();
+    let result = stopped.runs.iter().find(|r| r.id == run).unwrap();
+    assert_eq!(result.status, Status::Interrupted);
+    assert_eq!(
+        result.result.as_ref().unwrap()["failure_type"],
+        "needs_reconciliation"
+    );
+    assert!(stopped.deliveries.is_empty());
+    assert_eq!(
+        stopped
+            .turns
+            .iter()
+            .find(|t| t.id == turn.id)
+            .unwrap()
+            .status,
+        TurnStatus::NeedsReconciliation
+    );
+    assert_eq!(stopped.turns.len(), before.turns.len());
+    let workflow = workflow_runtime(&e, &feature);
+    let step = workflow
+        .steps
+        .iter()
+        .find(|s| s.key == "requirement_execute")
+        .unwrap();
+    assert_eq!(step.status, "failed");
+    assert!(step.reason.contains("结果未知"));
+    e.execute(
+        "workflow.step.retry",
+        Command {
+            command_id: id(),
+            target: Some(step.id.clone()),
+            expected_revision: Some(step.revision),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    let intent = e
+        .pending_workflow_intents()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.data["method"] == "run.retry" && r.data["command"]["target"] == run)
+        .unwrap();
+    let result = e.execute(
+        "run.retry",
+        serde_json::from_value(intent.data["command"].clone()).unwrap(),
+    );
+    e.observe_workflow_intent(&intent.id, &result).unwrap();
+    let next_id = result.unwrap()["id"].as_str().unwrap().to_owned();
+    let snapshot = e.store.snapshot().unwrap();
+    let next = snapshot.runs.iter().find(|r| r.id == next_id).unwrap();
+    assert_eq!(next.retry_of.as_deref(), Some(run.as_str()));
+    assert_ne!(next.session_id, old.session_id);
+    assert_eq!(json!(next.binding), json!(old.binding));
+    let session = snapshot
+        .sessions
+        .iter()
+        .find(|s| s.id == next.session_id)
+        .unwrap();
+    assert_eq!(
+        session.predecessor.as_deref(),
+        Some(old.session_id.as_str())
+    );
+    assert_eq!(
+        json!(session.runtime_binding),
+        json!(
+            before
+                .sessions
+                .iter()
+                .find(|s| s.id == old.session_id)
+                .unwrap()
+                .runtime_binding
+        )
+    );
+    assert_eq!(
+        snapshot
+            .turns
+            .iter()
+            .find(|t| t.id == turn.id)
+            .unwrap()
+            .input,
+        turn.input
+    );
+    assert_eq!(
+        e.query("query.session", &json!({"id":next.session_id}), 4)
+            .unwrap()["formal_execution"],
+        true
+    );
+}
+
+#[test]
+fn legacy_formal_successors_cannot_turn_an_unbound_reply_into_an_adoptable_proposal() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let run = recorded_native_stage(&e, &approval_answer(true), true, false);
+    let snapshot = e.store.snapshot().unwrap();
+    let original = snapshot.runs.iter().find(|r| r.id == run).unwrap();
+    let mut session = snapshot
+        .sessions
+        .iter()
+        .find(|s| s.id == original.session_id)
+        .unwrap()
+        .clone();
+    let mut turn = snapshot
+        .turns
+        .iter()
+        .find(|t| t.run_id.as_ref() == Some(&run))
+        .unwrap()
+        .clone();
+    session.predecessor = Some(session.id.clone());
+    session.id = id();
+    session.external_session = Some(format!("fixture-native-{}", session.id));
+    session.lifecycle = Some(SessionLifecycle::Idle);
+    turn.id = id();
+    turn.session_id = session.id.clone();
+    turn.run_id = None;
+    let sid = session.id.clone();
+    let tid = turn.id.clone();
+    e.store
+        .transact(None, &mut |s| {
+            s.sessions.push(session.clone());
+            s.turns.push(turn.clone());
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let detail = e.query("query.session", &json!({"id":sid}), 4).unwrap();
+    assert_eq!(detail["formal_execution"], true);
+    assert_eq!(detail["output_contract"]["id"], STAGE_ANSWER_CONTRACT);
+    for (method, target, payload) in [
+        (
+            "conversation.send",
+            Some(sid.clone()),
+            json!({"client_message_id":id(),"input":"继续需求提案"}),
+        ),
+        ("proposal.extract", None, json!({"turn_id":tid})),
+        (
+            "proposal.create",
+            None,
+            json!({"turn_id":tid,"content":{"kind":"requirement","title":"Stray requirement","body":"Not a formal report","acceptance":[]}}),
+        ),
+    ] {
+        let error = e
+            .execute(
+                method,
+                Command {
+                    command_id: id(),
+                    target,
+                    expected_revision: None,
+                    payload,
+                },
+            )
+            .unwrap_err();
+        assert!(error.message.contains("正式"), "{method}: {error:?}");
+    }
+    assert_eq!(
+        e.store.snapshot().unwrap().proposals.len(),
+        snapshot.proposals.len()
+    );
+}
+
 fn approval_answer(approved: bool) -> String {
     let mut value: Value = serde_json::from_str(&native_stage_answer()).unwrap();
     value["approve"] = json!(approved);

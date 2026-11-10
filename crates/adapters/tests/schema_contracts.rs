@@ -114,6 +114,14 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
         "RuntimeBinding",
         json!({"installation":installation,"adapter_version":"fixture/v1","model":"fixture-model","tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)}),
     );
+    round_trip::<RuntimeBinding>(
+        "RuntimeBinding",
+        json!({"installation":installation,"adapter_version":"fixture/v1","model":"fixture-model","model_parameters":{"reasoning_effort":"ultra"},"tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)}),
+    );
+    round_trip::<HarnessPreference>(
+        "HarnessPreference",
+        json!({"provider":"codex","model_ref":"model-revision","harness_ref":"harness-revision","model":"fixture-model","reasoning_effort":"ultra"}),
+    );
     round_trip::<AgentProfile>(
         "AgentProfile",
         json!({"role":"analyst","skill_revisions":[],"tool_policy":"read_only","allowed_work":["discussion"],"output_schemas":["proposal"]}),

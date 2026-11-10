@@ -50,6 +50,9 @@ export function AgentTaskView({ value }: { value: Row }) {
       {(content.specifications || []).map((spec: Row) =>
         text(`Spec · ${spec.name}`, spec.body, spec.id),
       )}
+      {(content.delivery_types || []).map((delivery: Row) =>
+        text(`Delivery · ${delivery.name}`, delivery.data.body, delivery.id),
+      )}
       {(value.diagnostics || []).map((line: string) => (
         <p className="muted" key={line}>
           {line}

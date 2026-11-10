@@ -110,6 +110,21 @@ impl Workspace {
         } else {
             self.global.default_harness()?
         };
+        let preference = role_preference
+            .filter(|p| p.provider == provider && (p.model.is_some() || p.model_ref.is_some()))
+            .or(project_preference.filter(|p| p.provider == provider))
+            .filter(|_| command.payload.get("agent_configuration").is_none());
+        let preference_model: Option<ModelDefinition> = preference
+            .and_then(|p| p.model_ref.as_ref())
+            .map(|id| state.configuration(id)?.decode())
+            .transpose()?;
+        let preference_harness = role_preference
+            .filter(|p| p.provider == provider && (p.installation_id.is_some() || p.harness_ref.is_some()))
+            .or(project_preference.filter(|p| p.provider == provider))
+            .filter(|_| command.payload.get("agent_configuration").is_none())
+            .and_then(|p| p.harness_ref.as_ref())
+            .map(|id| state.configuration(id))
+            .transpose()?;
         let preferred_installation = command.payload["installation_id"]
             .as_str()
             .or_else(|| {
@@ -122,7 +137,21 @@ impl Workspace {
                     .filter(|p| p.provider == provider)
                     .and_then(|p| p.installation_id.as_deref())
             });
-        let installation = self.ensure_runtime(provider, preferred_installation)?;
+        let installation = if let Some(record) = preference_harness.filter(|_| command.payload["installation_id"].is_null()) {
+            let harness: HarnessDefinition = record.decode()?;
+            require(harness.provider == provider.as_str(), "Harness 配置与偏好后端不一致")?;
+            if harness.recipe_digest.is_some() {
+                self.materialize_harness(e, record)?
+            } else {
+                self.ensure_runtime(provider, preferred_installation)?
+            }
+        } else {
+            self.ensure_runtime(provider, preferred_installation)?
+        };
+        if let Some(record) = preference_harness {
+            let harness: HarnessDefinition = record.decode()?;
+            require(installation.key.version.split('+').next() == Some(harness.runtime_version.as_str()), "安装版本与所选 Harness 配置不匹配")?;
+        }
         if let Some(agent) = command.payload["agent_configuration"]["harness_revision_id"].as_str()
         {
             let h: HarnessDefinition = state.configuration(agent)?.decode()?;
@@ -145,6 +174,7 @@ impl Workspace {
         )?;
         let preferred_model = command.payload["model"]
             .as_str()
+            .or_else(|| preference_model.as_ref().map(|m| m.model.as_str()))
             .or_else(|| {
                 role_preference
                     .filter(|p| p.provider == provider)
@@ -329,9 +359,14 @@ impl Workspace {
                     state.configuration(&a.model_revision_id)?.decode()?,
                     state.configuration(&a.harness_revision_id)?.decode()?,
                 )
+            } else if let Some(model) = &preference_model {
+                (model.clone(), if let Some(harness) = preference_harness {
+                    harness.decode()?
+                } else {
+                    serde_json::from_value(json!({"provider":"dsh","runtime_version":installation.key.version})).map_err(|e|err("invalid_configuration",e.to_string()))?
+                })
             } else {
                 (serde_json::from_value({
-                    let preference=role_preference.filter(|p|p.provider==provider).or(project_preference.filter(|p|p.provider==provider));
                     json!({"provider":preference.and_then(|p|p.model_provider.as_deref()).unwrap_or("deepseek"),"model":model,
                         "endpoint":preference.and_then(|p|p.endpoint.as_ref()),"context_window":preference.and_then(|p|p.context_window),"max_output_tokens":preference.and_then(|p|p.max_output_tokens)})
                 }).map_err(|e|err("invalid_configuration",e.to_string()))?,
@@ -379,6 +414,18 @@ impl Workspace {
                     .and_then(|patch| configuration_digest(&json!(patch)))
             })
             .transpose()?;
+        let mut model_parameters = preference_model
+            .as_ref()
+            .filter(|m| m.model == model)
+            .map(|m| m.parameters.clone())
+            .unwrap_or_default();
+        // Component-backed preferences always inherit the selected Model parameters.
+        if let Some(effort) = preference
+            .filter(|p| p.model_ref.is_none() && p.model.as_deref() == Some(model.as_str()))
+            .and_then(|p| p.reasoning_effort.as_ref())
+        {
+            model_parameters.insert("reasoning_effort".into(), json!(effort));
+        }
         let mut binding = RuntimeBinding {
             model_connection,
             model_profile_digest,
@@ -387,6 +434,7 @@ impl Workspace {
             installation: installation.clone(),
             adapter_version: adapter,
             model,
+            model_parameters,
             tool_policy: policy,
             writable_paths,
             read_only_paths,
@@ -1738,6 +1786,31 @@ mod tests {
             &devdesk_domain::id(),
             json!({}),
         );
+    }
+    #[test]
+    fn project_and_role_reasoning_preferences_survive_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "Reasoning preferences");
+        let preferences = json!({
+            "default":{"provider":"codex","installation_id":null,"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"model":"gpt-6.1-sol","model_provider":"openai","reasoning_effort":"high"},
+            "roles":[{"role":"developer","preference":{"provider":"codex","installation_id":null,"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"model":"gpt-6.1-sol","model_provider":"openai","reasoning_effort":"ultra"}}]
+        });
+        w.dispatch("project.update", json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":1,"payload":{"runtime_preferences":preferences}})).unwrap();
+        for reference in ["missing-model", DEFAULT_HARNESS_ID] {
+            let mut invalid = preferences.clone();
+            invalid["default"]["model_ref"] = json!(reference);
+            assert!(w.dispatch("project.update", json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":2,"payload":{"runtime_preferences":invalid}})).is_err());
+        }
+        drop(w);
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let state = w
+            .active_engine(Some(&project))
+            .unwrap()
+            .store
+            .snapshot()
+            .unwrap();
+        assert_eq!(json!(state.projects[0].runtime_preferences), preferences);
     }
     #[test]
     fn switching_projects_isolates_state_artifacts_and_idempotency() {

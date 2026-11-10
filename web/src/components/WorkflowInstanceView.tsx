@@ -296,9 +296,20 @@ export function WorkflowInstanceView({
               return onDiscussion(step.outputs.session, runtime.owner_id);
             }}
           >
-            继续讨论 / 查看提案
+            {definition?.kind === "agent.interact"
+              ? "继续讨论 / 查看提案"
+              : "查看执行会话"}
           </ActionButton>
         )}
+        {["attempt.execute", "delivery.review", "merge.review"].includes(
+          definition?.kind,
+        ) &&
+          !approvals.length &&
+          !["completed", "skipped"].includes(step.status) && (
+            <p className="muted">
+              模型报告完成后，本步骤会显示“人类 Approve”；当前无需再次采纳提案。
+            </p>
+          )}
         {(data?.actions.find((a: Row) => a.id === step.id)?.allowed || []).map(
           (method: string) => (
             <ActionButton
@@ -358,7 +369,7 @@ export function WorkflowInstanceView({
                   ? "自动推进"
                   : "结果完成后等待人确认"}
             </p>
-            <p>{definition?.interaction.goal}</p>
+            {definition?.interaction.goal && <MarkdownPreview text={definition.interaction.goal} />}
             <details>
               <summary>该轮输入、证据和输出引用</summary>
               <pre>{JSON.stringify(step, null, 2)}</pre>

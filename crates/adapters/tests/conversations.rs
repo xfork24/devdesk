@@ -54,6 +54,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
                     model_connection: None,
                     model_profile_digest: None,
                     agent_configuration: None,
+                    model_parameters: Default::default(),
                     permissions: None,
                     installation: RuntimeInstallation {
                         id: "fixture-runtime".into(),
@@ -1059,6 +1060,7 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
         model_connection: None,
         model_profile_digest: None,
         agent_configuration: None,
+        model_parameters: Default::default(),
         permissions: None,
         installation: RuntimeInstallation {
             id: "global-fixture".into(),

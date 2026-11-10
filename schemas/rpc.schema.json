@@ -655,6 +655,10 @@
     "RuntimeBinding": {
       "type": "object",
       "properties": {
+        "model_parameters": {
+          "type": "object",
+          "additionalProperties": true
+        },
         "installation": {
           "$ref": "#/$defs/RuntimeInstallation"
         },
@@ -3211,6 +3215,18 @@
           "minLength": 1,
           "maxLength": 32768,
           "pattern": "\\S"
+        },
+        "delivery_inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowDeliveryInput"
+          }
+        },
+        "delivery_outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowDeliveryOutput"
+          }
         }
       },
       "required": [
@@ -5665,6 +5681,12 @@
             "object",
             "null"
           ]
+        },
+        "delivery_types": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigurationRecord"
+          }
         }
       },
       "required": [
@@ -5753,8 +5775,24 @@
     },
     "HarnessPreference": {
       "type": "object",
-      "description": "New UI preferences pin an executable installation and an explicit catalog model. use_system_default follows the Harness name while requiring reselection if the global provider changes.",
+      "description": "Preferences select exact Model and Harness revisions from foundation components. Legacy installation/model preferences remain readable. Model parameters are authoritative for component references. reasoning_effort is retained only for legacy raw-model preferences and ignored when model_ref is present.",
       "properties": {
+        "model_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "harness_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reasoning_effort": {
+          "description": "Legacy raw-model preferences only; ignored when model_ref selects a Model revision.",
+          "deprecated": true,
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
         "provider": {
           "enum": [
             "codex",
@@ -5806,6 +5844,64 @@
       },
       "required": [
         "provider"
+      ],
+      "additionalProperties": false
+    },
+    "DeliveryTypeDefinition": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "enum": [
+            "markdown",
+            "diff",
+            "test_report",
+            "json",
+            "text"
+          ]
+        }
+      },
+      "required": [
+        "body",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowDeliveryOutput": {
+      "type": "object",
+      "properties": {
+        "delivery_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_port": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "delivery_ref",
+        "source_port"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowDeliveryInput": {
+      "type": "object",
+      "properties": {
+        "delivery_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/WorkflowPortReference"
+        }
+      },
+      "required": [
+        "delivery_ref",
+        "source"
       ],
       "additionalProperties": false
     }

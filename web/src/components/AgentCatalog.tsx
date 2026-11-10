@@ -4,9 +4,10 @@ import {
   ActionSelect,
   useActionFeedback,
 } from "./ActionFeedback";
-import { DshModelFields, type ModelProvider } from "./DshProviderSettings";
+import { ModelFields, type ModelProvider } from "./DshProviderSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RoleManager } from "./RoleManager";
+import { isProjectRuntimeInstallation } from "./runtime-installations";
 import {
   actionLabels,
   dutyLabels,
@@ -31,6 +32,7 @@ const labels: Record<string, string> = {
   skill: "Skill",
   spec: "Spec",
   standard: "Standard",
+  delivery_type: "Delivery",
 };
 function initial(kind: string): Row {
   switch (kind) {
@@ -75,6 +77,8 @@ function initial(kind: string): Row {
       };
     case "standard":
       return { body: "", baseline_rules: [] };
+    case "delivery_type":
+      return { body: "", format: "markdown" };
     case "spec":
       return { body: "", rules: [], applicable_actions: [] };
     default:
@@ -257,6 +261,9 @@ export function ResourceEditor({
   }, [load]);
   const old = records.find((r) => r.id === draft.selected),
     data = draft.data;
+  const projectInstallations = installations.filter(
+    (r) => r.key?.provider === data.provider && isProjectRuntimeInstallation(r),
+  );
   const patch = (value: Row) =>
     setDraft((current) => ({
       ...current,
@@ -341,7 +348,9 @@ export function ResourceEditor({
     if (routeConsumed.current || !records.length) return;
     const selected = new URLSearchParams(location.search).get("config_object");
     if (selected) {
-      const row = records.find((r) => r.id === selected && r.kind === kind);
+      const legacy = records.find((r) => r.id === selected && r.kind === "agent_instance");
+      const revision = kind === "agent" && legacy ? legacy.data.agent_revision_id : selected;
+      const row = records.find((r) => r.id === revision && r.kind === kind);
       if (row) {
         routeConsumed.current = true;
         if (draft.selected !== row.id) choose(row);
@@ -355,6 +364,8 @@ export function ResourceEditor({
     setError("");
     try {
       let payload = structuredClone(data);
+      if (kind === "model" && !payload.model)
+        throw new Error("请先从模型目录中选择模型标识");
       if (kind === "capability")
         payload.tools = (payload.tools || []).filter((id: string) =>
           options("tool").some((row) => row.id === id),
@@ -726,16 +737,14 @@ export function ResourceEditor({
                       </label>
                     </>
                   )}
-                  <label>
-                    附加指令（可选）
-                    <textarea
-                      value={data.instructions || ""}
-                      onChange={(e) => {
-                        captureFeedback();
-                        return patch({ instructions: e.target.value });
-                      }}
-                    />
-                  </label>
+                  <MarkdownField
+                    label="附加指令（可选）"
+                    value={data.instructions || ""}
+                    onChange={(instructions) => {
+                      captureFeedback();
+                      patch({ instructions });
+                    }}
+                  />
                 </details>
               </>
             )}
@@ -884,16 +893,13 @@ export function ResourceEditor({
                     ))}
                   </ActionSelect>
                 </label>
-                {field("模型标识", "model", true)}
-                {data.provider !== "openai" && (
-                  <DshModelFields
-                    key={data.provider}
-                    request={request}
-                    data={{ ...data, provider: String(data.provider) }}
-                    patch={patch}
-                    providers={providers}
-                  />
-                )}
+                <ModelFields
+                  key={data.provider}
+                  request={request}
+                  data={{ ...data, provider: String(data.provider) }}
+                  patch={patch}
+                  providers={providers}
+                />
                 {data.provider === "openai" ? (
                   <label>
                     推理强度
@@ -1003,12 +1009,12 @@ export function ResourceEditor({
                     ))}
                   </ActionSelect>
                 </label>
-                <fieldset>
+                <fieldset className="model-provider-options">
                   <legend>支持的模型服务商</legend>
                   {providers
                     .filter((p) => p.harness === data.provider)
                     .map((p) => (
-                      <label key={p.id}>
+                      <label key={p.id} className="model-provider-choice">
                         <input
                           type="checkbox"
                           checked={(data.model_providers || []).includes(p.id)}
@@ -1023,7 +1029,7 @@ export function ResourceEditor({
                             });
                           }}
                         />
-                        {p.label}
+                        <span>{p.label}</span>
                       </label>
                     ))}
                 </fieldset>
@@ -1034,13 +1040,14 @@ export function ResourceEditor({
                 )}
                 <div className="full-width">
                   <h3>已登记安装</h3>
-                  {installations
-                    .filter((r) => r.key?.provider === data.provider)
-                    .map((r) => (
-                      <p key={r.id}>
-                        {r.key.version} · {r.key.os}/{r.key.arch}
-                      </p>
-                    ))}
+                  {projectInstallations.length === 0 && (
+                    <p className="muted">尚未准备项目执行运行时</p>
+                  )}
+                  {projectInstallations.map((r) => (
+                    <p key={r.id}>
+                      {r.key.version} · {r.key.os}/{r.key.arch}
+                    </p>
+                  ))}
                   {old && (
                     <ActionButton
                       type="button"
@@ -1188,10 +1195,13 @@ export function ResourceEditor({
                 )}
               </>
             )}
-            {["skill", "spec", "standard"].includes(kind) && (
+            {kind === "delivery_type" && <label>交付物格式<ActionSelect value={data.format} onChange={(event) => patch({format: event.target.value})}>
+              <option value="markdown">文档</option><option value="diff">Diff</option><option value="test_report">Test Report</option><option value="json">JSON</option><option value="text">文本</option>
+            </ActionSelect></label>}
+            {["skill", "spec", "standard", "delivery_type"].includes(kind) && (
               <MarkdownField
                 key={draft.selected || "new"}
-                label="Markdown 正文"
+                label="正文"
                 value={data.body || ""}
                 required
                 onChange={(body) => {
@@ -1253,7 +1263,7 @@ export function ResourceEditor({
                   </ActionSelect>
                 </label>
                 <p className="muted full-width">
-                  Markdown 要求可交给人或 Agent
+                  正文要求可交给人或 Agent
                   评审，自动检查仅执行这里已支持的检查器。
                 </p>
               </>
@@ -1407,7 +1417,7 @@ export function ResourceEditor({
               disabled={
                 busy ||
                 !draft.name.trim() ||
-                (["skill", "spec", "standard"].includes(kind) &&
+                (["skill", "spec", "standard", "delivery_type"].includes(kind) &&
                   !data.body?.trim())
               }
             >

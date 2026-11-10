@@ -640,14 +640,10 @@ impl RuntimeWorkers {
                     let connection = model_connection
                         .as_ref()
                         .ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?;
-                    let parameters = binding
-                        .agent_configuration
-                        .as_ref()
-                        .map(|a| a.model_parameters.clone())
-                        .unwrap_or_default();
+                    let parameters = binding.effective_model_parameters();
                     let max_tokens = connection.output_budget(
                         r.execution.run_id.is_some() || binding.tool_policy != ToolPolicy::ReadOnly,
-                        &parameters,
+                        parameters,
                     )?;
                     wire.request("initialize",json!({"cwd":cwd,"provider":connection.route,"model":binding.model,"maxTokens":max_tokens,"approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
                     let sid = r
@@ -798,10 +794,9 @@ impl Worker {
                     .session
                     .runtime_binding
                     .as_ref()
-                    .and_then(|b| b.agent_configuration.as_ref())
-                    .and_then(|a| a.model_parameters.get("reasoning_effort"))
+                    .and_then(|binding| binding.effective_model_parameters().get("reasoning_effort"))
                 {
-                    args["effort"] = effort.clone();
+                    args["effort"] = json!(effort);
                 }
                 if let Some(p) = &self.permissions {
                     args["approvalPolicy"] = json!(if p.approval == ApprovalPolicy::Never {
@@ -1514,6 +1509,65 @@ impl ports::Harness for RoutingHarness {
 #[cfg(test)]
 mod protocol_tests {
     use super::*;
+    #[test]
+    fn codex_turn_wire_uses_frozen_effort_or_model_default() {
+        for (effort, parameters, expected) in [
+            (Some("ultra"), None, Some("ultra")),
+            (None, None, None),
+            (None, Some(json!({"reasoning_effort":"high"})), Some("high")),
+            (None, Some(json!({})), None),
+        ] {
+            let mut binding = json!({
+                "installation":{"id":"fixture","key":{"provider":"codex","version":"0.167.0","os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
+                "adapter_version":"fixture/v1","model":"catalog-model","model_parameters":effort.map(|effort| json!({"reasoning_effort":effort})).unwrap_or(json!({})),
+                "tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)
+            });
+            if let Some(parameters) = parameters {
+                binding["agent_configuration"] = json!({
+                    "agent_instance_id":"fixture-instance","agent_revision_id":"fixture-agent","composition_hash":"a".repeat(64),
+                    "model_revision_id":"fixture-model","harness_revision_id":"fixture-harness","model_provider":"openai",
+                    "model_parameters":parameters,"tool_revisions":[]
+                });
+            }
+            let request: TurnDispatch = serde_json::from_value(json!({
+                "session":{"id":"session","owner_id":"project","agent":"fixture-agent","harness":"fixture","sandbox":"fixture","origin":"external","runtime_binding":binding},
+                "turn":{"id":"turn","project_id":"project","session_id":"session","client_message_id":"client","input":"Frozen effort fixture","input_digest":"b".repeat(64),"status":"queued","consumed":false,"revision":1}
+            })).unwrap();
+            // Echo transport observes the actual emitted JSONL request without a model or network.
+            let mut command = std::process::Command::new("/bin/cat");
+            command.arg("-u");
+            let mut worker = Worker {
+                task_base_digest: None,
+                worktree: PathBuf::new(),
+                permissions: None,
+                wire: JsonlProcess::spawn(command).unwrap(),
+                provider: HarnessProvider::Codex,
+                session: "native-thread".into(),
+                operation: id(),
+                container: "fixture".into(),
+                image: "fixture".into(),
+                log: PathBuf::new(),
+                activity: None,
+                requests: HashMap::new(),
+            };
+            worker.dispatch(&request).unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let frame = loop {
+                if let Some(frame) = worker.wire.drain().unwrap().into_iter().next() {
+                    break frame;
+                }
+                assert!(std::time::Instant::now() < deadline, "missing turn request");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            };
+            assert_eq!(frame["method"], "turn/start");
+            assert_eq!(frame["params"]["threadId"], "native-thread");
+            assert_eq!(frame["params"]["effort"].as_str(), expected);
+            if expected.is_none() {
+                assert!(frame["params"].get("effort").is_none());
+            }
+        }
+    }
+
     #[test]
     fn dsh_fast_completion_replays_pre_admission_consumption_before_output() {
         let answer = QuestionAnswer {

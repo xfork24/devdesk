@@ -330,7 +330,7 @@ test("完整 Agent 无需手工登记安装，显示准备及失败原因", asyn
     page.getByRole("button", { name: /登记.*镜像|登记本机/ }),
   ).toHaveCount(0);
   await expect(
-    page.getByText("尚未使用 Harness；首次执行时自动准备", { exact: true }),
+    page.getByText("尚未准备项目执行运行时；首次执行时自动准备", { exact: true }),
   ).toBeVisible();
 });
 

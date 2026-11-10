@@ -33,7 +33,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
   } = useActionFeedback();
 
   const [providers, setProviders] = useState<ModelProvider[]>([]);
-  const [provider, setProvider] = useState("deepseek");
+  const [provider, setProvider] = useState("minimax-cn");
   const [status, setStatus] = useState<Status>();
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
@@ -136,7 +136,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
                 </option>
               ))
             ) : (
-              <option value="deepseek">DeepSeek 官方 API</option>
+              <option value="minimax-cn">MiniMax 订阅 国内</option>
             )}
           </ActionSelect>
         </label>
@@ -238,8 +238,8 @@ export function DshProviderSettings({ request }: { request: Request }) {
   );
 }
 
-/** Model discovery supplies candidates; it never mutates a saved model revision. */
-export function DshModelFields({
+/** Model catalogs are read automatically; choosing a candidate only updates the draft. */
+export function ModelFields({
   request,
   data,
   patch,
@@ -256,135 +256,186 @@ export function DshModelFields({
   patch: (value: Record<string, unknown>) => void;
   providers: ModelProvider[];
 }) {
-  const {
-    message,
-    setMessage,
-    capture: captureFeedback,
-    beginFeedback,
-    endFeedback,
-  } = useActionFeedback();
-
-  const [candidates, setCandidates] = useState<ModelProvider["models"]>([]);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    setCandidates([]);
-    setMessage("");
-  }, [data.provider, data.endpoint]);
-  const selected = providers.find((p) => p.id === data.provider);
+  type Candidate = ModelProvider["models"][number] & { displayName?: string };
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [source, setSource] = useState("");
+  const [revision, setRevision] = useState(0);
+  const codex = data.provider === "openai";
   const ollama = data.provider === "ollama";
+  const selected = providers.find((provider) => provider.id === data.provider);
+
+  useEffect(() => {
+    const changed = () => setRevision((value) => value + 1);
+    window.addEventListener("devdesk:runtime-options-changed", changed);
+    return () =>
+      window.removeEventListener("devdesk:runtime-options-changed", changed);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setCandidates([]);
+    setError("");
+    setSource("");
+    const timer = window.setTimeout(
+      () => {
+        request(
+          codex ? "codex.auth.models" : "models.list",
+          codex
+            ? {}
+            : {
+                model_provider: data.provider,
+                ...(ollama && data.endpoint ? { endpoint: data.endpoint } : {}),
+              },
+        )
+          .then((result) => {
+            if (!active) return;
+            const models = (result.models || []).map(
+              (model: Record<string, any>) => ({
+                ...model,
+                id: model.model || model.id,
+              }),
+            );
+            setCandidates(models);
+            if (!models.length)
+              setError("模型目录为空，请检查后端服务或账号配置后刷新。");
+            setSource(
+              codex
+                ? "Codex 账号模型目录"
+                : result.source === "provider_endpoint"
+                  ? "服务商账号模型目录"
+                  : result.source === "host_endpoint"
+                    ? "Ollama 服务模型目录"
+                    : "当前 DSH 版本支持的模型目录",
+            );
+          })
+          .catch((error) => {
+            if (active) setError(String(error));
+          })
+          .finally(() => {
+            if (active) setLoading(false);
+          });
+      },
+      ollama ? 300 : 0,
+    );
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [request, data.provider, data.endpoint, codex, ollama, revision]);
+
   return (
-    <div className="full-width">
-      <p className="muted">
-        {selected?.label} ·{" "}
-        {ollama ? "通过本机 Ollama 服务连接" : selected?.endpoint}
-      </p>
+    <div className="full-width model-fields">
+      {!codex && (
+        <p className="muted">
+          {selected?.label} ·{" "}
+          {ollama ? "通过本机 Ollama 服务连接" : selected?.endpoint}
+        </p>
+      )}
       {ollama && (
         <label>
           Ollama 服务地址
           <input
             type="url"
-            disabled={busy}
             value={data.endpoint || ""}
             placeholder="http://127.0.0.1:11434/v1"
-            onChange={(event) => {
-              captureFeedback();
-              return patch({ endpoint: event.target.value || undefined });
-            }}
+            onChange={(event) =>
+              patch({ endpoint: event.target.value || undefined })
+            }
           />
         </label>
       )}
+      <label>
+        模型标识
+        <ActionSelect
+          aria-label="模型标识"
+          value={data.model || ""}
+          required
+          disabled={loading}
+          onChange={(event) => {
+            const candidate = candidates.find(
+              (model) => model.id === event.target.value,
+            );
+            if (candidate)
+              patch({
+                model: candidate.id,
+                ...(codex
+                  ? {}
+                  : {
+                      context_window: candidate.context_window,
+                      max_output_tokens: candidate.max_output_tokens,
+                    }),
+              });
+          }}
+        >
+          <option value="" disabled>
+            {loading ? "正在读取模型目录…" : "请选择模型"}
+          </option>
+          {data.model &&
+            !candidates.some((model) => model.id === data.model) && (
+              <option value={data.model} disabled>
+                {data.model}（当前目录未返回，保留已保存标识）
+              </option>
+            )}
+          {candidates.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.id}
+              {model.displayName && model.displayName !== model.id
+                ? ` · ${model.displayName}`
+                : ""}
+            </option>
+          ))}
+        </ActionSelect>
+      </label>
       <div className="actions">
         <ActionButton
           type="button"
-          disabled={busy}
-          onClick={async () => {
-            captureFeedback();
-
-            (beginFeedback(), setBusy(true));
-            setMessage("");
-            try {
-              const result = await request("models.list", {
-                model_provider: data.provider,
-                ...(ollama && data.endpoint ? { endpoint: data.endpoint } : {}),
-              });
-              setCandidates(result.models || []);
-              setMessage(
-                result.source === "provider_endpoint"
-                  ? "已读取账号模型目录；尚未发起推理。"
-                  : result.source === "host_endpoint"
-                    ? "已读取宿主服务目录；容器与推理尚未验证。"
-                    : "固定版本的模型候选；账号权限及实际调用尚未验证。",
-              );
-            } catch (error) {
-              setMessage(String(error));
-            } finally {
-              (endFeedback(), setBusy(false));
-            }
-          }}
+          disabled={loading}
+          onClick={() => setRevision((value) => value + 1)}
         >
-          读取模型候选
+          刷新模型目录
         </ActionButton>
+        {error && (
+          <p className="action-feedback error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
-      {candidates.length > 0 && (
-        <label>
-          模型候选
-          <ActionSelect
-            aria-label="模型候选"
-            value=""
-            onChange={(event) => {
-              captureFeedback();
-
-              const candidate = candidates.find(
-                (m) => m.id === event.target.value,
-              );
-              if (candidate)
-                patch({
-                  model: candidate.id,
-                  context_window: candidate.context_window,
-                  max_output_tokens: candidate.max_output_tokens,
-                });
-            }}
-          >
-            <option value="">选择后填入草稿，保存才生效</option>
-            {candidates.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}
-              </option>
-            ))}
-          </ActionSelect>
-        </label>
+      {source && <p className="muted">{source} · 读取目录不会发起推理。</p>}
+      {!codex && (
+        <>
+          {[
+            { key: "context_window", label: "上下文容量", max: 2000000 },
+            { key: "max_output_tokens", label: "最大输出容量", max: 1000000 },
+          ].map((field) => (
+            <label key={field.key}>
+              {field.label}
+              <input
+                type="number"
+                min={1}
+                max={field.max}
+                value={
+                  (field.key === "context_window"
+                    ? data.context_window
+                    : data.max_output_tokens) || ""
+                }
+                onChange={(event) =>
+                  patch({
+                    [field.key]: event.target.value
+                      ? Number(event.target.value)
+                      : undefined,
+                  })
+                }
+              />
+            </label>
+          ))}
+          <p className="muted">
+            目录未提供容量时请明确填写；请求输出 Tokens 不得超过输出容量。
+          </p>
+        </>
       )}
-      {[
-        { key: "context_window", label: "上下文容量", max: 2000000 },
-        { key: "max_output_tokens", label: "最大输出容量", max: 1000000 },
-      ].map((field) => (
-        <label key={field.key}>
-          {field.label}
-          <input
-            type="number"
-            min={1}
-            max={field.max}
-            value={
-              (field.key === "context_window"
-                ? data.context_window
-                : data.max_output_tokens) || ""
-            }
-            onChange={(event) => {
-              captureFeedback();
-              return patch({
-                [field.key]: event.target.value
-                  ? Number(event.target.value)
-                  : undefined,
-              });
-            }}
-          />
-        </label>
-      ))}
-      <p className="muted">
-        未收录的模型需明确容量；请求输出 Tokens
-        不得超过输出容量。模型能力通过完整 Agent 的讨论与工具回环验证。
-      </p>
-      <p role="status">{message}</p>
     </div>
   );
 }

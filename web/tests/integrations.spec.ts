@@ -2,6 +2,8 @@ import { test, expect, Page } from "@playwright/test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { useMockCodexCatalog } from "./support/model-catalog";
+useMockCodexCatalog();
 async function setup(page: Page) {
   await page.goto("/");
   if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
@@ -25,12 +27,11 @@ async function rpc(page: Page, method: string, params: any = {}) {
 async function markdown(page: any, label: string, value: string) {
   const field = page.getByRole("group", { name: label, exact: true });
   await field
-    .getByRole("button", { name: `编辑${label}源码`, exact: true })
+    .getByRole("button", { name: label, exact: true })
     .click();
   await field.getByRole("textbox", { name: label, exact: true }).fill(value);
   await field
-    .getByRole("button", { name: `预览${label}`, exact: true })
-    .click();
+    .getByRole("textbox", { name: label, exact: true }).press("Tab");
 }
 test("HTTP 接入发布动作、绑定确切授权与历史修订，原入口只保留 Model/Harness", async ({
   page,
@@ -134,7 +135,7 @@ test("Skills 导入保留 Markdown 原文与工具依赖，旧链接跳转同一
   const body =
     "---\nname: scoped-review\ndescription: Preserve source, scope and evidence.\n---\n\n# Review, evidence\n\nUse [reference](references/check.md).\n\n```text\nNo installation\n```";
   await importer.getByLabel("导入 Skill 名称", { exact: true }).fill(name);
-  await markdown(importer, "导入 Skill Markdown", body);
+  await markdown(importer, "Skill 内容", body);
   await importer
     .getByLabel("Skill 必需工具", { exact: true })
     .selectOption("builtin-tool-codex-native-v1");
@@ -159,7 +160,7 @@ test("Skills 导入保留 Markdown 原文与工具依赖，旧链接跳转同一
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue(name);
   await expect(
     page
-      .getByRole("group", { name: "Markdown 正文", exact: true })
+      .getByRole("group", { name: "正文", exact: true })
       .getByRole("heading", { name: "Review, evidence" }),
   ).toBeVisible();
 });

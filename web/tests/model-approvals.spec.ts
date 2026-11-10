@@ -10,7 +10,10 @@ for (const modelApprove of [true, false]) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/");
-    if ((await page.request.get("/capabilities").then((r) => r.json())).setup_required) {
+    if (
+      (await page.request.get("/capabilities").then((r) => r.json()))
+        .setup_required
+    ) {
       await page
         .getByLabel("数据目录")
         .fill(mkdtempSync(join(tmpdir(), "devdesk-approve-ui-")));
@@ -54,7 +57,7 @@ for (const modelApprove of [true, false]) {
       round: 1,
       revision: 1,
       status: "waiting_confirmation",
-      outputs: { attempt: "attempt-fixture" },
+      outputs: { attempt: "attempt-fixture", session: "formal-session" },
       input_hash: "current-report-hash",
       reason: "等待人类 Approve",
       confirmation: null,
@@ -96,6 +99,23 @@ for (const modelApprove of [true, false]) {
       ],
     };
     const commands: any[] = [];
+    const session = {
+      id: "formal-session",
+      owner_id: feature.id,
+      project_id: project.id,
+      feature_id: feature.id,
+      agent: "approval-agent",
+      lifecycle: "idle",
+      revision: 1,
+      runtime_binding: {
+        model: "fixture-model",
+        work_type: "design",
+        writable_paths: [],
+        read_only_paths: [],
+        installation: { key: { provider: "codex" } },
+      },
+    };
+    const newestSession = {...session, id:"latest-formal-session"};
     await page.route("**/capabilities", (route) =>
       route.fulfill({
         json: {
@@ -156,6 +176,53 @@ for (const modelApprove of [true, false]) {
             },
           ],
         };
+      else if (command.method === "query.configurations")
+        result = { records: [], total: 0 };
+      else if (command.method === "query.agent_revision")
+        result = {
+          id: session.agent,
+          kind: "agent",
+          name: "正式校验 Agent",
+          version: 1,
+          scope: { kind: "global" },
+          data: {
+            role: "analyst",
+            skills: [],
+            tools: [],
+            model_ref: "model",
+            harness_ref: "harness",
+          },
+        };
+      else if (command.method === "query.sessions")
+        result = { sessions: [newestSession, session] };
+      else if (command.method === "query.session")
+        result = {
+          session: command.params.id === newestSession.id ? newestSession : session,
+          formal_execution: true,
+          output_contract: null,
+          turns: [],
+          events: [],
+          next_cursor: 0,
+          interactions: [],
+          executions: [],
+          proposals: [
+            {
+              id: "stray-proposal",
+              status: "draft",
+              revision: 1,
+              dependencies: [],
+              adopted_objects: [],
+              turn_id: "standalone-turn",
+              session_id: session.id,
+              content: {
+                kind: "requirement",
+                title: "不属于正式校验的提案",
+                body: "旧会话回复",
+                acceptance: [],
+              },
+            },
+          ],
+        };
       else if (command.method === "workflow.step.confirm") {
         commands.push(command);
         step.status = "completed";
@@ -175,6 +242,27 @@ for (const modelApprove of [true, false]) {
     await page.goto(
       `/?tab=execution&project_id=${project.id}&feature_id=${feature.id}`,
     );
+    await expect(
+      page.getByRole("button", { name: "继续讨论 / 查看提案", exact: true }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "查看执行会话", exact: true })
+      .click();
+    await expect.poll(async () => ({
+      errors,
+      returnLinks: await page.getByRole("link", { name: "返回当前工作流" }).count(),
+    })).toEqual({ errors: [], returnLinks: 1 });
+    await expect(page.getByLabel("讨论会话", {exact:true})).toHaveValue(newestSession.id);
+    await expect(
+      page.getByText("该会话用于正式执行或校验。", { exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "采纳", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "发送", exact: true }),
+    ).toBeDisabled();
+    await page.getByRole("link", { name: "返回当前工作流" }).click();
     const panel = page.getByRole("region", { name: "内容校验与 Approve" });
     await expect(
       panel.getByRole("heading", {

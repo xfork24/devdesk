@@ -5,6 +5,7 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { WorkflowTaskPreview } from "./WorkflowTaskPreview";
+import { WorkflowDeliveries } from "./WorkflowDeliveries";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   actionLabels,
@@ -57,6 +58,9 @@ const emptyDocument = () => ({
   output_ports: {},
 });
 function outputNames(step: Row, records: Row[]): string[] {
+  return [...new Set([...nativeOutputNames(step, records), ...Object.keys(step.delivery_outputs || {})])];
+}
+function nativeOutputNames(step: Row, records: Row[]): string[] {
   switch (step.kind) {
     case "agent.interact":
       return ["session", "proposal", "document"];
@@ -984,7 +988,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     </label>
                     <MarkdownField
                       key={`${draft.selected}:${stage.key}:description`}
-                      label="阶段意图与交付物（Markdown）"
+                      label="阶段意图与交付物"
                       rows={8}
                       readOnly={!editable}
                       value={stage.description || ""}
@@ -1153,8 +1157,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           key={`${draft.selected}:${step.key}:task`}
                           label={
                             step.kind === "attempt.execute"
-                              ? "公共任务指令（Markdown）"
-                              : "任务指令（Markdown）"
+                              ? "公共任务指令"
+                              : "任务指令"
                           }
                           required
                           rows={10}
@@ -1222,6 +1226,10 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         />
                       </>
                     )}
+                    {document.schema_version >= 3 && <fieldset disabled={!editable || busy} className="full-width">
+                      <WorkflowDeliveries document={document} step={step} records={records}
+                        onChange={(value) => { captureFeedback(); updateStep(value); }} />
+                    </fieldset>}
                     <label>
                       前置步骤
                       <ActionSelect
@@ -1417,7 +1425,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                 agentNode(node.key) ? (
                                   <MarkdownField
                                     key={`${draft.selected}:${step.key}:${node.key}:task`}
-                                    label={`${nodeLabels[node.key] || node.key} 节点任务指令（Markdown）`}
+                                    label={`${nodeLabels[node.key] || node.key} 节点任务指令`}
                                     required
                                     rows={8}
                                     readOnly={!editable}

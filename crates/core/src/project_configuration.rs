@@ -513,6 +513,12 @@ impl Engine {
             .find(|s| &s.key == key)
             .ok_or_else(|| err("invalid_workflow", "冻结步骤不存在"))?;
         let target = text(result, "id")?;
+        if let Some(existing) = s.governance.iter().find(|r| r.kind == "execution_specification" && r.definition_id == target) {
+            require(existing.data["workflow_step_instance_id"] == instance
+                && existing.data["step"] == step.key && existing.data["spec_refs"] == json!(step.spec_refs),
+                "会话已属于其他工作流步骤，不能复用其冻结任务")?;
+            return Ok(());
+        }
         s.governance.push(record("execution_specification",target,Scope::Feature{project_id:s.feature(&runtime.feature_id)?.project_id.clone(),feature_id:runtime.feature_id},step.name.clone(),1,None,json!({"spec_refs":step.spec_refs,"workflow_step_instance_id":instance,"step":step.key}),true));
         Ok(())
     }

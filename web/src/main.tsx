@@ -17,6 +17,7 @@ import React, {
   FormEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { MarkdownField, MarkdownPreview } from "./components/configuration-ui";
 import {
   Layers3,
   LayoutDashboard,
@@ -65,7 +66,7 @@ type Field = {
   key: string;
   label: string;
   value?: string;
-  type?: "textarea" | "select" | "number";
+  type?: "textarea" | "select" | "number" | "markdown";
   options?: { value: string; label: string }[];
   optional?: boolean;
   description?: string;
@@ -228,7 +229,7 @@ function App() {
   const [historyPage, setHistoryPage] = useState(0);
   const [featurePage, setFeaturePage] = useState(0);
   const [projectPage, setProjectPage] = useState(0);
-  const [view, setView] = useState<{ title: string; body: string }>();
+  const [view, setView] = useState<{ title: string; body: string; format?: "markdown"; metadata?: RecordData }>();
   const [setupPath, setSetupPath] = useState("./data");
   const [liveProvider, setLiveProvider] = useState("");
   const [roleRevision, setRoleRevision] = useState(0);
@@ -339,16 +340,24 @@ function App() {
         setConnection("已连接");
         if (!c.setup_required) {
           let active = c.active_project_id || "";
+          let obsoleteRoute = false;
           if (!routeApplied.current) {
             routeApplied.current = true;
             const requested = route.get("project_id");
             if (requested && requested !== active) {
-              await rpc("project.open_github", {
-                command_id: crypto.randomUUID(),
-                target: requested,
-                payload: {},
-              });
-              active = requested;
+              try {
+                await rpc("project.open_github", {
+                  command_id: crypto.randomUUID(), target: requested, payload: {},
+                });
+                active = requested;
+              } catch (error) {
+                if (!(error instanceof Error) || !error.message.startsWith("not_found ·")) throw error;
+                obsoleteRoute = true;
+                for (const key of ["project_id", "feature_id", "task_id", "session_id"]) route.delete(key);
+                window.history.replaceState(null, "", `?${route}`);
+                setFeatureId("");
+                setTaskFilter("");
+              }
             }
           }
 
@@ -371,14 +380,14 @@ function App() {
           }
           const d = await rpc("query.workspace", {
             project_id: projectId || undefined,
-            feature_id: featureId || undefined,
+            feature_id: obsoleteRoute ? undefined : featureId || undefined,
             offset: featurePage * 50,
             project_offset: projectPage * 50,
             github_only: true,
             limit: 50,
             detail_pages: detailPages,
             work_filter: workFilter,
-            task_id: taskFilter || undefined,
+            task_id: obsoleteRoute ? undefined : taskFilter || undefined,
           });
           if (generation !== requestGeneration.current) return;
           setData(d);
@@ -807,13 +816,18 @@ function App() {
     const feedbackTarget = currentActionTarget();
     const generation = projectGeneration.current;
     try {
-      const r = await fetch(
-        `/artifacts/${id}?project_id=${encodeURIComponent(projectId)}`,
-      );
+      const [r, artifact] = await Promise.all([
+        fetch(`/artifacts/${id}?project_id=${encodeURIComponent(projectId)}`),
+        rpc("query.artifact", { id, project_id: projectId }),
+      ]);
       if (!r.ok) throw new Error("产物读取失败或哈希校验失败");
       const body = await r.text();
       if (generation === projectGeneration.current)
-        setView({ title: `Artifact · ${short(id)}`, body });
+        setView({
+          title: `Artifact · ${short(id)}`,
+          body,
+          ...(/\.md$/i.test(artifact.relative_path || "") || artifact.media_type?.includes("markdown") ? { format: "markdown" as const } : {}),
+        });
     } catch (e) {
       if (
         generation === projectGeneration.current &&
@@ -1394,7 +1408,7 @@ function App() {
               {legacyLock && (
                 <p className="notice">
                   历史 Feature 保留原配置及已记录的运行环境。缺失的 Model /
-                  AgentID 不作推断；新执行使用当前 Project 配置创建后继
+                  Agent 不作推断；新执行使用当前 Project 配置创建后继
                   Feature。
                 </p>
               )}
@@ -1529,7 +1543,7 @@ function App() {
                           {d.verifies?.join("、")}
                         </summary>
                         <pre>{pretty(d.test_recipe || {})}</pre>
-                        <p>{d.body}</p>
+                        <MarkdownPreview text={d.body} />
                       </details>
                     ))}
                   {detail.runs
@@ -2234,8 +2248,8 @@ function App() {
                           },
                           {
                             key: "body",
-                            label: "Markdown 内容",
-                            type: "textarea",
+                            label: "内容",
+                            type: "markdown",
                           },
                         ],
                       }),
@@ -2269,7 +2283,9 @@ function App() {
                             onClick={() =>
                               setView({
                                 title: `${d.title} · v${d.version}`,
-                                body: d.body + "\n\n---\n" + pretty(d),
+                                body: d.body,
+                                format: "markdown",
+                                metadata: d,
                               })
                             }
                           >
@@ -2307,8 +2323,8 @@ function App() {
                                 },
                                 {
                                   key: "body",
-                                  label: "Markdown 内容",
-                                  type: "textarea",
+                                  label: "内容",
+                                  type: "markdown",
                                   value: d.body,
                                 },
                               ],
@@ -2664,7 +2680,6 @@ function App() {
                   <RuntimePreferences
                     key={project.id}
                     project={project}
-                    installations={data.runtime_installations || []}
                     request={rpc}
                     refresh={load}
                   />
@@ -2834,6 +2849,8 @@ function App() {
         <Reader
           title={view.title}
           body={view.body}
+          format={view.format}
+          metadata={view.metadata}
           close={() => setView(undefined)}
         />
       )}
@@ -2917,6 +2934,7 @@ function CommandDialog({
       for (const field of spec.fields) {
         const value = values[field.key];
         if (field.optional && !value.trim()) continue;
+        if (field.type === "markdown" && !field.optional && !value.trim()) throw new Error(`请填写${field.label}`);
         if (field.key === "acceptance" && value.trim())
           payload.acceptance = value
             .split("\n")
@@ -2991,7 +3009,9 @@ function CommandDialog({
         {spec.fields.length === 0 && (
           <p className="muted">确认执行此领域操作。结果将保存到工程历史。</p>
         )}
-        {spec.fields.map((f, i) => (
+        {spec.fields.map((f, i) => f.type === "markdown" ? (
+          <MarkdownField key={f.key} label={f.label} value={values[f.key]} required={!f.optional} onChange={(value) => setValues({ ...values, [f.key]: value })} />
+        ) : (
           <label key={f.key}>
             {f.label}
             {f.type === "textarea" ? (
@@ -3122,10 +3142,14 @@ function useModalFocus(
 function Reader({
   title,
   body,
+  format,
+  metadata,
   close,
 }: {
   title: string;
   body: string;
+  format?: "markdown";
+  metadata?: RecordData;
   close: () => void;
 }) {
   const ref = useRef<HTMLElement>(null);
@@ -3146,7 +3170,8 @@ function Reader({
             <X size={18} />
           </ActionButton>
         </div>
-        <pre>{body}</pre>
+        {format === "markdown" ? <MarkdownPreview text={body} /> : <pre>{body}</pre>}
+        {metadata && <details><summary>文档信息</summary><pre>{pretty(metadata)}</pre></details>}
       </section>
     </div>
   );

@@ -138,6 +138,8 @@ pub fn validate_workflow_v3(doc: &WorkflowDocument) -> Result<Vec<String>> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowTaskDefinition {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub delivery_types: Vec<ConfigurationRecord>,
     pub renderer_version: String,
     pub workflow_revision_id: Id,
     pub source_step: String,
@@ -208,6 +210,14 @@ impl FrozenAgentTask {
                 ),
             "任务载荷与冻结步骤定义不匹配",
         )?;
+        if !definition.delivery_types.is_empty() {
+            require(content["delivery_types"] == json!(definition.delivery_types), "交付物定义与冻结任务不匹配")?;
+            require(content["delivery_contracts"] == json!({"inputs":step.delivery_inputs,"outputs":step.delivery_outputs}), "交付物引用与冻结步骤不匹配")?;
+            for delivery in &definition.delivery_types {
+                require(delivery.kind == "delivery_type" && delivery.content_hash == configuration_hash(&delivery.data), "冻结交付物定义已变化")?;
+                delivery.decode::<DeliveryTypeDefinition>()?.validate()?;
+            }
+        }
         let spec_ids = content["specifications"]
             .as_array()
             .ok_or_else(|| err("task_contract_mismatch", "任务缺少 Spec 列表"))?

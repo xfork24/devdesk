@@ -1,6 +1,8 @@
 # DevDesk 0.2
 
-本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 测试和 GitHub PR。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；历史原型数据只读保留，离线测试使用独立夹具。账号授权在设置中完成；见 [真实工程接入](docs/real-engineering.md)。
+本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 测试和 GitHub PR。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；历史原型数据只读保留，离线测试使用独立夹具。账号授权在设置中完成，见[真实工程接入](docs/real-engineering.md)。
+
+流程与规范的 Delivery 页可定义 PRD、Design Doc、Diff、Test Report 等交付物。Workflow v3 步骤可声明产出及引用依赖链上的确切交付物修订，定义与材料一起进入冻结任务。角色与 Agent 仅保留 Role、Capability、Agent 三个页签，Agent 用于组合职责与能力；讨论身份可在角色讨论中创建。同一 owner、步骤、Agent 和执行节点默认续用最新会话，也可显式新建 Session。
 
 ## 运行
 
@@ -33,7 +35,7 @@ macOS Apple Silicon 输出 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz` 及 
 
 ## 使用与验证
 
-配置入口分为项目管理、流程与规范、角色与 Agent、基础组件。流程与规范包含 Workflow、Spec、Standard；基础组件依次包含 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用记录位于历史记录的 Tools调用记录范围。本轮变更、状态与验收见[改进计划](docs/plans/settings-navigation-usability/PLAN.md)及[实施报告](docs/plans/settings-navigation-usability/REPORT.md)。新项目页提供可直接采用的默认流程与六个职责 Agent；各职责引用独立 Capability 和 Markdown Skill/Spec，分别产出 PRD、Design Doc、Task Plan、测试、实现与评审。选择或调整后保存项目配置，再创建 Feature；Standard 为可选覆盖基线。[默认配置目录](resources/configuration/README.md)列出具体内容。
+配置入口分为项目管理、流程与规范、角色与 Agent、基础组件。流程与规范包含 Workflow、Delivery、Spec、Standard；基础组件依次包含 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用记录位于历史记录的 Tools调用记录范围。本轮变更、状态与验收见[改进计划](docs/plans/settings-navigation-usability/PLAN.md)及[实施报告](docs/plans/settings-navigation-usability/REPORT.md)。新项目页提供可直接采用的默认流程与六个职责 Agent；各职责引用独立 Capability 和 Markdown Skill/Spec，分别产出 PRD、Design Doc、Task Plan、测试、实现与评审。选择或调整后保存项目配置，再创建 Feature；Standard 为可选覆盖基线。[默认配置目录](resources/configuration/README.md)列出具体内容。
 
 [真实工程接入](docs/real-engineering.md)说明正常 Web 操作；[历史演示步骤](docs/plans/devdesk-prototype/demo.md)仅记录后端模拟夹具，不再对应当前 Web 入口。需要先完成规划的两个 Delivery/Review，再建立独立 Tasks；Task 完成后还有 Feature 自身收尾。
 

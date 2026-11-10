@@ -71,10 +71,10 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
   ).toBeVisible();
   await editor.getByRole("button", { name: "编辑流程", exact: true }).click();
   await editor
-    .getByRole("button", { name: "编辑任务指令（Markdown）源码", exact: true })
+    .getByRole("button", { name: "任务指令", exact: true })
     .click();
   await editor
-    .getByRole("textbox", { name: "任务指令（Markdown）", exact: true })
+    .getByRole("textbox", { name: "任务指令", exact: true })
     .fill(body);
   await editor.getByRole("button", { name: "保存草稿", exact: true }).click();
   await expect(
@@ -135,27 +135,27 @@ test("正式执行分别编辑公共和 Agent 节点任务，系统测试节点�
   await editor.getByRole("button", { name: "编辑流程", exact: true }).click();
   await editor
     .getByRole("button", {
-      name: "编辑公共任务指令（Markdown）源码",
+      name: "公共任务指令",
       exact: true,
     })
     .click();
   await editor
-    .getByRole("textbox", { name: "公共任务指令（Markdown）", exact: true })
+    .getByRole("textbox", { name: "公共任务指令", exact: true })
     .fill("## 公共目标\n\n仅实现当前 Task。");
   await editor
     .getByRole("button", {
-      name: "编辑实现 节点任务指令（Markdown）源码",
+      name: "实现 节点任务指令",
       exact: true,
     })
     .click();
   await editor
     .getByRole("textbox", {
-      name: "实现 节点任务指令（Markdown）",
+      name: "实现 节点任务指令",
       exact: true,
     })
     .fill("## 具体实现\n\n按已采纳接口完成当前 Task, 保持测试不变。");
   await expect(
-    editor.getByRole("group", { name: /节点任务指令（Markdown）/ }),
+    editor.getByRole("group", { name: /节点任务指令/ }),
   ).toHaveCount(3);
   await expect(
     editor.getByText("系统测试执行器按冻结 TestRecipe 执行，不调用 Agent。", {

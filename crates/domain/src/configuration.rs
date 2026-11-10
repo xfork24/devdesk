@@ -365,10 +365,12 @@ pub fn validate_workflow_v2(doc: &WorkflowDocument) -> Result<Vec<String>> {
 
 /// Validate ports against declared action contracts; workflow.call ports are checked after expansion.
 pub fn validate_workflow_ports(doc: &WorkflowDocument) -> Result<()> {
+    validate_workflow_deliveries(doc)?;
     fn output(doc: &WorkflowDocument, step: &str, port: &str) -> bool {
         let Some(source) = doc.steps.iter().find(|s| s.key == step) else {
             return false;
         };
+        if source.delivery_outputs.contains_key(port) { return true; }
         let ports: &[&str] = match source.kind.as_str() {
             "agent.interact" => &["session", "proposal", "document"],
             "proposal.adopt" => &["proposal", "document"],
@@ -398,7 +400,7 @@ pub fn validate_workflow_ports(doc: &WorkflowDocument) -> Result<()> {
                 }
             }
         }
-        for (name, input) in &step.inputs {
+        for (name, input) in step.inputs.iter().chain(step.delivery_inputs.iter().map(|(name, input)| (name, &input.source))) {
             require(
                 if input.step == "$input" {
                     doc.input_ports.contains(&input.port)

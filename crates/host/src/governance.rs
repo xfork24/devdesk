@@ -162,10 +162,10 @@ impl Workspace {
             .map(str::to_owned);
         let agent_id = if let Some(instance) = &selected {
             let r = state.configuration(instance)?;
-            require(r.kind == "agent_instance", "无效 AgentID")?;
+            require(r.kind == "agent_instance", "无效 Agent")?;
             r.data["agent_revision_id"]
                 .as_str()
-                .ok_or_else(|| err("blocked", "AgentID 缺少组合"))?
+                .ok_or_else(|| err("blocked", "Agent 缺少组合"))?
                 .to_owned()
         } else {
             command.payload["agent"]
@@ -193,7 +193,7 @@ impl Workspace {
                     .projects
                     .iter()
                     .any(|project| project.execution_mode == "live"),
-                "新原生 Session 需要完整 AgentRevision 和 AgentID；历史角色定义不能分开覆盖 Model/Harness",
+                "新原生 Session 需要完整 AgentRevision 和 Agent；历史角色定义不能分开覆盖 Model/Harness",
             )?;
             return Ok(());
         };
@@ -250,7 +250,7 @@ impl Workspace {
         ] {
             require(
                 command.payload.get(key).is_none(),
-                "AgentID 执行不能单独覆盖 Role/Model/Harness/Permission，请采用新的 Agent 版本",
+                "Agent 执行不能单独覆盖 Role/Model/Harness/Permission，请采用新的 Agent 版本",
             )?;
         }
         let project = state.projects.first();
@@ -265,7 +265,7 @@ impl Workspace {
         let instance = if let Some(instance) = selected {
             let r = state.configuration(&instance)?;
             let i: AgentInstance = r.decode()?;
-            require(i.scope.visible_from(&scope), "AgentID 不属于当前项目")?;
+            require(i.scope.visible_from(&scope), "Agent 不属于当前项目")?;
             instance
         } else if let Some(r) = state.governance.iter().find(|r| {
             r.kind == "agent_instance"
@@ -351,6 +351,7 @@ impl Workspace {
             || method.starts_with("sandbox.")
             || method.starts_with("role.")
             || method.starts_with("capability.")
+            || method.starts_with("delivery_type.")
             || method.starts_with("agent.instance.")
             || ([
                 "skill.create",
