@@ -83,7 +83,7 @@ def main():
             c.open(project)
             model = c.command('model.create', payload={'name': 'Host Ollama fixture', 'data': {'provider': 'ollama', 'model': 'host-fixture-model', 'endpoint': f'http://127.0.0.1:{server.server_port}/v1', 'context_window': 32768, 'max_output_tokens': 4096, 'parameters': {'max_tokens': 2048}}})['id']
             cap = c.command('capability.create', payload={'name': 'Host Ollama capability', 'data': {'model_ref': model, 'harness_ref': 'builtin-harness-dsh-multi-provider-v1', 'tools': ['builtin-tool-dsh-native-v1'], 'skills': []}})['id']
-            agent = c.command('agent.create', payload={'name': 'Host Ollama Agent', 'data': {'role_ref': 'builtin-role-analyst-v1', 'capability_ref': cap, 'permissions': ['permission-container-full-access-v1'], 'approval': 'never'}})['id']
+            agent = c.command('agent.create', payload={'name': 'Host Ollama Agent', 'data': {'role_ref': 'builtin-role-analyst-v1', 'capability_ref': cap, 'permission_selection': {'sandbox_ref': 'builtin-permission-sandbox-docker-v1', 'harness': {'mode': 'follow_target'}, 'sandbox': {'mode': 'follow_target'}}}})['id']
             checked = c.rpc('agent.connection.check', {'agent_revision_id': agent})
             assert checked['container_verified'] and not checked['inference_verified'], checked
             state = c.rpc('query.session', {'id': checked['session_id']})

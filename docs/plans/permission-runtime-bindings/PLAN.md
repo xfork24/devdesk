@@ -1,5 +1,7 @@
 # Permission 资源与运行时版本绑定实施计划
 
+> 历史记录：未提供链接的原始文件路径仅记录当时执行；相关中间产物或已删除源码不随当前工程提供。
+
 日期：2026-11-09。状态：已实施。macOS 自动化、Docker 双供应商原生边界、真实 Codex 运行时改绑和独立发布包验证通过；Ubuntu、DSH 真实模型传输及完整崩溃注入矩阵待补验。详情见 [实施记录](EXECUTION.md)。
 
 将 Permission 建成独立、可修订的运行时配置资源：`permissions/` 中的预定义文件和 UI 使用同一种声明语言；UI 可以读取、编辑、保存、导入和导出；权限修订可以绑定到某个 Harness 或 Sandbox 的确切资源修订。更新绑定后，后续执行无需重启 Host 即可使用新权限；已有讨论在静止边界通过后继 Session 切换，保留原执行证据。
@@ -14,12 +16,12 @@
 |---|---|---|
 | 六个预设通过 `include_str!` 枚举后播种 | 新增目录文件不会自动成为运行时资源，需要显式加载与导入机制 | [core/lib.rs](../../../crates/core/src/lib.rs) 的 `seed_configuration` |
 | Permission 不含审批，审批在全局配置和 Agent 中分别保存 | 完整 profile 必须统一审批归属，并定义旧数据解释方式 | [domain/permission.rs](../../../crates/domain/src/permission.rs)、[domain/governance.rs](../../../crates/domain/src/governance.rs) |
-| 全局绑定以 `codex`、`dsh` 为键，Sandbox 只有一项绑定 | 无法区分同一供应商的不同资源修订、构建与平台 | [permission_catalog.rs](../../../crates/adapters/src/permission_catalog.rs) |
+| 全局绑定以 `codex`、`dsh` 为键，Sandbox 只有一项绑定 | 无法区分同一供应商的不同资源修订、构建与平台 | permission_catalog.rs（历史路径：`../../../crates/adapters/src/permission_catalog.rs`） |
 | Agent 使用 `permissions[0]` 与最后一项分别作为两层权限 | 更改全局设置可能不影响新 Agent 路径，列表位置也没有明确类型 | [host/workspace.rs](../../../crates/host/src/workspace.rs) 的 `open_role_session` |
 | 旧路径按绑定、项目、角色、本次执行覆盖，新 Agent 路径跳过这些覆盖 | 必须统一解析入口，明确追随目标与固定引用的区别 | 同上，以及 [resolve_permission](../../../crates/domain/src/permission.rs) |
 | 新 Harness 使用不可变 `ConfigurationRecord`；旧 Harness 与 Sandbox 另有领域记录 | 需要明确目标修订的权威类型，不能把安装 ID 当成配置修订 ID | [domain/governance.rs](../../../crates/domain/src/governance.rs)、[domain/execution.rs](../../../crates/domain/src/execution.rs) |
 | 能力表目前固定验证 Codex 0.167.0 和 DSH 0.2.2-rc.1 | 绑定不同版本不等于该版本已获支持，能力必须按执行合同核验 | [adapters/permissions.rs](../../../crates/adapters/src/permissions.rs) |
-| 预检构造空读写目录，并未使用完整 Agent 组合 | 预检通过不能代表实际实施阶段可执行 | [host/permission_api.rs](../../../crates/host/src/permission_api.rs) |
+| 预检构造空读写目录，并未使用完整 Agent 组合 | 预检通过不能代表实际实施阶段可执行 | host/permission_api.rs（历史路径：`../../../crates/host/src/permission_api.rs`） |
 | Session 的 RuntimeBinding 和原生 Session ID 均禁止原地替换 | 已有会话应创建后继 Session，不能覆盖旧绑定或直接续用旧原生线程 | [domain/conversation.rs](../../../crates/domain/src/conversation.rs) 的历史一致性校验 |
 | 打开讨论可创建带 Snapshot 的后继 Session；发送消息仍使用现有绑定 | 可以复用继承能力，但需补充自动切换、旧 worker 静止核对与消息幂等 | [core/conversations.rs](../../../crates/core/src/conversations.rs)、[core/conversation_runtime.rs](../../../crates/core/src/conversation_runtime.rs) |
 | Feature 已冻结配置闭包，Run 与 RuntimeExecution 保存权限快照 | 动态目标绑定不能绕过既有工程授权冻结与重试语义 | [core/governance.rs](../../../crates/core/src/governance.rs)、[core/project_configuration.rs](../../../crates/core/src/project_configuration.rs) |

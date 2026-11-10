@@ -1,5 +1,7 @@
 # macOS 补充独立评审
 
+> 历史记录：未提供链接的原始文件路径仅记录当时执行；相关中间产物或已删除源码不随当前工程提供。
+
 日期：2026-11-08。评审者：独立 Agent `review_macos`，未参与本轮业务代码或构建脚本实现。范围：计划 v0.2 中 F1/F5 的 macOS 实机待办、验证入口和本地运行交付。
 
 ## 结论
@@ -34,6 +36,6 @@ HTTP 契约中的 Artifact 检查覆盖未鉴权和不存在 ID；实际已保�
 
 ## 作者验证与范围
 
-作者另报告 `./scripts/check.sh` 全部通过：32 项 Rust 测试、debug HTTP、debug Web E2E 3/3（31.4s）、release 构建、release standalone HTTP、release Web E2E 3/3（23.0s）。作者也记录小样本查询、启动时间和包体积；这些不是评审者独立重跑的数据，见 [验证报告](macos-validation.md) 与 [测量数据](macos-measurements.json)。
+作者另报告 `./scripts/check.sh` 全部通过：32 项 Rust 测试、debug HTTP、debug Web E2E 3/3（31.4s）、release 构建、release standalone HTTP、release Web E2E 3/3（23.0s）。作者也记录小样本查询、启动时间和包体积；这些不是评审者独立重跑的数据，见 [验证报告](macos-validation.md) 与 测量数据（历史路径：`macos-measurements.json`）。
 
 本轮评审没有重新审计全部既有领域实现，也没有在 Linux 再次运行修改后的脚本；Linux 依据原有独立评审和验收历史。本轮新增修改集中在验证、平台状态和交付，未改变领域状态机。真实 Git/Test/Codex、Archive/迁移执行等仍按计划延期，不列为本轮未完成项。

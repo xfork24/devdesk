@@ -99,12 +99,12 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     role.getByRole("button", { name: new RegExp(name + " v2") }),
   ).toHaveCount(0);
 });
-test("原生工具目录不编辑 Schema，旧 Tool 链接跳转到独立目录", async ({
+test("原生工具目录提供独立当前入口且不编辑 Schema", async ({
   page,
 }) => {
   await setup(page);
   await page.goto(
-    "/?tab=components&config_tab=tool&config_object=builtin-tool-codex-native-v1",
+    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native-v1",
   );
   await expect(
     page.getByRole("region", { name: "原生工具目录" }),
@@ -338,7 +338,7 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
   const child = await publish(
     "可编辑子流程 " + crypto.randomUUID().slice(0, 6),
     {
-      schema_version: 2,
+      schema_version: 3,
       process_kind: "subworkflow",
       stages: [{ key: "work", name: "子流程阶段" }],
       steps: [
@@ -354,7 +354,7 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
   const parent = await publish(
     "阶段与讨论 " + crypto.randomUUID().slice(0, 6),
     {
-      schema_version: 2,
+      schema_version: 3,
       process_kind: "subworkflow",
       stages: [
         {
@@ -371,10 +371,11 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
           kind: "agent.interact",
           stage: "plan",
           role_ref: "builtin-role-analyst",
+          contract_version: 2,
+          task_instructions: goal,
           spec_refs: ["builtin-spec-stage-prd-v1"],
           interaction: {
             mode: "discussion",
-            goal,
             required_topics: topics,
             output_kind: "requirement",
             max_turns: 8,
@@ -426,7 +427,7 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
     .getByRole("button", { name: "需求讨论 角色讨论", exact: true })
     .click();
   const goalField = editor.getByRole("group", {
-    name: "讨论目标",
+    name: "任务指令",
     exact: true,
   });
   const topicsField = editor.getByRole("group", {
@@ -457,13 +458,13 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
   );
   const changedGoal = "## 新讨论目标\n\n产出 **PRD** 与验收说明。";
   await goalField
-    .getByRole("button", { name: "讨论目标", exact: true })
+    .getByRole("button", { name: "任务指令", exact: true })
     .click();
   await goalField
-    .getByRole("textbox", { name: "讨论目标", exact: true })
+    .getByRole("textbox", { name: "任务指令", exact: true })
     .fill(changedGoal);
   await goalField
-    .getByRole("textbox", { name: "讨论目标", exact: true }).press("Tab");
+    .getByRole("textbox", { name: "任务指令", exact: true }).press("Tab");
   await expect(
     goalField.getByRole("heading", { name: "新讨论目标", level: 2 }),
   ).toBeVisible();
@@ -485,14 +486,14 @@ test("阶段整体折叠且保留状态，讨论 Markdown 与已发布子流程�
   await expect(page.getByRole("status")).toHaveText(/草稿已保存/);
   const draftId = new URL(page.url()).searchParams.get("workflow_id");
   const saved = await rpc(page, "query.workflow_draft", { id: draftId });
-  expect(saved.data.document.steps[0].interaction.goal).toBe(changedGoal);
+  expect(saved.data.document.steps[0].task_instructions).toBe(changedGoal);
   expect(saved.data.document.steps[0].interaction.required_topics).toEqual([
     changedTopic,
     topics[1],
   ]);
   expect(
     (await rpc(page, "query.workflow", { id: parent.id })).data.steps[0]
-      .interaction.goal,
+      .task_instructions,
   ).toBe(goal);
   await page.reload();
   await expect(
@@ -616,7 +617,7 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
 
 });
 
-test("合并配置页面保持 Tab 顺序，旧链接定位且 Tools 调用记录迁至历史", async ({
+test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录位于历史", async ({
   page,
 }, info) => {
   await setup(page);
@@ -660,17 +661,17 @@ test("合并配置页面保持 Tab 顺序，旧链接定位且 Tools 调用记�
     path: info.outputPath("combined-foundations.png"),
     fullPage: true,
   });
-  await page.goto("/?tab=specifications&config_tab=standard");
+  await page.goto("/?tab=workflows&config_tab=standard");
   await expect(
     page.getByRole("tab", { name: "Standard", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(/tab=workflows/);
-  await page.goto("/?tab=integrations&config_tab=mcp");
+  await page.goto("/?tab=components&config_tab=mcp");
   await expect(
     page.getByRole("tab", { name: "MCP", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(/tab=components/);
-  await page.goto("/?tab=integrations&config_tab=calls");
+  await page.goto("/?tab=history&history_scope=tools");
   await expect(page.getByLabel("历史范围", { exact: true })).toHaveValue(
     "tools",
   );

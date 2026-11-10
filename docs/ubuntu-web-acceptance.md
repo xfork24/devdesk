@@ -32,16 +32,15 @@ macOS/aarch64、Linux/aarch64、Linux/x86_64 是不同安装键。不能复制�
 
 ```bash
 cargo test --locked -p devdesk-adapters --test command_tests --test docker_resources --test git_resources -- --include-ignored
-./scripts/check/check-live.sh --mode full --providers codex,dsh \
-  --root /absolute/path/to/dedicated-live-data \
+./scripts/check/check-live.sh --groups workbench --providers codex,dsh \
   --github-repo owner/dedicated-test-repo \
-  --url http://127.0.0.1:51751 --allow-host-restart
+  --url http://127.0.0.1:51751
 ./scripts/release/package.sh
 ```
 
-完整 live 模式使用新报告目录和随机源码前缀，执行模型调用、创建真实 Feature/Task、PR 并接纳至专用仓库主干，还会 SIGKILL/重启唯一匹配数据集和端口的验收 Host。只使用专用测试数据集/仓库，不能以 DevDesk 自身仓库验收。缺配置、权限、镜像或恢复授权以非零退出，不把 skip 视为成功。
+workbench 组使用新报告目录和随机源码前缀，执行模型调用、创建真实 Feature/Task、PR 并接纳至专用仓库主干。只使用专用测试数据集/仓库，不能以 DevDesk 自身仓库验收。缺配置、权限或镜像以非零退出，不把 skip 视为成功。
 
-按组诊断可使用 `--groups git,docker,harness,github,web,workflow,recovery` 的子集；完整工程验收需要全部组和两供应商。`--mode verify-existing --reports <报告目录>` 是对已经执行过的外部对象/产物重新核验，不替代首次真实执行。
+按组诊断可使用 `--groups git,docker,permissions` 的子集；完整工程验收需显式选择 `workbench` 和两供应商。当前入口不再提供旧 mode、旧分组或 Host 重启选项。
 
 报告需另存 Ubuntu 实际 OS/CPU、依赖、命令退出状态、双供应商原生 Session、资源/停止证明、PR/候选 SHA、浏览器截图和打包 SHA256。旧 macOS 数据保留历史，不改写其平台/凭据引用来伪造 Ubuntu 实例。
 

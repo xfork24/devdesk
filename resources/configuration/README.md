@@ -1,6 +1,6 @@
 # 默认配置目录
 
-默认条目是普通、独立版本化定义。程序首次初始化时嵌入 Markdown 正文并建立明确引用；项目页预填默认配置，保存后用于后续 Feature。编辑资源不回写其他定义或已有执行锁。
+默认条目是普通、独立版本化定义。`catalog.json` 直接发布当前目录：6 个 Agent、7 个 Capability、2 个 v3 Workflow、8 个阶段 Spec、9 个 Skill，以及 Model、Harness、Sandbox、Permission 和 Delivery。Markdown 引用在编译时嵌入，启动不执行旧版本生成、投影或转换链。项目页预填当前目录，保存后用于后续 Feature。编辑资源不回写其他定义或已有执行锁。
 
 | Role / Agent | Capability 中的专用 Skill | 主要交付与阶段 Spec |
 |---|---|---|
@@ -18,7 +18,7 @@ Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审�
 
 ## 默认 Step 任务
 
-`tasks/` 的 22 份 Markdown 在编译时嵌入，播种为 Workflow Schema v3 的 Feature/Task 定义。用户在 Workflow UI 编辑任务，发布后正文属于该修订；修改源码资源不会改写已有修订或 Feature 锁。任务没有模板插值；Role 是职责，Skill 是方法，Spec 是判准，阶段描述是背景，均独立保留来源。旧 v2 默认仍可明确采用。
+`tasks/` 的 22 份 Markdown 在编译时嵌入，播种为 Workflow Schema v3 的 Feature/Task 定义。用户在 Workflow UI 编辑任务，发布后正文属于该修订；修改源码资源不会改写已有修订或 Feature 锁。任务没有模板插值；Role 是职责，Skill 是方法，Spec 是判准，阶段描述是背景，均独立保留来源。仅支持当前 v3 任务合同。
 
 | 原业务提示入口 | 新任务文件 | 保留的系统合同 |
 |---|---|---|
@@ -29,9 +29,9 @@ Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审�
 | 阶段交付评审 | review-requirement / review-plan / review-task / review-feature | 独立评审身份、四类 checks 与真实证据 |
 | 候选评审 | review-candidate-task / review-candidate-feature | 候选来源、只读代码与合入门禁 |
 
-新 v3 路径只传这些已冻结正文和受控材料，不再从 live_runs 的旧分支追加业务提示。兼容工作流读取冻结步骤的 goal 与 parameters.agent_prompts；运行代码不再拼接阶段业务提示词。显式升级到 v3 时保留这些配置，并转换为对应任务字段。系统测试和 merge.prepare 不调用 Agent。
+新 v3 路径只传这些已冻结正文和受控材料，不再从 live_runs 的旧分支追加业务提示。系统只接受 v3 Workflow 的显式任务指令。系统测试和 merge.prepare 不调用 Agent。
 
-工程上下文、V1 工作方法、Role 职责、Spec 与 Standard 正文分别维护在 `skills/`、`roles/`、`specs/`、`standards/`。升级时仅为未被用户自定义的内置正文追加修订；原冻结引用、已发表内容与摘要保持不变。DSH 原生工具组通过明确的 Harness 标识限制适用后端，旧通用原生工具绑定继续用于历史组合。
+工程上下文、职责、阶段方法、Spec、Standard 与任务正文维护在对应 Markdown 目录，`catalog.json` 声明当前发布版本及精确引用。只读内容与引用的摘要在发布时计算。DSH 原生工具组通过明确的 Harness 标识限制适用后端。
 
 ## 内容校验、提示词与双重 Approve
 
@@ -54,4 +54,4 @@ Feature 默认分为八个阶段；Task 默认包含 TDD 实现、独立评审�
 
 内置正文按目标与边界、输入、交付内容、一致性检查、完成标准和工具证据组织。职责、技能、规范、任务与交付定义分别说明本层责任，避免把计划当作执行证据。新增内容位于 `deliveries/`。
 
-应用更新为未被用户自定义的内置内容追加不可变修订，并同步发布依赖这些正文的内置 Capability、Agent 和 Workflow。新项目的默认选择使用这些修订。已有 Workflow、Feature 与任务输入保持冻结；编辑任务或 Skill 后，发布并明确选择新修订，不隐式替换在途执行。
+发布默认目录时应同步更新内容、版本及依赖引用；启动只补齐缺失身份，不推断或转换旧定义。新项目的默认选择使用当前发布目录。已有 Workflow、Feature 与任务输入保持冻结；编辑任务或 Skill 后，发布并明确选择新修订，不隐式替换在途执行。

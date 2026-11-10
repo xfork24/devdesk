@@ -15,30 +15,9 @@ fn engine(path: &Path) -> Engine {
         runtime::adapters(),
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e
 }
-fn legacy_store(path: &Path) -> SqliteStore {
-    std::fs::create_dir_all(path).unwrap();
-    std::fs::write(path.join(".devdesk-dataset"), "devdesk-schema-v1\n").unwrap();
-    let db = rusqlite::Connection::open(path.join("engineering.sqlite3")).unwrap();
-    db.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
-    db.execute_batch(include_str!(
-        "../../../tests/fixtures/legacy/engineering-v34.sql"
-    ))
-    .unwrap();
-    drop(db);
-    let artifacts: std::collections::BTreeMap<String, String> = serde_json::from_str(include_str!(
-        "../../../tests/fixtures/legacy/artifacts.json"
-    ))
-    .unwrap();
-    for (relative, body) in artifacts {
-        let file = path.join(relative);
-        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-        std::fs::write(file, body).unwrap();
-    }
-    SqliteStore::open(path).unwrap()
-}
-
 fn revision(e: &Engine, target: &str) -> Option<u64> {
     let s = e.store.snapshot().unwrap();
     s.projects
@@ -193,181 +172,30 @@ fn hardening_document_target_cannot_bypass_revision() {
     );
 }
 
+#[cfg(unix)]
 #[test]
-fn project_databases_migrate_full_history_and_keep_the_legacy_source() {
+fn current_databases_exclude_retired_permission_storage_and_conversion_indexes() {
     let dir = tempfile::tempdir().unwrap();
-    let old = legacy_store(dir.path());
-    let before = serde_json::to_value(old.snapshot().unwrap()).unwrap();
-    std::fs::write(
-        dir.path().join("runtime.json"),
-        r#"{"global_concurrency":7}"#,
-    )
-    .unwrap();
-    assert!(GlobalStore::open(dir.path()).is_err());
-    drop(old);
-    let original = std::fs::read(dir.path().join("engineering.sqlite3")).unwrap();
-    let global = GlobalStore::open(dir.path()).unwrap();
-    assert_eq!(global.concurrency().unwrap(), 7);
-    let (projects, count) = global.projects(0, 100).unwrap();
-    assert_eq!(count, 2);
-    assert_eq!(global.github_projects(0, 100).unwrap().1, 0);
-    let mut combined = std::collections::HashMap::<String, usize>::new();
-    let global_state = global.snapshot().unwrap();
-    let mut events = global_state.events.len();
-    for project in &projects {
-        let store = SqliteStore::open_project(dir.path(), &project.id).unwrap();
-        let state = store.snapshot().unwrap();
-        assert_eq!(state.projects.len(), 1);
-        assert_eq!(state.projects[0].id, project.id);
-        assert_eq!(state.features.len(), 1);
-        assert!(state.features.iter().all(|f| f.project_id == project.id));
-        let artifacts = FileArtifacts::new(store.root().into());
-        for artifact in &state.artifacts {
-            assert!(!artifacts.read(artifact).unwrap().is_empty());
-        }
-        events += state.events.len();
-        let json = serde_json::to_value(&state).unwrap();
-        for (table, rows) in json.as_object().unwrap() {
-            *combined.entry(table.clone()).or_default() += rows.as_array().unwrap().len();
-        }
-        let conn = rusqlite::Connection::open(
-            std::path::PathBuf::from(store.root()).join("engineering.sqlite3"),
-        )
-        .unwrap();
-        assert_eq!(
-            conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| {
-                r.get::<_, usize>(0)
-            })
-            .unwrap(),
-            0
-        );
-        let fp:String=conn.query_row("SELECT fingerprint FROM operations WHERE json_extract(fingerprint,'$[0]')='project.create'",[],|r|r.get(0)).unwrap();
-        let command_id: String = conn
-            .query_row(
-                "SELECT id FROM operations WHERE fingerprint=?1",
-                [&fp],
-                |r| r.get(0),
-            )
-            .unwrap();
-        let values: Value = serde_json::from_str(&fp).unwrap();
-        let command = Command {
-            command_id,
-            target: None,
-            expected_revision: None,
-            payload: values[3].clone(),
-        };
-        assert_eq!(global.reserve_project(&command).unwrap(), project.id);
-    }
-    for (table, rows) in before.as_object().unwrap() {
-        if ![
-            "governance",
-            "permissions",
-            "definitions",
-            "harnesses",
-            "sandboxes",
-            "events",
-        ]
-        .contains(&table.as_str())
-        {
-            assert_eq!(
-                combined[table],
-                rows.as_array().unwrap().len(),
-                "lost {table}"
-            );
-        }
-    }
-    assert_eq!(events, before["events"].as_array().unwrap().len());
-    let migrated = serde_json::to_value(global_state.definitions).unwrap();
-    for original in before["definitions"].as_array().unwrap() {
-        assert_eq!(
-            migrated
-                .as_array()
+    let _global = GlobalStore::open(dir.path()).unwrap();
+    let project = id();
+    let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
+    for (path, version) in [
+        (dir.path().join("global.sqlite3"), 10),
+        (
+            SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
-                .iter()
-                .find(|d| d["id"] == original["id"]),
-            Some(original),
-            "migration must preserve every immutable source definition"
+                .join("engineering.sqlite3"),
+            41,
+        ),
+    ] {
+        let db = rusqlite::Connection::open(path).unwrap();
+        assert_eq!(
+            db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
+                .unwrap(),
+            version
         );
+        assert_eq!(db.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('permissions','idx_governance_conversion_source')", [], |r|r.get::<_, u32>(0)).unwrap(), 0);
     }
-    let conn = rusqlite::Connection::open(dir.path().join("global.sqlite3")).unwrap();
-    assert_eq!(conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('features','runs','projects','deliveries')",[],|r|r.get::<_,usize>(0)).unwrap(),0);
-    assert_eq!(
-        original,
-        std::fs::read(dir.path().join("engineering.sqlite3")).unwrap()
-    );
-    drop(conn);
-    drop(global);
-    let reopened = GlobalStore::open(dir.path()).unwrap();
-    assert_eq!(reopened.projects(0, 100).unwrap().1, 2);
-    assert_eq!(reopened.concurrency().unwrap(), 7);
-}
-
-#[test]
-fn project_database_migration_retries_after_artifact_failure_without_publishing_partial_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let old = legacy_store(dir.path());
-    let f2 = old.snapshot().unwrap().features[1].id.clone();
-    let artifact = old
-        .snapshot()
-        .unwrap()
-        .artifacts
-        .iter()
-        .find(|a| a.feature_id.as_deref() == Some(f2.as_str()))
-        .unwrap()
-        .clone();
-    let path = dir.path().join(&artifact.relative_path);
-    let bytes = std::fs::read(&path).unwrap();
-    drop(old);
-    std::fs::write(&path, b"corrupt").unwrap();
-    assert!(GlobalStore::open(dir.path()).is_err());
-    let conn = rusqlite::Connection::open(dir.path().join("global.sqlite3")).unwrap();
-    assert_eq!(
-        conn.query_row("SELECT count(*) FROM project_catalog", [], |r| r
-            .get::<_, usize>(0))
-            .unwrap(),
-        0
-    );
-    drop(conn);
-    std::fs::write(path, bytes).unwrap();
-    let global = GlobalStore::open(dir.path()).unwrap();
-    assert_eq!(global.projects(0, 100).unwrap().1, 2);
-}
-
-#[test]
-fn global_configuration_upgrades_a_copy_of_v1_and_rejects_project_data() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join(".devdesk-dataset"), "devdesk-schema-v1\n").unwrap();
-    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
-    conn.execute_batch(include_str!(
-        "../../../sql/project/foundation/001_initial.sql"
-    ))
-    .unwrap();
-    drop(conn);
-    let global = GlobalStore::open(dir.path()).unwrap();
-    assert!(!global.snapshot().unwrap().definitions.is_empty());
-    let mut state = global.snapshot().unwrap();
-    let other = tempfile::tempdir().unwrap();
-    let old = engine(&other.path().join("legacy"));
-    new_feature(&old);
-    state.projects = old.store.snapshot().unwrap().projects;
-    assert!(
-        global
-            .transact(None, &mut |s| {
-                s.projects = state.projects.clone();
-                Ok(json!({}))
-            })
-            .is_err()
-    );
-    let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
-    assert_eq!(
-        conn.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
-            .unwrap(),
-        1
-    );
-    global.set_concurrency(9).unwrap();
-    assert_eq!(global.concurrency().unwrap(), 9);
-    assert!(global.set_concurrency(0).is_err());
-    assert!(global.set_concurrency(33).is_err());
 }
 
 #[cfg(unix)]
@@ -431,36 +259,6 @@ fn native_configuration_has_no_prototype_provider_or_execution_controls() {
     assert!(state.runs.is_empty() && state.sessions.is_empty() && state.executions.is_empty());
 }
 
-#[test]
-fn legacy_history_remains_readable_without_mutation_or_execution() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = Arc::new(legacy_store(dir.path()));
-    let before = serde_json::to_value(store.snapshot().unwrap()).unwrap();
-    let e = Engine::new(
-        store.clone(),
-        Arc::new(FileArtifacts::new(dir.path().into())),
-        runtime::adapters(),
-    );
-    e.bootstrap().unwrap();
-    e.tick(4).unwrap();
-    let state = store.snapshot().unwrap();
-    assert!(state.runs.iter().all(|r| r.origin == Origin::Simulated));
-    assert!(e.query("query.workspace", &json!({}), 4).is_ok());
-    assert!(
-        cmd(
-            &e,
-            "project.update",
-            Some(&state.projects[0].id),
-            json!({"title":"Cannot rewrite history"})
-        )
-        .is_err()
-    );
-    assert_eq!(
-        before,
-        serde_json::to_value(store.snapshot().unwrap()).unwrap()
-    );
-}
-
 // Recorded native boundary facts exercise Run acceptance separately from worker transport.
 fn recorded_native_stage(e: &Engine, answer: &str, stopped: bool, cancelled: bool) -> Id {
     recorded_native_stage_with_kind(e, answer, stopped, cancelled, RuntimeExecutionKind::Harness)
@@ -509,7 +307,7 @@ fn recorded_native_stage_with_status(
     session.owner_id = fid.clone();
     session.feature_id = Some(fid.clone());
     session.scope = Some(SessionScope::Feature);
-    session.agent = "builtin-agent-architect-v1".into();
+    session.agent = "builtin-agent-sol-high-architect-v3".into();
     session.external_session = Some(format!("fixture-native-{sid}"));
     session.lifecycle = Some(SessionLifecycle::Idle);
     session.runtime_binding.as_mut().unwrap().work_type = WorkType::Design;
@@ -883,158 +681,492 @@ fn legacy_formal_successors_cannot_turn_an_unbound_reply_into_an_adoptable_propo
 fn approval_answer(approved: bool) -> String {
     let mut value: Value = serde_json::from_str(&native_stage_answer()).unwrap();
     value["approve"] = json!(approved);
-    if !approved { value["checks"][3]["passed"] = json!(false); value["checks"][3]["evidence"] = json!("PRD 未说明输入失败后的恢复行为，需要补充具体行为。"); }
+    if !approved {
+        value["checks"][3]["passed"] = json!(false);
+        value["checks"][3]["evidence"] =
+            json!("PRD 未说明输入失败后的恢复行为，需要补充具体行为。");
+    }
     value.to_string()
 }
 fn workflow_runtime(e: &Engine, feature: &str) -> WorkflowRuntime {
-    e.store.snapshot().unwrap().governance.iter().find(|r|r.kind=="workflow_instance"&&r.definition_id==feature).unwrap().decode().unwrap()
+    e.store
+        .snapshot()
+        .unwrap()
+        .governance
+        .iter()
+        .find(|r| r.kind == "workflow_instance" && r.definition_id == feature)
+        .unwrap()
+        .decode()
+        .unwrap()
 }
-fn attach_validation(e: &Engine, run: &str) -> (String,String) {
-    let snapshot=e.store.snapshot().unwrap();
-    let attempt=snapshot.runs.iter().find(|r|r.id==run).unwrap().attempt_id.clone().unwrap();
-    let feature=snapshot.attempt(&attempt).unwrap().feature_id.clone();
-    e.store.transact(None,&mut |s| {
-        let record=s.governance.iter_mut().find(|r|r.kind=="workflow_instance"&&r.definition_id==feature).unwrap();
-        let mut runtime:WorkflowRuntime=record.decode()?;
-        for step in &mut runtime.steps {
-            if step.key=="requirement_execute" {step.outputs.insert("attempt".into(),attempt.clone());step.status="active".into();break;}
-            step.status="completed".into();
-        }
-        record.data=json!(runtime);record.content_hash=configuration_hash(&record.data);record.revision+=1;
-        Ok(Value::Null)
-    }).unwrap();
-    (feature,attempt)
+fn attach_validation(e: &Engine, run: &str) -> (String, String) {
+    let snapshot = e.store.snapshot().unwrap();
+    let attempt = snapshot
+        .runs
+        .iter()
+        .find(|r| r.id == run)
+        .unwrap()
+        .attempt_id
+        .clone()
+        .unwrap();
+    let feature = snapshot.attempt(&attempt).unwrap().feature_id.clone();
+    e.store
+        .transact(None, &mut |s| {
+            let record = s
+                .governance
+                .iter_mut()
+                .find(|r| r.kind == "workflow_instance" && r.definition_id == feature)
+                .unwrap();
+            let mut runtime: WorkflowRuntime = record.decode()?;
+            for step in &mut runtime.steps {
+                if step.key == "requirement_execute" {
+                    step.outputs.insert("attempt".into(), attempt.clone());
+                    step.status = "active".into();
+                    break;
+                }
+                step.status = "completed".into();
+            }
+            record.data = json!(runtime);
+            record.content_hash = configuration_hash(&record.data);
+            record.revision += 1;
+            Ok(Value::Null)
+        })
+        .unwrap();
+    (feature, attempt)
 }
-fn submit_pending_delivery(e:&Engine) -> String {
+fn submit_pending_delivery(e: &Engine) -> String {
     e.evaluate_workflows().unwrap();
-    let intent=e.pending_workflow_intents().unwrap().into_iter().find(|r|r.data["method"]=="delivery.submit").unwrap();
-    let result=e.execute("delivery.submit",serde_json::from_value(intent.data["command"].clone()).unwrap());
-    e.observe_workflow_intent(&intent.id,&result).unwrap();
+    let intent = e
+        .pending_workflow_intents()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.data["method"] == "delivery.submit")
+        .unwrap();
+    let result = e.execute(
+        "delivery.submit",
+        serde_json::from_value(intent.data["command"].clone()).unwrap(),
+    );
+    e.observe_workflow_intent(&intent.id, &result).unwrap();
     result.unwrap()["id"].as_str().unwrap().into()
 }
-fn confirm_step(e:&Engine,step:&WorkflowStepRuntime,overwrite:bool,reason:&str)->Result<Value> {
+fn confirm_step(
+    e: &Engine,
+    step: &WorkflowStepRuntime,
+    overwrite: bool,
+    reason: &str,
+) -> Result<Value> {
     e.execute("workflow.step.confirm",Command{command_id:id(),target:Some(step.id.clone()),expected_revision:Some(step.revision),payload:json!({"input_hash":step.input_hash,"overwrite_model":overwrite,"reason":reason})})
 }
 
 #[test]
 fn model_content_approval_always_waits_for_a_human_and_rejection_can_be_overwritten() {
-    for approved in [true,false] {
-        let dir=tempfile::tempdir().unwrap();let e=engine(dir.path());
-        let run=recorded_native_stage(&e,&approval_answer(approved),true,false);
+    for approved in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let run = recorded_native_stage(&e, &approval_answer(approved), true, false);
         e.tick(4).unwrap();
-        let (feature,_)=attach_validation(&e,&run);
+        let (feature, _) = attach_validation(&e, &run);
         submit_pending_delivery(&e);
         e.evaluate_workflows().unwrap();
-        let runtime=workflow_runtime(&e,&feature);
-        let step=runtime.steps.iter().find(|step|step.key=="requirement_execute").unwrap();
-        assert_eq!(step.status,"waiting_confirmation");
-        assert_eq!(runtime.steps.iter().find(|s|s.key=="requirement_review").unwrap().status,"pending");
-        let original=e.store.snapshot().unwrap().runs.iter().find(|r|r.id==run).unwrap().result.clone();
+        let runtime = workflow_runtime(&e, &feature);
+        let step = runtime
+            .steps
+            .iter()
+            .find(|step| step.key == "requirement_execute")
+            .unwrap();
+        assert_eq!(step.status, "waiting_confirmation");
+        assert_eq!(
+            runtime
+                .steps
+                .iter()
+                .find(|s| s.key == "requirement_review")
+                .unwrap()
+                .status,
+            "pending"
+        );
+        let original = e
+            .store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|r| r.id == run)
+            .unwrap()
+            .result
+            .clone();
         if !approved {
-            assert!(confirm_step(&e,step,false,"").is_err());
-            assert!(confirm_step(&e,step,true,"").is_err());
+            assert!(confirm_step(&e, step, false, "").is_err());
+            assert!(confirm_step(&e, step, true, "").is_err());
         }
-        confirm_step(&e,step,!approved,"测试阶段确认接受当前范围，保留后续补充项").unwrap();
-        assert_eq!(workflow_runtime(&e,&feature).steps.iter().find(|s|s.key==step.key).unwrap().status,"completed");
-        let s=e.store.snapshot().unwrap();
-        assert_eq!(s.runs.iter().find(|r|r.id==run).unwrap().result,original);
-        let record=s.governance.iter().find(|r|r.kind=="workflow_confirmation"&&r.definition_id==step.id).unwrap();
-        assert_eq!(record.data["human_approve"],true);
-        assert_eq!(record.data["overwrite_model"],!approved);
+        confirm_step(
+            &e,
+            step,
+            !approved,
+            "测试阶段确认接受当前范围，保留后续补充项",
+        )
+        .unwrap();
+        assert_eq!(
+            workflow_runtime(&e, &feature)
+                .steps
+                .iter()
+                .find(|s| s.key == step.key)
+                .unwrap()
+                .status,
+            "completed"
+        );
+        let s = e.store.snapshot().unwrap();
+        assert_eq!(
+            s.runs.iter().find(|r| r.id == run).unwrap().result,
+            original
+        );
+        let record = s
+            .governance
+            .iter()
+            .find(|r| r.kind == "workflow_confirmation" && r.definition_id == step.id)
+            .unwrap();
+        assert_eq!(record.data["human_approve"], true);
+        assert_eq!(record.data["overwrite_model"], !approved);
     }
 }
 
-fn recorded_review(e:&Engine, validation:&str, delivery:&str, approved:bool)->String {
-    let snapshot=e.store.snapshot().unwrap();
-    let source=snapshot.runs.iter().find(|r|r.id==validation).unwrap().clone();
-    let feature=snapshot.delivery(delivery).unwrap().feature_id.clone();
-    let mut reviewer=snapshot.sessions.iter().find(|session|session.id==source.session_id).unwrap().clone();
-    reviewer.id=id();reviewer.agent=default_configured_agent_id("reviewer");
-    reviewer.external_session=Some(format!("reviewer-{}",reviewer.id));
-    reviewer.runtime_binding.as_mut().unwrap().work_type=WorkType::Review;
-    let mut run=source.clone();run.id=id();run.node=format!("review:{delivery}");run.session_id=reviewer.id.clone();
-    run.binding.agent=reviewer.agent.clone();run.binding.skills=snapshot.definitions.iter().find(|d|d.id==reviewer.agent).unwrap().agent_profile.as_ref().unwrap().skill_revisions.clone();
-    run.status=Status::Running;run.finished=None;run.result=None;run.result_artifact=None;
-    let original_turn=snapshot.turns.iter().find(|turn|turn.run_id.as_ref()==Some(&source.id)).unwrap();
-    let mut turn=original_turn.clone();turn.id=id();turn.session_id=reviewer.id.clone();turn.run_id=Some(run.id.clone());turn.client_message_id=id();
-    let protocol=e.artifacts.seal(&feature,None,"protocol","Independent reviewer fixture with stop proof").unwrap();
-    e.store.transact(None,&mut |s| {
-        s.sessions.push(reviewer.clone());s.runs.push(run.clone());s.turns.push(turn.clone());s.artifacts.push(protocol.clone());
-        s.executions.push(RuntimeExecution{id:id(),session_id:reviewer.id.clone(),run_id:Some(run.id.clone()),operation_id:run.id.clone(),container_id:Some("fixture-reviewer".into()),image_digest:format!("sha256:{}","a".repeat(64)),status:Status::Released,writer_revoked:true,started:Some(1),finished:Some(2),protocol_artifact:Some(protocol.id.clone()),kind:RuntimeExecutionKind::Harness,permissions:None});
-        s.conversation_events.push(ConversationEvent{id:id(),session_id:reviewer.id.clone(),turn_id:turn.id.clone(),sequence:1,deduplication_key:id(),kind:ConversationEventKind::Assistant,content:approval_answer(approved),artifact_id:None,time:2,mode:MessageMode::Full,provider_item:None});
-        Ok(Value::Null)
-    }).unwrap();
+fn recorded_review(e: &Engine, validation: &str, delivery: &str, approved: bool) -> String {
+    let snapshot = e.store.snapshot().unwrap();
+    let source = snapshot
+        .runs
+        .iter()
+        .find(|r| r.id == validation)
+        .unwrap()
+        .clone();
+    let feature = snapshot.delivery(delivery).unwrap().feature_id.clone();
+    let mut reviewer = snapshot
+        .sessions
+        .iter()
+        .find(|session| session.id == source.session_id)
+        .unwrap()
+        .clone();
+    reviewer.id = id();
+    reviewer.agent = default_configured_agent_id("reviewer");
+    reviewer.external_session = Some(format!("reviewer-{}", reviewer.id));
+    reviewer.runtime_binding.as_mut().unwrap().work_type = WorkType::Review;
+    let mut run = source.clone();
+    run.id = id();
+    run.node = format!("review:{delivery}");
+    run.session_id = reviewer.id.clone();
+    run.binding.agent = reviewer.agent.clone();
+    run.binding.skills = snapshot
+        .definitions
+        .iter()
+        .find(|d| d.id == reviewer.agent)
+        .unwrap()
+        .agent_profile
+        .as_ref()
+        .unwrap()
+        .skill_revisions
+        .clone();
+    run.status = Status::Running;
+    run.finished = None;
+    run.result = None;
+    run.result_artifact = None;
+    let original_turn = snapshot
+        .turns
+        .iter()
+        .find(|turn| turn.run_id.as_ref() == Some(&source.id))
+        .unwrap();
+    let mut turn = original_turn.clone();
+    turn.id = id();
+    turn.session_id = reviewer.id.clone();
+    turn.run_id = Some(run.id.clone());
+    turn.client_message_id = id();
+    let protocol = e
+        .artifacts
+        .seal(
+            &feature,
+            None,
+            "protocol",
+            "Independent reviewer fixture with stop proof",
+        )
+        .unwrap();
+    e.store
+        .transact(None, &mut |s| {
+            s.sessions.push(reviewer.clone());
+            s.runs.push(run.clone());
+            s.turns.push(turn.clone());
+            s.artifacts.push(protocol.clone());
+            s.executions.push(RuntimeExecution {
+                id: id(),
+                session_id: reviewer.id.clone(),
+                run_id: Some(run.id.clone()),
+                operation_id: run.id.clone(),
+                container_id: Some("fixture-reviewer".into()),
+                image_digest: format!("sha256:{}", "a".repeat(64)),
+                status: Status::Released,
+                writer_revoked: true,
+                started: Some(1),
+                finished: Some(2),
+                protocol_artifact: Some(protocol.id.clone()),
+                kind: RuntimeExecutionKind::Harness,
+                permissions: None,
+            });
+            s.conversation_events.push(ConversationEvent {
+                id: id(),
+                session_id: reviewer.id.clone(),
+                turn_id: turn.id.clone(),
+                sequence: 1,
+                deduplication_key: id(),
+                kind: ConversationEventKind::Assistant,
+                content: approval_answer(approved),
+                artifact_id: None,
+                time: 2,
+                mode: MessageMode::Full,
+                provider_item: None,
+            });
+            Ok(Value::Null)
+        })
+        .unwrap();
     run.id
 }
 
 #[test]
 fn independent_review_requires_human_approval_and_overwrite_keeps_the_model_rejection() {
-    for approved in [true,false] {
-        let dir=tempfile::tempdir().unwrap();let e=engine(dir.path());
-        let validation=recorded_native_stage(&e,&approval_answer(true),true,false);
-        e.tick(4).unwrap();let (feature,_)=attach_validation(&e,&validation);
-        let delivery=submit_pending_delivery(&e);e.evaluate_workflows().unwrap();
-        let state=workflow_runtime(&e,&feature);let gate=state.steps.iter().find(|s|s.key=="requirement_execute").unwrap();
-        confirm_step(&e,gate,false,"").unwrap();e.evaluate_workflows().unwrap();
-        assert!(e.execute("override.accept",Command{command_id:id(),target:Some(delivery.clone()),expected_revision:None,payload:json!({"items":["review"],"reason":"不能跳过尚未进行的模型评审"})}).unwrap_err().message.contains("模型完成内容评审"));
-        let review=recorded_review(&e,&validation,&delivery,approved);
-        let intent=e.pending_workflow_intents().unwrap().into_iter().find(|r|r.data["method"]=="review.request").unwrap();
-        e.observe_workflow_intent(&intent.id,&Ok(json!({"id":review}))).unwrap();
-        e.tick(4).unwrap();e.evaluate_workflows().unwrap();
-        let snapshot=e.store.snapshot().unwrap();
+    for approved in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let e = engine(dir.path());
+        let validation = recorded_native_stage(&e, &approval_answer(true), true, false);
+        e.tick(4).unwrap();
+        let (feature, _) = attach_validation(&e, &validation);
+        let delivery = submit_pending_delivery(&e);
+        e.evaluate_workflows().unwrap();
+        let state = workflow_runtime(&e, &feature);
+        let gate = state
+            .steps
+            .iter()
+            .find(|s| s.key == "requirement_execute")
+            .unwrap();
+        confirm_step(&e, gate, false, "").unwrap();
+        e.evaluate_workflows().unwrap();
+        assert!(
+            e.execute(
+                "override.accept",
+                Command {
+                    command_id: id(),
+                    target: Some(delivery.clone()),
+                    expected_revision: None,
+                    payload: json!({"items":["review"],"reason":"不能跳过尚未进行的模型评审"})
+                }
+            )
+            .unwrap_err()
+            .message
+            .contains("模型完成内容评审")
+        );
+        let review = recorded_review(&e, &validation, &delivery, approved);
+        let intent = e
+            .pending_workflow_intents()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.data["method"] == "review.request")
+            .unwrap();
+        e.observe_workflow_intent(&intent.id, &Ok(json!({"id":review})))
+            .unwrap();
+        e.tick(4).unwrap();
+        e.evaluate_workflows().unwrap();
+        let snapshot = e.store.snapshot().unwrap();
         assert!(!snapshot.accepted(snapshot.delivery(&delivery).unwrap()));
-        assert_eq!(snapshot.reviews.iter().find(|r|r.run_id.as_ref()==Some(&review)).unwrap().decision,if approved{Decision::Pass}else{Decision::ChangesRequested});
-        let workflow=workflow_runtime(&e,&feature);let gate=workflow.steps.iter().find(|s|s.key=="requirement_review").unwrap();
-        assert_eq!(gate.status,"waiting_confirmation");
-        if !approved {assert!(confirm_step(&e,gate,false,"").is_err());}
-        confirm_step(&e,gate,!approved,"人类核对后接受该测试范围，记录模型指出的缺口").unwrap();
-        let snapshot=e.store.snapshot().unwrap();
+        assert_eq!(
+            snapshot
+                .reviews
+                .iter()
+                .find(|r| r.run_id.as_ref() == Some(&review))
+                .unwrap()
+                .decision,
+            if approved {
+                Decision::Pass
+            } else {
+                Decision::ChangesRequested
+            }
+        );
+        let workflow = workflow_runtime(&e, &feature);
+        let gate = workflow
+            .steps
+            .iter()
+            .find(|s| s.key == "requirement_review")
+            .unwrap();
+        assert_eq!(gate.status, "waiting_confirmation");
+        if !approved {
+            assert!(confirm_step(&e, gate, false, "").is_err());
+        }
+        confirm_step(
+            &e,
+            gate,
+            !approved,
+            "人类核对后接受该测试范围，记录模型指出的缺口",
+        )
+        .unwrap();
+        let snapshot = e.store.snapshot().unwrap();
         assert!(snapshot.accepted(snapshot.delivery(&delivery).unwrap()));
-        assert_eq!(snapshot.runs.iter().find(|r|r.id==review).unwrap().result.as_ref().unwrap()["model_approve"],approved);
-        assert_eq!(snapshot.overrides.iter().filter(|o|o.delivery_id==delivery).count(),if approved{0}else{1});
+        assert_eq!(
+            snapshot
+                .runs
+                .iter()
+                .find(|r| r.id == review)
+                .unwrap()
+                .result
+                .as_ref()
+                .unwrap()["model_approve"],
+            approved
+        );
+        assert_eq!(
+            snapshot
+                .overrides
+                .iter()
+                .filter(|o| o.delivery_id == delivery)
+                .count(),
+            if approved { 0 } else { 1 }
+        );
     }
 }
 
 #[test]
 fn cancellation_wait_is_requeued_until_the_old_writer_has_really_stopped() {
-    let dir=tempfile::tempdir().unwrap();let e=engine(dir.path());
-    let run=recorded_native_stage(&e,&native_stage_answer(),true,true);
-    let (feature,attempt)=attach_validation(&e,&run);
-    let old=workflow_runtime(&e,&feature).steps.iter().find(|s|s.key=="requirement_execute").unwrap().clone();
-    e.execute("workflow.step.rework",Command{command_id:id(),target:Some(old.id),expected_revision:Some(old.revision),payload:json!({"from_step":"requirement_execute"})}).unwrap();
-    e.store.transact(None,&mut |s| {
-        let f=s.feature(&feature)?.clone();
-        let worktree=RepositoryWorktree{id:id(),project_id:f.project_id.clone(),owner_id:feature.clone(),kind:WorktreeKind::Feature,branch:"fixture".into(),path:"fixture-readonly".into(),base:"a".repeat(40),operation_id:id()};
-        s.repository_operations.push(RepositoryOperation{id:worktree.operation_id.clone(),project_id:f.project_id,action:RepositoryAction::CreateWorktree{owner:feature.clone(),worktree_kind:WorktreeKind::Feature,base:worktree.base.clone()},status:RepositoryOperationStatus::Completed,receipt:Some(RepositoryReceipt::Worktree{worktree:worktree.clone()}),reason:String::new(),revision:1});
-        s.repository_worktrees.push(worktree);
-        Ok(Value::Null)
-    }).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let run = recorded_native_stage(&e, &native_stage_answer(), true, true);
+    let (feature, attempt) = attach_validation(&e, &run);
+    let old = workflow_runtime(&e, &feature)
+        .steps
+        .iter()
+        .find(|s| s.key == "requirement_execute")
+        .unwrap()
+        .clone();
+    e.execute(
+        "workflow.step.rework",
+        Command {
+            command_id: id(),
+            target: Some(old.id),
+            expected_revision: Some(old.revision),
+            payload: json!({"from_step":"requirement_execute"}),
+        },
+    )
+    .unwrap();
+    e.store
+        .transact(None, &mut |s| {
+            let f = s.feature(&feature)?.clone();
+            let worktree = RepositoryWorktree {
+                id: id(),
+                project_id: f.project_id.clone(),
+                owner_id: feature.clone(),
+                kind: WorktreeKind::Feature,
+                branch: "fixture".into(),
+                path: "fixture-readonly".into(),
+                base: "a".repeat(40),
+                operation_id: id(),
+            };
+            s.repository_operations.push(RepositoryOperation {
+                id: worktree.operation_id.clone(),
+                project_id: f.project_id,
+                action: RepositoryAction::CreateWorktree {
+                    owner: feature.clone(),
+                    worktree_kind: WorktreeKind::Feature,
+                    base: worktree.base.clone(),
+                },
+                status: RepositoryOperationStatus::Completed,
+                receipt: Some(RepositoryReceipt::Worktree {
+                    worktree: worktree.clone(),
+                }),
+                reason: String::new(),
+                revision: 1,
+            });
+            s.repository_worktrees.push(worktree);
+            Ok(Value::Null)
+        })
+        .unwrap();
     e.evaluate_workflows().unwrap();
-    let intent=e.pending_workflow_intents().unwrap().into_iter().find(|r|r.data["method"]=="attempt.start").unwrap();
-    assert_eq!(e.validate_attempt_cancellation(&feature).unwrap_err().code,"run_cancellation_pending");
-    let mut unsafe_state=e.store.snapshot().unwrap();
-    unsafe_state.runs.iter_mut().find(|r|r.id==run).unwrap().status=Status::Cancelled;
-    unsafe_state.executions.iter_mut().find(|execution|execution.run_id.as_ref()==Some(&run)).unwrap().writer_revoked=false;
+    let intent = e
+        .pending_workflow_intents()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.data["method"] == "attempt.start")
+        .unwrap();
+    assert_eq!(
+        e.validate_attempt_cancellation(&feature).unwrap_err().code,
+        "run_cancellation_pending"
+    );
+    let mut unsafe_state = e.store.snapshot().unwrap();
+    unsafe_state
+        .runs
+        .iter_mut()
+        .find(|r| r.id == run)
+        .unwrap()
+        .status = Status::Cancelled;
+    unsafe_state
+        .executions
+        .iter_mut()
+        .find(|execution| execution.run_id.as_ref() == Some(&run))
+        .unwrap()
+        .writer_revoked = false;
     assert!(unsafe_state.run_cancellation_pending("fixture-readonly"));
-    e.observe_workflow_intent(&intent.id,&Err(err("run_cancellation_pending","等待旧 Run 取消确认后再启动"))).unwrap();
-    assert_eq!(e.store.snapshot().unwrap().configuration(&intent.id).unwrap().data["status"],"prepared");
-    // Reproduce the durable failed-intent state left by the earlier build.
-    e.store.transact(None,&mut |s| {
-        let record=s.governance.iter_mut().find(|r|r.id==intent.id).unwrap();
-        record.data["status"]=json!("failed");record.data["error"]=json!("blocked: 等待旧 Run 取消确认后再启动");
-        record.content_hash=configuration_hash(&record.data);record.revision+=1;Ok(Value::Null)
-    }).unwrap();
+    e.observe_workflow_intent(
+        &intent.id,
+        &Err(err(
+            "run_cancellation_pending",
+            "等待旧 Run 取消确认后再启动",
+        )),
+    )
+    .unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&intent.id)
+            .unwrap()
+            .data["status"],
+        "prepared"
+    );
     e.evaluate_workflows().unwrap();
-    assert_eq!(e.store.snapshot().unwrap().configuration(&intent.id).unwrap().data["status"],"prepared");
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&intent.id)
+            .unwrap()
+            .data["status"],
+        "prepared"
+    );
     e.tick(4).unwrap();
-    assert_eq!(e.store.snapshot().unwrap().runs.iter().find(|r|r.id==run).unwrap().status,Status::Cancelled);
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .runs
+            .iter()
+            .find(|r| r.id == run)
+            .unwrap()
+            .status,
+        Status::Cancelled
+    );
     assert!(e.validate_attempt_cancellation(&feature).is_ok());
     e.evaluate_workflows().unwrap();
-    let runtime=workflow_runtime(&e,&feature);
-    let current=runtime.steps.iter().find(|s|s.key=="requirement_execute").unwrap();
-    assert_ne!(current.status,"blocked");
-    assert!(e.pending_workflow_intents().unwrap().iter().any(|r|r.id==intent.id));
-    assert_eq!(e.store.snapshot().unwrap().attempt(&attempt).unwrap().status,Status::Interrupted);
+    let runtime = workflow_runtime(&e, &feature);
+    let current = runtime
+        .steps
+        .iter()
+        .find(|s| s.key == "requirement_execute")
+        .unwrap();
+    assert_ne!(current.status, "blocked");
+    assert!(
+        e.pending_workflow_intents()
+            .unwrap()
+            .iter()
+            .any(|r| r.id == intent.id)
+    );
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .attempt(&attempt)
+            .unwrap()
+            .status,
+        Status::Interrupted
+    );
 }
 #[test]
 fn native_run_accepts_structured_output_after_writer_stop_and_protocol_export() {
@@ -1182,6 +1314,7 @@ fn restarting_native_tests_stops_the_old_writer_without_replaying_or_accepting_i
         })
         .unwrap();
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     assert!(e.store.has_pending_work().unwrap());
     e.tick(4).unwrap();
     let s = e.store.snapshot().unwrap();

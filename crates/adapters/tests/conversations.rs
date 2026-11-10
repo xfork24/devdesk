@@ -15,6 +15,7 @@ fn engine(path: &std::path::Path) -> Engine {
         runtime::adapters(),
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e
 }
 fn initialize(e: &Engine) -> (Id, Id, Id) {
@@ -39,7 +40,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
             s.sessions.push(Session {
                 id: sid.clone(),
                 owner_id: pid.clone(),
-                agent: "builtin-agent-analyst-v1".into(),
+                agent: "builtin-agent-sol-high-analyst-v3".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "docker-fixture".into(),
                 snapshot_id: None,
@@ -165,7 +166,7 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
             .iter()
             .filter(|definition| definition.id.starts_with("builtin-agent-sol-high-"))
             .count(),
-        11
+        6
     );
     assert_ne!(
         roles
@@ -873,6 +874,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
         adapters,
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     assert!(!store.has_pending_work().unwrap());
     let (_, sid, tid) = initialize(&e);
     assert!(
@@ -922,7 +924,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
                 command_id: id(),
                 target: Some(pid),
                 expected_revision: Some(1),
-                payload: json!({"agent":"builtin-agent-analyst-v1","binding":binding}),
+                payload: json!({"agent":"builtin-agent-sol-high-analyst-v3","binding":binding}),
             },
         )
         .unwrap();
@@ -959,6 +961,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
         .stop_allowed
         .store(true, std::sync::atomic::Ordering::SeqCst);
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e.tick_conversations(2).unwrap();
     assert_eq!(
         fixture.dispatched.load(std::sync::atomic::Ordering::SeqCst),
@@ -1054,6 +1057,7 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
         adapters,
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     let agent = default_agent_id("analyst");
     let instance = default_agent_instance_id("analyst");
     let binding = RuntimeBinding {
@@ -1132,11 +1136,25 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
             .iter()
             .any(|r| r["content"] == "Remember this cross-project planning question")
     );
-    assert_eq!(detail["agent_instance_id"],instance);
-    let owned=e.query("query.sessions",&json!({"owner_id":"global","agent_instance_id":instance}),1).unwrap();
-    assert_eq!(owned["total"],1);
-    assert_eq!(owned["sessions"][0]["agent_instance_id"],instance);
-    assert_eq!(e.query("query.sessions",&json!({"owner_id":"global","agent_instance_id":id()}),1).unwrap()["total"],0);
+    assert_eq!(detail["agent_instance_id"], instance);
+    let owned = e
+        .query(
+            "query.sessions",
+            &json!({"owner_id":"global","agent_instance_id":instance}),
+            1,
+        )
+        .unwrap();
+    assert_eq!(owned["total"], 1);
+    assert_eq!(owned["sessions"][0]["agent_instance_id"], instance);
+    assert_eq!(
+        e.query(
+            "query.sessions",
+            &json!({"owner_id":"global","agent_instance_id":id()}),
+            1
+        )
+        .unwrap()["total"],
+        0
+    );
     assert_eq!(detail["session"]["scope"], "global");
     assert!(e.store.snapshot().unwrap().projects.is_empty());
 }

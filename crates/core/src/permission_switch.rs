@@ -1,4 +1,4 @@
-//! A permission change creates a successor; accepted inputs never change their runtime lock.
+//! Discussion permission changes create successors; Tasks require an explicit new Session.
 use crate::*;
 
 pub fn permission_switch_id(command: &str) -> String {
@@ -25,17 +25,21 @@ impl Engine {
             .ok_or_else(|| err("invalid_params", "需要 Session"))?;
         let intent_id = permission_switch_id(&c.command_id);
         self.store.transact(None, &mut |s| {
+            let session = s
+                .sessions
+                .iter()
+                .find(|r| r.id == sid)
+                .ok_or_else(|| err("not_found", "Session 不存在"))?;
+            require(
+                session.scope != Some(SessionScope::Task),
+                "Task 会话的运行基线已冻结；更换权限或集成时请显式新建 Session",
+            )?;
             if let Some(intent) = s.governance.iter().find(|r| r.id == intent_id) {
                 if intent.data["fingerprint"] != fp {
                     return Err(err("revision_conflict", "切换命令被不同输入复用"));
                 }
                 return Ok(Value::Null);
             }
-            let session = s
-                .sessions
-                .iter()
-                .find(|r| r.id == sid)
-                .ok_or_else(|| err("not_found", "Session 不存在"))?;
             if c.expected_revision != Some(session.revision) {
                 return Err(err("revision_conflict", "Session 已改变"));
             }
@@ -190,7 +194,7 @@ impl Engine {
             if s.turns.iter().any(|t|t.session_id==sid && t.status.active()) || s.executions.iter().any(|e|e.session_id==sid && !e.writer_revoked) {
                 return Err(err("needs_reconciliation","原会话尚未静止"));
             }
-            let snapshot=self.capture_conversation(s,&original,"permission_handoff",None,None)?;
+            let snapshot=self.capture_conversation(s,&original,"permission_handoff",None,None,None)?;
             let instance=s.governance.iter().find(|r|r.kind=="agent_session" && r.definition_id==sid).and_then(|r|r.data["agent_instance_id"].as_str()).map(str::to_owned);
             let mut payload=json!({"agent":original.agent,"binding":binding,"force_new":true,"predecessor":sid,"snapshot_id":snapshot});
             if let Some(instance)=instance {payload["agent_instance_id"]=json!(instance);}

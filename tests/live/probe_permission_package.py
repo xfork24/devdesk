@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import http.cookiejar
 import json
+import re
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -43,7 +44,8 @@ try:
         for name in ['permission.schema.json', 'permission-profile.schema.json', 'permission-binding.schema.json', 'sandbox.schema.json', 'permission-backend.schema.json', 'rpc.schema.json', 'agent-task.schema.json']:
             assert (package / 'schemas' / name).read_bytes() == (source / 'schemas' / name).read_bytes()
         presets = list((package / 'permissions/presets').glob('*.json'))
-        assert len(presets) >= 9
+        assert len(presets) == 3
+        assert all(json.loads(p.read_text())["schema_version"] == 2 for p in presets)
         report['assets_verified'] = len(manifest['assets'])
         report['presets_verified'] = len(presets)
         dataset = root / 'isolated data'
@@ -66,15 +68,16 @@ try:
         def command(method, payload, target=None, revision=None):
             return rpc(method, {'command_id': str(uuid.uuid4()), 'target': target,
                                 'expected_revision': revision, 'payload': payload})
-        settings = rpc('query.permissions')
         resources = rpc('query.permission_resources')
         assert resources['profiles'] and resources['sources']
         assert all(str(package.resolve()) in path for path in resources['sources'])
-        target = next(t['target'] for t in resources['targets'] if t['provider'] == 'codex' and t['supported'])
+        target_row = next(t for t in resources['targets'] if t['provider'] == 'codex' and t['supported'])
+        target = target_row['target']
+        initial_revision = target_row['active']['revision']
         preview = rpc('permission.binding.preflight', {'target': target, 'permission_revision_id': 'permission-harness-read-only-v2-r1'})
         assert preview['compatible'] and not preview['scope_checked']
-        applied = command('permission.bindings.apply', {'bindings': [{'target': target, 'permission_revision_id': 'permission-harness-read-only-v2-r1', 'expected_revision': 0}]})
-        assert applied['bindings'][0]['revision'] == 1
+        applied = command('permission.bindings.apply', {'bindings': [{'target': target, 'permission_revision_id': 'permission-harness-read-only-v2-r1', 'expected_revision': initial_revision}]})
+        assert applied['bindings'][0]['revision'] == initial_revision + 1
         exported = rpc('permission.profile.export', {'id': 'permission-harness-read-only-v2-r1'})
         assert len(exported['profiles']) == 1
         command('permission.profile.import', exported)
@@ -86,27 +89,10 @@ try:
         command('permission.profile.reload', {})
         reloaded = rpc('query.permission_resources')
         assert any(p['id'] == runtime_preset['id'] for p in reloaded['profiles'])
-        assert next(t for t in reloaded['targets'] if t['target'] == target)['active']['revision'] == 1
+        assert next(t for t in reloaded['targets'] if t['target'] == target)['active']['revision'] == initial_revision + 1
         report['runtime_reload_without_restart'] = True
-        config = settings['configuration']
-        assert config['approval'] == 'never'
-        for provider in ['codex', 'dsh']:
-            assert config['harnesses'][provider]['permission']['revision_id'] == 'permission-container-full-access-v1'
-            plan = rpc('permission.preflight', {'provider': provider})['resolved']
-            assert not plan['isolation']['nested_sandbox'] and plan['isolation']['executable_tmp']
-            assert any(b['id'] == plan['enforcement']['harness_backend'] for b in manifest['backends'])
-        denied = request('permission.preflight', {'provider': 'codex', 'overrides': {'harness': {
-            'overrides': {'network': {'mode': 'allowlist', 'destinations': ['example.com']}}}}})
-        assert denied['error']['data']['code'] == 'permission_unsupported'
-        policy = {'filesystem': {'mode': 'read_only'}, 'network': {'mode': 'enabled'}, 'tools': {'mode': 'all_available'}}
-        created = command('permission.create', {'identity': 'package-smoke', 'name': 'Package smoke', 'policy': policy})
-        revised = command('permission.revise', {'name': 'Package immutable revision', 'policy': policy}, created['id'], 1)
-        assert next(v for v in rpc('query.permissions')['permissions'] if v['id'] == created['id']) == created
-        config['harnesses']['codex'] = {'permission': {'revision_id': revised['id']}, 'overrides': {}}
-        binding = {'command_id': str(uuid.uuid4()), 'target': 'permission-configuration',
-                   'expected_revision': config['revision'], 'payload': config}
-        saved = rpc('permission.bind', binding)
-        assert saved == rpc('permission.bind', binding)
+        assert request('query.permissions')['error']['data']['code'] == 'method_not_found'
+        report['current_only_permission_api'] = True
         project = command('project.create', {'title': 'Standalone Permission schema'})['id']
         defaults = rpc('query.configuration_defaults')
         workflow = rpc('query.workflow', {'id': defaults['workflow_ref']})
@@ -127,7 +113,7 @@ try:
         assert preview['scope_checked'] is False
         report['workflow_v3_embedded_tasks_edit_publish_preview'] = True
         db = dataset / 'projects' / project / 'engineering.sqlite3'
-        expected_schema = max(int(path.name.split('_', 1)[0]) for path in (source / 'sql/project').rglob('[0-9]*_*.sql'))
+        expected_schema = int(re.search(r'PRAGMA user_version=(\d+)', (source / 'sql/project/schema.sql').read_text()).group(1))
         with sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True) as conn:
             assert conn.execute('PRAGMA user_version').fetchone()[0] == expected_schema
         assert rpc('query.runtime_installations')['installations'] == []

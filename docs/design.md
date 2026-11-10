@@ -1,6 +1,6 @@
 # 架构与 ADR
 
-当前实现基线为 [DevDesk v0.3](plans/devdesk-v0.3/PLAN.md)，工程库 v39、全局库 v5。下文保留既有架构决策；旧 BindingLock/单阶段 planning 行为仅适用于历史兼容，新 Feature 使用配置锁及 Workflow 驱动。
+当前全局库为 v10，工程库为 v41，直接使用当前结构基线。默认目录直接发布六个完整 Agent、v3 Workflow 与 v2 Permission；没有旧版本生成和自动转换链。Project 选择当前配置，Feature 与执行冻结确切依赖。以下 ADR 保留设计决策背景，具体运行合同以当前协议与 Schema 为准。
 
 ## 模块
 
@@ -20,7 +20,7 @@ Rust stable 固定版本、bundled SQLite、普通路径及文件锁；不引入
 
 ## ADR-003：明确区分真实与模拟来源
 
-Web 项目使用真实 GitHub 仓库，打开时登记并接入，Harness 按需准备。产品已移除原型模拟执行器、回退、故障注入和受控继续路径；旧原型项目只读保留，历史来源不改写。Harness、Git、Tests 和 GitHub 只产生有来源的外部事实，核心决定状态；DockerSandbox 负责实际容器边界。测试替身只位于测试代码，不进入产品运行时。
+Web 项目使用真实 GitHub 仓库，打开时登记并接入，Harness 按需准备。产品已移除原型模拟执行器、回退、故障注入和受控继续路径；只接受当前数据结构与原生执行来源。Harness、Git、Tests 和 GitHub 只产生有来源的外部事实，核心决定状态；DockerSandbox 负责实际容器边界。测试替身只位于测试代码，不进入产品运行时。
 
 ## ADR-004：持久化与幂等
 
@@ -60,7 +60,7 @@ Archive/数据目录搬迁执行与通用环境重建仍延期。真实供应商
 
 Attempt.git_context 在启动时冻结 Workspace、Project 和源/目标分支/worktree。MergeAdvance.context 从源交付复制；candidate、advance 和 reconcile_advance 均显式接收它。派发前再次校验输入、目标和 Review，失效意图记为未执行，不调用供应商。
 
-TestRequest 附冻结的定义正文、GitContext 和 ExecutionInstance（包含执行回传的环境身份）；Harness 输入也携带代码定位。提供者不以进程全局 cwd 或可变 Project 当前设置定位工程。历史缺少定位的数据保持 null，不能自动根据当前配置倒填。
+TestRequest 附冻结的定义正文、GitContext 和 ExecutionInstance（包含执行回传的环境身份）；Harness 输入也携带代码定位。提供者不以进程全局 cwd 或可变 Project 当前设置定位工程。执行定位在准备时冻结，不能根据后续配置倒填。
 
 并行 DAG 的请求在首次派发时固定到 EffectRecord。后续轮询不重新吸收兄弟节点输出，避免 Green/Docs 或 Feature Tests/Docs 并行时改变供应商输入。评审独立性比较 Agent 修订链的身份根，而非仅比较 revision ID。
 
@@ -76,13 +76,13 @@ host 的 Workspace 管理活动 Engine。`project.create` 先在全局库预留�
 
 已打开的 Engine 保留连接，切换回来不会重新执行启动恢复，也不会把正常运行标为 interrupted。单调度器继续处理这些项目，并扣除其他项目正在运行的 Run 后计算可用全局额度。重启遍历全局索引加载并核对所有项目的原执行者，随后恢复上次活动选择，不重发结果未知的工作。
 
-旧版单库按 SQLite 一致性快照拆分；旧文件不原地升级。迁移在临时副本上按当前 schema 序列升级，按领域归属复制所有工程行、事件、操作结果与 Artifact，并校验外键、归属覆盖和产物哈希。全部项目落盘后才在全局事务中发布目录和布局版本。中断或产物损坏后可重试；根目录旧库、旧 Artifact 和 `runtime.json` 留作原始来源，新布局成功后不再读取旧配置。此结构迁移与尚未实现的 data 目录搬迁是不同操作。
+启动只接受当前全局 v10 / 项目 v41 结构基线；旧单库布局与旧结构被拒绝。结构升级须离线备份、迁移并校验完整性，运行时不再承担历史布局转换。
 
 ## ADR-011：原生执行接口与测试注入
 
 `devdesk_core::ports::{Harness, Git, Tests, PullRequests}` 定义当前执行契约，分别由原生供应商、CliGit、CommandTests 和 GitHubPullRequests 实现。DockerSandbox 管理真实容器；领域模型中的 Harness/Sandbox 只描述配置与历史，不承担执行接口职责。
 
-`ExecutionAdapters` 持有原生接口对象，由 `Engine::new` 和 `Workspace::open_with_adapters` 在装配时注入；只按冻结的供应商绑定路由。测试替身位于 `tests/support/`，不会编译进产品。历史操作的来源与固定身份只用于兼容核验，不提供模拟执行能力。具体约束见[适配器契约](real-adapter-contract.md#接口与装配)。
+`ExecutionAdapters` 持有原生接口对象，由 `Engine::new` 和 `Workspace::open_with_adapters` 在装配时注入；只按冻结的供应商绑定路由。测试替身位于 `tests/support/`，不会编译进产品。执行来源与固定身份用于核验真实回执。具体约束见[适配器契约](real-adapter-contract.md#接口与装配)。
 
 ## ADR-012：真实会话、共享安装与双重交付
 
@@ -114,6 +114,6 @@ Workflow 是核心领域对象，组合交互契约与已有执行处理器。Gl
 
 ## 配置导航与执行工作台
 
-“流程与规范”统一 Workflow、Spec、Standard；“基础组件”依次提供 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用历史移入“历史记录 → Tools调用记录”，可选择当前项目或 Global 接入并查看调用详情及回执。旧 specifications、integrations 和 tool/skill 配置链接迁至对应入口，保留对象定位。
+“流程与规范”统一 Workflow、Spec、Standard；“基础组件”依次提供 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用历史移入“历史记录 → Tools调用记录”，可选择当前项目或 Global 接入并查看调用详情及回执。配置链接只使用当前入口，不再转换旧导航参数。
 
 执行工作台按阶段逐行显示，阶段内展开编译后的步骤和 Task 子流程；子流程详情按展开时读取，按工作流实例保存折叠状态。讨论以 AgentID 确定历史归属，全局讨论使用独立存储命名空间，不创建占位 Project。权限合同由权限语义与策略资产决定，适配器执行构建身份继续独立冻结。具体改动、迁移约束与验证见 [本轮计划](plans/settings-navigation-usability/PLAN.md) 和 [实施报告](plans/settings-navigation-usability/REPORT.md)。

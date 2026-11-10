@@ -6,7 +6,7 @@
 - `crates/core`：命令、查询、调度与执行接口；`crates/adapters`：SQLite、文件、Git、Docker 及原生供应商实现。
 - `crates/host`：本地 HTTP/SSE 服务并嵌入 Web；`crates/credential-helper`：macOS 共享凭据助手。
 - `web/src`：React/TypeScript 界面，样式在 `style.css`；`web/tests`：浏览器测试。
-- `sql/project/`：按职责分组的项目库迁移，`sql/global/`：全局库迁移；迁移索引见 `sql/README.md`。`schemas/`：协议；`permissions/`：权限预设和执行后端；`tests/entrypoints/`：跨进程检查入口；`tests/fixtures/`：夹具；`tests/reporters/`：嵌入式测试报告器；`docs/`：设计、操作说明及验收记录。
+- `sql/project/schema.sql`：项目库当前结构，`sql/global/schema.sql`：全局库当前结构；结构基线见 `sql/README.md`。`schemas/`：协议；`permissions/`：权限预设和执行后端；`tests/entrypoints/`：跨进程检查入口；`tests/fixtures/`：夹具；`tests/reporters/`：嵌入式测试报告器；`docs/`：设计、操作说明及验收记录。
 - `scripts/dev/`：构建和开发；`scripts/check/`：检查和诊断；`scripts/release/`：打包；`scripts/platform/{macos,linux}/`：平台配置；`scripts/py/`：由入口调用的 Python 辅助实现。
 
 ## 构建、测试与本地开发
@@ -22,7 +22,7 @@
 
 ## 编码风格与命名
 
-Rust 使用 rustfmt、4 空格缩进，函数和模块采用 `snake_case`，类型采用 `PascalCase`；使用 `cargo fmt --all -- --check` 检查。前端保持所在文件风格，常规缩进为 2 空格，组件采用 `PascalCase`，变量采用 `camelCase`；可用已安装的 Prettier 格式化修改文件。目前没有独立 lint 脚本。迁移文件沿用 `031_delivery_source_contract.sql` 这类编号命名，新增迁移保留历史升级路径。
+Rust 使用 rustfmt、4 空格缩进，函数和模块采用 `snake_case`，类型采用 `PascalCase`；使用 `cargo fmt --all -- --check` 检查。前端保持所在文件风格，常规缩进为 2 空格，组件采用 `PascalCase`，变量采用 `camelCase`；可用已安装的 Prettier 格式化修改文件。目前没有独立 lint 脚本。数据库使用当前结构基线；变更需要显式迁移，不添加旧协议或旧行为回退。
 
 ## 测试规范
 
@@ -34,7 +34,7 @@ Rust 使用内置 `#[test]`，单元测试位于模块内，集成测试位于 `
 
 ## 架构与配置约束
 
-业务终态由 core 接纳，前端和适配器不得直接设置。外部调用遵循“持久化意图、事务外执行、接纳回执”，保留冻结输入与真实来源；历史原型数据只读兼容。凭据接入遵循 `docs/system-credentials.md`；不要提交密钥、运行数据或构建产物，也不要通过删库恢复或升级数据集。
+业务终态由 core 接纳，前端和适配器不得直接设置。外部调用遵循“持久化意图、事务外执行、接纳回执”，保留冻结输入与真实来源；系统只支持当前协议与数据结构，不保留历史原型执行路径。凭据接入遵循 `docs/system-credentials.md`；不要提交密钥、运行数据或构建产物，也不要通过删库恢复或升级数据集。
 
 ## 计划与执行记录
 

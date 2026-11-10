@@ -97,7 +97,10 @@ pub fn dsh_model_catalog(provider: DshModelProvider) -> Vec<ModelCapacity> {
         "../../../resources/configuration/dsh-model-catalog.json"
     ))
     .expect("embedded verified DSH catalog");
-    assert_eq!(catalog.runtime_version, DEFAULT_DSH_VERSION, "embedded model catalog runtime");
+    assert_eq!(
+        catalog.runtime_version, DEFAULT_DSH_VERSION,
+        "embedded model catalog runtime"
+    );
     catalog.models.remove(provider.as_str()).unwrap_or_default()
 }
 

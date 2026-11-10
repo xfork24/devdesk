@@ -1,5 +1,5 @@
 //! Explicit reusable capabilities, visibility and configuration reference checks.
-use crate::governance::{record, reference, validate_composition};
+use crate::governance::{reference, validate_composition};
 use crate::*;
 
 pub(crate) fn role_record<'a>(
@@ -49,11 +49,11 @@ pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&s
     true
 }
 pub(crate) fn compose_capability(
-    s: &EngineeringState,
+    _s: &EngineeringState,
     capability: &CapabilityDefinition,
 ) -> AgentComposition {
     AgentComposition {
-        permission_selection: None,
+        permission_selection: Some(default_permission_selection()),
         capability_ref: None,
         role: AgentRole::Analyst,
         role_ref: None,
@@ -62,20 +62,14 @@ pub(crate) fn compose_capability(
         harness_ref: capability.harness_ref.clone(),
         skills: capability.skills.clone(),
         tools: capability.tools.clone(),
-        permissions: s
-            .permissions
-            .iter()
-            .find(|p| p.identity == "container-full-access")
-            .map(|p| vec![p.id.clone()])
-            .unwrap_or_else(|| vec!["permission-container-full-access-v1".into()]),
-        approval: ApprovalPolicy::Never,
     }
 }
 pub(crate) fn normalize_agent(s: &EngineeringState, data: &mut Value, scope: &Scope) -> Result<()> {
     let role_ref = text(data, "role_ref")?;
     let r = reference(s, &role_ref, "role", scope)?;
     let role: RoleDefinition = r.decode()?;
-    if let Some(capability_ref) = opt(data, "capability_ref") {
+    {
+        let capability_ref = text(data, "capability_ref")?;
         let cap = reference(s, &capability_ref, "capability", scope)?;
         let capability: CapabilityDefinition = cap.decode()?;
         for (key, value) in [
@@ -84,45 +78,26 @@ pub(crate) fn normalize_agent(s: &EngineeringState, data: &mut Value, scope: &Sc
             ("tools", json!(capability.tools)),
             ("skills", json!(capability.skills)),
         ] {
-            if data.get(key).is_some_and(|v| *v != value) {
-                return Err(err(
-                    "invalid_configuration",
-                    format!("Agent.{key} 必须来自所选 Capability"),
-                ));
-            }
+            require(
+                data.get(key).is_none_or(|v| *v == value),
+                format!("Agent.{key} 必须来自所选 Capability"),
+            )?;
             data[key] = value;
         }
-    } else {
-        // The v1 command contract remains usable for old clients; all components must be explicit.
-        for field in ["model_ref", "harness_ref", "tools", "skills"] {
-            require(
-                data.get(field).is_some(),
-                format!("请选择 Capability 或明确提供 {field}"),
-            )?;
-        }
     }
+    require(
+        data.get("permissions").is_none() && data.get("approval").is_none(),
+        "旧权限字段已移除，请使用 permission_selection",
+    )?;
     data["role"] = json!(role.execution_role);
     if data.get("instructions").is_none() {
         data["instructions"] = json!(role.instructions);
-    }
-    if data.get("permissions").is_none() {
-        data["permissions"] = json!([
-            "permission-container-full-access-v1",
-            "permission-container-full-access-v1"
-        ]);
     }
     Ok(())
 }
 pub(crate) fn validate_capability(s: &EngineeringState, data: &Value, scope: &Scope) -> Result<()> {
     let cap: CapabilityDefinition = serde_json::from_value(data.clone())
         .map_err(|e| err("invalid_configuration", e.to_string()))?;
-    require(
-        !cap.tools.iter().any(|id| {
-            s.configuration(id)
-                .is_ok_and(ConfigurationRecord::is_legacy_experience_tool)
-        }),
-        "Agent 经验属于上下文，请从 Capability 的 Tools 中移除",
-    )?;
     for skill in &cap.skills {
         if let Some(r) = s
             .governance
@@ -255,60 +230,6 @@ pub(crate) fn ensure_unreferenced(
         ),
     )
 }
-/// Add capabilities for legacy compositions without altering any old revision or AgentID.
-pub(crate) fn migrate_capabilities(s: &mut EngineeringState) {
-    let agents: Vec<_> = s
-        .governance
-        .iter()
-        .filter(|r| r.kind == "agent")
-        .cloned()
-        .collect();
-    for agent in agents {
-        let Ok(a) = agent.decode::<AgentComposition>() else {
-            continue;
-        };
-        if a.capability_ref.is_some() {
-            continue;
-        }
-        let cap = CapabilityDefinition {
-            model_ref: a.model_ref,
-            harness_ref: a.harness_ref,
-            tools: a.tools,
-            skills: a.skills,
-        };
-        let digest = configuration_hash(&(json!(agent.scope), json!(cap)));
-        let id = format!("capability-{}-v1", &digest[..24]);
-        if !s.governance.iter().any(|r| r.id == id) {
-            let mut r = record(
-                "capability",
-                id.trim_end_matches("-v1").into(),
-                agent.scope.clone(),
-                format!("{} · 能力", agent.name),
-                1,
-                None,
-                json!(cap),
-                true,
-            );
-            r.id = id.clone();
-            s.governance.push(r);
-        }
-        let migration = format!("agent-capability:{}", agent.id);
-        if !s.governance.iter().any(|r| r.id == migration) {
-            let mut r = record(
-                "agent_capability",
-                agent.id.clone(),
-                agent.scope.clone(),
-                agent.name.clone(),
-                1,
-                None,
-                json!({"agent_ref":agent.id,"capability_ref":id}),
-                true,
-            );
-            r.id = migration;
-            s.governance.push(r);
-        }
-    }
-}
 impl Engine {
     pub(crate) fn configuration_query(&self, method: &str, p: &Value) -> Option<Result<Value>> {
         if !["query.configuration_references", "query.capabilities"].contains(&method) {
@@ -335,9 +256,7 @@ impl Engine {
                     })
                 })
                 .collect();
-            Ok(
-                json!({"records":rows,"total":rows.len(),"agent_bindings":s.governance.iter().filter(|r|r.kind=="agent_capability").filter_map(|r|Some((r.data["agent_ref"].as_str()?.to_owned(),r.data["capability_ref"].clone()))).collect::<serde_json::Map<String,Value>>()}),
-            )
+            Ok(json!({"records":rows,"total":rows.len()}))
         })())
     }
 }

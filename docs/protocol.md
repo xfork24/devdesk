@@ -2,7 +2,7 @@
 
 ## Workflow Step 任务合同
 
-新建默认 Workflow 使用 Schema/编译器 v3。`agent.interact`、`attempt.execute`、`delivery.review`、`merge.review` 使用动作合同 v2，要求非空 `task_instructions`；其余动作保持合同 v1 且拒绝 Agent 任务字段。正式配方的六类 Agent 节点另有必填任务，测试执行器节点不接受任务。`merge.prepare` 是系统执行，Role/Spec 仍有身份和验收用途。旧 v1/v2 和 compiler 1/2 保持历史合同。
+新建默认 Workflow 使用 Schema/编译器 v3。`agent.interact`、`attempt.execute`、`delivery.review`、`merge.review` 使用动作合同 v2，要求非空 `task_instructions`；其余动作保持合同 v1 且拒绝 Agent 任务字段。正式配方的六类 Agent 节点另有必填任务，测试执行器节点不接受任务。`merge.prepare` 是系统执行，Role/Spec 仍有身份和验收用途。旧 Workflow Schema、compiler 和任务渲染器均被拒绝。
 
 任务是无插值 Markdown：单字段最多 32 KiB UTF-8，展开任务总量最多 1 MiB，冻结任务与基础 Role/Agent/Skill 上下文合计最多 512 KiB；超限拒绝，不截断任务。v3 的旧 `interaction.goal` 必须为空。`workflow.task_upgrade` 使用草稿 target/revision 显式创建 v3 草稿，复制旧讨论 goal、映射已知阶段任务；未知映射返回 diagnostics 和待补草稿，不能发布缺任务的流程。原修订、项目采用和已有 Feature 锁不变。
 
@@ -14,11 +14,11 @@ Feature 锁的 specification_snapshot 带版本化 WorkflowTaskDefinition。步�
 
 ## Permission 运行时资源
 
-`query.permission_resources` 返回 v2 profiles、绑定修订、确切目标版本、活动分配、来源与兼容投影。可携带 project_id 读取当前项目可见资源；省略时只读取全局目录。旧 `query.permissions` 保留 v1 数据。
+`query.permission_resources` 返回 v2 profiles、绑定修订、确切目标版本、活动分配与来源。可携带 project_id 读取当前项目可见资源；省略时只读取全局目录。v1 权限接口、预设与覆盖字段均已移除。
 
 新增命令均使用 Command：`permission.profile.create/revise` 的 payload 为 identity（创建时）、name、target_kind、policy；revise 的 target 是原修订 ID，expected_revision 为原版本。`permission.profile.import` 接受 payload.profiles，批次原子；`permission.profile.reload` 重新读取登记的预设来源。`permission.source.register` 接受 payload.path，必须为存在的普通绝对目录；注册后需显式重新加载。
 
-`permission.profile.export({id})` 返回 `{profiles:[前序修订…,所选修订]}`，可直接重新导入。导入支持 v1 文件并保留其历史表示；v2 policy 的 null 和未知字段拒绝。
+`permission.profile.export({id})` 返回 `{profiles:[前序修订…,所选修订]}`，可直接重新导入。导入只接受 v2 profile；policy 的 null 和未知字段拒绝。
 
 `permission.bindings.apply` 的 payload.bindings 为非空数组，每项包含 target={kind,revision_id,content_hash}、permission_revision_id、expected_revision（该目标尚无分配时为 0）。执行合同由 Host 生成，客户端不能决定。一个批次必须属于同一全局或项目配置库作用域；全部校验通过后原子提交。返回各目标的新活动 revision 与 binding_revision_id；command_id 重放优先于版本校验。
 
@@ -66,15 +66,15 @@ SSE 和轮询使用同一个数据库事实源。所有命令在 SQLite 短事�
 
 query.workspace 的 project_offset 与 Feature offset 独立；detail_pages 对 tasks/attempts/runs/deliveries/merges/documents/snapshots/artifacts/effects 指定页码（从0起）。每页默认50，Runs每页为5倍；detail.totals 为各集合数量。翻 Attempts/Merges 页时客户端将 runs 页码归零。事件与日志报告文件分段读取，不加载全部工程历史到浏览器。
 
-Workflow v2 使用 `Step.role_ref`（稳定 Role 身份）和 `spec_refs`（精确 Spec 修订）。项目配置 `role_agent_bindings` 固定每个 Role 的单个 AgentRevision；Agent 输入引用 RoleRevision/CapabilityRevision，服务端展开实际组件并拒绝不一致覆盖。`standard_ref` 可为 null；Standard v2 的 `baseline_rules` 使用动作选择器、必需 Spec 及非零 `min_matches` 校验覆盖，不改变 Step。逐 Step 审计快照及实际执行/评审保留 Spec 来源、检查方式和输出契约。Spec 的 Markdown 正文与内置 traceability、failure_paths、sections 自动检查分别保留，无任意检查脚本。
+Workflow v3 使用 `Step.role_ref`（稳定 Role 身份）和 `spec_refs`（精确 Spec 修订）。项目配置 `role_agent_bindings` 固定每个 Role 的单个 AgentRevision；Agent 输入引用 RoleRevision/CapabilityRevision，服务端展开实际组件并拒绝不一致覆盖。`standard_ref` 可为 null；Standard v2 的 `baseline_rules` 使用动作选择器、必需 Spec 及非零 `min_matches` 校验覆盖，不改变 Step。逐 Step 审计快照及实际执行/评审保留 Spec 来源、检查方式和输出契约。Spec 的 Markdown 正文与内置 traceability、failure_paths、sections 自动检查分别保留，无任意检查脚本。
 
 `query.configuration_defaults` 返回可直接采用的分阶段 Feature/Task、Role→Agent 和组件精确引用；读取不创建项目配置、不安装运行时。`query.workflow_requirements`/`query.specification_audit` 可预览未保存 document 或已保存修订，递归返回 Role 需求、规范快照、基线判定和快照差异。`runtime.prepare_harness` 按明确 Harness 修订准备安装。历史 `query.default_configuration` 仅供已有 bundle 读取，不再是正常产品入口。
 
-v1 Standard 的 planning/implementation/merge slots 及已冻结编译器 1 继续按历史契约执行。新增子流程 `workflow.call` 支持声明输入/输出、递归引用和真实运行；入口条件/确认先于内部节点，深度最多 8、总展开节点最多 1000。
+Standard 只使用显式 baseline_rules，不支持旧用途 slots。新增子流程 `workflow.call` 支持声明输入/输出、递归引用和真实运行；入口条件/确认先于内部节点，深度最多 8、总展开节点最多 1000。
 
 Attempt 除文档与绑定外冻结 Context 内容与 revision。Harness 的执行输入包含冻结 Context 和继承 Snapshot；Reviewer 输入为目标 Delivery 的冻结文档、证据和报告正文。TestRequest 必须包含 operation_id、phase、candidate、test_definitions、environment、origin，可附 session_id、完整 definitions、code 和 runtime，适配器结果必须回传匹配的绑定。
 
-Delivery 文件清单及工程 Snapshot 清单含 `schema_version=1`；Project 上下文和会话输入/交接快照直接序列化 `Snapshot`，没有清单外层。上述格式均由 `schemas/manifest.schema.json` 描述，封存并记录哈希，不成为可写工程事实源。原生交付使用 `origin=external`，`simulated` 仅供历史读取。各 Schema 的对应实现与校验边界见 [Schema 说明](../schemas/README.md)。JSON-RPC 不实现 batch/notification，查询与命令均要求 request id；无参数查询可省略 params，Command.payload 省略时为 null。
+Delivery 文件清单及工程 Snapshot 清单含 `schema_version=1`；Project 上下文和会话输入/交接快照直接序列化 `Snapshot`，没有清单外层。上述格式均由 `schemas/manifest.schema.json` 描述，封存并记录哈希，不成为可写工程事实源。原生交付使用 `origin=external`；不接受 `simulated` 来源。各 Schema 的对应实现与校验边界见 [Schema 说明](../schemas/README.md)。JSON-RPC 不实现 batch/notification，查询与命令均要求 request id；无参数查询可省略 params，Command.payload 省略时为 null。
 
 实现参考：[Axum SSE](https://docs.rs/axum/0.8.9/axum/response/sse/)、[Cargo Workspaces](https://doc.rust-lang.org/stable/cargo/reference/workspaces.html)。
 
@@ -85,7 +85,7 @@ Delivery 文件清单及工程 Snapshot 清单含 `schema_version=1`；Project �
 - task.create 可附 scope={requirement,design,acceptance} 或 acceptance_keys。默认从已接受的初始 Snapshot 解析。task.replan(target=Task, expected_revision) 采用当前已接受规划及选定条目，新测试修订保留 supersedes。
 - query.runtimes 返回 Harness/Sandbox 定义。注册表提供原生定义和已登记的真实运行时，旧定义只作历史引用。
 - Run 返回不可变 binding；Session 返回 instance；Review 返回 assignment；Snapshot 返回 capture；Attempt 返回 baseline。
-- 数据库支持从 v1 顺序升级至 v33（全局库 v4）。旧文档缺少结构化验收映射时保持空值，旧交付历史可读；重新参与增强门禁须明确修订和验收，不能将迁移当成人类复核。
+- 数据库直接使用全局 v10、工程 v41 的当前结构基线；旧结构必须显式离线迁移后打开，启动不执行旧系统转换链。
 
 历史 Run 的 binding_verified=false，保留可从 Session 确定的身份，但不把无法证明的完整绑定用于技术重试；需要新建执行。新 Run 的 binding_verified=true。
 
@@ -101,7 +101,7 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 
 ## 真实接入基础接口
 
-全局配置库 v2 追加 `runtime_installations`。`query.runtime_installations` 返回安装引用和 `default_harness`；`query.workspace` 同步附带这两个字段。`settings.update` 可原子更新 `default_harness: codex|dsh`、`global_concurrency: 1..32`，至少一个；已有 Session/Run 锁不因偏好变化而改变。默认偏好初始为 Codex，历史原型项目只读保留，不再进入调度。
+全局配置库保存 `runtime_installations`。`query.runtime_installations` 返回安装引用和 `default_harness`；`query.workspace` 同步附带这两个字段。`settings.update` 可原子更新 `default_harness: codex|dsh`、`global_concurrency: 1..32`，至少一个；已有 Session/Run 锁不因偏好变化而改变。默认偏好初始为 Codex，仅支持原生执行项目。
 
 - `runtime.register({key:{provider,version,os,arch},artifact,source,license})`：登记原生 executable（canonical_path+sha256）或以 digest 固定的 oci_image 引用。同键同内容返回原 ID；内容冲突拒绝。原生文件检查 header/platform、执行权限和摘要；脚本入口不等于完整安装，不接受作为完整运行时。登记不下载、不执行工具、不复制或删除共享安装。
 - `runtime.discover_codex({})`：显式发现 PATH 中本机原生 Codex，校验格式并查询版本，登记一次。不调用模型。
@@ -125,9 +125,9 @@ GitContext 随 Attempt.git_context 和 MergeAdvance.context 返回；它包含�
 
 `proposal.extract` reads the last complete assistant JSON from a completed `turn_id`. `proposal.create` accepts human-edited `content` conforming to `ProposalContent`; both require an explicit source Turn and resolve a `target` and `expected_revision`. `proposal.revise` creates a new immutable draft revision. `proposal.adopt`/`proposal.reject` target the Proposal revision. Adoption is atomic, validates current target and immutable input documents, and invokes the existing formal object commands. `proposal.instantiate` materializes an accepted TaskPlan's stable keys and dependencies after the existing planning Review/Snapshot gate; the key-to-Task mapping is persisted and cannot be replaced. Proposal acceptance does not accept a Delivery or a Merge.
 
-在采纳步骤完成前，其上游讨论及子流程输出会重新核对同一讨论的有效提案，包括同身份、同目标的后继 Session；拒绝、失效或已有后继修订的提案不再作为当前输出。新提案改变输出时，原人工确认失效，必须确认新版本。采纳步骤完成后，已消费的提案、执行、交付及候选仍固定到原轮次；后续业务变更使用返工，重新生成受影响步骤的引用。重新打开项目会将未结束流程标为待核对，以恢复旧版本留下的等待状态。
+在采纳步骤完成前，其上游讨论及子流程输出会重新核对同一讨论的有效提案，包括同身份、同目标的后继 Session；拒绝、失效或已有后继修订的提案不再作为当前输出。新提案改变输出时，原人工确认失效，必须确认新版本。采纳步骤完成后，已消费的提案、执行、交付及候选仍固定到原轮次；后续业务变更使用返工，重新生成受影响步骤的引用。重新打开项目会将未结束流程标为待核对，以恢复中断前的等待状态。
 
-Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations, role definitions and Permission revisions live in global schema v5; engineering records and conversation projections currently use project schema v34. Sequential SQL upgrades preserve historical provenance and never fabricate native IDs. Historical prototype projects are read-only; active execution is native-only.
+Project-owned Requirement/Artifact/Snapshot records use `project_id` with NULL `feature_id`; Feature/Task materials use the inverse ownership. Feature `source_requirement` pins a same-project Requirement revision. Runtime installations, role definitions and Permission profiles use global schema v10; engineering and conversation records use project schema v41. Only the current schema and native execution paths are supported.
 
 ## 真实工程操作与证据
 
@@ -156,19 +156,11 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 
 `codex.auth.start` / `status` / `models` / `cancel` 的 `installation_id` 改为可选；省略时自动准备版本固定的本机登录组件。首次准备可能需要下载与构建，相关 Web 请求允许较长超时并轮询进度。运行中和技术重试仍使用原冻结绑定，不自动更换安装。
 
-## Permission 配置与预检
+## 执行权限冻结
 
-`query.permissions` 返回不可变权限修订、带 revision 的全局绑定、当前角色修订和后端能力。`permission.create`、`permission.revise`、`permission.bind` 使用 Command；修订和绑定要求 expected_revision，相同 command_id/参数重放原结果。权限修订不能原地修改，绑定更新只影响后续会话。
+权限统一使用 v2 完整 profile 与确切目标绑定，接口见“Permission 运行时资源”。Agent 必须提供 Role、Capability 与命名的 `permission_selection`。项目、角色及本次执行的 `permission_overrides` 被拒绝；客户端不能提供解析后的执行 binding。
 
-```json
-{"jsonrpc":"2.0","id":1,"method":"permission.preflight","params":{"provider":"codex","overrides":{"harness":{"overrides":{"filesystem":{"mode":"read_only"}}}}}}
-```
-
-预检返回 `resolved` 和 `configuration_digest`，不调用模型、不启动容器。可携带明确的项目作用域及拟用 configuration；结果包含标准权限、覆盖来源、原生选项和执行后端。错误 `permission_unsupported` 表示规则缺少执行器，`permission_conflict` 表示配置与必要运行条件冲突，`permission_denied` 表示实际访问被拒绝；保留后端原始错误分类。
-
-`project.update` 的 payload 可包含 `permission_overrides`；Agent profile 同名字段通过 `agent.revise` 创建新角色修订。`session.open` payload 支持本次 `permission_overrides`，客户端不能提供解析后的 binding。字段含义见 `schemas/permission.schema.json` 和 `schemas/rpc.schema.json`。
-
-`query.session` 的 RuntimeBinding 与各 RuntimeExecution 返回冻结权限；旧历史的缺失值保持 null，不伪造既有执行保证。独立测试的策略明确标记无模型连接，Sandbox 禁网与 Harness 工具禁网不会混为一谈。
+`query.session` 的 RuntimeBinding 与 RuntimeExecution 返回冻结权限。独立系统测试使用无模型连接的固定测试策略；Sandbox 禁网与 Harness 工具禁网分别编译和核验。
 
 ## v0.3 Workflow 与 Agent 组合接口
 
@@ -177,7 +169,7 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 | 接口 | 主要参数及结果 |
 |---|---|
 | model/tool/harness/skill/spec/standard/agent.create | payload.name/scope/data；返回不可变 ConfigurationRecord。Agent 的 data 固定 model_ref/harness_ref/skills/tools/permissions、职责及指令 |
-| 上述类型 .revise | target 为旧修订，expected_revision；追加新版本，旧 AgentID 不变。agent 的旧无 data 接口仅为兼容 |
+| 上述类型 .revise | target 为旧修订，expected_revision；追加新版本，旧 AgentID 不变。Agent 必须使用包含完整 Role/Capability/权限选择的 data |
 | agent.instance.create | payload.agent_revision_id/name/scope；返回固定组合及经验范围的 AgentID |
 | configuration.retire | 精确修订 target、expected_revision、payload.reason；停止新绑定，保留历史 |
 | workflow.create | payload.name/scope；template_ref 或 document；返回可编辑草稿 |
@@ -193,11 +185,11 @@ schema 与字段定义见仓库 `schemas/rpc.schema.json`；真实安装、凭�
 
 `query.configurations`、`query.agent_instances`、`query.workflows` 支持 offset/limit 和 Scope；活动项目查询使用 local:true/project_id，可见 Global 发布版本及本项目定义。`query.workflow`、`query.workflow_draft`、`query.agent_revision` 按精确 id 读取，不依赖列表当前页。
 
-`query.workflow_validation` / `query.workflow_preview` 接收 document 或 id，返回 valid/errors、document_hash、顺序及演练状态，不调用模型、Docker、Git、测试或 Merge。sample.outputs 和 sample.accepted 表示演练事实；通过预演不代表真实证据成立。动作及 DSL 结构见 schemas/rpc.schema.json，v1/v2/v3 契约与 compiler_version 按冻结修订解释；新默认使用 v3。
+`query.workflow_validation` / `query.workflow_preview` 接收 document 或 id，返回 valid/errors、document_hash、顺序及演练状态，不调用模型、Docker、Git、测试或 Merge。sample.outputs 和 sample.accepted 表示演练事实；通过预演不代表真实证据成立。动作及 DSL 结构见 schemas/rpc.schema.json，只接受当前 v3 契约和编译器。
 
 `query.workflow_instance` / `query.workflow_actions` 返回运行记录、冻结计划/配置及可用动作。运行实例 ID、步骤 key、步骤实例 ID 和 round 分别表示不同概念；旧 round 的确认不能用于新 round。
 
-AgentID 经验是用于定位 Feature/Task 问题和恢复现场的历史上下文，不属于 Tool。Tool 管理与 Capability 新配置排除该项；旧修订的经验 Tool 引用仅兼容读取，不启用模型工具或经验目录挂载。
+AgentID 经验属于有来源的上下文，不是 Tool；原生工具必须来自明确的 Harness 工具组。
 
 `query.agent_experience` 必须携带 agent_instance_id；可组合 project_name、feature_name、from/to（UTC 毫秒，边界包含）、offset/limit。带 snapshot_id/source_project_id 才读取具体快照和证据引用。目录保留工作时间及捕获时间、历史名称、稳定 ID、实际组合和可用性；正文哈希失败不返回假成功。跨项目读取不切换活动工程或启动源 worker。
 
@@ -224,7 +216,7 @@ Agent 新建可提供 role_ref，省略模型与能力字段时填入 Sol High /
 
 `query.model_providers` 返回服务商、Harness、DSH 路由、协议、端点、认证类型与固定目录候选。`models.list` 通过 `model_provider` 选择目录；Ollama 可提供 endpoint，并由 Host 查询本机服务；DeepSeek 读取账号目录，智谱和 MiniMax 返回固定 DSH 版本的内嵌支持目录。候选不自动保存，返回值显式区分目录来源与未验证的推理。
 
-`credentials.configure/status/check/authorize` 增加 model_provider；省略时保持 DeepSeek 兼容语义。configure 保留 provider=dsh，api_key 仅用于 vault 写入，不进入普通查询。Ollama 状态 auth_kind=none，不支持存储或授权 key。
+`credentials.configure/status/check/authorize` 增加 model_provider；省略时默认 DeepSeek。configure 保留 provider=dsh，api_key 仅用于 vault 写入，不进入普通查询。Ollama 状态 auth_kind=none，不支持存储或授权 key。
 
 `agent.connection.check` 和 `agent.model.verify` 接收 project_id、agent_revision_id。前者创建带冻结绑定的完整 Agent Session，从 DSH 镜像查询模型目录，返回 container_verified 和 inference_verified=false；后者通过既有 session.open/conversation.send 提交真实模型与工具验证，返回 Session/Turn/marker，完成状态从 query.session 读取。
 
@@ -232,23 +224,23 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 `query.runtime_options` 只读取安装、受支持配方和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和基础组件 Harness 的安装列表仅展示项目执行用的 Linux Docker 安装；本机 Codex 登录与模型目录组件保留内部登记，不显示为项目安装。旧偏好的 `use_system_default` 仅跟随 Harness 名称，默认后端改变后须重新明确安装及模型。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务；智谱与 MiniMax 返回固定 DSH 版本支持的目录，并在 `source` 中区分。读取目录不执行推理。
 
-项目默认与角色运行时偏好可直接选择基础组件中的确切 `model_ref`、`harness_ref` 修订；保存前校验引用类型、项目可见性、退役状态和 Model/Harness 兼容性。Model 的模型标识、连接、容量与参数直接来自该修订；新会话按 Harness 的固定配方物化安装，旧版不含组件引用的偏好继续按明确安装及模型读取。设置页仅选择 Model 和 Harness，不提供思考深度覆盖或读取账号模型目录；思考深度等参数统一由所选 Model 修订决定。旧数据中的 `reasoning_effort` 仅在不含 `model_ref` 的原始模型偏好中兼容读取，引用 Model 时忽略该覆盖值，再次保存所选范围后省略它。新会话把有效参数冻结在 `RuntimeBinding.model_parameters`，纳入配置摘要，并在 Codex 每轮 `turn/start.effort` 或 DSH 输出预算中使用。完整 Agent 仍使用 `agent_configuration.model_parameters`；已有会话不随偏好更新。
+项目默认与角色运行时偏好只接受确切 `model_ref`、`harness_ref` 修订及 provider。保存前校验引用类型、可见性、退役状态和 Model/Harness 兼容性。执行的模型、连接、容量与参数来自完整 Agent 的 Model 修订，Harness 按固定配方物化；不接受原始模型名、安装 ID 或思考深度覆盖。有效参数冻结在 RuntimeBinding，已有会话不随偏好变化。
 
 `integration.delete` 将接入源及所属工具、绑定从后续选择中删除，或单独删除已发布工具。操作原子检查在用引用，拒绝仍被 Capability、Agent、Skill 或项目配置使用的资源；修订和历史调用保留，紧急停用另由 `integration.disable` 处理。
 
-全局角色讨论使用 `scope: "global"`，`session.open` 的目标为 `global`，不得同时提供 `project_id`。数据单独保存在 `conversations/global/engineering.sqlite3`；不创建 Project。Session 的 `scope` 为 `global`，其兼容的 `project_id` 列保留固定的执行命名空间 `00000000-0000-4000-8000-000000000000`，用于容器归属和 Session/Turn 外键；它不属于项目目录。全局 Session 仅接受全局 AgentID，消息、快照及经验仍按该身份保存。全局讨论中的方案须切换到具体项目后再进入工程采纳流程。
+全局角色讨论使用 `scope: "global"`，`session.open` 的目标为 `global`，不得同时提供 `project_id`。数据单独保存在 `conversations/global/engineering.sqlite3`；不创建 Project。Session 的 `scope` 为 `global`，其 `project_id` 列保留固定的执行命名空间 `00000000-0000-4000-8000-000000000000`，用于容器归属和 Session/Turn 外键；它不属于项目目录。全局 Session 仅接受全局 AgentID，消息、快照及经验仍按该身份保存。全局讨论中的方案须切换到具体项目后再进入工程采纳流程。
 
-权限合同 v2 绑定权限语义、受支持运行版本与实际策略资产；普通 UI、模型目录及非权限 schema 更新不改变权限合同。适配器的精确构建仍在运行绑定中独立冻结。旧默认权限转换追加新的合同记录；尚无 Session/Attempt 的 Feature 可在预检证明 profile 与目标完全一致后追加 `feature_permission_renewal`，原冻结记录和摘要保留。已开始执行或发生实际策略资产漂移的 Feature 不自动更换冻结权限。
+权限合同 v2 绑定权限语义、受支持运行版本与实际策略资产；普通 UI、模型目录及非权限 schema 更新不改变权限合同。适配器精确构建在运行绑定中独立冻结。Feature 冻结确切权限闭包，不再生成旧默认权限转换或 feature_permission_renewal 记录。
 
 `feature.create.predecessor` 只记录同项目 Feature 的前后关联，代码仍从项目主干基线建立。界面枚举同项目所有 Feature，并明确显示这一语义。
 
 `query.workflow_instance` 附带当前 TaskGroup 的 `children` 摘要（实例 ID/修订、任务名称、父步骤），子流程详细计划按实例单独读取。执行与交付以阶段为整行展示，编译展开的子流程保持在其调用阶段内；Task 子流程在所属阶段中按需展开，折叠状态按项目和工作流实例保存在本机。
 
-`query.sessions` 可按 `agent_instance_id` 在分页前筛选。列表和会话详情返回该身份的关联元数据，兼容早期仅有 `agent_session` 记录的会话。独立讨论完成后保存 `conversation_completed` 快照，AgentID 历史包含本轮消息与真实终态证据；切换身份不继续沿用原会话。
+`query.sessions` 可按 `agent_instance_id` 在分页前筛选。列表和会话详情返回该身份的关联元数据。独立讨论完成后保存 `conversation_completed` 快照，AgentID 历史包含本轮消息与真实终态证据；切换身份不继续沿用原会话。
 
-### 冻结任务渲染器兼容
+### 当前冻结任务渲染器
 
-新配置冻结使用 `agent-task/v3`，在 Ubuntu 已验证的类型化 `agent-task/v2` 合同上增加模型内容判断与人类 Approve；正式检查输出的 `schema` 与 `output_schema` 一致。文档任务保留 `document.kind=doc` 和正文类型。历史 `agent-task/v1`、`agent-task/v2` 及本地 v1 的版本化 Approve 合同继续按原载荷和摘要读取、验证，不自动重渲染。旧绑定中新追加的轮次采用当前明确版本化的输出合同；已准备或完成的轮次保留原输入和结论。真实测试与独立评审证据仍按原执行规则核对。
+配置冻结只使用 `agent-task/v3`，正式检查输出的 `schema` 与 `output_schema` 一致。文档任务包含 `document.kind=doc` 和正文类型。旧任务渲染器与旧输出合同被拒绝；当前已冻结任务、业务输入和实际执行证据保持不可变。
 
 候选评审的冻结输入另含 `candidate_provenance`：协调器通过 Git 端口读取确切候选的实际 parents，要求恰好一个且等于冻结 expected_target，并附 Merge 及对应已完成仓库操作回执。模型不需要访问隐藏的 Git 元数据来猜测父子关系；历史评审输入不回写，新的评审 Run 冻结当前实际证据。
 
@@ -258,20 +250,24 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ### 模型内容校验与人类 Approve
 
-正式内容校验使用 `evidence-checks/v2`，结构见 `schemas/stage-answer.schema.json`。新请求要求 `approve`、`summary` 和四类 `checks`，每项为 `key`、布尔 `passed`、非空字符串 `evidence`。`approve` 必须与逐项结论一致。错误返回具体字段路径；旧冻结 v1 任务和结果仍可读取。
+正式内容校验使用 `evidence-checks/v2`，结构见 `schemas/stage-answer.schema.json`。新请求要求 `approve`、`summary` 和四类 `checks`，每项为 `key`、布尔 `passed`、非空字符串 `evidence`。`approve` 必须与逐项结论一致。错误返回具体字段路径。
 
-业务提示词来自冻结 Workflow Step 的任务和 Agent 配方节点任务；兼容路径从冻结 `interaction.goal`、`parameters.agent_prompts` 读取，运行器不追加隐藏的阶段业务指令。模型读取当前 Skill/Spec、作者 Skill 及实际材料判断内容；章节、关键词探测不再作为新模型报告的内容质量门禁。
+业务提示词来自冻结 Workflow Step 的任务和 Agent 配方节点任务，运行器不追加隐藏的阶段业务指令。模型读取当前 Skill/Spec、作者 Skill 及实际材料判断内容；章节、关键词探测不再作为新模型报告的内容质量门禁。
 
 有效报告的 Run 记录 `model_approve`、`approval_required`，模型拒绝与执行失败分开。校验和独立评审均进入 `waiting_confirmation`，即使步骤配置自动推进也等待人类决定。`workflow.step.confirm` 携带当前 `input_hash`；覆盖模型拒绝还需 `overwrite_model:true` 和非空 `reason`。不可变确认记录保留模型报告、Skill 修订、轮次、操作者、原结论与覆盖理由；独立评审覆盖另外写入 Review Override，原模型 Review 不改写。报告或输入改变会使旧确认失效。
 
-取消中的旧 Run 返回 `run_cancellation_pending`。该错误仅表示启动前等待，工作流保留 prepared 意图，待 Run 和旧 writer 均停止后继续。旧版本留下的同类 failed 意图会重新核对；不会把尚未停止的执行者标成已停止。
+取消中的旧 Run 返回 `run_cancellation_pending`。该错误仅表示启动前等待，工作流保留 prepared 意图，待 Run 和旧 writer 均停止后继续。等待状态保持 prepared 意图，不会把尚未停止的执行者标成已停止。
 
-`query.session.formal_execution` 标识正式执行及其后继会话；旧 v1/v2 会话缺少逐轮任务绑定时，仍通过原 Run、冻结步骤及同归属的后继链解析输出合同。正式 Run 的后继不接受独立讨论输入或提案采纳，界面提供“查看执行会话”和“返回当前工作流”。模型报告尚未齐备时显示等待条件，报告完成后由对应步骤提供人类 Approve。
+`query.session.formal_execution` 标识正式执行及其后继会话；仅从当前冻结任务绑定及同归属后继链解析输出合同。正式 Run 的后继不接受独立讨论输入或提案采纳，界面提供“查看执行会话”和“返回当前工作流”。模型报告尚未齐备时显示等待条件，报告完成后由对应步骤提供人类 Approve。
 
-正式 Turn 的 `needs_reconciliation` 不再使 Run 永久显示运行中。取得原执行的 writer 撤销和协议封存证明后，Run 记录为 `interrupted`，保留未知结果及原 Turn，并提供技术重试。显式重试创建使用原绑定/任务的新 Run 和后继 Session，原 Attempt 的 Session 映射保持冻结；旧输入不会自动重发，独立会话回复不会被补认成正式报告。
+正式 Turn 的 `needs_reconciliation` 不再使 Run 永久显示运行中。取得原执行的 writer 撤销和协议封存证明后，Run 记录为 `interrupted`，保留未知结果及原 Turn，并提供技术重试。显式重试创建使用原绑定/任务的新 Run；Task 继续使用原 Session，Feature 级执行创建后继 Session，原 Attempt 的 Session 映射保持冻结。未知结果须先核对，旧输入不会自动重发，独立会话回复不会被补认成正式报告。
 
 Delivery 类型配置与跨步骤材料引用：`delivery_type.create/revise` 管理确切修订的 `{format, body}` 定义，与正式运行的 `Delivery` 业务实例分开。流程与规范的 Delivery 页提供 PRD、Design Doc、Diff、Test Report 默认定义。Workflow v3 的 `delivery_outputs.<name>={delivery_ref,source_port}` 将本步骤的真实输出命名为交付物；`delivery_inputs.<name>={delivery_ref,source:{step,port}}` 引用依赖链上同一类型修订的交付物。编辑器选择引用时自动加入生产步骤依赖；发布校验端口、依赖、作用域及类型修订，不用正文声明替代实际输出。子流程展开后保留来源映射；Agent 的冻结任务携带 Delivery 定义正文、产出/引用声明及真实材料。类型修订不会改写已冻结的 Feature 或 Turn。
 
-工作流讨论会话按 owner、步骤实例、Agent 和配方节点复用最新会话，保留其冻结运行绑定；不同步骤及节点互相隔离。`session.open` 仅在显式 `force_new` 时新增同一上下文的会话，活动轮次须先结束或核对。`query.sessions` 支持 `workflow_session_id` 锚定该步骤/节点的历史，或显式指定 `workflow_step_instance_id`、`workflow_recipe_node` 和 `agent_instance_id`；结果按新建顺序倒序。角色讨论默认选最新会话，也可手动查看历史或新建 Session。关闭及待核对执行不会因此重新发送输入；正式 Run 保留技术重试及人类 Approve 入口。
+Task 会话按 owner 与 Agent 身份复用最新 Session 和原生 thread，不以 Workflow 步骤或执行配方节点分组；同一 Task 的实现与文档、交付评审与候选评审因此可以续用对应 Agent 的会话。不同 Task、不同 Agent 身份彼此隔离，Feature 级会话继续按步骤与节点隔离。仅显式 `force_new` 新建同一 Task/Agent 的会话，已有活动轮次须先结束或核对；新节点不会因运行基线漂移自动新建会话。Task 技术重试保留 Session，未知结果仍须先核对，不能自动重发输入。
+
+Session 的 Agent、Model/Harness、凭据和权限基线保持固定，Task 的权限或集成变更不会自动创建后继 Session。Task 的节点上下文作为不可变 `execution_task_binding` 追加，`data.session_id` 关联共享 Session；首条绑定使用 `definition_id=SessionID`，后续绑定拥有独立目标 ID。无 Agent 任务的系统步骤通过 `execution_runtime_binding` 冻结相同的上下文及范围。正式 Run 创建时按 RunID 单独冻结节点来源与运行锁，后续打开其他节点不会改变已排队 Run。每个 Turn 的 `execution_task` 保存本轮 `runtime_binding` 与确切任务来源，分别冻结节点指令、Spec、输出合同及执行范围。协调器和外部工具调用均读取本轮锁，使用固定的原生 thread 恢复执行；Session 的初始锁与旧任务快照不会改写。共用 Session 的节点串行派发，测试节点仍由系统测试执行器执行。
+
+`query.sessions` 用 `workflow_session_id` 锚定 Task 时返回同一 Task/Agent 的会话历史；显式步骤/节点筛选匹配该会话曾绑定的上下文。`query.session.current_runtime_binding` 提供当前节点范围，`session.runtime_binding` 继续表示初始锁。角色讨论默认选最新会话，也可查看历史或显式新建 Session；正式 Run 保留技术重试及人类 Approve 入口。
 
 角色与 Agent 界面保留 Role、Capability、Agent 三个页签；Agent 页用于组合 Role 与 Capability。内部 AgentID / `agent_instance_id` 身份协议不变，角色讨论中的“新建讨论身份”从所选 Agent 的确切修订创建全局或当前项目身份。每个身份独立保留会话和经验，重复打开同一执行上下文时复用最新会话。

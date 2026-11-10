@@ -124,7 +124,7 @@ test("HTTP 接入发布动作、绑定确切授权与历史修订，原入口只
     page.getByRole("tab", { name: "Skill", exact: true }),
   ).toHaveCount(0);
 });
-test("Skills 导入保留 Markdown 原文与工具依赖，旧链接跳转同一资源", async ({
+test("Skills 导入保留 Markdown 原文与工具依赖，当前链接定位同一资源", async ({
   page,
 }) => {
   await setup(page);
@@ -155,7 +155,7 @@ test("Skills 导入保留 Markdown 原文与工具依赖，旧链接跳转同一
   expect(pkg.body).toBe(body);
   expect(pkg.requires_tools).toEqual(["builtin-tool-codex-native-v1"]);
   await page.goto(
-    `/?tab=components&config_tab=skill&config_object=${skill.id}`,
+    `/?tab=components&config_tab=skills&config_object=${skill.id}`,
   );
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue(name);
   await expect(
@@ -349,7 +349,7 @@ test("HTTP 与 MCP 的新建区在管理区上方，接入源和发布工具可�
       },
     });
     await page.goto(
-      `/?tab=integrations&config_tab=${kind}&config_object=${source.id}`,
+      `/?tab=components&config_tab=${kind}&config_object=${source.id}`,
     );
     const label = kind === "http" ? "HTTP API" : "MCP";
     const create = page.getByRole("region", {

@@ -1,5 +1,7 @@
 # v0.4 基线核对与验证记录
 
+> 历史记录：未提供链接的原始文件路径仅记录当时执行；相关中间产物或已删除源码不随当前工程提供。
+
 日期：2026-11-10。本文记录 [v0.4 架构与实现基线](PLAN.md) 的源码依据、继承的验证结果及待验边界。本次工作为文档整理，未新增产品功能、修改包版本、迁移用户数据或启动真实工程。
 
 ## 源码基准与版本
@@ -23,9 +25,9 @@
 | 能力 | 主要实现依据 | 回归或合同依据 |
 |---|---|---|
 | Role/Capability/Agent、可见范围、可选 Standard | [领域配置](../../../crates/domain/src/configuration.rs)、[配置处理](../../../crates/core/src/configuration.rs)、[项目配置](../../../crates/core/src/project_configuration.rs) | [配置资源回归](../../../crates/adapters/tests/configuration_resources.rs)、[原实施契约](../role-capability-project-configuration/CONTRACT.md) |
-| 六种默认 Role、阶段 Skill/Spec、八个 Feature 阶段 | [默认目录](../../../crates/core/src/default_catalog.rs)、[默认配置资源](../../../resources/configuration/README.md) | 配置资源回归、[配置浏览器回归](../../../web/tests/workflow-authoring.spec.ts) |
+| 六种默认 Role、阶段 Skill/Spec、八个 Feature 阶段 | 默认目录（历史路径：`../../../crates/core/src/default_catalog.rs`）、[默认配置资源](../../../resources/configuration/README.md) | 配置资源回归、[配置浏览器回归](../../../web/tests/workflow-authoring.spec.ts) |
 | 任务配置、版本、编译路径与冻结载荷 | [任务领域合同](../../../crates/domain/src/agent_task.rs)、[工作流编译](../../../crates/core/src/workflow_definition.rs)、[任务组装](../../../crates/core/src/agent_tasks.rs) | [任务回归](../../../crates/adapters/tests/agent_tasks.rs)、[任务编辑浏览器回归](../../../web/tests/workflow-tasks.spec.ts) |
-| 全阶段业务提示词配置 | [任务播种及显式升级](../../../crates/core/src/default_tasks.rs)、[冻结配置提示词及质量依据](../../../crates/core/src/workflow_prompts.rs) | 任务回归覆盖讨论、三类校验、测试编写、实现、文档及两类评审；[22 份任务索引](../../../resources/configuration/README.md) |
+| 全阶段业务提示词配置 | 任务播种及显式升级（历史路径：`../../../crates/core/src/default_tasks.rs`）、[冻结配置提示词及质量依据](../../../crates/core/src/workflow_prompts.rs) | 任务回归覆盖讨论、三类校验、测试编写、实现、文档及两类评审；[22 份任务索引](../../../resources/configuration/README.md) |
 | 正式结构化输出、模型 Approve | [报告解析](../../../crates/domain/src/stage_answer.rs)、[输出 Schema](../../../schemas/stage-answer.schema.json)、[正式执行](../../../crates/core/src/live_runs.rs) | [Schema 回归](../../../crates/adapters/tests/schema_contracts.rs)、[执行回归](../../../crates/adapters/tests/workflows.rs) |
 | 人类 Approve、覆盖、确认失效及原报告保留 | [模型报告与人工门禁](../../../crates/core/src/model_approvals.rs)、[工作流运行器](../../../crates/core/src/workflow_runtime.rs)、[运行界面](../../../web/src/components/WorkflowInstanceView.tsx) | 执行回归、[模型/人工决定浏览器回归](../../../web/tests/model-approvals.spec.ts) |
 | 提案替换、Session 后继、子流程端口及返工引用 | 工作流运行器、[提案采纳](../../../crates/core/src/proposals.rs) | [引用回归](../../../crates/adapters/tests/workflow_references.rs)：四种提案、重启、拒绝/修订、后继与无关 Session、冻结已消费输入、旧确认失效、子流程别名及后继输出清理 |
@@ -35,7 +37,7 @@
 | DSH 四路由、目录/连接/推理分离 | [模型服务商领域](../../../crates/domain/src/model_provider.rs)、[Host 服务商接口](../../../crates/host/src/model_providers.rs) | [服务商回归](../../../crates/adapters/tests/model_providers.rs)、[DSH 设置回归](../../../web/tests/model-providers.spec.ts) |
 | 权限绑定、合同重新验证与后继 | [权限切换](../../../crates/core/src/permission_switch.rs)、[权限资源](../../../crates/core/src/permission_resources.rs) | [权限回归](../../../crates/adapters/tests/permission_profiles.rs)、[权限确切绑定报告](../permission-runtime-bindings/EXECUTION.md) |
 | 九项导航、连接内核、阶段布局和反馈 | [工作台](../../../web/src/main.tsx)、[内核连接](../../../web/src/components/KernelConnection.tsx)、[配置页面](../../../web/src/components/ConfigurationPages.tsx) | [布局回归](../../../web/tests/execution-layout.spec.ts)、[连接回归](../../../web/tests/kernel-connection.spec.ts)、[设置回归](../../../web/tests/settings-usability.spec.ts) |
-| 全局讨论及工程库 v39 | [项目库迁移和讨论目录](../../../crates/adapters/src/lib.rs)、[039 迁移](../../../sql/project/conversations/039_global_discussions.sql)、[全局库迁移](../../../crates/adapters/src/catalog.rs) | Host 全局讨论回归、HTTP 分库回归；迁移编号依据执行入口核对 |
+| 全局讨论及工程库 v39 | [项目库迁移和讨论目录](../../../crates/adapters/src/lib.rs)、039 迁移（历史路径：`../../../sql/project/conversations/039_global_discussions.sql`）、[全局库迁移](../../../crates/adapters/src/catalog.rs) | Host 全局讨论回归、HTTP 分库回归；迁移编号依据执行入口核对 |
 
 ## 继承的 macOS 自动化结果
 

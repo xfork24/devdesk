@@ -11,7 +11,8 @@ fn reject_outside_mounts_before_touching_docker() {
     let root = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
     let sandbox = DockerSandbox::new(root.path()).unwrap();
-    let spec = ContainerSpec { host_gateway: false,
+    let spec = ContainerSpec {
+        host_gateway: false,
         permissions: None,
         purpose: ContainerPurpose::Tests,
         nested_sandbox: false,
@@ -175,7 +176,8 @@ fn dsh_runner_masks_private_state_and_proc_without_expanding_docker_privileges()
         "-c",
         "test ! -e /state/canary && test ! -e /proc/1/environ && test ! -e /run/devdesk/runner && printf dsh-ok > /work/tests/allowed/proof && (! touch /work/forbidden 2>/dev/null)",
     ];
-    let spec = ContainerSpec { host_gateway: false,
+    let spec = ContainerSpec {
+        host_gateway: false,
         permissions: None,
         purpose: ContainerPurpose::Harness,
         project_id: id(),

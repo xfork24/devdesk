@@ -211,10 +211,7 @@ impl Engine {
                 && t.external_turn.as_ref() == Some(external_turn),
             "工具调用线程或轮次归属不符",
         )?;
-        let b = session
-            .runtime_binding
-            .as_ref()
-            .ok_or_else(|| err("invalid_configuration", "缺少运行绑定"))?;
+        let b = s.turn_runtime_binding(t)?;
         let config = b
             .agent_configuration
             .as_ref()
@@ -1203,7 +1200,7 @@ impl Engine {
             if method == "skill.export" {
                 let key = text(p, "id")?;
                 let r = s.configuration(&key)?;
-                let package=s.governance.iter().find(|r|r.kind=="skill_package"&&r.definition_id==key).map(|r|r.data.clone()).unwrap_or_else(||json!({"body":r.data["body"],"description":r.name,"files":[],"requires_tools":[],"source":"legacy_markdown","scripts_disabled":false}));
+                let package=s.governance.iter().find(|r|r.kind=="skill_package"&&r.definition_id==key).map(|r|r.data.clone()).unwrap_or_else(||json!({"body":r.data["body"],"description":r.name,"files":[],"requires_tools":[],"source":"inline_markdown","scripts_disabled":false}));
                 return Ok(package);
             }
             let rows: Vec<_> = s

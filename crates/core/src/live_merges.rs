@@ -90,6 +90,12 @@ impl Engine {
             .iter()
             .find(|v| v.id == session)
             .ok_or_else(|| err("blocked", "候选验证 Session 不存在"))?;
+        let role = crate::agent_tasks::session_for_node(
+            s,
+            role,
+            None,
+            c.payload["workflow_step_instance_id"].as_str(),
+        )?;
         require(
             role.owner_id == owner
                 && role
@@ -190,7 +196,7 @@ impl Engine {
                     .binding
                     .standard
                     .clone();
-                let binding = self.live_binding(s, session, &standard)?;
+                let binding = self.live_binding(s, session, &standard, None)?;
                 let mm = s.merges.iter_mut().find(|v| v.id == *merge).unwrap();
                 mm.candidate = revision.clone();
                 mm.status = Status::Running;

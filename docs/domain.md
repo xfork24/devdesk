@@ -1,6 +1,6 @@
 # DevDesk v0.3 领域规范
 
-当前工程库 schema v39，全局库 v8。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。新 Project 使用 live；旧原型项目保留历史来源并只读打开，不再参与调度。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
+当前工程库 schema v41，全局库 v10，使用当前结构基线直接初始化。v0.3 实现基线及 Workflow/工作台执行记录见 [最新基线](plans/devdesk-v0.3/PLAN.md)、[实施记录](plans/workflow-and-workbench/EXECUTION.md)。配置与分阶段默认能力以 [Role/Capability 重构](plans/role-capability-project-configuration/PLAN.md)及其[实施记录](plans/role-capability-project-configuration/EXECUTION.md)为准。原始设计、真实接入、Permission 与 Workflow 计划共同约束领域模型。Project 使用 live 与当前版本化配置，旧原型布局与旧合同不再作为运行路径。应用代码中的对象是类型化结构；用户创建的身份使用 UUID，内置修订和导入/幂等派生记录也可使用稳定字符串 ID。
 
 ## 归属与对象契约
 
@@ -14,11 +14,11 @@
 | Design | 引用 Requirement 的不可变设计修订 | 规划交付，与 Task/Test 计划一起 Review | documents(kind=design)；示例“流式编码方案” |
 | Test | 引用 Requirement/Design 和可选 Task 的测试定义 | 定义先于 Task 实现冻结，TestRunner 请求实际携带测试定义、候选与环境并校验响应绑定；TestResult 在 Run.result | documents(kind=test)；示例“空列表返回表头” |
 | Doc | Feature/Task 的不可变说明修订 | document.revise 或原生执行产生；所属交付 Review | documents(kind=doc)；示例“使用及限制” |
-| Spec | 独立规范定义 ID、修订链 | definition.revise 克隆新版本，不回写旧版本 | definitions(family=spec)；例 Internal Design Spec v1/v2 |
-| Standard | 可选质量基线，按动作/阶段要求 Spec 覆盖 | 克隆修订，不注入或覆盖 Step Spec | governance_records(kind=standard)；旧 slots 仅供 v1 历史 |
+| Spec | 独立规范定义 ID、修订链 | spec.revise 克隆新版本，不回写旧版本 | definitions(family=spec)；例 Internal Design Spec v1/v2 |
+| Standard | 可选质量基线，按动作/阶段要求 Spec 覆盖 | 克隆修订，不注入或覆盖 Step Spec | governance_records(kind=standard)；显式 baseline_rules |
 | Skill | 独立定义修订 | 克隆、绑定；不支持任意脚本 | definitions(family=skill)；例 TDD v1 |
 | Capability | 一个 Model、一个 Harness、多个 Tool/Skill 精确修订 | 独立命名、修订和停用；不随 Role 自动派生 | governance_records(kind=capability) |
-| AgentRevision | RoleRevision + CapabilityRevision，保留执行权限和兼容投影 | 整体发布不可变组合，不允许在 AgentID 会话中拆开覆盖 | governance_records(kind=agent)，投影 legacy AgentProfile 供执行器使用 |
+| AgentRevision | RoleRevision + CapabilityRevision，明确选择版本化权限 | 整体发布不可变组合，不允许在 AgentID 会话中拆开覆盖 | governance_records(kind=agent)，生成类型化 AgentProfile 供执行器使用 |
 | AgentID | 实例身份，固定 AgentRevision 和独立 Scope | Global 跨项目经验；Project 仅本项目；同组合可有多个实例 | agent_instance / agent_session / agent_session_use |
 | Model / HarnessDefinition / ToolDefinition | 模型后端/参数、运行协议与精确构建、可执行能力契约 | 版本化；不支持的协议、参数或处理器拒绝派发 | governance_records(kind=model/harness/tool) |
 | Scope | Global / Project / Feature 值对象 | 定义可见性、绑定目标、实例范围和材料来源分别表达 | 类型化 kind 与 project_id / feature_id |
@@ -44,7 +44,7 @@
 
 1. 技术失败仅 Run 重试；范围、输入、身份锁变化和 Review 退回后的修订必须新 Attempt。DAG 依赖按节点的最后一次执行判断，不能沿用已替代执行。
 2. 全局额度默认 4，Project 默认 2；同逻辑 worktree 写入互斥。暂停不强杀在途 Run。取消确认前保留许可。
-3. 新流程先执行 requirement_definition 和需求 Review，再讨论 Design/TaskPlan/TestPlan，执行 solution_planning 并评审计划；之后 Feature ready。设计变化保留未变需求评审。旧 planning 为历史兼容。
+3. 新流程先执行 requirement_definition 和需求 Review，再讨论 Design/TaskPlan/TestPlan，执行 solution_planning 并评审计划；之后 Feature ready。设计变化保留未变需求评审。不再提供旧 planning 合同。
 4. Task Red→implement→Green→verify；Red 是预期断言失败，不是技术失败；测试定义、候选与顺序须一致。技术失败不可作为 Red 证据，质量豁免须明确记录依据。
 5. Delivery 引用确定证据；Review 不改变来源。Agent 评审为独立 Run/Session，只有 core 可以执行门禁。
 6. Task accepted 后申请候选 Merge，候选验证 Delivery 经 Review 后 apply。当前 TaskPlan generation 的固定成员全部完成后才允许 Feature closure Attempt；之后相同 Merge 流程进入 mainline。
@@ -52,7 +52,7 @@
 8. 输入变化使未完成流程有关证据 stale；已完成历史保留，后续变更用关联的新 Feature/Task。定义修订不会更改旧锁。
 9. Git 候选使用已观察的精确版本。目标推进先登记意图、事务外执行 CAS，再核对本地与远端回执；command_id 幂等，未核验远端事实不能声明交付完成。
 10. 重启将未确认 running Run 标记 interrupted，保留原因，不透明续跑或自动成功。Queued 可继续调度，失败 Attempt 需明确重试或新 Attempt。
-11. v2 的执行规范来自 Step.spec_refs；Standard 是可选覆盖基线。v1 StandardLock 的具名用途（planning/implementation/merge）Spec slots 保持历史读取与恢复；ExecutionBindingLock 包含 Agent/Skills/Harness/Sandbox 确定版本。ReconstructionManifest 是 Snapshot 中固定引用的组合，不设管理服务。
+11. 执行规范来自 Step.spec_refs；Standard 是可选覆盖基线。ExecutionBindingLock 包含 Agent/Skills/Harness/Sandbox 确定版本。ReconstructionManifest 是 Snapshot 中固定引用的组合，不设管理服务。
 12. SQLite 为唯一工程事实源，文件 manifest/报告不是第二套可写状态。
 
 ## 闭环例子
@@ -64,7 +64,7 @@
 - Requirement/Design/Test/Doc 继续共享不可变文档修订的存储结构，业务校验按正式阶段区分。Requirement.acceptance 为唯一 key 与可验证 description 的列表；未单独录入时将用户完整正文登记为一个显式 AC-1，用户可在 Web 拆分。Test.verifies 引用这些 key，不通过正文关键词计算追踪。
 - Task.scope 固定 Requirement/Design 修订与实现的验收条目；默认继承规划全部条目，可在创建时选择子集。需求变化后，先重新规划，再通过 task.replan 采用新范围并生成新测试修订，旧 Attempt 与输入不回写。已合入 Task 仍冻结。
 - Run.binding 是独立 ExecutionBindingLock。评审 Run 的重试继承原评审绑定，接收评审时再次检查作者身份隔离。Review.assignment 固定 Delivery、Spec 与人类主体或 Agent/Run/Session。
-- Workspace 是仓库描述、路径与 mainline 的值对象。Harness 与 Sandbox 为独立、持久化的定义；Session.instance 为拥有稳定 ID 的运行实例，冻结两类定义和版本，并记录外部身份、起止和终态。旧数据中的 simulated 来源和实例标识仅供历史读取，不能用于新的原生执行。
+- Workspace 是仓库描述、路径与 mainline 的值对象。Harness 与 Sandbox 为独立、持久化的定义；Session.instance 为拥有稳定 ID 的运行实例，冻结两类定义和版本，并记录外部身份、起止和终态。不再接受 simulated 来源。
 - TestResult 是有结构校验的领域结果，绑定 operation_id、测试修订、阶段、候选、环境与来源；仍以 Run.result 保存其序列化形式。Attempt.baseline 固定 Red 执行的代码版本；Green/Delivery 固定实现候选，二者不要求相等。代码 revision 由 GitPort 提供。
 - Snapshot.capture 固定来源 Attempt、Runs、Sessions、Resources、原因与时间；文档集合来自已接受交付。历史无法确定的捕获来源保持 legacy/空值。
 - ChangeRequestRef 是 Merge 内嵌的 GitHub PR 引用，冻结仓库、外部 ID 和源/目标版本。
@@ -87,9 +87,9 @@ TestRequest/TestResult.environment 使用 Session.instance.id，绑定具体环�
 - EffectRecord 保存固定操作 ID、适配器版本身份、冻结请求、原始回执与状态。pending → observed → applied/discarded；中断结果未知为 needs_reconciliation；cleanup_failed 通过新操作显式重试，原失败不覆盖。
 - MergeAdvance 固定供应商、交付、候选、目标基线及回执。prepared → dispatched → observed → applied；结果未知 needs_reconciliation；供应商明确未推进则 not_applied，观察目标并重新验收。不得把旧操作交给不同供应商推定成功。
 - Harness/Sandbox 的定义与 Session.instance 分开保存；能力缺失在绑定时拒绝。Reviewer/候选验证沿用源交付的锁定标准。供应商核对必须匹配原 Run/Session 或完整 TestRequest，错误回执不能解除 Resource 所有权。
-- 数据库 v7—v13 增加操作记录、阶段输出、冻结范围和目标推进核对；旧信息保持空或 legacy，不从可变对象倒填执行事实。
+- 数据库 v7—v13 增加操作记录、阶段输出、冻结范围和目标推进核对；当前结构直接初始化，不从可变对象倒填执行事实。
 
-GitContext 是 Attempt 与 MergeAdvance 中的不可变值对象，固定 Project、Workspace 和源/目标 CodeLocation。供应商候选、推进及核对显式接收它，TestRequest/ Harness 输入也携带它。v13 迁移保留历史未知定位为 null；未记录代码路由的旧执行必须新建执行，不能推定一个当前工作目录。
+GitContext 是 Attempt 与 MergeAdvance 中的不可变值对象，固定 Project、Workspace 和源/目标 CodeLocation。供应商候选、推进及核对显式接收它，TestRequest/ Harness 输入也携带它。执行必须冻结代码路由，不能推定当前工作目录。
 
 Run 首次调用的输入保存在 Harness EffectRecord 中；后续轮询及取消复用它。并行兄弟节点的新输出只进入后续新 Run 的输入，不能改变已在运行的请求。Agent 的身份由不可变修订链根确定，不把作者的另一修订当作独立 Reviewer。
 
@@ -117,7 +117,7 @@ live 合入分别记录本地 CAS、远端精确 lease、PR merged 核对；只�
 
 ## Permission 与执行范围
 
-Permission v2 通过统一 profile 表达完整文件、网络、工具与审批规则，Sandbox 仅接受文件和网络维度。PermissionProfile、VersionedPermissionBinding、目标活动分配和 SandboxDefinition 作为治理配置修订保存；活动分配追加修订，以 CAS 决定目标当前绑定。Agent 命名选择 follow_target 或 pinned，旧 Agent 只追加固定兼容投影，不改写历史。新 Feature 冻结确切权限闭包；新讨论冻结绑定，已有讨论在下一轮通过后继 Session 采用新权限。切换意图、停止回执和原命令保持幂等，原 RuntimeBinding 与原生线程身份不可原地替换。详见 [权限说明](../permissions/README.md)。
+Permission v2 通过统一 profile 表达完整文件、网络、工具与审批规则，Sandbox 仅接受文件和网络维度。PermissionProfile、VersionedPermissionBinding、目标活动分配和 SandboxDefinition 作为治理配置修订保存；活动分配追加修订，以 CAS 决定目标当前绑定。Agent 命名选择 follow_target 或 pinned，所有 Agent 必须声明命名权限选择。新 Feature 冻结确切权限闭包；新讨论冻结绑定，已有讨论在下一轮通过后继 Session 采用新权限。切换意图、停止回执和原命令保持幂等，原 RuntimeBinding 与原生线程身份不可原地替换。详见 [权限说明](../permissions/README.md)。
 
 Permission 是具有稳定身份及不可变修订的独立策略实体，描述文件、工具网络和工具调用权限。Harness 与 Sandbox 持有 PermissionBinding；项目、角色和本次执行的覆盖按顺序解析，省略字段继承、列表整体替换。定义修订、绑定版本和最终策略分别记录，旧运行不读取当前 latest 配置。
 
@@ -125,7 +125,7 @@ RuntimeBinding 与 RuntimeExecution 保存冻结的 ExecutionPermissions，包�
 
 Permission 不替代业务门禁。正式工程的所属 worktree、测试写范围、受保护测试目录和只读 Review 代码视图继续由 ExecutionScope 约束；运行时审批不能接受交付或 Review。Never 表示不询问，不把拒绝的请求变为允许。
 
-新配置默认采用容器内全权限；旧数据迁移保留 legacy 策略，未保存标准快照的旧执行保持 unknown。全权限以整个容器为信任范围，受限配置声明的状态/凭据不可见保证必须有对应执行器和验证。具体支持范围见 [Permission 说明](../permissions/README.md)。
+新配置默认采用容器内全权限；不接受旧权限策略和覆盖字段。全权限以整个容器为信任范围，受限配置声明的状态/凭据不可见保证必须有对应执行器和验证。具体支持范围见 [Permission 说明](../permissions/README.md)。
 
 ## Workflow 与配置的持久化补充
 
@@ -141,19 +141,19 @@ AgentID 经验索引以项目名、Feature 名和工作时间为主要筛选，�
 
 Role 定义名称、Markdown 职责及 Global/多个项目可见范围，执行职责类型与用户定义身份分开。全局目录索引共享 Role 的一条修订历史，数据库归属不限制声明的多项目可见性。编辑 Role 只创建 Role 修订；被 Agent、Workflow 或项目引用时必须先显式换绑才可删除。停用保留历史，不生成替代资源。
 
-Capability 固定 Model、Harness、Tools、Skills。命名 Agent 固定 RoleRevision 和 CapabilityRevision；项目以 Role 身份绑定单个 Agent。Workflow v2 Step 只声明 Role 和精确 Spec，配方内部节点也声明 Role；项目和 Feature 冻结完整依赖摘要。角色身份不相同的 Agent 不能仅凭执行职责相同替换。可选 Standard 校验规范落点、版本及最低匹配数量，不修改 Step 行为；审计快照按路径、动作、角色、规范与输出契约比较。
+Capability 固定 Model、Harness、Tools、Skills。命名 Agent 固定 RoleRevision 和 CapabilityRevision；项目以 Role 身份绑定单个 Agent。Workflow v3 Step 只声明 Role 和精确 Spec，配方内部节点也声明 Role；项目和 Feature 冻结完整依赖摘要。角色身份不相同的 Agent 不能仅凭执行职责相同替换。可选 Standard 校验规范落点、版本及最低匹配数量，不修改 Step 行为；审计快照按路径、动作、角色、规范与输出契约比较。
 
 默认目录提供分阶段 Feature/Task 工作流、六个职责 Agent、各自 Capability、Markdown Skill/Spec、GPT-6.1 Sol High、固定 Codex Harness 和 Docker 默认权限。架构师产出 Design Doc，独立项目经理 Role 负责 Task Plan；其底层执行职责复用 architect 协议。新项目页预填默认配置，用户保存后才用于新 Feature。默认资源是普通独立定义，不自动追随修订。完整目录见 [默认配置](../resources/configuration/README.md)。
 
-v1 配置及旧 defaults_bundle 只保留历史语义。升级按旧 Workflow/Standard 精确组合派生等价 v2 Spec 绑定，不覆盖原 Workflow；无法证明的映射留待配置。harness_materialization 保存固定配方到 RuntimeInstallation 的不可变关联，Sandbox 定义与实际 Docker 执行实例分开，默认条目不声称已经运行。
+目录直接发布当前配置；不再生成旧 defaults_bundle 或 Workflow/Standard 转换记录。harness_materialization 保存固定配方到 RuntimeInstallation 的不可变关联，Sandbox 定义与实际 Docker 执行实例分开，默认条目不声称已经运行。
 
 
 ## Workflow 任务冻结
 
 Workflow v3 为每个实际 Agent Step 声明 Markdown task_instructions；attempt.execute 同时声明公共任务与 Agent 配方节点任务。系统节点没有任务编辑入口。具体合同、限制与查询见 [任务协议](protocol.md#workflow-step-任务合同)。
 
-WorkflowTaskDefinition 随路径进入 Feature 编译闭包，AgentTaskBase 固定有效 AgentRevision、声明顺序的 Skill 和 Role 来源。execution_task_binding 关联步骤/轮次/节点，execution_task 按 Turn 唯一、同时引用 agent-task Artifact。FrozenAgentTask 使用 agent-task/v1 渲染器，分别保存定义、基础上下文、规范输入及总摘要；Markdown 原文不变，摘要用规范 JSON 对象键序。领域层核对正文、输出合同、Spec 顺序、来源、Artifact 哈希与不可变历史，不以最新 Workflow 重新解释排队输入。
+WorkflowTaskDefinition 随路径进入 Feature 编译闭包，AgentTaskBase 固定有效 AgentRevision、声明顺序的 Skill 和 Role 来源。execution_task_binding 关联步骤/轮次/节点，execution_task 按 Turn 唯一、同时引用 agent-task Artifact。FrozenAgentTask 使用 agent-task/v3 渲染器，分别保存定义、基础上下文、规范输入及总摘要；Markdown 原文不变，摘要用规范 JSON 对象键序。领域层核对正文、输出合同、Spec 顺序、来源、Artifact 哈希与不可变历史，不以最新 Workflow 重新解释排队输入。
 
-项目迁移 038 追加任务唯一索引与步骤索引，全局库为 v8。旧 Workflow/Feature/RuntimeBinding/清单不补写任务字段；旧兼容执行提示继续保留。新默认任务在编译时嵌入，运行时读写已导入 Workflow 修订。
+当前项目基线 v41 含任务唯一索引与步骤索引，全局库为 v10；仅接受当前 Workflow、RuntimeBinding 和冻结任务合同。新默认任务在编译时嵌入，运行时读写已导入 Workflow 修订。
 
 全局讨论独立于 Project/Feature/Task，使用全局 AgentID 和独立会话库。讨论范围与 AgentID 的经验范围分别表达会话归属和身份可见性：选择 AgentID 后不再重复选择经验范围；全局身份可积累跨项目工作，项目身份不能用于全局讨论。全局材料采用 `MaterialOwner::Global`，不挂靠虚构项目。

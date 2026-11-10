@@ -60,14 +60,12 @@ pub fn asset_digests() -> BTreeMap<String, String> {
     .map(|(n, b)| (n.into(), format!("{:x}", Sha256::digest(b))))
     .collect()
 }
-pub fn resolve_execution_permissions(
-    definitions: &[Permission],
-    config: &PermissionConfiguration,
+pub fn compile_resolved_permissions(
     provider: HarnessProvider,
     scope: ExecutionScope,
-    project: Option<&PermissionOverrides>,
-    role: Option<&PermissionOverrides>,
-    explicit: Option<&PermissionOverrides>,
+    harness: ResolvedPermission,
+    sandbox: ResolvedPermission,
+    approval: ApprovalPolicy,
 ) -> Result<ExecutionPermissions> {
     let manifest: Value =
         serde_json::from_str(include_str!("../../../permissions/backends/manifest.json"))
@@ -80,108 +78,18 @@ pub fn resolve_execution_permissions(
             ));
         }
     }
-    let mut hl = vec![];
-    let mut sl = vec![];
-    for (name, value) in [
-        ("project", project),
-        ("role", role),
-        ("execution", explicit),
-    ] {
-        if let Some(v) = value {
-            hl.push((name, &v.harness));
-            sl.push((name, &v.sandbox));
-        }
-    }
-    let base = config
-        .harnesses
-        .get(provider.as_str())
-        .ok_or_else(|| err("invalid_params", "缺少 Harness 权限绑定"))?;
-    let mut harness = resolve_permission(definitions, base, &hl)?;
-    let sandbox = resolve_permission(definitions, &config.sandbox, &sl)?;
-    let legacy = harness.reference.revision_id == "permission-legacy-restricted-v1";
-    if legacy
-        && base.overrides.filesystem.is_none()
-        && hl.iter().all(|(_, b)| b.overrides.filesystem.is_none())
-    {
-        harness.policy.filesystem = if provider == HarnessProvider::Codex {
-            FilesystemPermission::Scoped {
-                rules: [
-                    PathPermission {
-                        path: "/".into(),
-                        access: FileAccess::Deny,
-                    },
-                    PathPermission {
-                        path: "/state".into(),
-                        access: FileAccess::Deny,
-                    },
-                ]
-                .into_iter()
-                .chain(
-                    (!scope.writable_paths.iter().any(|p| p == ".")).then(|| PathPermission {
-                        path: "/work".into(),
-                        access: FileAccess::Read,
-                    }),
-                )
-                .chain(scope.writable_paths.iter().map(|p| PathPermission {
-                    path: if p == "." {
-                        "/work".into()
-                    } else {
-                        format!("/work/{p}")
-                    },
-                    access: FileAccess::ReadWrite,
-                }))
-                .chain(scope.read_only_paths.iter().map(|p| PathPermission {
-                    path: format!("/work/{p}"),
-                    access: FileAccess::Read,
-                }))
-                .collect(),
-            }
-        } else if scope.writable_paths.is_empty() {
-            FilesystemPermission::ReadOnly
-        } else {
-            FilesystemPermission::Scoped {
-                rules: std::iter::once(PathPermission {
-                    path: "/".into(),
-                    access: FileAccess::Read,
-                })
-                .chain(scope.writable_paths.iter().map(|p| PathPermission {
-                    path: if p == "." {
-                        "/work".into()
-                    } else {
-                        format!("/work/{p}")
-                    },
-                    access: FileAccess::ReadWrite,
-                }))
-                .chain(scope.read_only_paths.iter().map(|p| PathPermission {
-                    path: format!("/work/{p}"),
-                    access: FileAccess::Read,
-                }))
-                .collect(),
-            }
-        };
-        harness.sources.push("legacy:execution_scope".into());
-    }
-    if legacy
-        && provider == HarnessProvider::Codex
-        && base.overrides.tools.is_none()
-        && hl.iter().all(|(_, b)| b.overrides.tools.is_none())
-    {
-        harness.policy.tools = ToolPermission::AllAvailable;
-        harness.sources.push("legacy:codex-native-exposure".into());
-    }
-    let nested = legacy
-        || harness.policy.filesystem != FilesystemPermission::FullAccess
+    let nested = harness.policy.filesystem != FilesystemPermission::FullAccess
         || harness.policy.network != NetworkPermission::Enabled;
     let mut result = ExecutionPermissions {
         binding_lock: None,
         harness: harness.clone(),
         sandbox,
-        approval: config.approval,
+        approval,
         scope,
         isolation: SandboxIsolation {
             protected_metadata: vec![".git".into(), ".codex".into(), ".agents".into()],
-            read_only_root: legacy,
-            executable_tmp: !legacy,
+            read_only_root: false,
+            executable_tmp: true,
             nested_sandbox: nested,
             backend: if nested {
                 "docker-nested-v1"
@@ -189,12 +97,7 @@ pub fn resolve_execution_permissions(
                 "docker-default-v1"
             }
             .into(),
-            credential_boundary: if legacy {
-                "confined-tools"
-            } else {
-                "container-trust"
-            }
-            .into(),
+            credential_boundary: "container-trust".into(),
         },
         limits: ResourceLimits::default(),
         enforcement: PermissionEnforcementPlan {
@@ -216,14 +119,14 @@ pub fn resolve_execution_permissions(
                 }
                 .into(),
                 profile: "devdesk".into(),
-                approval_policy: match (config.approval, provider) {
+                approval_policy: match (approval, provider) {
                     (ApprovalPolicy::Never, _) => "never",
                     (_, HarnessProvider::Codex) => "on-request",
                     _ => "ask",
                 }
                 .into(),
             }),
-            compiler_version: "permission-compiler/v1".into(),
+            compiler_version: "permission-compiler/v2".into(),
             harness_backend: format!("{}-native-v1", provider.as_str()),
             sandbox_backend: if nested {
                 "docker-nested-v1"
@@ -271,11 +174,7 @@ pub fn validate_execution_permissions(
         }
         if let FilesystemPermission::Scoped { rules } = &policy.filesystem {
             for r in rules {
-                let legacy_codex_deny = provider == HarnessProvider::Codex
-                    && layer == "harness"
-                    && p.isolation.credential_boundary == "confined-tools"
-                    && ["/", "/state"].contains(&r.path.as_str());
-                if (r.access == FileAccess::Deny && !legacy_codex_deny)
+                if r.access == FileAccess::Deny
                     || (r.access == FileAccess::ReadWrite
                         && r.path != "/work"
                         && !r.path.starts_with("/work/"))
@@ -308,19 +207,8 @@ pub fn validate_execution_permissions(
             "Sandbox 网络关闭会阻止模型连接；工具禁网请修改 Harness 权限",
         ));
     }
-    if p.approval == ApprovalPolicy::OnRequest
-        && p.isolation.credential_boundary == "confined-tools"
-    {
-        return Err(err(
-            "permission_conflict",
-            "受限凭据边界不允许通过审批绕过固定执行范围",
-        ));
-    }
     match provider {
-        HarnessProvider::Codex
-            if p.harness.policy.tools != ToolPermission::AllAvailable
-                && p.isolation.credential_boundary != "confined-tools" =>
-        {
+        HarnessProvider::Codex if p.harness.policy.tools != ToolPermission::AllAvailable => {
             return Err(err(
                 "permission_unsupported",
                 "Codex 固定版本没有通用工具白名单接口",

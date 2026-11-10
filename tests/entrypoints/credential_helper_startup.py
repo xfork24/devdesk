@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='devdesk-helper-ensure-') as directory:
         copied.chmod(0o700)
         value = json.loads(manifest.read_text())
         value['source_digest'] = 'a' * 64
-        value['protocol'] = 1
+        value['protocol'] = 2
         metadata.write_text(json.dumps(value))
 
     def run(*args):
@@ -63,9 +63,10 @@ with tempfile.TemporaryDirectory(prefix='devdesk-helper-ensure-') as directory:
     assert strict.returncode == 1 and 'explicit --update' in strict.stderr
 
     value = json.loads(metadata.read_text())
-    value['protocol'] = 99
-    metadata.write_text(json.dumps(value))
-    assert run('--ensure').returncode != 0, 'Unsupported protocol was accepted'
+    for protocol in [1, 99]:
+        value['protocol'] = protocol
+        metadata.write_text(json.dumps(value))
+        assert run('--ensure').returncode != 0, 'Unsupported protocol was accepted'
 
     reset()
     with copied.open('ab') as output:

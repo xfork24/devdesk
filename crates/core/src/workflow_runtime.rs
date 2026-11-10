@@ -96,7 +96,11 @@ fn pending_proposal_outputs(
     plan: &WorkflowDocument,
 ) -> BTreeMap<String, Vec<String>> {
     let mut outputs = BTreeMap::<String, Vec<String>>::new();
-    for adopt in plan.steps.iter().filter(|step| step.kind == "proposal.adopt") {
+    for adopt in plan
+        .steps
+        .iter()
+        .filter(|step| step.kind == "proposal.adopt")
+    {
         if !runtime.steps.iter().any(|state| {
             state.key == adopt.key
                 && !["completed", "skipped", "failed"].contains(&state.status.as_str())
@@ -193,10 +197,16 @@ impl Engine {
         c: &Command,
     ) -> Result<()> {
         let target = c.target.as_deref().unwrap_or("");
-        if method == "proposal.adopt" && s.proposals.iter().find(|p| p.id == target)
-            .is_some_and(|p| crate::agent_tasks::formal_session(s, &p.session_id))
+        if method == "proposal.adopt"
+            && s.proposals
+                .iter()
+                .find(|p| p.id == target)
+                .is_some_and(|p| crate::agent_tasks::formal_session(s, &p.session_id))
         {
-            return Err(err("blocked", "正式执行会话的回复不能再次采纳为需求提案；请在执行与交付的当前工作流查看执行状态，模型报告完成后执行人类 Approve；中断时使用技术重试"));
+            return Err(err(
+                "blocked",
+                "正式执行会话的回复不能再次采纳为需求提案；请在执行与交付的当前工作流查看执行状态，模型报告完成后执行人类 Approve；中断时使用技术重试",
+            ));
         }
         let owner = if let Some(d) = s.deliveries.iter().find(|d| d.id == target) {
             d.task_id.as_deref().unwrap_or(&d.feature_id)
@@ -218,11 +228,8 @@ impl Engine {
             .map_or(owner, |t| t.feature_id.as_str());
         let Some(lock) = s.feature_configuration(feature) else {
             require(
-                !s.governance
-                    .iter()
-                    .any(|r| r.kind == "legacy_feature_lock" && r.definition_id == feature)
+                !s.features.iter().any(|r| r.id == feature)
                     || ![
-                        "binding.update",
                         "attempt.start",
                         "merge.request",
                         "review.request",
@@ -230,7 +237,7 @@ impl Engine {
                         "task.create",
                     ]
                     .contains(&method),
-                "历史 Feature 已保留可证明配置，不能猜测完整 Agent 组合；请配置 Project 后创建后继 Feature。已有冻结执行及回执仍可读取/核对",
+                "Feature 必须冻结当前版本化配置后才能执行",
             )?;
             return Ok(());
         };
@@ -296,7 +303,7 @@ impl Engine {
                             .unwrap_or(if runtime.task_id.is_some() {
                                 "implementation"
                             } else {
-                                "planning"
+                                ""
                             }))
                 && runtime.steps.iter().any(|r| {
                     r.key == step.key
@@ -375,14 +382,20 @@ impl Engine {
                 "确认的版本已变化",
             )?;
             let reports = crate::model_approvals::reports(s, &old);
-            if reports.is_empty() { if let Some(did) = old.outputs.get("delivery") {
-                let d = s.delivery(did)?;
-                require(s.accepted(d), "交付证据已失效")?;
-                if d.merge_id.is_some() {
-                    self.check_merge_target(s, d)?;
+            if reports.is_empty() {
+                if let Some(did) = old.outputs.get("delivery") {
+                    let d = s.delivery(did)?;
+                    require(s.accepted(d), "交付证据已失效")?;
+                    if d.merge_id.is_some() {
+                        self.check_merge_target(s, d)?;
+                    }
                 }
-            }} else {
-                require(crate::model_approvals::input_hash(s, &runtime.configuration_lock_id, &old) == old.input_hash, "模型结论已变化，请刷新后重新 Approve")?;
+            } else {
+                require(
+                    crate::model_approvals::input_hash(s, &runtime.configuration_lock_id, &old)
+                        == old.input_hash,
+                    "模型结论已变化，请刷新后重新 Approve",
+                )?;
             }
             let confirmation = json!({"input_hash":old.input_hash,"step_id":old.id,"round":old.round,"outputs":old.outputs,"actor":"human:local","confirmed_at":now(),"human_approve":true,"model_approvals":reports,"overwrite_model":c.payload["overwrite_model"]==true,"reason":c.payload["reason"]});
             s.governance.push(record(
@@ -396,8 +409,13 @@ impl Engine {
                 true,
             ));
             if !reports.is_empty() {
-                let lock: FeatureConfiguration = s.configuration(&runtime.configuration_lock_id)?.decode()?;
-                let plan = if runtime.task_id.is_some() { &lock.task_plan } else { &lock.plan };
+                let lock: FeatureConfiguration =
+                    s.configuration(&runtime.configuration_lock_id)?.decode()?;
+                let plan = if runtime.task_id.is_some() {
+                    &lock.task_plan
+                } else {
+                    &lock.plan
+                };
                 let definition = plan.steps.iter().find(|step| step.key == old.key).unwrap();
                 self.validate_human_approval(s, definition, &old, &reports, c)?;
             }
@@ -694,27 +712,13 @@ impl Engine {
                 }
                 let lock: FeatureConfiguration =
                     s.configuration(&runtime.configuration_lock_id)?.decode()?;
-                require([1,2,3].contains(&lock.compiler_version), "运行器不支持此已冻结编译语义")?;
+                require(lock.compiler_version == 3, "运行器只支持 Workflow compiler v3")?;
                 let plan = if runtime.task_id.is_some() {
                     &lock.task_plan
                 } else {
                     &lock.plan
                 };
                 let live_proposals = pending_proposal_outputs(&runtime, plan);
-                // Older builds persisted this temporary wait as a failed action.
-                // Requeue only this known, side-effect-free preflight failure.
-                for intent in s.governance.iter_mut().filter(|r| {
-                    r.kind == "workflow_intent" && r.data["method"] == "attempt.start"
-                        && r.data["status"] == "failed"
-                        && r.data["error"] == "blocked: 等待旧 Run 取消确认后再启动"
-                        && runtime.steps.iter().any(|step| step.id == r.definition_id
-                            && !["completed", "skipped"].contains(&step.status.as_str()))
-                }) {
-                    let mut data = intent.data.clone();
-                    data["status"] = json!("prepared");
-                    data["waiting_for"] = json!("run_cancellation");
-                    update_record(intent, data);
-                }
                 for step in &plan.steps {
                     let Some(index) = runtime.steps.iter().position(|r| r.key == step.key) else {
                         return Err(err("invalid_workflow", "运行步骤与冻结计划不匹配"));
@@ -973,11 +977,20 @@ impl Engine {
         match step.kind.as_str() {
             "agent.interact" => {
                 let wanted = step.interaction.output_kind.as_str();
-                let session = s.sessions.iter().rev().find(|session| {
-                    session.owner_id == owner
-                        && crate::agent_tasks::session_workflow_context(s, &session.id)
-                            .is_some_and(|context| context["step_instance_id"] == state.id && context["recipe_node"].is_null())
-                }).map(|session| session.id.clone()).or_else(|| state.outputs.get("session").cloned());
+                let session = s
+                    .sessions
+                    .iter()
+                    .rev()
+                    .find(|session| {
+                        session.owner_id == owner
+                            && crate::agent_tasks::session_workflow_context(s, &session.id)
+                                .is_some_and(|context| {
+                                    context["step_instance_id"] == state.id
+                                        && context["recipe_node"].is_null()
+                                })
+                    })
+                    .map(|session| session.id.clone())
+                    .or_else(|| state.outputs.get("session").cloned());
                 if let Some(session) = session {
                     let session = discussion_session(s, &session);
                     if state.outputs.get("session") != Some(&session)
@@ -1016,12 +1029,10 @@ impl Engine {
                                 .iter()
                                 .any(|new| new.supersedes.as_ref() == Some(&p.id))
                             && p.dependencies.iter().all(|id| {
-                                !s.documents
-                                    .iter()
-                                    .any(|new| {
-                                        new.supersedes.as_ref() == Some(id)
-                                            && s.document_in_feature(new, &runtime.feature_id)
-                                    })
+                                !s.documents.iter().any(|new| {
+                                    new.supersedes.as_ref() == Some(id)
+                                        && s.document_in_feature(new, &runtime.feature_id)
+                                })
                             })
                     }) {
                         state.outputs.insert("proposal".into(), proposal.id.clone());
@@ -1044,7 +1055,7 @@ impl Engine {
                             .iter()
                             .find(|s| s.id == session)
                             .map(|s| s.revision);
-                        self.workflow_intent(s,state,"conversation.send",&session,json!({"client_message_id":format!("workflow:{}:initial",state.id),"input":if step.task_instructions.is_some(){json!({"workflow_step_instance_id":state.id}).to_string()}else{step.interaction.goal.clone()},"expected_session_revision":rev}))?;
+                        self.workflow_intent(s,state,"conversation.send",&session,json!({"client_message_id":format!("workflow:{}:initial",state.id),"input":json!({"workflow_step_instance_id":state.id}).to_string(),"expected_session_revision":rev}))?;
                     }
                     if let Some(turn) = turns
                         .iter()
@@ -1118,7 +1129,11 @@ impl Engine {
                         .ok_or_else(|| err("not_found", "步骤提案不存在"))?;
                     state.outputs.insert("proposal".into(), p.id.clone());
                     if p.status == ProposalStatus::Accepted {
-                        if let Some(document) = p.adopted_objects.iter().find(|id| s.documents.iter().any(|d| &d.id == *id)) {
+                        if let Some(document) = p
+                            .adopted_objects
+                            .iter()
+                            .find(|id| s.documents.iter().any(|d| &d.id == *id))
+                        {
                             state.outputs.insert("document".into(), document.clone());
                         }
                         return Ok(true);
@@ -1173,15 +1188,31 @@ impl Engine {
                 if let Some(aid) = state.outputs.get("attempt").cloned() {
                     let a = s.attempt(&aid)?;
                     let runs = s.latest_runs(Some(&aid), None);
-                    let current = runs.iter().find(|run| run.status == Status::Running)
-                        .or_else(|| runs.iter().find(|run| matches!(run.status, Status::Failed | Status::Interrupted | Status::Cancelled)))
+                    let current = runs
+                        .iter()
+                        .find(|run| run.status == Status::Running)
+                        .or_else(|| {
+                            runs.iter().find(|run| {
+                                matches!(
+                                    run.status,
+                                    Status::Failed | Status::Interrupted | Status::Cancelled
+                                )
+                            })
+                        })
                         .or_else(|| runs.iter().find(|run| run.status == Status::Queued))
-                        .or_else(|| runs.iter().rev().find(|run| run.status == Status::Succeeded));
+                        .or_else(|| {
+                            runs.iter()
+                                .rev()
+                                .find(|run| run.status == Status::Succeeded)
+                        });
                     if let Some(run) = current {
-                        state.outputs.insert("session".into(), run.session_id.clone());
-                        if s.turns.iter().any(|turn| turn.run_id.as_ref() == Some(&run.id)
-                            && turn.status == TurnStatus::NeedsReconciliation)
-                            && run.status == Status::Running
+                        state
+                            .outputs
+                            .insert("session".into(), run.session_id.clone());
+                        if s.turns.iter().any(|turn| {
+                            turn.run_id.as_ref() == Some(&run.id)
+                                && turn.status == TurnStatus::NeedsReconciliation
+                        }) && run.status == Status::Running
                         {
                             state.status = "blocked".into();
                             state.reason = "原执行结果待核对，正在停止并封存执行者；停止后可在本步骤技术重试，无需再次采纳提案".into();
@@ -1197,8 +1228,10 @@ impl Engine {
                     .contains(&a.status)
                     {
                         state.status = "failed".into();
-                        state.reason = current.and_then(|run| run.result.as_ref())
-                            .and_then(|result| result["message"].as_str()).map(str::to_owned)
+                        state.reason = current
+                            .and_then(|run| run.result.as_ref())
+                            .and_then(|result| result["message"].as_str())
+                            .map(str::to_owned)
                             .unwrap_or_else(|| format!("执行 {:?}，需要显式重试或返工", a.status));
                         return Ok(false);
                     }
@@ -1230,7 +1263,9 @@ impl Engine {
                         &owner,
                         json!({"phase":phase(step)}),
                     )?;
-                    if s.repository_worktrees.iter().find(|w| w.owner_id == owner)
+                    if s.repository_worktrees
+                        .iter()
+                        .find(|w| w.owner_id == owner)
                         .is_some_and(|w| s.run_cancellation_pending(&w.path))
                     {
                         state.status = "waiting_dependencies".into();
@@ -1256,8 +1291,15 @@ impl Engine {
                 };
                 let d = s.delivery(&delivery)?.clone();
                 state.outputs.insert("delivery".into(), delivery.clone());
-                if let Some(run) = s.runs.iter().rev().find(|run| run.node == format!("review:{delivery}")) {
-                    state.outputs.insert("session".into(), run.session_id.clone());
+                if let Some(run) = s
+                    .runs
+                    .iter()
+                    .rev()
+                    .find(|run| run.node == format!("review:{delivery}"))
+                {
+                    state
+                        .outputs
+                        .insert("session".into(), run.session_id.clone());
                 }
                 if let Some(mid) = &d.merge_id {
                     state.outputs.insert("merge".into(), mid.clone());
@@ -1628,7 +1670,12 @@ impl Engine {
                 }
                 Err(e) => {
                     data["status"] = if old.data["method"] == "attempt.start"
-                        && e.code == "run_cancellation_pending" { json!("prepared") } else { json!("failed") };
+                        && e.code == "run_cancellation_pending"
+                    {
+                        json!("prepared")
+                    } else {
+                        json!("failed")
+                    };
                     if e.code == "run_cancellation_pending" {
                         data["waiting_for"] = json!("run_cancellation");
                     }

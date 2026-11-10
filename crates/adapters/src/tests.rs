@@ -172,7 +172,8 @@ impl CommandTests {
                 session.run_id == r.operation_id && session.id == r.environment,
                 "测试执行实例身份不符",
             )?;
-            let created = sandbox.create(&ContainerSpec { host_gateway: false,
+            let created = sandbox.create(&ContainerSpec {
+                host_gateway: false,
                 permissions: Some(isolated_test_permissions()),
                 purpose: ContainerPurpose::Tests,
                 project_id: r.code.as_ref().unwrap().project.clone(),
@@ -354,9 +355,6 @@ impl ports::Tests for CommandTests {
     fn accepts_identity(&self, identity: &str) -> bool {
         let current = self.identity();
         identity == current
-            || identity
-                .strip_prefix("routing-tests/v1:devdesk_adapters::SimTests:")
-                .is_some_and(|native| native == current)
     }
     fn poll_test(&self, r: &TestRequest) -> Result<Option<Value>> {
         self.poll(r)
@@ -376,13 +374,13 @@ impl ports::Tests for CommandTests {
 mod reporter_tests {
     use super::*;
     #[test]
-    fn legacy_native_test_identity_requires_the_same_executor_and_reporter() {
+    fn test_identity_requires_the_current_executor_and_reporter() {
         use devdesk_core::ports::Tests;
         let dir = tempfile::tempdir().unwrap();
         let runner = CommandTests::new(dir.path()).unwrap();
         let current = runner.identity();
         assert!(runner.accepts_identity(&current));
-        assert!(runner.accepts_identity(&format!(
+        assert!(!runner.accepts_identity(&format!(
             "routing-tests/v1:devdesk_adapters::SimTests:{current}"
         )));
         assert!(

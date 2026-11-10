@@ -25,7 +25,7 @@ async function rpc(page: Page, method: string, params = {}) {
 }
 async function createGlobalAgent(page: Page, name: string) {
   const defaults = await rpc(page, "query.configuration_defaults");
-  const definition = defaults.records.find((r: any) => r.kind === "agent" && r.data.role === "analyst");
+  const definition = defaults.records.find((r: any) => r.id === defaults.role_agent_bindings["builtin-role-analyst"]);
   const created = await rpc(page, "agent.instance.create", {
     command_id: crypto.randomUUID(), payload: { name, scope: {kind:"global"}, agent_revision_id:definition.id },
   });
@@ -267,7 +267,7 @@ test("运行时偏好只选择 Model 和 Harness，项目与角色独立回显",
       data: {
         provider: "openai",
         model: "gpt-6.1-sol",
-        parameters: { reasoning_effort: "high" },
+            parameters: { reasoning_effort: "high" },
       },
     },
     {
@@ -288,7 +288,17 @@ test("运行时偏好只选择 Model 和 Harness，项目与角色独立回显",
         max_output_tokens: 131072,
       },
     },
-  ].map((record) => ({ ...record, version: 1, definition_id: record.id }));
+  ].map((record) => ({
+    ...record,
+    version: 1,
+    revision: 1,
+    definition_id: record.id,
+    scope: { kind: "global" },
+    immutable: true,
+    supersedes: null,
+    content_hash: "a".repeat(64),
+    created_at: 0,
+  }));
   const installations = [
     {
       id: "codex-native",
@@ -409,7 +419,6 @@ test("运行时偏好只选择 Model 和 Harness，项目与角色独立回显",
     provider: "codex",
     model_ref: "model-sol",
     harness_ref: "harness-codex",
-    model: "gpt-6.1-sol",
   });
   expect(saved[0].default).not.toHaveProperty("reasoning_effort");
 
@@ -460,10 +469,6 @@ test("运行时偏好只选择 Model 和 Harness，项目与角色独立回显",
     provider: "dsh",
     model_ref: "model-glm",
     harness_ref: "harness-dsh",
-    model_provider: "zai-coding-cn",
-    model: "glm-5.3",
-    context_window: 1000000,
-    max_output_tokens: 131072,
   });
   expect(saved[3].default).not.toHaveProperty("reasoning_effort");
   expect(saved[3].roles[0].preference.model_ref).toBe("model-luna");
@@ -495,6 +500,11 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
   const agent = firstCreated.agent;
   const requests: any[] = [];
   const sessions: any[] = [];
+  let holdSecondList = true;
+  let releaseSecondList!: () => void;
+  const secondListReady = new Promise<void>((resolve) => {
+    releaseSecondList = resolve;
+  });
   await page.route("**/rpc", async (route) => {
     const c = route.request().postDataJSON();
     let result: any;
@@ -518,8 +528,7 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
             agent_configuration: {
               agent_instance_id: c.params.payload.agent_instance_id,
             },
-            model: "gpt-6.1-sol",
-            work_type: "discussion",
+                    work_type: "discussion",
           },
         };
         sessions.push(session);
@@ -527,6 +536,8 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
       result = { id: session.id };
     } else if (c.method === "query.sessions" && c.params.scope === "global") {
       requests.push(c);
+      if (holdSecondList && c.params.agent_instance_id === secondCreated.instance)
+        await secondListReady;
       const selected = sessions.filter(
         (s) =>
           !c.params.agent_instance_id ||
@@ -579,6 +590,9 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
   await expect(page.getByLabel("讨论会话",{exact:true})).toHaveValue(latestSession);
   expect(sessions).toHaveLength(2);
   await identity.selectOption(secondCreated.instance);
+  await expect(page.getByLabel("讨论会话", { exact: true }).locator(`option[value="${latestSession}"]`)).toHaveCount(0);
+  holdSecondList = false;
+  releaseSecondList();
   await expect(identity).not.toHaveValue(first);
   const second = await identity.inputValue();
   await expect(

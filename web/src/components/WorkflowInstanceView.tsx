@@ -369,7 +369,7 @@ export function WorkflowInstanceView({
                   ? "自动推进"
                   : "结果完成后等待人确认"}
             </p>
-            {definition?.interaction.goal && <MarkdownPreview text={definition.interaction.goal} />}
+            {definition?.task_instructions && <MarkdownPreview text={definition.task_instructions} />}
             <details>
               <summary>该轮输入、证据和输出引用</summary>
               <pre>{JSON.stringify(step, null, 2)}</pre>

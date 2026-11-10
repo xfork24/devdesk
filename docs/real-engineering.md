@@ -1,6 +1,6 @@
 # 真实工程接入
 
-Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检查、克隆；讨论与工程任务根据实际选中的 Harness 按需准备运行环境。产品只装配原生供应商执行器；旧原型项目只读保留，测试使用独立的静态数据和原生接口替身。
+Web 统一使用真实 GitHub 项目。打开项目时自动登记仓库并检查、克隆；讨论与工程任务根据实际选中的 Harness 按需准备运行环境。产品只装配原生供应商执行器；仅接受当前结构和原生执行来源，测试使用独立夹具及原生接口替身。
 
 ## 配置与运行
 
@@ -55,7 +55,7 @@ flowchart LR
 
 数据库事务先保存输入/操作意图；Docker、Git、供应商和 GitHub 调用在事务外执行，回执先保存再投影领域状态。Git 操作 ID 按用途分开，候选与推进可以共享同一个 Merge ID。PR 创建前按冻结分支和 marker 查询，丢失回执后核对原 PR；不调用 GitHub 平台 merge 接口。
 
-所有工程工具在所属容器内运行，无法访问 Docker socket、宿主 HOME 或其他 worktree。新配置采用容器全权限，旧受限配置及其状态隔离通过独立 Permission 后端保留；具体选择见 [权限说明](../permissions/README.md)。`.git`、项目本地 Harness 配置和插件入口被屏蔽。受限 Permission 使用 Codex 原生命名 profile 或 DSH 原生 profile、受控工具规则与 bwrap 包装；默认全权限使用供应商原生外部隔离/全权限模式。只有受限后端声明并验证工具状态隔离，全权限以整个容器为信任范围。不通过放开 Docker 特权解决嵌套沙箱问题。
+所有工程工具在所属容器内运行，无法访问 Docker socket、宿主 HOME 或其他 worktree。默认配置采用容器全权限，受限配置及状态隔离使用当前版本化 Permission 后端；具体选择见 [权限说明](../permissions/README.md)。`.git`、项目本地 Harness 配置和插件入口被屏蔽。受限 Permission 使用 Codex 原生命名 profile 或 DSH 原生 profile、受控工具规则与 bwrap 包装；默认全权限使用供应商原生外部隔离/全权限模式。只有受限后端声明并验证工具状态隔离，全权限以整个容器为信任范围。不通过放开 Docker 特权解决嵌套沙箱问题。
 
 正常终态先停止 worker、封存脱敏协议和运行报告，再清理容器。停止回执区分 Codex interrupt ACK、DSH forced stop、正常静止和恢复停止。清理失败保留归属，可显式重试；共享镜像和安装不删除。应用退出处理所有已打开项目的所属执行者，切换项目或关闭浏览器不会取消后台工作。
 
@@ -63,7 +63,7 @@ flowchart LR
 
 ## 验证
 
-离线回归使用 `./scripts/check/check.sh`，包含 Rust、HTTP、debug/release Chromium 流程。真实测试使用专用数据集、仓库和带归属标签的容器；原始结果在 `docs/plans/real-engineering-integration/`。A01–A22 与分层证据见 [最终验收](plans/real-engineering-integration/R8-acceptance.md)。统一入口为 `scripts/check/check-live.sh --providers codex,dsh --root <独立数据集> --github-repo <owner/test-repo>`，默认 `--mode full`，可选 `--groups git,docker,harness,github,web,workflow,recovery`。恢复组需要 `--allow-host-restart`，只停止可证明归属该数据集和端口的 Host。`--mode verify-existing --reports <已有报告目录>` 只复核已有实际对象，不发新模型任务；报告明确区分两种模式。全新闭环使用独立报告目录与随机源码前缀，不能重跑已实现同名任务冒充 Red。
+离线回归使用 `./scripts/check/check.sh`，包含 Rust、HTTP、debug/release Chromium 流程。真实测试使用专用数据集、仓库和带归属标签的容器；原始执行记录见 [最终验收](plans/real-engineering-integration/R8-acceptance.md)。当前统一入口为 `scripts/check/check-live.sh --providers codex,dsh --github-repo <owner/test-repo>`，默认组 `git,docker,permissions` 不调用模型。完整工程验收需显式选择 `--groups workbench` 并提供运行中的 `--url`；它会调用真实模型、创建工程事实及 PR，只能使用专用测试仓库。当前入口不提供旧 mode、旧分组或自动重启选项。新闭环使用独立报告目录与随机源码前缀，不能重跑已实现同名任务冒充 Red。
 
 首批 Tests 仅支持无依赖的 Node `node:test` 固定文件配方。其他语言、依赖下载、网络测试和严格分支保护下的其他合入策略需要新的适配契约，不在现有执行路径中隐式放开。
 

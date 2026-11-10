@@ -39,7 +39,7 @@ if [ -f "$helper_dir/manifest.json" ] && [ -f "$helper_dir/devdesk-credential-he
     python3 - "$helper_dir" <<'PYVERIFY'
 import json,sys,pathlib,hashlib
 root=pathlib.Path(sys.argv[1]);manifest=json.loads((root/'manifest.json').read_text());actual=hashlib.sha256((root/'devdesk-credential-helper').read_bytes()).hexdigest()
-if manifest.get('protocol') not in (1,2):raise SystemExit('Installed credential helper protocol is unsupported; explicit update is required.')
+if manifest.get('protocol') != 2:raise SystemExit('Installed credential helper protocol is unsupported; explicit update is required.')
 if actual!=manifest['binary_sha256']:raise SystemExit('Installed credential helper content changed; explicit repair is required.')
 PYVERIFY
     /usr/bin/codesign --verify --strict -R "=identifier \"dev.devdesk.credentials\" and certificate leaf = H\"$certificate\"" "$helper_dir/devdesk-credential-helper"

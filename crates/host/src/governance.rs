@@ -171,17 +171,7 @@ impl Workspace {
             command.payload["agent"]
                 .as_str()
                 .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    let role = command.payload["role"].as_str().unwrap_or("analyst");
-                    state
-                        .governance
-                        .iter()
-                        .filter(|r| r.kind == "project_configuration")
-                        .max_by_key(|r| r.version)
-                        .and_then(|r| r.data["agent_refs"][role].as_str())
-                        .map(str::to_owned)
-                        .unwrap_or_default()
-                })
+                .ok_or_else(|| err("invalid_params", "请选择完整 Agent 或 AgentID"))?
         };
         let Some(record) = state
             .governance
@@ -319,22 +309,6 @@ impl Workspace {
         command.payload["agent_instance_id"] = json!(instance);
         command.payload["model"] = json!(model.model);
         command.payload["provider"] = json!(harness.provider);
-        if agent_permission_selection(&state, &agent_id, &agent).is_none()
-            && !agent.permissions.is_empty()
-        {
-            let permission = state
-                .permissions
-                .iter()
-                .find(|p| p.id == agent.permissions[0])
-                .ok_or_else(|| err("not_found", "Agent Permission 不存在"))?;
-            let sandbox_id = agent.permissions.get(1).unwrap_or(&agent.permissions[0]);
-            let sandbox = state
-                .permissions
-                .iter()
-                .find(|p| &p.id == sandbox_id)
-                .ok_or_else(|| err("not_found", "Agent Sandbox Permission 不存在"))?;
-            command.payload["permission_overrides"] = json!({"harness":{"permission":{"revision_id":permission.id}},"sandbox":{"permission":{"revision_id":sandbox.id}}});
-        }
         Ok(())
     }
 
@@ -478,9 +452,6 @@ impl Workspace {
                         }
                     }
                     records.retain(|r| {
-                        if r.is_legacy_experience_tool() {
-                            return false;
-                        }
                         if !devdesk_core::configuration_visible(
                             &directory,
                             r,

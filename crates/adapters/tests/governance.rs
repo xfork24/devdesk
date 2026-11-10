@@ -1,5 +1,7 @@
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
+#[path = "../../../tests/support/workflows.rs"]
+mod workflow_fixture;
 use devdesk_adapters::*;
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -14,9 +16,36 @@ fn engine(root: &Path) -> Engine {
         adapters,
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e
 }
-fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Result<Value> {
+fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -> Result<Value> {
+    if method.starts_with("workflow.") {
+        for field in ["data", "document"] {
+            if payload.get(field).is_some() {
+                payload[field] = workflow_fixture::current(payload[field].clone());
+            }
+        }
+    }
+    if method == "project.configuration.update" && payload.get("agent_refs").is_some() {
+        let mut bindings = e.configuration_defaults(target).unwrap()["role_agent_bindings"]
+            .as_object()
+            .unwrap()
+            .clone();
+        let state = e.store.snapshot().unwrap();
+        for (role, agent) in payload["agent_refs"].as_object().unwrap() {
+            let key = state
+                .configuration(agent.as_str().unwrap())
+                .ok()
+                .and_then(|r| r.data["role_ref"].as_str())
+                .and_then(|id| state.configuration(id).ok())
+                .map(|r| r.definition_id.clone())
+                .unwrap_or_else(|| format!("builtin-role-{role}"));
+            bindings.insert(key, agent.clone());
+        }
+        payload.as_object_mut().unwrap().remove("agent_refs");
+        payload["role_agent_bindings"] = serde_json::to_value(bindings).unwrap();
+    }
     let s = e.store.snapshot()?;
     let expected_revision = target.and_then(|id| {
         s.governance
@@ -37,9 +66,18 @@ fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Re
 }
 fn setup_agent(e: &Engine, role: &str) -> String {
     let model=command(e,"model.create",None,json!({"name":"Model A","data":{"provider":"openai","model":"model-a","parameters":{},"capabilities":[]}})).unwrap();
-    let harness=command(e,"harness.create",None,json!({"name":"Harness","data":{"provider":"codex","runtime_version":"1","capabilities":[],"model_providers":["openai"]}})).unwrap();
+    let harness=command(e,"harness.create",None,json!({"name":"Harness","data":{"provider":"codex","runtime_version":"0.167.0","capabilities":[],"model_providers":["openai"]}})).unwrap();
     let tool=command(e,"tool.create",None,json!({"name":"原生工具","data":{"qualified_name":"fixture.native","implementation":"harness.native","input_schema":{},"output_schema":{},"capabilities":[]}})).unwrap();
-    command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"data":{"role_ref":default_role_id(role),"role":role,"instructions":"Execute the frozen scope","model_ref":model["id"],"harness_ref":harness["id"],"skills":[],"tools":[tool["id"]],"permissions":["permission-read-only-v1"]}})).unwrap()["id"].as_str().unwrap().into()
+    let state = e.store.snapshot().unwrap();
+    let target = permission_target(
+        &state,
+        PermissionTargetKind::Harness,
+        harness["id"].as_str().unwrap(),
+    )
+    .unwrap();
+    command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"permission-harness-full-access-v2-r1","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
+    let cap=command(e,"capability.create",None,json!({"name":"Fixture capability","data":{"model_ref":model["id"],"harness_ref":harness["id"],"tools":[tool["id"]],"skills":[]}})).unwrap();
+    command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"data":{"role_ref":default_role_id(role),"capability_ref":cap["id"],"instructions":"Execute the frozen scope","permission_selection":default_permission_selection()}})).unwrap()["id"].as_str().unwrap().into()
 }
 #[test]
 fn agent_instances_pin_composition_and_choose_independent_scope() {
@@ -106,7 +144,7 @@ fn workflow_publication_is_immutable_and_replay_does_not_publish_twice() {
         &e,
         "workflow.create",
         None,
-        json!({"name":"项目开发流程","template_ref":"builtin-workflow-feature-v1"}),
+        json!({"name":"项目开发流程","template_ref":"builtin-workflow-feature-sol-high-v4"}),
     )
     .unwrap();
     let did = draft["id"].as_str().unwrap();
@@ -176,7 +214,7 @@ fn feature_freezes_defaults_and_cannot_rebind_after_project_updates() {
         .unwrap()
         .id
         .clone();
-    let binding = json!({"workflow_ref":"builtin-workflow-feature-v1","standard_ref":standard,"agent_refs":agents});
+    let binding = json!({"workflow_ref":"builtin-workflow-feature-sol-high-v4","standard_ref":standard,"agent_refs":agents});
     let original = command(
         &e,
         "project.configuration.update",
@@ -229,7 +267,7 @@ fn publication_rejects_cycle_and_cross_project_scope() {
         .store
         .snapshot()
         .unwrap()
-        .configuration("builtin-workflow-feature-v1")
+        .configuration("builtin-workflow-feature-sol-high-v4")
         .unwrap()
         .data
         .clone();
@@ -261,7 +299,7 @@ fn configured(e: &Engine) -> (String, String) {
     for role in ["analyst", "architect", "developer", "tester", "reviewer"] {
         agents.insert(role.into(), json!(setup_agent(e, role)));
     }
-    command(e,"project.configuration.update",Some(&pid),json!({"workflow_ref":"builtin-workflow-feature-v1","standard_ref":e.store.snapshot().unwrap().definitions.iter().find(|d|d.family=="standard").unwrap().id,"agent_refs":agents})).unwrap();
+    command(e,"project.configuration.update",Some(&pid),json!({"workflow_ref":"builtin-workflow-feature-sol-high-v4","standard_ref":e.store.snapshot().unwrap().definitions.iter().find(|d|d.family=="standard").unwrap().id,"agent_refs":agents})).unwrap();
     let fid = command(
         e,
         "feature.create",
@@ -385,6 +423,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             runtime::adapters(),
         );
         e.bootstrap().unwrap();
+        runtime::bind_default_permissions(&e);
         let config = global.snapshot().unwrap();
         e.store
             .transact(None, &mut |s| {
@@ -522,60 +561,6 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             .unwrap()
             .iter()
             .any(|r| r["project_id"] == projects[1] && r["availability"] == "unavailable")
-    );
-}
-
-#[test]
-fn upgrade_locks_provable_legacy_feature_without_inventing_agent_id_or_model() {
-    let root = tempfile::tempdir().unwrap();
-    let fid;
-    let binding;
-    {
-        let e = engine(root.path());
-        let pid = command(&e, "project.create", None, json!({"title":"legacy"})).unwrap()["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        fid = id();
-        binding = e.store.snapshot().unwrap().projects[0].binding.clone();
-        e.store
-            .transact(None, &mut |s| {
-                s.features.push(Feature {
-                    id: fid.clone(),
-                    project_id: pid.clone(),
-                    source_requirement: None,
-                    title: "Historical native Feature without a configuration lock".into(),
-                    status: Status::Draft,
-                    revision: 1,
-                    input_version: 1,
-                    binding: binding.clone(),
-                    predecessor: None,
-                });
-                Ok(Value::Null)
-            })
-            .unwrap();
-    }
-    let e = engine(root.path());
-    let state = e.store.snapshot().unwrap();
-    let lock = state
-        .governance
-        .iter()
-        .find(|r| r.kind == "legacy_feature_lock" && r.definition_id == fid)
-        .unwrap();
-    assert_eq!(lock.data["binding"], json!(binding));
-    assert!(lock.data["agent_instance_id"].is_null());
-    assert!(command(&e, "binding.update", Some(&fid), json!(binding)).is_err());
-    assert!(
-        e.validate_workflow_command(
-            "session.open",
-            &Command {
-                command_id: id(),
-                target: Some(fid),
-                expected_revision: None,
-                payload: json!({"agent":"builtin-agent-analyst-v1"})
-            }
-        )
-        .is_err()
     );
 }
 
@@ -737,6 +722,7 @@ fn reference_catalog_is_idempotent_and_does_not_configure_new_projects() {
             .any(|r| r.kind == "defaults_bundle")
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     assert_eq!(
         before.governance.len(),
         e.store.snapshot().unwrap().governance.len()

@@ -15,7 +15,7 @@ export function AgentTaskView({ value }: { value: Row }) {
   if (!task?.instructions)
     return (
       <p className="muted">
-        此记录使用旧版或独立讨论合同，没有 v3 Agent 任务快照。
+        此独立讨论没有 Workflow 任务快照。
       </p>
     );
   const text = (label: string, body: string, id: string) => (

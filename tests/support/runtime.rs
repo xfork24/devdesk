@@ -56,7 +56,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
             s.sessions.push(Session {
                 id: sid.clone(),
                 owner_id: project.into(),
-                agent: "builtin-agent-analyst-v1".into(),
+                agent: "builtin-agent-sol-high-analyst-v3".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "fixture-docker".into(),
                 snapshot_id: None,
@@ -130,5 +130,48 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
 pub fn configure_project(e: &Engine, project: &str) {
     let s = e.store.snapshot().unwrap();
     let defaults = e.configuration_defaults(Some(project)).unwrap();
-    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_V2_ID,"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
+    e.execute("project.configuration.update",Command{command_id:id(),target:Some(project.into()),expected_revision:Some(s.projects.iter().find(|p|p.id==project).unwrap().revision),payload:json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_V3_ID,"role_agent_bindings":defaults["role_agent_bindings"]})}).unwrap();
+}
+
+/// Explicit fixture grants for current built-in targets, through the production v2 command.
+pub fn bind_default_permissions(e: &Engine) {
+    let s = e.store.snapshot().unwrap();
+    let mut bindings = Vec::new();
+    for (kind, id, profile) in [
+        (
+            PermissionTargetKind::Harness,
+            DEFAULT_HARNESS_ID,
+            "permission-harness-full-access-v2-r1",
+        ),
+        (
+            PermissionTargetKind::Harness,
+            "builtin-harness-dsh-multi-provider-v1",
+            "permission-harness-full-access-v2-r1",
+        ),
+        (
+            PermissionTargetKind::Sandbox,
+            DEFAULT_PERMISSION_SANDBOX,
+            "permission-sandbox-full-access-v2-r1",
+        ),
+    ] {
+        if s.configuration(id).is_err() {
+            continue;
+        }
+        let target = permission_target(&s, kind, id).unwrap();
+        if active_permission_binding(&s, &target).is_none() {
+            bindings.push(json!({"target":target,"permission_revision_id":profile,"expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&s,&target).unwrap()}));
+        }
+    }
+    if !bindings.is_empty() {
+        e.execute(
+            "permission.bindings.apply",
+            Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"bindings":bindings}),
+            },
+        )
+        .unwrap();
+    }
 }

@@ -1,5 +1,7 @@
 # 领域与工程接入基础补强验收
 
+> 历史记录：未提供链接的原始文件路径仅记录当时执行；相关中间产物或已删除源码不随当前工程提供。
+
 日期：2026-11-08。状态：H1–H4 已完成。范围基线：[补强计划](PLAN.md)。本轮验证平台为当前 macOS；不声称 Linux 已复验。评审性质为作者自检和自动化验证，不冒称独立评审。
 
 ## 计划完成映射
@@ -35,7 +37,7 @@
 
 ## 最终验证
 
-最终 `./scripts/check.sh` 全部通过，原始输出保存在 [验证日志](domain-hardening-validation.txt)。
+最终 `./scripts/check.sh` 全部通过，原始输出保存在 验证日志（历史路径：`domain-hardening-validation.txt`）。
 
 - Rust：**65 项通过**（62 项集成/契约测试 + 3 项领域测试）；其中本次完成计划新增 completion_ 测试 20 项。
 - TypeScript/Vite 构建通过；debug/release 二进制构建通过。

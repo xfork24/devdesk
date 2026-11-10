@@ -92,9 +92,12 @@ fn ollama_directory_is_checked_from_host_and_selected_container() {
         0
     );
     thread.join().unwrap();
-    let closed=check_container_connection(dataset.path(),&b,&id(),&id()).unwrap();
-    assert_eq!(closed["container_verified"],false,"closed server cannot reuse prior host success");
-    assert_eq!(closed["inference_verified"],false);
+    let closed = check_container_connection(dataset.path(), &b, &id(), &id()).unwrap();
+    assert_eq!(
+        closed["container_verified"], false,
+        "closed server cannot reuse prior host success"
+    );
+    assert_eq!(closed["inference_verified"], false);
 }
 
 #[test]

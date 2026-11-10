@@ -177,7 +177,7 @@ pub fn check_baseline(
     })
 }
 
-pub fn validate_workflow_v2(doc: &WorkflowDocument) -> Result<Vec<String>> {
+pub(crate) fn validate_workflow_structure(doc: &WorkflowDocument) -> Result<Vec<String>> {
     require(
         ["feature", "task", "project_intake", "subworkflow"].contains(&doc.process_kind.as_str()),
         "无效流程用途",
@@ -203,7 +203,12 @@ pub fn validate_workflow_v2(doc: &WorkflowDocument) -> Result<Vec<String>> {
         )?;
         require(stages.contains(step.stage.as_str()), "阶段不存在")?;
         require(
-            step.contract_version == 1
+            step.contract_version
+                == if action_requires_task(&step.kind) {
+                    2
+                } else {
+                    1
+                }
                 && catalog
                     .as_array()
                     .unwrap()
@@ -232,11 +237,10 @@ pub fn validate_workflow_v2(doc: &WorkflowDocument) -> Result<Vec<String>> {
         }
         if step.kind == "agent.interact" {
             require(
-                !step.interaction.goal.trim().is_empty()
-                    && (1..=100).contains(&step.interaction.max_turns)
+                (1..=100).contains(&step.interaction.max_turns)
                     && ["requirement", "feature", "design", "task_plan", "test_plan"]
                         .contains(&step.interaction.output_kind.as_str()),
-                "讨论目标、轮数或输出契约不支持",
+                "讨论轮数或输出契约不支持",
             )?;
         }
         if step.kind == "workflow.call" {
@@ -370,7 +374,9 @@ pub fn validate_workflow_ports(doc: &WorkflowDocument) -> Result<()> {
         let Some(source) = doc.steps.iter().find(|s| s.key == step) else {
             return false;
         };
-        if source.delivery_outputs.contains_key(port) { return true; }
+        if source.delivery_outputs.contains_key(port) {
+            return true;
+        }
         let ports: &[&str] = match source.kind.as_str() {
             "agent.interact" => &["session", "proposal", "document"],
             "proposal.adopt" => &["proposal", "document"],
@@ -400,7 +406,11 @@ pub fn validate_workflow_ports(doc: &WorkflowDocument) -> Result<()> {
                 }
             }
         }
-        for (name, input) in step.inputs.iter().chain(step.delivery_inputs.iter().map(|(name, input)| (name, &input.source))) {
+        for (name, input) in step.inputs.iter().chain(
+            step.delivery_inputs
+                .iter()
+                .map(|(name, input)| (name, &input.source)),
+        ) {
             require(
                 if input.step == "$input" {
                     doc.input_ports.contains(&input.port)

@@ -116,8 +116,6 @@ pub enum Status {
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
     Human,
-    /// Historical provenance only; no execution provider can create new simulated work.
-    Simulated,
     External,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,8 +142,6 @@ pub struct Check {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
-    #[serde(default)]
-    pub permission_overrides: Option<PermissionOverrides>,
     pub id: Id,
     pub title: String,
     pub workspace: String,
@@ -426,8 +422,6 @@ pub struct EngineeringState {
     #[serde(default)]
     pub governance: Vec<ConfigurationRecord>,
     #[serde(default)]
-    pub permissions: Vec<Permission>,
-    #[serde(default)]
     pub turns: Vec<ConversationTurn>,
     #[serde(default)]
     pub conversation_events: Vec<ConversationEvent>,
@@ -535,18 +529,30 @@ impl EngineeringState {
             .flat_map(|o| o.items.iter())
             .collect::<Vec<_>>();
         let review_ok = pass || waived.contains(&&"review".to_string());
-        let model_run = self.reviews.iter().rev().find(|r| r.delivery_id == d.id)
+        let model_run = self
+            .reviews
+            .iter()
+            .rev()
+            .find(|r| r.delivery_id == d.id)
             .and_then(|review| review.run_id.as_deref())
             .and_then(|id| self.runs.iter().find(|run| run.id == id))
-            .filter(|run| run.result.as_ref().is_some_and(|result| result["approval_required"] == true));
+            .filter(|run| {
+                run.result
+                    .as_ref()
+                    .is_some_and(|result| result["approval_required"] == true)
+            });
         let human_ok = model_run.is_none_or(|run| {
-            waived.contains(&&"review".to_string()) || self.governance.iter().any(|record| {
-                record.kind == "workflow_confirmation" && record.data["human_approve"] == true
-                    && record.data["outputs"]["delivery"] == d.id
-                    && record.data["model_approvals"].as_array().is_some_and(|reports| {
-                        reports.iter().any(|report| report["run_id"] == run.id)
-                    })
-            })
+            waived.contains(&&"review".to_string())
+                || self.governance.iter().any(|record| {
+                    record.kind == "workflow_confirmation"
+                        && record.data["human_approve"] == true
+                        && record.data["outputs"]["delivery"] == d.id
+                        && record.data["model_approvals"]
+                            .as_array()
+                            .is_some_and(|reports| {
+                                reports.iter().any(|report| report["run_id"] == run.id)
+                            })
+                })
         });
         let tests_ok = d.evidence.iter().all(|id| {
             self.runs.iter().find(|r| &r.id == id).is_some_and(|r| {
@@ -577,27 +583,11 @@ impl EngineeringState {
                     })
             });
         }
-        self.feature(fid).is_ok_and(|f| {
-            self.attempts.iter().any(|a| {
-                a.feature_id == fid
-                    && a.task_id.is_none()
-                    && a.phase == "planning"
-                    && a.input_version == f.input_version
-                    && a.status == Status::Accepted
-            })
-        })
+        false
     }
+
     pub fn validate_evidence(&self, d: &Delivery) -> Result<()> {
-        let f = self.feature(&d.feature_id)?;
-        evidence_origin(
-            &self
-                .projects
-                .iter()
-                .find(|p| p.id == f.project_id)
-                .ok_or_else(|| err("not_found", "Project 不存在"))?
-                .execution_mode,
-            d.origin,
-        )?;
+        self.feature(&d.feature_id)?;
         require(
             d.attempt_id.is_some() != d.merge_id.is_some(),
             "Delivery 必须且只能归属 Attempt 或 Merge",
@@ -611,9 +601,7 @@ impl EngineeringState {
                 "Delivery 与 Attempt 的归属或版本不一致",
             )?;
             require(
-                if a.phase == "planning" {
-                    ["requirement", "plan"].contains(&d.kind.as_str())
-                } else if a.phase == "requirement_definition" {
+                if a.phase == "requirement_definition" {
                     d.kind == "requirement"
                 } else if a.phase == "solution_planning" {
                     d.kind == "plan"
@@ -795,15 +783,6 @@ impl EngineeringState {
                 .iter()
                 .find(|r| &r.id == rid)
                 .ok_or_else(|| err("blocked", "证据引用不完整"))?;
-            evidence_origin(
-                &self
-                    .projects
-                    .iter()
-                    .find(|p| p.id == f.project_id)
-                    .unwrap()
-                    .execution_mode,
-                r.origin,
-            )?;
             if ["red", "green", "verify", "feature_tests", "merge_verify"]
                 .contains(&r.node.as_str())
             {
@@ -1039,24 +1018,22 @@ impl EngineeringState {
             )?;
         }
         if !explicit_specs {
-            let standard = self
-                .definitions
-                .iter()
-                .find(|d| d.id == b.standard)
-                .ok_or_else(|| err("blocked", "Standard 缺失"))?;
-            require(
-                ["planning", "implementation", "merge"]
-                    .iter()
-                    .all(|purpose| {
-                        standard.slots.iter().any(|slot| {
-                            &slot.purpose == purpose
-                                && self.definitions.iter().any(|d| {
-                                    d.id == slot.spec && d.family == "spec" && !d.rules.is_empty()
-                                })
-                        })
-                    }),
-                "Standard 必须提供规划、实现、Merge 的 Spec 用途 slot",
-            )?;
+            let standard = self.configuration(&b.standard)?;
+            require(standard.kind == "standard", "Standard 类型不匹配")?;
+            let standard: StandardDefinition = standard.decode()?;
+            for rule in &standard.baseline_rules {
+                rule.selector.validate()?;
+                require(
+                    rule.min_matches > 0 && !rule.required_spec_refs.is_empty(),
+                    "Standard 基线规则不完整",
+                )?;
+                for id in &rule.required_spec_refs {
+                    require(
+                        self.configuration(id)?.kind == "spec",
+                        "Standard 必须引用确切 Spec 修订",
+                    )?;
+                }
+            }
         }
         let harness = self
             .harnesses
@@ -1121,12 +1098,6 @@ pub fn valid_dag(nodes: &[(String, Vec<String>)]) -> Result<()> {
     }
     require(done.len() == nodes.len(), "DAG 有环或引用不存在的节点")
 }
-pub fn evidence_origin(mode: &str, origin: Origin) -> Result<()> {
-    require(
-        mode == "simulation" || origin != Origin::Simulated,
-        "历史模拟证据不能满足原生执行门禁",
-    )
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1153,13 +1124,16 @@ mod tests {
         );
     }
     #[test]
-    fn historical_provenance_is_readable_but_cannot_satisfy_native_gates() {
-        assert!(evidence_origin("live", Origin::Simulated).is_err());
-        assert!(evidence_origin("simulation", Origin::Simulated).is_ok());
+    fn only_current_provenance_is_accepted() {
+        assert!(serde_json::from_str::<Origin>("\"simulated\"").is_err());
+        assert_eq!(
+            serde_json::from_str::<Origin>("\"external\"").unwrap(),
+            Origin::External
+        );
     }
 }
 
-/// Capture provenance; legacy migration intentionally does not invent a Session.
+/// Exact provenance of the captured execution context.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SnapshotCapture {
     pub attempt: Option<Id>,

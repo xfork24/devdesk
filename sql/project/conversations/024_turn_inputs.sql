@@ -1,3 +1,0 @@
-ALTER TABLE turns ADD COLUMN input_snapshot TEXT REFERENCES snapshots(id) DEFERRABLE INITIALLY DEFERRED;
-ALTER TABLE turns ADD COLUMN source_revision INTEGER;
-PRAGMA user_version=24;

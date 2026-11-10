@@ -148,17 +148,7 @@ impl CliGit {
                 && kind.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
             "Git 操作用途无效",
         )?;
-        let legacy = path.join(format!("{operation}.json"));
-        reject_symlink(&legacy)?;
         let data = serde_json::to_vec(request).map_err(storage)?;
-        if legacy.exists() {
-            let old: Value =
-                serde_json::from_slice(&fs::read(&legacy).map_err(storage)?).map_err(storage)?;
-            if old["kind"] == kind {
-                require(old == *request, "Git 操作 ID 被不同请求复用")?;
-                return Ok(legacy);
-            }
-        }
         let path = path.join(format!("{kind}-{operation}.json"));
         reject_symlink(&path)?;
         let mut options = OpenOptions::new();
@@ -1166,17 +1156,9 @@ impl ports::Git for CliGit {
             .project(&c.project)?
             .join("execution/git-operations")
             .join(format!("advance-{operation}.json"));
-        let legacy = path.parent().unwrap().join(format!("{operation}.json"));
         reject_symlink(&path)?;
-        reject_symlink(&legacy)?;
         let path = if path.is_file() {
             path
-        } else if legacy.is_file()
-            && serde_json::from_slice::<Value>(&fs::read(&legacy).map_err(storage)?)
-                .map_err(storage)?["kind"]
-                == "advance"
-        {
-            legacy
         } else {
             // The marker and target update are one ref transaction, always after this intent file.
             require(

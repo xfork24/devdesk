@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/workflows.rs"]
+mod workflow_fixture;
 use devdesk_adapters::{FileArtifacts, SqliteStore};
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -12,9 +14,40 @@ fn engine(path: &std::path::Path) -> Engine {
         runtime::adapters(),
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e
 }
-fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Result<Value> {
+fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -> Result<Value> {
+    if method == "agent.create" && payload["data"].get("permission_selection").is_none() {
+        payload["data"]["permission_selection"] =
+            serde_json::to_value(default_permission_selection()).unwrap();
+    }
+    if method.starts_with("workflow.") {
+        for field in ["data", "document"] {
+            if payload.get(field).is_some() {
+                payload[field] = workflow_fixture::current(payload[field].clone());
+            }
+        }
+    }
+    if method == "project.configuration.update" && payload.get("agent_refs").is_some() {
+        let mut bindings = e.configuration_defaults(target).unwrap()["role_agent_bindings"]
+            .as_object()
+            .unwrap()
+            .clone();
+        let state = e.store.snapshot().unwrap();
+        for (role, agent) in payload["agent_refs"].as_object().unwrap() {
+            let key = state
+                .configuration(agent.as_str().unwrap())
+                .ok()
+                .and_then(|r| r.data["role_ref"].as_str())
+                .and_then(|id| state.configuration(id).ok())
+                .map(|r| r.definition_id.clone())
+                .unwrap_or_else(|| format!("builtin-role-{role}"));
+            bindings.insert(key, agent.clone());
+        }
+        payload.as_object_mut().unwrap().remove("agent_refs");
+        payload["role_agent_bindings"] = serde_json::to_value(bindings).unwrap();
+    }
     let revision = target.and_then(|id| {
         e.store
             .snapshot()
@@ -53,198 +86,20 @@ fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Re
     )
 }
 #[test]
-fn experience_leaves_tool_catalog_and_defaults_without_rewriting_legacy_compositions() {
-    let fresh = tempfile::tempdir().unwrap();
-    let source = engine(fresh.path());
-    let state = source.store.snapshot().unwrap();
+fn current_defaults_exclude_experience_tools_and_reject_them_at_creation() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
     assert!(
-        !state
+        !e.store
+            .snapshot()
+            .unwrap()
             .governance
             .iter()
-            .any(ConfigurationRecord::is_legacy_experience_tool)
+            .any(|r| r.kind == "tool" && r.data["implementation"] == "experience.lookup")
     );
-    let defaults = source.configuration_defaults(None).unwrap();
-    for row in defaults["records"].as_array().unwrap() {
-        if ["capability", "agent"].contains(&row["kind"].as_str().unwrap()) {
-            assert_eq!(row["data"]["tools"], json!([DEFAULT_NATIVE_TOOL_ID]));
-        }
-    }
-
-    // Reproduce the previous built-in revisions before bootstrap, including their exact hashes.
-    let mut tool = state.configuration(DEFAULT_NATIVE_TOOL_ID).unwrap().clone();
-    tool.id = "builtin-tool-agent-experience-v1".into();
-    tool.definition_id = "builtin-tool-agent-experience".into();
-    tool.name = "AgentID 经验检索".into();
-    tool.data["implementation"] = json!("experience.lookup");
-    tool.data["qualified_name"] = json!("experience.lookup");
-    tool.content_hash = configuration_hash(&tool.data);
-    let mut cap = state
-        .configuration("builtin-capability-analyst-codex-v2")
-        .unwrap()
-        .clone();
-    cap.id = "builtin-capability-analyst-codex-v1".into();
-    cap.version = 1;
-    cap.supersedes = None;
-    cap.data["tools"] = json!([DEFAULT_NATIVE_TOOL_ID, tool.id]);
-    cap.content_hash = configuration_hash(&cap.data);
-    let mut agent = state
-        .configuration(&default_configured_agent_id("analyst"))
-        .unwrap()
-        .clone();
-    agent.id = "builtin-agent-sol-high-analyst-v2".into();
-    agent.version = 2;
-    agent.supersedes = None;
-    agent.data["capability_ref"] = json!(cap.id);
-    agent.data["tools"] = cap.data["tools"].clone();
-    agent.content_hash = configuration_hash(&agent.data);
-    let mut profile = state
-        .definitions
-        .iter()
-        .find(|r| r.id == default_configured_agent_id("analyst"))
-        .unwrap()
-        .clone();
-    profile.id = agent.id.clone();
-    profile.version = 2;
-    profile.supersedes = None;
-    let mut original_agent = agent.clone();
-    original_agent.id = default_agent_id("analyst");
-    original_agent.version = 1;
-    original_agent.data["capability_ref"] = Value::Null;
-    original_agent.content_hash = configuration_hash(&original_agent.data);
-    let mut original_profile = profile.clone();
-    original_profile.id = original_agent.id.clone();
-    original_profile.version = 1;
-    agent.supersedes = Some(original_agent.id.clone());
-    profile.supersedes = agent.supersedes.clone();
-    let mut customized = cap.clone();
-    customized.id = "user-revised-default-capability".into();
-    customized.version = 2;
-    customized.supersedes = Some(cap.id.clone());
-    let old = vec![
-        tool.clone(),
-        cap.clone(),
-        customized.clone(),
-        original_agent,
-        agent.clone(),
-    ];
-    let upgraded = tempfile::tempdir().unwrap();
-    let store = Arc::new(SqliteStore::open(upgraded.path()).unwrap());
-    store
-        .transact(None, &mut |s| {
-            s.governance.extend(old.clone());
-            s.definitions.push(profile.clone());
-            s.definitions.push(original_profile.clone());
-            s.definitions.extend(
-                state
-                    .definitions
-                    .iter()
-                    .filter(|r| r.family == "skill")
-                    .cloned(),
-            );
-            Ok(json!({}))
-        })
-        .unwrap();
-    let e = Engine::new(
-        store,
-        Arc::new(FileArtifacts::new(upgraded.path().into())),
-        runtime::adapters(),
-    );
-    e.bootstrap().unwrap();
-    let after = e.store.snapshot().unwrap();
-    for record in &old {
-        assert_eq!(
-            json!(after.configuration(&record.id).unwrap()),
-            json!(record)
-        );
-    }
-    assert_eq!(
-        after
-            .configuration("builtin-capability-analyst-codex-v2")
-            .unwrap()
-            .supersedes
-            .as_deref(),
-        Some(customized.id.as_str())
-    );
-    assert_eq!(
-        after
-            .configuration(&default_configured_agent_id("analyst"))
-            .unwrap()
-            .supersedes
-            .as_deref(),
-        Some(agent.id.as_str())
-    );
-    for history in [false, true] {
-        let rows = e
-            .query(
-                "query.configurations",
-                &json!({"kind":"tool","include_history":history,"include_deleted":true}),
-                100,
-            )
-            .unwrap();
-        assert_eq!(rows["total"], 2);
-        assert!(
-            rows["records"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|r| r["id"] == DEFAULT_NATIVE_TOOL_ID)
-        );
-        assert!(
-            rows["records"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|r| r["id"] == DEFAULT_DSH_NATIVE_TOOL_ID)
-        );
-    }
-    // Existing pinned Agents remain usable without granting an experience Tool.
-    command(
-        &e,
-        "agent.instance.create",
-        None,
-        json!({"name":"Pinned history","agent_revision_id":agent.id,"scope":{"kind":"global"}}),
-    )
-    .unwrap();
-    assert!(
-        command(
-            &e,
-            "tool.create",
-            None,
-            json!({"name":"Experience","data":tool.data})
-        )
-        .is_err()
-    );
-    assert!(
-        command(
-            &e,
-            "tool.revise",
-            Some(&tool.id),
-            json!({"name":"Experience","data":tool.data})
-        )
-        .is_err()
-    );
-    assert!(
-        command(
-            &e,
-            "capability.create",
-            None,
-            json!({"name":"Obsolete","data":cap.data})
-        )
-        .is_err()
-    );
-    let mut cleaned = cap.data.clone();
-    cleaned["tools"] = json!([DEFAULT_NATIVE_TOOL_ID]);
-    command(
-        &e,
-        "capability.revise",
-        Some("builtin-capability-analyst-codex-v2"),
-        json!({"name":"Cleaned","data":cleaned}),
-    )
-    .unwrap();
-    let count = e.store.snapshot().unwrap().governance.len();
-    e.bootstrap().unwrap();
-    assert_eq!(e.store.snapshot().unwrap().governance.len(), count);
+    assert!(command(&e,"tool.create",None,json!({"name":"Unsupported","data":{"qualified_name":"experience.lookup","implementation":"experience.lookup","input_schema":{},"output_schema":{},"capabilities":[]}})).is_err());
 }
+
 #[test]
 fn role_crud_has_no_derived_agent_or_skill_side_effects() {
     let dir = tempfile::tempdir().unwrap();
@@ -357,7 +212,7 @@ fn reference_configuration(e: &Engine) -> (String, Value) {
         .iter()
         .find(|r| {
             r.kind == "workflow"
-                && r.data["schema_version"] == 2
+                && r.data["schema_version"] == 3
                 && r.data["process_kind"] == "feature"
         })
         .unwrap()
@@ -416,7 +271,10 @@ fn explicit_project_bindings_freeze_agent_capability_and_spec_closure_without_st
     let lock = s
         .feature_configuration(first["id"].as_str().unwrap())
         .unwrap();
-    assert_eq!(lock.compiler_version, 2);
+    assert_eq!(lock.compiler_version, 3);
+    let mut retired = json!(lock);
+    retired["compiler_version"] = json!(2);
+    assert!(serde_json::from_value::<FeatureConfiguration>(retired).is_err());
     assert!(lock.standard_ref.is_empty());
     assert!(lock.baseline_check.is_none());
     assert!(!lock.specification_snapshot.is_empty());
@@ -457,9 +315,7 @@ fn same_execution_class_cannot_substitute_an_unrelated_role_identity() {
     let role=command(&e,"role.create",None,json!({"name":"Other Analyst","data":{"execution_role":"analyst","instructions":"Other duty"}})).unwrap();
     let s = e.store.snapshot().unwrap();
     let cap = s
-        .governance
-        .iter()
-        .find(|r| r.kind == "agent_capability" && r.definition_id == default_agent_id("analyst"))
+        .configuration(&default_configured_agent_id("analyst"))
         .unwrap()
         .data["capability_ref"]
         .clone();
@@ -656,78 +512,73 @@ fn reusable_subworkflow_waits_for_confirmation_and_exports_actual_snapshot_after
     );
 }
 #[test]
-fn old_workflow_standard_pairs_convert_independently_and_idempotently() {
+fn defaults_follow_current_identity_revisions_without_discarding_published_history() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
-    let p = command(&e, "project.create", None, json!({"title":"Legacy"})).unwrap();
-    let roles: serde_json::Map<String, Value> =
-        ["analyst", "architect", "developer", "tester", "reviewer"]
-            .into_iter()
-            .map(|r| (r.into(), json!(default_agent_id(r))))
-            .collect();
-    command(&e,"project.configuration.update",p["id"].as_str(),json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_ID,"standard_ref":DEFAULT_STANDARD_ID,"agent_refs":roles})).unwrap();
-    let old = e
-        .store
-        .snapshot()
-        .unwrap()
-        .configuration(DEFAULT_FEATURE_WORKFLOW_ID)
-        .unwrap()
-        .content_hash
-        .clone();
+    let initial = e.configuration_defaults(None).unwrap();
+    for (method, id) in [
+        ("model.revise", initial["model_ref"].as_str().unwrap()),
+        ("harness.revise", initial["harness_ref"].as_str().unwrap()),
+        (
+            "agent.revise",
+            initial["role_agent_bindings"]["builtin-role-analyst"]
+                .as_str()
+                .unwrap(),
+        ),
+    ] {
+        let data = e
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(id)
+            .unwrap()
+            .data
+            .clone();
+        let revision = command(&e, method, Some(id), json!({"data":data})).unwrap();
+        let defaults = e.configuration_defaults(None).unwrap();
+        let chosen = match method {
+            "model.revise" => &defaults["model_ref"],
+            "harness.revise" => &defaults["harness_ref"],
+            _ => &defaults["role_agent_bindings"]["builtin-role-analyst"],
+        };
+        assert_eq!(chosen, &revision["id"]);
+        assert!(e.store.snapshot().unwrap().configuration(id).is_ok());
+    }
+}
 
-    let alternative=command(&e,"spec.create",None,json!({"name":"Alternative migrated Spec","data":{"body":"# Alternative\n\n## 独立规范","rules":["sections"]}})).unwrap();
-    let standard=command(&e,"standard.create",None,json!({"name":"Legacy alternate Standard","data":{"body":"Alternate legacy slots","slots":[{"purpose":"planning","spec":alternative["id"]},{"purpose":"implementation","spec":alternative["id"]},{"purpose":"merge","spec":alternative["id"]}],"rules":[]}})).unwrap();
-    let other = command(
+#[test]
+fn selected_standard_is_preserved_in_the_frozen_feature_configuration() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let project = command(
         &e,
         "project.create",
         None,
-        json!({"title":"Different legacy standard"}),
+        json!({"title":"Explicit baseline"}),
     )
     .unwrap();
-    let roles: serde_json::Map<String, Value> =
-        ["analyst", "architect", "developer", "tester", "reviewer"]
-            .into_iter()
-            .map(|r| (r.into(), json!(default_agent_id(r))))
-            .collect();
-    command(&e,"project.configuration.update",other["id"].as_str(),json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_ID,"standard_ref":standard["id"],"agent_refs":roles})).unwrap();
-    e.migrate_project_configuration().unwrap();
-    let s = e.store.snapshot().unwrap();
-    let current = s
-        .governance
-        .iter()
-        .filter(|r| r.kind == "project_configuration" && json!(r.definition_id) == p["id"])
-        .max_by_key(|r| r.version)
-        .unwrap();
-    assert_eq!(current.data["schema_version"], 2);
-    assert_ne!(current.data["workflow_ref"], DEFAULT_FEATURE_WORKFLOW_ID);
-    let converted = s
-        .governance
-        .iter()
-        .filter(|r| r.kind == "project_configuration" && json!(r.definition_id) == other["id"])
-        .max_by_key(|r| r.version)
-        .unwrap();
-    assert_ne!(current.data["workflow_ref"], converted.data["workflow_ref"]);
-    let doc: WorkflowDocument = s
-        .configuration(converted.data["workflow_ref"].as_str().unwrap())
+    let defaults = e.configuration_defaults(None).unwrap();
+    let pid = project["id"].as_str().unwrap();
+    command(&e, "project.configuration.update", Some(pid), json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"],"standard_ref":DEFAULT_STANDARD_ID})).unwrap();
+    let feature = command(
+        &e,
+        "feature.create",
+        None,
+        json!({"project_id":pid,"title":"Frozen baseline"}),
+    )
+    .unwrap();
+    let lock = e
+        .store
+        .snapshot()
         .unwrap()
-        .decode()
+        .feature_configuration(feature["id"].as_str().unwrap())
         .unwrap();
-    assert!(
-        doc.steps
-            .iter()
-            .filter(|s| !s.spec_refs.is_empty())
-            .all(|s| json!(s.spec_refs) == json!([alternative["id"]]))
-    );
-
+    assert_eq!(lock.standard_ref, DEFAULT_STANDARD_ID);
     assert_eq!(
-        s.configuration(DEFAULT_FEATURE_WORKFLOW_ID)
-            .unwrap()
-            .content_hash,
-        old
+        lock.baseline_check.unwrap().standard_ref,
+        DEFAULT_STANDARD_ID
     );
-    let count = s.governance.len();
-    e.migrate_project_configuration().unwrap();
-    assert_eq!(count, e.store.snapshot().unwrap().governance.len());
+    assert!(lock.definition_hashes.contains_key(DEFAULT_STANDARD_ID));
 }
 
 #[test]
@@ -802,6 +653,7 @@ fn compacted_defaults_survive_bootstrap_and_resolve_revised_model_and_harness() 
     );
     for _ in 0..2 {
         e.bootstrap().unwrap();
+        runtime::bind_default_permissions(&e);
         let state = e.store.snapshot().unwrap();
         let ids: BTreeSet<_> = state.governance.iter().map(|r| r.id.clone()).collect();
         assert_eq!(ids, expected);
@@ -835,7 +687,7 @@ fn shipped_defaults_have_stage_markdown_and_distinct_role_methods() {
     );
     let s = e.store.snapshot().unwrap();
     let workflow: WorkflowDocument = s
-        .configuration(DEFAULT_FEATURE_WORKFLOW_V2_ID)
+        .configuration(DEFAULT_FEATURE_WORKFLOW_V3_ID)
         .unwrap()
         .decode()
         .unwrap();
@@ -909,7 +761,7 @@ fn shipped_defaults_have_stage_markdown_and_distinct_role_methods() {
     let audit = e
         .query(
             "query.workflow_requirements",
-            &json!({"id":DEFAULT_FEATURE_WORKFLOW_V2_ID}),
+            &json!({"id":DEFAULT_FEATURE_WORKFLOW_V3_ID}),
             4,
         )
         .unwrap();
@@ -1003,6 +855,7 @@ fn a_reused_session_dispatches_each_turn_with_its_frozen_step_specs() {
         adapters,
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     let p = command(
         &e,
         "project.create",
@@ -1196,70 +1049,18 @@ fn subworkflow_failure_propagates_and_rework_restarts_its_children() {
 }
 
 #[test]
-fn legacy_custom_role_bindings_migrate_without_substituting_the_builtin_identity() {
-    let dir = tempfile::tempdir().unwrap();
-    let e = engine(dir.path());
-    let p = command(
-        &e,
-        "project.create",
-        None,
-        json!({"title":"Legacy custom role"}),
-    )
-    .unwrap();
-    let role=command(&e,"role.create",None,json!({"name":"Legacy product specialist","data":{"execution_role":"analyst","instructions":"# Product duty"}})).unwrap();
-    let a=command(&e,"agent.create",None,json!({"name":"Legacy custom composition","data":{"role_ref":role["id"],"capability_ref":"builtin-capability-analyst-codex-v2"}})).unwrap();
-    let mut agents: serde_json::Map<String, Value> =
-        ["analyst", "architect", "developer", "tester", "reviewer"]
-            .into_iter()
-            .map(|r| (r.into(), json!(default_agent_id(r))))
-            .collect();
-    agents.insert("analyst".into(), a["id"].clone());
-    command(&e,"project.configuration.update",p["id"].as_str(),json!({"workflow_ref":DEFAULT_FEATURE_WORKFLOW_ID,"standard_ref":DEFAULT_STANDARD_ID,"agent_refs":agents})).unwrap();
-    e.migrate_project_configuration().unwrap();
-    let state = e.store.snapshot().unwrap();
-    let config = state
-        .governance
-        .iter()
-        .filter(|r| r.kind == "project_configuration")
-        .max_by_key(|r| r.version)
-        .unwrap();
-    assert_eq!(config.data["schema_version"], 2);
-    assert_eq!(
-        config.data["role_agent_bindings"][role["definition_id"].as_str().unwrap()],
-        a["id"]
-    );
-    let compiled = e
-        .query(
-            "query.workflow_requirements",
-            &json!({"id":config.data["workflow_ref"]}),
-            4,
-        )
-        .unwrap();
-    assert!(
-        compiled["roles"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["role_id"] == role["definition_id"])
-    );
-    assert!(
-        !compiled["roles"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["role_id"] == "builtin-role-analyst")
-    );
-}
-
-#[test]
 fn specification_applicability_uses_the_actual_discussion_output_contract() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let doc = json!({"schema_version":2,"process_kind":"subworkflow","stages":[{"key":"work","name":"Work"}],"steps":[{"key":"design","name":"Design","stage":"work","kind":"agent.interact","role_ref":"builtin-role-architect","spec_refs":["builtin-spec-stage-prd-v1"],"parameters":{"phase":"requirement"},"interaction":{"goal":"Produce a design","output_kind":"design","max_turns":4}}]});
     assert!(
-        e.query("query.workflow_requirements", &json!({"document":doc}), 4)
-            .unwrap_err()
-            .message
-            .contains("不适用")
+        e.query(
+            "query.workflow_requirements",
+            &json!({"document":workflow_fixture::current(doc.clone())}),
+            4
+        )
+        .unwrap_err()
+        .message
+        .contains("不适用")
     );
 }

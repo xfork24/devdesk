@@ -1,5 +1,7 @@
 # R0 固定接入基线
 
+> 历史记录：未提供链接的原始文件路径仅记录当时执行；相关中间产物或已删除源码不随当前工程提供。
+
 日期：2026-11-08。依据 [实施计划](PLAN.md)。本报告是作者自检；工程内的原生 Reviewer 独立评审各自的交付，不构成本实现代码的第三方评审。
 
 ## 固定环境和产物
@@ -22,13 +24,13 @@
 
 ## 实际能力与证据
 
-- 原生握手：[R0-protocols.json](R0-protocols.json)。握手与真实模型调用分别记录。
-- 两套 Linux Harness 的真实两轮与结构化输出：[Codex](R0-codex-turns.json)、[DSH](R0-dsh-turns.json)。随机 marker 跨轮保留；不是只观察 enqueue/idle。
-- 销毁并重建 worker 后原生续用第三轮：[Codex](R0-codex-resume.json)、[DSH](R0-dsh-resume.json)。各自独立状态目录、不同 worker 生命周期、相同原生 Session。
-- 完整 HTTP → Rust → 容器 → 持久化会话：[Codex](R3-codex-application.json)、[DSH](R3-dsh-application.json)。每轮绑定输入、消费证明、终态、writer revoked 和脱敏协议 Artifact；同 client message ID 重放返回同 Turn。
-- 实际受控 shell 工具：[Codex](R3-codex-tools.json)、[DSH](R3-dsh-tools.json)。Docker 实测覆盖指定目录写入、越界拒绝、隐藏私有状态、私有/空 proc、归属核对、重复创建/停止/清理。
-- 专用私有仓库 [PR #1](https://github.com/xfork24/devdesk-integration-test/pull/1) 的间接 merged、单父候选、CAS 与精确 lease 拒绝旧值：[R0-github.json](R0-github.json)。未调用平台 merge、修改规则或管理员绕过。
-- 实际策略检查：专用仓库兼容；对 `openai/codex` 只读诊断识别活动规则并阻塞。见 [R4-repository.json](R4-repository.json)。
+- 原生握手：R0-protocols.json（历史路径：`R0-protocols.json`）。握手与真实模型调用分别记录。
+- 两套 Linux Harness 的真实两轮与结构化输出：Codex（历史路径：`R0-codex-turns.json`）、DSH（历史路径：`R0-dsh-turns.json`）。随机 marker 跨轮保留；不是只观察 enqueue/idle。
+- 销毁并重建 worker 后原生续用第三轮：Codex（历史路径：`R0-codex-resume.json`）、DSH（历史路径：`R0-dsh-resume.json`）。各自独立状态目录、不同 worker 生命周期、相同原生 Session。
+- 完整 HTTP → Rust → 容器 → 持久化会话：Codex（历史路径：`R3-codex-application.json`）、DSH（历史路径：`R3-dsh-application.json`）。每轮绑定输入、消费证明、终态、writer revoked 和脱敏协议 Artifact；同 client message ID 重放返回同 Turn。
+- 实际受控 shell 工具：Codex（历史路径：`R3-codex-tools.json`）、DSH（历史路径：`R3-dsh-tools.json`）。Docker 实测覆盖指定目录写入、越界拒绝、隐藏私有状态、私有/空 proc、归属核对、重复创建/停止/清理。
+- 专用私有仓库 [PR #1](https://github.com/xfork24/devdesk-integration-test/pull/1) 的间接 merged、单父候选、CAS 与精确 lease 拒绝旧值：R0-github.json（历史路径：`R0-github.json`）。未调用平台 merge、修改规则或管理员绕过。
+- 实际策略检查：专用仓库兼容；对 `openai/codex` 只读诊断识别活动规则并阻塞。见 R4-repository.json（历史路径：`R4-repository.json`）。
 
 ## 协议和隔离约定
 
@@ -40,10 +42,10 @@ DSH 使用公开 sdk profile：initialize 选择 provider/model/cwd；session/pr
 
 ## 失败与修复记录
 
-- slim 镜像缺 CA 导致 Codex 账户路由失败，补齐系统 CA 后真实两轮通过；保留 [首次失败](R0-codex-turns-first-failure.json)。
+- slim 镜像缺 CA 导致 Codex 账户路由失败，补齐系统 CA 后真实两轮通过；保留 首次失败（历史路径：`R0-codex-turns-first-failure.json`）。
 - DSH native addon 默认复制至 noexec tmp，改用供应商支持的 `NARB_DISABLE_NATIVE_CACHE=1` 直接加载镜像内产物，保留 tmp noexec。
 - OAuth 登记卡顿通过 debug SHA 优化、绝对 CODEX_HOME、超时与同步打开浏览器窗口解决；用户已完成独立网页登录。
 - unsigned 开发构建的 Keychain 读取可能等待系统授权；状态查询改为仅查元数据，密钥读取通过有超时的系统工具。用户已授权，密钥未进入报告。
-- 首次正式写工具测试发现 code-mode host 未启用及 DSH proc 挂载失败；禁止越权的策略确实拒绝了重试。保留 [R6-tool-boundary-failure.json](R6-tool-boundary-failure.json)，修复后采用新 Attempt，双 Task 的实际 Red/Green/Review 见 [R6-implementation.json](R6-implementation.json)。
+- 首次正式写工具测试发现 code-mode host 未启用及 DSH proc 挂载失败；禁止越权的策略确实拒绝了重试。保留 R6-tool-boundary-failure.json（历史路径：`R6-tool-boundary-failure.json`），修复后采用新 Attempt，双 Task 的实际 Red/Green/Review 见 R6-implementation.json（历史路径：`R6-implementation.json`）。
 
 整轮完成状态以最终 A01–A22 报告为准，不能仅凭本阶段兼容路径宣称 R8 已通过。接入与当前限制见 [运行说明](../../real-engineering.md)。

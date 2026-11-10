@@ -11,50 +11,15 @@ pub fn insert_permission_profiles(
         return Err(err("invalid_params", "一次最多导入 512 个权限修订"));
     }
     let mut profiles = Vec::new();
-    let mut legacy = Vec::new();
     for value in values {
-        if value["schema_version"] == 1 {
-            let p: Permission = serde_json::from_value(value.clone())
-                .map_err(|e| err("invalid_params", e.to_string()))?;
-            p.validate()?;
-            legacy.push(p);
-        } else {
-            let mut p: PermissionProfile = serde_json::from_value(value.clone())
-                .map_err(|e| err("invalid_params", e.to_string()))?;
-            p.normalize()?;
-            profiles.push(p);
-        }
+        let mut p: PermissionProfile = serde_json::from_value(value.clone())
+            .map_err(|e| err("invalid_params", e.to_string()))?;
+        p.normalize()?;
+        profiles.push(p);
     }
     profiles.sort_by_key(|p| p.version);
-    legacy.sort_by_key(|p| p.version);
     let mut added = Vec::new();
     let mut unchanged = Vec::new();
-    for p in legacy {
-        if let Some(old) = s.permissions.iter().find(|v| v.id == p.id) {
-            if old != &p {
-                return Err(err("revision_conflict", "旧权限修订内容冲突"));
-            }
-            unchanged.push(p.id);
-            continue;
-        }
-        if s.permissions
-            .iter()
-            .any(|v| v.identity == p.identity && v.version == p.version)
-        {
-            return Err(err("revision_conflict", "旧权限版本已有不同 ID"));
-        }
-        if p.version > 1
-            && !s.permissions.iter().any(|v| {
-                Some(&v.id) == p.supersedes.as_ref()
-                    && v.identity == p.identity
-                    && v.version + 1 == p.version
-            })
-        {
-            return Err(err("revision_conflict", "旧权限缺少连续前序修订"));
-        }
-        added.push(p.id.clone());
-        s.permissions.push(p);
-    }
     for p in profiles {
         let data = json!(p);
         if let Some(old) = s.governance.iter().find(|r| r.id == p.id) {
@@ -154,42 +119,6 @@ pub fn permission_profile_export(s: &EngineeringState, id: &str) -> Result<Value
     }
     result.reverse();
     Ok(json!({"profiles":result}))
-}
-
-pub(crate) fn seed_permission_resources(s: &mut EngineeringState) {
-    if !s
-        .governance
-        .iter()
-        .any(|r| r.id == DEFAULT_PERMISSION_SANDBOX)
-    {
-        let mut r = record(
-            "sandbox",
-            "builtin-docker-sandbox".into(),
-            Scope::Global,
-            "Docker Sandbox".into(),
-            1,
-            None,
-            json!(SandboxDefinition {
-                provider: "docker".into(),
-                runtime_version: "1".into(),
-                enforcement: "docker-worker/v1".into(),
-                platforms: vec!["linux/aarch64".into(), "linux/x86_64".into()]
-            }),
-            true,
-        );
-        r.id = DEFAULT_PERMISSION_SANDBOX.into();
-        r.created_at = 0;
-        s.governance.push(r);
-    }
-    let values: Vec<Value> = [
-        include_str!("../../../permissions/presets/harness-full-access-v2.json"),
-        include_str!("../../../permissions/presets/harness-read-only-v2.json"),
-        include_str!("../../../permissions/presets/sandbox-full-access-v2.json"),
-    ]
-    .iter()
-    .map(|s| serde_json::from_str(s).expect("embedded profile"))
-    .collect();
-    insert_permission_profiles(s, &values, "embedded").expect("embedded profiles valid");
 }
 
 impl Engine {

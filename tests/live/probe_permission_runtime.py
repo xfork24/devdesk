@@ -79,18 +79,18 @@ def main():
                                         'permission-sandbox-full-access-v2-r1', 'expected_revision': 0})
                     return c.command('permission.bindings.apply', payload={'bindings': changes})
 
-                bind('permission-harness-full-access-v2-r1', 0)
+                bind('permission-harness-full-access-v2-r1', 1)
                 model = c.command('model.create', payload={'name': 'Controlled permission probe model', 'data': {
                     'provider': 'openai', 'model': args.model,
                     'parameters': {'reasoning_effort': 'low'}, 'capabilities': []}})['id']
                 tool = c.command('tool.create', payload={'name': 'Controlled native tools', 'data': {
                     'qualified_name': 'harness.native', 'implementation': 'harness.native',
                     'input_schema': {}, 'output_schema': {}, 'capabilities': []}})['id']
+                capability = c.command('capability.create', payload={'name': 'Controlled permission capability', 'data': {'model_ref': model, 'harness_ref': harness['revision_id'], 'skills': [], 'tools': [tool]}})['id']
                 agent = c.command('agent.create', payload={'name': 'Follow target permission probe', 'data': {
                     'role_ref': 'builtin-role-analyst-v1', 'instructions': 'Run only the supplied controlled shell probe. '
                     'Do not inspect credentials or runtime state, delegate, or propose changes.',
-                    'model_ref': model, 'harness_ref': harness['revision_id'], 'skills': [], 'tools': [tool],
-                    'permissions': [], 'approval': 'never', 'permission_selection': {
+                    'capability_ref': capability, 'permission_selection': {
                         'sandbox_ref': sandbox['revision_id'], 'harness': {'mode': 'follow_target'},
                         'sandbox': {'mode': 'follow_target'}}}})['id']
                 c.rpc('runtime.prepare_harness', {'id': harness['revision_id']})
@@ -148,7 +148,7 @@ def main():
                     'identity': 'runtime-probe-restricted', 'name': 'Real model read-only tools offline',
                     'target_kind': 'harness', 'policy': {'filesystem': {'mode': 'read_only'},
                     'network': {'mode': 'disabled'}, 'tools': {'mode': 'all_available'}, 'approval': 'never'}})
-                bind(profile['id'], 1)
+                bind(profile['id'], 2)
                 successor, after, row = turn(sid, True)
                 report['restricted'] = row
                 assert successor != original

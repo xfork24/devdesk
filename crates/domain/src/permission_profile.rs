@@ -1,4 +1,4 @@
-//! Runtime permission resources. V1 policies and their serialized history remain unchanged.
+//! Versioned permission profiles and exact runtime bindings.
 use crate::*;
 use serde_json::json;
 
@@ -277,18 +277,20 @@ pub fn resolve_permission_lock(
     })
 }
 
+pub fn default_permission_selection() -> AgentPermissionSelection {
+    AgentPermissionSelection {
+        sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
+        harness: PermissionSelection::FollowTarget,
+        sandbox: PermissionSelection::FollowTarget,
+    }
+}
+
 pub fn agent_permission_selection(
-    s: &EngineeringState,
-    agent_id: &str,
+    _s: &EngineeringState,
+    _agent_id: &str,
     agent: &AgentComposition,
 ) -> Option<AgentPermissionSelection> {
-    agent.permission_selection.clone().or_else(|| {
-        s.governance
-            .iter()
-            .filter(|r| ["permission_migration", "permission_migration_renewal"].contains(&r.kind.as_str()) && r.definition_id == agent_id)
-            .max_by_key(|r| r.version)
-            .and_then(|r| serde_json::from_value(r.data["selection"].clone()).ok())
-    })
+    agent.permission_selection.clone()
 }
 
 pub fn frozen_permission_lock(
@@ -316,15 +318,10 @@ pub fn frozen_permission_lock(
 }
 
 pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermissions) -> Result<()> {
-    let Some(lock) = &p.binding_lock else {
-        for r in [&p.harness.reference, &p.sandbox.reference] {
-            require(
-                s.permissions.iter().any(|d| d.id == r.revision_id),
-                "冻结 Permission 修订缺失",
-            )?;
-        }
-        return Ok(());
-    };
+    let lock = p
+        .binding_lock
+        .as_ref()
+        .ok_or_else(|| err("permission_unconfigured", "执行必须冻结 v2 权限绑定"))?;
     for (bound, kind) in [
         (&lock.harness, PermissionTargetKind::Harness),
         (&lock.sandbox, PermissionTargetKind::Sandbox),

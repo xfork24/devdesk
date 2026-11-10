@@ -40,11 +40,6 @@ function initial(kind: string): Row {
       return {
         role_ref: "",
         capability_ref: "",
-        permissions: [
-          "permission-container-full-access-v1",
-          "permission-container-full-access-v1",
-        ],
-        approval: "never",
         permission_selection: {
           sandbox_ref: "",
           harness: { mode: "follow_target" },
@@ -182,37 +177,26 @@ export function ResourceEditor({
     installations: [],
   });
   const [records, setRecords] = useState<Row[]>([]),
-    [permissions, setPermissions] = useState<Row[]>([]),
     [permissionResources, setPermissionResources] = useState<Row>({
       targets: [],
       bindings: [],
       profiles: [],
     }),
     [busy, setBusy] = useState(false),
-    [integrations, setIntegrations] = useState<Row[]>([]),
-    [legacyCapabilities, setLegacyCapabilities] = useState<
-      Record<string, string>
-    >({});
+    [integrations, setIntegrations] = useState<Row[]>([]);
   const [draft, setDraft] = useDraft(
-    `devdesk:v2:resource:${project?.id || "global"}:${kind}`,
+    `devdesk:v3:resource:${project?.id || "global"}:${kind}`,
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
     const [
       records,
-      policy,
-      capabilities,
       resources,
       modelProviders,
       integrationResources,
       runtimeOptions,
     ] = await Promise.all([
       loadCatalog(request, project),
-      request("query.permissions"),
-      request("query.capabilities", {
-        local: !!project,
-        project_id: project?.id,
-      }),
       request("query.permission_resources", { project_id: project?.id }),
       request("query.model_providers"),
       ["capability", "agent", "skill"].includes(kind)
@@ -230,7 +214,6 @@ export function ResourceEditor({
           ? { selected: "", name: "", scope: "global", data: initial(kind) }
           : current,
       );
-    setPermissions(policy.permissions || []);
     setPermissionResources(resources);
     setDraft((current) =>
       !current.selected &&
@@ -248,7 +231,6 @@ export function ResourceEditor({
           }
         : current,
     );
-    setLegacyCapabilities(capabilities.agent_bindings || {});
   }, [request, project?.id, revision]);
   useEffect(() => {
     let active = true;
@@ -318,9 +300,7 @@ export function ResourceEditor({
       value = {
         role_ref: value.role_ref || "",
         capability_ref:
-          value.capability_ref || legacyCapabilities[row.id] || "",
-        permissions: value.permissions,
-        approval: value.approval,
+          value.capability_ref || "",
         ...(value.permission_selection
           ? { permission_selection: value.permission_selection }
           : {}),
@@ -348,8 +328,8 @@ export function ResourceEditor({
     if (routeConsumed.current || !records.length) return;
     const selected = new URLSearchParams(location.search).get("config_object");
     if (selected) {
-      const legacy = records.find((r) => r.id === selected && r.kind === "agent_instance");
-      const revision = kind === "agent" && legacy ? legacy.data.agent_revision_id : selected;
+      const instance = records.find((r) => r.id === selected && r.kind === "agent_instance");
+      const revision = kind === "agent" && instance ? instance.data.agent_revision_id : selected;
       const row = records.find((r) => r.id === revision && r.kind === kind);
       if (row) {
         routeConsumed.current = true;
@@ -566,30 +546,7 @@ export function ResourceEditor({
                   </div>
                 )}
                 <details className="full-width">
-                  <summary>权限与兼容指令</summary>
-                  <label>
-                    权限绑定方式
-                    <ActionSelect
-                      value={data.permission_selection ? "versioned" : "legacy"}
-                      onChange={(e) => {
-                        captureFeedback();
-
-                        const next = { ...data };
-                        if (e.target.value === "versioned")
-                          next.permission_selection = {
-                            sandbox_ref:
-                              permissionResources.default_sandbox_ref,
-                            harness: { mode: "follow_target" },
-                            sandbox: { mode: "follow_target" },
-                          };
-                        else delete next.permission_selection;
-                        patch(next);
-                      }}
-                    >
-                      <option value="versioned">按目标版本选择权限</option>
-                      <option value="legacy">保留旧固定权限</option>
-                    </ActionSelect>
-                  </label>
+                  <summary>权限与附加指令</summary>
                   {data.permission_selection ? (
                     <>
                       <label>
@@ -692,51 +649,7 @@ export function ResourceEditor({
                         );
                       })}
                     </>
-                  ) : (
-                    <>
-                      {[0, 1].map((index) => (
-                        <RevisionSelect
-                          key={index}
-                          label={
-                            index === 0
-                              ? "Harness Permission"
-                              : "Sandbox Permission"
-                          }
-                          records={permissions.map((p) => ({
-                            ...p,
-                            kind: "permission",
-                            definition_id: p.identity,
-                          }))}
-                          value={
-                            data.permissions?.[index] ||
-                            data.permissions?.[0] ||
-                            ""
-                          }
-                          required
-                          onChange={(value) => {
-                            captureFeedback();
-
-                            const values = [...(data.permissions || ["", ""])];
-                            values[index] = value;
-                            patch({ permissions: values });
-                          }}
-                        />
-                      ))}
-                      <label>
-                        确认策略
-                        <ActionSelect
-                          value={data.approval || "never"}
-                          onChange={(e) => {
-                            captureFeedback();
-                            return patch({ approval: e.target.value });
-                          }}
-                        >
-                          <option value="never">不额外询问</option>
-                          <option value="on_request">按请求确认</option>
-                        </ActionSelect>
-                      </label>
-                    </>
-                  )}
+                  ) : null}
                   <MarkdownField
                     label="附加指令（可选）"
                     value={data.instructions || ""}

@@ -98,7 +98,7 @@ fn reject_wrong_platform_hash_scripts_and_mutable_images() {
 }
 
 #[test]
-fn v1_upgrade_retains_settings_and_preference_updates_are_atomic() {
+fn current_settings_and_preference_updates_are_atomic() {
     let temp = tempfile::tempdir().unwrap();
     // Initialize a v1 global database with user configuration before the application opens it.
     fs::create_dir_all(temp.path().join("data")).unwrap();
@@ -108,7 +108,7 @@ fn v1_upgrade_retains_settings_and_preference_updates_are_atomic() {
     )
     .unwrap();
     let conn = rusqlite::Connection::open(temp.path().join("data/global.sqlite3")).unwrap();
-    conn.execute_batch(include_str!("../../../sql/global/001_initial.sql"))
+    conn.execute_batch(include_str!("../../../sql/global/schema.sql"))
         .unwrap();
     conn.execute(
         "INSERT INTO settings(key,value) VALUES('layout_version','2')",

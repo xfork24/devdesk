@@ -2,6 +2,127 @@
 use crate::governance::record;
 use crate::*;
 
+pub(crate) fn session_binding<'a>(
+    s: &'a EngineeringState,
+    sid: &str,
+) -> Option<&'a ConfigurationRecord> {
+    for record in s.governance.iter().rev() {
+        if ["execution_task_binding", "execution_runtime_binding"].contains(&record.kind.as_str())
+            && !record.data["run_id"].is_string()
+            && (record.definition_id == sid || record.data["session_id"] == sid)
+        {
+            return Some(record);
+        }
+        if record.kind == "execution_task"
+            && s.turns
+                .iter()
+                .any(|turn| turn.id == record.definition_id && turn.session_id == sid)
+        {
+            if let Some(source) = record.data["source_binding_id"]
+                .as_str()
+                .and_then(|id| s.governance.iter().find(|r| r.id == id))
+            {
+                return Some(source);
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn node_binding<'a>(
+    s: &'a EngineeringState,
+    sid: &str,
+    node: Option<&str>,
+    step: Option<&str>,
+) -> Option<&'a ConfigurationRecord> {
+    s.governance.iter().rev().find(|r| {
+        ["execution_task_binding", "execution_runtime_binding"].contains(&r.kind.as_str())
+            && !r.data["run_id"].is_string()
+            && (r.definition_id == sid || r.data["session_id"] == sid)
+            && node.is_none_or(|node| r.data["recipe_node"] == node)
+            && step.is_none_or(|step| r.data["step_instance_id"] == step)
+    })
+}
+
+pub(crate) fn session_for_node(
+    s: &EngineeringState,
+    session: &Session,
+    node: Option<&str>,
+    step: Option<&str>,
+) -> Result<Session> {
+    let mut effective = session.clone();
+    if session.scope == Some(SessionScope::Task) {
+        if node.is_none() && step.is_none() {
+            if let Some(turn) = s
+                .turns
+                .iter()
+                .rev()
+                .find(|turn| turn.session_id == session.id && turn.status.active())
+            {
+                effective.runtime_binding = Some(s.turn_runtime_binding(turn)?);
+                return Ok(effective);
+            }
+        }
+        let source = if node.is_none() && step.is_none() {
+            session_binding(s, &session.id)
+        } else {
+            node_binding(s, &session.id, node, step)
+        };
+        if let Some(binding) = source.and_then(|r| r.data.get("runtime_binding")) {
+            let binding: RuntimeBinding = serde_json::from_value(binding.clone())
+                .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
+            s.validate_task_runtime(session, &binding)?;
+            effective.runtime_binding = Some(binding);
+        }
+    }
+    Ok(effective)
+}
+
+pub(crate) fn session_for_run(s: &EngineeringState, run: &Run) -> Result<Session> {
+    let session = s
+        .sessions
+        .iter()
+        .find(|session| session.id == run.session_id)
+        .ok_or_else(|| err("blocked", "Run Session 不存在"))?;
+    if let Some(turn) = s
+        .turns
+        .iter()
+        .find(|turn| turn.run_id.as_deref() == Some(&run.id))
+    {
+        let mut effective = session.clone();
+        effective.runtime_binding = Some(s.turn_runtime_binding(turn)?);
+        return Ok(effective);
+    }
+    if let Some(binding) = binding_for_run(s, run).and_then(|r| r.data.get("runtime_binding")) {
+        let mut effective = session.clone();
+        let binding: RuntimeBinding = serde_json::from_value(binding.clone())
+            .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
+        s.validate_task_runtime(session, &binding)?;
+        effective.runtime_binding = Some(binding);
+        return Ok(effective);
+    }
+    let step = binding_for_run(s, run).and_then(|r| r.data["step_instance_id"].as_str());
+    let node = (!run.node.starts_with("review:")).then_some(run.node.as_str());
+    session_for_node(s, session, node, step)
+}
+
+pub(crate) fn session_matches_context(
+    s: &EngineeringState,
+    session: &Session,
+    step: &str,
+    node: Option<&Value>,
+) -> bool {
+    s.governance.iter().any(|r| {
+        ["execution_task_binding", "execution_runtime_binding"].contains(&r.kind.as_str())
+            && (r.definition_id == session.id || r.data["session_id"] == session.id)
+            && r.data["step_instance_id"] == step
+            && node.is_none_or(|node| r.data["recipe_node"] == *node)
+    }) || session_workflow_context(s, &session.id).is_some_and(|context| {
+        context["step_instance_id"] == step
+            && node.is_none_or(|node| context["recipe_node"] == *node)
+    })
+}
+
 fn frozen_task_record(s: &EngineeringState, turn: &str) -> Result<Option<FrozenAgentTask>> {
     s.governance
         .iter()
@@ -23,7 +144,10 @@ fn definition(binding: &ConfigurationRecord) -> Result<WorkflowTaskDefinition> {
     task.decode_step()?;
     Ok(task)
 }
-pub(crate) fn binding_for_run<'a>(s: &'a EngineeringState, run: &Run) -> Option<&'a ConfigurationRecord> {
+pub(crate) fn binding_for_run<'a>(
+    s: &'a EngineeringState,
+    run: &Run,
+) -> Option<&'a ConfigurationRecord> {
     let mut current = Some(run);
     let mut seen = vec![];
     while let Some(r) = current {
@@ -53,8 +177,7 @@ pub(crate) fn binding_for_run<'a>(s: &'a EngineeringState, run: &Run) -> Option<
     })
 }
 
-// A successor retains the task's meaning even in legacy sessions without a v3
-// task binding. Stop at a directly bound step so a later discussion is distinct.
+// A successor retains its frozen task. A directly bound step starts a distinct discussion.
 fn session_lineage<'a>(s: &'a EngineeringState, sid: &str) -> Vec<&'a Session> {
     let mut lineage = vec![];
     let mut current = s.sessions.iter().find(|session| session.id == sid);
@@ -84,12 +207,22 @@ pub(crate) fn session_workflow_task(
 ) -> Option<(WorkflowStep, Option<String>)> {
     for session in session_lineage(s, sid) {
         let run = s.runs.iter().rev().find(|run| run.session_id == session.id);
-        let binding = s
-            .governance
-            .iter()
-            .find(|r| r.kind == "execution_task_binding" && r.definition_id == session.id)
-            .or_else(|| run.and_then(|run| binding_for_run(s, run)));
+        let binding =
+            session_binding(s, &session.id).or_else(|| run.and_then(|run| binding_for_run(s, run)));
         if let Some(binding) = binding {
+            if binding.kind == "execution_runtime_binding" {
+                let lock = s
+                    .configuration(binding.data["feature_lock_id"].as_str()?)
+                    .ok()?
+                    .decode::<FeatureConfiguration>()
+                    .ok()?;
+                return lock
+                    .task_plan
+                    .steps
+                    .into_iter()
+                    .find(|step| Some(step.key.as_str()) == binding.data["step"].as_str())
+                    .map(|step| (step, None));
+            }
             let definition = definition(binding).ok()?;
             return Some((
                 definition.decode_step().ok()?,
@@ -102,38 +235,6 @@ pub(crate) fn session_workflow_task(
                     }),
             ));
         }
-        let source = [
-            Some(session.id.as_str()),
-            run.map(|r| r.id.as_str()),
-            run.and_then(|r| r.attempt_id.as_deref()),
-        ]
-        .into_iter()
-        .flatten()
-        .find_map(|target| {
-            s.governance
-                .iter()
-                .find(|r| r.kind == "execution_specification" && r.definition_id == target)
-        });
-        if let Some(source) = source {
-            let lock = session
-                .feature_id
-                .as_deref()
-                .and_then(|id| s.feature_configuration(id))?;
-            let plan = if session.task_id.is_some() {
-                &lock.task_plan
-            } else {
-                &lock.plan
-            };
-            let step = plan
-                .steps
-                .iter()
-                .find(|step| Some(step.key.as_str()) == source.data["step"].as_str())?;
-            return Some((
-                step.clone(),
-                run.filter(|r| !r.node.starts_with("review:"))
-                    .map(|r| r.node.clone()),
-            ));
-        }
     }
     None
 }
@@ -141,47 +242,14 @@ pub(crate) fn session_workflow_task(
 pub(crate) fn session_workflow_context(s: &EngineeringState, sid: &str) -> Option<Value> {
     for session in session_lineage(s, sid) {
         let run = s.runs.iter().rev().find(|run| run.session_id == session.id);
-        let source = s
-            .governance
-            .iter()
-            .find(|r| r.kind == "execution_task_binding" && r.definition_id == session.id)
-            .or_else(|| run.and_then(|run| binding_for_run(s, run)))
-            .or_else(|| {
-                [
-                    Some(session.id.as_str()),
-                    run.map(|r| r.id.as_str()),
-                    run.and_then(|r| r.attempt_id.as_deref()),
-                ]
-                .into_iter()
-                .flatten()
-                .find_map(|target| {
-                    s.governance
-                        .iter()
-                        .find(|r| r.kind == "execution_specification" && r.definition_id == target)
-                })
-            })
-            .or_else(|| {
-                s.governance.iter().find(|r| {
-                    r.kind == "agent_session"
-                        && r.definition_id == session.id
-                        && r.data["workflow_step_instance_id"].is_string()
-                })
-            });
+        let source =
+            session_binding(s, &session.id).or_else(|| run.and_then(|run| binding_for_run(s, run)));
         if let Some(source) = source {
-            let step_id = source.data["step_instance_id"]
-                .as_str()
-                .or(source.data["workflow_step_instance_id"].as_str())?;
-            let agent_session = s
-                .governance
-                .iter()
-                .find(|r| r.kind == "agent_session" && r.definition_id == session.id);
-            let recipe = source.data["recipe_node"]
-                .as_str()
-                .or_else(|| agent_session.and_then(|r| r.data["workflow_recipe_node"].as_str()))
-                .or_else(|| {
-                    run.filter(|r| !r.node.starts_with("review:"))
-                        .map(|r| r.node.as_str())
-                });
+            let step_id = source.data["step_instance_id"].as_str()?;
+            let recipe = source.data["recipe_node"].as_str().or_else(|| {
+                run.filter(|r| !r.node.starts_with("review:"))
+                    .map(|r| r.node.as_str())
+            });
             return Some(json!({"step_instance_id":step_id,"recipe_node":recipe,
                 "workflow_instance_id":source.data["workflow_instance_id"],"step":source.data["step"]}));
         }
@@ -334,7 +402,8 @@ fn task_sections(def: &WorkflowTaskDefinition, node: Option<&str>) -> Result<Val
     let mut sections = json!({"task":{"instructions":step.task_instructions.as_deref().ok_or_else(||err("task_contract_mismatch","步骤公共任务缺失"))?,"node_instructions":node_task,"required_topics":step.interaction.required_topics},"stage_context":def.stage,"output_contract":agent_task_output_contract(&step,node)});
     if !def.delivery_types.is_empty() {
         sections["delivery_types"] = json!(def.delivery_types);
-        sections["delivery_contracts"] = json!({"inputs":step.delivery_inputs,"outputs":step.delivery_outputs});
+        sections["delivery_contracts"] =
+            json!({"inputs":step.delivery_inputs,"outputs":step.delivery_outputs});
     }
     Ok(sections)
 }
@@ -352,7 +421,30 @@ fn render(
         .feature_id
         .as_ref()
         .and_then(|id| s.feature_configuration(id));
-    let base = task_base(s, session, &step, node, lock.as_ref())?;
+    let mut base = task_base(s, session, &step, node, lock.as_ref())?;
+    let workflow_role = if session.scope == Some(SessionScope::Task) {
+        base.role
+            .as_mut()
+            .and_then(Value::as_object_mut)
+            .and_then(|role| role.remove("workflow_role"))
+    } else {
+        None
+    };
+    if session.scope == Some(SessionScope::Task) {
+        // Existing native threads retain the exact base they originally received,
+        // including pre-upgrade snapshots that still contain a workflow Role.
+        if let Some(previous) = s.turns.iter().find(|turn| {
+            turn.session_id == session.id
+                && s.governance
+                    .iter()
+                    .any(|r| r.kind == "execution_task" && r.definition_id == turn.id)
+        }) {
+            if let Some(frozen) = frozen_task_record(s, &previous.id)? {
+                base = frozen.base;
+            }
+        }
+    }
+
     let specs = step
         .spec_refs
         .iter()
@@ -415,6 +507,9 @@ fn render(
         "inputs":inputs,"materials":documents,"context":context,"historical_context":historical_context,"code_view":turn.code_view,
         "authorization":session.runtime_binding.as_ref().map(|b|json!({"permissions":b.permissions,"tool_policy":b.tool_policy,"work_type":b.work_type,"writable_paths":b.writable_paths,"read_only_paths":b.read_only_paths})),
         "output_contract":agent_task_output_contract(&step,node)});
+    if let Some(role) = workflow_role {
+        content["workflow_role"] = role;
+    }
     content
         .as_object_mut()
         .unwrap()
@@ -455,9 +550,7 @@ impl Engine {
         let lock = s
             .feature_configuration(&runtime.feature_id)
             .ok_or_else(|| err("task_contract_mismatch", "Feature 配置锁不存在"))?;
-        if lock.compiler_version < 3 {
-            return Ok(());
-        }
+        require(lock.compiler_version == 3, "Workflow compiler 必须为 v3")?;
         let spec = lock
             .specification_snapshot
             .iter()
@@ -474,7 +567,39 @@ impl Engine {
                     })
             })
             .ok_or_else(|| err("task_contract_mismatch", "任务步骤不在冻结编译闭包中"))?;
+        let target = text(result, "id")?;
+        let task_session = (method == "session.open")
+            .then(|| s.sessions.iter().find(|session| session.id == target))
+            .flatten()
+            .filter(|session| session.scope == Some(SessionScope::Task));
         let Some(def) = &spec.task else {
+            if let Some(session) = task_session {
+                let binding: RuntimeBinding = serde_json::from_value(c.payload["binding"].clone())
+                    .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
+                s.validate_task_runtime(session, &binding)?;
+                let data = json!({"feature_lock_id":runtime.configuration_lock_id,"workflow_instance_id":runtime_id,"step_instance_id":instance,"step":step_state.key,"round":step_state.round,"recipe_node":null,"session_id":session.id,"runtime_binding":binding,"spec_refs":spec.spec_refs});
+                if session_binding(s, &target).is_some_and(|old| old.data == data) {
+                    return Ok(());
+                }
+                require(
+                    !s.turns
+                        .iter()
+                        .any(|turn| turn.session_id == target && turn.status.active()),
+                    "请先结束或核对当前 Task 会话的活动轮次，再切换节点",
+                )?;
+                s.governance.push(record(
+                    "execution_runtime_binding",
+                    id(),
+                    Scope::Project {
+                        project_id: s.feature(&runtime.feature_id)?.project_id.clone(),
+                    },
+                    step_state.key,
+                    1,
+                    None,
+                    data,
+                    true,
+                ));
+            }
             return Ok(());
         };
         let node = c.payload["workflow_recipe_node"].as_str();
@@ -496,24 +621,69 @@ impl Engine {
             ));
         }
 
-        if node.is_some_and(|n| !recipe_node_is_agent(n)) {
-            return Ok(());
-        }
-        let target = text(result, "id")?;
-        let data = json!({"definition":def,"definition_digest":task_content_hash(def),"feature_lock_id":runtime.configuration_lock_id,"workflow_instance_id":runtime_id,"step_instance_id":instance,"round":step_state.round,"recipe_node":node});
-        if let Some(old) = s
-            .governance
-            .iter()
-            .find(|r| r.kind == "execution_task_binding" && r.definition_id == target)
+        if node.is_some_and(|n| !recipe_node_is_agent(n))
+            && !(method == "session.open"
+                && s.sessions.iter().any(|session| {
+                    Some(session.id.as_str()) == result["id"].as_str()
+                        && session.scope == Some(SessionScope::Task)
+                }))
         {
-            if old.data != data {
-                return Err(err(
-                    "task_contract_mismatch",
-                    "此执行已绑定其他任务，请创建独立步骤会话",
-                ));
-            }
             return Ok(());
         }
+        let data = json!({"definition":def,"definition_digest":task_content_hash(def),"feature_lock_id":runtime.configuration_lock_id,"workflow_instance_id":runtime_id,"step_instance_id":instance,"round":step_state.round,"recipe_node":node});
+        let mut data = data;
+        if method == "review.request" {
+            if let Some(run) = s.runs.iter().find(|run| run.id == target) {
+                if let Some(session) = s.sessions.iter().find(|session| {
+                    session.id == run.session_id && session.scope == Some(SessionScope::Task)
+                }) {
+                    let context = node_binding(s, &session.id, None, Some(instance))
+                        .ok_or_else(|| err("task_contract_mismatch", "Task 评审缺少节点上下文"))?;
+                    data["session_id"] = json!(session.id);
+                    data["runtime_binding"] = context.data["runtime_binding"].clone();
+                    data["run_id"] = json!(run.id);
+                }
+            }
+        }
+        let target = if let Some(session) = task_session {
+            let runtime_binding: RuntimeBinding =
+                serde_json::from_value(c.payload["binding"].clone())
+                    .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
+            s.validate_task_runtime(session, &runtime_binding)?;
+            data["session_id"] = json!(session.id);
+            data["runtime_binding"] = json!(runtime_binding);
+            let old = session_binding(s, &target);
+            if old.is_some_and(|old| {
+                let mut previous = old.data.clone();
+                previous.as_object_mut().unwrap().remove("run_id");
+                if previous.get("session_id").is_none()
+                    && session.runtime_binding.as_ref() == Some(&runtime_binding)
+                {
+                    previous["session_id"] = json!(session.id);
+                    previous["runtime_binding"] = json!(runtime_binding);
+                }
+                previous == data
+            }) {
+                return Ok(());
+            }
+            require(
+                !s.turns
+                    .iter()
+                    .any(|turn| turn.session_id == target && turn.status.active()),
+                "请先结束或核对当前 Task 会话的活动轮次，再切换节点",
+            )?;
+            if old.is_some() { id() } else { target }
+        } else {
+            if let Some(old) = s
+                .governance
+                .iter()
+                .find(|r| r.kind == "execution_task_binding" && r.definition_id == target)
+            {
+                require(old.data == data, "此执行已绑定其他任务，请创建独立步骤会话")?;
+                return Ok(());
+            }
+            target
+        };
         s.governance.push(record(
             "execution_task_binding",
             target,
@@ -527,6 +697,43 @@ impl Engine {
             data,
             true,
         ));
+        if method == "attempt.start" {
+            let attempt_id = text(result, "id")?;
+            let runs: Vec<_> = s
+                .runs
+                .iter()
+                .filter(|run| run.attempt_id.as_deref() == Some(&attempt_id))
+                .cloned()
+                .collect();
+            for run in runs {
+                if s.governance
+                    .iter()
+                    .any(|r| r.kind == "execution_task_binding" && r.definition_id == run.id)
+                {
+                    continue;
+                }
+                let Some(session) = s.sessions.iter().find(|session| {
+                    session.id == run.session_id && session.scope == Some(SessionScope::Task)
+                }) else {
+                    continue;
+                };
+                let context = node_binding(s, &session.id, Some(&run.node), Some(instance))
+                    .cloned()
+                    .ok_or_else(|| err("task_contract_mismatch", "Task Run 缺少冻结节点上下文"))?;
+                let mut data = context.data;
+                data["run_id"] = json!(run.id);
+                s.governance.push(record(
+                    "execution_task_binding",
+                    run.id,
+                    context.scope,
+                    context.name,
+                    1,
+                    None,
+                    data,
+                    true,
+                ));
+            }
+        }
         Ok(())
     }
     pub(crate) fn freeze_turn_task(&self, s: &mut EngineeringState, turn_id: &str) -> Result<()> {
@@ -550,13 +757,31 @@ impl Engine {
             .as_ref()
             .and_then(|id| s.runs.iter().find(|r| &r.id == id));
         let binding = if let Some(run) = run {
-            binding_for_run(s, run)
+            let source = binding_for_run(s, run);
+            if source.is_some_and(|r| r.data["runtime_binding"].is_object()) {
+                source
+            } else if session.scope == Some(SessionScope::Task) {
+                let step = source.and_then(|r| r.data["step_instance_id"].as_str());
+                node_binding(
+                    s,
+                    &session.id,
+                    (!run.node.starts_with("review:")).then_some(run.node.as_str()),
+                    step,
+                )
+                .or(source)
+            } else {
+                source
+            }
         } else {
-            s.governance
-                .iter()
-                .find(|r| r.kind == "execution_task_binding" && r.definition_id == session.id)
+            session_binding(s, &session.id)
         }
         .cloned();
+        require(
+            binding
+                .as_ref()
+                .is_none_or(|binding| binding.kind != "execution_runtime_binding"),
+            "此节点由系统执行器执行，不接受 Agent 输入",
+        )?;
         let Some(binding) = binding else {
             if (run.is_some()
                 || s.governance
@@ -566,7 +791,7 @@ impl Engine {
                     .feature_id
                     .as_ref()
                     .and_then(|id| s.feature_configuration(id))
-                    .is_some_and(|l| l.compiler_version >= 3)
+                    .is_some_and(|l| l.compiler_version == 3)
             {
                 return Err(err(
                     "task_contract_mismatch",
@@ -574,6 +799,18 @@ impl Engine {
                 ));
             }
             return Ok(());
+        };
+        let effective = if session.scope == Some(SessionScope::Task) {
+            let mut effective = session.clone();
+            if let Some(runtime) = binding.data.get("runtime_binding") {
+                let runtime: RuntimeBinding = serde_json::from_value(runtime.clone())
+                    .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
+                s.validate_task_runtime(&session, &runtime)?;
+                effective.runtime_binding = Some(runtime);
+            }
+            effective
+        } else {
+            session.clone()
         };
         let node = run
             .filter(|r| !r.node.starts_with("review:"))
@@ -601,7 +838,7 @@ impl Engine {
             content["retry_of"] = json!(run.and_then(|r| r.retry_of.as_ref()));
             FrozenAgentTask::new(previous.definition, previous.base, content)?
         } else {
-            render(s, &session, &turn, &binding, node)?
+            render(s, &effective, &turn, &binding, node)?
         };
         let owner = if let Some(tid) = &session.task_id {
             MaterialOwner::Task {
@@ -622,7 +859,11 @@ impl Engine {
             &serde_json::to_string(&task).map_err(|e| err("serialization", e.to_string()))?,
         )?;
         artifact.origin = Origin::External;
-        let data = json!({"task":task,"source_binding_id":binding.id,"artifact_id":artifact.id});
+        let mut data =
+            json!({"task":task,"source_binding_id":binding.id,"artifact_id":artifact.id});
+        if session.scope == Some(SessionScope::Task) {
+            data["runtime_binding"] = json!(effective.runtime_binding);
+        }
         s.artifacts.push(artifact);
         s.governance.push(record(
             "execution_task",
@@ -663,7 +904,7 @@ impl Engine {
             });
         if feature
             .and_then(|id| s.feature_configuration(id))
-            .is_some_and(|l| l.compiler_version >= 3)
+            .is_some_and(|l| l.compiler_version == 3)
         {
             return Err(err("task_contract_mismatch", "v3 Run 缺少任务绑定"));
         }
@@ -676,18 +917,30 @@ impl Engine {
         next: &str,
     ) -> Result<()> {
         for kind in ["execution_task_binding", "execution_specification"] {
-            if let Some(source) = s
-                .governance
-                .iter()
-                .rev()
-                .find(|r| r.kind == kind && r.definition_id == old)
-                .cloned()
-            {
+            let source = if kind == "execution_task_binding" {
+                session_binding(s, old).cloned()
+            } else {
+                s.governance
+                    .iter()
+                    .rev()
+                    .find(|r| r.kind == kind && r.definition_id == old)
+                    .cloned()
+            };
+            if let Some(mut source) = source {
                 if s.governance
                     .iter()
                     .any(|r| r.kind == kind && r.definition_id == next)
                 {
                     return Err(err("task_contract_mismatch", "后继会话已有其他冻结任务"));
+                }
+                if kind == "execution_task_binding" && source.data["session_id"].is_string() {
+                    source.data["session_id"] = json!(next);
+                    source.data["runtime_binding"] = json!(
+                        s.sessions
+                            .iter()
+                            .find(|session| session.id == next)
+                            .and_then(|session| session.runtime_binding.as_ref())
+                    );
                 }
                 let mut r = record(
                     kind,
@@ -772,7 +1025,7 @@ impl Engine {
                     .ok_or_else(|| err("not_found", "Turn 不存在"))?;
                 let task = frozen_task_record(&s, turn)?;
                 return Ok(
-                    json!({"turn_id":t.id,"run_id":t.run_id,"legacy":task.is_none(),"task":task}),
+                    json!({"turn_id":t.id,"run_id":t.run_id,"configured":task.is_some(),"task":task}),
                 );
             }
             let mut wf = if let Some(doc) = p.get("document") {
@@ -810,9 +1063,7 @@ impl Engine {
                 .find(|b| b.path == path)
                 .ok_or_else(|| err("not_found", "步骤完整路径不存在"))?;
             let Some(def) = &binding.task else {
-                return Ok(
-                    json!({"legacy":wf.data["schema_version"]!=3,"executor":"system_or_legacy","task":null,"scope_checked":false}),
-                );
+                return Ok(json!({"executor":"system","task":null,"scope_checked":false}));
             };
             let step = def.decode_step()?;
             let node = p["recipe_node"].as_str();

@@ -1,8 +1,8 @@
 # DevDesk 0.2
 
-本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 测试和 GitHub PR。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；历史原型数据只读保留，离线测试使用独立夹具。账号授权在设置中完成，见[真实工程接入](docs/real-engineering.md)。
+本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 测试和 GitHub PR。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；运行路径只接受当前协议与配置，离线测试使用独立夹具。账号授权在设置中完成，见[真实工程接入](docs/real-engineering.md)。
 
-流程与规范的 Delivery 页可定义 PRD、Design Doc、Diff、Test Report 等交付物。Workflow v3 步骤可声明产出及引用依赖链上的确切交付物修订，定义与材料一起进入冻结任务。角色与 Agent 仅保留 Role、Capability、Agent 三个页签，Agent 用于组合职责与能力；讨论身份可在角色讨论中创建。同一 owner、步骤、Agent 和执行节点默认续用最新会话，也可显式新建 Session。
+流程与规范的 Delivery 页可定义 PRD、Design Doc、Diff、Test Report 等交付物。Workflow v3 步骤可声明产出及引用依赖链上的确切交付物修订，定义与材料一起进入冻结任务。角色与 Agent 仅保留 Role、Capability、Agent 三个页签，Agent 用于组合职责与能力；讨论身份可在角色讨论中创建。同一 Task 中，同一 Agent 跨步骤和执行节点续用同一个 Session 与原生 thread，仅显式新建时切换到新会话；每轮独立冻结节点任务和执行权限。Feature 级讨论继续按步骤隔离。
 
 ## 运行
 
@@ -71,9 +71,9 @@ npm --prefix web ci
 <data>/projects/<project-id>/artifacts/           # 当前项目的文档、报告与其他产物
 ```
 
-数据库初始化与结构升级脚本按数据库和职责分类：`sql/global/` 对应全局配置库，`sql/project/` 对应项目工程库，后者再分基础结构、执行、会话、工程流和配置。脚本在编译时嵌入程序，编号与升级顺序不受目录分组影响；见 [迁移索引](sql/README.md)。
+数据库由 `sql/global/schema.sql` 与 `sql/project/schema.sql` 的当前基线直接创建；见 [结构说明](sql/README.md)。
 
-在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。旧版根目录 `engineering.sqlite3` 首次打开时自动拆分，校验产物并保留历史和幂等记录；旧库、旧产物及 `runtime.json` 保留不变，后续只使用新布局。迁移失败可修复原因后重试，不发布不完整的项目目录。详细语义见[架构说明](docs/design.md#adr-010每项目数据库与全局配置库)。
+在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。系统只支持当前分库布局，已有数据需显式迁移到当前结构后打开。
 
 本轮领域补强的计划见 [补强计划](docs/plans/domain-hardening/PLAN.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/plans/domain-hardening/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
 
@@ -81,6 +81,6 @@ npm --prefix web ci
 
 开发 Web Host 可用 `./scripts/dev/dev.sh --data /完整路径/数据集 --port 4317`；它会在 macOS 重建后应用已配置的稳定签名。
 
-运行权限采用独立的 Permission 修订，支持 Harness/Sandbox 绑定、覆盖和执行前预览。新配置默认容器内全权限，旧数据保留原绑定；见 [权限说明](permissions/README.md) 和 [实施报告](docs/plans/permission-standardization/EXECUTION.md)。
+运行权限只使用 v2 完整 profile 和版本绑定，支持执行前预览。内置 Agent 默认追随 Harness/Sandbox 的容器内全权限绑定；见 [权限说明](permissions/README.md) 和 [实施报告](docs/plans/permission-standardization/EXECUTION.md)。
 
 2026-11-09 两项新能力的 Ubuntu x86_64 实机验证分别见 [Permission 补验](docs/plans/permission-standardization/UBUNTU.md) 和 [Workflow 与工作台补验](docs/plans/workflow-and-workbench/UBUNTU.md)，包含当前源码回归、双 Harness 原生执行、Linux 隔离与发布包证据。

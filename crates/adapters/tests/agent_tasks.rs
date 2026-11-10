@@ -1,4 +1,6 @@
-//! Real SQLite/Artifact/Engine round trips; an explicit recording port never calls a model.
+#[path = "../../../tests/support/permissions.rs"]
+mod permission_fixture;
+// Real SQLite/Artifact/Engine round trips; an explicit recording port never calls a model.
 use devdesk_adapters::{FileArtifacts, SqliteStore};
 use devdesk_core::{ports::*, *};
 use devdesk_domain::*;
@@ -15,6 +17,7 @@ mod schemas;
 #[derive(Default)]
 struct Recorder {
     calls: Mutex<Vec<TurnDispatch>>,
+    starts: Mutex<Vec<SessionStart>>,
     pending: Mutex<HashMap<Id, Vec<ConversationObservation>>>,
 }
 impl devdesk_core::ports::Harness for Recorder {
@@ -22,6 +25,7 @@ impl devdesk_core::ports::Harness for Recorder {
         "fixture:task-recorder".into()
     }
     fn open_session(&self, r: &SessionStart) -> Result<SessionReceipt> {
+        self.starts.lock().unwrap().push(r.clone());
         if let Some(base) = &r.task_base {
             assert_eq!(base.agent.id, r.agent.id);
         }
@@ -82,6 +86,7 @@ fn engine(path: &std::path::Path, port: Arc<Recorder>) -> Engine {
         adapters,
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e
 }
 fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Result<Value> {
@@ -197,7 +202,12 @@ fn open(e: &Engine, fid: &str, key: &str, node: Option<&str>) -> Id {
         .unwrap();
     let actor = &lock.role_agent_bindings[role];
     let instance = &rt.steps.iter().find(|s| s.key == key).unwrap().id;
-    command(e,"session.open",Some(fid),json!({"agent":actor,"binding":binding(),"workflow_step_instance_id":instance,"workflow_recipe_node":node})).unwrap()["id"].as_str().unwrap().to_owned()
+    let mut runtime = binding();
+    if task.is_some() && node == Some("docs") {
+        runtime.read_only_paths = vec!["tests/frozen".into()];
+        runtime.configuration_digest = "b".repeat(64);
+    }
+    command(e,"session.open",Some(fid),json!({"agent":actor,"binding":runtime,"workflow_step_instance_id":instance,"workflow_recipe_node":node})).unwrap()["id"].as_str().unwrap().to_owned()
 }
 fn send(e: &Engine, sid: &str, text: &str) -> Value {
     command(
@@ -210,12 +220,12 @@ fn send(e: &Engine, sid: &str, text: &str) -> Value {
 }
 
 #[test]
-fn v3_contracts_validate_every_agent_lane_and_preserve_v2_bytes() {
+fn v3_contracts_validate_every_agent_lane_and_round_trip_current_bytes() {
     let root = tempfile::tempdir().unwrap();
     let e = engine(root.path(), Arc::default());
     let s = e.store.snapshot().unwrap();
     let old = s
-        .configuration(DEFAULT_FEATURE_WORKFLOW_V2_ID)
+        .configuration(DEFAULT_FEATURE_WORKFLOW_V3_ID)
         .unwrap()
         .data
         .clone();
@@ -232,6 +242,9 @@ fn v3_contracts_validate_every_agent_lane_and_preserve_v2_bytes() {
         .iter()
         .position(|s| s.kind == "agent.interact")
         .unwrap();
+    let mut retired = json!(doc);
+    retired["steps"][index]["interaction"]["goal"] = json!("Retired discussion goal");
+    assert!(serde_json::from_value::<WorkflowDocument>(retired).is_err());
     doc.steps[index].task_instructions = None;
     assert!(validate_workflow(&doc).is_err());
     let mut raw = s
@@ -297,7 +310,7 @@ fn v3_contracts_validate_every_agent_lane_and_preserve_v2_bytes() {
             .unwrap()
     );
     assert_eq!(
-        s.configuration(DEFAULT_FEATURE_WORKFLOW_V2_ID)
+        s.configuration(DEFAULT_FEATURE_WORKFLOW_V3_ID)
             .unwrap()
             .data,
         old
@@ -344,41 +357,14 @@ fn task_markdown_round_trips_through_revision_preview_and_real_storage() {
     assert_eq!(preview["task"]["instructions"], text);
     assert_eq!(preview["side_effects"], false);
     assert!(preview["base_context"].is_null());
-    let unknown = command(
-        &e,
-        "workflow.task_upgrade",
-        Some(DEFAULT_FEATURE_WORKFLOW_V2_ID),
-        json!({}),
-    )
-    .unwrap();
-    assert_eq!(unknown["data"]["document"]["schema_version"], 3);
     assert!(
-        unknown["data"]["document"]["steps"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|s| s["kind"] == "agent.interact")
-            .all(|s| s["interaction"]["goal"] == "")
-    );
-    // Changing only task text is an actual compiled audit difference.
-    let mut after = doc.clone();
-    after["steps"][index]["task_instructions"] = json!("Different task");
-    let before = e
-        .query("query.specification_audit", &json!({"document":doc}), 4)
-        .unwrap();
-    let difference = e
-        .query(
-            "query.specification_audit",
-            &json!({"document":after,"previous_snapshot":before["specification_snapshot"]}),
-            4,
+        command(
+            &e,
+            "workflow.task_upgrade",
+            Some(DEFAULT_FEATURE_WORKFLOW_V3_ID),
+            json!({})
         )
-        .unwrap();
-    assert!(
-        difference["changes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|v| v["path"] == key)
+        .is_err()
     );
 }
 
@@ -429,32 +415,52 @@ fn every_agent_step_and_feature_recipe_dispatches_its_task_role_skills_and_specs
         schemas::SCHEMAS.assert_valid("agent-task.schema.json", &record["task"]);
         e.tick_conversations(4).unwrap();
         e.tick_conversations(4).unwrap();
-        let session_detail=e.query("query.session",&json!({"id":sid}),4).unwrap();
+        let session_detail = e.query("query.session", &json!({"id":sid}), 4).unwrap();
         if key != "requirement_discussion" {
-            let error=command(&e,"proposal.extract",None,json!({"turn_id":sent["id"],"target":f})).unwrap_err();
+            let error = command(
+                &e,
+                "proposal.extract",
+                None,
+                json!({"turn_id":sent["id"],"target":f}),
+            )
+            .unwrap_err();
             assert!(error.message.contains("正式交付或评审结果不属于需求提案"));
-            assert_ne!(session_detail["output_contract"]["id"],"proposal-content/v1");
+            assert_ne!(
+                session_detail["output_contract"]["id"],
+                "proposal-content/v1"
+            );
         }
         let captured = port.calls.lock().unwrap().last().unwrap().clone();
         let frozen = captured.task.as_ref().unwrap();
-        assert!(!frozen.content["quality_basis"]["skills"].as_array().unwrap().is_empty());
+        assert!(
+            !frozen.content["quality_basis"]["skills"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         if frozen.content["output_contract"]["id"] == STAGE_ANSWER_CONTRACT {
-            assert_eq!(frozen.content["output_contract"]["schema"]["properties"]["checks"]["items"]["properties"]["passed"]["type"], "boolean");
-            assert!(frozen.content["output_contract"]["required_fields"].as_array().unwrap().contains(&json!("approve")));
-            // Preserve upstream v1/v2 snapshots and the pre-rebase local v1 Approve variant.
-            let step=frozen.definition.decode_step().unwrap();
-            for renderer in [LEGACY_TASK_RENDERER,TYPED_TASK_RENDERER] {
-                let mut old_definition=frozen.definition.clone();old_definition.renderer_version=renderer.into();
-                let mut old_content=frozen.content.clone();old_content["renderer_version"]=json!(renderer);
-                old_content["output_contract"]=agent_task_output_contract_for_renderer(&step,node,renderer);
-                let old=FrozenAgentTask::new(old_definition.clone(),frozen.base.clone(),old_content.clone()).unwrap();
-                let bytes=serde_json::to_vec(&old).unwrap();
-                let restored:FrozenAgentTask=serde_json::from_slice(&bytes).unwrap();restored.validate().unwrap();
-                assert_eq!(serde_json::to_vec(&restored).unwrap(),bytes);
-                if renderer==LEGACY_TASK_RENDERER {
-                    old_content["output_contract"].as_object_mut().unwrap().extend(stage_answer_output_contract().as_object().unwrap().clone());
-                    FrozenAgentTask::new(old_definition,frozen.base.clone(),old_content).unwrap().validate().unwrap();
-                }
+            assert_eq!(
+                frozen.content["output_contract"]["schema"]["properties"]["checks"]["items"]["properties"]
+                    ["passed"]["type"],
+                "boolean"
+            );
+            assert!(
+                frozen.content["output_contract"]["required_fields"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("approve"))
+            );
+            for renderer in ["agent-task/v1", "agent-task/v2"] {
+                let mut old_task = record["task"].clone();
+                old_task["renderer_version"] = json!(renderer);
+                assert!(
+                    !schemas::SCHEMAS
+                        .validator("agent-task.schema.json")
+                        .is_valid(&old_task)
+                );
+                let mut old_definition = frozen.definition.clone();
+                old_definition.renderer_version = renderer.into();
+                assert!(old_definition.decode_step().is_err());
             }
         }
         let native = devdesk_adapters::harness::provider_turn_text(&captured).unwrap();
@@ -568,6 +574,434 @@ fn queued_task_survives_restart_directory_changes_and_continuation_without_rerea
     );
 }
 
+fn task_fixture(e: &Engine, f: &str) -> Id {
+    let f = f.to_owned();
+    let tid = id();
+    e.store
+        .transact(None, &mut |s| {
+            let feature = s.feature(&f)?.clone();
+            let lock = s.feature_configuration(&f).unwrap();
+            let mut record = s
+                .governance
+                .iter()
+                .find(|r| r.kind == "workflow_instance" && r.definition_id == f)
+                .unwrap()
+                .clone();
+            let mut runtime: WorkflowRuntime = record.decode()?;
+            runtime.owner_id = tid.clone();
+            runtime.task_id = Some(tid.clone());
+            runtime.workflow_ref = DEFAULT_TASK_WORKFLOW_V3_ID.into();
+            runtime.steps = lock
+                .task_plan
+                .steps
+                .iter()
+                .map(|step| WorkflowStepRuntime {
+                    id: id(),
+                    key: step.key.clone(),
+                    round: 1,
+                    status: "pending".into(),
+                    input_hash: String::new(),
+                    outputs: Default::default(),
+                    reason: String::new(),
+                    revision: 1,
+                    confirmation: None,
+                })
+                .collect();
+            record.id = id();
+            record.definition_id = tid.clone();
+            record.data = json!(runtime);
+            record.content_hash = configuration_hash(&record.data);
+            s.governance.push(record);
+            let snapshot = id();
+            s.snapshots.push(Snapshot {
+                id: snapshot.clone(),
+                project_id: None,
+                feature_id: Some(f.clone()),
+                task_id: None,
+                kind: "explicit-fixture".into(),
+                content: "Frozen Task fixture context".into(),
+                binding: feature.binding.clone(),
+                documents: vec![],
+                delivery_id: None,
+                inherited_from: None,
+                capture: SnapshotCapture {
+                    attempt: None,
+                    runs: vec![],
+                    sessions: vec![],
+                    resources: vec![],
+                    captured_at: Some(1),
+                    reason: "Explicit test fixture; no accepted delivery claim".into(),
+                },
+                runtime_bindings: vec![],
+                execution_instances: vec![],
+            });
+            s.tasks.push(Task {
+                id: tid.clone(),
+                feature_id: f.clone(),
+                title: "Explicit Task fixture".into(),
+                status: Status::Ready,
+                revision: 1,
+                binding: feature.binding,
+                inherited_snapshot: snapshot,
+                dependencies: vec![],
+                worktree: "fixture".into(),
+                scope: TaskScope::default(),
+            });
+            s.contexts.push(Context {
+                id: id(),
+                owner_id: tid.clone(),
+                content: format!("Task context {tid}"),
+                revision: 1,
+            });
+            Ok(Value::Null)
+        })
+        .unwrap();
+    tid
+}
+
+#[test]
+fn task_attempt_freezes_each_node_scope_before_dispatch_on_shared_sessions() {
+    let root = tempfile::tempdir().unwrap();
+    let port = Arc::new(Recorder::default());
+    let e = engine(root.path(), port.clone());
+    let p = project(&e);
+    let f = feature(&e, &p);
+    let tid = task_fixture(&e, &f);
+    let upstream = e
+        .artifacts
+        .seal(&f, None, "deliveries", "# Accepted upstream fixture")
+        .unwrap();
+    // Explicit accepted upstream facts; this test exercises the real Attempt command,
+    // scheduler and native dispatch without executing Git, tests or a model.
+    e.store
+        .transact(None, &mut |s| {
+            s.artifacts.push(upstream.clone());
+            let feature = s.feature(&f)?.clone();
+            let mut docs = vec![];
+            for kind in ["requirement", "design"] {
+                let did = id();
+                s.documents.push(Document {
+                    id: did.clone(),
+                    feature_id: Some(f.clone()),
+                    project_id: None,
+                    task_id: None,
+                    kind: kind.into(),
+                    title: kind.into(),
+                    body: format!("# Fixture {kind}"),
+                    version: 1,
+                    supersedes: None,
+                    requirement_id: None,
+                    design_id: None,
+                    origin: Origin::Human,
+                    acceptance: vec![],
+                    verifies: vec![],
+                    artifact_id: None,
+                    test_recipe: None,
+                });
+                docs.push(did);
+            }
+            let task = s.tasks.iter_mut().find(|t| t.id == tid).unwrap();
+            task.scope.requirement = Some(docs[0].clone());
+            task.scope.design = Some(docs[1].clone());
+            let aid = id();
+            s.attempts.push(Attempt {
+                id: aid.clone(),
+                feature_id: f.clone(),
+                task_id: None,
+                phase: "planning".into(),
+                baseline: Some("a".repeat(40)),
+                source_base: Some("a".repeat(40)),
+                live_sessions: Default::default(),
+                git_context: None,
+                status: Status::Succeeded,
+                input_version: feature.input_version,
+                documents: docs.clone(),
+                outputs: vec![],
+                scope: None,
+                binding: feature.binding,
+                context_content: "Accepted fixture".into(),
+                context_revision: 1,
+                paused: false,
+                revision: 1,
+            });
+            for kind in ["requirement", "plan"] {
+                let delivery = id();
+                s.deliveries.push(Delivery {
+                    id: delivery.clone(),
+                    feature_id: f.clone(),
+                    task_id: None,
+                    attempt_id: Some(aid.clone()),
+                    merge_id: None,
+                    kind: kind.into(),
+                    input_version: feature.input_version,
+                    documents: docs.clone(),
+                    evidence: vec![],
+                    artifact_id: upstream.id.clone(),
+                    source_deliveries: vec![],
+                    candidate: Some("a".repeat(40)),
+                    stale: false,
+                    origin: Origin::External,
+                });
+                s.reviews.push(Review {
+                    id: id(),
+                    delivery_id: delivery,
+                    decision: Decision::Pass,
+                    checks: vec![],
+                    actor: "human:fixture".into(),
+                    run_id: None,
+                    reason: "Explicit accepted upstream fixture".into(),
+                    assignment: None,
+                });
+            }
+            for owner in [&f, &tid] {
+                let worktree = RepositoryWorktree {
+                    id: id(),
+                    project_id: p.clone(),
+                    owner_id: owner.clone(),
+                    kind: if owner == &tid {
+                        WorktreeKind::Task
+                    } else {
+                        WorktreeKind::Feature
+                    },
+                    branch: "fixture".into(),
+                    path: format!("fixture-{owner}"),
+                    base: "a".repeat(40),
+                    operation_id: id(),
+                };
+                s.repository_operations.push(RepositoryOperation {
+                    id: worktree.operation_id.clone(),
+                    project_id: p.clone(),
+                    action: RepositoryAction::CreateWorktree {
+                        owner: owner.clone(),
+                        worktree_kind: worktree.kind,
+                        base: worktree.base.clone(),
+                    },
+                    status: RepositoryOperationStatus::Completed,
+                    receipt: Some(RepositoryReceipt::Worktree {
+                        worktree: worktree.clone(),
+                    }),
+                    reason: String::new(),
+                    revision: 1,
+                });
+                s.repository_worktrees.push(worktree);
+                s.heads.push(GitHead {
+                    id: owner.clone(),
+                    project_id: p.clone(),
+                    revision: "a".repeat(40),
+                });
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let lock = state.feature_configuration(&f).unwrap();
+    let step = lock
+        .task_plan
+        .steps
+        .iter()
+        .find(|step| step.kind == "attempt.execute")
+        .unwrap();
+    let runtime: WorkflowRuntime = state
+        .governance
+        .iter()
+        .find(|r| r.kind == "workflow_instance" && r.definition_id == tid)
+        .unwrap()
+        .decode()
+        .unwrap();
+    let instance = &runtime.steps.iter().find(|s| s.key == step.key).unwrap().id;
+    let mut sessions = serde_json::Map::new();
+    for node in &step.execution_recipe {
+        let role = node.role_ref.as_ref().or(step.role_ref.as_ref()).unwrap();
+        let mut runtime = binding();
+        match node.key.as_str() {
+            "implement" => {
+                runtime.work_type = WorkType::Implementation;
+                runtime.tool_policy = ToolPolicy::TaskWrite;
+                runtime.writable_paths = vec![".".into()];
+                runtime.read_only_paths = vec!["tests".into()];
+            }
+            "test_author" => {
+                runtime.work_type = WorkType::Testing;
+                runtime.tool_policy = ToolPolicy::TestWrite;
+                runtime.writable_paths = vec!["tests/task-suite".into()];
+            }
+            _ => {}
+        }
+        runtime.configuration_digest = task_content_hash(&json!(&runtime));
+        let opened = command(
+            &e,
+            "session.open",
+            Some(&tid),
+            json!({
+                "agent":lock.role_agent_bindings[role], "binding":runtime,
+                "workflow_step_instance_id":instance, "workflow_recipe_node":node.key,
+            }),
+        )
+        .unwrap();
+        sessions.insert(node.key.clone(), opened["id"].clone());
+    }
+    assert_eq!(sessions["implement"], sessions["docs"]);
+    assert_eq!(sessions["test_author"], sessions["red"]);
+    assert_eq!(sessions["test_author"], sessions["green"]);
+    assert_eq!(sessions["test_author"], sessions["verify"]);
+    let attempt = command(
+        &e,
+        "attempt.start",
+        Some(&tid),
+        json!({"live_sessions":sessions,"workflow_step_instance_id":instance}),
+    )
+    .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let runs: Vec<_> = state
+        .runs
+        .iter()
+        .filter(|r| r.attempt_id.as_deref() == attempt["id"].as_str())
+        .cloned()
+        .collect();
+    assert_eq!(runs.len(), step.execution_recipe.len());
+    for run in &runs {
+        let frozen = state
+            .governance
+            .iter()
+            .find(|r| r.kind == "execution_task_binding" && r.definition_id == run.id)
+            .unwrap();
+        assert_eq!(frozen.data["recipe_node"], run.node);
+        assert_eq!(frozen.data["session_id"], run.session_id);
+        assert_eq!(
+            frozen.data["runtime_binding"]["tool_policy"],
+            match run.node.as_str() {
+                "implement" => "task_write",
+                "test_author" => "test_write",
+                _ => "read_only",
+            }
+        );
+    }
+    let implementation = runs.iter().find(|r| r.node == "implement").unwrap();
+    let frozen = state
+        .governance
+        .iter()
+        .find(|r| r.kind == "execution_task_binding" && r.definition_id == implementation.id)
+        .unwrap()
+        .clone();
+    // Opening docs again must not replace permissions already frozen for implementation.
+    assert_eq!(
+        open(&e, &tid, &step.key, Some("docs")),
+        implementation.session_id
+    );
+    e.store
+        .transact(None, &mut |s| {
+            s.attempts
+                .iter_mut()
+                .find(|a| Some(a.id.as_str()) == attempt["id"].as_str())
+                .unwrap()
+                .baseline = Some("a".repeat(40));
+            for run in s
+                .runs
+                .iter_mut()
+                .filter(|r| r.attempt_id.as_deref() == attempt["id"].as_str())
+            {
+                run.status = if run.node == "implement" {
+                    Status::Running
+                } else {
+                    Status::Cancelled
+                };
+                run.started = Some(1);
+                run.finished = (run.node != "implement").then_some(2);
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    e.tick(4).unwrap();
+    e.tick_conversations(4).unwrap();
+    let dispatch = port.calls.lock().unwrap()[0].clone();
+    assert_eq!(dispatch.session.id, implementation.session_id);
+    assert_eq!(
+        dispatch
+            .session
+            .runtime_binding
+            .as_ref()
+            .unwrap()
+            .tool_policy,
+        ToolPolicy::TaskWrite
+    );
+    assert_eq!(
+        dispatch.task.as_ref().unwrap().content["source"]["recipe_node"],
+        "implement"
+    );
+    assert_eq!(
+        dispatch.task.as_ref().unwrap().content["authorization"]["read_only_paths"],
+        json!(["tests"])
+    );
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(state.configuration(&frozen.id).unwrap(), &frozen);
+    assert_eq!(
+        state.sessions.iter().filter(|s| s.owner_id == tid).count(),
+        2
+    );
+    let session = state
+        .sessions
+        .iter()
+        .find(|s| s.id == implementation.session_id)
+        .unwrap();
+    assert!(
+        e.send_with_permission_binding(
+            Command {
+                command_id: id(),
+                target: Some(session.id.clone()),
+                expected_revision: Some(session.revision),
+                payload: json!({"input":"Changed permission fixture","client_message_id":id()}),
+            },
+            binding()
+        )
+        .unwrap_err()
+        .message
+        .contains("显式新建")
+    );
+    e.tick_conversations(4).unwrap();
+    e.store
+        .transact(None, &mut |s| {
+            let run = s
+                .runs
+                .iter_mut()
+                .find(|r| r.id == implementation.id)
+                .unwrap();
+            run.status = Status::Failed;
+            run.finished = Some(3);
+            run.result =
+                Some(json!({"failure_type":"adapter_contract","message":"Explicit retry fixture"}));
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let retry = command(&e, "run.retry", Some(&implementation.id), json!({})).unwrap();
+    let state = e.store.snapshot().unwrap();
+    let retry = state
+        .runs
+        .iter()
+        .find(|r| Some(r.id.as_str()) == retry["id"].as_str())
+        .unwrap();
+    assert_eq!(retry.session_id, implementation.session_id);
+    assert_eq!(retry.retry_of.as_deref(), Some(implementation.id.as_str()));
+    assert_eq!(
+        state.sessions.iter().filter(|s| s.owner_id == tid).count(),
+        2
+    );
+    let prepare = lock
+        .task_plan
+        .steps
+        .iter()
+        .find(|step| step.kind == "merge.prepare")
+        .unwrap();
+    let tester = open(&e, &tid, &prepare.key, None);
+    assert_eq!(json!(tester), sessions["test_author"]);
+    let view = e.query("query.session", &json!({"id":tester}), 4).unwrap();
+    assert_eq!(view["current_runtime_binding"]["tool_policy"], "read_only");
+    assert_eq!(
+        view["session"]["runtime_binding"]["tool_policy"],
+        "test_write"
+    );
+    assert_eq!(view["workflow_context"]["step"], prepare.key);
+}
+
 #[test]
 fn task_recipe_and_same_named_feature_review_keep_distinct_sources_for_two_tasks() {
     let root = tempfile::tempdir().unwrap();
@@ -619,87 +1053,11 @@ fn task_recipe_and_same_named_feature_review_keep_distinct_sources_for_two_tasks
     let defaults = e.configuration_defaults(Some(&p)).unwrap();
     command(&e,"project.configuration.update",Some(&p),json!({"workflow_ref":root_workflow["id"],"role_agent_bindings":defaults["role_agent_bindings"]})).unwrap();
     let f = feature(&e, &p);
+    let mut all_task_sessions = Vec::new();
     for _ in 0..2 {
-        let tid = id();
-        e.store
-            .transact(None, &mut |s| {
-                let feature = s.feature(&f)?.clone();
-                let lock = s.feature_configuration(&f).unwrap();
-                let mut record = s
-                    .governance
-                    .iter()
-                    .find(|r| r.kind == "workflow_instance" && r.definition_id == f)
-                    .unwrap()
-                    .clone();
-                let mut runtime: WorkflowRuntime = record.decode()?;
-                runtime.owner_id = tid.clone();
-                runtime.task_id = Some(tid.clone());
-                runtime.workflow_ref = DEFAULT_TASK_WORKFLOW_V3_ID.into();
-                runtime.steps = lock
-                    .task_plan
-                    .steps
-                    .iter()
-                    .map(|step| WorkflowStepRuntime {
-                        id: id(),
-                        key: step.key.clone(),
-                        round: 1,
-                        status: "pending".into(),
-                        input_hash: String::new(),
-                        outputs: Default::default(),
-                        reason: String::new(),
-                        revision: 1,
-                        confirmation: None,
-                    })
-                    .collect();
-                record.id = id();
-                record.definition_id = tid.clone();
-                record.data = json!(runtime);
-                record.content_hash = configuration_hash(&record.data);
-                s.governance.push(record);
-                let snapshot = id();
-                s.snapshots.push(Snapshot {
-                    id: snapshot.clone(),
-                    project_id: None,
-                    feature_id: Some(f.clone()),
-                    task_id: None,
-                    kind: "explicit-fixture".into(),
-                    content: "Frozen Task fixture context".into(),
-                    binding: feature.binding.clone(),
-                    documents: vec![],
-                    delivery_id: None,
-                    inherited_from: None,
-                    capture: SnapshotCapture {
-                        attempt: None,
-                        runs: vec![],
-                        sessions: vec![],
-                        resources: vec![],
-                        captured_at: Some(1),
-                        reason: "Explicit test fixture; no accepted delivery claim".into(),
-                    },
-                    runtime_bindings: vec![],
-                    execution_instances: vec![],
-                });
-                s.tasks.push(Task {
-                    id: tid.clone(),
-                    feature_id: f.clone(),
-                    title: "Explicit Task fixture".into(),
-                    status: Status::Ready,
-                    revision: 1,
-                    binding: feature.binding,
-                    inherited_snapshot: snapshot,
-                    dependencies: vec![],
-                    worktree: "fixture".into(),
-                    scope: TaskScope::default(),
-                });
-                s.contexts.push(Context {
-                    id: id(),
-                    owner_id: tid.clone(),
-                    content: format!("Task context {tid}"),
-                    revision: 1,
-                });
-                Ok(Value::Null)
-            })
-            .unwrap();
+        let mut by_agent = HashMap::new();
+        let mut frozen_turns = Vec::new();
+        let tid = task_fixture(&e, &f);
         for (key, node) in [
             ("implementation", Some("test_author")),
             ("implementation", Some("implement")),
@@ -726,8 +1084,29 @@ fn task_recipe_and_same_named_feature_review_keep_distinct_sources_for_two_tasks
                 .key
                 .clone();
             let sid = open(&e, &tid, &compiled_key, node);
-            assert_eq!(open(&e, &tid, &compiled_key, node), sid, "same Task, Agent and frozen node must reuse its session");
+            assert_eq!(
+                open(&e, &tid, &compiled_key, node),
+                sid,
+                "same Task, Agent and frozen node must reuse its session"
+            );
+            let actor = e
+                .store
+                .snapshot()
+                .unwrap()
+                .sessions
+                .iter()
+                .find(|session| session.id == sid)
+                .unwrap()
+                .agent
+                .clone();
+            if let Some(previous) = by_agent.insert(actor, sid.clone()) {
+                assert_eq!(
+                    previous, sid,
+                    "same Task/Agent must reuse its native session across nodes and steps"
+                );
+            }
             let sent = send(&e, &sid, "Task input");
+            frozen_turns.push(sent["id"].as_str().unwrap().to_owned());
             let task = e
                 .query("query.execution_task", &json!({"turn_id":sent["id"]}), 4)
                 .unwrap();
@@ -741,11 +1120,42 @@ fn task_recipe_and_same_named_feature_review_keep_distinct_sources_for_two_tasks
             );
             assert_eq!(task["task"]["content"]["source"]["task_id"], tid);
             assert_eq!(
+                task["task"]["content"]["authorization"]["read_only_paths"],
+                if node == Some("docs") {
+                    json!(["tests/frozen"])
+                } else {
+                    json!([])
+                }
+            );
+            assert_eq!(
                 task["task"]["content"]["source"]["recipe_node"],
                 json!(node)
             );
+            if node == Some("docs") {
+                let view = e.query("query.session", &json!({"id":sid}), 4).unwrap();
+                assert_eq!(
+                    view["current_runtime_binding"]["read_only_paths"],
+                    json!(["tests/frozen"])
+                );
+                assert_eq!(
+                    view["session"]["runtime_binding"]["read_only_paths"],
+                    json!([])
+                );
+            }
             e.tick_conversations(4).unwrap();
             e.tick_conversations(4).unwrap();
+            let dispatch = port.calls.lock().unwrap().last().unwrap().clone();
+            assert_eq!(
+                json!(
+                    dispatch
+                        .session
+                        .runtime_binding
+                        .as_ref()
+                        .unwrap()
+                        .read_only_paths
+                ),
+                task["task"]["content"]["authorization"]["read_only_paths"]
+            );
             assert_eq!(
                 port.calls
                     .lock()
@@ -757,6 +1167,167 @@ fn task_recipe_and_same_named_feature_review_keep_distinct_sources_for_two_tasks
                     .unwrap()
                     .digest,
                 task["task"]["digest"]
+            );
+        }
+        assert_eq!(by_agent.len(), 3);
+        let state = e.store.snapshot().unwrap();
+        let original_frozen: Vec<_> = frozen_turns
+            .iter()
+            .map(|turn| {
+                state
+                    .governance
+                    .iter()
+                    .find(|record| record.kind == "execution_task" && record.definition_id == *turn)
+                    .unwrap()
+                    .clone()
+            })
+            .collect();
+        all_task_sessions.extend(by_agent.values().cloned());
+        let reviewer = state
+            .sessions
+            .iter()
+            .find(|session| {
+                session.owner_id == tid
+                    && state
+                        .definitions
+                        .iter()
+                        .find(|d| d.id == session.agent)
+                        .unwrap()
+                        .agent_profile
+                        .as_ref()
+                        .unwrap()
+                        .role
+                        == AgentRole::Reviewer
+            })
+            .unwrap();
+        let developer = state
+            .sessions
+            .iter()
+            .find(|session| {
+                session.owner_id == tid
+                    && state
+                        .definitions
+                        .iter()
+                        .find(|d| d.id == session.agent)
+                        .unwrap()
+                        .agent_profile
+                        .as_ref()
+                        .unwrap()
+                        .role
+                        == AgentRole::Developer
+            })
+            .unwrap();
+        let developer_context = e
+            .query("query.session", &json!({"id":developer.id}), 4)
+            .unwrap()["workflow_context"]
+            .clone();
+        let mut drift = binding();
+        drift.model = "unexpected-model".into();
+        assert!(command(&e,"session.open",Some(&tid),json!({"agent":developer.agent,"binding":drift,"workflow_step_instance_id":developer_context["step_instance_id"],"workflow_recipe_node":"implement"})).unwrap_err().message.contains("显式新建"));
+        let busy = send(&e, &developer.id, "Pending Task discussion fixture");
+        let implementation = state
+            .feature_configuration(&f)
+            .unwrap()
+            .task_plan
+            .steps
+            .iter()
+            .find(|step| step.kind == "attempt.execute")
+            .unwrap()
+            .key
+            .clone();
+        assert_eq!(
+            open(&e, &tid, &implementation, Some("docs")),
+            developer.id,
+            "opening the current node while active does not replace the Session"
+        );
+        assert!(command(&e,"session.open",Some(&tid),json!({"agent":developer.agent,"binding":binding(),"workflow_step_instance_id":developer_context["step_instance_id"],"workflow_recipe_node":"implement"})).unwrap_err().message.contains("活动轮次"));
+        let queued = e
+            .store
+            .snapshot()
+            .unwrap()
+            .turns
+            .iter()
+            .find(|turn| Some(turn.id.as_str()) == busy["id"].as_str())
+            .unwrap()
+            .clone();
+        e.execute(
+            "conversation.cancel",
+            Command {
+                command_id: id(),
+                target: Some(queued.id),
+                expected_revision: Some(queued.revision),
+                payload: json!({}),
+            },
+        )
+        .unwrap();
+        let context = e
+            .query("query.session", &json!({"id":reviewer.id}), 4)
+            .unwrap()["workflow_context"]
+            .clone();
+        let newer = command(&e,"session.open",Some(&tid),json!({"agent":reviewer.agent,"binding":binding(),"workflow_step_instance_id":context["step_instance_id"],"force_new":true})).unwrap()["id"].as_str().unwrap().to_owned();
+        assert_ne!(newer, reviewer.id);
+        let review = state
+            .feature_configuration(&f)
+            .unwrap()
+            .task_plan
+            .steps
+            .iter()
+            .find(|step| step.kind == "delivery.review")
+            .unwrap()
+            .key
+            .clone();
+        assert_eq!(
+            open(&e, &tid, &review, None),
+            newer,
+            "explicit new session is used by earlier execution nodes too"
+        );
+        let history = e
+            .query(
+                "query.sessions",
+                &json!({"owner_id":tid,"workflow_session_id":reviewer.id}),
+                4,
+            )
+            .unwrap();
+        assert_eq!(history["total"], 2);
+        assert_eq!(history["sessions"][0]["id"], newer);
+        let after = e.store.snapshot().unwrap();
+        for record in original_frozen {
+            assert_eq!(after.configuration(&record.id).unwrap(), &record);
+        }
+        assert_eq!(
+            after
+                .sessions
+                .iter()
+                .filter(|session| session.owner_id == tid)
+                .count(),
+            4
+        );
+    }
+    all_task_sessions.sort();
+    all_task_sessions.dedup();
+    assert_eq!(
+        all_task_sessions.len(),
+        6,
+        "different Tasks must retain different sessions"
+    );
+    let starts = port.starts.lock().unwrap();
+    for start in starts.iter() {
+        let calls: Vec<_> = starts
+            .iter()
+            .filter(|other| other.session.id == start.session.id)
+            .collect();
+        assert!(
+            calls
+                .iter()
+                .all(|other| other.task_base.as_ref().map(task_content_hash)
+                    == start.task_base.as_ref().map(task_content_hash)),
+            "the native Agent base stays identical across Task nodes"
+        );
+        assert!(calls[0].session.external_session.is_none());
+        for resumed in calls.iter().skip(1) {
+            assert_eq!(
+                resumed.session.external_session.as_deref(),
+                Some(format!("fixture-{}", start.session.id).as_str())
             );
         }
     }
@@ -861,22 +1432,27 @@ fn permission_successor_keeps_the_task_and_specs_and_accepts_the_original_input_
     let s = e.store.snapshot().unwrap();
     let session = s.sessions.iter().find(|v| v.id == sid).unwrap();
     let mut next = session.runtime_binding.clone().unwrap();
-    next.permissions = Some(
-        devdesk_adapters::permissions::resolve_execution_permissions(
-            &s.permissions,
-            &PermissionConfiguration::defaults(false),
-            HarnessProvider::Codex,
-            ExecutionScope {
-                work_type: WorkType::Discussion,
-                writable_paths: vec![],
-                read_only_paths: vec![],
-            },
-            None,
-            None,
-            None,
-        )
-        .unwrap(),
-    );
+    e.store
+        .transact(None, &mut |state| {
+            let lock = permission_fixture::prepare(
+                state,
+                HarnessProvider::Codex,
+                PermissionPolicy::full_access(),
+            );
+            next.permissions = Some(
+                devdesk_adapters::permission_profiles::compile_permission_profiles(
+                    state,
+                    &lock,
+                    Some(ExecutionScope {
+                        work_type: WorkType::Discussion,
+                        writable_paths: vec![],
+                        read_only_paths: vec![],
+                    }),
+                )?,
+            );
+            Ok(json!(null))
+        })
+        .unwrap();
     next.configuration_digest = "b".repeat(64);
     let c = Command {
         command_id: id(),
@@ -1226,7 +1802,7 @@ fn formal_run_queues_frozen_task_before_dispatch_and_retry_preserves_business_in
 }
 
 #[test]
-fn output_contract_describes_typed_evidence_checks_and_preserves_legacy_snapshots() {
+fn output_contract_describes_typed_evidence_and_rejects_retired_renderers() {
     let root = tempfile::tempdir().unwrap();
     let e = engine(root.path(), Arc::default());
     let p = project(&e);
@@ -1249,10 +1825,9 @@ fn output_contract_describes_typed_evidence_checks_and_preserves_legacy_snapshot
         {"key":"tests","passed":true,"evidence":"verifiable acceptance; implementation not required yet"},
         {"key":"failure_paths","passed":true,"evidence":"invalid input TypeError"}]});
     assert!(validator.is_valid(&valid));
-    assert_eq!(output["output_schema"],output["schema"]);
-    let historical=agent_task_output_contract_for_renderer(&step,Some("requirement_validate"),TYPED_TASK_RENDERER);
-    let mut old_valid=valid.clone();old_valid.as_object_mut().unwrap().remove("approve");
-    assert!(jsonschema::validator_for(&historical["output_schema"]).unwrap().is_valid(&old_valid));
+    assert_eq!(output["output_schema"], output["schema"]);
+    let mut old_valid = valid.clone();
+    old_valid.as_object_mut().unwrap().remove("approve");
     assert!(!validator.is_valid(&old_valid));
     let mut wrong = valid.clone();
     wrong["checks"][0] = json!({"name":"traceability","status":"pass","evidence":["PRD"]});
@@ -1268,12 +1843,7 @@ fn output_contract_describes_typed_evidence_checks_and_preserves_legacy_snapshot
         .as_object_mut()
         .unwrap()
         .remove("output_schema");
-    let old = FrozenAgentTask::new(definition, task.base, content).unwrap();
-    let bytes = serde_json::to_vec(&old).unwrap();
-    let restored: FrozenAgentTask = serde_json::from_slice(&bytes).unwrap();
-    restored.validate().unwrap();
-    assert_eq!(serde_json::to_vec(&restored).unwrap(), bytes);
-    assert_eq!(restored.renderer_version, "agent-task/v1");
+    assert!(FrozenAgentTask::new(definition, task.base, content).is_err());
 }
 
 #[test]

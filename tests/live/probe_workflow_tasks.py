@@ -80,7 +80,7 @@ def main():
                     'model_ref': model['id'], 'harness_ref': 'builtin-harness-codex-managed-v1',
                     'skills': [skill['id']], 'tools': ['builtin-tool-codex-native-v1']}})
                 agent = c.command('agent.create', payload={'name': 'Controlled task Agent', 'data': {
-                    'role_ref': role['id'], 'capability_ref': cap['id'], 'approval': 'never'}})
+                    'role_ref': role['id'], 'capability_ref': cap['id'], 'permission_selection': {'sandbox_ref': 'builtin-permission-sandbox-docker-v1', 'harness': {'mode': 'follow_target'}, 'sandbox': {'mode': 'follow_target'}}}})
                 c.rpc('runtime.prepare_harness', {'id': 'builtin-harness-codex-managed-v1'})
                 defaults = c.rpc('query.configuration_defaults')
                 original = c.rpc('query.workflow', {'id': defaults['workflow_ref']})

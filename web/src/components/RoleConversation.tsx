@@ -72,6 +72,7 @@ export function RoleConversation({
   const [sessions, setSessions] = useState<Row[]>([]);
   const [sessionId, setSessionId] = useState("");
   const [detail, setDetail] = useState<Row>();
+  const currentBinding = detail?.current_runtime_binding || detail?.session.runtime_binding;
   const [events, setEvents] = useState<Row[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -85,6 +86,9 @@ export function RoleConversation({
   function clearSelectedSession() {
     manualSession.current = false;
     generation.current += 1;
+    listGeneration.current += 1;
+    setSessions([]);
+    setSessionAnchor("");
     setSessionId("");
     setDetail(undefined);
     setEvents([]);
@@ -134,7 +138,6 @@ export function RoleConversation({
     : owner === project.id
       ? (Object.values(
           projectConfiguration?.data.role_agent_bindings ||
-            projectConfiguration?.data.agent_refs ||
             {},
         ).find(
           (id) => catalog.find((r) => r.id === id)?.data.role === "analyst",
@@ -173,7 +176,7 @@ export function RoleConversation({
     if (detail?.session.id) {
       setAgent(detail.session.agent);
       setInstanceId(
-        detail.session.runtime_binding?.agent_configuration
+        currentBinding?.agent_configuration
           ?.agent_instance_id ||
           detail.agent_instance_id ||
           "",
@@ -294,6 +297,7 @@ export function RoleConversation({
   }, [scopedRequest, owner, instanceId, sessionAnchor, agent, recommendedStepId]);
   useEffect(() => {
     ++generation.current;
+    ++listGeneration.current;
     const focus =
       pendingFocus.current?.owner === owner ? pendingFocus.current : null;
     pendingFocus.current = null;
@@ -303,6 +307,7 @@ export function RoleConversation({
       focus?.session || (owner === initialOwner ? initialSession || "" : ""),
     );
     setDetail(undefined);
+    setSessions([]);
     setEvents([]);
     cursor.current = 0;
   }, [scopedRequest, owner, initialOwner, initialSession]);
@@ -584,7 +589,7 @@ export function RoleConversation({
         <p className="notice">
           工作流推荐：{recommended.name} ·{" "}
           {roles.find((r) => r.id === recommendation)?.name}。目标：
-          {recommended.interaction.goal}；产物：
+          {recommended.task_instructions}；产物：
           {recommended.interaction.output_kind}
         </p>
       )}
@@ -687,28 +692,28 @@ export function RoleConversation({
               </ActionButton>
             ))}
           <p className="muted">
-            {detail.session.runtime_binding.installation.key.provider} ·{" "}
-            {detail.session.runtime_binding.model_connection?.provider ||
-              detail.session.runtime_binding.agent_configuration
+            {currentBinding.installation.key.provider} ·{" "}
+            {currentBinding.model_connection?.provider ||
+              currentBinding.agent_configuration
                 ?.model_provider ||
-              (detail.session.runtime_binding.installation.key.provider ===
+              (currentBinding.installation.key.provider ===
               "dsh"
                 ? "deepseek"
                 : "openai")}{" "}
-            · {detail.session.runtime_binding.model} ·{" "}
+            · {currentBinding.model} ·{" "}
             {detail.session.lifecycle} · 原生会话{" "}
             {detail.session.external_session || "尚未启动"}
           </p>
-          {detail.session.runtime_binding.model_connection && (
+          {currentBinding.model_connection && (
             <p className="muted">
               模型地址{" "}
               <code>
-                {detail.session.runtime_binding.model_connection.endpoint}
+                {currentBinding.model_connection.endpoint}
               </code>{" "}
               · 容器地址{" "}
               <code>
                 {
-                  detail.session.runtime_binding.model_connection
+                  currentBinding.model_connection
                     .worker_endpoint
                 }
               </code>
@@ -725,7 +730,6 @@ export function RoleConversation({
                       adopted: "已采用当前绑定",
                       pending: "当前工作结束后切换",
                       ready_to_switch: "下一轮将切换到新绑定",
-                      legacy_fixed: "保留旧固定权限",
                       unconfigured: "目标权限未就绪",
                       needs_reconciliation: "权限切换需要核对停止回执",
                     } as Record<string, string>
@@ -756,17 +760,17 @@ export function RoleConversation({
                 ) : null}
               </div>
             ) : null}
-            {detail.session.runtime_binding.permissions ? (
+            {currentBinding.permissions ? (
               <pre>
                 {JSON.stringify(
-                  detail.session.runtime_binding.permissions,
+                  currentBinding.permissions,
                   null,
                   2,
                 )}
               </pre>
             ) : (
               <p>
-                旧版执行未保存标准 Permission
+                当前会话缺少版本化 Permission
                 快照；继续使用原运行锁，执行保证以历史回执为准。
               </p>
             )}
@@ -965,7 +969,7 @@ export function RoleConversation({
                 formalOutput ||
                 !!active ||
                 ["implementation", "testing", "review"].includes(
-                  detail.session.runtime_binding.work_type,
+                  currentBinding.work_type,
                 ) ||
                 [
                   "needs_reconciliation",

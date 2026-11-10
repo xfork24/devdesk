@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/permissions.rs"]
+mod permission_fixture;
 use devdesk_adapters::{FileArtifacts, SqliteStore};
 use devdesk_core::{Command, Engine, ports::TestRequest};
 use devdesk_domain::*;
@@ -48,17 +50,20 @@ fn all_published_schemas_and_definitions_resolve_offline() {
 
 #[test]
 fn formal_stage_schema_agrees_with_model_approval_examples_and_rejects_wrong_checks() {
-    let example=stage_answer_example();
-    SCHEMAS.assert_valid("stage-answer.schema.json",&example);
-    let validator=jsonschema::validator_for(&stage_answer_output_contract()["schema"]).unwrap();
+    let example = stage_answer_example();
+    SCHEMAS.assert_valid("stage-answer.schema.json", &example);
+    let validator = jsonschema::validator_for(&stage_answer_output_contract()["schema"]).unwrap();
     assert!(validator.is_valid(&example));
-    for key in ["approve","summary","checks"] {
-        let mut bad=example.clone();bad.as_object_mut().unwrap().remove(key);
-        assert!(!validator.is_valid(&bad),"{key}");
+    for key in ["approve", "summary", "checks"] {
+        let mut bad = example.clone();
+        bad.as_object_mut().unwrap().remove(key);
+        assert!(!validator.is_valid(&bad), "{key}");
     }
-    let mut bad=example.clone();bad["checks"][0]["evidence"]=json!(["untyped evidence"]);
+    let mut bad = example.clone();
+    bad["checks"][0]["evidence"] = json!(["untyped evidence"]);
     assert!(!validator.is_valid(&bad));
-    let mut bad=example;bad["checks"][0]["key"]=json!("scope");
+    let mut bad = example;
+    bad["checks"][0]["key"] = json!("scope");
     assert!(!validator.is_valid(&bad));
 }
 
@@ -97,9 +102,6 @@ fn published_configuration_wrappers_accept_current_builtin_revisions() {
             round_trip::<AgentProfile>("AgentProfile", json!(profile));
         }
     }
-    for permission in &state.permissions {
-        SCHEMAS.assert_valid("permission.schema.json", &json!(permission));
-    }
 }
 
 #[test]
@@ -120,7 +122,7 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
     );
     round_trip::<HarnessPreference>(
         "HarnessPreference",
-        json!({"provider":"codex","model_ref":"model-revision","harness_ref":"harness-revision","model":"fixture-model","reasoning_effort":"ultra"}),
+        json!({"provider":"codex","model_ref":"model-revision","harness_ref":"harness-revision"}),
     );
     round_trip::<AgentProfile>(
         "AgentProfile",
@@ -159,7 +161,7 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
         json!({"agent_revision_id":"agent-1","scope":{"kind":"global"}}),
     );
     round_trip::<WorkflowRunNode>("WorkflowRunNode", json!({"key":"red","role":"tester"}));
-    let workflow = json!({"schema_version":1,"process_kind":"project_intake","stages":[{"key":"setup","name":"Setup"}],"steps":[{"key":"finish","name":"Finish","stage":"setup","kind":"join","interaction":{}}]});
+    let workflow = json!({"schema_version":3,"process_kind":"subworkflow","stages":[{"key":"setup","name":"Setup"}],"steps":[{"key":"finish","name":"Finish","stage":"setup","kind":"join","interaction":{}}]});
     validate_workflow(&serde_json::from_value(workflow.clone()).unwrap()).unwrap();
     round_trip::<WorkflowDocument>("WorkflowDocument", workflow);
     // The 100-turn cap applies to agent.interact only; other actions may leave interaction unused.
@@ -295,48 +297,25 @@ fn standalone_permission_contract_matches_rpc_and_preserves_null_rejection() {
             "duplicate Permission definition {name}"
         );
     }
-    let mut root = standalone.clone();
-    for key in ["$schema", "$id", "title", "$defs"] {
-        root.as_object_mut().unwrap().remove(key);
-    }
-    assert_eq!(root, rpc["Permission"]);
     for file in std::fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../permissions/presets"
     ))
     .unwrap()
     {
-        let mut value: Value =
+        let value: Value =
             serde_json::from_slice(&std::fs::read(file.unwrap().path()).unwrap()).unwrap();
-        if value["schema_version"] == 2 {
-            SCHEMAS.assert_valid("permission-profile.schema.json", &value);
-            serde_json::from_value::<PermissionProfile>(value)
-                .unwrap()
-                .normalize()
-                .unwrap();
-            continue;
-        }
-        value.as_object_mut().unwrap().remove("supersedes");
-        SCHEMAS.assert_valid("permission.schema.json", &value);
-        serde_json::from_value::<Permission>(value)
+        assert_eq!(value["schema_version"], 2);
+        SCHEMAS.assert_valid("permission-profile.schema.json", &value);
+        serde_json::from_value::<PermissionProfile>(value)
             .unwrap()
-            .validate()
+            .normalize()
             .unwrap();
     }
-    round_trip::<PermissionPatch>("PermissionPatch", json!({}));
-    round_trip::<PermissionBinding>("PermissionBinding", json!({}));
-    round_trip::<PermissionOverrides>("PermissionOverrides", json!({}));
     round_trip::<SandboxIsolation>(
         "SandboxIsolation",
         json!({"read_only_root":true,"executable_tmp":true,"nested_sandbox":false,"backend":"docker","credential_boundary":"private"}),
     );
-    for (name, input) in [
-        ("PermissionPatch", json!({"filesystem":null})),
-        ("PermissionBinding", json!({"permission":null})),
-        ("PermissionBinding", json!({"overrides":null})),
-    ] {
-        assert!(!SCHEMAS.validator(&definition(name)).is_valid(&input));
-    }
     let backend: Value =
         serde_json::from_str(include_str!("../../../permissions/backends/manifest.json")).unwrap();
     SCHEMAS.assert_valid("permission-backend.schema.json", &backend);
@@ -357,21 +336,15 @@ fn compiled_native_permissions_match_the_published_execution_contract() {
     let mut state = EngineeringState::default();
     devdesk_core::seed_configuration(&mut state);
     for provider in [HarnessProvider::Codex, HarnessProvider::Dsh] {
-        for legacy in [false, true] {
-            let configuration = PermissionConfiguration::defaults(legacy);
-            round_trip::<PermissionConfiguration>("PermissionConfiguration", json!(configuration));
-            let permissions = devdesk_adapters::permissions::resolve_execution_permissions(
-                &state.permissions,
-                &configuration,
+        {
+            let permissions = permission_fixture::compile(
                 provider,
                 ExecutionScope {
                     work_type: WorkType::Discussion,
                     writable_paths: vec![],
                     read_only_paths: vec![],
                 },
-                None,
-                None,
-                None,
+                PermissionPolicy::full_access(),
             )
             .unwrap();
             round_trip::<ExecutionPermissions>("ExecutionPermissions", json!(permissions));
@@ -393,7 +366,7 @@ fn rpc_request_dispatch_validates_the_current_parameter_contracts() {
         "feature.create",
         "workflow.create",
         "execution.retry_cleanup",
-        "permission.bind",
+        "permission.bindings.apply",
         "merge.capture_snapshot",
     ] {
         assert!(
@@ -423,28 +396,7 @@ fn rpc_request_dispatch_validates_the_current_parameter_contracts() {
 }
 
 #[test]
-fn immutable_manifests_accept_history_and_reject_incomplete_current_shapes() {
-    let artifacts: std::collections::BTreeMap<String, String> = serde_json::from_str(include_str!(
-        "../../../tests/fixtures/legacy/artifacts.json"
-    ))
-    .unwrap();
-    let mut count = 0;
-    for (path, body) in artifacts {
-        if path.contains("/manifests/") || path.contains("/snapshots/") {
-            let value: Value = serde_json::from_str(&body).unwrap();
-            SCHEMAS.assert_valid("manifest.schema.json", &value);
-            if value.get("delivery_id").is_some() {
-                for origin in [Origin::External, Origin::Human, Origin::Simulated] {
-                    let mut current = value.clone();
-                    current["origin"] = json!(origin);
-                    current["report_artifact"]["origin"] = json!(origin);
-                    SCHEMAS.assert_valid("manifest.schema.json", &current);
-                }
-            }
-            count += 1;
-        }
-    }
-    assert_eq!(count, 9);
+fn immutable_manifests_reject_incomplete_current_shapes() {
     let validator = SCHEMAS.validator("manifest.schema.json");
     for invalid in [
         json!({"schema_version":1}),
@@ -526,7 +478,7 @@ fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline(
     );
     e.bootstrap().unwrap();
     let state = e.store.snapshot().unwrap();
-    for id in [DEFAULT_FEATURE_WORKFLOW_V2_ID, DEFAULT_TASK_WORKFLOW_V2_ID] {
+    for id in [DEFAULT_FEATURE_WORKFLOW_V3_ID, DEFAULT_TASK_WORKFLOW_V3_ID] {
         let value = state.configuration(id).unwrap().data.clone();
         SCHEMAS.assert_valid("workflow.schema.json", &value);
         let doc: WorkflowDocument = serde_json::from_value(value).unwrap();

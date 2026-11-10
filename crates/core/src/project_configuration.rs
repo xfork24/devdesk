@@ -46,7 +46,6 @@ fn bind(
             .chain(std::iter::once(&a.harness_ref))
             .chain(a.tools.iter())
             .chain(a.skills.iter())
-            .chain(a.permissions.iter())
         {
             if let Ok(r) = s.configuration(id) {
                 compilation
@@ -54,25 +53,8 @@ fn bind(
                     .insert(r.id.clone(), r.content_hash.clone());
             } else if let Some(d) = s.definitions.iter().find(|d| &d.id == id) {
                 compilation.hashes.insert(id.clone(), configuration_hash(d));
-            } else if let Some(permission) = s.permissions.iter().find(|p| &p.id == id) {
-                compilation
-                    .hashes
-                    .insert(id.clone(), configuration_hash(permission));
             } else {
                 return Err(err("not_found", format!("Agent 依赖不存在: {id}")));
-            }
-        }
-        if a.capability_ref.is_none() {
-            if let Some(cap) = s
-                .governance
-                .iter()
-                .find(|r| r.kind == "agent_capability" && r.definition_id == *agent_id)
-                .and_then(|r| r.data["capability_ref"].as_str())
-                .and_then(|id| s.configuration(id).ok())
-            {
-                compilation
-                    .hashes
-                    .insert(cap.id.clone(), cap.content_hash.clone());
             }
         }
         resolved.insert(role.clone(), agent_id.clone());
@@ -223,10 +205,9 @@ impl Engine {
         }
         let config = FeatureConfiguration {
             integration_locks,
-            defaults_bundle_ref: None,
             project_configuration_id: current.id.clone(),
             workflow_ref: wf.id.clone(),
-            standard_ref: String::new(),
+            standard_ref: standard.unwrap_or_default(),
             agent_refs: resolved.clone(),
             role_agent_bindings: resolved,
             specification_snapshot: result.specifications,
@@ -234,7 +215,7 @@ impl Engine {
             definition_hashes: result.hashes,
             plan: result.plan,
             task_plan: result.task_plan,
-            compiler_version: if wf.data["schema_version"] == 3 { 3 } else { 2 },
+            compiler_version: 3,
         };
         let lock = record(
             "feature_lock",
@@ -326,9 +307,7 @@ impl Engine {
         let Some(lock) = s.feature_configuration(feature) else {
             return Ok(None);
         };
-        if lock.compiler_version < 2 {
-            return Ok(None);
-        }
+        require(lock.compiler_version == 3, "Workflow compiler 必须为 v3")?;
         let plan = if s.tasks.iter().any(|t| t.id == owner) {
             &lock.task_plan
         } else {
@@ -498,9 +477,7 @@ impl Engine {
         let lock = s
             .feature_configuration(&runtime.feature_id)
             .ok_or_else(|| err("invalid_workflow", "配置锁不存在"))?;
-        if lock.compiler_version < 2 {
-            return Ok(());
-        }
+        require(lock.compiler_version == 3, "Workflow compiler 必须为 v3")?;
         let plan = if runtime.task_id.is_some() {
             &lock.task_plan
         } else {
@@ -513,10 +490,25 @@ impl Engine {
             .find(|s| &s.key == key)
             .ok_or_else(|| err("invalid_workflow", "冻结步骤不存在"))?;
         let target = text(result, "id")?;
-        if let Some(existing) = s.governance.iter().find(|r| r.kind == "execution_specification" && r.definition_id == target) {
-            require(existing.data["workflow_step_instance_id"] == instance
-                && existing.data["step"] == step.key && existing.data["spec_refs"] == json!(step.spec_refs),
-                "会话已属于其他工作流步骤，不能复用其冻结任务")?;
+        if let Some(existing) = s
+            .governance
+            .iter()
+            .find(|r| r.kind == "execution_specification" && r.definition_id == target)
+        {
+            if method == "session.open"
+                && s.sessions.iter().any(|session| {
+                    session.id == target && session.scope == Some(SessionScope::Task)
+                })
+            {
+                // Each Task node's full specification is retained in its execution_task_binding.
+                return Ok(());
+            }
+            require(
+                existing.data["workflow_step_instance_id"] == instance
+                    && existing.data["step"] == step.key
+                    && existing.data["spec_refs"] == json!(step.spec_refs),
+                "会话已属于其他工作流步骤，不能复用其冻结任务",
+            )?;
             return Ok(());
         }
         s.governance.push(record("execution_specification",target,Scope::Feature{project_id:s.feature(&runtime.feature_id)?.project_id.clone(),feature_id:runtime.feature_id},step.name.clone(),1,None,json!({"spec_refs":step.spec_refs,"workflow_step_instance_id":instance,"step":step.key}),true));
@@ -574,8 +566,8 @@ impl Engine {
             require(
                 !feature
                     .and_then(|id| s.feature_configuration(id))
-                    .is_some_and(|c| c.compiler_version >= 2),
-                "v2 执行缺少冻结 Spec 引用",
+                    .is_some_and(|c| c.compiler_version == 3),
+                "执行缺少冻结 Spec 引用",
             )?;
             return Ok(None);
         };
@@ -596,26 +588,6 @@ impl Engine {
 }
 
 impl Engine {
-    pub fn migrate_project_configuration(&self) -> Result<()> {
-        self.store.transact(None,&mut|s|{
-        crate::configuration::migrate_capabilities(s);
-        let configs:Vec<_>=s.projects.iter().filter_map(|p|s.governance.iter().filter(|r|r.kind=="project_configuration"&&r.definition_id==p.id).max_by_key(|r|r.version).cloned()).filter(|r|r.data["schema_version"]!=2).collect();
-        for old in configs {
-            let receipt_id=format!("project-configuration-conversion:{}",old.id);if s.governance.iter().any(|r|r.id==receipt_id){continue;}
-            let checkpoint=s.clone();let upgraded=(||->Result<Value>{let mut role_overrides=BTreeMap::new();let mut roles=BTreeMap::new();
-                if let Some(bindings)=old.data["agent_refs"].as_object(){for (slot,value) in bindings{let agent=value.as_str().ok_or_else(||err("configuration_required","旧 Agent 引用不完整"))?;let a:AgentComposition=s.configuration(agent)?.decode()?;let role=role_record(s,a.role_ref.as_deref().ok_or_else(||err("configuration_required","旧 Agent 缺少 Role 证明"))?)?;role_overrides.insert(slot.clone(),role.definition_id.clone());roles.insert(role.definition_id.clone(),agent.to_owned());}}
-                let workflow=crate::workflow_definition::import_legacy_workflow_with_roles(s,&text(&old.data,"workflow_ref")?,&text(&old.data,"standard_ref")?,&role_overrides)?;
-                let wf=s.configuration(&workflow)?.clone();let cmd=Command{command_id:receipt_id.clone(),target:Some(old.definition_id.clone()),expected_revision:None,payload:json!({"workflow_ref":workflow,"role_agent_bindings":roles})};self.update_project_configuration_v2(s,&cmd,&wf)
-            })();
-            let data=match upgraded{Ok(value)=>json!({"status":"converted","source":old.id,"configuration_ref":value["id"]}),Err(error)=>{*s=checkpoint;json!({"status":"needs_configuration","source":old.id,"reason":error.message})}};
-            let mut receipt=record("configuration_conversion",old.definition_id,old.scope,"项目配置升级".into(),1,None,data,true);receipt.id=receipt_id;s.governance.push(receipt);
-        }
-        Ok(Value::Null)
-    })?;
-        Ok(())
-    }
-}
-impl Engine {
     pub(crate) fn delivery_specifications(
         &self,
         s: &EngineeringState,
@@ -624,7 +596,7 @@ impl Engine {
     ) -> Result<Option<Vec<(Definition, String)>>> {
         if !s
             .feature_configuration(&d.feature_id)
-            .is_some_and(|c| c.compiler_version >= 2)
+            .is_some_and(|c| c.compiler_version == 3)
         {
             return Ok(None);
         }
@@ -694,9 +666,7 @@ impl Engine {
         let Some(lock) = s.feature_configuration(feature) else {
             return Ok(None);
         };
-        if lock.compiler_version < 2 {
-            return Ok(None);
-        }
+        require(lock.compiler_version == 3, "Workflow compiler 必须为 v3")?;
         let plan = if s.tasks.iter().any(|t| t.id == owner) {
             &lock.task_plan
         } else {

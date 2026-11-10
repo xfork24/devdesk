@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/permissions.rs"]
+mod permission_fixture;
 use devdesk_adapters::{
     FileArtifacts, SqliteStore,
     integrations::{NativeTools, import_openapi, import_skill_zip},
@@ -16,6 +18,7 @@ fn engine(root: &std::path::Path) -> Engine {
     )
     .with_tool_executor(Arc::new(NativeTools::new(root).unwrap()));
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e
 }
 fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Result<Value> {
@@ -83,6 +86,7 @@ fn resource_revisions_scope_and_actual_schema_validation_are_enforced() {
     assert!(command(&e,"integration.create",None,json!({"name":"Wrong scope","scope":{"kind":"project","project_id":"other"},"data":{"source":{"kind":"http_api","base_url":"https://example.test"}}})).is_err());
     let before = e.store.snapshot().unwrap().governance.len();
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     assert_eq!(e.store.snapshot().unwrap().governance.len(), before);
 }
 #[test]
@@ -179,19 +183,14 @@ fn static_skill_package_rejects_traversal_and_does_not_enable_scripts() {
 }
 
 fn invocation(root: &std::path::Path, port: u16) -> ToolInvocation {
-    let state = engine(root).store.snapshot().unwrap();
-    let permissions = devdesk_adapters::permissions::resolve_execution_permissions(
-        &state.permissions,
-        &PermissionConfiguration::defaults(false),
+    let permissions = permission_fixture::compile(
         HarnessProvider::Codex,
         ExecutionScope {
             work_type: WorkType::Discussion,
             writable_paths: vec![],
             read_only_paths: vec![],
         },
-        None,
-        None,
-        None,
+        PermissionPolicy::full_access(),
     )
     .unwrap();
     let origin = format!("http://host.docker.internal:{port}");
@@ -767,19 +766,14 @@ fn registered_invocation(root: &std::path::Path) -> (Engine, ToolInvocation) {
     )
     .unwrap();
     let binding=command(&e,"integration.binding.create",None,json!({"name":"Account","data":{"integration_ref":source["id"],"harness_ref":DEFAULT_HARNESS_ID,"sandbox_ref":DEFAULT_PERMISSION_SANDBOX,"allowed_origins":["https://example.test"],"allowed_tools":[tool["id"]]}})).unwrap();
-    let state = e.store.snapshot().unwrap();
-    let permissions = devdesk_adapters::permissions::resolve_execution_permissions(
-        &state.permissions,
-        &PermissionConfiguration::defaults(false),
+    let permissions = permission_fixture::compile(
         HarnessProvider::Codex,
         ExecutionScope {
             work_type: WorkType::Discussion,
             writable_paths: vec![],
             read_only_paths: vec![],
         },
-        None,
-        None,
-        None,
+        PermissionPolicy::full_access(),
     )
     .unwrap();
     let arguments = json!({"id":"A-1"});
@@ -873,6 +867,7 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
     e.drive_tool_calls().unwrap();
     assert_eq!(observed.starts.load(std::sync::atomic::Ordering::SeqCst), 1);
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e.drive_tool_calls().unwrap();
     assert_eq!(
         e.store
@@ -921,6 +916,7 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
     e.enqueue_tool_test(&test_command(), &i).unwrap();
     e.drive_tool_calls().unwrap();
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     command(&e,"tool.call.reconcile",Some(&i.id),json!({"remote_effect":"applied","evidence":"Server transaction fixture-2 confirmed by operator"})).unwrap();
     let state = e.store.snapshot().unwrap();
     let reconciled = state.configuration(&i.id).unwrap();

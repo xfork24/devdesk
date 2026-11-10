@@ -6,8 +6,6 @@ mod governance;
 mod integrations;
 #[path = "model_providers.rs"]
 mod model_providers;
-#[path = "permission_api.rs"]
-mod permission_api;
 #[path = "permission_resources.rs"]
 mod permission_resources;
 #[path = "runtime_setup.rs"]
@@ -42,6 +40,71 @@ fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters)
     );
     Arc::new(Engine::new(store, artifacts, adapters.clone()).with_tool_executor(tools))
 }
+fn workspace_defaults(e: &Engine) -> Result<()> {
+    let s = e.store.snapshot()?;
+    let mut targets = std::collections::BTreeSet::new();
+    if s.configuration(DEFAULT_HARNESS_ID).is_ok() {
+        targets.insert(DEFAULT_HARNESS_ID.to_owned());
+    }
+    if s.configuration("builtin-harness-dsh-multi-provider-v1")
+        .is_ok()
+    {
+        targets.insert("builtin-harness-dsh-multi-provider-v1".to_owned());
+    }
+    for r in s
+        .governance
+        .iter()
+        .filter(|r| r.kind == "agent" && r.definition_id.starts_with("builtin-agent-"))
+    {
+        let a: AgentComposition = r.decode()?;
+        if a.permission_selection.is_some() {
+            targets.insert(a.harness_ref);
+        }
+    }
+    for r in s.governance.iter().filter(|r| {
+        r.kind == "harness"
+            && r.definition_id.starts_with("builtin-harness-")
+            && !s.governance.iter().any(|n| {
+                n.kind == r.kind && n.definition_id == r.definition_id && n.version > r.version
+            })
+    }) {
+        targets.insert(r.id.clone());
+    }
+    let mut changes = Vec::new();
+    for (kind, id, profile) in targets
+        .into_iter()
+        .map(|id| {
+            (
+                PermissionTargetKind::Harness,
+                id,
+                "permission-harness-full-access-v2-r1",
+            )
+        })
+        .chain(std::iter::once((
+            PermissionTargetKind::Sandbox,
+            DEFAULT_PERMISSION_SANDBOX.into(),
+            "permission-sandbox-full-access-v2-r1",
+        )))
+    {
+        let target = permission_target(&s, kind, &id)?;
+        if active_permission_binding(&s, &target).is_none() {
+            changes.push(json!({"target":target,"permission_revision_id":profile,"expected_revision":0,"enforcement_contract":permission_profiles::permission_contract(&s,&target)?}));
+        }
+    }
+    if !changes.is_empty() {
+        e.execute(
+            "permission.bindings.apply",
+            Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"bindings":changes}),
+            },
+        )?;
+    }
+    Ok(())
+}
+
 impl Workspace {
     fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
         self.open_role_session(e, command, false)
@@ -88,70 +151,10 @@ impl Workspace {
             profile.allowed_work.contains(&work_type),
             "角色不支持当前工作类型",
         )?;
-        let preferences = state
-            .projects
-            .first()
-            .and_then(|p| p.runtime_preferences.as_ref());
-        let role_preference = preferences
-            .and_then(|p| p.roles.iter().find(|r| r.role == profile.role))
-            .map(|r| &r.preference);
-        let project_preference = preferences.and_then(|p| p.default.as_ref());
-        let provider: HarnessProvider = if let Some(value) = command.payload.get("provider") {
-            serde_json::from_value(value.clone())
-                .map_err(|_| err("invalid_params", "无效 Harness provider"))?
-        } else if let Some(preference) = role_preference.or(project_preference) {
-            if preference.use_system_default {
-                require(
-                    preference.provider == self.global.default_harness()?,
-                    "系统默认 Harness 已改变，请重新选择该偏好的明确安装和模型",
-                )?;
-            }
-            preference.provider
-        } else {
-            self.global.default_harness()?
-        };
-        let preference = role_preference
-            .filter(|p| p.provider == provider && (p.model.is_some() || p.model_ref.is_some()))
-            .or(project_preference.filter(|p| p.provider == provider))
-            .filter(|_| command.payload.get("agent_configuration").is_none());
-        let preference_model: Option<ModelDefinition> = preference
-            .and_then(|p| p.model_ref.as_ref())
-            .map(|id| state.configuration(id)?.decode())
-            .transpose()?;
-        let preference_harness = role_preference
-            .filter(|p| p.provider == provider && (p.installation_id.is_some() || p.harness_ref.is_some()))
-            .or(project_preference.filter(|p| p.provider == provider))
-            .filter(|_| command.payload.get("agent_configuration").is_none())
-            .and_then(|p| p.harness_ref.as_ref())
-            .map(|id| state.configuration(id))
-            .transpose()?;
-        let preferred_installation = command.payload["installation_id"]
-            .as_str()
-            .or_else(|| {
-                role_preference
-                    .filter(|p| p.provider == provider)
-                    .and_then(|p| p.installation_id.as_deref())
-            })
-            .or_else(|| {
-                project_preference
-                    .filter(|p| p.provider == provider)
-                    .and_then(|p| p.installation_id.as_deref())
-            });
-        let installation = if let Some(record) = preference_harness.filter(|_| command.payload["installation_id"].is_null()) {
-            let harness: HarnessDefinition = record.decode()?;
-            require(harness.provider == provider.as_str(), "Harness 配置与偏好后端不一致")?;
-            if harness.recipe_digest.is_some() {
-                self.materialize_harness(e, record)?
-            } else {
-                self.ensure_runtime(provider, preferred_installation)?
-            }
-        } else {
-            self.ensure_runtime(provider, preferred_installation)?
-        };
-        if let Some(record) = preference_harness {
-            let harness: HarnessDefinition = record.decode()?;
-            require(installation.key.version.split('+').next() == Some(harness.runtime_version.as_str()), "安装版本与所选 Harness 配置不匹配")?;
-        }
+        let provider: HarnessProvider = serde_json::from_value(command.payload["provider"].clone())
+            .map_err(|_| err("invalid_configuration", "Agent 缺少 Harness 后端"))?;
+        let installation =
+            self.ensure_runtime(provider, command.payload["installation_id"].as_str())?;
         if let Some(agent) = command.payload["agent_configuration"]["harness_revision_id"].as_str()
         {
             let h: HarnessDefinition = state.configuration(agent)?.decode()?;
@@ -172,38 +175,10 @@ impl Workspace {
             self.global.runtime_integrity(&installation.id)?.verified,
             "运行时镜像内容或平台未通过核验",
         )?;
-        let preferred_model = command.payload["model"]
+        let model = command.payload["model"]
             .as_str()
-            .or_else(|| preference_model.as_ref().map(|m| m.model.as_str()))
-            .or_else(|| {
-                role_preference
-                    .filter(|p| p.provider == provider)
-                    .and_then(|p| p.model.as_deref())
-            })
-            .or_else(|| {
-                project_preference
-                    .filter(|p| p.provider == provider)
-                    .and_then(|p| p.model.as_deref())
-            });
-        let model = if let Some(model) = preferred_model {
-            model.to_owned()
-        } else if provider == HarnessProvider::Dsh {
-            "deepseek-v4-pro".into()
-        } else {
-            let base_version = installation.key.version.split('+').next().unwrap_or("");
-            let native = self.ensure_codex_auth()?;
-            require(
-                native.key.version == base_version,
-                "所选 Codex 运行时与登录组件版本不兼容，请明确选择模型",
-            )?;
-            let directory = self.codex_auth.models(&self.global, &native.id)?;
-            directory["models"]
-                .as_array()
-                .and_then(|rows| rows.iter().find(|r| r["isDefault"] == true))
-                .and_then(|r| r["model"].as_str())
-                .ok_or_else(|| err("blocked", "供应商目录没有返回默认模型，请明确选择"))?
-                .to_string()
-        };
+            .ok_or_else(|| err("invalid_configuration", "Agent 缺少 Model 修订"))?
+            .to_owned();
         require(
             !model.trim().is_empty() && model.len() <= 160,
             "模型 ID 无效",
@@ -229,120 +204,36 @@ impl Workspace {
         } else {
             vec![]
         };
-        let explicit_permissions: Option<PermissionOverrides> = command
-            .payload
-            .get("permission_overrides")
-            .map(|v| {
-                serde_json::from_value(v.clone()).map_err(|e| err("invalid_params", e.to_string()))
-            })
-            .transpose()?;
-        let mut permission_configuration = self.global.permission_configuration()?;
-        let composite = command.payload.get("agent_configuration").is_some();
-        if composite
-            && state
-                .configuration(agent)?
-                .decode::<AgentComposition>()?
-                .permission_selection
-                .is_none()
-        {
-            let a: AgentComposition = state.configuration(agent)?.decode()?;
-            permission_configuration = PermissionConfiguration {
-                revision: 1,
-                harnesses: [(
-                    provider.as_str().into(),
-                    PermissionBinding {
-                        permission: Some(PermissionRef {
-                            revision_id: a.permissions[0].clone(),
-                        }),
-                        overrides: PermissionPatch::default(),
-                    },
-                )]
-                .into(),
-                sandbox: PermissionBinding {
-                    permission: Some(PermissionRef {
-                        revision_id: a.permissions.last().unwrap().clone(),
-                    }),
-                    overrides: PermissionPatch::default(),
-                },
-                approval: a.approval,
-            };
-        }
-        let versioned = if composite {
-            let a: AgentComposition = state.configuration(agent)?.decode()?;
-            if let Some(selection) = agent_permission_selection(&state, agent, &a) {
-                let lock = if engineering {
-                    let owner = command.target.as_deref().unwrap_or("");
-                    let feature = state
-                        .tasks
-                        .iter()
-                        .find(|t| t.id == owner)
-                        .map_or(owner, |t| t.feature_id.as_str());
-                    match frozen_permission_lock(&state, feature, agent) {
-                        Ok(lock) => Some(lock),
-                        Err(_) if a.permission_selection.is_none() => None,
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    Some(resolve_permission_lock(&state, &a.harness_ref, &selection)?)
-                };
-                if let Some(lock) = &lock {
-                    permission_profiles::verify_permission_installation(
-                        &state,
-                        lock,
-                        &installation,
-                    )?;
-                }
-                lock.as_ref()
-                    .map(|lock| {
-                        permission_profiles::compile_permission_profiles(
-                            &state,
-                            lock,
-                            Some(ExecutionScope {
-                                work_type,
-                                writable_paths: writable_paths.clone(),
-                                read_only_paths: read_only_paths.clone(),
-                            }),
-                        )
-                    })
-                    .transpose()?
-            } else {
-                None
-            }
+        require(
+            command.payload.get("permission_overrides").is_none(),
+            "旧权限覆盖已移除",
+        )?;
+        let composition: AgentComposition = state.configuration(agent)?.decode()?;
+        let selection = composition
+            .permission_selection
+            .as_ref()
+            .ok_or_else(|| err("permission_unconfigured", "Agent 必须选择版本化权限"))?;
+        let lock = if engineering {
+            let owner = command.target.as_deref().unwrap_or("");
+            let feature = state
+                .tasks
+                .iter()
+                .find(|t| t.id == owner)
+                .map_or(owner, |t| t.feature_id.as_str());
+            frozen_permission_lock(&state, feature, agent)?
         } else {
-            None
+            resolve_permission_lock(&state, &composition.harness_ref, selection)?
         };
-        let resolved_permissions = if let Some(p) = versioned {
-            p
-        } else {
-            permissions::resolve_execution_permissions(
-                &self.global.snapshot()?.permissions,
-                &permission_configuration,
-                provider,
-                ExecutionScope {
-                    work_type,
-                    writable_paths: writable_paths.clone(),
-                    read_only_paths: read_only_paths.clone(),
-                },
-                if composite {
-                    None
-                } else {
-                    state
-                        .projects
-                        .first()
-                        .and_then(|p| p.permission_overrides.as_ref())
-                },
-                if composite {
-                    None
-                } else {
-                    profile.permission_overrides.as_ref()
-                },
-                if composite {
-                    None
-                } else {
-                    explicit_permissions.as_ref()
-                },
-            )?
-        };
+        permission_profiles::verify_permission_installation(&state, &lock, &installation)?;
+        let resolved_permissions = permission_profiles::compile_permission_profiles(
+            &state,
+            &lock,
+            Some(ExecutionScope {
+                work_type,
+                writable_paths: writable_paths.clone(),
+                read_only_paths: read_only_paths.clone(),
+            }),
+        )?;
         let adapter = harness::managed_adapter_identity(provider);
         let agent_configuration: Option<AgentExecutionConfiguration> = command
             .payload
@@ -353,25 +244,11 @@ impl Workspace {
             })
             .transpose()?;
         let model_connection = if provider == HarnessProvider::Dsh {
-            let (m, h): (ModelDefinition, HarnessDefinition) = if let Some(a) = &agent_configuration
-            {
-                (
-                    state.configuration(&a.model_revision_id)?.decode()?,
-                    state.configuration(&a.harness_revision_id)?.decode()?,
-                )
-            } else if let Some(model) = &preference_model {
-                (model.clone(), if let Some(harness) = preference_harness {
-                    harness.decode()?
-                } else {
-                    serde_json::from_value(json!({"provider":"dsh","runtime_version":installation.key.version})).map_err(|e|err("invalid_configuration",e.to_string()))?
-                })
-            } else {
-                (serde_json::from_value({
-                    json!({"provider":preference.and_then(|p|p.model_provider.as_deref()).unwrap_or("deepseek"),"model":model,
-                        "endpoint":preference.and_then(|p|p.endpoint.as_ref()),"context_window":preference.and_then(|p|p.context_window),"max_output_tokens":preference.and_then(|p|p.max_output_tokens)})
-                }).map_err(|e|err("invalid_configuration",e.to_string()))?,
-                 serde_json::from_value(json!({"provider":"dsh","runtime_version":installation.key.version})).map_err(|e|err("invalid_configuration",e.to_string()))?)
-            };
+            let a = agent_configuration
+                .as_ref()
+                .ok_or_else(|| err("invalid_configuration", "缺少 Agent 执行配置"))?;
+            let m: ModelDefinition = state.configuration(&a.model_revision_id)?.decode()?;
+            let h: HarnessDefinition = state.configuration(&a.harness_revision_id)?.decode()?;
             require(m.model == model, "Model 修订与执行模型不一致")?;
             let connection = resolve_model_connection(&m, &h)?;
             require(
@@ -414,18 +291,11 @@ impl Workspace {
                     .and_then(|patch| configuration_digest(&json!(patch)))
             })
             .transpose()?;
-        let mut model_parameters = preference_model
+        let model_parameters = agent_configuration
             .as_ref()
-            .filter(|m| m.model == model)
-            .map(|m| m.parameters.clone())
-            .unwrap_or_default();
-        // Component-backed preferences always inherit the selected Model parameters.
-        if let Some(effort) = preference
-            .filter(|p| p.model_ref.is_none() && p.model.as_deref() == Some(model.as_str()))
-            .and_then(|p| p.reasoning_effort.as_ref())
-        {
-            model_parameters.insert("reasoning_effort".into(), json!(effort));
-        }
+            .ok_or_else(|| err("invalid_configuration", "缺少 Agent 执行配置"))?
+            .model_parameters
+            .clone();
         let mut binding = RuntimeBinding {
             model_connection,
             model_profile_digest,
@@ -463,15 +333,14 @@ impl Workspace {
             .ok_or_else(|| err("invalid_params", "缺少 Attempt target"))?;
         e.validate_attempt_cancellation(target)?;
         let task = state.tasks.iter().find(|t| t.id == target);
-        let phase_value = command.payload["phase"]
-            .as_str()
-            .unwrap_or("planning")
-            .to_owned();
-        let phase = if task.is_some() {
-            "implementation"
+        let phase_value = if task.is_some() {
+            Some("implementation")
         } else {
-            phase_value.as_str()
-        };
+            command.payload["phase"].as_str()
+        }
+        .ok_or_else(|| err("invalid_params", "Feature 执行必须选择确切阶段"))?
+        .to_owned();
+        let phase = phase_value.as_str();
         let stage_roles: Vec<(&str, AgentRole, WorkType)> = match phase {
             "requirement_definition" => vec![(
                 "requirement_validate",
@@ -485,13 +354,6 @@ impl Workspace {
                     AgentRole::Tester,
                     WorkType::Discussion,
                 ),
-            ],
-            "planning" => vec![
-                ("research", AgentRole::Analyst, WorkType::Discussion),
-                ("requirement", AgentRole::Analyst, WorkType::Discussion),
-                ("design", AgentRole::Architect, WorkType::Design),
-                ("task_plan", AgentRole::Architect, WorkType::Design),
-                ("test_plan", AgentRole::Tester, WorkType::Discussion),
             ],
             "implementation" => vec![
                 ("test_author", AgentRole::Tester, WorkType::Testing),
@@ -712,7 +574,7 @@ impl Workspace {
                         .is_some_and(|p| p.role == AgentRole::Reviewer)
                         && state
                             .agent_identity(&d.id)
-                            .is_ok_and(|root| root == "builtin-agent-reviewer-v1")
+                            .is_ok_and(|root| root == "builtin-agent-sol-high-reviewer-v3")
                 })
                 .max_by_key(|d| d.version)
                 .ok_or_else(|| err("blocked", "缺少独立 Reviewer"))?
@@ -782,7 +644,7 @@ impl Workspace {
                     .feature_configuration(feature)
                     .and_then(|c| c.agent_refs.get("tester").cloned())
             })
-            .unwrap_or_else(|| "builtin-agent-tester-v1".into());
+            .unwrap_or_else(|| "builtin-agent-sol-high-tester-v3".into());
         let mut payload = json!({"agent":agent,"work_type":"discussion"});
         for key in [
             "provider",
@@ -824,7 +686,7 @@ impl Workspace {
             expected_revision: None,
             payload: json!({}),
         })?;
-        global.migrate_permission_selections()?;
+        workspace_defaults(&configuration)?;
         let workspace = Arc::new(Self {
             codex_auth: codex_auth::CodexAuthentication::new(root)?,
             global,
@@ -873,7 +735,7 @@ impl Workspace {
     }
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
         let existing = e.store.snapshot()?;
-        // One global directory indexes legacy project-owned Role identities without changing their owner or revision.
+        // One global directory indexes project-owned Role identities without changing their owner or revision.
         self.global.transact(None, &mut |directory| {
             for role in existing
                 .governance
@@ -911,10 +773,6 @@ impl Workspace {
                     .iter()
                     .any(|v| v.id == r.id && v.content_hash == r.content_hash)
             })
-            && shared
-                .permissions
-                .iter()
-                .all(|p| existing.permissions.iter().any(|old| old == p))
             && shared.definitions.iter().all(|d| {
                 existing.definitions.iter().any(|v| {
                     v.id == d.id
@@ -930,7 +788,7 @@ impl Workspace {
                 .iter()
                 .all(|b| existing.sandboxes.iter().any(|v| v.id == b.id))
         {
-            return e.migrate_project_configuration();
+            return Ok(());
         }
         e.store.transact(None, &mut |s| {
             for r in shared.governance.iter().filter(|r| {
@@ -950,13 +808,6 @@ impl Workspace {
                 }
             }
             // Revisions are immutable. Copies keep historical foreign keys self-contained.
-            for p in &shared.permissions {
-                if let Some(old) = s.permissions.iter().find(|old| old.id == p.id) {
-                    require(old == p, "共享权限修订冲突")?;
-                } else {
-                    s.permissions.push(p.clone());
-                }
-            }
             for d in &shared.definitions {
                 if let Some(old) = s.definitions.iter().find(|old| old.id == d.id) {
                     require(
@@ -979,7 +830,7 @@ impl Workspace {
             }
             Ok(json!({"ok":true}))
         })?;
-        e.migrate_project_configuration()
+        Ok(())
     }
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let root = PathBuf::from(self.global.root());
@@ -1008,14 +859,12 @@ impl Workspace {
         self.sync_configuration(&e)?;
         e.bootstrap()?;
         e.recover_tool_receipts()?;
-        self.renew_unstarted_feature_permissions(&e)?;
         if e.store
             .snapshot()?
             .projects
             .iter()
             .all(|p| p.execution_mode == "live")
         {
-            e.migrate_project_configuration()?;
             // Re-evaluate native facts once on reopen before the idle-project filter.
             e.evaluate_workflows()?;
         }
@@ -1091,6 +940,22 @@ impl Workspace {
         )
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        if [
+            "query.permissions",
+            "permission.create",
+            "permission.revise",
+            "permission.bind",
+            "permission.preflight",
+            "definition.revise",
+            "binding.update",
+            "query.default_configuration",
+            "workflow.task_upgrade",
+        ]
+        .contains(&method)
+        {
+            return Err(err("method_not_found", "接口不存在"));
+        }
+
         if params["scope"] == "global"
             && [
                 "session.open",
@@ -1116,39 +981,6 @@ impl Workspace {
             return self
                 .configuration
                 .configuration_defaults(params["project_id"].as_str());
-        }
-        if method == "query.default_configuration" {
-            let state = self.global.snapshot()?;
-            let bundle = state
-                .governance
-                .iter()
-                .filter(|r| {
-                    r.kind == "defaults_bundle"
-                        && r.definition_id == DEFAULTS_BUNDLE_ID.trim_end_matches("-v1")
-                })
-                .max_by_key(|r| r.version)
-                .ok_or_else(|| err("configuration_required", "默认套件缺失"))?;
-            let ids: Vec<_> = bundle
-                .data
-                .as_object()
-                .unwrap()
-                .values()
-                .flat_map(|value| match value {
-                    Value::String(id) => vec![id.clone()],
-                    Value::Array(ids) => ids
-                        .iter()
-                        .filter_map(|id| id.as_str().map(str::to_owned))
-                        .collect(),
-                    Value::Object(refs) => refs
-                        .values()
-                        .filter_map(|id| id.as_str().map(str::to_owned))
-                        .collect(),
-                    _ => vec![],
-                })
-                .collect();
-            return Ok(
-                json!({"bundle":bundle,"records":state.governance.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"permissions":state.permissions.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"sandboxes":state.sandboxes.iter().filter(|r|ids.contains(&r.id)).collect::<Vec<_>>(),"materializations":state.governance.iter().filter(|r|r.kind=="harness_materialization"&&r.definition_id==DEFAULT_HARNESS_ID).collect::<Vec<_>>() }),
-            );
         }
         if method == "runtime.prepare_harness" {
             let id = params["id"]
@@ -1192,7 +1024,7 @@ impl Workspace {
                 .map_err(|_| err("invalid_params", "需要 Harness provider"))?;
             return Ok(json!(self.ensure_runtime(provider, None)?));
         }
-        if let Some(result) = self.permission_api(method, &params) {
+        if let Some(result) = self.permission_resource_api(method, &params) {
             return result;
         }
         if method == "github.diagnose" {
@@ -1347,7 +1179,7 @@ impl Workspace {
             *self.active.write().unwrap() = Some((id.into(), e));
             return Ok(json!({"id":id}));
         }
-        if ["definition.revise", "agent.create", "agent.revise"].contains(&method) {
+        if ["agent.create", "agent.revise"].contains(&method) {
             let c =
                 serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
             return self.configuration.execute(method, c);
@@ -1571,7 +1403,6 @@ impl Workspace {
                 result["global_concurrency"] = json!(global_limit);
                 result["default_harness"] = json!(self.global.default_harness()?);
                 result["runtime_installations"] = json!(self.global.runtime_installations()?);
-                result["permission_configuration"] = json!(self.global.permission_configuration()?);
                 let state = e.store.snapshot()?;
                 let project = e.store.project_id();
                 let material_offset =
@@ -1788,30 +1619,31 @@ mod tests {
         );
     }
     #[test]
-    fn project_and_role_reasoning_preferences_survive_restart() {
+    fn project_component_preferences_survive_restart_and_reject_raw_model_fields() {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
-        let project = create(&w, "Reasoning preferences");
-        let preferences = json!({
-            "default":{"provider":"codex","installation_id":null,"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"model":"gpt-6.1-sol","model_provider":"openai","reasoning_effort":"high"},
-            "roles":[{"role":"developer","preference":{"provider":"codex","installation_id":null,"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"model":"gpt-6.1-sol","model_provider":"openai","reasoning_effort":"ultra"}}]
-        });
-        w.dispatch("project.update", json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":1,"payload":{"runtime_preferences":preferences}})).unwrap();
-        for reference in ["missing-model", DEFAULT_HARNESS_ID] {
-            let mut invalid = preferences.clone();
-            invalid["default"]["model_ref"] = json!(reference);
-            assert!(w.dispatch("project.update", json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":2,"payload":{"runtime_preferences":invalid}})).is_err());
-        }
+        let project = create(&w, "Component preferences");
+        let preferences = json!({"default":{"provider":"codex","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID},"roles":[]});
+        w.dispatch("project.update",json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":1,"payload":{"runtime_preferences":preferences}})).unwrap();
+        let mut invalid = preferences.clone();
+        invalid["default"]["model"] = json!("raw-model");
+        assert!(w.dispatch("project.update",json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":2,"payload":{"runtime_preferences":invalid}})).is_err());
         drop(w);
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
-        let state = w
-            .active_engine(Some(&project))
-            .unwrap()
-            .store
-            .snapshot()
-            .unwrap();
-        assert_eq!(json!(state.projects[0].runtime_preferences), preferences);
+        assert_eq!(
+            json!(
+                w.active_engine(Some(&project))
+                    .unwrap()
+                    .store
+                    .snapshot()
+                    .unwrap()
+                    .projects[0]
+                    .runtime_preferences
+            ),
+            preferences
+        );
     }
+
     #[test]
     fn switching_projects_isolates_state_artifacts_and_idempotency() {
         let dir = tempfile::tempdir().unwrap();
@@ -1909,16 +1741,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open(dir.path()).unwrap();
         let a = create(&w, "A");
-        let old = w.global.snapshot().unwrap().definitions[0].clone();
+        let old = w
+            .global
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .find(|r| r.kind == "skill")
+            .unwrap()
+            .clone();
         let b = create(&w, "B");
-        let new = cmd(
-            &w,
-            "definition.revise",
-            Some(&b),
-            Some(&old.id),
-            "global-definition",
-            json!({"body":"共享新修订"}),
-        );
+        let mut data = old.data.clone();
+        data["body"] = json!("共享新修订");
+        let new=w.dispatch("skill.revise",json!({"command_id":"global-definition","target":old.id,"expected_revision":old.revision,"payload":{"name":old.name,"data":data}})).unwrap();
         w.dispatch("settings.update", json!({"global_concurrency":3}))
             .unwrap();
         select(&w, &a);
@@ -1936,7 +1771,7 @@ mod tests {
                 .find(|d| d.id == old.id)
                 .unwrap()
                 .body,
-            old.body
+            old.data["body"].as_str().unwrap()
         );
         drop(w);
         let w = Workspace::open(dir.path()).unwrap();
@@ -2017,50 +1852,6 @@ mod tests {
 mod adapter_injection_tests {
     use super::tests::{cmd, create, select};
     use super::*;
-    #[test]
-    fn legacy_experience_tool_is_hidden_in_global_and_project_catalogs() {
-        let dir = tempfile::tempdir().unwrap();
-        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
-        let pid = create(&w, "Context catalog");
-        let e = w.active_engine(Some(&pid)).unwrap();
-        let mut legacy = e
-            .store
-            .snapshot()
-            .unwrap()
-            .configuration(DEFAULT_NATIVE_TOOL_ID)
-            .unwrap()
-            .clone();
-        legacy.id = "legacy-context-tool-v1".into();
-        legacy.definition_id = "legacy-context-tool".into();
-        legacy.data["implementation"] = json!("experience.lookup");
-        legacy.content_hash = configuration_hash(&legacy.data);
-        for store in [w.global.as_ref() as &dyn EngineeringStore, e.store.as_ref()] {
-            store
-                .transact(None, &mut |s| {
-                    s.governance.push(legacy.clone());
-                    Ok(json!({}))
-                })
-                .unwrap();
-        }
-        for local in [false, true] {
-            let catalog = w.dispatch("query.configurations", json!({"local":local,"project_id":pid,"kind":"tool","include_history":true,"include_deleted":true})).unwrap();
-            assert_eq!(catalog["total"], 2);
-            assert!(
-                catalog["records"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|r| r["id"] == DEFAULT_NATIVE_TOOL_ID)
-            );
-            assert!(
-                catalog["records"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|r| r["id"] == DEFAULT_DSH_NATIVE_TOOL_ID)
-            );
-        }
-    }
     #[test]
     fn injected_providers_are_shared_after_opening_another_project() {
         let dir = tempfile::tempdir().unwrap();
@@ -2193,7 +1984,7 @@ mod adapter_injection_tests {
         );
         let agent = create_resource(
             "agent.create",
-            json!({"name":"Permission pair","data":{"role_ref":default_role_id("analyst"),"capability_ref":capability["id"],"permissions":["permission-read-only-v1","permission-container-full-access-v1"]}}),
+            json!({"name":"Permission pair","data":{"role_ref":default_role_id("analyst"),"capability_ref":capability["id"],"permission_selection":default_permission_selection()}}),
         );
         let e = w.active_engine(Some(&pid)).unwrap();
         w.sync_configuration(&e).unwrap();
@@ -2204,14 +1995,14 @@ mod adapter_injection_tests {
             payload: json!({"agent":agent["id"]}),
         };
         w.resolve_agent_composition(&e, &mut command).unwrap();
-        assert_eq!(
-            command.payload["permission_overrides"]["harness"]["permission"]["revision_id"],
-            "permission-read-only-v1"
-        );
-        assert_eq!(
-            command.payload["permission_overrides"]["sandbox"]["permission"]["revision_id"],
-            "permission-container-full-access-v1"
-        );
+        assert!(command.payload.get("permission_overrides").is_none());
+        let state = e.store.snapshot().unwrap();
+        let a: AgentComposition = state
+            .configuration(agent["id"].as_str().unwrap())
+            .unwrap()
+            .decode()
+            .unwrap();
+        assert!(a.permission_selection.is_some());
     }
     #[test]
     fn visibility_narrowing_blocks_new_use_and_preserves_frozen_agent_instances() {

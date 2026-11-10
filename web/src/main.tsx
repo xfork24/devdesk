@@ -172,34 +172,22 @@ const route = new URLSearchParams(location.search);
 function routeTabValue(p: URLSearchParams) {
   const original = p.toString();
   const tab = p.get("tab");
-  if (tab === "specifications") {
-    p.set("tab", "workflows");
-    if (!["spec", "standard"].includes(p.get("config_tab") || ""))
-      p.set("config_tab", "spec");
-  }
   if (tab === "workflows" && p.has("workflow_id"))
     p.set("config_tab", "workflow");
-  if (tab === "integrations") {
-    if (p.get("config_tab") === "calls") {
-      p.set("tab", "history");
-      p.set("history_scope", "tools");
-      p.delete("config_tab");
-    } else {
-      p.set("tab", "components");
-      if (
-        !["http", "mcp", "skills", "native"].includes(p.get("config_tab") || "")
-      )
-        p.set("config_tab", "http");
-    }
-  }
-  if (p.get("tab") === "components") {
-    if (p.get("config_tab") === "tool") p.set("config_tab", "native");
-    if (p.get("config_tab") === "skill") p.set("config_tab", "skills");
-  }
   if (original !== p.toString()) history.replaceState(null, "", `?${p}`);
-  return p.get("tab") === "workflow" || p.get("tab") === "documents"
-    ? "execution"
-    : p.get("tab") || "overview";
+  return [
+    "overview",
+    "projects",
+    "workflows",
+    "actors",
+    "discussion",
+    "components",
+    "settings",
+    "execution",
+    "history",
+  ].includes(tab || "")
+    ? tab!
+    : "overview";
 }
 const routeTab = routeTabValue(route);
 
@@ -229,9 +217,13 @@ function App() {
   const [historyPage, setHistoryPage] = useState(0);
   const [featurePage, setFeaturePage] = useState(0);
   const [projectPage, setProjectPage] = useState(0);
-  const [view, setView] = useState<{ title: string; body: string; format?: "markdown"; metadata?: RecordData }>();
+  const [view, setView] = useState<{
+    title: string;
+    body: string;
+    format?: "markdown";
+    metadata?: RecordData;
+  }>();
   const [setupPath, setSetupPath] = useState("./data");
-  const [liveProvider, setLiveProvider] = useState("");
   const [roleRevision, setRoleRevision] = useState(0);
   const [focusedSession, setFocusedSession] = useState<RecordData>();
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
@@ -347,13 +339,25 @@ function App() {
             if (requested && requested !== active) {
               try {
                 await rpc("project.open_github", {
-                  command_id: crypto.randomUUID(), target: requested, payload: {},
+                  command_id: crypto.randomUUID(),
+                  target: requested,
+                  payload: {},
                 });
                 active = requested;
               } catch (error) {
-                if (!(error instanceof Error) || !error.message.startsWith("not_found ·")) throw error;
+                if (
+                  !(error instanceof Error) ||
+                  !error.message.startsWith("not_found ·")
+                )
+                  throw error;
                 obsoleteRoute = true;
-                for (const key of ["project_id", "feature_id", "task_id", "session_id"]) route.delete(key);
+                for (const key of [
+                  "project_id",
+                  "feature_id",
+                  "task_id",
+                  "session_id",
+                ])
+                  route.delete(key);
                 window.history.replaceState(null, "", `?${route}`);
                 setFeatureId("");
                 setTaskFilter("");
@@ -589,23 +593,12 @@ function App() {
   const configurationLock = data?.configurations?.find(
     (r: RecordData) => r.kind === "feature_lock" && r.definition_id === f?.id,
   );
-  const legacyLock = data?.configurations?.find(
-    (r: RecordData) =>
-      r.kind === "legacy_feature_lock" && r.definition_id === f?.id,
-  );
-  const executionSelection =
-    !configurationLock && liveProvider ? { provider: liveProvider } : {};
   const begin = (target: string, phase?: string) => {
     show({
-      title:
-        phase === "planning"
-          ? "启动 Feature 规划"
-          : phase === "closure"
-            ? "启动 Feature 收尾"
-            : "启动 Task Attempt",
+      title: phase === "closure" ? "启动 Feature 收尾" : "启动 Task Attempt",
       method: "attempt.start",
       target,
-      payload: { phase, ...executionSelection },
+      payload: { phase },
       fields: [],
     });
   };
@@ -689,23 +682,6 @@ function App() {
         },
       ],
     });
-  const editBinding = (object: RecordData) =>
-    show({
-      title: "工程 Standard · 新 Attempt 使用新版本",
-      method: "binding.update",
-      target: object.id,
-      fields: [
-        {
-          key: "standard",
-          label: "Standard 固定版本",
-          type: "select",
-          value: object.binding.standard,
-          options: definitions
-            .filter((d) => d.family === "standard")
-            .map((d) => ({ value: d.id, label: `${d.name} v${d.version}` })),
-        },
-      ],
-    });
   const act = (
     id: string,
     method: string,
@@ -754,7 +730,7 @@ function App() {
             冻结引用
           </ActionButton>
           {act(d.id, "review.request", "Agent 评审", () =>
-            command("review.request", d.id, executionSelection).catch(() => {}),
+            command("review.request", d.id, {}).catch(() => {}),
           )}
           {act(d.id, "review.submit", "通过", () => review(d, "pass"))}
           {act(d.id, "review.submit", "退回", () =>
@@ -826,7 +802,10 @@ function App() {
         setView({
           title: `Artifact · ${short(id)}`,
           body,
-          ...(/\.md$/i.test(artifact.relative_path || "") || artifact.media_type?.includes("markdown") ? { format: "markdown" as const } : {}),
+          ...(/\.md$/i.test(artifact.relative_path || "") ||
+          artifact.media_type?.includes("markdown")
+            ? { format: "markdown" as const }
+            : {}),
         });
     } catch (e) {
       if (
@@ -1284,16 +1263,6 @@ function App() {
                     <Badge value={f.status} />
                   </div>
                   <div className="actions">
-                    {detail.allowed_actions[f.id]?.attempt_phases?.includes(
-                      "planning",
-                    ) &&
-                      act(
-                        f.id,
-                        "attempt.start",
-                        "启动规划",
-                        () => begin(f.id, "planning"),
-                        true,
-                      )}
                     {act(f.id, "task.create", "创建 Task", () =>
                       show({
                         title: "创建独立 Task",
@@ -1314,9 +1283,6 @@ function App() {
                           },
                         ],
                       }),
-                    )}
-                    {act(f.id, "binding.update", "配置绑定", () =>
-                      editBinding(f),
                     )}
                     <ActionButton onClick={() => setTab("execution")}>
                       进入执行工作台 <ArrowRight size={15} />
@@ -1405,13 +1371,6 @@ function App() {
           )}
           {tab === "execution" && f && repositoryReady && (
             <>
-              {legacyLock && (
-                <p className="notice">
-                  历史 Feature 保留原配置及已记录的运行环境。缺失的 Model /
-                  Agent 不作推断；新执行使用当前 Project 配置创建后继
-                  Feature。
-                </p>
-              )}
               <div className="object-heading">
                 <div>
                   <h2>
@@ -1497,7 +1456,7 @@ function App() {
                         }}
                       />
                     ))}
-                  {(configurationLock || legacyLock) && (
+                  {configurationLock && (
                     <ActionButton
                       onClick={() =>
                         show({
@@ -1617,27 +1576,7 @@ function App() {
                   </section>
                 )}
                 <div className="panel toolbar">
-                  {!configurationLock && (
-                    <label>
-                      下一次工程执行的 Harness
-                      <ActionSelect
-                        aria-label="工程 Harness"
-                        value={liveProvider}
-                        onChange={(e) => setLiveProvider(e.target.value)}
-                      >
-                        <option value="">继承角色 / 项目 / 全局偏好</option>
-                        <option value="codex">Codex</option>
-                        <option value="dsh">DeepSeek Harness</option>
-                      </ActionSelect>
-                    </label>
-                  )}
                   <div className="actions">
-                    {detail.allowed_actions[f.id]?.attempt_phases?.includes(
-                      "planning",
-                    ) &&
-                      act(f.id, "attempt.start", "规划 Attempt", () =>
-                        begin(f.id, "planning"),
-                      )}
                     {act(f.id, "task.create", "创建 Task", () =>
                       show({
                         title: "创建独立 Task",
@@ -1666,12 +1605,7 @@ function App() {
                         begin(f.id, "closure"),
                       )}
                     {act(f.id, "merge.request", "Feature → mainline", () =>
-                      command("merge.request", f.id, executionSelection).catch(
-                        () => {},
-                      ),
-                    )}
-                    {act(f.id, "binding.update", "Feature 绑定", () =>
-                      editBinding(f),
+                      command("merge.request", f.id, {}).catch(() => {}),
                     )}
                   </div>
                 </div>
@@ -1722,11 +1656,9 @@ function App() {
                               true,
                             )}
                             {act(t.id, "merge.request", "申请 Merge", () =>
-                              command(
-                                "merge.request",
-                                t.id,
-                                executionSelection,
-                              ).catch(() => {}),
+                              command("merge.request", t.id, {}).catch(
+                                () => {},
+                              ),
                             )}
                             {act(t.id, "task.replan", "更新规划范围", () =>
                               show({
@@ -1742,9 +1674,6 @@ function App() {
                                   },
                                 ],
                               }),
-                            )}
-                            {act(t.id, "binding.update", "绑定", () =>
-                              editBinding(t),
                             )}
                             <ActionButton
                               onClick={() =>
@@ -1925,28 +1854,13 @@ function App() {
                             {act(
                               a.id,
                               "delivery.submit",
-                              a.phase === "planning"
-                                ? "提交 Requirement"
-                                : "提交交付",
+                              "提交交付",
                               () =>
-                                command("delivery.submit", a.id, {
-                                  kind:
-                                    a.phase === "planning"
-                                      ? "requirement"
-                                      : a.phase,
-                                }).catch(() => {}),
+                                command("delivery.submit", a.id).catch(
+                                  () => {},
+                                ),
                               true,
                             )}
-                            {a.phase === "planning" &&
-                              act(
-                                a.id,
-                                "delivery.submit",
-                                "提交 Design / Task / Test 计划",
-                                () =>
-                                  command("delivery.submit", a.id, {
-                                    kind: "plan",
-                                  }).catch(() => {}),
-                              )}
                           </div>
                         </div>
                       ))
@@ -2934,7 +2848,8 @@ function CommandDialog({
       for (const field of spec.fields) {
         const value = values[field.key];
         if (field.optional && !value.trim()) continue;
-        if (field.type === "markdown" && !field.optional && !value.trim()) throw new Error(`请填写${field.label}`);
+        if (field.type === "markdown" && !field.optional && !value.trim())
+          throw new Error(`请填写${field.label}`);
         if (field.key === "acceptance" && value.trim())
           payload.acceptance = value
             .split("\n")
@@ -3009,48 +2924,56 @@ function CommandDialog({
         {spec.fields.length === 0 && (
           <p className="muted">确认执行此领域操作。结果将保存到工程历史。</p>
         )}
-        {spec.fields.map((f, i) => f.type === "markdown" ? (
-          <MarkdownField key={f.key} label={f.label} value={values[f.key]} required={!f.optional} onChange={(value) => setValues({ ...values, [f.key]: value })} />
-        ) : (
-          <label key={f.key}>
-            {f.label}
-            {f.type === "textarea" ? (
-              <textarea
-                autoFocus={i === 0}
-                required={!f.optional}
-                value={values[f.key]}
-                onChange={(e) =>
-                  setValues({ ...values, [f.key]: e.target.value })
-                }
-              />
-            ) : f.type === "select" ? (
-              <ActionSelect
-                aria-label={f.label}
-                value={values[f.key]}
-                onChange={(e) =>
-                  setValues({ ...values, [f.key]: e.target.value })
-                }
-              >
-                {f.options?.map((o) => (
-                  <option value={o.value} key={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </ActionSelect>
-            ) : (
-              <input
-                autoFocus={i === 0}
-                required={!f.optional}
-                type={f.type === "number" ? "number" : "text"}
-                value={values[f.key]}
-                onChange={(e) =>
-                  setValues({ ...values, [f.key]: e.target.value })
-                }
-              />
-            )}
-            {f.description && <span className="muted">{f.description}</span>}
-          </label>
-        ))}
+        {spec.fields.map((f, i) =>
+          f.type === "markdown" ? (
+            <MarkdownField
+              key={f.key}
+              label={f.label}
+              value={values[f.key]}
+              required={!f.optional}
+              onChange={(value) => setValues({ ...values, [f.key]: value })}
+            />
+          ) : (
+            <label key={f.key}>
+              {f.label}
+              {f.type === "textarea" ? (
+                <textarea
+                  autoFocus={i === 0}
+                  required={!f.optional}
+                  value={values[f.key]}
+                  onChange={(e) =>
+                    setValues({ ...values, [f.key]: e.target.value })
+                  }
+                />
+              ) : f.type === "select" ? (
+                <ActionSelect
+                  aria-label={f.label}
+                  value={values[f.key]}
+                  onChange={(e) =>
+                    setValues({ ...values, [f.key]: e.target.value })
+                  }
+                >
+                  {f.options?.map((o) => (
+                    <option value={o.value} key={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </ActionSelect>
+              ) : (
+                <input
+                  autoFocus={i === 0}
+                  required={!f.optional}
+                  type={f.type === "number" ? "number" : "text"}
+                  value={values[f.key]}
+                  onChange={(e) =>
+                    setValues({ ...values, [f.key]: e.target.value })
+                  }
+                />
+              )}
+              {f.description && <span className="muted">{f.description}</span>}
+            </label>
+          ),
+        )}
         <div className="modal-actions">
           <ActionButton type="button" disabled={busy} onClick={close}>
             取消
@@ -3170,8 +3093,17 @@ function Reader({
             <X size={18} />
           </ActionButton>
         </div>
-        {format === "markdown" ? <MarkdownPreview text={body} /> : <pre>{body}</pre>}
-        {metadata && <details><summary>文档信息</summary><pre>{pretty(metadata)}</pre></details>}
+        {format === "markdown" ? (
+          <MarkdownPreview text={body} />
+        ) : (
+          <pre>{body}</pre>
+        )}
+        {metadata && (
+          <details>
+            <summary>文档信息</summary>
+            <pre>{pretty(metadata)}</pre>
+          </details>
+        )}
       </section>
     </div>
   );

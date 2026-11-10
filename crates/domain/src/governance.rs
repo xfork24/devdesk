@@ -69,10 +69,6 @@ pub struct ConfigurationRecord {
     pub created_at: u64,
 }
 impl ConfigurationRecord {
-    /// Compatibility metadata only: experience is restored context, not an executable Tool.
-    pub fn is_legacy_experience_tool(&self) -> bool {
-        self.kind == "tool" && self.data["implementation"] == "experience.lookup"
-    }
     pub fn decode<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         serde_json::from_value(self.data.clone())
             .map_err(|e| err("invalid_configuration", format!("{}: {e}", self.id)))
@@ -161,10 +157,6 @@ pub struct AgentComposition {
     pub skills: Vec<Id>,
     #[serde(default)]
     pub tools: Vec<Id>,
-    #[serde(default)]
-    pub permissions: Vec<Id>,
-    #[serde(default)]
-    pub approval: ApprovalPolicy,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -243,8 +235,6 @@ pub struct WorkflowSlot {
 pub struct InteractionContract {
     #[serde(default)]
     pub mode: String,
-    #[serde(default)]
-    pub goal: String,
     #[serde(default)]
     pub required_topics: Vec<String>,
     #[serde(default)]
@@ -362,211 +352,10 @@ pub fn workflow_action_catalog() -> Value {
     ])
 }
 pub fn validate_workflow(doc: &WorkflowDocument) -> Result<Vec<String>> {
-    require(doc.schema_version >= 3 || doc.steps.iter().all(|step| step.delivery_inputs.is_empty() && step.delivery_outputs.is_empty()),
-        "Delivery 产出与引用需要 Workflow Schema v3，请显式升级草稿")?;
-    if doc.schema_version == 3 {
-        return validate_workflow_v3(doc);
-    }
-    validate_workflow_tasks(doc)?;
-    if doc.schema_version == 2 {
-        return crate::configuration::validate_workflow_v2(doc);
-    }
-    require(doc.schema_version == 1, "不支持的 Workflow Schema")?;
-    require(
-        ["project_intake", "feature", "task"].contains(&doc.process_kind.as_str()),
-        "无效的流程用途",
-    )?;
-    require(
-        !doc.steps.is_empty() && doc.steps.len() <= 200,
-        "流程必须包含 1—200 个步骤",
-    )?;
-    let canonical = [
-        ("analyst", AgentRole::Analyst),
-        ("architect", AgentRole::Architect),
-        ("developer", AgentRole::Developer),
-        ("tester", AgentRole::Tester),
-        ("reviewer", AgentRole::Reviewer),
-    ];
-    for (key, slot) in &doc.binding_slots {
-        require(
-            canonical
-                .iter()
-                .any(|(name, role)| *name == key && *role == slot.role),
-            format!("{key}: 当前编译器要求五种规范职责 slot，不支持别名或职责替换"),
-        )?;
-    }
-    if doc.process_kind != "project_intake" {
-        for (key, _) in canonical {
-            require(
-                doc.binding_slots.contains_key(key),
-                format!("缺少工程职责 {key}"),
-            )?;
-        }
-    }
-    let stages: BTreeSet<_> = doc.stages.iter().map(|x| x.key.as_str()).collect();
-    require(stages.len() == doc.stages.len(), "阶段 key 重复")?;
-    let keys: BTreeSet<_> = doc.steps.iter().map(|x| x.key.as_str()).collect();
-    require(keys.len() == doc.steps.len(), "步骤 key 重复")?;
-    let catalog = workflow_action_catalog();
-    for step in &doc.steps {
-        require(
-            !step.key.is_empty()
-                && step.key.len() <= 80
-                && step
-                    .key
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c)),
-            "步骤 key 格式错误",
-        )?;
-        require(
-            stages.contains(step.stage.as_str()),
-            format!("{}: 阶段不存在", step.key),
-        )?;
-        require(
-            step.contract_version == 1 && catalog.as_array().unwrap().contains(&json!(step.kind)),
-            format!("{}: 未知动作或契约版本", step.key),
-        )?;
-        require(
-            step.dependencies
-                .iter()
-                .all(|x| keys.contains(x.as_str()) && x != &step.key),
-            format!("{}: 前置步骤不存在或自引用", step.key),
-        )?;
-        if let Some(slot) = &step.participant_slot {
-            require(
-                doc.binding_slots.contains_key(slot),
-                format!("{}: 角色 slot 不存在", step.key),
-            )?;
-        }
-        let expected = match step.kind.as_str() {
-            "agent.interact" => match step.interaction.output_kind.as_str() {
-                "requirement" | "feature" => Some("analyst"),
-                "design" | "task_plan" => Some("architect"),
-                "test_plan" => Some("tester"),
-                _ => None,
-            },
-            "delivery.review" | "merge.review" => Some("reviewer"),
-            "merge.prepare" => Some("tester"),
-            "attempt.execute" => match step.parameters.get("phase").and_then(Value::as_str) {
-                Some("requirement_definition") => Some("analyst"),
-                Some("solution_planning") => Some("architect"),
-                Some("implementation") => Some("developer"),
-                Some("closure") => Some("tester"),
-                _ => {
-                    return Err(err(
-                        "invalid_workflow",
-                        format!("{}: 不支持的正式阶段", step.key),
-                    ));
-                }
-            },
-            _ => None,
-        };
-        if let Some(expected) = expected {
-            require(
-                step.participant_slot.as_deref() == Some(expected),
-                format!("{}: 此动作必须使用 {expected} 完整 Agent", step.key),
-            )?;
-        }
-        require(step.retry_limit <= 10, "自动重试上限不能大于 10")?;
-        require(
-            step.rework_scope.iter().all(|x| keys.contains(x.as_str())),
-            "返工范围包含未知步骤",
-        )?;
-        validate_condition(&step.condition, &keys)?;
-        if step.kind == "agent.interact" {
-            require(
-                step.participant_slot.is_some() && !step.interaction.goal.trim().is_empty(),
-                format!("{}: 讨论需要角色和目标", step.key),
-            )?;
-        }
-        if step.kind == "agent.interact" {
-            require(
-                (1..=100).contains(&step.interaction.max_turns)
-                    && ["requirement", "feature", "design", "task_plan", "test_plan"]
-                        .contains(&step.interaction.output_kind.as_str()),
-                format!("{}: 讨论轮数或输出契约不支持", step.key),
-            )?;
-        }
-        if !step.execution_recipe.is_empty() {
-            let nodes: Vec<_> = step
-                .execution_recipe
-                .iter()
-                .map(|n| (n.key.clone(), n.dependencies.clone()))
-                .collect();
-            valid_dag(&nodes)?;
-            for node in &step.execution_recipe {
-                require(
-                    ["test_author", "red", "implement", "green", "docs", "verify"]
-                        .contains(&node.key.as_str()),
-                    format!("{}: 未知执行节点 {}", step.key, node.key),
-                )?;
-                require(
-                    match node.key.as_str() {
-                        "implement" => node.role == AgentRole::Developer && node.writes,
-                        "test_author" => node.role == AgentRole::Tester && node.writes,
-                        "docs" => node.role == AgentRole::Developer && !node.writes,
-                        _ => node.role == AgentRole::Tester && !node.writes,
-                    },
-                    format!("{}: 节点职责或写权限不兼容", node.key),
-                )?;
-            }
-        }
-    }
-    let order = topological(
-        &doc.steps
-            .iter()
-            .map(|s| (s.key.clone(), s.dependencies.clone()))
-            .collect::<Vec<_>>(),
-    )?;
-    if doc.process_kind == "feature" {
-        for kind in [
-            "agent.interact",
-            "proposal.adopt",
-            "attempt.execute",
-            "delivery.review",
-            "tasks.foreach",
-            "merge.prepare",
-            "merge.apply",
-            "snapshot.capture",
-        ] {
-            require(
-                doc.steps.iter().any(|s| s.kind == kind),
-                format!("Feature 流程缺少必需动作 {kind}"),
-            )?;
-        }
-    }
-    if doc.process_kind == "task" {
-        let recipes: Vec<_> = doc.steps.iter().flat_map(|s| &s.execution_recipe).collect();
-        if !recipes.is_empty() {
-            for node in ["test_author", "red", "implement", "green", "docs", "verify"] {
-                require(
-                    recipes.iter().any(|n| n.key == node),
-                    format!("Task 配方缺少 {node}"),
-                )?;
-            }
-            let implement = recipes.iter().find(|n| n.key == "implement").unwrap();
-            require(
-                implement.dependencies.iter().any(|d| d == "red"),
-                "实现必须依赖 Red",
-            )?;
-            let verify = recipes.iter().find(|n| n.key == "verify").unwrap();
-            require(
-                ["green", "docs"]
-                    .iter()
-                    .all(|key| verify.dependencies.iter().any(|d| d == key)),
-                "verify 必须依赖 Green 和文档",
-            )?;
-            let green = recipes.iter().find(|n| n.key == "green").unwrap();
-            require(
-                green.dependencies.iter().any(|d| d == "implement"),
-                "Green 必须依赖实现",
-            )?;
-        }
-    }
-    crate::configuration::validate_workflow_ports(doc)?;
-    validate_workflow_semantics(doc)?;
-    Ok(order)
+    require(doc.schema_version == 3, "Workflow 仅支持 Schema v3")?;
+    validate_workflow_v3(doc)
 }
+
 pub(crate) fn validate_condition(c: &WorkflowCondition, keys: &BTreeSet<&str>) -> Result<()> {
     match c {
         WorkflowCondition::All { conditions } | WorkflowCondition::Any { conditions } => {
@@ -610,6 +399,7 @@ pub fn topological(nodes: &[(String, Vec<String>)]) -> Result<Vec<String>> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FeatureConfiguration {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub integration_locks: BTreeMap<Id, IntegrationLock>,
@@ -619,8 +409,6 @@ pub struct FeatureConfiguration {
     pub baseline_check: Option<BaselineCheck>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub role_agent_bindings: BTreeMap<Id, Id>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub defaults_bundle_ref: Option<Id>,
     pub project_configuration_id: Id,
     pub workflow_ref: Id,
     pub standard_ref: Id,
@@ -628,7 +416,17 @@ pub struct FeatureConfiguration {
     pub definition_hashes: BTreeMap<String, String>,
     pub plan: WorkflowDocument,
     pub task_plan: WorkflowDocument,
+    #[serde(deserialize_with = "current_workflow_compiler")]
     pub compiler_version: u64,
+}
+fn current_workflow_compiler<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> std::result::Result<u64, D::Error> {
+    let version = u64::deserialize(d)?;
+    if version != 3 {
+        return Err(serde::de::Error::custom("Workflow compiler must be v3"));
+    }
+    Ok(version)
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStepRuntime {

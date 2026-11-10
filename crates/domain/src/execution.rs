@@ -4,10 +4,17 @@ impl EngineeringState {
     /// A cancellation is not complete until both the logical Run and its writer have stopped.
     pub fn run_cancellation_pending(&self, worktree: &str) -> bool {
         self.runs.iter().any(|run| {
-            run.worktree == worktree && run.cancel_requested
+            run.worktree == worktree
+                && run.cancel_requested
                 && (run.status == Status::Running
-                    || self.turns.iter().any(|t| t.run_id.as_ref() == Some(&run.id) && t.status.active())
-                    || self.executions.iter().any(|e| e.run_id.as_ref() == Some(&run.id) && !e.writer_revoked))
+                    || self
+                        .turns
+                        .iter()
+                        .any(|t| t.run_id.as_ref() == Some(&run.id) && t.status.active())
+                    || self
+                        .executions
+                        .iter()
+                        .any(|e| e.run_id.as_ref() == Some(&run.id) && !e.writer_revoked))
         })
     }
 }
@@ -20,7 +27,7 @@ pub struct Workspace {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Harness {
     #[serde(default)]
-    pub permission: Option<PermissionBinding>,
+    pub permission: Option<ResolvedPermission>,
     pub id: Id,
     pub provider: String,
     pub version: String,
@@ -30,7 +37,7 @@ pub struct Harness {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sandbox {
     #[serde(default)]
-    pub permission: Option<PermissionBinding>,
+    pub permission: Option<ResolvedPermission>,
     pub id: Id,
     pub provider: String,
     pub version: String,

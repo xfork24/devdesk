@@ -48,6 +48,31 @@ pub struct RuntimeBinding {
 }
 
 impl RuntimeBinding {
+    /// A Task may change node-local scope while retaining the same Agent and native thread.
+    pub fn same_task_agent(&self, other: &Self) -> bool {
+        let authority = |binding: &Self| {
+            binding.permissions.as_ref().map(|p| {
+                serde_json::json!([
+                    p.binding_lock,
+                    p.harness,
+                    p.sandbox,
+                    p.approval,
+                    p.isolation,
+                    p.limits
+                ])
+            })
+        };
+        self.installation == other.installation
+            && self.adapter_version == other.adapter_version
+            && self.model == other.model
+            && self.model_parameters == other.model_parameters
+            && self.model_connection == other.model_connection
+            && self.model_profile_digest == other.model_profile_digest
+            && self.agent_configuration == other.agent_configuration
+            && self.credential_ref == other.credential_ref
+            && authority(self) == authority(other)
+    }
+
     /// Complete Agents keep their frozen Model parameters as the execution authority.
     pub fn effective_model_parameters(&self) -> &std::collections::BTreeMap<String, Value> {
         match &self.agent_configuration {
@@ -190,10 +215,6 @@ pub enum InteractionAnswer {
         answers: Vec<QuestionAnswer>,
         cancelled: bool,
     },
-    /// Readable migration history; never sent back to a live provider.
-    Legacy {
-        text: String,
-    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingInteraction {
@@ -306,6 +327,98 @@ pub struct RuntimeExecution {
     pub finished: Option<u64>,
     #[serde(default)]
     pub protocol_artifact: Option<Id>,
+}
+
+impl EngineeringState {
+    /// Node permissions are immutable per Turn; the Session keeps its original identity/base lock.
+    pub fn turn_runtime_binding(&self, turn: &ConversationTurn) -> Result<RuntimeBinding> {
+        let session = self
+            .sessions
+            .iter()
+            .find(|session| session.id == turn.session_id)
+            .ok_or_else(|| err("not_found", "Turn 的 Session 不存在"))?;
+        let original = session
+            .runtime_binding
+            .as_ref()
+            .ok_or_else(|| err("blocked", "Session 缺少运行锁"))?;
+        let frozen = self
+            .governance
+            .iter()
+            .find(|r| r.kind == "execution_task" && r.definition_id == turn.id)
+            .and_then(|r| r.data.get("runtime_binding"));
+        let Some(frozen) = frozen else {
+            return Ok(original.clone());
+        };
+        let binding: RuntimeBinding = serde_json::from_value(frozen.clone())
+            .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
+        require(
+            session.scope == Some(SessionScope::Task) && original.same_task_agent(&binding),
+            "Task 轮次改变了 Agent、模型或权限基线",
+        )?;
+        self.validate_task_runtime(session, &binding)?;
+        Ok(binding)
+    }
+
+    pub fn validate_task_runtime(&self, session: &Session, binding: &RuntimeBinding) -> Result<()> {
+        require(
+            session.scope == Some(SessionScope::Task),
+            "节点运行锁仅适用于 Task",
+        )?;
+        let original = session
+            .runtime_binding
+            .as_ref()
+            .ok_or_else(|| err("blocked", "Session 缺少运行锁"))?;
+        require(
+            original.same_task_agent(binding),
+            "Task 节点改变了冻结 Agent 运行基线",
+        )?;
+        match binding.tool_policy {
+            ToolPolicy::ReadOnly => require(binding.writable_paths.is_empty(), "只读节点不能写入")?,
+            ToolPolicy::TaskWrite => require(
+                binding.writable_paths == vec!["."],
+                "实现节点只能写当前 Task",
+            )?,
+            ToolPolicy::TestWrite => require(
+                !binding.writable_paths.is_empty()
+                    && binding.writable_paths.iter().all(|path| {
+                        path.starts_with("tests/")
+                            && !path.contains(['\\', '\n', '\r'])
+                            && path
+                                .split('/')
+                                .all(|p| !p.is_empty() && p != "." && p != "..")
+                    }),
+                "测试节点写路径越界",
+            )?,
+        }
+        if let Some(permission) = &binding.permissions {
+            require(
+                permission.scope.work_type == binding.work_type
+                    && permission.scope.writable_paths == binding.writable_paths
+                    && permission.scope.read_only_paths == binding.read_only_paths,
+                "节点权限与执行范围不一致",
+            )?;
+            validate_frozen_permissions(self, permission)?;
+        }
+        let profile = self
+            .definitions
+            .iter()
+            .find(|d| d.id == session.agent)
+            .and_then(|d| d.agent_profile.as_ref())
+            .ok_or_else(|| err("blocked", "Task Agent 修订不存在"))?;
+        let policy = if [WorkType::Discussion, WorkType::Design, WorkType::Review]
+            .contains(&binding.work_type)
+        {
+            ToolPolicy::ReadOnly
+        } else {
+            profile.tool_policy
+        };
+        require(
+            profile.allowed_work.contains(&binding.work_type)
+                && policy == binding.tool_policy
+                && binding.configuration_digest.len() == 64,
+            "Agent 不支持节点工作类型或权限",
+        )
+    }
 }
 
 impl EngineeringState {

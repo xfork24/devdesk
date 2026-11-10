@@ -4,42 +4,6 @@ use devdesk_adapters::permission_profiles::{
 };
 
 impl Workspace {
-    pub(super) fn renew_unstarted_feature_permissions(&self, e: &Engine) -> Result<()> {
-        e.store.transact(None, &mut |s| {
-            let locks: Vec<_> = s.governance.iter().filter(|r| ["feature_permission_lock", "feature_permission_renewal"].contains(&r.kind.as_str())
-                && !s.governance.iter().any(|next| ["feature_permission_lock", "feature_permission_renewal"].contains(&next.kind.as_str()) && next.definition_id == r.definition_id && next.version > r.version)).cloned().collect();
-            for old in locks {
-                let Some(feature)=old.data["feature_id"].as_str() else { continue; };
-                if s.sessions.iter().any(|v|v.feature_id.as_deref()==Some(feature))
-                    || s.attempts.iter().any(|v|v.feature_id==feature) { continue; }
-                let Ok(lock)=serde_json::from_value::<VersionedPermissionLock>(old.data["lock"].clone()) else { continue; };
-                if compile_permission_profiles(s,&lock,None).is_ok() { continue; }
-                let renewal=(||->Result<VersionedPermissionLock>{
-                    Ok(VersionedPermissionLock{
-                        harness:devdesk_adapters::permission_profiles::renew_permission_bound(s,&lock.harness)?,
-                        sandbox:devdesk_adapters::permission_profiles::renew_permission_bound(s,&lock.sandbox)?
-                    })
-                })();
-                let Ok(next_lock)=renewal else { continue; };
-                // This repair is limited to a feature that has never opened an execution session.
-                // Its policy, profile and exact targets remain identical; only the contract is revalidated.
-                if next_lock.harness.binding.enforcement_contract==lock.harness.binding.enforcement_contract
-                    && next_lock.sandbox.binding.enforcement_contract==lock.sandbox.binding.enforcement_contract { continue; }
-                for bound in [&next_lock.harness,&next_lock.sandbox] {
-                    if s.governance.iter().any(|r|r.id==bound.binding_revision_id) { continue; }
-                    let data=json!(bound.binding);
-                    s.governance.push(ConfigurationRecord{id:bound.binding_revision_id.clone(),kind:"permission_binding".into(),definition_id:bound.binding_revision_id.clone(),scope:Scope::Global,name:bound.profile.name.clone(),version:1,supersedes:None,content_hash:configuration_hash(&data),data,immutable:true,revision:1,created_at:0});
-                }
-                let mut next=old.clone(); next.kind="feature_permission_renewal".into(); next.version+=1; next.supersedes=Some(old.id.clone());
-                next.data["lock"]=json!(next_lock);
-                next.data["renewal"]=json!({"source":old.id,"reason":"unstarted_feature_contract_revalidation","policy_changed":false,"target_changed":false});
-                next.content_hash=configuration_hash(&next.data); next.id=format!("feature-permission-renewal:{}",next.content_hash);
-                s.governance.push(next);
-            }
-            Ok(Value::Null)
-        })?;
-        Ok(())
-    }
     pub(super) fn permission_runtime_digest(
         agent: &Definition,
         b: &RuntimeBinding,
@@ -95,7 +59,7 @@ impl Workspace {
             .and_then(|p| p.binding_lock.as_ref())
             .is_none()
         {
-            return Ok(None);
+            return Err(err("permission_unconfigured", "会话必须使用版本化权限绑定"));
         }
         if binding.adapter_version
             != harness::managed_adapter_identity(binding.installation.key.provider)
@@ -203,7 +167,7 @@ impl Workspace {
             "needs_reconciliation"
         } else {
             match &desired {
-                None => "legacy_fixed",
+                None => "unconfigured",
                 Some(Err(_)) => "unconfigured",
                 Some(Ok(v)) if frozen == Some(v) => "adopted",
                 Some(Ok(_)) if active => "pending",
@@ -277,14 +241,13 @@ impl Workspace {
                         .filter_map(|r|r.decode::<AgentComposition>().ok().map(|a| {
                             let selection=agent_permission_selection(&s,&r.id,&a);
                             json!({"id":r.id,"name":r.name,"harness_ref":a.harness_ref,"sandbox_ref":selection.as_ref().map(|v|v.sandbox_ref.as_str()),
-                                "harness_mode":selection.as_ref().map(|v|match v.harness {PermissionSelection::FollowTarget=>"follow_target",_=>"pinned"}).unwrap_or("legacy_fixed"),
-                                "sandbox_mode":selection.as_ref().map(|v|match v.sandbox {PermissionSelection::FollowTarget=>"follow_target",_=>"pinned"}).unwrap_or("legacy_fixed")})
+                                "harness_mode":selection.as_ref().map(|v|match v.harness {PermissionSelection::FollowTarget=>"follow_target",_=>"pinned"}).unwrap_or("unconfigured"),
+                                "sandbox_mode":selection.as_ref().map(|v|match v.sandbox {PermissionSelection::FollowTarget=>"follow_target",_=>"pinned"}).unwrap_or("unconfigured")})
                         })).collect();
                     Ok(
                         json!({"profiles":records("permission_profile").iter().map(|r|&r.data).collect::<Vec<_>>(),
-                        "bindings":records("permission_binding"),"origins":records("permission_origin").into_iter().chain(records("permission_file_origin")).collect::<Vec<_>>(),"migrations":records("permission_migration").into_iter().chain(records("permission_migration_renewal")).collect::<Vec<_>>(),"targets":targets,"agents":agents,
-                        "sources":self.global.permission_preset_sources()?,"default_sandbox_ref":DEFAULT_PERMISSION_SANDBOX,
-                        "legacy_agents":s.governance.iter().filter(|r|r.kind=="agent" && r.data.get("permission_selection").is_none()).map(|r|json!({"id":r.id,"name":r.name,"mode":"legacy_fixed"})).collect::<Vec<_>>()}),
+                        "bindings":records("permission_binding"),"origins":records("permission_origin").into_iter().chain(records("permission_file_origin")).collect::<Vec<_>>(),"targets":targets,"agents":agents,
+                        "sources":self.global.permission_preset_sources()?,"default_sandbox_ref":DEFAULT_PERMISSION_SANDBOX}),
                     )
                 }
                 "permission.profile.export" => permission_profile_export(
@@ -486,7 +449,7 @@ mod tests {
             let mut changes = vec![
                 json!({"target":permission_target(&s,PermissionTargetKind::Harness,DEFAULT_HARNESS_ID).unwrap(),"permission_revision_id":profile,"expected_revision":expected}),
             ];
-            if expected == 0 {
+            if false {
                 changes.push(json!({"target":permission_target(&s,PermissionTargetKind::Sandbox,DEFAULT_PERMISSION_SANDBOX).unwrap(),"permission_revision_id":"permission-sandbox-full-access-v2-r1","expected_revision":0}));
             }
             w.dispatch(
@@ -495,7 +458,7 @@ mod tests {
             )
             .unwrap()
         };
-        apply("permission-harness-full-access-v2-r1", 0);
+        apply("permission-harness-full-access-v2-r1", 1);
         let selection = AgentPermissionSelection {
             sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
             harness: PermissionSelection::FollowTarget,
@@ -568,7 +531,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        apply("permission-harness-read-only-v2-r1", 1);
+        apply("permission-harness-read-only-v2-r1", 2);
         let params = json!({"project_id":project,"command_id":id(),"target":original,"expected_revision":1,"payload":{"input":"Use the new permissions","client_message_id":"one-message"}});
         let sent = w.dispatch("conversation.send", params.clone()).unwrap();
         assert_ne!(sent["effective_session_id"], original);
@@ -684,7 +647,7 @@ mod tests {
             .clone();
         let preflight=w.dispatch("permission.binding.preflight",json!({"target":target,"permission_revision_id":"permission-harness-read-only-v2-r1"})).unwrap();
         assert_eq!(preflight["scope_checked"], false);
-        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"permission-harness-read-only-v2-r1","expected_revision":0}]}});
+        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"permission-harness-read-only-v2-r1","expected_revision":1}]}});
         let first = w
             .dispatch("permission.bindings.apply", request.clone())
             .unwrap();
@@ -714,99 +677,7 @@ mod tests {
                 .iter()
                 .find(|r| r["target"] == target)
                 .unwrap()["active"]["revision"],
-            1
+            2
         );
-    }
-}
-
-#[cfg(test)]
-mod contract_renewal_tests {
-    use super::*;
-    #[test]
-    fn unstarted_feature_renews_only_the_contract_and_preserves_original_lock() {
-        let dir = tempfile::tempdir().unwrap();
-        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
-        let pid = w
-            .dispatch(
-                "project.create",
-                json!({"command_id":id(),"payload":{"title":"Contract renewal"}}),
-            )
-            .unwrap()["id"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let e = w.active_engine(Some(&pid)).unwrap();
-        let state = e.store.snapshot().unwrap();
-        let agent = default_configured_agent_id("analyst");
-        let a: AgentComposition = state.configuration(&agent).unwrap().decode().unwrap();
-        let selection = agent_permission_selection(&state, &agent, &a).unwrap();
-        let mut lock = resolve_permission_lock(&state, &a.harness_ref, &selection).unwrap();
-        lock.harness.binding.enforcement_contract =
-            "codex-native-v1:codex-app-server/v1+build.0000000000000000".into();
-        lock.sandbox.binding.enforcement_contract = format!("docker-worker/v1:{}", "0".repeat(64));
-        for bound in [&mut lock.harness, &mut lock.sandbox] {
-            bound.binding_hash = permission_content_hash(&bound.binding);
-            bound.binding_revision_id = format!("legacy-binding-{}", bound.binding_hash);
-        }
-        let fid = id();
-        let record_id = id();
-        e.store
-            .transact(None, &mut |s| {
-                for bound in [&lock.harness, &lock.sandbox] {
-                    let data = json!(bound.binding);
-                    s.governance.push(ConfigurationRecord {
-                        id: bound.binding_revision_id.clone(),
-                        kind: "permission_binding".into(),
-                        definition_id: bound.binding_revision_id.clone(),
-                        scope: Scope::Global,
-                        name: "Legacy grant".into(),
-                        version: 1,
-                        supersedes: None,
-                        content_hash: configuration_hash(&data),
-                        data,
-                        immutable: true,
-                        revision: 1,
-                        created_at: 0,
-                    });
-                }
-                let data = json!({"feature_id":fid,"agent_revision_id":agent,"lock":lock});
-                s.governance.push(ConfigurationRecord {
-                    id: record_id.clone(),
-                    kind: "feature_permission_lock".into(),
-                    definition_id: format!("{fid}:{agent}"),
-                    scope: Scope::Global,
-                    name: "Frozen permission".into(),
-                    version: 1,
-                    supersedes: None,
-                    content_hash: configuration_hash(&data),
-                    data,
-                    immutable: true,
-                    revision: 1,
-                    created_at: 0,
-                });
-                Ok(Value::Null)
-            })
-            .unwrap();
-        let original = e
-            .store
-            .snapshot()
-            .unwrap()
-            .configuration(&record_id)
-            .unwrap()
-            .clone();
-        assert!(compile_permission_profiles(&e.store.snapshot().unwrap(), &lock, None).is_err());
-        w.renew_unstarted_feature_permissions(&e).unwrap();
-        let after = e.store.snapshot().unwrap();
-        let renewed = frozen_permission_lock(&after, &fid, &agent).unwrap();
-        assert_eq!(renewed.harness.profile, lock.harness.profile);
-        assert_eq!(renewed.harness.binding.target, lock.harness.binding.target);
-        compile_permission_profiles(&after, &renewed, None).unwrap();
-        assert_eq!(
-            json!(after.configuration(&record_id).unwrap()),
-            json!(original)
-        );
-        let count = after.governance.len();
-        w.renew_unstarted_feature_permissions(&e).unwrap();
-        assert_eq!(count, e.store.snapshot().unwrap().governance.len());
     }
 }

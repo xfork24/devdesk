@@ -79,7 +79,11 @@ impl Workspace {
         record: &ConfigurationRecord,
     ) -> Result<RuntimeInstallation> {
         let harness: HarnessDefinition = record.decode()?;
-        let provider = match harness.provider.as_str() { "codex" => HarnessProvider::Codex, "dsh" => HarnessProvider::Dsh, _ => return Err(err("unsupported", "未知 Harness")) };
+        let provider = match harness.provider.as_str() {
+            "codex" => HarnessProvider::Codex,
+            "dsh" => HarnessProvider::Dsh,
+            _ => return Err(err("unsupported", "未知 Harness")),
+        };
         let digest = harness
             .recipe_digest
             .as_ref()
@@ -106,8 +110,14 @@ impl Workspace {
         }
         require(
             match provider {
-                HarnessProvider::Codex => harness.runtime_version == DEFAULT_CODEX_VERSION && *digest == default_codex_recipe_digest(),
-                HarnessProvider::Dsh => harness.runtime_version == DEFAULT_DSH_VERSION && *digest == default_dsh_recipe_digest(),
+                HarnessProvider::Codex => {
+                    harness.runtime_version == DEFAULT_CODEX_VERSION
+                        && *digest == default_codex_recipe_digest()
+                }
+                HarnessProvider::Dsh => {
+                    harness.runtime_version == DEFAULT_DSH_VERSION
+                        && *digest == default_dsh_recipe_digest()
+                }
             },
             "当前程序无法构建此冻结配方；不能静默换版",
         )?;

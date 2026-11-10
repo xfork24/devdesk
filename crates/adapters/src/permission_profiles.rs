@@ -60,52 +60,6 @@ fn permission_semantics_digest(provider: HarnessProvider) -> String {
     )
 }
 
-/// Revalidate an unchanged old grant under the current enforcement contract.
-/// Callers must publish a new binding; immutable source records are retained.
-pub fn renew_permission_bound(
-    s: &EngineeringState,
-    old: &BoundPermission,
-) -> Result<BoundPermission> {
-    let expected = permission_contract(s, &old.binding.target)?;
-    require(
-        old.binding.enforcement_contract == expected
-            || match old.binding.target.kind {
-                PermissionTargetKind::Harness => {
-                    old.binding
-                        .enforcement_contract
-                        .starts_with("codex-native-v1:codex-app-server/v1+build.")
-                        || old
-                            .binding
-                            .enforcement_contract
-                            .starts_with("dsh-native-v1:dsh-sdk/v1+build.")
-                }
-                PermissionTargetKind::Sandbox => old
-                    .binding
-                    .enforcement_contract
-                    .starts_with("docker-worker/v1:"),
-            },
-        "未知权限合同变化，不能自动修复",
-    )?;
-    let mut normalized = old.profile.clone();
-    normalized.normalize()?;
-    require(
-        normalized == old.profile
-            && old.profile_hash == permission_content_hash(&old.profile)
-            && old.binding_hash == permission_content_hash(&old.binding)
-            && old.binding.permission_revision_id == old.profile.id
-            && old.binding.target.kind == old.profile.target_kind
-            && s.configuration(&old.profile.id)?.data == json!(old.profile)
-            && s.configuration(&old.binding_revision_id)?.data == json!(old.binding),
-        "权限原始修订或摘要已漂移，不能修复合同",
-    )?;
-    preflight_profile(s, &old.binding.target, &old.profile)?;
-    let mut next = old.clone();
-    next.binding.enforcement_contract = permission_contract(s, &old.binding.target)?;
-    next.binding_hash = permission_content_hash(&next.binding);
-    next.binding_revision_id = format!("permission-contract:{}", next.binding_hash);
-    Ok(next)
-}
-
 pub fn compile_permission_profiles(
     s: &EngineeringState,
     lock: &VersionedPermissionLock,
@@ -192,46 +146,19 @@ pub fn compile_permission_profiles(
     if scope.writable_paths.len() > 128 || scope.read_only_paths.len() > 128 {
         return Err(err("invalid_params", "ExecutionScope 路径数量超出范围"));
     }
-    let definitions: Vec<_> = [&lock.harness, &lock.sandbox]
-        .into_iter()
-        .map(|b| Permission {
-            id: format!("profile-v2:{}", b.profile.id),
-            identity: b.profile.identity.clone(),
-            name: b.profile.name.clone(),
-            version: 1,
-            supersedes: None,
-            schema_version: 1,
-            policy: b.profile.policy.portable(),
-        })
-        .collect();
-    let config = PermissionConfiguration {
-        revision: 1,
-        harnesses: [(
-            provider.as_str().into(),
-            PermissionBinding {
-                permission: Some(PermissionRef {
-                    revision_id: definitions[0].id.clone(),
-                }),
-                overrides: PermissionPatch::default(),
-            },
-        )]
-        .into(),
-        sandbox: PermissionBinding {
-            permission: Some(PermissionRef {
-                revision_id: definitions[1].id.clone(),
-            }),
-            overrides: PermissionPatch::default(),
+    let resolved = |bound: &BoundPermission| ResolvedPermission {
+        reference: PermissionRef {
+            revision_id: bound.profile.id.clone(),
         },
-        approval,
+        policy: bound.profile.policy.portable(),
+        sources: vec![format!("binding:{}", bound.binding_revision_id)],
     };
-    let mut result = permissions::resolve_execution_permissions(
-        &definitions,
-        &config,
+    let mut result = permissions::compile_resolved_permissions(
         provider,
         scope,
-        None,
-        None,
-        None,
+        resolved(&lock.harness),
+        resolved(&lock.sandbox),
+        approval,
     )?;
     result.harness.reference.revision_id = lock.harness.profile.id.clone();
     result.sandbox.reference.revision_id = lock.sandbox.profile.id.clone();
@@ -352,55 +279,6 @@ pub fn verify_permission_installation(
 }
 
 impl GlobalStore {
-    /// Additive projections preserve immutable Agents and historical serialization.
-    pub fn migrate_permission_selections(&self) -> Result<()> {
-        self.transact(None,&mut |s| {
-            let agents:Vec<_>=s.governance.iter().filter(|r|r.kind=="agent" && r.data.get("permission_selection").is_none()).cloned().collect();
-            for agent in agents {
-                let a:AgentComposition=agent.decode()?;
-                let converted=(||->Result<(Vec<PermissionProfile>,Vec<BoundPermission>,AgentPermissionSelection)> {
-                    let old_h=s.permissions.iter().find(|p|Some(&p.id)==a.permissions.first()).ok_or_else(||err("not_found","旧 Harness 权限不存在"))?;
-                    let old_b=s.permissions.iter().find(|p|Some(&p.id)==a.permissions.last()).ok_or_else(||err("not_found","旧 Sandbox 权限不存在"))?;
-                    if old_h.id=="permission-legacy-restricted-v1" {return Err(err("permission_unsupported","保留 legacy 动态范围与凭据边界"));}
-                    let mut profiles=Vec::new();let mut bounds=Vec::new();
-                    for (kind,old,target_id) in [(PermissionTargetKind::Harness,old_h,a.harness_ref.as_str()),(PermissionTargetKind::Sandbox,old_b,DEFAULT_PERMISSION_SANDBOX)] {
-                        let policy=ProfilePolicy{filesystem:old.policy.filesystem.clone(),network:old.policy.network.clone(),tools:if kind==PermissionTargetKind::Harness {Some(old.policy.tools.clone())}else{None},approval:if kind==PermissionTargetKind::Harness {Some(a.approval)}else{None}};
-                        let identity=format!("legacy-profile-{}",configuration_hash(&json!({"kind":kind,"policy":policy})));
-                        let mut profile=PermissionProfile{schema_version:2,id:format!("{identity}-r1"),identity,name:format!("兼容固定 {kind:?} 权限"),version:1,supersedes:None,target_kind:kind,policy};
-                        profile.normalize()?;
-                        let target=permission_target(s,kind,target_id)?;
-                        preflight_profile(s,&target,&profile)?;
-                        let binding=VersionedPermissionBinding{enforcement_contract:permission_contract(s,&target)?,target,permission_revision_id:profile.id.clone()};
-                        let hash=permission_content_hash(&binding);
-                        bounds.push(BoundPermission{binding_revision_id:format!("legacy-binding-{hash}"),binding_hash:hash,binding,profile:profile.clone(),profile_hash:permission_content_hash(&profile)});
-                        profiles.push(profile);
-                    }
-                    let selection=AgentPermissionSelection{sandbox_ref:DEFAULT_PERMISSION_SANDBOX.into(),harness:PermissionSelection::Pinned{binding_revision_id:bounds[0].binding_revision_id.clone()},sandbox:PermissionSelection::Pinned{binding_revision_id:bounds[1].binding_revision_id.clone()}};
-                    Ok((profiles,bounds,selection))
-                })();
-                let data=match converted {
-                    Ok((profiles,bounds,selection))=>{
-                        insert_permission_profiles(s,&profiles.iter().map(|p|json!(p)).collect::<Vec<_>>(),"legacy_conversion")?;
-                        for b in bounds {if !s.governance.iter().any(|r|r.id==b.binding_revision_id) {
-                            let data=json!(b.binding);s.governance.push(ConfigurationRecord{id:b.binding_revision_id.clone(),kind:"permission_binding".into(),definition_id:b.binding_revision_id,scope:Scope::Global,name:b.profile.name,version:1,supersedes:None,content_hash:configuration_hash(&data),data,immutable:true,revision:1,created_at:0});
-                        }}
-                        json!({"status":"converted_fixed","selection":selection,"original_permissions":a.permissions,"original_approval":a.approval})
-                    }
-                    Err(e)=>json!({"status":"legacy_fixed","reason":e.message,"original_permissions":a.permissions,"original_approval":a.approval}),
-                };
-                let previous=s.governance.iter().filter(|r|["permission_migration","permission_migration_renewal"].contains(&r.kind.as_str()) && r.definition_id==agent.id).max_by_key(|r|r.version);
-                if previous.is_some_and(|r|r.data==data) { continue; }
-                let version=previous.map_or(1,|r|r.version+1);
-                let supersedes=previous.map(|r|r.id.clone());
-                let hash=configuration_hash(&data);
-                let record_id=if version==1 {format!("permission-migration:{}",agent.id)}else{format!("permission-migration:{}:{hash}",agent.id)};
-                s.governance.push(ConfigurationRecord{id:record_id,kind:if version==1 {"permission_migration"}else{"permission_migration_renewal"}.into(),definition_id:agent.id,scope:agent.scope,name:agent.name,version,supersedes,content_hash:hash,data,immutable:true,revision:1,created_at:0});
-            }
-            Ok(Value::Null)
-        })?;
-        Ok(())
-    }
-
     pub fn permission_preset_sources(&self) -> Result<Vec<PathBuf>> {
         let mut roots = vec![Path::new(&self.root()).join("permissions/presets")];
         let mut packaged = false;

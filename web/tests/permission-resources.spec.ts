@@ -27,6 +27,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   await expect(
     page.getByRole("heading", { name: "Permission 定义与版本绑定" }),
   ).toBeVisible();
+  await expect(page.getByText("旧权限配置兼容入口", { exact: true })).toHaveCount(0);
   const catalog = await rpc("query.permission_resources");
   const target = catalog.targets.find(
     (t: any) => t.provider === "codex" && t.supported,

@@ -143,7 +143,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     [moveStage, setMoveStage] = useState(""),
     [search, setSearch] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:v2:workflow:${project?.id || "global"}`,
+    `devdesk:v3:workflow:${project?.id || "global"}`,
     () => ({
       selected: "",
       view: "list",
@@ -226,9 +226,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   const selected = rows.find((r) => r.id === draft.selected);
   const editable = draft.editing;
   const workflows = latest(
-    rows.filter((r) => r.kind === "workflow" && r.data.schema_version >= 2),
+    rows.filter((r) => r.kind === "workflow" && r.data.schema_version === 3),
   );
-  const isTaskVersion = document.schema_version >= 3;
   const requiresTask = (kind: string) =>
     contracts.actions.some((a: Row) => a.kind === kind && a.requires_task);
   const requiresRole = (kind: string) =>
@@ -339,15 +338,14 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       name: kind === "workflow.call" ? "新子流程" : "新步骤",
       stage: stage?.key || step?.stage || document.stages[0]?.key,
       kind,
-      contract_version: isTaskVersion && requiresTask(kind) ? 2 : 1,
-      ...(isTaskVersion && requiresTask(kind) ? { task_instructions: "" } : {}),
+      contract_version: requiresTask(kind) ? 2 : 1,
+      ...(requiresTask(kind) ? { task_instructions: "" } : {}),
       dependencies: step ? [step.key] : [],
       role_ref: null,
       spec_refs: [],
       inputs: {},
       interaction: {
         mode: "discussion",
-        goal: "",
         required_topics: [],
         output_kind: "requirement",
         max_turns: 8,
@@ -535,30 +533,6 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               >
                 返回流程列表
               </ActionButton>
-              {selected && !isTaskVersion ? (
-                <ActionButton
-                  disabled={busy}
-                  onClick={() => {
-                    captureFeedback();
-                    return void act(async () => {
-                      const row = await mutate(
-                        "workflow.task_upgrade",
-                        selected.id,
-                        {},
-                        selected.revision,
-                      );
-                      await load();
-                      choose(row);
-                      setMessage(
-                        row.data.task_upgrade_diagnostics?.join("\n") ||
-                          "已建立任务指令版草稿，请检查任务并显式选择升级后的子流程，再发布。",
-                      );
-                    });
-                  }}
-                >
-                  创建任务指令版草稿
-                </ActionButton>
-              ) : null}
               {selected && (
                 <ActionButton
                   disabled={busy}
@@ -1119,11 +1093,11 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           return updateStep({
                             kind: e.target.value,
                             contract_version:
-                              isTaskVersion && requiresTask(e.target.value)
+                              requiresTask(e.target.value)
                                 ? 2
                                 : 1,
                             task_instructions:
-                              isTaskVersion && requiresTask(e.target.value)
+                              requiresTask(e.target.value)
                                 ? ""
                                 : undefined,
                             participant_slot: null,
@@ -1151,7 +1125,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         ))}
                       </ActionSelect>
                     </label>
-                    {isTaskVersion && requiresTask(step.kind) ? (
+                    {requiresTask(step.kind) ? (
                       <>
                         <MarkdownField
                           key={`${draft.selected}:${step.key}:task`}
@@ -1226,10 +1200,10 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         />
                       </>
                     )}
-                    {document.schema_version >= 3 && <fieldset disabled={!editable || busy} className="full-width">
+                    <fieldset disabled={!editable || busy} className="full-width">
                       <WorkflowDeliveries document={document} step={step} records={records}
                         onChange={(value) => { captureFeedback(); updateStep(value); }} />
-                    </fieldset>}
+                    </fieldset>
                     <label>
                       前置步骤
                       <ActionSelect
@@ -1303,24 +1277,6 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     )}
                     {step.kind === "agent.interact" && (
                       <>
-                        {!isTaskVersion ? (
-                          <MarkdownField
-                            key={`${draft.selected}:${step.key}:goal`}
-                            label="讨论目标"
-                            required
-                            readOnly={!editable}
-                            value={step.interaction?.goal || ""}
-                            onChange={(goal) => {
-                              captureFeedback();
-                              return updateStep({
-                                interaction: {
-                                  ...step.interaction,
-                                  goal,
-                                },
-                              });
-                            }}
-                          />
-                        ) : null}
                         <MarkdownTopicsField
                           key={`${draft.selected}:${step.key}:topics`}
                           value={step.interaction?.required_topics || []}
@@ -1397,12 +1353,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                   ...step.parameters,
                                   phase: e.target.value,
                                 },
-                                ...(isTaskVersion
-                                  ? {
-                                      task_instructions: "",
-                                      execution_recipe: [],
-                                    }
-                                  : {}),
+                                task_instructions: "",
+                                execution_recipe: [],
                               });
                             }}
                           >
@@ -1421,8 +1373,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                               <legend>
                                 {nodeLabels[node.key] || node.key}
                               </legend>
-                              {isTaskVersion ? (
-                                agentNode(node.key) ? (
+                              {agentNode(node.key) ? (
                                   <MarkdownField
                                     key={`${draft.selected}:${step.key}:${node.key}:task`}
                                     label={`${nodeLabels[node.key] || node.key} 节点任务指令`}
@@ -1446,8 +1397,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                     系统测试执行器按冻结 TestRecipe 执行，不调用
                                     Agent。
                                   </p>
-                                )
-                              ) : null}
+                                )}
                               <RevisionSelect
                                 label={`${nodeLabels[node.key] || node.key} Role`}
                                 records={roles
@@ -1603,7 +1553,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                                       ];
                             updateStep({
                               execution_recipe: nodes.map((node) => ({
-                                ...(isTaskVersion && agentNode(node.key)
+                                ...(agentNode(node.key)
                                   ? { task_instructions: "" }
                                   : {}),
                                 ...node,
@@ -1733,7 +1683,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                   </>
                 )}
               </fieldset>
-              {step && isTaskVersion && requiresTask(step.kind) ? (
+              {step && requiresTask(step.kind) ? (
                 <WorkflowTaskPreview
                   key={`${draft.selected}:${step.key}`}
                   request={request}

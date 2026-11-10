@@ -1,4 +1,4 @@
-//! Business instructions come from the exact workflow step, including legacy goals.
+//! Business instructions come from the current frozen Workflow task.
 use crate::*;
 use std::collections::BTreeSet;
 
@@ -63,7 +63,7 @@ impl Engine {
         let instructions = step
             .task_instructions
             .as_deref()
-            .unwrap_or(&step.interaction.goal);
+            .ok_or_else(|| err("configuration_required", "步骤缺少当前任务指令"))?;
         require(
             !instructions.trim().is_empty(),
             "工作流步骤的任务提示词不能为空",
@@ -72,13 +72,7 @@ impl Engine {
             .execution_recipe
             .iter()
             .find(|node| node.key == run.node);
-        let node_instructions = node
-            .and_then(|n| n.task_instructions.as_deref())
-            .or_else(|| {
-                step.parameters
-                    .get("agent_prompts")
-                    .and_then(|prompts| prompts[&run.node].as_str())
-            });
+        let node_instructions = node.and_then(|n| n.task_instructions.as_deref());
         let output_contract = if ["test_author", "implement", "docs"].contains(&run.node.as_str()) {
             agent_task_output_contract(step, Some(&run.node))
         } else {

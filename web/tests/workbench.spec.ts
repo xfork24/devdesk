@@ -488,81 +488,11 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("Permission 原生配置预检、修订与重载保持绑定", async ({
-  page,
-}, testInfo) => {
+test("设置只提供版本化权限并拒绝旧权限接口", async ({ page }) => {
   await ensureSetup(page);
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByText("旧权限配置兼容入口", { exact: true }).click();
-  const panel = page.locator(".setting-row").filter({
-    has: page.getByRole("heading", {
-      name: "运行权限 Permission",
-      exact: true,
-    }),
-  });
-  await expect(panel.getByLabel("权限修订", { exact: true })).toHaveValue(
-    "permission-container-full-access-v1",
-  );
-  await panel
-    .getByLabel("权限修订", { exact: true })
-    .selectOption("permission-read-only-v1");
-  await panel
-    .getByRole("button", { name: "预览最终权限", exact: true })
-    .click();
-  await expect(
-    panel.getByText("预检通过，未启动模型或容器。", { exact: true }),
-  ).toBeVisible();
-  await panel
-    .getByRole("button", { name: "保存权限绑定", exact: true })
-    .click();
-  await expect(panel.getByText(/权限已保存，后续会话使用新配置/)).toBeVisible();
-  await page.reload();
-  await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByText("旧权限配置兼容入口", { exact: true }).click();
-  await expect(panel.getByLabel("权限修订", { exact: true })).toHaveValue(
-    "permission-read-only-v1",
-  );
-  await panel.getByLabel("权限字段覆盖", { exact: true }).fill(
-    JSON.stringify({
-      network: { mode: "allowlist", destinations: ["example.com"] },
-    }),
-  );
-  await panel
-    .getByRole("button", { name: "预览最终权限", exact: true })
-    .click();
-  await expect(
-    panel
-      .getByRole("status")
-      .filter({ hasText: /permission_unsupported|需要受控代理/ }),
-  ).toBeVisible();
-  await panel.getByText("创建或修订可复用权限", { exact: true }).click();
-  await panel.getByLabel("新权限名称", { exact: true }).fill("浏览器权限定义");
-  await panel.getByLabel("新权限策略", { exact: true }).fill(
-    JSON.stringify({
-      filesystem: { mode: "read_only" },
-      network: { mode: "enabled" },
-      tools: { mode: "all_available" },
-    }),
-  );
-  await panel.getByRole("button", { name: "创建权限", exact: true }).click();
-  await expect(
-    panel
-      .getByLabel("权限修订", { exact: true })
-      .locator("option")
-      .filter({ hasText: "浏览器权限定义" }),
-  ).toHaveCount(1);
-  await panel.getByLabel("权限字段覆盖", { exact: true }).fill("{}");
-  await panel
-    .getByLabel("权限修订", { exact: true })
-    .selectOption("permission-container-full-access-v1");
-  await panel
-    .getByRole("button", { name: "保存权限绑定", exact: true })
-    .click();
-  await expect(panel.getByText(/权限已保存，后续会话使用新配置/)).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath(
-      `permission-settings-${process.env.DEVDESK_E2E_PROFILE ?? "debug"}.png`,
-    ),
-    fullPage: true,
-  });
+  await expect(page.getByRole("heading", { name: "Permission 定义与版本绑定" })).toBeVisible();
+  await expect(page.getByText("旧权限配置兼容入口", { exact: true })).toHaveCount(0);
+  const reply = await page.request.post("/rpc", { data: { jsonrpc: "2.0", id: 1, method: "query.permissions", params: {} } }).then((r) => r.json());
+  expect(reply.error.data.code).toBe("method_not_found");
 });

@@ -23,6 +23,7 @@ impl Engine {
         s: &mut EngineeringState,
         session_id: &str,
         standard: &str,
+        node: Option<&str>,
     ) -> Result<BindingLock> {
         let session = s
             .sessions
@@ -30,6 +31,7 @@ impl Engine {
             .find(|v| v.id == session_id)
             .cloned()
             .ok_or_else(|| err("blocked", "缺少正式阶段 Session"))?;
+        let session = crate::agent_tasks::session_for_node(s, &session, node, None)?;
         let runtime = session
             .runtime_binding
             .as_ref()
@@ -51,10 +53,7 @@ impl Engine {
         };
         if !s.harnesses.iter().any(|h| h.id == harness) {
             s.harnesses.push(devdesk_domain::Harness {
-                permission: runtime
-                    .permissions
-                    .as_ref()
-                    .map(|p| PermissionBinding::frozen(&p.harness)),
+                permission: runtime.permissions.as_ref().map(|p| p.harness.clone()),
                 id: harness.clone(),
                 provider: installation.key.provider.as_str().into(),
                 version: installation.key.version.clone(),
@@ -69,10 +68,7 @@ impl Engine {
         }
         if !s.sandboxes.iter().any(|b| b.id == sandbox) {
             s.sandboxes.push(devdesk_domain::Sandbox {
-                permission: runtime
-                    .permissions
-                    .as_ref()
-                    .map(|p| PermissionBinding::frozen(&p.sandbox)),
+                permission: runtime.permissions.as_ref().map(|p| p.sandbox.clone()),
                 id: sandbox.clone(),
                 provider: "docker".into(),
                 version: "managed-worker/v1".into(),
@@ -121,13 +117,6 @@ impl Engine {
                     AgentRole::Tester,
                     ToolPolicy::ReadOnly,
                 ),
-            ],
-            "planning" => vec![
-                ("research", AgentRole::Analyst, ToolPolicy::ReadOnly),
-                ("requirement", AgentRole::Analyst, ToolPolicy::ReadOnly),
-                ("design", AgentRole::Architect, ToolPolicy::ReadOnly),
-                ("task_plan", AgentRole::Architect, ToolPolicy::ReadOnly),
-                ("test_plan", AgentRole::Tester, ToolPolicy::ReadOnly),
             ],
             "implementation" => vec![
                 ("test_author", AgentRole::Tester, ToolPolicy::TestWrite),
@@ -182,6 +171,8 @@ impl Engine {
                 .iter()
                 .find(|v| &v.id == sid)
                 .ok_or_else(|| err("blocked", "阶段 Session 不存在"))?;
+            let session =
+                crate::agent_tasks::session_for_node(s, session, Some(&node), step_instance)?;
             let profile = s
                 .definitions
                 .iter()
@@ -217,7 +208,7 @@ impl Engine {
             .get(node)
             .ok_or_else(|| err("blocked", "缺少冻结阶段 Session"))?
             .clone();
-        let binding = self.live_binding(s, &sid, &a.binding.standard)?;
+        let binding = self.live_binding(s, &sid, &a.binding.standard, Some(node))?;
         let c = a
             .git_context
             .as_ref()
@@ -284,11 +275,8 @@ impl Engine {
     }
     pub(crate) fn poll_live_run(&self, s: &EngineeringState, r: &Run) -> Result<Option<Value>> {
         require(r.origin == Origin::External, "真实执行入口拒绝模拟 Run")?;
-        let session = s
-            .sessions
-            .iter()
-            .find(|v| v.id == r.session_id)
-            .ok_or_else(|| err("blocked", "真实 Run Session 缺失"))?;
+        let session = crate::agent_tasks::session_for_run(s, r)?;
+        let session = &session;
         if ["red", "green", "verify", "feature_tests", "merge_verify"].contains(&r.node.as_str()) {
             return self.poll_live_test(s, r);
         }
@@ -324,6 +312,12 @@ impl Engine {
             ));
         }
         let Some(turn) = existing else {
+            if s.turns
+                .iter()
+                .any(|turn| turn.session_id == session.id && turn.status.active())
+            {
+                return Ok(None);
+            }
             if self.run_uses_task(s, r)? {
                 let (documents, code, input) = if r.node.starts_with("review:") {
                     let d = s.delivery(r.node.trim_start_matches("review:"))?;
@@ -482,14 +476,21 @@ impl Engine {
             return Ok(None);
         };
         if turn.status == TurnStatus::NeedsReconciliation {
-            let executions: Vec<_> = s.executions.iter()
-                .filter(|e| e.run_id.as_ref() == Some(&r.id)).collect();
-            if !executions.is_empty() && executions.iter()
-                .all(|e| e.writer_revoked && e.protocol_artifact.is_some())
+            let executions: Vec<_> = s
+                .executions
+                .iter()
+                .filter(|e| e.run_id.as_ref() == Some(&r.id))
+                .collect();
+            if !executions.is_empty()
+                && executions
+                    .iter()
+                    .all(|e| e.writer_revoked && e.protocol_artifact.is_some())
             {
-                return Ok(Some(json!({"status":"interrupted","failure_type":"needs_reconciliation",
+                return Ok(Some(
+                    json!({"status":"interrupted","failure_type":"needs_reconciliation",
                     "message":"原执行结果未知，执行者已停止并封存。请在本步骤执行技术重试；旧输入和结果保留，不会自动重发，也无需再次采纳需求提案。",
-                    "turn_id":turn.id,"origin":"external"})));
+                    "turn_id":turn.id,"origin":"external"}),
+                ));
             }
             return Ok(None);
         }
@@ -623,16 +624,24 @@ impl Engine {
         let input_context = serde_json::from_str::<Value>(&turn.input).unwrap_or(Value::Null);
         let approval_required = input_context["output_contract"]["id"] == STAGE_ANSWER_CONTRACT;
         if approval_required && answer.approve.is_none() {
-            return Ok(Some(json!({"status":"failed","failure_type":"adapter_contract",
-                "message":"正式交付输出 $.approve：必须给出模型 Approve 布尔结论", "turn_id":turn.id,"origin":"external"})));
+            return Ok(Some(
+                json!({"status":"failed","failure_type":"adapter_contract",
+                "message":"正式交付输出 $.approve：必须给出模型 Approve 布尔结论", "turn_id":turn.id,"origin":"external"}),
+            ));
         }
         let passed = answer.checks.iter().all(|c| c.passed);
         let mut output = json!({"status":if approval_required||passed||r.node.starts_with("review:"){"succeeded"}else{"failed"},"failure_type":if approval_required||passed||r.node.starts_with("review:"){Value::Null}else{json!("quality")},"summary":answer.summary,"checks":answer.checks.iter().map(|c|json!({"key":c.key,"passed":c.passed,"evidence":c.evidence})).collect::<Vec<_>>(),"turn_id":turn.id,"origin":"external"});
         if approval_required {
             output["model_approve"] = json!(passed);
             output["approval_required"] = json!(true);
-            output["skill_refs"] = json!(input_context["quality_basis"]["skills"].as_array()
-                .map(|skills|skills.iter().filter_map(|skill|skill["id"].as_str()).collect::<Vec<_>>()));
+            output["skill_refs"] = json!(input_context["quality_basis"]["skills"].as_array().map(
+                |skills| {
+                    skills
+                        .iter()
+                        .filter_map(|skill| skill["id"].as_str())
+                        .collect::<Vec<_>>()
+                }
+            ));
         }
         if r.node.starts_with("review:") {
             output["review_decision"] = json!(if passed { "pass" } else { "changes_requested" });
@@ -649,16 +658,21 @@ impl Engine {
         code: FrozenCode,
     ) -> Result<()> {
         let snapshot = self.store.snapshot()?;
-        let mut value: Value = serde_json::from_str(input)
-            .map_err(|e| err("serialization", e.to_string()))?;
-        if let Some(contract) = value.get("task").and_then(|task|task.get("output_contract")).cloned() {
+        let mut value: Value =
+            serde_json::from_str(input).map_err(|e| err("serialization", e.to_string()))?;
+        if let Some(contract) = value
+            .get("task")
+            .and_then(|task| task.get("output_contract"))
+            .cloned()
+        {
             value["output_contract"] = contract;
         }
         value["quality_basis"] = self.skill_quality_basis(&snapshot, run, documents)?;
         if !["test_author", "implement", "docs"].contains(&run.node.as_str()) {
             value["output_contract"] = stage_answer_output_contract();
         }
-        let input = serde_json::to_string(&value).map_err(|e| err("serialization", e.to_string()))?;
+        let input =
+            serde_json::to_string(&value).map_err(|e| err("serialization", e.to_string()))?;
         let input = input.as_str();
         require(input.len() <= 512 * 1024, "正式运行输入超出协议限制")?;
         self.store.transact(None, &mut |s| {
@@ -680,12 +694,14 @@ impl Engine {
                     .any(|t| t.session_id == session.id && t.status.active()),
                 "角色 Session 正忙",
             )?;
+            let task_source = crate::agent_tasks::binding_for_run(s, run).cloned();
             let snapshot = self.capture_conversation(
                 s,
                 session,
                 "run_input",
                 Some(documents),
                 Some(&run.binding),
+                task_source.as_ref(),
             )?;
             let owner = if let Some(task) = &session.task_id {
                 MaterialOwner::Task {
@@ -983,9 +999,7 @@ impl Engine {
             sandbox.version = "node-test/v1".into();
             sandbox.image = Some(recipe.image.clone());
             sandbox.network = false;
-            sandbox.permission = Some(PermissionBinding::frozen(
-                &isolated_test_permissions().sandbox,
-            ));
+            sandbox.permission = Some(isolated_test_permissions().sandbox);
             let execution = RuntimeExecution {
                 permissions: Some(isolated_test_permissions()),
                 kind: RuntimeExecutionKind::Tests,
@@ -1010,9 +1024,7 @@ impl Engine {
                     version: "node-test/v1".into(),
                     capabilities: vec!["tests".into()],
                     origin: Origin::External,
-                    permission: Some(PermissionBinding::frozen(
-                        &isolated_test_permissions().harness,
-                    )),
+                    permission: Some(isolated_test_permissions().harness),
                 },
                 sandbox,
                 external_session: None,
@@ -1265,18 +1277,31 @@ impl Engine {
         )?;
         require(
             !s.turns.iter().any(|t| {
-                t.status.active() && t.status != TurnStatus::NeedsReconciliation
+                t.status.active()
+                    && t.status != TurnStatus::NeedsReconciliation
                     && (t.run_id.as_ref() == Some(&old.id)
                         || descendants.iter().any(|r| t.run_id.as_ref() == Some(&r.id)))
             }),
             "旧输入结果尚未核对，请先在原会话明确停止，不会重发该输入",
         )?;
-        require(s.turns.iter().filter(|t| t.status == TurnStatus::NeedsReconciliation
-            && (t.run_id.as_ref() == Some(&old.id)
-                || descendants.iter().any(|r| t.run_id.as_ref() == Some(&r.id))))
-            .all(|t| s.executions.iter().any(|e| e.session_id == t.session_id
-                && e.run_id == t.run_id && e.writer_revoked && e.protocol_artifact.is_some())),
-            "未知输入重试前须取得原执行的停止及协议封存证明")?;
+        require(
+            s.turns
+                .iter()
+                .filter(|t| {
+                    t.status == TurnStatus::NeedsReconciliation
+                        && (t.run_id.as_ref() == Some(&old.id)
+                            || descendants.iter().any(|r| t.run_id.as_ref() == Some(&r.id)))
+                })
+                .all(|t| {
+                    s.executions.iter().any(|e| {
+                        e.session_id == t.session_id
+                            && e.run_id == t.run_id
+                            && e.writer_revoked
+                            && e.protocol_artifact.is_some()
+                    })
+                }),
+            "未知输入重试前须取得原执行的停止及协议封存证明",
+        )?;
         if let Some(aid) = &old.attempt_id {
             let a = s.attempt(aid)?;
             require(
@@ -1320,26 +1345,59 @@ impl Engine {
                     .any(|d| d.evidence.contains(&original.id)),
                 "重试涉及已冻结证据，必须新 Attempt/Merge",
             )?;
-            let session = s
-                .sessions
-                .iter()
-                .find(|v| v.id == original.session_id)
-                .unwrap()
-                .clone();
+            let session = crate::agent_tasks::session_for_run(s, &original)?;
+            if session.scope == Some(SessionScope::Task) {
+                require(
+                    !s.turns
+                        .iter()
+                        .any(|turn| turn.session_id == session.id && turn.status.active()),
+                    "Task 原轮次仍待核对，请先明确原结果；不会自动创建 Session",
+                )?;
+                let mut next = original.clone();
+                next.id = id();
+                next.retry_of = Some(original.id.clone());
+                next.status = Status::Queued;
+                next.cancel_requested = false;
+                next.started = None;
+                next.finished = None;
+                next.result = None;
+                next.result_artifact = None;
+                if first.is_none() {
+                    first = Some(next.id.clone());
+                }
+                s.runs.push(next);
+                continue;
+            }
             let binding = session
                 .runtime_binding
                 .clone()
                 .ok_or_else(|| err("blocked", "旧运行时锁缺失"))?;
             // Use the old exact binding; global/project/role defaults are intentionally not resolved again.
-            let snapshot = self.capture_conversation(s, &session, "run_retry_handoff", None, Some(&original.binding))?;
-            let instance = session.runtime_binding.as_ref()
+            let snapshot = self.capture_conversation(
+                s,
+                &session,
+                "run_retry_handoff",
+                None,
+                Some(&original.binding),
+                None,
+            )?;
+            let instance = session
+                .runtime_binding
+                .as_ref()
                 .and_then(|binding| binding.agent_configuration.as_ref())
                 .map(|agent| agent.agent_instance_id.clone())
-                .or_else(|| s.governance.iter().find(|r| r.kind == "agent_session" && r.definition_id == session.id)
-                    .and_then(|r| r.data["agent_instance_id"].as_str()).map(str::to_owned));
+                .or_else(|| {
+                    s.governance
+                        .iter()
+                        .find(|r| r.kind == "agent_session" && r.definition_id == session.id)
+                        .and_then(|r| r.data["agent_instance_id"].as_str())
+                        .map(str::to_owned)
+                });
             let mut payload = json!({"agent":session.agent,"binding":binding,
                 "force_new":true,"predecessor":session.id,"snapshot_id":snapshot});
-            if let Some(instance) = instance { payload["agent_instance_id"] = json!(instance); }
+            if let Some(instance) = instance {
+                payload["agent_instance_id"] = json!(instance);
+            }
             let command = Command {
                 command_id: format!("retry-session:{}", id()),
                 target: Some(session.owner_id.clone()),

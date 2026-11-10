@@ -2,6 +2,8 @@
 //! without dispatching a model, Git operation, or container.
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
+#[path = "../../../tests/support/workflows.rs"]
+mod workflow_fixture;
 use devdesk_adapters::{FileArtifacts, SqliteStore};
 use devdesk_core::{Command, Engine};
 use devdesk_domain::*;
@@ -15,9 +17,36 @@ fn engine(path: &Path) -> Engine {
         runtime::adapters(),
     );
     e.bootstrap().unwrap();
+    runtime::bind_default_permissions(&e);
     e
 }
-fn command(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Value {
+fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -> Value {
+    if method.starts_with("workflow.") {
+        for field in ["data", "document"] {
+            if payload.get(field).is_some() {
+                payload[field] = workflow_fixture::current(payload[field].clone());
+            }
+        }
+    }
+    if method == "project.configuration.update" && payload.get("agent_refs").is_some() {
+        let mut bindings = e.configuration_defaults(target).unwrap()["role_agent_bindings"]
+            .as_object()
+            .unwrap()
+            .clone();
+        let state = e.store.snapshot().unwrap();
+        for (role, agent) in payload["agent_refs"].as_object().unwrap() {
+            let key = state
+                .configuration(agent.as_str().unwrap())
+                .ok()
+                .and_then(|r| r.data["role_ref"].as_str())
+                .and_then(|id| state.configuration(id).ok())
+                .map(|r| r.definition_id.clone())
+                .unwrap_or_else(|| format!("builtin-role-{role}"));
+            bindings.insert(key, agent.clone());
+        }
+        payload.as_object_mut().unwrap().remove("agent_refs");
+        payload["role_agent_bindings"] = serde_json::to_value(bindings).unwrap();
+    }
     let s = e.store.snapshot().unwrap();
     let expected_revision = target.and_then(|id| {
         s.projects
@@ -81,7 +110,7 @@ struct Scenario {
 }
 impl Scenario {
     fn new(e: &Engine, phase: &str) -> Self {
-        Self::with_workflow(e, phase, "builtin-workflow-feature-v1")
+        Self::with_workflow(e, phase, "builtin-workflow-feature-sol-high-v4")
     }
     fn with_workflow(e: &Engine, phase: &str, workflow_ref: &str) -> Self {
         let project = command(
@@ -471,7 +500,7 @@ fn a_new_draft_invalidates_previous_discussion_confirmation() {
         .store
         .snapshot()
         .unwrap()
-        .configuration("builtin-workflow-feature-v1")
+        .configuration("builtin-workflow-feature-sol-high-v4")
         .unwrap()
         .data
         .clone();
@@ -522,7 +551,7 @@ fn compiled_subworkflow_alias_exports_follow_the_replacement() {
         .store
         .snapshot()
         .unwrap()
-        .configuration(DEFAULT_FEATURE_WORKFLOW_V2_ID)
+        .configuration(DEFAULT_FEATURE_WORKFLOW_V3_ID)
         .unwrap()
         .data
         .clone();
@@ -547,6 +576,11 @@ fn compiled_subworkflow_alias_exports_follow_the_replacement() {
         .find(|s| s["key"] == "requirement_discussion")
         .unwrap();
     call["kind"] = json!("workflow.call");
+    call["contract_version"] = json!(1);
+    for key in ["task_instructions", "role_ref", "participant_slot"] {
+        call.as_object_mut().unwrap().remove(key);
+    }
+    call["interaction"] = json!({});
     call["subworkflow_ref"] = json!(child);
     call["spec_refs"] = json!([]);
     steps

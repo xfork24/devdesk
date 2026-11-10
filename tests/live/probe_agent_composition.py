@@ -9,7 +9,10 @@ try:
  model=c.command('model.create',payload={'name':'Native '+provider+' typed model','data':{'provider':provider,'model':a.model,'parameters':({'reasoning_effort':'low'} if a.provider=='codex' else {'max_tokens':4096}),'capabilities':[]}})['id']
  harness=c.command('harness.create',payload={'name':'Native '+a.provider+' typed Harness','data':{'provider':a.provider,'runtime_version':runtime['key']['version'],'capabilities':[],'model_providers':[provider]}})['id']
  tool=c.command('tool.create',payload={'name':'Native tools','data':{'qualified_name':'harness.native','implementation':'harness.native','input_schema':{},'output_schema':{},'capabilities':[]}})['id']
- agent=c.command('agent.create',payload={'name':'Native typed analyst','data':{'role':'analyst','instructions':'Act as an analyst. Answer the supplied acceptance prompt concisely. Do not change files or engineering state.','model_ref':model,'harness_ref':harness,'skills':[],'tools':[tool],'permissions':['permission-container-full-access-v1'],'approval':'never'}})['id']
+ resources=c.rpc('query.permission_resources');target=next(t['target'] for t in resources['targets'] if t['target']['revision_id']==harness)
+ c.command('permission.bindings.apply',payload={'bindings':[{'target':target,'permission_revision_id':'permission-harness-full-access-v2-r1','expected_revision':0}]})
+ cap=c.command('capability.create',payload={'name':'Native typed capability','data':{'model_ref':model,'harness_ref':harness,'skills':[],'tools':[tool]}})['id']
+ agent=c.command('agent.create',payload={'name':'Native typed analyst','data':{'role_ref':'builtin-role-analyst-v1','capability_ref':cap,'instructions':'Answer the supplied acceptance prompt concisely without changing files.','permission_selection':{'sandbox_ref': 'builtin-permission-sandbox-docker-v1', 'harness': {'mode': 'follow_target'}, 'sandbox': {'mode': 'follow_target'}}}})['id']
  instance=c.command('agent.instance.create',payload={'name':'Native typed Project instance','agent_revision_id':agent,'scope':{'kind':'project','project_id':a.project}})['id']
  for payload in [{'agent':'builtin-agent-analyst-v1','provider':a.provider},{'agent_instance_id':instance,'model':'runtime-override'}]:
   try:c.command('session.open',owner['id'],owner['revision'],payload)

@@ -96,6 +96,9 @@ impl Engine {
                 .iter()
                 .find(|s| s.id == turn.session_id)
                 .unwrap();
+            let mut effective = session.clone();
+            effective.runtime_binding = Some(state.turn_runtime_binding(turn)?);
+            let session = &effective;
             if turn.status == TurnStatus::NeedsReconciliation {
                 // Restart never resubmits input. Stop the previous owned writer first and retain unknown outcome.
                 if turn.cancel_requested {
@@ -237,6 +240,8 @@ impl Engine {
                 .find(|s| s.id == turn.session_id)
                 .unwrap()
                 .clone();
+            let mut session = session;
+            session.runtime_binding = Some(snapshot.turn_runtime_binding(turn)?);
             let installation = &session.runtime_binding.as_ref().unwrap().installation;
             let image = match &installation.artifact {
                 RuntimeArtifact::DockerImage { image_id } => image_id.clone(),
@@ -387,7 +392,11 @@ impl Engine {
                 self.harness.dispatch_turn(&TurnDispatch {
                     task: self.frozen_turn_task(&snapshot, &turn.id)?,
                     specifications,
-                    session: updated.clone(),
+                    session: {
+                        let mut effective = updated.clone();
+                        effective.runtime_binding = Some(current.turn_runtime_binding(t)?);
+                        effective
+                    },
                     turn: t.clone(),
                 })?;
                 self.store.transact(None, &mut |s| {
@@ -661,7 +670,21 @@ impl Engine {
                     .iter()
                     .any(|r| r.kind == "agent_session" && r.definition_id == session.id)
             {
-                self.capture_conversation(s, session, "conversation_completed", None, None)?;
+                let task_source = s
+                    .governance
+                    .iter()
+                    .find(|record| record.kind == "execution_task" && record.definition_id == tid)
+                    .and_then(|record| record.data["source_binding_id"].as_str())
+                    .and_then(|id| s.configuration(id).ok())
+                    .cloned();
+                self.capture_conversation(
+                    s,
+                    session,
+                    "conversation_completed",
+                    None,
+                    None,
+                    task_source.as_ref(),
+                )?;
             }
             Ok(json!({"ok":true}))
         })?;

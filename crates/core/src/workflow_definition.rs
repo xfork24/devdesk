@@ -49,91 +49,6 @@ fn delivery_kind(
     }
     None
 }
-fn role_key(role: AgentRole) -> &'static str {
-    match role {
-        AgentRole::Analyst => "analyst",
-        AgentRole::Architect => "architect",
-        AgentRole::Developer => "developer",
-        AgentRole::Tester => "tester",
-        AgentRole::Reviewer => "reviewer",
-    }
-}
-/// Explicit v1 template import; never changes the source revision.
-pub(crate) fn explicit_document(
-    s: &EngineeringState,
-    doc: &WorkflowDocument,
-    standard: Option<&str>,
-) -> Result<WorkflowDocument> {
-    if doc.schema_version >= 2 {
-        return Ok(doc.clone());
-    }
-    let mut result = doc.clone();
-    result.schema_version = 2;
-    let std = standard.and_then(|id| {
-        s.definitions
-            .iter()
-            .find(|d| d.id == id && d.family == "standard")
-    });
-    for step in &mut result.steps {
-        if let Some(slot) = step
-            .participant_slot
-            .as_ref()
-            .and_then(|id| doc.binding_slots.get(id))
-        {
-            let key = slot
-                .agent_ref
-                .as_ref()
-                .and_then(|id| s.governance.iter().find(|r| r.id == *id))
-                .and_then(|a| a.data["role_ref"].as_str());
-            let role = key
-                .and_then(|id| role_record(s, id).ok())
-                .or_else(|| role_record(s, &default_role_id(role_key(slot.role))).ok())
-                .ok_or_else(|| err("configuration_required", "无法证明旧角色对应关系"))?;
-            step.role_ref = Some(role.definition_id.clone());
-            step.participant_slot = Some(role.definition_id.clone());
-        }
-        for node in &mut step.execution_recipe {
-            node.role_ref = Some(
-                role_record(s, &default_role_id(role_key(node.role)))?
-                    .definition_id
-                    .clone(),
-            );
-        }
-        if [
-            "agent.interact",
-            "attempt.execute",
-            "delivery.review",
-            "merge.prepare",
-            "merge.review",
-        ]
-        .contains(&step.kind.as_str())
-        {
-            let kind = delivery_kind(doc, step, &mut BTreeSet::new());
-            let purpose = if kind.as_deref() == Some("merge_candidate") {
-                "merge"
-            } else if kind
-                .as_ref()
-                .is_some_and(|s| ["implementation", "closure"].contains(&s.as_str()))
-            {
-                "implementation"
-            } else {
-                "planning"
-            };
-            let spec = std
-                .and_then(|std| std.slots.iter().find(|slot| slot.purpose == purpose))
-                .map(|slot| slot.spec.clone())
-                .ok_or_else(|| {
-                    err(
-                        "configuration_required",
-                        format!("{} 缺少旧 Standard 的 {purpose} Spec", step.key),
-                    )
-                })?;
-            step.spec_refs = vec![spec];
-        }
-    }
-    result.binding_slots.clear();
-    Ok(result)
-}
 fn map_condition(condition: &mut WorkflowCondition, keys: &BTreeMap<String, String>) {
     match condition {
         WorkflowCondition::All { conditions } | WorkflowCondition::Any { conditions } => {
@@ -170,7 +85,6 @@ struct Builder<'a> {
     stages: Vec<WorkflowStage>,
     steps: Vec<WorkflowStep>,
     stack: Vec<Id>,
-    task_mode: bool,
 }
 impl Builder<'_> {
     fn expand(
@@ -182,14 +96,6 @@ impl Builder<'_> {
     ) -> Result<BTreeMap<String, WorkflowPortReference>> {
         require(self.stack.len() <= 8, "子流程深度超过 8")?;
         validate_workflow(doc)?;
-        if self.task_mode != (doc.schema_version == 3)
-            && doc.steps.iter().any(|s| action_requires_task(&s.kind))
-        {
-            return Err(err(
-                "invalid_workflow",
-                "包含 Agent 的子流程需要与主流程使用相同任务合同，请先显式升级并选择确切修订",
-            ));
-        }
         let keys: BTreeMap<String, String> = doc
             .steps
             .iter()
@@ -213,7 +119,9 @@ impl Builder<'_> {
             require(self.steps.len() < 1000, "展开子流程超过 1000 个步骤")?;
             let mut step = original.clone();
             for (name, input) in &original.delivery_inputs {
-                step.inputs.entry(name.clone()).or_insert_with(|| input.source.clone());
+                step.inputs
+                    .entry(name.clone())
+                    .or_insert_with(|| input.source.clone());
             }
             step.key = keys[&original.key].clone();
             step.stage = namespace(prefix, &original.stage);
@@ -243,7 +151,9 @@ impl Builder<'_> {
                     input.step = keys[&input.step].clone();
                 }
             }
-            for (name, input) in &mut step.delivery_inputs { input.source = step.inputs[name].clone(); }
+            for (name, input) in &mut step.delivery_inputs {
+                input.source = step.inputs[name].clone();
+            }
             let path = if prefix.is_empty() {
                 original.key.clone()
             } else {
@@ -341,8 +251,11 @@ impl Builder<'_> {
                 checks.insert(spec.clone(), definition.rules.clone());
             }
             let delivery_types = crate::deliverables::definitions(self.s, &step, self.scope)?;
-            for delivery in &delivery_types { self.hashes.insert(delivery.id.clone(), delivery.content_hash.clone()); }
-            let task = if self.task_mode && action_requires_task(&step.kind) {
+            for delivery in &delivery_types {
+                self.hashes
+                    .insert(delivery.id.clone(), delivery.content_hash.clone());
+            }
+            let task = if action_requires_task(&step.kind) {
                 Some(WorkflowTaskDefinition {
                     delivery_types,
                     renderer_version: TASK_RENDERER.into(),
@@ -368,8 +281,8 @@ impl Builder<'_> {
                 require(!self.stack.contains(&child.id), "子流程引用存在环")?;
                 let child_doc: WorkflowDocument = child.decode()?;
                 require(
-                    matches!(child_doc.schema_version, 2 | 3),
-                    "请先将子流程保存为 v2/v3",
+                    child_doc.schema_version == 3,
+                    "子流程需要 Workflow Schema v3",
                 )?;
                 for required in &child_doc.input_ports {
                     require(
@@ -443,10 +356,7 @@ pub(crate) fn compile(
     scope: &Scope,
 ) -> Result<Compilation> {
     let source: WorkflowDocument = wf.decode()?;
-    require(
-        matches!(source.schema_version, 2 | 3),
-        "请选择 v2 Workflow；旧配置继续使用其冻结契约",
-    )?;
+    require(source.schema_version == 3, "请选择 Workflow Schema v3")?;
     let mut b = Builder {
         s,
         scope,
@@ -456,7 +366,6 @@ pub(crate) fn compile(
         stages: vec![],
         steps: vec![],
         stack: vec![wf.id.clone()],
-        task_mode: source.schema_version == 3,
     };
     let input_bindings = source
         .input_ports
@@ -489,7 +398,7 @@ pub(crate) fn compile(
         let r = reference(s, task, "workflow", scope)?;
         let doc: WorkflowDocument = r.decode()?;
         require(
-            matches!(doc.schema_version, 2 | 3) && doc.process_kind == "task",
+            doc.schema_version == 3 && doc.process_kind == "task",
             "Task 子流程用途或版本不匹配",
         )?;
         b.hashes.insert(r.id.clone(), r.content_hash.clone());
@@ -584,147 +493,4 @@ pub(crate) fn compile(
         hashes: b.hashes,
         baseline,
     })
-}
-
-pub(crate) fn import_legacy_workflow(
-    s: &mut EngineeringState,
-    source: &str,
-    standard: &str,
-) -> Result<Id> {
-    import_legacy_workflow_with_roles(s, source, standard, &BTreeMap::new())
-}
-pub(crate) fn import_legacy_workflow_with_roles(
-    s: &mut EngineeringState,
-    source: &str,
-    standard: &str,
-    roles: &BTreeMap<String, Id>,
-) -> Result<Id> {
-    fn import(
-        s: &mut EngineeringState,
-        source: &str,
-        standard: &str,
-        stack: &mut Vec<String>,
-        roles: &BTreeMap<String, Id>,
-    ) -> Result<Id> {
-        require(
-            stack.len() < 8 && !stack.iter().any(|s| s == source),
-            "旧子流程循环或过深",
-        )?;
-        let original = s.configuration(source)?.clone();
-        let doc: WorkflowDocument = original.decode()?;
-        if doc.schema_version >= 2 {
-            return Ok(source.into());
-        }
-        let key = if roles.is_empty() {
-            configuration_hash(&(source, standard, &original.scope))
-        } else {
-            configuration_hash(&(source, standard, &original.scope, roles))
-        };
-        let id = format!("workflow-specs-{}-v2", &key[..24]);
-        if s.governance.iter().any(|r| r.id == id) {
-            return Ok(id);
-        }
-        stack.push(source.into());
-        let mut explicit = explicit_document(s, &doc, Some(standard))?;
-        for (old, step) in doc.steps.iter().zip(explicit.steps.iter_mut()) {
-            if let Some(role) = old
-                .participant_slot
-                .as_ref()
-                .and_then(|slot| roles.get(slot))
-            {
-                step.role_ref = Some(role.clone());
-                step.participant_slot = Some(role.clone());
-            }
-            for node in &mut step.execution_recipe {
-                if let Some(role) = roles.get(role_key(node.role)) {
-                    node.role_ref = Some(role.clone());
-                }
-            }
-        }
-        for child in explicit.subworkflow_refs.values_mut() {
-            *child = import(s, child, standard, stack, roles)?;
-        }
-        stack.pop();
-        // Formal actions expose every internal role instead of silently consulting a global default.
-        for step in &mut explicit.steps {
-            if step.kind == "attempt.execute" && step.execution_recipe.is_empty() {
-                let nodes: Vec<(&str, AgentRole, Vec<&str>, bool)> = match phase(step).as_deref() {
-                    Some("requirement_definition") => {
-                        vec![("requirement_validate", AgentRole::Analyst, vec![], false)]
-                    }
-                    Some("solution_planning") => vec![
-                        ("plan_validate", AgentRole::Architect, vec![], false),
-                        (
-                            "test_plan_validate",
-                            AgentRole::Tester,
-                            vec!["plan_validate"],
-                            false,
-                        ),
-                    ],
-                    Some("closure") => vec![
-                        ("test_author", AgentRole::Tester, vec![], true),
-                        (
-                            "feature_tests",
-                            AgentRole::Tester,
-                            vec!["test_author"],
-                            false,
-                        ),
-                        ("docs", AgentRole::Developer, vec!["feature_tests"], false),
-                        (
-                            "verify",
-                            AgentRole::Tester,
-                            vec!["feature_tests", "docs"],
-                            false,
-                        ),
-                    ],
-                    _ => vec![],
-                };
-                for (key, role, deps, writes) in nodes {
-                    step.execution_recipe.push(WorkflowRunNode {
-                        task_instructions: None,
-                        key: key.into(),
-                        role,
-                        role_ref: Some(
-                            roles.get(role_key(role)).cloned().unwrap_or(
-                                role_record(s, &default_role_id(role_key(role)))?
-                                    .definition_id
-                                    .clone(),
-                            ),
-                        ),
-                        dependencies: deps.into_iter().map(str::to_owned).collect(),
-                        writes,
-                    });
-                }
-            }
-        }
-        validate_workflow(&explicit)?;
-        let mut r = crate::governance::record(
-            "workflow",
-            id.clone(),
-            original.scope,
-            original.name.replace("默认", "参考"),
-            1,
-            None,
-            json!(explicit),
-            true,
-        );
-        r.id = id.clone();
-        r.created_at = original.created_at;
-        s.governance.push(r);
-        let mut receipt = crate::governance::record(
-            "configuration_conversion",
-            source.into(),
-            Scope::Global,
-            "Workflow Spec 转换".into(),
-            1,
-            None,
-            json!({"source_workflow":source,"source_standard":standard,"workflow_ref":id,"role_bindings":roles}),
-            true,
-        );
-        receipt.id = format!("workflow-conversion:{}", &key[..24]);
-        receipt.created_at = original.created_at;
-        s.governance.push(receipt);
-        Ok(id)
-    }
-    import(s, source, standard, &mut vec![], roles)
 }

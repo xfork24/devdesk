@@ -6,14 +6,13 @@
 |---|---|---|
 | `crates/*/src/` 内的测试模块 | 领域类型、权限和配置规则、协议解析、进程与凭据边界、Host 查询等模块内回归 | `cargo test --workspace --locked` |
 | `crates/adapters/tests/` | 通过适配器验证存储、工作流、恢复、会话、运行安装、治理、权限及 Git/Docker/GitHub 资源 | 同上；依赖外部资源的用例部分标记 `#[ignore]`，需显式执行 |
-| `crates/adapters/tests/configuration_resources.rs` | Role/Capability/Agent 独立修订、默认阶段能力、项目绑定、逐轮冻结 Spec、基线与审计、子流程输入输出/失败返工、旧 Standard 分离迁移 | 随 Rust 默认测试执行 |
+| `crates/adapters/tests/configuration_resources.rs` | Role/Capability/Agent 独立修订、默认阶段能力、项目绑定、逐轮冻结 Spec、基线与审计、子流程输入输出/失败返工、当前 Standard 覆盖校验 | 随 Rust 默认测试执行 |
 | `crates/adapters/tests/schema_contracts.rs` | 所有发布 Schema 和引用的离线编译、当前配置与 Serde 数据契约、权限和不可变产物兼容、非法输入拒绝 | 随 Rust 默认测试执行；使用 Rust 测试依赖，不依赖 Python jsonschema |
 | `web/tests/` | Playwright 浏览器回归：工作台、项目接入、设置与权限、Workflow/Agent/Role 编辑和重载持久化 | Web 构建及 Host 就绪后，在 `web/` 执行 `npx playwright test` |
 | `tests/entrypoints/http_contract.py` | 独立 Host 进程的 HTTP、安全、生命周期和分库隔离契约 | 默认检查入口自动执行 debug 和 release/standalone 两次 |
 | `tests/entrypoints/runtime_preparation.py` | 独立 Host 进程的延迟运行环境准备及仓库接入恢复 | 默认检查入口自动执行一次 debug |
 | `tests/live/` | 真实供应商、容器、仓库、凭据及浏览器专项验收；不同探针的外部依赖不同 | `scripts/check/check-live.sh` 或按需执行单个探针 |
 | `tests/fixtures/protocols/` | 脱敏真实协议样本，由 Rust 协议测试嵌入回放 | 随对应 Rust 测试执行 |
-| `tests/fixtures/legacy/` | 静态历史项目库及产物：迁移、完整性与只读兼容 | 随 Rust 存储测试执行 |
 | `tests/reporters/` | 产品执行用户项目 Node 测试时使用的结构化报告器 | Rust 编译嵌入；报告器契约由 Rust 回归验证 |
 | `tests/support/` | 只编译进 Rust 测试的原生接口替身 | 由对应测试模块引用 |
 
@@ -39,19 +38,18 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 
 ## `live/` 中的真实验收
 
-`check_live.py` 是编排入口，`client.py` 是共享 HTTP/RPC 客户端。默认组为 `git,docker,harness,github,web,workflow,recovery`，`workbench` 需显式选择。`--mode full` 生成新执行，`--mode verify-existing` 复核已有事实；后者不能算作一次新的模型或浏览器验收。
+`check_live.py` 是编排入口，`client.py` 是共享 HTTP/RPC 客户端。默认组为 `git,docker,permissions`，`workbench` 需显式选择；该组生成新的真实工程执行。旧 `--mode` 与历史恢复组不再提供。
 
 | 探针 | 验证内容 | 是否由编排入口直接调用 |
 |---|---|---|
-| `probe_application_conversations.py` | 应用到原生供应商的真实对话、轮次消费和持久化证据 | `harness` 组 |
-| `browser_conversation.mjs` | 浏览器讨论、结构化提案和正式需求采纳 | `web` / `workflow` 组 |
-| `probe_repository.py` | 仓库登记、接入和 Feature worktree | `web` / `workflow` 组 |
-| `probe_planning.py` | 角色讨论、规划采纳、原生规划 Run/Review 和任务 worktree | `workflow` 组 |
-| `probe_implementation.py` | Task DAG、Docker Red/Green、Delivery 和独立 Review | `workflow` 组 |
-| `probe_merges.py` | PR 候选、过期目标拒绝、合并推进、Feature 收尾与主线交付 | `workflow` 组 |
+| `probe_application_conversations.py` | 应用到原生供应商的真实对话、轮次消费和持久化证据 | 单独执行 |
+| `browser_conversation.mjs` | 浏览器讨论、结构化提案和正式需求采纳 | 单独执行 |
+| `probe_repository.py` | 仓库登记、接入和 Feature worktree | 单独执行 |
+| `probe_planning.py` | 角色讨论、规划采纳、原生规划 Run/Review 和任务 worktree | 单独执行 |
+| `probe_implementation.py` | Task DAG、Docker Red/Green、Delivery 和独立 Review | 单独执行 |
+| `probe_merges.py` | PR 候选、过期目标拒绝、合并推进、Feature 收尾与主线交付 | 单独执行 |
 | `browser_accept.mjs` | 已评审主线候选的浏览器最终验收 | 由 `probe_merges.py --browser-final` 间接调用 |
-| `probe_recovery.py` | 原生取消、交互问题、输入已消费后的崩溃恢复 | `recovery` 组 |
-| `probe_workflow_workbench.py` | v2 分阶段默认能力、PRD 可复用子流程、显式 Spec、Task TDD 与独立评审的原生闭环 | 显式 `workbench` 组 |
+| `probe_workflow_workbench.py` | v3 分阶段默认能力、PRD 可复用子流程、显式 Spec、Task TDD 与独立评审的原生闭环 | 显式 `workbench` 组 |
 | `probe_agent_composition.py` | 不可变 Model/Harness/Tool/Agent 组合的原生轮次 | 单独执行 |
 | `probe_agent_experience.py` | AgentID 经验隔离、跨项目查询与场景恢复 | 单独执行 |
 | `probe_installations.py` | 并发安装登记、Docker 镜像层复用 | 单独执行 |
@@ -60,7 +58,6 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 | `probe_boundaries.py` | Docker/GitHub 边界实验与专用仓库操作 | 单独执行 |
 | `probe_managed_tools.py` | 原生工具可用性与私有状态隔离 | 单独执行 |
 | `probe_nested_sandbox.py` | 使用无害凭据标记验证真实 Codex 子沙箱，不调用模型 | 单独执行 |
-| `probe_permissions.py` | 双供应商 Permission 的文件和网络限制 | 单独执行 |
 | `probe_permission_package.py` | 解包运行包的 Permission 资产、API 和持久化，不调用模型 | 单独执行 |
 | `probe_permission_runtime.py` | 临时独立数据集中的真实 Codex v2 改绑、后继会话、工具写入及受控 HTTP 收据；显式提供登录文件，测试后清理副本 | 单独执行 |
 | `probe_linux_credentials.mjs` | Linux Secret Service、浏览器凭据设置和 Host 重启 | 单独执行 |
@@ -70,22 +67,24 @@ python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standal
 
 `tests/reporters/node-reporter.mjs` 是产品执行测试时使用的 Node 报告器，属于运行时资产：Rust `CommandTests` 将其嵌入并写入测试容器，解析结构化失败分类和汇总，并将内容摘要纳入执行器身份。它是产品运行时需要的测试支持资产，与测试用例分开放在 `reporters/`。
 
-原型脚本化执行用例已移除；当前 Rust 回归覆盖原生会话、Run 结构化结果、取消、停止证明、重启后的旧测试核对和历史只读迁移。Workflow 样本演练仅计算流程条件，不创建外部事实。
+原型脚本化执行用例已移除；当前 Rust 回归覆盖原生会话、Run 结构化结果、取消、停止证明、重启核对和当前数据结构。Workflow 样本演练仅计算流程条件，不创建外部事实。
 
 DSH 多服务商离线验证：设置 DEVDESK_DSH_MOCK_IMAGE 为固定镜像 ID，运行 `cargo test -p devdesk-adapters --test model_providers -- --ignored --nocapture`。DSH 流式/工具/恢复由禁外网容器内的模拟端点提供；另一测试只查询模拟 Ollama 目录，不推理。`tests/live/probe_model_providers.py` 验证完整 Host 连接与冻结；仅传入 --codex-auth-source 时允许 Codex 真实模型验证，始终不发 DSH 真实推理请求。
 
 macOS 源码启动兼容回归：在已配置同证书签名助手的开发机执行 `python3 tests/entrypoints/credential_helper_startup.py --launch`。兼容/拒绝检查使用隔离的助手副本，实际启动只打开空工作空间，不读取凭据、不调用模型，也不替换共享助手。
 
 
-Workflow 任务专项：`cargo test -p devdesk-adapters --test agent_tasks --locked` 覆盖所有 Agent 类别的记录端口派发、v3 校验、Markdown 原文、冻结恢复、正式 Run/重试、权限后继、子流程身份和伪造拒绝。原基线夹具显式选择 v2，专项夹具选择 v3。
+Workflow 任务专项：`cargo test -p devdesk-adapters --test agent_tasks --locked` 覆盖所有 Agent 类别的记录端口派发、v3 校验、Markdown 原文、冻结恢复、正式 Run/重试、权限后继、子流程身份和伪造拒绝。所有执行夹具在提交命令前显式构造当前 v3 任务合同。
 
 `DEVDESK_DSH_MOCK_IMAGE=sha256:… cargo test -p devdesk-adapters --test agent_tasks frozen_task_reaches_native --locked -- --ignored --nocapture` 使用固定 DSH SDK、Docker --network=none 和本地模型响应，核对原生请求中的完整任务/Spec 与基础 Role/Skill、工具结果及恢复；不声称真实 DSH 模型推理。`probe_workflow_tasks.py --binary … --auth-file … --output …` 在临时私有数据集中用真实 Codex 执行两个任务，核对实际工具输出和受控 HTTP 回执，只复制显式提供的登录文件，不读取原项目库。探针输出不含凭据。
 
-`web/tests/workflow-tasks.spec.ts` 验证浏览器编辑、保存、发布、上下文预览及公共/配方任务持久化。独立发布包探针 probe_permission_package.py 同时验证嵌入的默认 v3 任务、编辑发布、只读预览和项目 schema v38，不调用模型。
+`web/tests/workflow-tasks.spec.ts` 验证浏览器编辑、保存、发布、上下文预览及公共/配方任务持久化。独立发布包探针 probe_permission_package.py 同时验证嵌入的默认 v3 任务、编辑发布、只读预览和项目 schema v41，不调用模型。
 工具与技能接入：`crates/adapters/tests/tool_integrations.rs` 覆盖修订、作用域、配置锁、依赖、离线 Schema、审批/取消/核对；其 `docker_` 忽略用例使用真实 Docker HTTP/MCP/OAuth 夹具，不调用模型。`web/tests/integrations.spec.ts` 使用实际 Host 完成配置，MCP 测试通过真正的 Docker stdio 服务发现及调用，需可用 Docker 和固定 Codex 镜像。
 
 `tests/live/probe_tool_integrations.py --codex-auth-source /绝对路径/专用/auth.json --host /绝对路径/devdesk-host --report /tmp/tools-native.json` 创建独立数据集，配置 HTTP/MCP/Skill、Capability、Agent 和项目绑定，真实 Codex 执行两轮并重启 Host，核验文件只读和外部调用回执。始终不调用 DSH；只复制明确提供的 Codex 登录文件，结束后删除测试中的 auth.json 副本，保留无凭据运行证据。
 
-Ubuntu 六项补验见 `docs/plans/ubuntu-six-plan-acceptance/PLAN.md`。权限切换专项增加真实子进程退出测试，覆盖意图提交、停止回执丢失/提交、后继事务回滚及输入提交后恢复。任务专项验证 v2 渲染输出 Schema 的字段类型和唯一检查项，以及历史 v1 快照逐字往返；浏览器初始化根据 `/capabilities.setup_required` 判断，避免首屏渲染竞态。
+Ubuntu 六项补验见 `docs/plans/ubuntu-six-plan-acceptance/PLAN.md`。权限切换专项增加真实子进程退出测试，覆盖意图提交、停止回执丢失/提交、后继事务回滚及输入提交后恢复。任务专项验证 v3 渲染输出 Schema 的字段类型和唯一检查项，并拒绝旧渲染器；浏览器初始化根据 `/capabilities.setup_required` 判断，避免首屏渲染竞态。
 
 候选评审增加协调器 Git commit_parents 查询：真实 Git 资源测试核对候选的实际单父关系并拒绝符号引用；Core 回归拒绝候选或基线不匹配。v3 评审的冻结输入携带 candidate_provenance，包含实际父节点、Merge 和对应仓库回执，不要求模型读取受保护的 Git 元数据。
+
+当前真实检查入口默认运行 `git,docker,permissions`，不调用模型。需要真实完整工程验证时显式选择 `--groups workbench --providers codex,dsh`。旧原型全流程与旧权限恢复探针已移除，持久化切换与崩溃恢复由当前 Rust 回归及 v2 原生边界测试覆盖。

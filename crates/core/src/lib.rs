@@ -3,9 +3,7 @@ mod advances;
 mod agent_tasks;
 mod builtin_defaults;
 mod configuration;
-mod default_catalog;
-mod default_tasks;
-mod shipped_prose;
+mod current_catalog;
 pub use configuration::{
     project_configuration_references, retired as configuration_retired,
     visible as configuration_visible,
@@ -17,13 +15,12 @@ mod integrations;
 pub use integrations::{
     freeze_integrations, integration_deletion_targets, integration_feature_lock,
 };
+mod deliverables;
 mod governance;
 mod live_merges;
 mod live_runs;
 mod model_approvals;
-mod deliverables;
 mod permission_resources;
-mod permissions;
 pub use permission_resources::{insert_permission_profiles, permission_profile_export};
 mod permission_switch;
 pub use permission_switch::permission_switch_id;
@@ -32,9 +29,9 @@ mod project_configuration;
 mod proposals;
 mod repositories;
 mod workflow_definition;
-mod workflow_runtime;
 mod workflow_prompts;
-// Compatibility names for existing adapters and contract fixtures.
+mod workflow_runtime;
+// Shared domain types and execution ports.
 use devdesk_domain::*;
 pub use ports::{Git as GitPort, Harness as HarnessPort, TestRequest, Tests as TestRunnerPort};
 use serde::{Deserialize, Serialize};
@@ -135,8 +132,12 @@ fn binding(s: &EngineeringState) -> BindingLock {
         agent: s
             .definitions
             .iter()
-            .find(|d| d.id == "builtin-agent-developer-v1")
-            .or_else(|| s.definitions.iter().filter(|d| d.agent_profile.as_ref().is_some_and(|profile| profile.role == AgentRole::Developer)).max_by_key(|d| d.version))
+            .filter(|d| {
+                d.agent_profile
+                    .as_ref()
+                    .is_some_and(|profile| profile.role == AgentRole::Developer)
+            })
+            .max_by_key(|d| d.version)
             .expect("seeded developer definition")
             .id
             .clone(),
@@ -264,175 +265,62 @@ fn git_context(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Result<Git
 }
 /// Seed shared configuration without creating project or execution facts.
 pub fn seed_configuration(s: &mut EngineeringState) {
-    let existing = s.governance.clone();
-    for body in [
-        include_str!("../../../permissions/presets/container-full-access.json"),
-        include_str!("../../../permissions/presets/read-only.json"),
-        include_str!("../../../permissions/presets/task-implementation.json"),
-        include_str!("../../../permissions/presets/test-author.json"),
-        include_str!("../../../permissions/presets/isolated-tests.json"),
-        include_str!("../../../permissions/presets/legacy-restricted-v1.json"),
-    ] {
-        let p: Permission = serde_json::from_str(body).expect("embedded Permission preset");
-        if !s.permissions.iter().any(|old| old.id == p.id) {
-            s.permissions.push(p);
+    let mut catalog = current_catalog::catalog();
+    let mut aliases = std::collections::BTreeMap::new();
+    for source in &catalog.governance {
+        if let Some(existing) = s
+            .governance
+            .iter()
+            .filter(|r| r.kind == source.kind && r.definition_id == source.definition_id)
+            .max_by_key(|r| r.version)
+        {
+            aliases.insert(source.id.clone(), existing.id.clone());
         }
     }
-    if s.definitions.is_empty() {
-        for (family, name, version, body) in [
-            (
-                "spec",
-                "Internal Design Spec",
-                1,
-                include_str!("../../../resources/configuration/specs/legacy-planning.md"),
-            ),
-            (
-                "spec",
-                "Internal Design Spec",
-                2,
-                include_str!("../../../resources/configuration/specs/legacy-planning.md"),
-            ),
-            (
-                "spec",
-                "Alternative Design Spec",
-                1,
-                include_str!("../../../resources/configuration/specs/architecture.md"),
-            ),
-            (
-                "skill",
-                "TDD",
-                1,
-                include_str!("../../../resources/configuration/skills/engineering-method.md"),
-            ),
-            (
-                "standard",
-                "工程默认 Standard",
-                1,
-                include_str!("../../../resources/configuration/standards/engineering.md"),
-            ),
-        ] {
-            let slots = if family == "standard" {
-                s.definitions
-                    .iter()
-                    .filter(|d| d.family == "spec" && d.version == 1)
-                    .take(1)
-                    .flat_map(|d| {
-                        ["planning", "implementation", "merge"].map(|purpose| SpecSlot {
-                            purpose: purpose.into(),
-                            spec: d.id.clone(),
-                        })
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
-            let rules = if family == "spec" {
-                if name == "Alternative Design Spec" {
-                    vec!["sections".into()]
-                } else if version == 2 {
-                    vec!["traceability".into(), "failure_paths".into()]
-                } else {
-                    vec!["traceability".into()]
+    fn remap(v: &mut Value, aliases: &std::collections::BTreeMap<String, String>) {
+        match v {
+            Value::String(id) => {
+                if let Some(next) = aliases.get(id) {
+                    *id = next.clone();
                 }
-            } else {
-                vec![]
-            };
-            let predecessor = if family == "spec" && version > 1 {
-                s.definitions
-                    .iter()
-                    .rev()
-                    .find(|d| d.family == family && d.name == name)
-                    .map(|d| d.id.clone())
-            } else {
-                None
-            };
-            s.definitions.push(Definition {
-                id: id(),
-                family: family.into(),
-                name: name.into(),
-                version,
-                supersedes: predecessor,
-                body: body.into(),
-                slots,
-                rules,
-                agent_profile: None,
-            });
+            }
+            Value::Array(xs) => xs.iter_mut().for_each(|v| remap(v, aliases)),
+            Value::Object(xs) => xs.values_mut().for_each(|v| remap(v, aliases)),
+            _ => {}
         }
     }
-    for (key, name, role, instructions, tool_policy, allowed_work, output_schemas) in [
-        (
-            "analyst",
-            "需求分析师",
-            AgentRole::Analyst,
-            "Clarify requirements, constraints and acceptance criteria. Produce proposals; do not mutate engineering state or code.",
-            ToolPolicy::ReadOnly,
-            vec![WorkType::Discussion],
-            vec!["requirement/v1", "feature/v1"],
-        ),
-        (
-            "architect",
-            "架构师",
-            AgentRole::Architect,
-            "Explain architecture, interfaces and tradeoffs. Derive design and task/test plans from frozen requirement revisions.",
-            ToolPolicy::ReadOnly,
-            vec![WorkType::Discussion, WorkType::Design],
-            vec!["design/v1", "task_plan/v1", "test_plan/v1"],
-        ),
-        (
-            "developer",
-            "开发",
-            AgentRole::Developer,
-            "Implement only the frozen Task scope inside its sandbox. Preserve evidence and report changes; never approve your own delivery.",
-            ToolPolicy::TaskWrite,
-            vec![WorkType::Discussion, WorkType::Implementation],
-            vec!["implementation/v1"],
-        ),
-        (
-            "tester",
-            "测试",
-            AgentRole::Tester,
-            "Derive tests from explicit acceptance criteria. Distinguish assertion failure from environment failure and retain command/revision evidence.",
-            ToolPolicy::TestWrite,
-            vec![WorkType::Discussion, WorkType::Testing],
-            vec!["test_plan/v1", "test_result/v1"],
-        ),
-        (
-            "reviewer",
-            "评审",
-            AgentRole::Reviewer,
-            "Independently review frozen delivery and candidate evidence. Return per-check decisions and reasons; do not modify code or approve on behalf of a human.",
-            ToolPolicy::ReadOnly,
-            vec![WorkType::Discussion, WorkType::Review],
-            vec!["review/v1"],
-        ),
-    ] {
-        let identity = format!("builtin-agent-{key}-v1");
-        if !s.definitions.iter().any(|d| d.id == identity) {
-            s.definitions.push(Definition {
-                id: identity,
-                family: "agent".into(),
-                name: name.into(),
-                version: 1,
-                supersedes: None,
-                body: instructions.into(),
-                slots: vec![],
-                rules: vec![],
-                agent_profile: Some(AgentProfile {
-                    permission_overrides: None,
-                    role,
-                    skill_revisions: vec![],
-                    tool_policy,
-                    allowed_work,
-                    output_schemas: output_schemas.into_iter().map(str::to_owned).collect(),
-                }),
-            });
+    let mut added = std::collections::BTreeSet::new();
+    for r in &mut catalog.governance {
+        if aliases.contains_key(&r.id) {
+            continue;
+        }
+        remap(&mut r.data, &aliases);
+        r.content_hash = configuration_hash(&r.data);
+        added.insert(r.id.clone());
+        s.governance.push(r.clone());
+    }
+    for definition in &catalog.definitions {
+        if !added.contains(&definition.id) {
+            continue;
+        }
+        let mut value = json!(definition);
+        remap(&mut value, &aliases);
+        s.definitions
+            .push(serde_json::from_value(value).expect("current definition"));
+    }
+    for mut harness in catalog.harnesses {
+        if let Some(target) = aliases.get(&harness.id) {
+            harness.id = target.clone();
+        }
+        if !s.harnesses.iter().any(|r| r.id == harness.id) {
+            s.harnesses.push(harness);
         }
     }
-    governance::seed_governance(s);
-    permission_resources::seed_permission_resources(s);
-    default_tasks::seed_task_workflows(s);
-    builtin_defaults::discard_reintroduced_history(s, &existing);
-    shipped_prose::upgrade(s);
+    for sandbox in catalog.sandboxes {
+        if !s.sandboxes.iter().any(|r| r.id == sandbox.id) {
+            s.sandboxes.push(sandbox);
+        }
+    }
 }
 
 impl Engine {
@@ -608,8 +496,6 @@ impl Engine {
         self.store.transact(None, &mut |s| {
             seed_configuration(s);
             for r in s.governance.iter_mut().filter(|r| r.kind=="tool_call" && r.data["status"]=="dispatched") { let mut d=r.data.clone();d["status"]=json!("needs_reconciliation");d["remote_effect"]=json!("unknown");governance::update_record(r,d); }
-            configuration::migrate_capabilities(s);
-            self.freeze_legacy_features(s);
             // Reconcile persisted workflow references once after opening, including
             // idle instances left waiting by an older evaluator.
             for record in s.governance.iter_mut().filter(|r| {
@@ -681,10 +567,17 @@ impl Engine {
     }
     pub fn validate_attempt_cancellation(&self, owner: &str) -> Result<()> {
         let s = self.store.snapshot()?;
-        let worktree = s.repository_worktrees.iter().find(|w| w.owner_id == owner)
-            .map(|w| w.path.as_str()).unwrap_or("");
+        let worktree = s
+            .repository_worktrees
+            .iter()
+            .find(|w| w.owner_id == owner)
+            .map(|w| w.path.as_str())
+            .unwrap_or("");
         if s.run_cancellation_pending(worktree) {
-            return Err(err("run_cancellation_pending", "等待旧 Run 取消确认后再启动"));
+            return Err(err(
+                "run_cancellation_pending",
+                "等待旧 Run 取消确认后再启动",
+            ));
         }
         Ok(())
     }
@@ -761,9 +654,6 @@ impl Engine {
             event(s, target, method, &format!("command_id={}", c.command_id));
             return Ok(result);
         }
-        if let Some(result) = self.permission_command(method, c, s) {
-            return result;
-        }
         if let Some(result) = self.repository_command(method, c, s)? {
             event(s, target, method, &format!("command_id={}", c.command_id));
             return Ok(result);
@@ -804,59 +694,10 @@ impl Engine {
         }
         let result = match method {
             "agent.create" | "agent.revise" => {
-                let old = if method == "agent.revise" {
-                    let old = s
-                        .definitions
-                        .iter()
-                        .find(|d| d.id == target && d.family == "agent")
-                        .cloned()
-                        .ok_or_else(|| err("not_found", "Agent 修订不存在"))?;
-                    require(
-                        c.expected_revision == Some(old.version),
-                        "需要明确 Agent expected_revision",
-                    )?;
-                    require(
-                        !s.definitions
-                            .iter()
-                            .any(|d| d.supersedes.as_deref() == Some(target)),
-                        "Agent 已有后继修订，请使用当前修订",
-                    )?;
-                    Some(old)
-                } else {
-                    None
-                };
-                let profile: AgentProfile = serde_json::from_value(p["profile"].clone())
-                    .map_err(|_| err("invalid_params", "需要完整的 Agent profile"))?;
-                profile.validate()?;
-                if let Some(old) = &old {
-                    require(
-                        old.agent_profile
-                            .as_ref()
-                            .is_some_and(|p| p.role == profile.role),
-                        "不可通过修订改变角色身份，请创建新的 Agent",
-                    )?;
-                }
-                require(
-                    profile.skill_revisions.iter().all(|id| {
-                        s.definitions
-                            .iter()
-                            .any(|d| &d.id == id && d.family == "skill")
-                    }),
-                    "角色 Skill 必须引用明确修订",
-                )?;
-                let did = id();
-                s.definitions.push(Definition {
-                    id: did.clone(),
-                    family: "agent".into(),
-                    name: text(p, "name")?,
-                    version: old.as_ref().map_or(1, |d| d.version + 1),
-                    supersedes: old.map(|d| d.id),
-                    body: text(p, "instructions")?,
-                    slots: vec![],
-                    rules: vec![],
-                    agent_profile: Some(profile),
-                });
-                json!({"id":did})
+                return Err(err(
+                    "invalid_params",
+                    "Agent 必须通过 Role、Capability 与 permission_selection 创建",
+                ));
             }
             "project.create" => {
                 let scoped = self.store.project_id();
@@ -868,7 +709,6 @@ impl Engine {
                 let title = text(p, "title")?;
                 let b = binding(s);
                 s.projects.push(Project {
-                    permission_overrides: None,
                     runtime_preferences: None,
                     id: pid.clone(),
                     title,
@@ -897,21 +737,35 @@ impl Engine {
                 json!({"id":pid})
             }
             "project.update" => {
-                let runtime_preferences = p.get("runtime_preferences").map(|value| {
-                    let preferences: Option<ProjectRuntimePreferences> = serde_json::from_value(value.clone())
-                        .map_err(|_| err("invalid_params", "无效项目运行时偏好"))?;
-                    if let Some(preferences) = &preferences {
-                        preferences.validate()?;
-                        preferences.validate_references(s)?;
-                        for preference in preferences.default.iter().chain(preferences.roles.iter().map(|r| &r.preference)) {
-                            for reference in preference.model_ref.iter().chain(preference.harness_ref.iter()) {
-                                let record = s.configuration(reference)?;
-                                require(configuration_visible(s, record, Some(target)) && !configuration_retired(s, record), "所选 Model 或 Harness 不适用于当前项目")?;
+                let runtime_preferences = p
+                    .get("runtime_preferences")
+                    .map(|value| {
+                        let preferences: Option<ProjectRuntimePreferences> =
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| err("invalid_params", "无效项目运行时偏好"))?;
+                        if let Some(preferences) = &preferences {
+                            preferences.validate()?;
+                            preferences.validate_references(s)?;
+                            for preference in preferences
+                                .default
+                                .iter()
+                                .chain(preferences.roles.iter().map(|r| &r.preference))
+                            {
+                                for reference in std::iter::once(&preference.model_ref)
+                                    .chain(std::iter::once(&preference.harness_ref))
+                                {
+                                    let record = s.configuration(reference)?;
+                                    require(
+                                        configuration_visible(s, record, Some(target))
+                                            && !configuration_retired(s, record),
+                                        "所选 Model 或 Harness 不适用于当前项目",
+                                    )?;
+                                }
                             }
                         }
-                    }
-                    Ok::<_, Error>(preferences)
-                }).transpose()?;
+                        Ok::<_, Error>(preferences)
+                    })
+                    .transpose()?;
                 let project = s
                     .projects
                     .iter_mut()
@@ -920,10 +774,10 @@ impl Engine {
                 if let Some(title) = opt(p, "title") {
                     project.title = title;
                 }
-                if let Some(value) = p.get("permission_overrides") {
-                    project.permission_overrides = serde_json::from_value(value.clone())
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                }
+                require(
+                    p.get("permission_overrides").is_none(),
+                    "项目权限覆盖已移除，请修改 Agent 的版本化权限绑定",
+                )?;
                 if let Some(preferences) = runtime_preferences {
                     project.runtime_preferences = preferences;
                 }
@@ -1224,98 +1078,6 @@ impl Engine {
                     );
                     json!({"id":did})
                 }
-            }
-            "definition.revise" => {
-                let old = s
-                    .definitions
-                    .iter()
-                    .find(|d| d.id == target)
-                    .cloned()
-                    .ok_or_else(|| err("not_found", "定义不存在"))?;
-                let mut d = old.clone();
-                d.id = id();
-                d.supersedes = Some(old.id);
-                d.version = s
-                    .definitions
-                    .iter()
-                    .filter(|x| x.name == old.name && x.family == old.family)
-                    .map(|x| x.version)
-                    .max()
-                    .unwrap_or(0)
-                    + 1;
-                d.name = opt(p, "name").unwrap_or(old.name);
-                d.body = text(p, "body")?;
-                if let Some(slots) = p.get("slots") {
-                    d.slots = serde_json::from_value(slots.clone())
-                        .map_err(|_| err("invalid_params", "slots 应为版本 ID 列表"))?;
-                    for slot in &d.slots {
-                        require(
-                            ["planning", "implementation", "merge"]
-                                .contains(&slot.purpose.as_str())
-                                && s.definitions
-                                    .iter()
-                                    .any(|x| x.id == slot.spec && x.family == "spec"),
-                            "Standard slot 必须包含用途并引用 Spec 版本",
-                        )?;
-                    }
-                    require(
-                        d.slots
-                            .iter()
-                            .map(|x| &x.purpose)
-                            .collect::<std::collections::HashSet<_>>()
-                            .len()
-                            == d.slots.len(),
-                        "Standard 用途 slot 不可重复",
-                    )?;
-                }
-                if let Some(rules) = p.get("rules") {
-                    d.rules = serde_json::from_value(rules.clone())
-                        .map_err(|_| err("invalid_params", "rules 应为内置规则名列表"))?;
-                    require(
-                        d.rules.iter().all(|r| {
-                            ["traceability", "failure_paths", "sections"].contains(&r.as_str())
-                        }),
-                        "不支持任意规范脚本",
-                    )?;
-                }
-                let did = d.id.clone();
-                s.definitions.push(d);
-                json!({"id":did})
-            }
-            "binding.update" => {
-                let fid = s
-                    .tasks
-                    .iter()
-                    .find(|t| t.id == target)
-                    .map(|t| t.feature_id.as_str())
-                    .unwrap_or(target);
-                require(
-                    s.feature_configuration(fid).is_none(),
-                    "Feature 创建时的配置已冻结；请创建关联后继 Feature",
-                )?;
-                let b: BindingLock = serde_json::from_value(p.clone())
-                    .map_err(|e| err("invalid_params", e.to_string()))?;
-                s.validate_binding(&b)?;
-                if let Some(t) = s.tasks.iter().find(|x| x.id == target).cloned() {
-                    mutable_feature(s, &t.feature_id)?;
-                    require(t.status != Status::Completed, "Task 已冻结")?;
-                    let t = s.tasks.iter_mut().find(|x| x.id == target).unwrap();
-                    t.binding = b;
-                    t.revision += 1;
-                } else if let Some(f) = s.features.iter_mut().find(|x| x.id == target) {
-                    require(f.status != Status::Completed, "Feature 已冻结")?;
-                    f.binding = b;
-                    f.revision += 1;
-                } else {
-                    let x = s
-                        .projects
-                        .iter_mut()
-                        .find(|x| x.id == target)
-                        .ok_or_else(|| err("not_found", "绑定 owner 不存在"))?;
-                    x.binding = b;
-                    x.revision += 1;
-                }
-                json!({"id":target})
             }
             "task.create" => {
                 let f = s.feature(target)?.clone();
@@ -1706,29 +1468,12 @@ impl Engine {
                     } else {
                         let f = s.feature(target)?.clone();
                         mutable_feature(s, &f.id)?;
-                        let phase = opt(p, "phase").unwrap_or_else(|| {
-                            if [Status::Draft, Status::Planning].contains(&f.status) {
-                                "planning".into()
-                            } else {
-                                "closure".into()
-                            }
-                        });
+                        let phase = text(p, "phase")?;
                         require(
-                            [
-                                "planning",
-                                "requirement_definition",
-                                "solution_planning",
-                                "closure",
-                            ]
-                            .contains(&phase.as_str()),
+                            ["requirement_definition", "solution_planning", "closure"]
+                                .contains(&phase.as_str()),
                             "未知 Feature 阶段",
                         )?;
-                        if phase == "planning" {
-                            require(
-                                !s.planning_accepted(&f.id),
-                                "当前规划已接受；变更输入后才能重新规划",
-                            )?;
-                        }
                         if phase == "closure" {
                             require(s.planning_accepted(&f.id), "当前输入规划尚未接受")?;
                             let ts = s.required_tasks(&f.id);
@@ -1779,7 +1524,10 @@ impl Engine {
                     "已有活动 Attempt；请等待评审或取消",
                 )?;
                 if s.run_cancellation_pending(&worktree) {
-                    return Err(err("run_cancellation_pending", "等待旧 Run 取消确认后再启动"));
+                    return Err(err(
+                        "run_cancellation_pending",
+                        "等待旧 Run 取消确认后再启动",
+                    ));
                 }
                 let live = s.projects.iter().any(|p| {
                     p.id == s.feature(&fid).unwrap().project_id && p.execution_mode == "live"
@@ -1788,7 +1536,7 @@ impl Engine {
                 let live_sessions: std::collections::BTreeMap<String, Id> =
                     serde_json::from_value(p["live_sessions"].clone())
                         .map_err(|_| err("blocked", "Attempt 缺少宿主解析的阶段 Session"))?;
-                if live && ["planning", "solution_planning"].contains(&phase.as_str()) {
+                if phase == "solution_planning" {
                     let docs = document_ids(s, &fid, None);
                     require(
                         ["requirement", "design", "test"].iter().all(|kind| {
@@ -1826,13 +1574,13 @@ impl Engine {
                         p["workflow_step_instance_id"].as_str(),
                     )?;
                     let primary = match phase.as_str() {
-                        "planning" => "design",
                         "requirement_definition" => "requirement_validate",
                         "solution_planning" => "plan_validate",
                         "implementation" => "implement",
                         _ => "docs",
                     };
-                    b = self.live_binding(s, &live_sessions[primary], &b.standard)?;
+                    b =
+                        self.live_binding(s, &live_sessions[primary], &b.standard, Some(primary))?;
                 }
                 s.validate_binding(&b)?;
                 let runtime = s.harnesses.iter().find(|h| h.id == b.harness).unwrap();
@@ -1894,57 +1642,23 @@ impl Engine {
                 } else {
                     Some(baseline)
                 };
-                let builtin_nodes: Vec<(&str, Vec<&str>, bool)> = match phase.as_str() {
-                    "requirement_definition" => vec![("requirement_validate", vec![], false)],
-                    "solution_planning" => vec![
-                        ("plan_validate", vec![], false),
-                        ("test_plan_validate", vec!["plan_validate"], false),
-                    ],
-                    "planning" => vec![
-                        ("research", vec![], false),
-                        ("requirement", vec!["research"], true),
-                        ("design", vec!["requirement"], true),
-                        ("task_plan", vec!["design"], false),
-                        ("test_plan", vec!["design"], false),
-                    ],
-                    "implementation" => vec![
-                        ("test_author", vec![], true),
-                        ("red", vec!["test_author"], false),
-                        ("implement", vec!["red"], true),
-                        ("green", vec!["implement"], false),
-                        ("docs", vec!["implement"], false),
-                        ("verify", vec!["green", "docs"], false),
-                    ],
-                    _ => vec![
-                        ("test_author", vec![], true),
-                        ("feature_tests", vec!["test_author"], false),
-                        ("docs", vec!["feature_tests"], false),
-                        ("verify", vec!["feature_tests", "docs"], false),
-                    ],
-                };
-                let nodes: Vec<(String, Vec<String>, bool)> = if let Some(recipe) = self
+                let recipe = self
                     .workflow_recipe(
                         s,
                         tid.as_deref().unwrap_or(&fid),
                         &phase,
                         p["workflow_step_instance_id"].as_str(),
-                    ) {
-                    recipe
-                        .into_iter()
-                        .map(|n| (n.key, n.dependencies, n.writes))
-                        .collect()
-                } else {
-                    builtin_nodes
-                        .into_iter()
-                        .map(|(key, deps, writes)| {
-                            (
-                                key.into(),
-                                deps.into_iter().map(str::to_owned).collect(),
-                                writes,
-                            )
-                        })
-                        .collect()
-                };
+                    )
+                    .ok_or_else(|| {
+                        err(
+                            "configuration_required",
+                            "执行必须使用冻结 Workflow 的节点配方",
+                        )
+                    })?;
+                let nodes: Vec<(String, Vec<String>, bool)> = recipe
+                    .into_iter()
+                    .map(|n| (n.key, n.dependencies, n.writes))
+                    .collect();
                 valid_dag(
                     &nodes
                         .iter()
@@ -1952,7 +1666,7 @@ impl Engine {
                         .collect::<Vec<_>>(),
                 )?;
                 for (node, deps, writes) in nodes {
-                    self.add_live_run(s, &aid, &node, deps, writes && phase != "planning")?;
+                    self.add_live_run(s, &aid, &node, deps, writes)?;
                 }
                 if let Some(tid) = tid {
                     let t = s.tasks.iter_mut().find(|x| x.id == tid).unwrap();
@@ -1966,7 +1680,7 @@ impl Engine {
                     if live {
                         f.binding = b.clone();
                     }
-                    f.status = if ["planning", "requirement_definition", "solution_planning"]
+                    f.status = if ["requirement_definition", "solution_planning"]
                         .contains(&phase.as_str())
                     {
                         Status::Planning
@@ -2114,14 +1828,11 @@ impl Engine {
                     "requirement".into()
                 } else if a.phase == "solution_planning" {
                     "plan".into()
-                } else if a.phase == "planning" {
-                    opt(p, "kind").unwrap_or_else(|| "requirement".into())
                 } else {
                     a.phase.clone()
                 };
                 require(
-                    (a.phase == "planning" && ["requirement", "plan"].contains(&kind.as_str()))
-                        || (a.phase == "requirement_definition" && kind == "requirement")
+                    (a.phase == "requirement_definition" && kind == "requirement")
                         || (a.phase == "solution_planning" && kind == "plan")
                         || kind == a.phase,
                     "无效交付边界",
@@ -2132,21 +1843,11 @@ impl Engine {
                         .any(|d| d.attempt_id.as_deref() == Some(target) && d.kind == kind),
                     "该边界已提交，修订需新 Attempt",
                 )?;
-                let runs: Vec<_> = effective_runs(s, &a)
-                    .into_iter()
-                    .filter(|r| {
-                        kind != "requirement"
-                            || a.phase == "requirement_definition"
-                            || ["research", "requirement"].contains(&r.node.as_str())
-                    })
-                    .collect();
+                let runs = effective_runs(s, &a);
                 if kind == "plan" {
                     require(
                         s.deliveries.iter().any(|d| {
-                            (d.attempt_id.as_deref() == Some(&a.id)
-                                || (a.phase == "solution_planning" && d.feature_id == a.feature_id))
-                                && d.kind == "requirement"
-                                && s.accepted(d)
+                            d.feature_id == a.feature_id && d.kind == "requirement" && s.accepted(d)
                         }),
                         "需求交付通过 Review 后才能提交计划",
                     )?;
@@ -2241,6 +1942,12 @@ impl Engine {
                     .iter()
                     .find(|v| v.id == sid)
                     .ok_or_else(|| err("blocked", "Reviewer Session 缺失"))?;
+                let session = crate::agent_tasks::session_for_node(
+                    s,
+                    session,
+                    None,
+                    p["workflow_step_instance_id"].as_str(),
+                )?;
                 require(
                     session.owner_id == d.task_id.as_deref().unwrap_or(&d.feature_id)
                         && session.runtime_binding.as_ref().is_some_and(|b| {
@@ -2263,7 +1970,7 @@ impl Engine {
                     .binding
                     .standard
                     .clone();
-                let binding = self.live_binding(s, &sid, &standard)?;
+                let binding = self.live_binding(s, &sid, &standard, None)?;
                 let rid = id();
                 s.runs.push(Run {
                     id: rid.clone(),
@@ -2314,14 +2021,31 @@ impl Engine {
                         .map_err(|_| err("invalid_params", "items 应为条目列表"))?;
                 require(!items.is_empty(), "必须选择豁免条目")?;
                 if items.iter().any(|item| item == "review")
-                    && (s.feature_configuration(&d.feature_id).is_some_and(|lock| lock.compiler_version >= 3)
-                        || d.evidence.iter().any(|id|s.runs.iter().find(|r|&r.id==id)
-                            .and_then(|r|r.result.as_ref()).is_some_and(|result|result["approval_required"]==true)))
+                    && (s
+                        .feature_configuration(&d.feature_id)
+                        .is_some_and(|lock| lock.compiler_version == 3)
+                        || d.evidence.iter().any(|id| {
+                            s.runs
+                                .iter()
+                                .find(|r| &r.id == id)
+                                .and_then(|r| r.result.as_ref())
+                                .is_some_and(|result| result["approval_required"] == true)
+                        }))
                 {
-                    require(s.runs.iter().rev().find(|r|r.node==format!("review:{}",d.id))
-                        .is_some_and(|r|r.status==Status::Succeeded && r.result.as_ref().is_some_and(|result|
-                            result["approval_required"]==true && result["model_approve"].is_boolean())),
-                        "请等待模型完成内容评审并给出 Approve 结论后，再执行人类覆盖")?;
+                    require(
+                        s.runs
+                            .iter()
+                            .rev()
+                            .find(|r| r.node == format!("review:{}", d.id))
+                            .is_some_and(|r| {
+                                r.status == Status::Succeeded
+                                    && r.result.as_ref().is_some_and(|result| {
+                                        result["approval_required"] == true
+                                            && result["model_approve"].is_boolean()
+                                    })
+                            }),
+                        "请等待模型完成内容评审并给出 Approve 结论后，再执行人类覆盖",
+                    )?;
                 }
                 for item in &items {
                     require(
@@ -2750,52 +2474,20 @@ impl Engine {
                 evidence: reason.into(),
             },
         ];
-        let lock = if let Some(aid) = &d.attempt_id {
-            s.attempt(aid)?.binding.clone()
-        } else {
-            let m = s.merge(d.merge_id.as_deref().unwrap())?;
-            let source = s.delivery(&m.source_delivery)?;
-            s.attempt(source.attempt_id.as_deref().unwrap())?
-                .binding
-                .clone()
-        };
-        let specification_checks =
-            if let Some(specs) = self.delivery_specifications(s, d, run.as_deref())? {
-                specs
-            } else {
-                let standard = s
-                    .definitions
-                    .iter()
-                    .find(|x| x.id == lock.standard)
-                    .ok_or_else(|| err("blocked", "Standard 锁缺失"))?;
-                let purpose = if d.merge_id.is_some() {
-                    "merge"
-                } else if ["requirement", "plan"].contains(&d.kind.as_str()) {
-                    "planning"
-                } else {
-                    "implementation"
-                };
-                let slot = standard
-                    .slots
-                    .iter()
-                    .find(|x| x.purpose == purpose)
-                    .ok_or_else(|| err("blocked", "Standard 缺少对应用途 slot"))?;
-                let spec = s
-                    .definitions
-                    .iter()
-                    .find(|x| x.id == slot.spec)
-                    .ok_or_else(|| err("blocked", "Spec 锁缺失"))?;
-                vec![(
-                    spec.clone(),
-                    format!("standard={} slot={purpose}", standard.id),
-                )]
-            };
+        let specification_checks = self
+            .delivery_specifications(s, d, run.as_deref())?
+            .ok_or_else(|| err("configuration_required", "正式评审必须引用冻结的步骤规范"))?;
         for (spec, source) in &specification_checks {
             // Content judgments use the configured model task and the exact Skill/Spec
             // bodies. Legacy keyword probes are not quality gates for the new report contract.
-            if run.as_ref().and_then(|id|s.runs.iter().find(|r| &r.id==id))
-                .and_then(|r|r.result.as_ref()).is_some_and(|result|result["approval_required"]==true)
-            { continue; }
+            if run
+                .as_ref()
+                .and_then(|id| s.runs.iter().find(|r| &r.id == id))
+                .and_then(|r| r.result.as_ref())
+                .is_some_and(|result| result["approval_required"] == true)
+            {
+                continue;
+            }
             for rule in &spec.rules {
                 let documents = d
                     .documents
@@ -2921,8 +2613,6 @@ impl Engine {
             vec!["requirement"]
         } else if a.phase == "solution_planning" {
             vec!["plan"]
-        } else if a.phase == "planning" {
-            vec!["requirement", "plan"]
         } else {
             vec![a.phase.as_str()]
         };
@@ -2931,11 +2621,6 @@ impl Engine {
                 .iter()
                 .any(|x| x.attempt_id.as_deref() == Some(&a.id) && x.kind == *kind && s.accepted(x))
         }) {
-            if a.phase == "planning" && d.kind == "requirement" {
-                let am = s.attempts.iter_mut().find(|x| x.id == a.id).unwrap();
-                am.status = Status::Running;
-                am.revision += 1;
-            }
             return Ok(());
         }
         let am = s.attempts.iter_mut().find(|x| x.id == a.id).unwrap();
@@ -2945,7 +2630,7 @@ impl Engine {
             s,
             &a.feature_id,
             a.task_id.as_deref(),
-            if ["planning", "solution_planning"].contains(&a.phase.as_str()) {
+            if a.phase == "solution_planning" {
                 "initial"
             } else {
                 "final"
@@ -2963,7 +2648,7 @@ impl Engine {
                 .iter_mut()
                 .find(|x| x.id == a.feature_id)
                 .unwrap();
-            f.status = if ["planning", "solution_planning"].contains(&a.phase.as_str()) {
+            f.status = if a.phase == "solution_planning" {
                 Status::Ready
             } else if a.phase == "requirement_definition" {
                 Status::Planning
@@ -3302,18 +2987,9 @@ impl Engine {
                             .as_ref()
                             .is_some_and(|v| v["failure_type"] == "assertion")
                 });
-                let requirement_gate = a.phase == "planning"
-                    && rs
-                        .iter()
-                        .any(|r| r.node == "requirement" && r.status == Status::Succeeded)
-                    && !s.deliveries.iter().any(|d| {
-                        d.attempt_id.as_deref() == Some(&a.id)
-                            && d.kind == "requirement"
-                            && s.accepted(d)
-                    });
-                if all || failed || requirement_gate {
+                if all || failed {
                     let am = s.attempts.iter_mut().find(|x| x.id == a.id).unwrap();
-                    am.status = if all || requirement_gate {
+                    am.status = if all {
                         Status::WaitingReview
                     } else {
                         Status::Failed
@@ -3804,7 +3480,7 @@ impl Engine {
                     None
                 };
                 Ok(
-                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":s.runs.iter().filter(|r|r.status==Status::Running).count(),"waiting_review":s.deliveries.iter().filter(|d|!d.stale&&s.delivery_inputs_current(d)&&!s.reviews.iter().any(|r|r.delivery_id==d.id&&[Decision::Pass,Decision::ChangesRequested].contains(&r.decision))&&!s.accepted(d)).count(),"waiting_confirmation":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|step.status=="waiting_confirmation").count(),"blocked":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|["blocked","failed"].contains(&step.status.as_str())).count()},"configurations":s.governance.iter().filter(|r|["feature_lock","legacy_feature_lock","workflow_instance","project_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),"total_projects":s.projects.len(),"definitions":s.definitions,"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live","repository_ready":s.projects.iter().any(|p| p.execution_mode=="live" && s.repository_worktrees.iter().any(|w|w.project_id==p.id && w.kind==WorktreeKind::Mainline)),"global_concurrency":global_limit}),
+                    json!({"projects":s.projects.iter().skip(p.get("project_offset").and_then(Value::as_u64).unwrap_or(0) as usize).take(limit).collect::<Vec<_>>(),"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":s.runs.iter().filter(|r|r.status==Status::Running).count(),"waiting_review":s.deliveries.iter().filter(|d|!d.stale&&s.delivery_inputs_current(d)&&!s.reviews.iter().any(|r|r.delivery_id==d.id&&[Decision::Pass,Decision::ChangesRequested].contains(&r.decision))&&!s.accepted(d)).count(),"waiting_confirmation":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|step.status=="waiting_confirmation").count(),"blocked":s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["status"]!="cancelled").filter_map(|r|r.decode::<WorkflowRuntime>().ok()).flat_map(|r|r.steps).filter(|step|["blocked","failed"].contains(&step.status.as_str())).count()},"configurations":s.governance.iter().filter(|r|["feature_lock","workflow_instance","project_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),"total_projects":s.projects.len(),"definitions":s.definitions,"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live","repository_ready":s.projects.iter().any(|p| p.execution_mode=="live" && s.repository_worktrees.iter().any(|w|w.project_id==p.id && w.kind==WorktreeKind::Mainline)),"global_concurrency":global_limit}),
                 )
             }
             "query.history" => {
@@ -3942,7 +3618,7 @@ impl Engine {
         }
         if let Some(f) = s.features.iter().find(|x| x.id == target) {
             if f.status != Status::Completed {
-                allowed.extend(["document.revise", "binding.update", "snapshot.save"]);
+                allowed.extend(["document.revise", "snapshot.save"]);
                 if !s.planning_accepted(&f.id) {
                     allowed.push("attempt.start");
                 }
@@ -3966,12 +3642,7 @@ impl Engine {
         }
         if let Some(t) = s.tasks.iter().find(|x| x.id == target) {
             if t.status != Status::Completed {
-                allowed.extend([
-                    "attempt.start",
-                    "binding.update",
-                    "snapshot.save",
-                    "task.replan",
-                ]);
+                allowed.extend(["attempt.start", "snapshot.save", "task.replan"]);
                 if [Status::Accepted, Status::Merging].contains(&t.status) {
                     allowed.push("merge.request");
                 }
@@ -4050,24 +3721,7 @@ impl Engine {
             .iter()
             .find(|t| t.id == owner)
             .map_or(owner, |t| t.feature_id.as_str());
-        if s.governance
-            .iter()
-            .any(|r| r.kind == "legacy_feature_lock" && r.definition_id == feature)
-        {
-            allowed.retain(|method| {
-                ![
-                    "binding.update",
-                    "attempt.start",
-                    "merge.request",
-                    "review.request",
-                    "task.create",
-                ]
-                .contains(method)
-            });
-            blocked.push("历史 Feature 已保留原配置；新执行请使用完整版本化配置创建后继 Feature");
-        }
         if let Some(lock) = s.feature_configuration(feature) {
-            allowed.retain(|method| *method != "binding.update");
             let runtime = s
                 .governance
                 .iter()
@@ -4125,7 +3779,8 @@ impl Engine {
             });
             return json!({"allowed":allowed,"blocked":blocked,"attempt_phases":phases});
         }
-        json!({"allowed":allowed,"blocked":blocked,"attempt_phases":if let Some(f)=s.features.iter().find(|f|f.id==target){if !s.planning_accepted(&f.id){vec!["planning"]}else if s.tasks.iter().any(|t|t.feature_id==f.id)&&s.tasks.iter().filter(|t|t.feature_id==f.id).all(|t|t.status==Status::Completed){vec!["closure"]}else{vec![]}}else{vec!["implementation"]}})
+        allowed.retain(|method| *method != "attempt.start");
+        json!({"allowed":allowed,"blocked":blocked,"attempt_phases":[]})
     }
 }
 
@@ -4168,5 +3823,40 @@ mod document_stream_tests {
             document_ids(&state, "feature", None),
             vec!["notes", "new-plan"]
         );
+    }
+}
+
+#[cfg(test)]
+mod current_catalog_tests {
+    use super::*;
+    #[test]
+    fn current_defaults_have_no_upgrade_chain_and_bootstrap_is_idempotent() {
+        let mut s = EngineeringState::default();
+        seed_configuration(&mut s);
+        let before = json!(s);
+        assert_eq!(s.governance.iter().filter(|r| r.kind == "agent").count(), 6);
+        assert_eq!(
+            s.governance.iter().filter(|r| r.kind == "workflow").count(),
+            2
+        );
+        assert!(!s.governance.iter().any(|r| {
+            [
+                "configuration_conversion",
+                "agent_capability",
+                "defaults_bundle",
+                "permission_migration",
+            ]
+            .contains(&r.kind.as_str())
+        }));
+        for r in s.governance.iter().filter(|r| r.kind == "agent") {
+            assert!(r.data.get("permissions").is_none());
+            assert!(r.data["permission_selection"].is_object());
+            assert!(r.data["capability_ref"].is_string());
+        }
+        for r in s.governance.iter().filter(|r| r.kind == "workflow") {
+            assert_eq!(r.data["schema_version"], 3);
+        }
+        seed_configuration(&mut s);
+        assert_eq!(before, json!(s));
     }
 }

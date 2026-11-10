@@ -45,4 +45,4 @@ Codex 仍使用数据集专属官方 OAuth 文件和受控 Session 凭据。平�
 
 ## DSH 多服务商凭据
 
-DeepSeek、`zai-coding-cn`、`minimax-cn` 使用独立账号命名空间和当前引用，读取时校验数据集及服务商。旧 DeepSeek 引用继续有效，换 key 不覆盖旧执行的引用。Ollama 本地服务免密，不创建 vault 条目。macOS 新服务商需要协议版本 2 的助手，升级步骤见 [模型服务商](model-providers.md)；打包仅构建随包助手，不修改本机共享安装。
+DeepSeek、`zai-coding-cn`、`minimax-cn` 使用独立账号命名空间和当前引用，读取时校验数据集及服务商。DeepSeek 使用显式 UUID 凭据引用，未配置时不探测旧固定账号；换 key 不覆盖已冻结执行的引用。Ollama 本地服务免密，不创建 vault 条目。macOS 只接受协议版本 2 的助手，升级步骤见 [模型服务商](model-providers.md)；打包仅构建随包助手，不修改本机共享安装。

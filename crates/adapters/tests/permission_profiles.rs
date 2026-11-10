@@ -98,14 +98,39 @@ fn profile(e: &Engine, id: &str) -> PermissionProfile {
 }
 
 #[test]
-fn strict_profiles_share_canonical_hashes_with_files_and_preserve_v1() {
+fn strict_profiles_share_canonical_hashes_and_reject_v1() {
     let dir = tempfile::tempdir().unwrap();
     let (store, e) = global(dir.path());
-    let before = store.snapshot().unwrap().permissions;
+    let before = store
+        .snapshot()
+        .unwrap()
+        .governance
+        .iter()
+        .filter(|r| r.kind == "permission_profile")
+        .map(|r| r.id.clone())
+        .collect::<Vec<_>>();
     store
         .reload_permission_presets(&command("reload", json!({}), None, None).1)
         .unwrap();
-    assert_eq!(before, store.snapshot().unwrap().permissions);
+    assert_eq!(
+        before,
+        store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .filter(|r| r.kind == "permission_profile")
+            .map(|r| r.id.clone())
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        insert_permission_profiles(
+            &mut EngineeringState::default(),
+            &[json!({"schema_version":1})],
+            "fixture"
+        )
+        .is_err()
+    );
     let p = profile(&e, "permission-harness-read-only-v2-r1");
     let r = store
         .snapshot()
@@ -413,33 +438,32 @@ fn compiler_rejects_unenforceable_rules_and_checks_the_real_scope() {
 }
 
 #[test]
-fn compatibility_conversion_keeps_immutable_agents_and_is_restart_idempotent() {
+fn defaults_use_v2_directly_and_restart_does_not_create_compatibility_records() {
     let dir = tempfile::tempdir().unwrap();
     let (store, e) = global(dir.path());
-    let before = store.snapshot().unwrap();
-    store.migrate_permission_selections().unwrap();
     let first = store.snapshot().unwrap();
+    for r in first.governance.iter().filter(|r| r.kind == "agent") {
+        assert!(r.data.get("permissions").is_none());
+        assert!(r.data.get("approval").is_none());
+        assert!(
+            r.decode::<AgentComposition>()
+                .unwrap()
+                .permission_selection
+                .is_some()
+        );
+    }
     assert!(
-        first
+        !first
             .governance
             .iter()
-            .any(|r| r.kind == "permission_migration" && r.data["status"] == "converted_fixed")
-    );
-    for r in before.governance.iter().filter(|r| r.kind == "agent") {
-        assert_eq!(json!(r), json!(first.configuration(&r.id).unwrap()));
-    }
-    store.migrate_permission_selections().unwrap();
-    assert_eq!(
-        json!(first.governance),
-        json!(store.snapshot().unwrap().governance)
+            .any(|r| r.kind.starts_with("permission_migration"))
     );
     drop(e);
     drop(store);
-    let (reopened, _) = global(dir.path());
-    reopened.migrate_permission_selections().unwrap();
+    let (store, _) = global(dir.path());
     assert_eq!(
         json!(first.governance),
-        json!(reopened.snapshot().unwrap().governance)
+        json!(store.snapshot().unwrap().governance)
     );
 }
 
@@ -491,7 +515,7 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
         e,
         command(
             "session.open",
-            json!({"agent":"builtin-agent-analyst-v1","binding":binding}),
+            json!({"agent":"builtin-agent-sol-high-analyst-v3","binding":binding}),
             Some(&project),
             Some(revision),
         ),

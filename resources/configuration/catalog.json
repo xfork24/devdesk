@@ -1,0 +1,3288 @@
+{
+  "schema_version": 1,
+  "governance": [
+    {
+      "id": "builtin-permission-sandbox-docker-v1",
+      "kind": "sandbox",
+      "definition_id": "builtin-docker-sandbox",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Docker Sandbox",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "5d2abcc9471ac20e5444d26f4503cfba4008d08667688a27ed92256b21273d79",
+      "data": {
+        "enforcement": "docker-worker/v1",
+        "platforms": [
+          "linux/aarch64",
+          "linux/x86_64"
+        ],
+        "provider": "docker",
+        "runtime_version": "1"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "permission-harness-full-access-v2-r1",
+      "kind": "permission_profile",
+      "definition_id": "harness-full-access-v2",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Harness 容器内全权限",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "49af14d44a66cde60a7f49d9fb87e3225a9cd85e33241620c707fb534996c210",
+      "data": {
+        "id": "permission-harness-full-access-v2-r1",
+        "identity": "harness-full-access-v2",
+        "name": "Harness 容器内全权限",
+        "policy": {
+          "approval": "never",
+          "filesystem": {
+            "mode": "full_access"
+          },
+          "network": {
+            "mode": "enabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "schema_version": 2,
+        "supersedes": null,
+        "target_kind": "harness",
+        "version": 1
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "permission-harness-read-only-v2-r1",
+      "kind": "permission_profile",
+      "definition_id": "harness-read-only-v2",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Harness 只读",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "1f804fd521bc093b2c86527f15028c400aabb4832331236fd45e98769c4e259c",
+      "data": {
+        "id": "permission-harness-read-only-v2-r1",
+        "identity": "harness-read-only-v2",
+        "name": "Harness 只读",
+        "policy": {
+          "approval": "never",
+          "filesystem": {
+            "mode": "read_only"
+          },
+          "network": {
+            "mode": "enabled"
+          },
+          "tools": {
+            "mode": "all_available"
+          }
+        },
+        "schema_version": 2,
+        "supersedes": null,
+        "target_kind": "harness",
+        "version": 1
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "permission-sandbox-full-access-v2-r1",
+      "kind": "permission_profile",
+      "definition_id": "sandbox-full-access-v2",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Sandbox 容器内全权限",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "694016cd9ac1114ea6da6596040b1a303369e45235cc20a60e81ff4083ca6174",
+      "data": {
+        "id": "permission-sandbox-full-access-v2-r1",
+        "identity": "sandbox-full-access-v2",
+        "name": "Sandbox 容器内全权限",
+        "policy": {
+          "filesystem": {
+            "mode": "full_access"
+          },
+          "network": {
+            "mode": "enabled"
+          }
+        },
+        "schema_version": 2,
+        "supersedes": null,
+        "target_kind": "sandbox",
+        "version": 1
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-harness-dsh-multi-provider-v1",
+      "kind": "harness",
+      "definition_id": "builtin-harness-dsh-multi-provider",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "DeepSeek Harness 多模型服务商",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "b010047b7bfcf84c346adec2a0898944545d5152fd2c87d8a60fd666adc216f6",
+      "data": {
+        "capabilities": [
+          "structured-output",
+          "tool-calling",
+          "cancel",
+          "poll"
+        ],
+        "model_providers": [
+          "deepseek",
+          "zai-coding-cn",
+          "minimax-cn",
+          "ollama"
+        ],
+        "provider": "dsh",
+        "recipe_digest": "09644ad904fab5737d26c52a3211db55bba1b142fd60adc7fb86c2b4dade4a79",
+        "runtime_version": "0.2.2-rc.1"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-model-gpt-6-1-sol-high-v1",
+      "kind": "model",
+      "definition_id": "builtin-model-gpt-6-1-sol-high",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "GPT-6.1 Sol High",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "33585e47277aefadfc8fb5440c48a387f204794e397fb25c8f2ce40cd1c231c9",
+      "data": {
+        "capabilities": [
+          "structured-output",
+          "tool-calling"
+        ],
+        "model": "gpt-6.1-sol",
+        "parameters": {
+          "reasoning_effort": "high"
+        },
+        "provider": "openai"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-harness-codex-managed-v1",
+      "kind": "harness",
+      "definition_id": "builtin-harness-codex-managed",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Codex 默认 Harness",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "c9960b15c5cf4170b7576a6daf270c9afe8670e11defa7cf99d99021316ee2ac",
+      "data": {
+        "capabilities": [
+          "structured-output",
+          "tool-calling",
+          "cancel",
+          "poll"
+        ],
+        "model_providers": [
+          "openai"
+        ],
+        "provider": "codex",
+        "recipe_digest": "e38e18dcedc553809e45adb2dc8711c0b6302773b5356f67062ad02db922a570",
+        "runtime_version": "0.167.0"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-tool-codex-native-v1",
+      "kind": "tool",
+      "definition_id": "builtin-tool-codex-native",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Codex 原生工具组",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "a595e5d9c6abafd9fbc6b7f2c6fd2a867fb86673016b0fa1a5eb3b762b8068ab",
+      "data": {
+        "capabilities": [],
+        "implementation": "harness.native",
+        "input_schema": {
+          "description": "Native Codex tool contracts, constrained by the frozen role/work scope and Permission",
+          "type": "object"
+        },
+        "output_schema": {
+          "type": "object"
+        },
+        "qualified_name": "harness.native"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-tool-dsh-native-v1",
+      "kind": "tool",
+      "definition_id": "builtin-tool-dsh-native",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "DSH 原生工具组",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "4e660204fc87d3d39b99ee522c10937ab84375b62ef596196148e8a03b3dc967",
+      "data": {
+        "capabilities": [],
+        "harness_provider": "dsh",
+        "implementation": "harness.native",
+        "input_schema": {
+          "description": "DSH native tools; constrained by frozen permissions and work scope",
+          "type": "object"
+        },
+        "output_schema": {
+          "type": "object"
+        },
+        "qualified_name": "dsh.native"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-engineering-context-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-engineering-context",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "工程上下文与工作树规范",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "2c4509aa92bd5add236baea6d888a1227291d66bd68b7926e3745c7d3caa1c38",
+      "data": {
+        "body": {
+          "$markdown": "skills/engineering-context.md"
+        },
+        "rules": [],
+        "slots": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-role-analyst-v1",
+      "kind": "role",
+      "definition_id": "builtin-role-analyst",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "需求分析师",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "1cc44973de341cb7966fc5c3c6b4bf1d2b224515566b2500f42c478c31968800",
+      "data": {
+        "execution_role": "analyst",
+        "instructions": {
+          "$markdown": "roles/analyst.md"
+        }
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-instance-sol-high-analyst-v1",
+      "kind": "agent_instance",
+      "definition_id": "builtin-instance-sol-high-analyst",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "需求分析师 · 默认全局实例",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "bace570bf59a57e9ba081dad273944fc80821699ad90d61bd7a3a9c7d4181131",
+      "data": {
+        "agent_revision_id": "builtin-agent-sol-high-analyst-v3",
+        "scope": {
+          "kind": "global"
+        },
+        "source_instance_id": null
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-role-architect-v1",
+      "kind": "role",
+      "definition_id": "builtin-role-architect",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "架构师",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "ecef9996fcc288b2ff444ef18c52e3144add175e550987351c2de2f1daaeb19d",
+      "data": {
+        "execution_role": "architect",
+        "instructions": {
+          "$markdown": "roles/architect.md"
+        }
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-instance-sol-high-architect-v1",
+      "kind": "agent_instance",
+      "definition_id": "builtin-instance-sol-high-architect",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "架构师 · 默认全局实例",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "eef58f0290fc3ffea7d10a2128230f057b68fe4631913c727d4e89271381e5ab",
+      "data": {
+        "agent_revision_id": "builtin-agent-sol-high-architect-v3",
+        "scope": {
+          "kind": "global"
+        },
+        "source_instance_id": null
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-role-developer-v1",
+      "kind": "role",
+      "definition_id": "builtin-role-developer",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "开发",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "466f4b8a014c118091e0499d424bb0784b4c1ffab8a14dd6ba4d456c8b509aca",
+      "data": {
+        "execution_role": "developer",
+        "instructions": {
+          "$markdown": "roles/developer.md"
+        }
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-instance-sol-high-developer-v1",
+      "kind": "agent_instance",
+      "definition_id": "builtin-instance-sol-high-developer",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "开发 · 默认全局实例",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "a48ce91133ca782426b03e07de85b4a289cab099b4e941af6207790add29c8d9",
+      "data": {
+        "agent_revision_id": "builtin-agent-sol-high-developer-v3",
+        "scope": {
+          "kind": "global"
+        },
+        "source_instance_id": null
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-role-tester-v1",
+      "kind": "role",
+      "definition_id": "builtin-role-tester",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "测试",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "d906de3763316221bf83a1b11be9b4c3b727f2e6f235bcb5e9102f1f75d39dce",
+      "data": {
+        "execution_role": "tester",
+        "instructions": {
+          "$markdown": "roles/tester.md"
+        }
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-instance-sol-high-tester-v1",
+      "kind": "agent_instance",
+      "definition_id": "builtin-instance-sol-high-tester",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "测试 · 默认全局实例",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "84909b9922219361989cc93ded786f64117c1c65b029459c9bea2d1200007fcf",
+      "data": {
+        "agent_revision_id": "builtin-agent-sol-high-tester-v3",
+        "scope": {
+          "kind": "global"
+        },
+        "source_instance_id": null
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-role-reviewer-v1",
+      "kind": "role",
+      "definition_id": "builtin-role-reviewer",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "评审",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "74b5c179962438e67ea0a756d0690917bfb8effc355a8b5085cf448052025d82",
+      "data": {
+        "execution_role": "reviewer",
+        "instructions": {
+          "$markdown": "roles/reviewer.md"
+        }
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-instance-sol-high-reviewer-v1",
+      "kind": "agent_instance",
+      "definition_id": "builtin-instance-sol-high-reviewer",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "评审 · 默认全局实例",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "e2e1d832e1ea49c9f2e5f09fd388f90abe2da897362ca32cd0010b7567715877",
+      "data": {
+        "agent_revision_id": "builtin-agent-sol-high-reviewer-v3",
+        "scope": {
+          "kind": "global"
+        },
+        "source_instance_id": null
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-standard-engineering-v1",
+      "kind": "standard",
+      "definition_id": "builtin-standard-engineering",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "默认工程 Standard",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "05016fd58f7c87e0b437129244a56d32ebb6c2df73e8e11382699361af8e0ff4",
+      "data": {
+        "body": {
+          "$markdown": "standards/engineering.md"
+        },
+        "baseline_rules": [
+          {
+            "selector": {
+              "kind": "agent.interact",
+              "phase": "requirement"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-prd-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "attempt.execute",
+              "phase": "requirement_definition"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-prd-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "delivery_kind": "requirement",
+              "kind": "delivery.review"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-prd-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "agent.interact",
+              "phase": "design"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-architecture-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "agent.interact",
+              "phase": "task_plan"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-project-planning-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "agent.interact",
+              "phase": "test_plan"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-test-design-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "attempt.execute",
+              "phase": "solution_planning"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-solution-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "delivery_kind": "plan",
+              "kind": "delivery.review"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-solution-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "attempt.execute",
+              "phase": "implementation"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-implementation-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "delivery_kind": "implementation",
+              "kind": "delivery.review"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-implementation-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "attempt.execute",
+              "phase": "closure"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-closure-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "delivery_kind": "closure",
+              "kind": "delivery.review"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-closure-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "merge.prepare"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-release-v1"
+            ],
+            "min_matches": 1
+          },
+          {
+            "selector": {
+              "kind": "merge.review"
+            },
+            "required_spec_refs": [
+              "builtin-spec-stage-release-v1"
+            ],
+            "min_matches": 1
+          }
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-engineering-method-v1",
+      "kind": "skill",
+      "definition_id": "builtin-skill-engineering-method",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "默认分阶段开发方法",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "102b89f1924154e0f2d1060637e1febffe42e1410bed656ab03f297c3cde33db",
+      "data": {
+        "body": {
+          "$markdown": "skills/engineering-method.md"
+        },
+        "rules": [],
+        "slots": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-capability-sol-high-codex-v2",
+      "kind": "capability",
+      "definition_id": "builtin-capability-sol-high-codex",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "默认能力 · GPT-6.1 Sol High / Codex",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "15bf27f6eea15996d7d263e4d37aa6212123a5a50bd27006b377ccf964ebcf24",
+      "data": {
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-engineering-method-v1"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-delivery-prd-v1",
+      "kind": "delivery_type",
+      "definition_id": "builtin-delivery-prd",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "PRD",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "865acf374caf2c1b76b4aac12697d5b248a2898707f9093c1f77f12f3a64b3f5",
+      "data": {
+        "body": {
+          "$markdown": "deliveries/prd.md"
+        },
+        "format": "markdown"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-delivery-design-v1",
+      "kind": "delivery_type",
+      "definition_id": "builtin-delivery-design",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Design Doc",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "cea13b58741d9c96c6d362467a69b98f3238ad0c9e65e857fae4d8b023d3f9b6",
+      "data": {
+        "body": {
+          "$markdown": "deliveries/design.md"
+        },
+        "format": "markdown"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-delivery-diff-v1",
+      "kind": "delivery_type",
+      "definition_id": "builtin-delivery-diff",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Diff",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "9082338d418231c0072a30a5bed033f48e4462f3d06d0b14685334440127efdb",
+      "data": {
+        "body": {
+          "$markdown": "deliveries/diff.md"
+        },
+        "format": "diff"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-delivery-test-report-v1",
+      "kind": "delivery_type",
+      "definition_id": "builtin-delivery-test-report",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Test Report",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "9b2e097df7941315021d0f5029b2850cfd896d717fe3425965f611705b807abe",
+      "data": {
+        "body": {
+          "$markdown": "deliveries/test-report.md"
+        },
+        "format": "test_report"
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-prd-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-prd",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "PRD 需求分析",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "b368004faaecf62cf1e9c3a5011b77f4dea90609e7ff221238a242ea31281984",
+      "data": {
+        "body": {
+          "$markdown": "skills/prd.md"
+        },
+        "rules": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-architecture-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-architecture",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Design Doc 架构设计",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "550c8e6ad30bc0f167e63868381204fd275a2bb9ec7e60233234df8fb76160f8",
+      "data": {
+        "body": {
+          "$markdown": "skills/architecture.md"
+        },
+        "rules": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-project-planning-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-project-planning",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Task Plan 项目管理",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "2db0bbc562433d021c6459792755f907b1472983f2d5e65ef0de50c3f93ec3da",
+      "data": {
+        "body": {
+          "$markdown": "skills/project-planning.md"
+        },
+        "rules": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-test-design-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-test-design",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "独立测试与 TDD",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "57b3cb1e47d373a17f3f4a6316e03ae533290d43cc62e814e5c3b9dc5ba8ec5f",
+      "data": {
+        "body": {
+          "$markdown": "skills/test-design.md"
+        },
+        "rules": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-tdd-implementation-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-tdd-implementation",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Task 实现与文档",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "6567c7e64dbfc3b6e51f9f183fbdb7cc446fb027387f4d08bc91864f51cf7418",
+      "data": {
+        "body": {
+          "$markdown": "skills/tdd-implementation.md"
+        },
+        "rules": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-release-verification-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-release-verification",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Feature 与候选验证",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "9b68235c6bb1485134196593a2c269f6c2e41cbc745756dc5700476f95e28004",
+      "data": {
+        "body": {
+          "$markdown": "skills/release-verification.md"
+        },
+        "rules": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-skill-independent-review-v2",
+      "kind": "skill",
+      "definition_id": "builtin-skill-independent-review",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "分阶段独立评审",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "58d10feb9b6d685f77d066de18fe6f4b89c9c880641ff437fe45a5911996bff6",
+      "data": {
+        "body": {
+          "$markdown": "skills/independent-review.md"
+        },
+        "rules": []
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-prd-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-prd",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "PRD 需求规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "52be171a09c37839cbac8e4d974e299718f9ee5b45217bd414009d5a582d8cce",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "agent.interact",
+            "phase": "requirement"
+          },
+          {
+            "kind": "attempt.execute",
+            "phase": "requirement_definition"
+          },
+          {
+            "delivery_kind": "requirement",
+            "kind": "delivery.review"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/prd.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-architecture-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-architecture",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Design Doc 设计规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "f60247b698c93e13b18b6d2303129df856110f1f94d24bc1718d38746a8e2cbd",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "agent.interact",
+            "phase": "design"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/architecture.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-project-planning-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-project-planning",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Task Plan 拆分规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "e6f9c5127b32dbcd0e290fc0d5fc694f36e50577434782efbf3db363c3b2a6e3",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "agent.interact",
+            "phase": "task_plan"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/project-planning.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-test-design-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-test-design",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Test Plan 测试设计规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "bdea982f9f0f59138a2f84f5568940de67840db55d585dda14f47298add37e7d",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "agent.interact",
+            "phase": "test_plan"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/test-design.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-solution-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-solution",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "方案交付规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "fa48435934fe156470bf16a0868fe78ff33c604daeeb6c6a6e775cc1b48350b7",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "attempt.execute",
+            "phase": "solution_planning"
+          },
+          {
+            "delivery_kind": "plan",
+            "kind": "delivery.review"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/solution.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-implementation-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-implementation",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Task TDD 交付规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "6f599ac6330795de143329ffb3e8e13f27fbbc98626a80c25faadbd4d734a213",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "attempt.execute",
+            "phase": "implementation"
+          },
+          {
+            "delivery_kind": "implementation",
+            "kind": "delivery.review"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/implementation.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-closure-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-closure",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "Feature 完整验收规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "de8eb18b07c23de1d9bc4c1e8e7a57d5e0c0b51042bd245334114873c86b979c",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "attempt.execute",
+            "phase": "closure"
+          },
+          {
+            "delivery_kind": "closure",
+            "kind": "delivery.review"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/closure.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-spec-stage-release-v1",
+      "kind": "spec",
+      "definition_id": "builtin-spec-stage-release",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "候选与合入规范",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "f761b95f6afbcd74bc26e5cb7ff9e67c4627a737f175f413c7383cd8d5740756",
+      "data": {
+        "applicable_actions": [
+          {
+            "kind": "merge.prepare"
+          },
+          {
+            "kind": "merge.review"
+          }
+        ],
+        "body": {
+          "$markdown": "specs/release.md"
+        },
+        "rules": [
+          "traceability",
+          "failure_paths",
+          "sections"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-role-project-manager-v1",
+      "kind": "role",
+      "definition_id": "builtin-role-project-manager",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "项目经理",
+      "version": 1,
+      "supersedes": null,
+      "content_hash": "4832187e94ecf628ce73b959bb734253ad5fcc087e6ab583631e785f09aec1d2",
+      "data": {
+        "execution_role": "architect",
+        "instructions": {
+          "$markdown": "roles/project-manager.md"
+        },
+        "visibility": {
+          "kind": "global"
+        }
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-capability-analyst-codex-v2",
+      "kind": "capability",
+      "definition_id": "builtin-capability-analyst-codex",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "需求分析师能力 · Sol High / Codex",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "b35068fb625c0540fbe9b280b1b1c54488bbea6c6bda5894b6898fded92fd6ce",
+      "data": {
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-prd-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-agent-sol-high-analyst-v3",
+      "kind": "agent",
+      "definition_id": "builtin-agent-sol-high-analyst",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "需求分析师 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "content_hash": "a68efe8c620c931eb4ad342991cceb17ba765f8b223650e27d36f75d29aa6ad0",
+      "data": {
+        "capability_ref": "builtin-capability-analyst-codex-v2",
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "instructions": {
+          "$markdown": "roles/analyst.md"
+        },
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "permission_selection": {
+          "harness": {
+            "mode": "follow_target"
+          },
+          "sandbox": {
+            "mode": "follow_target"
+          },
+          "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+        },
+        "role": "analyst",
+        "role_ref": "builtin-role-analyst-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-prd-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-capability-architect-codex-v2",
+      "kind": "capability",
+      "definition_id": "builtin-capability-architect-codex",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "架构师能力 · Sol High / Codex",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "1d36e5139f371518407e6976525828d11f596140a20a1808ab6eed2f47e8b3ec",
+      "data": {
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-architecture-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-agent-sol-high-architect-v3",
+      "kind": "agent",
+      "definition_id": "builtin-agent-sol-high-architect",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "架构师 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "content_hash": "8930fdba05f3f2bb3b9fc63e87cf02d2ce5dcb6ba21552515e0674c16fc5bcce",
+      "data": {
+        "capability_ref": "builtin-capability-architect-codex-v2",
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "instructions": {
+          "$markdown": "roles/architect.md"
+        },
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "permission_selection": {
+          "harness": {
+            "mode": "follow_target"
+          },
+          "sandbox": {
+            "mode": "follow_target"
+          },
+          "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+        },
+        "role": "architect",
+        "role_ref": "builtin-role-architect-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-architecture-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-capability-project-manager-codex-v2",
+      "kind": "capability",
+      "definition_id": "builtin-capability-project-manager-codex",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "项目经理能力 · Sol High / Codex",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "af9cbf98644ccf5cb038fff6d46eff5112608aedf1de6f21920ee67c39276709",
+      "data": {
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-project-planning-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-agent-sol-high-project-manager-v3",
+      "kind": "agent",
+      "definition_id": "builtin-agent-sol-high-project-manager",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "项目经理 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "content_hash": "eac197f99c924786b0a3291a1940ae51cefa11ab419ddc63269e57d3db70a7c9",
+      "data": {
+        "capability_ref": "builtin-capability-project-manager-codex-v2",
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "instructions": {
+          "$markdown": "roles/project-manager.md"
+        },
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "permission_selection": {
+          "harness": {
+            "mode": "follow_target"
+          },
+          "sandbox": {
+            "mode": "follow_target"
+          },
+          "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+        },
+        "role": "architect",
+        "role_ref": "builtin-role-project-manager-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-project-planning-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-capability-developer-codex-v2",
+      "kind": "capability",
+      "definition_id": "builtin-capability-developer-codex",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "开发能力 · Sol High / Codex",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "2890b0744045085da19fa78da56126413c7ec342b05196f5a478bea421c4bbd4",
+      "data": {
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-tdd-implementation-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-agent-sol-high-developer-v3",
+      "kind": "agent",
+      "definition_id": "builtin-agent-sol-high-developer",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "开发 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "content_hash": "5a940dd918bc5b8f941e91576b1d305cb59a1545e8da0fed30ee1c1a4f29cf80",
+      "data": {
+        "capability_ref": "builtin-capability-developer-codex-v2",
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "instructions": {
+          "$markdown": "roles/developer.md"
+        },
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "permission_selection": {
+          "harness": {
+            "mode": "follow_target"
+          },
+          "sandbox": {
+            "mode": "follow_target"
+          },
+          "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+        },
+        "role": "developer",
+        "role_ref": "builtin-role-developer-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-tdd-implementation-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-capability-tester-codex-v2",
+      "kind": "capability",
+      "definition_id": "builtin-capability-tester-codex",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "测试能力 · Sol High / Codex",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "5703b90fa9a2e1ad6c0378c1a05c0d7b8d8ec1614b84db0b79636f6f80c71ba1",
+      "data": {
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-test-design-v2",
+          "builtin-skill-release-verification-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-agent-sol-high-tester-v3",
+      "kind": "agent",
+      "definition_id": "builtin-agent-sol-high-tester",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "测试 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "content_hash": "3656bb70b7720576134a11954ae74a647689b314f9f937e6981e2d8f57a3bb2f",
+      "data": {
+        "capability_ref": "builtin-capability-tester-codex-v2",
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "instructions": {
+          "$markdown": "roles/tester.md"
+        },
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "permission_selection": {
+          "harness": {
+            "mode": "follow_target"
+          },
+          "sandbox": {
+            "mode": "follow_target"
+          },
+          "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+        },
+        "role": "tester",
+        "role_ref": "builtin-role-tester-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-test-design-v2",
+          "builtin-skill-release-verification-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-capability-reviewer-codex-v2",
+      "kind": "capability",
+      "definition_id": "builtin-capability-reviewer-codex",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "评审能力 · Sol High / Codex",
+      "version": 2,
+      "supersedes": null,
+      "content_hash": "ecd032675716630fd62836a76c85e1b851741a5415059d92642f54fc5d52cb20",
+      "data": {
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-independent-review-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-agent-sol-high-reviewer-v3",
+      "kind": "agent",
+      "definition_id": "builtin-agent-sol-high-reviewer",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "评审 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "content_hash": "f0fedba6bebff13918cbcc924c3089276e568e1a8244f13a8a8c98d663c7857d",
+      "data": {
+        "capability_ref": "builtin-capability-reviewer-codex-v2",
+        "harness_ref": "builtin-harness-codex-managed-v1",
+        "instructions": {
+          "$markdown": "roles/reviewer.md"
+        },
+        "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
+        "permission_selection": {
+          "harness": {
+            "mode": "follow_target"
+          },
+          "sandbox": {
+            "mode": "follow_target"
+          },
+          "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+        },
+        "role": "reviewer",
+        "role_ref": "builtin-role-reviewer-v1",
+        "skills": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-independent-review-v2"
+        ],
+        "tools": [
+          "builtin-tool-codex-native-v1"
+        ]
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-workflow-task-sol-high-v4",
+      "kind": "workflow",
+      "definition_id": "builtin-workflow-task-sol-high",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "默认 Task 开发流程",
+      "version": 4,
+      "supersedes": null,
+      "content_hash": "fd8df295159941856179507ec93d98256b62e90eb960504a8c9e444aa011dde9",
+      "data": {
+        "binding_slots": {},
+        "process_kind": "task",
+        "schema_version": 3,
+        "stages": [
+          {
+            "description": {
+              "$markdown": "specs/implementation.md"
+            },
+            "key": "implementation",
+            "name": "Task TDD 实现"
+          },
+          {
+            "description": {
+              "$markdown": "specs/implementation.md"
+            },
+            "key": "review",
+            "name": "Task 独立评审"
+          },
+          {
+            "description": {
+              "$markdown": "specs/release.md"
+            },
+            "key": "integration",
+            "name": "候选验证与汇合"
+          },
+          {
+            "description": {
+              "$markdown": "specs/release.md"
+            },
+            "key": "snapshot",
+            "name": "交付快照"
+          }
+        ],
+        "steps": [
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [],
+            "execution_recipe": [
+              {
+                "dependencies": [],
+                "key": "test_author",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "task_instructions": {
+                  "$markdown": "tasks/author-task-tests.md"
+                },
+                "writes": true
+              },
+              {
+                "dependencies": [
+                  "test_author"
+                ],
+                "key": "red",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "red"
+                ],
+                "key": "implement",
+                "role": "developer",
+                "role_ref": "builtin-role-developer",
+                "task_instructions": {
+                  "$markdown": "tasks/implement.md"
+                },
+                "writes": true
+              },
+              {
+                "dependencies": [
+                  "implement"
+                ],
+                "key": "green",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "implement"
+                ],
+                "key": "docs",
+                "role": "developer",
+                "role_ref": "builtin-role-developer",
+                "task_instructions": {
+                  "$markdown": "tasks/docs.md"
+                },
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "green",
+                  "docs"
+                ],
+                "key": "verify",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              }
+            ],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "implementation",
+              "required_topics": []
+            },
+            "key": "implementation",
+            "kind": "attempt.execute",
+            "name": "TDD 与实现",
+            "parameters": {
+              "phase": "implementation"
+            },
+            "participant_slot": "builtin-role-developer",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-developer",
+            "spec_refs": [
+              "builtin-spec-stage-implementation-v1"
+            ],
+            "stage": "implementation",
+            "task_instructions": {
+              "$markdown": "tasks/attempt-implementation.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "implementation"
+            ],
+            "execution_recipe": [
+              {
+                "dependencies": [],
+                "key": "test_author",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "task_instructions": {
+                  "$markdown": "tasks/author-task-tests.md"
+                },
+                "writes": true
+              },
+              {
+                "dependencies": [
+                  "test_author"
+                ],
+                "key": "red",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "red"
+                ],
+                "key": "implement",
+                "role": "developer",
+                "role_ref": "builtin-role-developer",
+                "task_instructions": {
+                  "$markdown": "tasks/implement.md"
+                },
+                "writes": true
+              },
+              {
+                "dependencies": [
+                  "implement"
+                ],
+                "key": "green",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "implement"
+                ],
+                "key": "docs",
+                "role": "developer",
+                "role_ref": "builtin-role-developer",
+                "task_instructions": {
+                  "$markdown": "tasks/docs.md"
+                },
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "green",
+                  "docs"
+                ],
+                "key": "verify",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              }
+            ],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "implementation",
+              "required_topics": []
+            },
+            "key": "review",
+            "kind": "delivery.review",
+            "name": "Task 交付评审",
+            "parameters": {
+              "phase": "implementation"
+            },
+            "participant_slot": "builtin-role-reviewer",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-reviewer",
+            "spec_refs": [
+              "builtin-spec-stage-implementation-v1"
+            ],
+            "stage": "review",
+            "task_instructions": {
+              "$markdown": "tasks/review-task.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "review"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "merge_prepare",
+            "kind": "merge.prepare",
+            "name": "准备 Task 合入候选",
+            "parameters": {},
+            "participant_slot": "builtin-role-tester",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-tester",
+            "spec_refs": [
+              "builtin-spec-stage-release-v1"
+            ],
+            "stage": "integration"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "merge_prepare"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "merge_review",
+            "kind": "merge.review",
+            "name": "Task 候选评审",
+            "parameters": {},
+            "participant_slot": "builtin-role-reviewer",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-reviewer",
+            "spec_refs": [
+              "builtin-spec-stage-release-v1"
+            ],
+            "stage": "integration",
+            "task_instructions": {
+              "$markdown": "tasks/review-candidate-task.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "merge_review"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "merge_apply",
+            "kind": "merge.apply",
+            "name": "应用 Task 合入",
+            "parameters": {},
+            "participant_slot": null,
+            "retry_limit": 3,
+            "rework_scope": [],
+            "stage": "integration"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "merge_apply"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "snapshot",
+            "kind": "snapshot.capture",
+            "name": "Task 最终快照",
+            "parameters": {},
+            "participant_slot": null,
+            "retry_limit": 3,
+            "rework_scope": [],
+            "stage": "snapshot"
+          }
+        ],
+        "subworkflow_refs": {}
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    },
+    {
+      "id": "builtin-workflow-feature-sol-high-v4",
+      "kind": "workflow",
+      "definition_id": "builtin-workflow-feature-sol-high",
+      "scope": {
+        "kind": "global"
+      },
+      "name": "默认 Feature 开发流程",
+      "version": 4,
+      "supersedes": null,
+      "content_hash": "8689518d2f8964ada99d7c8d0d05337aa07d12d0dd630b4b99e2771ad5e5b91a",
+      "data": {
+        "binding_slots": {},
+        "process_kind": "feature",
+        "schema_version": 3,
+        "stages": [
+          {
+            "description": {
+              "$markdown": "specs/prd.md"
+            },
+            "key": "requirements",
+            "name": "需求分析与 PRD"
+          },
+          {
+            "description": {
+              "$markdown": "specs/architecture.md"
+            },
+            "key": "architecture",
+            "name": "架构设计与 Design Doc"
+          },
+          {
+            "description": {
+              "$markdown": "specs/project-planning.md"
+            },
+            "key": "planning",
+            "name": "项目管理与 Task Plan"
+          },
+          {
+            "description": {
+              "$markdown": "specs/test-design.md"
+            },
+            "key": "test_design",
+            "name": "测试设计与 Test Plan"
+          },
+          {
+            "description": {
+              "$markdown": "specs/solution.md"
+            },
+            "key": "solution_validation",
+            "name": "方案交付与评审"
+          },
+          {
+            "description": {
+              "$markdown": "specs/implementation.md"
+            },
+            "key": "development",
+            "name": "Task 并行开发"
+          },
+          {
+            "description": {
+              "$markdown": "specs/closure.md"
+            },
+            "key": "closure",
+            "name": "Feature 收尾与验收"
+          },
+          {
+            "description": {
+              "$markdown": "specs/release.md"
+            },
+            "key": "release",
+            "name": "候选、确认与交付"
+          }
+        ],
+        "steps": [
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "initial_snapshot",
+            "kind": "snapshot.capture",
+            "name": "建立初始上下文快照",
+            "parameters": {},
+            "participant_slot": null,
+            "retry_limit": 3,
+            "rework_scope": [],
+            "stage": "requirements"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "initial_snapshot"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "brainstorm",
+              "output_kind": "requirement",
+              "required_topics": []
+            },
+            "key": "requirement_discussion",
+            "kind": "agent.interact",
+            "name": "需求头脑风暴",
+            "parameters": {
+              "phase": "requirement"
+            },
+            "participant_slot": "builtin-role-analyst",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-analyst",
+            "spec_refs": [
+              "builtin-spec-stage-prd-v1"
+            ],
+            "stage": "requirements",
+            "task_instructions": {
+              "$markdown": "tasks/prd.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "requirement_discussion"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "brainstorm",
+              "output_kind": "requirement",
+              "required_topics": []
+            },
+            "key": "requirement_adopt",
+            "kind": "proposal.adopt",
+            "name": "采纳需求",
+            "parameters": {
+              "phase": "requirement"
+            },
+            "participant_slot": "builtin-role-analyst",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-analyst",
+            "stage": "requirements"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "requirement_adopt"
+            ],
+            "execution_recipe": [
+              {
+                "dependencies": [],
+                "key": "requirement_validate",
+                "role": "analyst",
+                "role_ref": "builtin-role-analyst",
+                "task_instructions": {
+                  "$markdown": "tasks/validate-requirement.md"
+                },
+                "writes": false
+              }
+            ],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "requirement_definition",
+              "required_topics": []
+            },
+            "key": "requirement_execute",
+            "kind": "attempt.execute",
+            "name": "需求正式交付",
+            "parameters": {
+              "phase": "requirement_definition"
+            },
+            "participant_slot": "builtin-role-analyst",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-analyst",
+            "spec_refs": [
+              "builtin-spec-stage-prd-v1"
+            ],
+            "stage": "requirements",
+            "task_instructions": {
+              "$markdown": "tasks/attempt-requirement.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "requirement_execute"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "brainstorm",
+              "output_kind": "requirement",
+              "required_topics": []
+            },
+            "key": "requirement_review",
+            "kind": "delivery.review",
+            "name": "需求评审",
+            "parameters": {
+              "phase": "requirement"
+            },
+            "participant_slot": "builtin-role-reviewer",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-reviewer",
+            "spec_refs": [
+              "builtin-spec-stage-prd-v1"
+            ],
+            "stage": "requirements",
+            "task_instructions": {
+              "$markdown": "tasks/review-requirement.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "requirement_review"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "design",
+              "required_topics": []
+            },
+            "key": "design_discussion",
+            "kind": "agent.interact",
+            "name": "讨论方案设计",
+            "parameters": {
+              "phase": "design"
+            },
+            "participant_slot": "builtin-role-architect",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-architect",
+            "spec_refs": [
+              "builtin-spec-stage-architecture-v1"
+            ],
+            "stage": "architecture",
+            "task_instructions": {
+              "$markdown": "tasks/design.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "design_discussion"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "design",
+              "required_topics": []
+            },
+            "key": "design_adopt",
+            "kind": "proposal.adopt",
+            "name": "采纳设计",
+            "parameters": {
+              "phase": "design"
+            },
+            "participant_slot": "builtin-role-architect",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-architect",
+            "stage": "architecture"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "design_adopt"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "task_plan",
+              "required_topics": []
+            },
+            "key": "task_discussion",
+            "kind": "agent.interact",
+            "name": "项目经理拆分 Task Plan",
+            "parameters": {
+              "phase": "task_plan"
+            },
+            "participant_slot": "builtin-role-project-manager",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-project-manager",
+            "spec_refs": [
+              "builtin-spec-stage-project-planning-v1"
+            ],
+            "stage": "planning",
+            "task_instructions": {
+              "$markdown": "tasks/planning.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "task_discussion"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "task_plan",
+              "required_topics": []
+            },
+            "key": "task_adopt",
+            "kind": "proposal.adopt",
+            "name": "采纳 Task Plan",
+            "parameters": {
+              "phase": "task_plan"
+            },
+            "participant_slot": "builtin-role-project-manager",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-project-manager",
+            "stage": "planning"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "task_adopt"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "test_plan",
+              "required_topics": []
+            },
+            "key": "test_discussion",
+            "kind": "agent.interact",
+            "name": "讨论 Feature 测试计划",
+            "parameters": {
+              "phase": "test_plan"
+            },
+            "participant_slot": "builtin-role-tester",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-tester",
+            "spec_refs": [
+              "builtin-spec-stage-test-design-v1"
+            ],
+            "stage": "test_design",
+            "task_instructions": {
+              "$markdown": "tasks/discussion-tests.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "test_discussion"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "test_plan",
+              "required_topics": []
+            },
+            "key": "test_adopt",
+            "kind": "proposal.adopt",
+            "name": "采纳 Feature 测试计划",
+            "parameters": {
+              "phase": "test_plan"
+            },
+            "participant_slot": "builtin-role-tester",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-tester",
+            "stage": "test_design"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "test_adopt"
+            ],
+            "execution_recipe": [
+              {
+                "dependencies": [],
+                "key": "plan_validate",
+                "role": "architect",
+                "role_ref": "builtin-role-architect",
+                "task_instructions": {
+                  "$markdown": "tasks/validate-plan.md"
+                },
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "plan_validate"
+                ],
+                "key": "test_plan_validate",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "task_instructions": {
+                  "$markdown": "tasks/validate-tests.md"
+                },
+                "writes": false
+              }
+            ],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "solution_planning",
+              "required_topics": []
+            },
+            "key": "solution_execute",
+            "kind": "attempt.execute",
+            "name": "方案规划交付",
+            "parameters": {
+              "phase": "solution_planning"
+            },
+            "participant_slot": "builtin-role-architect",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-architect",
+            "spec_refs": [
+              "builtin-spec-stage-solution-v1"
+            ],
+            "stage": "solution_validation",
+            "task_instructions": {
+              "$markdown": "tasks/attempt-planning.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "solution_execute"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "plan",
+              "required_topics": []
+            },
+            "key": "solution_review",
+            "kind": "delivery.review",
+            "name": "方案规划评审",
+            "parameters": {
+              "phase": "plan"
+            },
+            "participant_slot": "builtin-role-reviewer",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-reviewer",
+            "spec_refs": [
+              "builtin-spec-stage-solution-v1"
+            ],
+            "stage": "solution_validation",
+            "task_instructions": {
+              "$markdown": "tasks/review-plan.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "solution_review"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "tasks",
+            "kind": "tasks.foreach",
+            "name": "并行 Task 子流程",
+            "parameters": {},
+            "participant_slot": null,
+            "retry_limit": 3,
+            "rework_scope": [],
+            "stage": "development"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "tasks"
+            ],
+            "execution_recipe": [
+              {
+                "dependencies": [],
+                "key": "test_author",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "task_instructions": {
+                  "$markdown": "tasks/author-feature-tests.md"
+                },
+                "writes": true
+              },
+              {
+                "dependencies": [
+                  "test_author"
+                ],
+                "key": "feature_tests",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "feature_tests"
+                ],
+                "key": "docs",
+                "role": "developer",
+                "role_ref": "builtin-role-developer",
+                "task_instructions": {
+                  "$markdown": "tasks/docs.md"
+                },
+                "writes": false
+              },
+              {
+                "dependencies": [
+                  "feature_tests",
+                  "docs"
+                ],
+                "key": "verify",
+                "role": "tester",
+                "role_ref": "builtin-role-tester",
+                "writes": false
+              }
+            ],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "closure",
+              "required_topics": []
+            },
+            "key": "closure",
+            "kind": "attempt.execute",
+            "name": "Feature 完整测试与文档",
+            "parameters": {
+              "phase": "closure"
+            },
+            "participant_slot": "builtin-role-tester",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-tester",
+            "spec_refs": [
+              "builtin-spec-stage-closure-v1"
+            ],
+            "stage": "closure",
+            "task_instructions": {
+              "$markdown": "tasks/attempt-closure.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "closure"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "closure",
+              "required_topics": []
+            },
+            "key": "closure_review",
+            "kind": "delivery.review",
+            "name": "Feature 交付评审",
+            "parameters": {
+              "phase": "closure"
+            },
+            "participant_slot": "builtin-role-reviewer",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-reviewer",
+            "spec_refs": [
+              "builtin-spec-stage-closure-v1"
+            ],
+            "stage": "closure",
+            "task_instructions": {
+              "$markdown": "tasks/review-feature.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "closure_review"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "merge_prepare",
+            "kind": "merge.prepare",
+            "name": "准备主干候选",
+            "parameters": {},
+            "participant_slot": "builtin-role-tester",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-tester",
+            "spec_refs": [
+              "builtin-spec-stage-release-v1"
+            ],
+            "stage": "release"
+          },
+          {
+            "advance_mode": "human_confirmation",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 2,
+            "dependencies": [
+              "merge_prepare"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "merge_review",
+            "kind": "merge.review",
+            "name": "主干候选评审并确认",
+            "parameters": {},
+            "participant_slot": "builtin-role-reviewer",
+            "retry_limit": 3,
+            "rework_scope": [],
+            "role_ref": "builtin-role-reviewer",
+            "spec_refs": [
+              "builtin-spec-stage-release-v1"
+            ],
+            "stage": "release",
+            "task_instructions": {
+              "$markdown": "tasks/review-candidate-feature.md"
+            }
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "merge_review"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "merge_apply",
+            "kind": "merge.apply",
+            "name": "应用主干合入",
+            "parameters": {},
+            "participant_slot": null,
+            "retry_limit": 3,
+            "rework_scope": [],
+            "stage": "release"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "merge_apply"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "snapshot",
+            "kind": "snapshot.capture",
+            "name": "Feature 最终快照",
+            "parameters": {},
+            "participant_slot": null,
+            "retry_limit": 3,
+            "rework_scope": [],
+            "stage": "release"
+          },
+          {
+            "advance_mode": "automatic",
+            "condition": {
+              "op": "always"
+            },
+            "contract_version": 1,
+            "dependencies": [
+              "snapshot"
+            ],
+            "execution_recipe": [],
+            "inputs": {},
+            "interaction": {
+              "max_turns": 30,
+              "mode": "discussion",
+              "output_kind": "",
+              "required_topics": []
+            },
+            "key": "cleanup",
+            "kind": "resource.cleanup",
+            "name": "资源处置",
+            "parameters": {},
+            "participant_slot": null,
+            "retry_limit": 3,
+            "rework_scope": [],
+            "stage": "release"
+          }
+        ],
+        "subworkflow_refs": {
+          "task": "builtin-workflow-task-sol-high-v4"
+        }
+      },
+      "immutable": true,
+      "revision": 1,
+      "created_at": 0
+    }
+  ],
+  "definitions": [
+    {
+      "id": "builtin-skill-engineering-context-v2",
+      "family": "skill",
+      "name": "工程上下文与工作树规范",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/engineering-context.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-standard-engineering-v1",
+      "family": "standard",
+      "name": "默认工程 Standard",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "standards/engineering.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-engineering-method-v1",
+      "family": "skill",
+      "name": "默认分阶段开发方法",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/engineering-method.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-prd-v2",
+      "family": "skill",
+      "name": "PRD 需求分析",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/prd.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-architecture-v2",
+      "family": "skill",
+      "name": "Design Doc 架构设计",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/architecture.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-project-planning-v2",
+      "family": "skill",
+      "name": "Task Plan 项目管理",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/project-planning.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-test-design-v2",
+      "family": "skill",
+      "name": "独立测试与 TDD",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/test-design.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-tdd-implementation-v2",
+      "family": "skill",
+      "name": "Task 实现与文档",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/tdd-implementation.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-release-verification-v2",
+      "family": "skill",
+      "name": "Feature 与候选验证",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/release-verification.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-skill-independent-review-v2",
+      "family": "skill",
+      "name": "分阶段独立评审",
+      "version": 2,
+      "supersedes": null,
+      "body": {
+        "$markdown": "skills/independent-review.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-prd-v1",
+      "family": "spec",
+      "name": "PRD 需求规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/prd.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-architecture-v1",
+      "family": "spec",
+      "name": "Design Doc 设计规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/architecture.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-project-planning-v1",
+      "family": "spec",
+      "name": "Task Plan 拆分规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/project-planning.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-test-design-v1",
+      "family": "spec",
+      "name": "Test Plan 测试设计规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/test-design.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-solution-v1",
+      "family": "spec",
+      "name": "方案交付规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/solution.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-implementation-v1",
+      "family": "spec",
+      "name": "Task TDD 交付规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/implementation.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-closure-v1",
+      "family": "spec",
+      "name": "Feature 完整验收规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/closure.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-spec-stage-release-v1",
+      "family": "spec",
+      "name": "候选与合入规范",
+      "version": 1,
+      "supersedes": null,
+      "body": {
+        "$markdown": "specs/release.md"
+      },
+      "slots": [],
+      "rules": [
+        "traceability",
+        "failure_paths",
+        "sections"
+      ],
+      "agent_profile": null
+    },
+    {
+      "id": "builtin-agent-sol-high-analyst-v3",
+      "family": "agent",
+      "name": "需求分析师 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "body": {
+        "$markdown": "roles/analyst.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": {
+        "allowed_work": [
+          "discussion"
+        ],
+        "output_schemas": [
+          "requirement/v1",
+          "feature/v1"
+        ],
+        "role": "analyst",
+        "skill_revisions": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-prd-v2"
+        ],
+        "tool_policy": "read_only"
+      }
+    },
+    {
+      "id": "builtin-agent-sol-high-architect-v3",
+      "family": "agent",
+      "name": "架构师 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "body": {
+        "$markdown": "roles/architect.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": {
+        "allowed_work": [
+          "discussion",
+          "design"
+        ],
+        "output_schemas": [
+          "design/v1",
+          "task_plan/v1"
+        ],
+        "role": "architect",
+        "skill_revisions": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-architecture-v2"
+        ],
+        "tool_policy": "read_only"
+      }
+    },
+    {
+      "id": "builtin-agent-sol-high-project-manager-v3",
+      "family": "agent",
+      "name": "项目经理 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "body": {
+        "$markdown": "roles/project-manager.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": {
+        "allowed_work": [
+          "discussion",
+          "design"
+        ],
+        "output_schemas": [
+          "design/v1",
+          "task_plan/v1"
+        ],
+        "role": "architect",
+        "skill_revisions": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-project-planning-v2"
+        ],
+        "tool_policy": "read_only"
+      }
+    },
+    {
+      "id": "builtin-agent-sol-high-developer-v3",
+      "family": "agent",
+      "name": "开发 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "body": {
+        "$markdown": "roles/developer.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": {
+        "allowed_work": [
+          "discussion",
+          "implementation"
+        ],
+        "output_schemas": [
+          "implementation/v1"
+        ],
+        "role": "developer",
+        "skill_revisions": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-tdd-implementation-v2"
+        ],
+        "tool_policy": "task_write"
+      }
+    },
+    {
+      "id": "builtin-agent-sol-high-tester-v3",
+      "family": "agent",
+      "name": "测试 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "body": {
+        "$markdown": "roles/tester.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": {
+        "allowed_work": [
+          "discussion",
+          "testing"
+        ],
+        "output_schemas": [
+          "test_plan/v1",
+          "test_result/v1"
+        ],
+        "role": "tester",
+        "skill_revisions": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-test-design-v2",
+          "builtin-skill-release-verification-v2"
+        ],
+        "tool_policy": "test_write"
+      }
+    },
+    {
+      "id": "builtin-agent-sol-high-reviewer-v3",
+      "family": "agent",
+      "name": "评审 · Sol High / Codex",
+      "version": 3,
+      "supersedes": null,
+      "body": {
+        "$markdown": "roles/reviewer.md"
+      },
+      "slots": [],
+      "rules": [],
+      "agent_profile": {
+        "allowed_work": [
+          "discussion",
+          "review"
+        ],
+        "output_schemas": [
+          "review/v1"
+        ],
+        "role": "reviewer",
+        "skill_revisions": [
+          "builtin-skill-engineering-context-v2",
+          "builtin-skill-independent-review-v2"
+        ],
+        "tool_policy": "read_only"
+      }
+    }
+  ],
+  "harnesses": [
+    {
+      "id": "builtin-harness-codex-managed-v1",
+      "provider": "codex",
+      "version": "0.167.0",
+      "capabilities": [
+        "structured-output",
+        "tool-calling",
+        "cancel",
+        "poll"
+      ],
+      "origin": "external",
+      "permission": null
+    }
+  ],
+  "sandboxes": [
+    {
+      "id": "builtin-sandbox-codex-docker-v1",
+      "provider": "docker",
+      "version": "docker-worker/v1",
+      "platform": "linux",
+      "image": null,
+      "network": true,
+      "origin": "external",
+      "permission": null
+    }
+  ]
+}

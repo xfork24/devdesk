@@ -298,14 +298,13 @@ impl RuntimeWorkers {
         if binding.permissions.is_some() {
             if let Some(role) = role_context.as_object_mut() {
                 role.remove("tool_policy");
-                role.remove("permission_overrides");
             }
         }
-        let access_context = if let Some(p) = &binding.permissions {
-            json!({"permissions":p,"execution_scope":p.scope})
-        } else {
-            json!({"legacy_tool_policy":binding.tool_policy,"writable_paths":binding.writable_paths,"read_only_paths":binding.read_only_paths})
-        };
+        let p = binding
+            .permissions
+            .as_ref()
+            .ok_or_else(|| err("permission_unconfigured", "执行必须冻结版本化权限"))?;
+        let access_context = json!({"permissions":p,"execution_scope":p.scope});
         // v3 materials live in the per-Turn task; keep the native base stable.
         let base_snapshot = r.snapshot.as_ref().filter(|_| r.task_base.is_none());
         let base_documents = if r.task_base.is_some() {
@@ -790,12 +789,9 @@ impl Worker {
         let (method, params) = match self.provider {
             HarnessProvider::Codex => ("turn/start", {
                 let mut args = json!({"threadId":self.session,"input":[{"type":"text","text":provider_turn_text(r)?}]});
-                if let Some(effort) = r
-                    .session
-                    .runtime_binding
-                    .as_ref()
-                    .and_then(|binding| binding.effective_model_parameters().get("reasoning_effort"))
-                {
+                if let Some(effort) = r.session.runtime_binding.as_ref().and_then(|binding| {
+                    binding.effective_model_parameters().get("reasoning_effort")
+                }) {
                     args["effort"] = json!(effort);
                 }
                 if let Some(p) = &self.permissions {
@@ -1301,9 +1297,6 @@ impl Worker {
                     }
                     json!({"answers":map})
                 }
-            }
-            InteractionAnswer::Legacy { .. } => {
-                return Err(err("blocked", "历史文本回答不能发送给运行时"));
             }
         };
         let _ = &req.method;

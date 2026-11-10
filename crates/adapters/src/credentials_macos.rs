@@ -69,7 +69,7 @@ fn verify_manifest(binary: &Path) -> Result<()> {
         .map_err(|_| err("credential_helper_unavailable", "凭据助手清单无效"))?;
     let actual = format!("{:x}", Sha256::digest(fs::read(binary).map_err(storage)?));
     require(
-        matches!(value["protocol"].as_u64(), Some(1 | 2)) && value["binary_sha256"].as_str() == Some(actual.as_str()),
+        value["protocol"] == 2 && value["binary_sha256"].as_str() == Some(actual.as_str()),
         "凭据助手内容与安装清单不一致，请显式修复安装",
     )
 }
@@ -150,15 +150,15 @@ pub(super) fn helper_path() -> Result<PathBuf> {
     verify_manifest(&installed)?;
     Ok(installed)
 }
-pub(super) fn model_keys_available() -> bool {
-    helper_path().ok().and_then(|p| fs::read(p.parent()?.join("manifest.json")).ok())
-        .and_then(|b|serde_json::from_slice::<Value>(&b).ok()).is_some_and(|v|v["protocol"]==2)
-}
-
 /// Explicit CLI action. Publishes a verified bundled principal without opening Keychain.
 pub(super) fn update_bundled_helper() -> Result<()> {
     let installed = helper_path()?;
-    let bundle = std::env::current_exe().map_err(storage)?.parent().unwrap().join("credential-helper").join(HELPER);
+    let bundle = std::env::current_exe()
+        .map_err(storage)?
+        .parent()
+        .unwrap()
+        .join("credential-helper")
+        .join(HELPER);
     verify(&bundle)?;
     verify_manifest(&bundle)?;
     let manifest = fs::read(bundle.parent().unwrap().join("manifest.json")).map_err(storage)?;

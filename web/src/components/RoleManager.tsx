@@ -271,7 +271,7 @@ export function RoleManager({
             }}
           />
           <details>
-            <summary>执行职责兼容设置</summary>
+            <summary>执行职责设置</summary>
             <label>
               执行职责
               <ActionSelect

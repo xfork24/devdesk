@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DevDesk immutable file manifest v1",
-  "description": "Immutable delivery manifests, engineering snapshot envelopes, and bare project/conversation Snapshot files emitted by the engine. Historical simulated provenance remains readable; new native evidence uses external. Referenced schemas ship alongside this file.",
+  "description": "Immutable delivery manifests, engineering snapshot envelopes, and bare project/conversation Snapshot files emitted by the current engine. Referenced schemas ship alongside this file.",
   "oneOf": [
     {
       "$ref": "#/$defs/DeliveryManifest"
@@ -772,10 +772,9 @@
         },
         "execution_mode": {
           "enum": [
-            "live",
-            "simulation"
+            "live"
           ],
-          "description": "simulation is accepted only for immutable historical manifests."
+          "description": "Only native live execution is accepted."
         },
         "merge": {
           "anyOf": [

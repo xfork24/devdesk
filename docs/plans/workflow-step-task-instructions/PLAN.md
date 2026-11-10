@@ -1,5 +1,7 @@
 # Workflow Step 任务指令改造计划
 
+> 历史记录：未提供链接的原始文件路径仅记录当时执行；相关中间产物或已删除源码不随当前工程提供。
+
 日期：2026-11-09。状态：已实施并完成本机验收；实际结果、并行 main 整合和未覆盖环境见 [实施记录](EXECUTION.md)。
 
 让每个实际调用 Agent 的工作流步骤都有可在 UI 编辑的明确任务指令，与冻结的 Role、Agent 指令、Skill、Spec 和业务输入一起进入模型。任务指令属于 Workflow 不可变修订；默认任务正文从 Rust 分支迁到 Markdown 资源。保留引擎对执行范围、真实证据、输出协议和状态推进的控制。
@@ -22,7 +24,7 @@
 | Role/Agent 正文、Skill 在 Session 创建时进入原生指令，Spec 在 Turn 输入中携带 | 新任务组装需覆盖 Session 基础上下文与每轮任务，避免 Role 重复拼接或只在首轮生效 | [adapters/harness.rs](../../../crates/adapters/src/harness.rs) 的 worker 创建与 `dispatch_turn` |
 | 同一 Agent/owner 可以复用 Session；已有回归核对复用时每轮 Spec 冻结 | 任务必须按步骤实例和轮次定位，不能按 Session 最近一条记录推断 | [conversations.rs](../../../crates/core/src/conversations.rs)、[configuration_resources.rs](../../../crates/adapters/tests/configuration_resources.rs) |
 | Permission 切换创建后继 Session，保存原输入，但新 Session 创建参数未通用携带步骤任务绑定 | 新任务合同必须跨后继保留来源与 Spec，不能仅依靠历史摘要中的文字恢复 | [permission_switch.rs](../../../crates/core/src/permission_switch.rs) |
-| 默认讨论 goal 会拼入整段 Spec 正文；阶段 description 也引用阶段 Spec | 新默认应分清任务、阶段背景与验收规范，减少重复；旧文本不做猜测式去重 | [default_catalog.rs](../../../crates/core/src/default_catalog.rs)、`resources/configuration/` |
+| 默认讨论 goal 会拼入整段 Spec 正文；阶段 description 也引用阶段 Spec | 新默认应分清任务、阶段背景与验收规范，减少重复；旧文本不做猜测式去重 | default_catalog.rs（历史路径：`../../../crates/core/src/default_catalog.rs`）、`resources/configuration/` |
 
 审核结论：需要同时改造声明、动作能力描述、编译冻结、任务组装、两条派发路径、UI、默认资源和兼容读取。不能只把现有大字符串挪到文件，或在 UI 新增一个未进入派发的文本框。
 

@@ -181,13 +181,6 @@ impl CredentialVault {
             model_provider.requires_key(),
             "Ollama 本地服务无需保存 API key",
         )?;
-        #[cfg(target_os = "macos")]
-        if model_provider != DshModelProvider::Deepseek {
-            require(
-                crate::credentials_macos::model_keys_available(),
-                "请显式升级共享凭据助手以支持新服务商：install-macos-credential-helper.sh --update",
-            )?;
-        }
         require(
             (8..=4096).contains(&secret.len()) && secret.bytes().all(|b| b.is_ascii_graphic()),
             "API key 格式无效",
@@ -237,10 +230,7 @@ impl CredentialVault {
     pub fn status(&self, provider: HarnessProvider) -> Result<CredentialStatus> {
         self.status_reference(provider, None)
     }
-    fn reference_account(&self, reference: Option<&str>) -> Result<String> {
-        let Some(reference) = reference else {
-            return Ok("deepseek-official-api-key".into());
-        };
+    fn reference_account(&self, reference: &str) -> Result<String> {
         let prefix = format!("{}:", self.service);
         let account = reference
             .strip_prefix(&prefix)
@@ -275,33 +265,23 @@ impl CredentialVault {
                 available: true,
             });
         }
-        let account = if let Some(reference) = reference {
-            self.model_account(model_provider, reference)?
-        } else if model_provider == DshModelProvider::Deepseek {
-            self.reference_account(None)?
-        } else {
-            format!(
-                "dsh-{}-api-key-{}",
-                model_provider.as_str(),
-                uuid::Uuid::nil()
-            )
+        let Some(reference) = reference else {
+            return Ok(self.model_status_value(model_provider, "", false));
         };
+        let account = self.model_account(model_provider, reference)?;
 
         #[cfg(target_os = "macos")]
-        let configured = if crate::credentials_macos::helper_path().is_ok()
-            && (model_provider == DshModelProvider::Deepseek
-                || crate::credentials_macos::model_keys_available())
-        {
+        let configured = if crate::credentials_macos::helper_path().is_ok() {
             crate::credentials_macos::call("status", &self.service, &account, None)?["configured"]
                 .as_bool()
                 .unwrap_or(false)
         } else {
-            reference.is_some()
+            true
         };
         #[cfg(target_os = "linux")]
         // The global vault reference is configuration metadata, not proof of an
         // unlocked collection. Status does not read/unlock a Linux secret.
-        let configured = reference.is_some();
+        let configured = true;
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let configured = false;
         Ok(self.model_status_value(model_provider, &account, configured))
@@ -314,16 +294,12 @@ impl CredentialVault {
     ) -> CredentialStatus {
         let mut status = self.status_value(HarnessProvider::Dsh, account, configured);
         status.model_provider = p;
-        #[cfg(target_os = "macos")]
-        if p != DshModelProvider::Deepseek {
-            status.available = crate::credentials_macos::model_keys_available();
+        if account.is_empty() {
+            status.reference.clear();
         }
         status
     }
     fn account_provider(account: &str) -> Option<DshModelProvider> {
-        if account == "deepseek-official-api-key" {
-            return Some(DshModelProvider::Deepseek);
-        }
         for p in DshModelProvider::ALL
             .into_iter()
             .filter(|p| p.requires_key())
@@ -343,7 +319,7 @@ impl CredentialVault {
         None
     }
     fn model_account(&self, p: DshModelProvider, reference: &str) -> Result<String> {
-        let account = self.reference_account(Some(reference))?;
+        let account = self.reference_account(reference)?;
         require(
             Self::account_provider(&account) == Some(p),
             "凭据引用不属于所选模型服务商",
@@ -367,7 +343,7 @@ impl CredentialVault {
         Ok(())
     }
     pub(crate) fn read_reference(&self, reference: &str) -> Result<Vec<u8>> {
-        let account = self.reference_account(Some(reference))?;
+        let account = self.reference_account(reference)?;
         #[cfg(target_os = "macos")]
         {
             let value = crate::credentials_macos::call("read", &self.service, &account, None)?;
@@ -416,7 +392,7 @@ impl CredentialVault {
     /// Only the explicit settings action allows UI in the immutable signed helper.
     /// Its private response is consumed here; HTTP never returns a secret.
     pub fn authorize_interactively(&self, reference: &str) -> Result<()> {
-        let account = self.reference_account(Some(reference))?;
+        let account = self.reference_account(reference)?;
         #[cfg(target_os = "macos")]
         {
             crate::credentials_macos::call("authorize", &self.service, &account, None)?;
@@ -446,12 +422,25 @@ mod tests {
         let b = tempfile::tempdir().unwrap();
         let first = CredentialVault::new(a.path()).unwrap();
         let second = CredentialVault::new(b.path()).unwrap();
+        let unset = first
+            .status_model_reference(DshModelProvider::Deepseek, None)
+            .unwrap();
+        assert!(!unset.configured && unset.reference.is_empty());
         let reference = first
-            .status_value(HarnessProvider::Dsh, "deepseek-official-api-key", false)
+            .status_value(
+                HarnessProvider::Dsh,
+                &format!("deepseek-api-key-{}", id()),
+                false,
+            )
             .reference;
-        assert!(first.reference_account(Some(&reference)).is_ok());
-        assert!(second.reference_account(Some(&reference)).is_err());
-        assert!(first.reference_account(Some("/tmp/secret")).is_err());
+        assert!(first.reference_account(&reference).is_ok());
+        assert!(second.reference_account(&reference).is_err());
+        assert!(first.reference_account("/tmp/secret").is_err());
+        assert!(
+            first
+                .reference_account(&format!("{}:deepseek-official-api-key", first.service))
+                .is_err()
+        );
     }
     #[test]
     fn provider_accounts_cannot_be_reused_across_providers_or_datasets() {

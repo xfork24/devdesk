@@ -1,5 +1,7 @@
 # 默认模板资源与重置模板定义
 
+> 历史记录：未提供链接的原始文件路径仅记录当时执行；相关中间产物或已删除源码不随当前工程提供。
+
 日期：2026-11-10。状态：设计方案，尚未实施。
 
 将 `resources/configuration` 建立为随应用发布的默认定义来源。首次初始化从这份资源生成数据库中的可编辑副本；UI 始终通过 API 使用数据库记录。设置页增加“重置模板定义”，确认后将当前定义目录恢复为随当前应用发布的默认内容。
@@ -11,9 +13,9 @@
 | 问题 | 当前行为与代码位置 |
 | --- | --- |
 | UI 会修改资源目录吗 | 配置 UI 使用 `role.revise`、各类 `*.create/revise`、Workflow 草稿和发布 API。写入数据库，不回写该资源目录。见 [RoleManager](../../../web/src/components/RoleManager.tsx)、[治理命令](../../../crates/core/src/governance.rs)。 |
-| UI 会读取这里的记录吗 | 间接读取。Markdown 通过 `include_str!` 编译进程序，`seed_configuration` 和后续播种逻辑建立数据库记录；UI 用 `query.roles`、`query.configurations`、`query.workflows`、接入查询读取数据库。见 [初始化](../../../crates/core/src/lib.rs)、[正文更新](../../../crates/core/src/shipped_prose.rs)、[前端目录查询](../../../web/src/components/configuration-ui.tsx)。运行时修改源码 Markdown 不会立即影响 UI，必须重新构建程序。 |
-| UI 编辑是否已有数据库副本 | 已有。已发布配置按独立修订追加，Workflow 先编辑数据库草稿再发布。`governance_records` 禁止修改已发布记录和删除历史，见 [全局 SQL](../../../sql/global/005_governance.sql)。 |
-| 其他默认定义在哪里 | Model、Harness、Tools、Role/Capability/Agent 组合主要在 [builtin_defaults](../../../crates/core/src/builtin_defaults.rs) 和 [default_catalog](../../../crates/core/src/default_catalog.rs)；Workflow 结构在 [governance](../../../crates/core/src/governance.rs)、[default_catalog](../../../crates/core/src/default_catalog.rs) 和 [default_tasks](../../../crates/core/src/default_tasks.rs)；Delivery 定义在 [deliverables](../../../crates/core/src/deliverables.rs)。 |
+| UI 会读取这里的记录吗 | 间接读取。Markdown 通过 `include_str!` 编译进程序，`seed_configuration` 和后续播种逻辑建立数据库记录；UI 用 `query.roles`、`query.configurations`、`query.workflows`、接入查询读取数据库。见 [初始化](../../../crates/core/src/lib.rs)、正文更新（历史路径：`../../../crates/core/src/shipped_prose.rs`）、[前端目录查询](../../../web/src/components/configuration-ui.tsx)。运行时修改源码 Markdown 不会立即影响 UI，必须重新构建程序。 |
+| UI 编辑是否已有数据库副本 | 已有。已发布配置按独立修订追加，Workflow 先编辑数据库草稿再发布。`governance_records` 禁止修改已发布记录和删除历史，见 全局 SQL（历史路径：`../../../sql/global/005_governance.sql`）。 |
+| 其他默认定义在哪里 | Model、Harness、Tools、Role/Capability/Agent 组合主要在 [builtin_defaults](../../../crates/core/src/builtin_defaults.rs) 和 default_catalog（历史路径：`../../../crates/core/src/default_catalog.rs`）；Workflow 结构在 [governance](../../../crates/core/src/governance.rs)、default_catalog（历史路径：`../../../crates/core/src/default_catalog.rs`） 和 default_tasks（历史路径：`../../../crates/core/src/default_tasks.rs`）；Delivery 定义在 [deliverables](../../../crates/core/src/deliverables.rs)。 |
 | MCP 是否已有内置默认 | 当前内置初始化没有播种 MCP 服务。MCP 使用 `integration` 定义，接入绑定、工具发布和发现另有记录，见 [接入领域](../../../crates/domain/src/integrations.rs)、[接入命令](../../../crates/core/src/integrations.rs)。 |
 | 全局和项目如何保存 | 全局定义存于 `global.sqlite3`；项目数据库保存项目定义和共享修订副本。`sync_configuration` 追加同步历史以保留自包含引用，见 [Workspace](../../../crates/host/src/workspace.rs)、[GlobalStore](../../../crates/adapters/src/catalog.rs)。 |
 

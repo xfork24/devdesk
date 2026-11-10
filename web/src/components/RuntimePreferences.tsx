@@ -90,7 +90,6 @@ export function RuntimePreferences({ project, request, refresh }: Props) {
     (r) => r.kind === "harness" && r.id === harnessRef,
   );
   const model = records.find((r) => r.kind === "model" && r.id === modelRef);
-  const codex = harness?.data.provider === "codex";
   const canSave =
     !loading &&
     !loadError &&
@@ -118,17 +117,15 @@ export function RuntimePreferences({ project, request, refresh }: Props) {
         provider: harness!.data.provider,
         harness_ref: harnessRef,
         model_ref: modelRef,
-        model: model!.data.model,
-        model_provider: model!.data.provider,
-        ...(codex
-          ? {}
-          : {
-              endpoint: model!.data.endpoint || undefined,
-              context_window: model!.data.context_window,
-              max_output_tokens: model!.data.max_output_tokens,
-            }),
       };
-      const old = project.runtime_preferences || { default: null, roles: [] };
+      const selection = (value: Row | null | undefined) => value ? {
+        provider: value.provider, harness_ref: value.harness_ref, model_ref: value.model_ref,
+      } : null;
+      const previous = project.runtime_preferences;
+      const old = {
+        default: selection(previous?.default),
+        roles: (previous?.roles || []).map((row: Row) => ({ role: row.role, preference: selection(row.preference) })),
+      };
       const next =
         scope === "project"
           ? { ...old, default: preference }

@@ -104,7 +104,7 @@ test("执行与交付每行一个阶段，调用的子流程在阶段内展开�
     });
   };
   const child = await publish("阶段行子流程", {
-    schema_version: 2,
+    schema_version: 3,
     process_kind: "subworkflow",
     stages: [{ key: "check", name: "子流程检查" }],
     steps: [
