@@ -164,6 +164,42 @@ impl Journal {
 }
 
 type WriteRequest = (Vec<u8>, SyncSender<bool>);
+
+#[derive(Default)]
+struct AgentMessageBatch {
+    pending: Option<Value>,
+}
+impl AgentMessageBatch {
+    fn push(&mut self, frame: Value) -> Vec<Value> {
+        let delta = (frame["method"] == "item/agentMessage/delta")
+            .then(|| frame["params"]["delta"].as_str())
+            .flatten();
+        if let (Some(pending), Some(delta)) = (self.pending.as_mut(), delta) {
+            let same_item = ["threadId", "turnId", "itemId"]
+                .iter()
+                .all(|key| pending["params"][key] == frame["params"][key]);
+            if same_item {
+                if let Value::String(text) = &mut pending["params"]["delta"] {
+                    if text.len() + delta.len() <= 4096 {
+                        text.push_str(delta);
+                        return vec![];
+                    }
+                }
+            }
+        }
+        let mut ready: Vec<_> = self.pending.take().into_iter().collect();
+        if delta.is_some() {
+            self.pending = Some(frame);
+        } else {
+            ready.push(frame);
+        }
+        ready
+    }
+    fn finish(&mut self) -> Option<Value> {
+        self.pending.take()
+    }
+}
+
 pub(crate) struct JsonlProcess {
     child: Child,
     input: Option<SyncSender<WriteRequest>>,
@@ -251,6 +287,27 @@ impl JsonlProcess {
         let log = journal.clone();
         let reader = std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
+            let mut batch = AgentMessageBatch::default();
+            let enqueue = |frame: Value| {
+                let cost = serde_json::to_vec(&frame)
+                    .map(|bytes| bytes.len().saturating_mul(4))
+                    .unwrap_or(8 * 1024 * 1024);
+                if budget
+                    .fetch_add(cost, Ordering::AcqRel)
+                    .saturating_add(cost)
+                    > 8 * 1024 * 1024
+                {
+                    budget.fetch_sub(cost, Ordering::AcqRel);
+                    signal.store(true, Ordering::Release);
+                    return false;
+                }
+                if tx.try_send((frame, cost)).is_err() {
+                    budget.fetch_sub(cost, Ordering::AcqRel);
+                    signal.store(true, Ordering::Release);
+                    return false;
+                }
+                true
+            };
             loop {
                 let mut bytes = Vec::new();
                 let read = reader
@@ -290,22 +347,19 @@ impl JsonlProcess {
                 } else {
                     frame
                 };
-                let cost = serde_json::to_vec(&frame)
-                    .map(|bytes| bytes.len().saturating_mul(4))
-                    .unwrap_or(8 * 1024 * 1024);
-                if budget
-                    .fetch_add(cost, Ordering::AcqRel)
-                    .saturating_add(cost)
-                    > 8 * 1024 * 1024
-                {
-                    budget.fetch_sub(cost, Ordering::AcqRel);
-                    signal.store(true, Ordering::Release);
-                    break;
+                // Keep bounded memory while avoiding a frame-count overflow when a
+                // valid evidence delivery arrives as thousands of tiny text deltas.
+                // Journal/sanitize first, and flush before every other frame so
+                // terminal receipts and interleaved items keep their exact order.
+                for frame in batch.push(frame) {
+                    if !enqueue(frame) {
+                        return;
+                    }
                 }
-                if tx.try_send((frame, cost)).is_err() {
-                    budget.fetch_sub(cost, Ordering::AcqRel);
-                    signal.store(true, Ordering::Release);
-                    break;
+            }
+            if !signal.load(Ordering::Acquire) {
+                if let Some(frame) = batch.finish() {
+                    enqueue(frame);
                 }
             }
         });
@@ -460,6 +514,45 @@ impl Drop for JsonlProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn evidence_text_bursts_preserve_full_content_and_terminal_receipts() {
+        let mut command = Command::new("node");
+        command.args(["-e", "for(let i=0;i<9000;i++) console.log(JSON.stringify({method:'item/agentMessage/delta',params:{threadId:'t',turnId:'u',itemId:'i',delta:'x'}})); console.log(JSON.stringify({method:'item/completed',params:{item:{id:'i',type:'agentMessage',text:'x'.repeat(9000)}}})); console.log(JSON.stringify({method:'turn/completed',params:{turn:{id:'u',status:'completed'}}}));"]);
+        let mut wire = JsonlProcess::spawn(command).unwrap();
+        // Deliberately let the provider finish before consuming any frames.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while wire.child.try_wait().unwrap().is_none() {
+            assert!(Instant::now() < deadline, "provider did not finish");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        wire.reader.take().unwrap().join().unwrap();
+        assert!(!wire.failed.load(Ordering::Acquire));
+        let frames = wire.drain().unwrap();
+        let text: String = frames
+            .iter()
+            .filter(|frame| frame["method"] == "item/agentMessage/delta")
+            .map(|frame| frame["params"]["delta"].as_str().unwrap())
+            .collect();
+        assert_eq!(text, "x".repeat(9000));
+        assert_eq!(frames[frames.len() - 2]["params"]["item"]["text"], text);
+        assert_eq!(frames.last().unwrap()["method"], "turn/completed");
+        assert_eq!(wire.queued.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn text_batches_never_cross_other_events_or_message_identities() {
+        let delta = |item: &str, text: &str| json!({"method":"item/agentMessage/delta","params":{"threadId":"t","turnId":"u","itemId":item,"delta":text}});
+        let mut batch = AgentMessageBatch::default();
+        assert!(batch.push(delta("first", "a")).is_empty());
+        assert!(batch.push(delta("first", "b")).is_empty());
+        let event = json!({"method":"item/started","params":{"item":{"id":"second"}}});
+        assert_eq!(batch.push(event.clone()), vec![delta("first", "ab"), event]);
+        assert!(batch.push(delta("second", "x")).is_empty());
+        assert_eq!(batch.push(delta("first", "y")), vec![delta("second", "x")]);
+        assert_eq!(batch.finish(), Some(delta("first", "y")));
+        assert_eq!(batch.finish(), None);
+    }
+
     #[test]
     fn split_secret_deltas_never_become_reconstructable_logs_or_ui_events() {
         let temp = tempfile::NamedTempFile::new().unwrap();
