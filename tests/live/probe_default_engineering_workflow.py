@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Explicit real Codex/Git/Docker/GitHub acceptance of the default engineering graph in an isolated dataset."""
-import argparse,json,os,shutil,subprocess,tempfile,time,uuid,sys
+import argparse,hashlib,json,os,shutil,subprocess,tempfile,time,uuid,sys
 from pathlib import Path
 from client import Client
 
@@ -13,6 +13,20 @@ def verify_evidence(client, rows, output):
   step=next(step for step in view['runtime']['steps'] if step['step']==key)
   assert step['status']=='completed', (key,step['status'])
   return view['outputs'][step['outputs']['result']]['value']
+ child=children[0]
+ implementation=next(step for step in child['runtime']['steps'] if step['step']=='implementation')
+ evidence_id=implementation['outputs']['evidence'];evidence=child['outputs'][evidence_id]['value']
+ assert {'red','green'} <= {run['phase'] for run in evidence['runs']}, 'Raw evidence must include actual Red and Green'
+ for run in evidence['runs']:
+  assert isinstance(run['stdout'],str) and isinstance(run['stderr'],str)
+  for source in run['files']:
+   assert hashlib.sha256(source['content'].encode()).hexdigest()==source['sha256'], ('Evidence snapshot digest mismatch',run['sequence'],source['path'])
+ for key in ['documentation','review','candidate_review']:
+  execution=next(step for step in child['runtime']['steps'] if step['step']==key)
+  task=client.rpc('query.execution_task',{'turn_id':execution['turn_id']})['task']['task']
+  assert execution['inputs']['evidence']==evidence and task['inputs']['evidence']==evidence, ('Missing raw evidence at consumer',key)
+  assert task['input_sources']['evidence']['source_output_id']==evidence_id, ('Wrong evidence provenance',key)
+ (output/'raw-tdd-evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2))
  red=receipt(children[0],'red');assert red['expected_failure'] and red['assertion_failed'] and red['counts']['failed']>0 and red['container_id']
  green=receipt(children[0],'green');assert green['status']=='succeeded' and not green['expected_failure'] and green['exit_code']==0 and green['counts']['passed']>0
  verified=receipt(children[0],'verify');assert verified['status']=='succeeded' and verified['candidate']==green['candidate'] and verified['exit_code']==0 and verified['container_id']
@@ -44,7 +58,7 @@ try:
  c.wait(lambda:c.rpc('query.workspace'),lambda v:v['repository_ready'],300)
  runtime=c.rpc('runtime.prepare',{'provider':'codex'});image=runtime['artifact']['image_id']
  defaults=c.rpc('query.configuration_defaults');workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v4-{suffix}/greeting.mjs';task_test=f'tests/workflow-v4-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v4-{suffix}-feature/behavior.test.mjs'
- goal=f'''本次验收事实已经全部确定，无需等待用户补充：在已有仓库新增依赖免费的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 `Hello, <trimmed>!`；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test}；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。测试使用 node:test、node:assert/strict，无 npm 安装、无联网、无外部依赖。测试 import 为 ../../{module}。在模块尚不存在的 Red 阶段，用动态 import 的 catch 调用 assert.fail，确保缺少实现表现为真实断言失败，不是环境导入错误。Task 配方仅运行 {task_test}；Feature 和最终候选配方运行 {task_test} 与 {feature_test} 两个文件。固定 Node TestRecipe 的 runner=node_test、image={image}、timeout_seconds=60。测试、实现、文档和独立评审必须按各自 Skill 和当前 Step 合同真实完成，不能把计划、模型自述或未运行内容当作工具回执。业务文档通过当前输出端口交付。'''
+ goal=f'''本次验收事实已经全部确定，无需等待用户补充：在已有仓库新增依赖免费的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 `Hello, <trimmed>!`；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test}；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。测试使用 node:test、node:assert/strict，无 npm 安装、无联网、无外部依赖。测试 import 为 ../../{module}。模块或导出缺失属于运行前置条件错误，不使用动态 import 的 catch、assert.fail 或伪造返回值将它包装成业务 Red；由 Task Workflow 的 red_baseline 步骤准备可调用的最小接口，平台 Red 必须来自真实业务断言差异。实施逐次原始日志及测试/源码内容快照通过必需 evidence 输出交付，不能只提交临时路径或摘要。Task 配方仅运行 {task_test}；Feature 和最终候选配方运行 {task_test} 与 {feature_test} 两个文件。固定 Node TestRecipe 的 runner=node_test、image={image}、timeout_seconds=60。测试、实现、文档和独立评审必须按各自 Skill 和当前 Step 合同真实完成，不能把计划、模型自述或未运行内容当作工具回执。业务文档通过当前输出端口交付。'''
  workflow['steps'][0]['task_instructions']+='\n\n'+goal
  draft=c.command('workflow.create',payload={'name':'Default engineering v4 '+suffix,'document':workflow});published=c.command('workflow.publish',draft['id'],draft['revision']);p=c.rpc('query.workspace')['active_project']
  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings']})
@@ -68,7 +82,7 @@ try:
      pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-confirmation.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
      definition=next(definition for definition in pending['plan']['steps'] if definition['key']==step['step'])
      rejected=[name for name,port in definition.get('outputs',{}).items() if port.get('content_checks') and pending['outputs'][step['outputs'][name]]['value']['approve'] is False]
-     if rejected:raise RuntimeError('Content review rejected '+step['path']+': '+step['reason'])
+     if rejected or not pending['completion_status'][step['id']]['satisfied']:raise RuntimeError('Completion or content review rejected '+step['path']+': '+step['reason'])
      c.command('workflow.step.confirm',row['id'],row['revision'],{'step':step['step'],'input_digest':step['input_digest'],'outputs':step['outputs'],'reason':'专用验收：核对当前确切输入、模型报告及实际工具回执；不覆盖未满足条件。'})
      confirmed.add(step['id']);print('Confirmed:',step['path'],flush=True);break
   if root['data']['status']=='completed':

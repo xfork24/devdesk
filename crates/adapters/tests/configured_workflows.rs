@@ -590,6 +590,27 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         .find(|step| step.key == "red_baseline")
         .unwrap();
     let red = task.steps.iter().find(|step| step.key == "red").unwrap();
+    let tests_snapshot = task
+        .steps
+        .iter()
+        .find(|step| step.key == "tests_snapshot")
+        .unwrap();
+    assert_eq!(tests_snapshot.dependencies, vec!["tests"]);
+    assert_eq!(baseline.dependencies, vec!["tests_snapshot"]);
+    let InputBinding::Source {
+        source: baseline_workspace,
+    } = &baseline.inputs["workspace"]
+    else {
+        panic!("the second writer must consume the sealed test revision")
+    };
+    assert_eq!(baseline_workspace.step, "tests_snapshot");
+    let red_snapshot = task
+        .steps
+        .iter()
+        .find(|step| step.key == "red_snapshot")
+        .unwrap();
+    assert_eq!(red_snapshot.dependencies, vec!["red_baseline"]);
+    assert_eq!(red.dependencies, vec!["red_snapshot"]);
     assert!(task.ancestors(red).contains(baseline.key.as_str()));
     assert!(
         baseline

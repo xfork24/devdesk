@@ -156,3 +156,5 @@ python3 tests/live/probe_default_engineering_workflow.py --binary target/debug/d
 当前项目已发布并采用 Task Workflow v5、Feature Workflow v6（包含更新后的开发/测试 Skill、Capability 与 Agent 绑定），配置编译和任务预览通过。既有 Feature 与子流程继续引用原冻结 v4，原始 reject 保留，未执行人工放行或自动返工。Host 已重新构建、签名并在原 4317 端口恢复。
 
 限制：本次验证了证据交付、最小可执行基线的配置闭包及审批链路，未替用户重跑新版本的完整真实模型/GitHub 交付。执行证据由 Agent 据真实工具输出整理，其身份不同于平台测试回执；Schema 保证交付结构，内容真实性与 Red/Green 对应关系仍需独立检查。规范任务沿用 512 KiB 大小上限，超过时会明确拒绝，不放宽为任意文件读取。
+
+首次真实复跑在 `red_baseline` 暴露快照顺序缺陷：独立测试已写入 Task 工作树，但还未封存，第二个写入 Agent 因工作树存在未封存修改而被拒绝启动；原进程已停止，未取得模型执行结果，不计为业务通过。流程已修正为“独立测试 → tests_snapshot → red_baseline → red_snapshot → Red”，基线准备消费测试快照，平台 Red 与实现消费新的 Red 快照，两次快照分别保存独立测试及接口准备结果。现有 Git 清洁度、确切修订及只读测试保护规则保持不变。补充依赖及输入来源回归；配置执行 28 项、Schema 11 项再次通过。真实验收探针移除把模块缺失包装成断言失败的旧提示，并新增原始证据内容摘要、规范任务输入及源输出 ID 检查。
