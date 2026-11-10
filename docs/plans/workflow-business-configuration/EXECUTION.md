@@ -166,3 +166,19 @@ python3 tests/live/probe_default_engineering_workflow.py --binary target/debug/d
 停止已失败运行时进一步发现：SQLite 的后台调度资格排除了 failed / needs_reconciliation 实例，即使已有 cancel_requested，取消也无法被消费，继而阻挡同一 Feature 的新运行。调度资格现将非终态的显式取消列为待处理工作；取消也优先于祖先暂停，仍等待实际 writer 和工具停止，终态回执不改写。新增实际 SQLite 回归，验证失败运行由空闲转为可调度、取消完成后可启动新运行，以及暂停父流程下独立取消子调用后恢复空闲；没有修改数据库状态或把失败转换为成功。
 
 第四次复跑中，工程约束已实际传入设计与评审，设计改为 JavaScript，规划、独立测试、平台 Red 均通过相应完成条件；实现执行后在输出原始证据时出现原生协议结果不确定。协议日志包含超过 8,000 个细小文本分片，未收到最终实现消息与结束回执；不能将其视为成功。JSONL 传输现将同一 thread/turn/item 的连续文本分片在脱敏后合并为最多 4 KiB 的批次，遇其他事件或消息身份立即按原顺序冲刷，EOF 冲刷剩余内容。原始日志边界、单行和总队列大小限制保持不变，不丢弃终态或扩大为无界缓冲。新增 9,000 分片突发回归，故意等提供方退出后再消费，验证完整文本、最终消息和 turn 回执均保留；另验证事件交错与身份隔离。适配器 14 项单元及原生协议测试通过，包括跨分片脱敏回归。该运行保留为不确定结果，后续使用新二进制与全新执行会话复跑。
+
+### 完整真实复跑通过
+
+2026-11-11 02:41–03:23（Asia/Shanghai），提交并推送 `372044d` 后，用其 Release 构建在原 4317 服务启动第五次完整复跑。原有失败与不确定结果均保留，通过正常取消接口结束旧运行；没有改写数据库、复用旧实现冒充新 TDD 或人工覆盖失败条件。
+
+- Feature `95739419-d59c-40e9-be2a-59e22599fda3` 的状态为 `completed`。新根实例 `c6e8bd10-e042-4ddc-afbb-609f513f7aa7` 的 22 步全部完成，Task 子实例 `d57d71db-9cd7-45e7-9fe4-c0d3e2134c92` 的 20 步全部完成。
+- 根流程冻结定义为 `1a03e2a1-f26a-4246-8700-c6b52862c176`，消费 Task Workflow v7 `b57eb4c5-6914-4a98-bb38-b0d1132b2cb3`。本次入口显式传入已接纳的完整 PRD，规划为一个实现 Task；该复跑入口与项目默认入口分别保存，默认入口不要求额外的必填 request。
+- `design`、`design_review`、`planning`、`plan_review`、`release_recipe` 的实际规范任务均收到同一工程约束 delivery，内容及源输出 ID 逐一核对一致。
+- 原始执行证据产物为 `21adbba1-037b-46cd-9a6e-95beb36d5907`，30,035 bytes，SHA-256 `28b92738fa621fa3c2ae2ea12ba88f8a49181cbbbf47607bfb47b30f26175c68`。包含两轮 Red/Green 和两次最终回归，共 6 条记录；每条包含完整命令、时间、退出码、stdout/stderr、源码及测试内容快照和摘要。
+- `documentation`、`review`、`candidate_review` 的实际规范任务收到的 evidence 均与下载的封存产物完全一致，`source_output_id` 均为 `b7aaf93b-8ca5-42c4-8af7-bf0664f7daed`，`value_digest` 均等于上述产物摘要。所有文件内容摘要核验通过，最终源码和测试快照匹配平台 Green 的实际 Git 对象。
+- 下载原生协议产物 `405cf9be-90d1-4ee0-a5d4-2eb3f443662e` 并核验其 SHA-256 `a0dc008c5e65f0efb26ed17e0b011608e2c3dab0601615aa7738a0b42f11b764`。证据中 6 条记录逐字段匹配唯一实际原生命令回执，包括 stdout/stderr、退出码、时间和文件快照。该会话接收 11,299 个文本分片及正常 turn 结束回执，实际覆盖了第四次复跑触发队列溢出的长输出场景。
+- 平台 Red 在 `cf03edbd3e04c9bb2732f30395edd1ee655f052b` 上发现 62 项业务断言失败，退出码 1、`assertion_failed=true`；平台 Green 在 `e69875dff1fefe9d992f3e930d374ed07336c7fa` 上 62/62 通过。Task 确切候选同样 62/62 通过。Feature 整体回归和最终候选均 73/73 通过，没有失败、跳过或取消。
+- 所有内容评审均 approve=true、每项检查 passed=true。模板保留的三个确认节点，由本轮监控脚本在完成条件满足且输入、产物确切匹配后自动调用普通 `workflow.step.confirm`；三次均 `manual_approval=false`、`override_completion=false`。人工例外 `workflow.step.approve` 调用数为 0；没有将未满足条件的节点放行。
+- [Task PR #1](https://github.com/xfork24/devdesk-project-1/pull/1) 已合入 Feature 分支，确切候选及 GitHub merge commit 均为 `e3f2f91cd54f275e11fd5dc3b8f269f0888595bb`。[Feature PR #2](https://github.com/xfork24/devdesk-project-1/pull/2) 已合入 main，确切候选、GitHub head、merge commit 及独立查询的远端 main 均为 `fe56f5651e6b4b2ed46862236d583fd4d2d7b10c`。两项 MERGED 状态另经 GitHub CLI 查询核实，没有仅依赖应用自述。
+
+本地完整审计汇总、各轮冻结状态、接收端规范任务及复跑脚本保存在 `/tmp/devdesk-feature-rerun-20261111/`，最终机器审计结果为 `audit.json`，status=passed。持久化业务证据位于项目数据集的上述 Artifact 与 Workflow 输出中；临时目录不是跨步骤读取证据的依赖。
