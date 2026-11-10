@@ -41,7 +41,7 @@ test("HTTP 接入发布动作、绑定确切授权与历史修订，原入口只
   await page.getByRole("tab", { name: "Tools", exact: true }).click();
   const source = page.getByRole("region", { name: "HTTP API 接入管理" });
   const creator = page.getByRole("region", {
-    name: "HTTP API 新建接入",
+    name: "HTTP API 接入管理",
     exact: true,
   });
   const name = "Browser API " + crypto.randomUUID().slice(0, 6);
@@ -130,6 +130,7 @@ test("Skills 导入保留 Markdown 原文与工具依赖，当前链接定位同
   await setup(page);
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "Skills", exact: true }).click();
+  await page.getByRole("button", { name: "导入 Skill 包", exact: true }).click();
   const importer = page.getByRole("region", { name: "Skill 包导入" });
   const name = "Browser Skill " + crypto.randomUUID().slice(0, 6);
   const body =
@@ -194,7 +195,7 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   const source = page.getByRole("region", { name: "MCP 接入管理" });
   const name = "Browser MCP " + crypto.randomUUID().slice(0, 6);
   const creator = page.getByRole("region", {
-    name: "MCP 新建接入",
+    name: "MCP 接入管理",
     exact: true,
   });
   await creator.getByLabel("接入名称", { exact: true }).fill(name);
@@ -300,7 +301,7 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   });
 });
 
-test("HTTP 与 MCP 的新建区在管理区上方，接入源和发布工具可删除", async ({
+test("HTTP 与 MCP 在列表内新建，接入源和发布工具可删除", async ({
   page,
 }) => {
   await setup(page);
@@ -352,10 +353,6 @@ test("HTTP 与 MCP 的新建区在管理区上方，接入源和发布工具可�
       `/?tab=components&config_tab=${kind}&config_object=${source.id}`,
     );
     const label = kind === "http" ? "HTTP API" : "MCP";
-    const create = page.getByRole("region", {
-      name: `${label} 新建接入`,
-      exact: true,
-    });
     const manage = page.getByRole("region", {
       name: `${label} 接入管理`,
       exact: true,
@@ -363,9 +360,9 @@ test("HTTP 与 MCP 的新建区在管理区上方，接入源和发布工具可�
     await expect(manage.getByLabel("接入名称", { exact: true })).toHaveValue(
       name,
     );
-    expect((await create.boundingBox())!.y).toBeLessThan(
-      (await manage.boundingBox())!.y,
-    );
+    await expect(manage.locator(".configuration-list").getByRole("button", {
+      name: `新建 ${label} 接入源`, exact: true,
+    })).toBeVisible();
     const remove = page.getByRole("button", {
       name: `删除工具 · Tool ${name}`,
       exact: true,
@@ -395,5 +392,8 @@ test("HTTP 与 MCP 的新建区在管理区上方，接入源和发布工具可�
         await rpc(page, "query.integrations", { include_history: true })
       ).records.some((r: any) => r.id === source.id),
     ).toBe(false);
+    await manage.getByRole("button", { name: `新建 ${label} 接入源`, exact: true }).click();
+    await expect(manage.getByLabel("接入名称", { exact: true })).toBeEnabled();
+    await expect(manage.getByLabel("接入名称", { exact: true })).toHaveValue("");
   }
 });

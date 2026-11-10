@@ -10,13 +10,13 @@
 
 ```bash
 ./scripts/dev/build.sh
-./target/release/devdesk-host
+python3 scripts/dev/run-host.py target/release/devdesk-host
 ```
 
 打开终端给出的 `http://127.0.0.1:4317`，在初始设置中选择空目录或已有 DevDesk 数据集。也可指定路径和端口：
 
 ```bash
-./target/release/devdesk-host --data ./data --port 4317
+python3 scripts/dev/run-host.py target/release/devdesk-host --data ./data --port 4317
 ```
 
 Host 程序嵌入 Web 文件；macOS 的真实 DSH 凭据另使用运行包内的一份共享助手，运行时不需要 Node、开发服务器或源码目录。默认只监听 loopback。设置、初始化页和连接失败页均提供“连接内核”，填写 `http://ip:port` 后先验证内核，再打开目标工作台。远程监听通过 `--host IP` 和 `DEVDESK_ACCESS_TOKEN` 显式开启；部署及反向代理配置见[运行包说明](docs/run-binary.md)。Host 校验连接地址对应的 Host/Origin。
@@ -49,7 +49,7 @@ npm --prefix web ci
 
 测试目录、两个 Python 离线回归入口和真实验收探针的职责见 [测试索引](tests/README.md)。
 
-开发时使用 `./scripts/dev/dev.sh --data ./data`，自动构建 Web、复用凭据助手并为 macOS Host 签名。Web 更改后需重新构建并重启 host，保持同源鉴权；`vite` 独立开发服务不是成品运行依赖。
+开发时使用 `./scripts/dev/dev.sh --data ./data`，自动构建 Web、复用凭据助手并为 macOS Host 签名。macOS 从私有签名副本启动，后续重建不会使运行中 Host 的凭据核验失效。Web 更改后需重新构建并重启 host，保持同源鉴权；`vite` 独立开发服务不是成品运行依赖。
 
 ## 文档
 

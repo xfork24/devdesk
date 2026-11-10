@@ -41,7 +41,9 @@ sudo apt-get install libsecret-tools gnome-keyring
 
 Codex 仍使用数据集专属官方 OAuth 文件和受控 Session 凭据。平台和绝对数据目录变化会改变系统凭据命名空间；换机器后重新配置本机凭据，不能把 macOS 引用当作 Linux 上的秘密。
 
-如果在 Host 运行期间覆盖了它的二进制文件，调用方签名校验会阻塞旧进程；重启新构建即可，不需要重新授权助手。开发时按正常流程停止、重建并启动 Host。
+macOS 开发入口 `scripts/dev/dev.sh` 通过 `scripts/dev/run-host.py` 从私有临时目录中的签名副本运行 Host，退出后清理。后续 Cargo 构建、签名不会覆盖运行中的程序，因此不会使凭据助手的调用方核验失效。也可用 `python3 scripts/dev/run-host.py target/release/devdesk-host --data /absolute/path/to/data` 启动已构建的版本。
+
+直接运行 `target/debug/devdesk-host` 后再覆盖其二进制，仍会使旧进程的签名核验失败。遇到“无法核验当前 Host 签名”时，停止该旧进程并通过上述入口启动；不需要重新授权助手或重新保存 key。
 
 ## DSH 多服务商凭据
 

@@ -5,7 +5,8 @@
 | 目录 | 入口 | 用途 |
 |---|---|---|
 | `dev/` | `build.sh` | 安装前端依赖、校验权限资产、准备 macOS 凭据助手、构建 Web 和 release Host、签名 |
-| `dev/` | `dev.sh` | 构建 Web 和 debug Host、签名并启动；参数传给 Host |
+| `dev/` | `dev.sh` | 构建 Web 和 debug Host、签名并启动；macOS 从独立签名副本运行，参数传给 Host |
+| `dev/` | `run-host.py` | 启动已构建的 Host；macOS 使用私有临时副本，后续重建不影响运行中签名，退出时清理 |
 | `check/` | `check.sh` | 默认离线回归：权限资产、Web、Rust、HTTP、运行环境准备、debug/release Chromium |
 | `check/` | `check-live.sh` | 调用 `tests/live/check_live.py`，执行专用资源上的真实验收或已有证据复核 |
 | `check/` | `check-permissions.sh` | 校验权限预设、后端 manifest 与不可变文件摘要 |

@@ -85,7 +85,7 @@ export function RepositorySettings({
         </div>
       </div>
       <div style={{ padding: 20 }}>
-        <p>
+        <p className="repository-connection-summary">
           <a
             href={`https://github.com/${repository}`}
             target="_blank"
@@ -93,14 +93,14 @@ export function RepositorySettings({
           >
             {repository}
           </a>{" "}
-          · {project.workspace_definition?.mainline}
-        </p>
-        <p role="status">
-          {ready
-            ? "仓库已接入"
-            : connectionBlocked
-              ? "仓库接入未完成，请根据下方原因核对后重试"
-              : "正在准备仓库，完成后即可开始工作"}
+          · {project.workspace_definition?.mainline}{" "}
+          <span role="status">
+            {ready
+              ? "仓库已接入"
+              : connectionBlocked
+                ? "仓库接入未完成，请根据下方原因核对后重试"
+                : "正在准备仓库，完成后即可开始工作"}
+          </span>
         </p>
         {error && (
           <div className="error" role="alert">
@@ -108,10 +108,7 @@ export function RepositorySettings({
           </div>
         )}
         {state?.operations
-          .filter(
-            (op: Row) =>
-              op.action.kind === "connect" || op.status !== "completed",
-          )
+          .filter((op: Row) => op.status !== "completed")
           .map((op: Row) => (
             <div className="setting-row" key={op.id}>
               <div>

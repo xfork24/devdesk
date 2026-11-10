@@ -808,8 +808,10 @@ main {
   color: #a1a8b5;
 }
 .history-row .history-action { border:0; padding:0; background:transparent; color:inherit; text-align:left; }
-.tool-call-history .history-row { padding-left:0; padding-right:0; }
-.integration-content .tool-call-details { margin:0 0 16px; }
+.tool-call-details { margin:0 20px 16px; padding:14px; border:1px solid #dce2ec; border-radius:8px; }
+.tool-call-details pre { overflow:auto; max-width:100%; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+.tool-call-details dd { overflow-wrap:anywhere; }
+.repository-connection-summary { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px; }
 .setting-row {
   display: flex;
   align-items: center;

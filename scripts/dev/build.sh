@@ -10,4 +10,4 @@ fi
 npm --prefix web run build
 cargo build --release --locked -p devdesk-host
 ./scripts/platform/macos/sign-macos.sh target/release/devdesk-host
-printf '\nRun: ./target/release/devdesk-host\n'
+printf '\nRun: python3 scripts/dev/run-host.py target/release/devdesk-host\n'

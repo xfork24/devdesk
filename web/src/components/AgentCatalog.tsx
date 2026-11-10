@@ -5,7 +5,7 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { ModelFields, type ModelProvider } from "./DshProviderSettings";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { RoleManager } from "./RoleManager";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
 import {
@@ -155,13 +155,16 @@ export function ResourceEditor({
   project,
   installations,
   revision,
+  additionalEditor,
 }: {
   kind: string;
   request: Request;
   project?: Row;
   installations: Row[];
   revision: number;
+  additionalEditor?: { label: string; content: ReactNode };
 }) {
+  const [showAdditionalEditor, setShowAdditionalEditor] = useState(false);
   const {
     error,
     setError,
@@ -295,6 +298,7 @@ export function ResourceEditor({
     </label>
   );
   const choose = (row: Row) => {
+    setShowAdditionalEditor(false);
     let value = structuredClone(row.data);
     if (kind === "agent") {
       const role = records.find((r) => r.id === value.role_ref);
@@ -449,10 +453,13 @@ export function ResourceEditor({
       <div className="configuration-layout">
         <div className="configuration-list">
           <ActionButton
-            className="new-resource"
+            className={
+              !old && !showAdditionalEditor ? "new-resource selected" : "new-resource"
+            }
             onClick={() => {
               captureFeedback();
 
+              setShowAdditionalEditor(false);
               const params = new URLSearchParams(location.search);
               params.delete("config_object");
               history.replaceState(null, "", `?${params}`);
@@ -466,11 +473,25 @@ export function ResourceEditor({
           >
             新建 {labels[kind]}
           </ActionButton>
+          {additionalEditor && (
+            <ActionButton
+              className={showAdditionalEditor ? "selected" : ""}
+              onClick={() => {
+                setShowAdditionalEditor(true);
+                setError("");
+                setMessage("");
+              }}
+            >
+              {additionalEditor.label}
+            </ActionButton>
+          )}
 
           {latest(records.filter((r) => r.kind === kind)).map((row) => (
             <ActionButton
               key={row.id}
-              className={draft.selected === row.id ? "selected" : ""}
+              className={
+                !showAdditionalEditor && draft.selected === row.id ? "selected" : ""
+              }
               onClick={() => {
                 captureFeedback();
                 return choose(row);
@@ -484,7 +505,9 @@ export function ResourceEditor({
             </ActionButton>
           ))}
         </div>
+        {showAdditionalEditor && additionalEditor?.content}
         <ActionForm
+          hidden={showAdditionalEditor}
           onSubmit={(e) => {
             captureFeedback();
 

@@ -229,6 +229,9 @@ test("Tools 调用记录采用事件行并在行内展开详情与审批", async
     exact: true,
   });
   await expect(history.locator(".history-row")).toHaveCount(2);
+  await expect(history.getByRole("textbox")).toHaveCount(0);
+  await expect(history).toContainText("按时间倒序 · 每页 50 条");
+  await expect(history.locator(".pagination")).toContainText("第 1 页");
   await expect(history.locator(".configuration-layout")).toHaveCount(0);
   await expect(
     history.getByText("选择调用查看参数、权限、来源与结果。", { exact: true }),
@@ -299,4 +302,57 @@ test("清理项目后旧链接返回可用工作台", async ({page}) => {
   await expect(page.getByRole("heading", {name:"项目管理",exact:true}).first()).toBeVisible();
   await expect(page).not.toHaveURL(/deleted-project|deleted-feature|deleted-task/);
   await expect(page.getByText(/not_found · 项目不存在/)).toHaveCount(0);
+});
+
+test("MCP 和 Tools 在同一列表内新建与编辑，Skills 导入位于编辑区", async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await setup(page);
+  for (const [tab, kind, field] of [
+    ["mcp", "MCP", "MCP URL"],
+    ["http", "HTTP API", "API Base URL"],
+  ]) {
+    await page.goto(`/?tab=components&config_tab=${tab}`);
+    const manager = page.getByRole("region", { name: `${kind} 接入管理`, exact: true });
+    const list = manager.locator(".configuration-list");
+    await expect(page.getByRole("region", { name: `${kind} 新建接入`, exact: true })).toHaveCount(0);
+    await list.getByRole("button", { name: `新建 ${kind} 接入源`, exact: true }).click();
+    const name = `${kind} unified ${crypto.randomUUID().slice(0, 6)}`;
+    await manager.getByLabel("接入名称", { exact: true }).fill(name);
+    await manager.getByLabel(field, { exact: true }).fill("https://example.test/api");
+    await manager.getByRole("button", { name: "创建接入源", exact: true }).click();
+    await expect(manager.getByRole("status")).toContainText("接入定义已保存");
+    const item = list.getByRole("button", { name: new RegExp(name) });
+    await expect(item).toHaveClass("selected");
+    const itemBox = (await item.boundingBox())!;
+    const formBox = (await manager.getByLabel("接入名称", { exact: true }).boundingBox())!;
+    expect(itemBox.x + itemBox.width).toBeLessThan(formBox.x);
+    await manager.getByLabel("接入名称", { exact: true }).fill(`${name} revised`);
+    await manager.getByRole("button", { name: "保存接入新修订", exact: true }).click();
+    await expect(manager.getByRole("status")).toContainText("接入定义已保存");
+    await page.reload();
+    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue(`${name} revised`);
+    await list.getByRole("button", { name: `新建 ${kind} 接入源`, exact: true }).click();
+    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue("");
+    await expect(manager.getByRole("button", { name: "创建接入源", exact: true })).toBeVisible();
+    await expect(page).not.toHaveURL(/config_object=/);
+    await list.getByRole("button", { name: new RegExp(`${name} revised`) }).click();
+    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue(`${name} revised`);
+    await page.screenshot({ path: info.outputPath(`${tab}-unified-editor.png`), fullPage: true });
+  }
+  await page.goto("/?tab=components&config_tab=skills");
+  const skills = page.getByRole("region", { name: "Skill 管理", exact: true });
+  const list = skills.locator(".configuration-list");
+  await expect(page.getByRole("region", { name: "Skill 包导入", exact: true })).toHaveCount(0);
+  await list.getByRole("button", { name: "导入 Skill 包", exact: true }).click();
+  const importer = skills.getByRole("region", { name: "Skill 包导入", exact: true });
+  await expect(importer).toBeVisible();
+  const listBox = (await list.boundingBox())!;
+  const importerBox = (await importer.boundingBox())!;
+  expect(listBox.x + listBox.width).toBeLessThan(importerBox.x);
+  await page.screenshot({ path: info.outputPath("skills-unified-editor.png"), fullPage: true });
+  await list.getByRole("button", { name: "新建 Skill", exact: true }).click();
+  await expect(importer).toHaveCount(0);
+  await expect(skills.getByRole("button", { name: "创建 Skill", exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
 });

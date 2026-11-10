@@ -144,21 +144,24 @@ export function Integrations({
           project={project}
         />
       ) : tab === "skills" ? (
-        <>
-          <SkillImport
-            request={request}
-            project={project}
-            onImported={() => setSkillRevision((v) => v + 1)}
-          />
-          <ResourceEditor
-            key={`skills:${project?.id}`}
-            request={request}
-            project={project}
-            installations={installations}
-            kind="skill"
-            revision={skillRevision}
-          />
-        </>
+        <ResourceEditor
+          key={`skills:${project?.id}`}
+          request={request}
+          project={project}
+          installations={installations}
+          kind="skill"
+          revision={skillRevision}
+          additionalEditor={{
+            label: "导入 Skill 包",
+            content: (
+              <SkillImport
+                request={request}
+                project={project}
+                onImported={() => setSkillRevision((v) => v + 1)}
+              />
+            ),
+          }}
+        />
       ) : tab === "native" ? (
         <NativeCatalog request={request} project={project} />
       ) : (
@@ -244,49 +247,11 @@ function NativeCatalog({
     </section>
   );
 }
-function SourceManager(props: {
-  kind: string;
-  request: Request;
-  project?: Row;
-}) {
-  const [revision, setRevision] = useState(0);
-  const [selectId, setSelectId] = useState<string>();
-  const changed = (id?: string) => {
-    setSelectId(id);
-    setRevision((v) => v + 1);
-  };
-  return (
-    <>
-      <SourceEditor
-        {...props}
-        mode="create"
-        revision={revision}
-        selectId={selectId}
-        onChanged={changed}
-      />
-      <SourceEditor
-        {...props}
-        mode="manage"
-        revision={revision}
-        selectId={selectId}
-        onChanged={changed}
-      />
-    </>
-  );
-}
-function SourceEditor({
+function SourceManager({
   kind,
   request,
   project,
-  mode,
-  revision,
-  onChanged,
-  selectId,
 }: {
-  mode: "create" | "manage";
-  revision: number;
-  onChanged: (id?: string) => void;
-  selectId?: string;
   kind: string;
   request: Request;
   project?: Row;
@@ -319,7 +284,7 @@ function SourceEditor({
     oauth_scopes: "",
   });
   const [draft, setDraft] = useDraft(
-    `devdesk:integrations:${project?.id || "global"}:${kind}:${mode}`,
+    `devdesk:integrations:${project?.id || "global"}:${kind}:manage`,
     fresh,
   );
   const [sources, setSources] = useState<Row[]>([]),
@@ -335,14 +300,15 @@ function SourceEditor({
   }, [request, project?.id]);
   useEffect(() => {
     void load().catch((e) => setError(String(e)));
-  }, [load, revision]);
+  }, [load]);
   const [deletedSource, setDeletedSource] = useState<Row>();
   const selected =
-    mode === "manage"
-      ? sources.find((r) => r.id === draft.selected) || deletedSource
-      : undefined;
+    sources.find((r) => r.id === draft.selected) || deletedSource;
   const choose = (r: Row) => {
     setDeletedSource(undefined);
+    const params = new URLSearchParams(location.search);
+    params.set("config_object", r.id);
+    history.replaceState(null, "", `?${params}`);
     const s = r.data.source;
     setDraft({
       selected: r.id,
@@ -362,23 +328,9 @@ function SourceEditor({
       oauth_scopes: (r.data.oauth?.scopes || []).join("\n"),
     });
   };
-  const consumedSelection = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (
-      mode !== "manage" ||
-      !selectId ||
-      consumedSelection.current === selectId
-    )
-      return;
-    const row = sources.find((r) => r.id === selectId);
-    if (row) {
-      consumedSelection.current = selectId;
-      choose(row);
-    }
-  }, [mode, sources, selectId]);
   const routeConsumed = useRef(false);
   useEffect(() => {
-    if (mode !== "manage" || routeConsumed.current || !sources.length) return;
+    if (routeConsumed.current || !sources.length) return;
     const target = new URLSearchParams(location.search).get("config_object");
     const tool = catalog.find((r) => r.id === target && r.kind === "tool");
     const row = sources.find(
@@ -411,410 +363,398 @@ function SourceEditor({
         r.data.source.kind === (kind === "http" ? "http_api" : "mcp"),
     ),
   );
-  useEffect(() => {
-    if (mode === "manage" && !draft.selected && !deletedSource && rows[0])
-      choose(rows[0]);
-  }, [mode, draft.selected, sources]);
   return (
     <>
-      <section
-        className="panel"
-        aria-label={`${names[kind]} ${mode === "create" ? "新建接入" : "接入管理"}`}
-      >
+      <section className="panel" aria-label={`${names[kind]} 接入管理`}>
         <div className="panel-heading">
-          <h2>
-            {mode === "create"
-              ? `新建 ${names[kind]} 接入源`
-              : `管理 ${names[kind]} 接入源`}
-          </h2>
+          <h2>{names[kind]} 接入源管理</h2>
         </div>
-        <div
-          className={
-            mode === "manage" ? "configuration-layout" : "integration-content"
-          }
-        >
-          {mode === "manage" && (
-            <div className="configuration-list">
-              {rows.map((r) => (
-                <ActionButton
-                  key={r.id}
-                  className={r.id === selected?.id ? "selected" : ""}
-                  onClick={() => {
-                    captureFeedback();
-                    return choose(r);
-                  }}
-                >
-                  <strong>{r.name}</strong>
-                  <span>
-                    v{r.version} · {r.scope.kind}
-                  </span>
-                </ActionButton>
-              ))}
-            </div>
-          )}
-          {mode === "create" || selected ? (
-            <ActionForm
-              onSubmit={(e) => {
+        <div className="configuration-layout">
+          <div className="configuration-list">
+            <ActionButton
+              className={!selected ? "new-resource selected" : "new-resource"}
+              onClick={() => {
                 captureFeedback();
-
-                e.preventDefault();
-                void run(async () => {
-                  const source =
-                    kind === "http"
-                      ? { kind: "http_api", base_url: draft.base_url }
-                      : {
-                          kind: "mcp",
-                          transport: draft.transport,
-                          protocol_version: draft.protocol_version,
-                          url:
-                            draft.transport === "streamable_http"
-                              ? draft.url
-                              : null,
-                          command:
-                            draft.transport === "stdio"
-                              ? JSON.parse(draft.command)
-                              : [],
-                        };
-                  const r = await command(
-                    request,
-                    `integration.${selected ? "revise" : "create"}`,
-                    project,
-                    {
-                      name: draft.name,
-                      scope:
-                        draft.scope === "project"
-                          ? { kind: "project", project_id: project!.id }
-                          : { kind: "global" },
-                      data: {
-                        source,
-                        description: draft.description,
-                        ...(draft.oauth_enabled
-                          ? {
-                              oauth: {
-                                client_id: draft.client_id,
-                                authorization_url: draft.authorization_url,
-                                token_url: draft.token_url,
-                                revocation_url: draft.revocation_url || null,
-                                scopes: lines(draft.oauth_scopes),
-                              },
-                            }
-                          : {}),
-                      },
-                    },
-                    selected,
-                  );
-                  await load();
-                  if (mode === "manage") choose(r);
-                  else setDraft(fresh());
-                  onChanged(r.id);
-                  setMessage("接入定义已保存；请配置绑定并发布具体工具。");
-                });
+                setDeletedSource(undefined);
+                setDraft(fresh());
+                setMessage("");
+                const params = new URLSearchParams(location.search);
+                params.delete("config_object");
+                history.replaceState(null, "", `?${params}`);
               }}
             >
-              <fieldset
-                disabled={busy || !!deletedSource}
-                className="integration-fields"
+              新建 {names[kind]} 接入源
+            </ActionButton>
+            {rows.map((r) => (
+              <ActionButton
+                key={r.id}
+                className={r.id === selected?.id ? "selected" : ""}
+                onClick={() => {
+                  captureFeedback();
+                  return choose(r);
+                }}
               >
+                <strong>{r.name}</strong>
+                <span>
+                  v{r.version} · {r.scope.kind}
+                </span>
+              </ActionButton>
+            ))}
+          </div>
+          <ActionForm
+            onSubmit={(e) => {
+              captureFeedback();
+
+              e.preventDefault();
+              void run(async () => {
+                const source =
+                  kind === "http"
+                    ? { kind: "http_api", base_url: draft.base_url }
+                    : {
+                        kind: "mcp",
+                        transport: draft.transport,
+                        protocol_version: draft.protocol_version,
+                        url:
+                          draft.transport === "streamable_http"
+                            ? draft.url
+                            : null,
+                        command:
+                          draft.transport === "stdio"
+                            ? JSON.parse(draft.command)
+                            : [],
+                      };
+                const r = await command(
+                  request,
+                  `integration.${selected ? "revise" : "create"}`,
+                  project,
+                  {
+                    name: draft.name,
+                    scope:
+                      draft.scope === "project"
+                        ? { kind: "project", project_id: project!.id }
+                        : { kind: "global" },
+                    data: {
+                      source,
+                      description: draft.description,
+                      ...(draft.oauth_enabled
+                        ? {
+                            oauth: {
+                              client_id: draft.client_id,
+                              authorization_url: draft.authorization_url,
+                              token_url: draft.token_url,
+                              revocation_url: draft.revocation_url || null,
+                              scopes: lines(draft.oauth_scopes),
+                            },
+                          }
+                        : {}),
+                    },
+                  },
+                  selected,
+                );
+                await load();
+                choose(r);
+                setMessage("接入定义已保存；请配置绑定并发布具体工具。");
+              });
+            }}
+          >
+            <fieldset
+              disabled={busy || !!deletedSource}
+              className="integration-fields"
+            >
+              <label>
+                接入名称
+                <input
+                  required
+                  value={draft.name}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({ ...draft, name: e.target.value });
+                  }}
+                />
+              </label>
+              <label>
+                接入范围
+                <ActionSelect
+                  disabled={!!selected}
+                  value={draft.scope}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({ ...draft, scope: e.target.value });
+                  }}
+                >
+                  <option value="global">Global</option>
+                  {project && <option value="project">当前项目</option>}
+                </ActionSelect>
+              </label>
+              {kind === "http" ? (
                 <label>
-                  接入名称
+                  API Base URL
                   <input
+                    type="url"
                     required
-                    value={draft.name}
+                    value={draft.base_url}
                     onChange={(e) => {
                       captureFeedback();
-                      return setDraft({ ...draft, name: e.target.value });
+                      return setDraft({ ...draft, base_url: e.target.value });
                     }}
+                    placeholder="https://api.example.com/v1"
                   />
                 </label>
-                <label>
-                  接入范围
-                  <ActionSelect
-                    disabled={!!selected}
-                    value={draft.scope}
-                    onChange={(e) => {
-                      captureFeedback();
-                      return setDraft({ ...draft, scope: e.target.value });
-                    }}
-                  >
-                    <option value="global">Global</option>
-                    {project && <option value="project">当前项目</option>}
-                  </ActionSelect>
-                </label>
-                {kind === "http" ? (
+              ) : (
+                <>
                   <label>
-                    API Base URL
+                    MCP 传输
+                    <ActionSelect
+                      value={draft.transport}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          transport: e.target.value,
+                        });
+                      }}
+                    >
+                      <option value="streamable_http">Streamable HTTP</option>
+                      <option value="stdio">stdio · Docker 中执行</option>
+                    </ActionSelect>
+                  </label>
+                  <label>
+                    MCP 协议版本
+                    <ActionSelect
+                      value={draft.protocol_version}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          protocol_version: e.target.value,
+                        });
+                      }}
+                    >
+                      <option>2026-07-28</option>
+                      <option>2025-11-25</option>
+                    </ActionSelect>
+                  </label>
+                  {draft.transport === "streamable_http" ? (
+                    <label>
+                      MCP URL
+                      <input
+                        type="url"
+                        required
+                        value={draft.url}
+                        onChange={(e) => {
+                          captureFeedback();
+                          return setDraft({ ...draft, url: e.target.value });
+                        }}
+                      />
+                    </label>
+                  ) : (
+                    <JsonField
+                      label="MCP 启动参数（JSON 数组）"
+                      value={draft.command}
+                      onChange={(command) => {
+                        captureFeedback();
+                        return setDraft({ ...draft, command });
+                      }}
+                    />
+                  )}
+                </>
+              )}
+              <label className="inline-control">
+                <input
+                  type="checkbox"
+                  checked={draft.oauth_enabled || false}
+                  onChange={(e) => {
+                    captureFeedback();
+                    return setDraft({
+                      ...draft,
+                      oauth_enabled: e.target.checked,
+                    });
+                  }}
+                />
+                启用 OAuth 授权码 + PKCE
+              </label>
+              {draft.oauth_enabled && (
+                <fieldset>
+                  <legend>OAuth 公共客户端</legend>
+                  <label>
+                    OAuth Client ID
+                    <input
+                      required
+                      value={draft.client_id}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          client_id: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <label>
+                    授权端点
                     <input
                       type="url"
                       required
-                      value={draft.base_url}
+                      value={draft.authorization_url}
                       onChange={(e) => {
                         captureFeedback();
-                        return setDraft({ ...draft, base_url: e.target.value });
+                        return setDraft({
+                          ...draft,
+                          authorization_url: e.target.value,
+                        });
                       }}
-                      placeholder="https://api.example.com/v1"
                     />
                   </label>
-                ) : (
-                  <>
-                    <label>
-                      MCP 传输
-                      <ActionSelect
-                        value={draft.transport}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            transport: e.target.value,
-                          });
-                        }}
-                      >
-                        <option value="streamable_http">Streamable HTTP</option>
-                        <option value="stdio">stdio · Docker 中执行</option>
-                      </ActionSelect>
-                    </label>
-                    <label>
-                      MCP 协议版本
-                      <ActionSelect
-                        value={draft.protocol_version}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            protocol_version: e.target.value,
-                          });
-                        }}
-                      >
-                        <option>2026-07-28</option>
-                        <option>2025-11-25</option>
-                      </ActionSelect>
-                    </label>
-                    {draft.transport === "streamable_http" ? (
-                      <label>
-                        MCP URL
-                        <input
-                          type="url"
-                          required
-                          value={draft.url}
-                          onChange={(e) => {
-                            captureFeedback();
-                            return setDraft({ ...draft, url: e.target.value });
-                          }}
-                        />
-                      </label>
-                    ) : (
-                      <JsonField
-                        label="MCP 启动参数（JSON 数组）"
-                        value={draft.command}
-                        onChange={(command) => {
-                          captureFeedback();
-                          return setDraft({ ...draft, command });
-                        }}
-                      />
-                    )}
-                  </>
-                )}
-                <label className="inline-control">
-                  <input
-                    type="checkbox"
-                    checked={draft.oauth_enabled || false}
-                    onChange={(e) => {
-                      captureFeedback();
-                      return setDraft({
-                        ...draft,
-                        oauth_enabled: e.target.checked,
-                      });
-                    }}
-                  />
-                  启用 OAuth 授权码 + PKCE
-                </label>
-                {draft.oauth_enabled && (
-                  <fieldset>
-                    <legend>OAuth 公共客户端</legend>
-                    <label>
-                      OAuth Client ID
-                      <input
-                        required
-                        value={draft.client_id}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            client_id: e.target.value,
-                          });
-                        }}
-                      />
-                    </label>
-                    <label>
-                      授权端点
-                      <input
-                        type="url"
-                        required
-                        value={draft.authorization_url}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            authorization_url: e.target.value,
-                          });
-                        }}
-                      />
-                    </label>
-                    <label>
-                      Token 端点
-                      <input
-                        type="url"
-                        required
-                        value={draft.token_url}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            token_url: e.target.value,
-                          });
-                        }}
-                      />
-                    </label>
-                    <label>
-                      撤销端点（可选）
-                      <input
-                        type="url"
-                        value={draft.revocation_url}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            revocation_url: e.target.value,
-                          });
-                        }}
-                      />
-                    </label>
-                    <label>
-                      可授权 scopes（每行一个）
-                      <textarea
-                        value={draft.oauth_scopes}
-                        onChange={(e) => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            oauth_scopes: e.target.value,
-                          });
-                        }}
-                      />
-                    </label>
-                    <p>
-                      在服务端登记回调地址：{window.location.origin}
-                      /oauth/integrations/callback
-                    </p>
-                  </fieldset>
-                )}
-                <MarkdownField
-                  key={draft.selected || "new"}
-                  label="接入说明"
-                  value={draft.description}
-                  onChange={(description) => {
-                    captureFeedback();
-                    return setDraft({ ...draft, description });
-                  }}
-                />
-                <div className="actions">
-                  <ActionButton className="primary" disabled={busy}>
-                    {selected ? "保存接入新修订" : "创建接入源"}
-                  </ActionButton>
-                  {selected && (
-                    <>
-                      <ActionButton
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          captureFeedback();
-                          return setDraft({
-                            ...draft,
-                            selected: "",
-                            name: `${draft.name} · 副本`,
-                          });
-                        }}
-                      >
-                        复制接入源
-                      </ActionButton>
-                      <ActionButton
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          captureFeedback();
-                          return void run(async () => {
-                            await command(
-                              request,
-                              "integration.delete",
-                              project,
-                              { reason: "用户删除接入源及所属动作和绑定" },
-                              selected,
-                            );
-                            setDeletedSource(selected);
-                            await load();
-                            onChanged();
-                            setMessage(
-                              "接入源及所属动作、绑定已删除，历史记录保留。",
-                            );
-                          });
-                        }}
-                      >
-                        删除接入源
-                      </ActionButton>
-                      <ActionButton
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          captureFeedback();
-                          return void run(async () => {
-                            await command(
-                              request,
-                              "integration.disable",
-                              project,
-                              { reason: "用户紧急停用" },
-                              selected,
-                            );
-                            setMessage("已紧急停用，将阻止后续工具派发。");
-                          });
-                        }}
-                      >
-                        紧急停用
-                      </ActionButton>
-                    </>
-                  )}
-                </div>
-                {selected && !deletedSource && (
                   <label>
-                    接入历史修订
-                    <ActionSelect
-                      value={selected.id}
+                    Token 端点
+                    <input
+                      type="url"
+                      required
+                      value={draft.token_url}
                       onChange={(e) => {
                         captureFeedback();
-
-                        const row = sources.find(
-                          (r) => r.id === e.target.value,
-                        );
-                        if (row) choose(row);
+                        return setDraft({
+                          ...draft,
+                          token_url: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <label>
+                    撤销端点（可选）
+                    <input
+                      type="url"
+                      value={draft.revocation_url}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          revocation_url: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <label>
+                    可授权 scopes（每行一个）
+                    <textarea
+                      value={draft.oauth_scopes}
+                      onChange={(e) => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          oauth_scopes: e.target.value,
+                        });
+                      }}
+                    />
+                  </label>
+                  <p>
+                    在服务端登记回调地址：{window.location.origin}
+                    /oauth/integrations/callback
+                  </p>
+                </fieldset>
+              )}
+              <MarkdownField
+                key={draft.selected || "new"}
+                label="接入说明"
+                value={draft.description}
+                onChange={(description) => {
+                  captureFeedback();
+                  return setDraft({ ...draft, description });
+                }}
+              />
+              <div className="actions">
+                <ActionButton className="primary" disabled={busy}>
+                  {selected ? "保存接入新修订" : "创建接入源"}
+                </ActionButton>
+                {selected && (
+                  <>
+                    <ActionButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        captureFeedback();
+                        return setDraft({
+                          ...draft,
+                          selected: "",
+                          name: `${draft.name} · 副本`,
+                        });
                       }}
                     >
-                      {sources
-                        .filter(
-                          (r) =>
-                            r.kind === "integration" &&
-                            r.definition_id === selected.definition_id,
-                        )
-                        .map((r) => (
-                          <option key={r.id} value={r.id}>
-                            v{r.version} · {r.name}
-                          </option>
-                        ))}
-                    </ActionSelect>
-                  </label>
+                      复制接入源
+                    </ActionButton>
+                    <ActionButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        captureFeedback();
+                        return void run(async () => {
+                          await command(
+                            request,
+                            "integration.delete",
+                            project,
+                            { reason: "用户删除接入源及所属动作和绑定" },
+                            selected,
+                          );
+                          setDeletedSource(selected);
+                          await load();
+                          setMessage(
+                            "接入源及所属动作、绑定已删除，历史记录保留。",
+                          );
+                        });
+                      }}
+                    >
+                      删除接入源
+                    </ActionButton>
+                    <ActionButton
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        captureFeedback();
+                        return void run(async () => {
+                          await command(
+                            request,
+                            "integration.disable",
+                            project,
+                            { reason: "用户紧急停用" },
+                            selected,
+                          );
+                          setMessage("已紧急停用，将阻止后续工具派发。");
+                        });
+                      }}
+                    >
+                      紧急停用
+                    </ActionButton>
+                  </>
                 )}
-              </fieldset>
-            </ActionForm>
-          ) : (
-            <p className="muted">暂无接入源，请先在上方创建。</p>
-          )}
+              </div>
+              {selected && !deletedSource && (
+                <label>
+                  接入历史修订
+                  <ActionSelect
+                    value={selected.id}
+                    onChange={(e) => {
+                      captureFeedback();
+
+                      const row = sources.find((r) => r.id === e.target.value);
+                      if (row) choose(row);
+                    }}
+                  >
+                    {sources
+                      .filter(
+                        (r) =>
+                          r.kind === "integration" &&
+                          r.definition_id === selected.definition_id,
+                      )
+                      .map((r) => (
+                        <option key={r.id} value={r.id}>
+                          v{r.version} · {r.name}
+                        </option>
+                      ))}
+                  </ActionSelect>
+                </label>
+              )}
+            </fieldset>
+          </ActionForm>
         </div>
         {error && <p role="alert">{error}</p>}
         {message && <p role="status">{message}</p>}
@@ -1859,17 +1799,18 @@ function HttpToolEditor({
     <section className="panel" aria-label="HTTP 动作管理">
       <div className="panel-heading">
         <h2>HTTP 可调用动作</h2>
-        <ActionButton
-          onClick={() => {
-            captureFeedback();
-            return setDraft(initial());
-          }}
-        >
-          新建 HTTP 动作
-        </ActionButton>
       </div>
       <div className="configuration-layout">
         <div className="configuration-list">
+          <ActionButton
+            className="new-resource"
+            onClick={() => {
+              captureFeedback();
+              return setDraft(initial());
+            }}
+          >
+            新建 HTTP 动作
+          </ActionButton>
           {tools.map((t) => (
             <ActionButton
               key={t.id}
@@ -2650,30 +2591,19 @@ export function CallHistory({
     [offset, setOffset] = useState(0),
     [total, setTotal] = useState(0),
     [evidence, setEvidence] = useState(""),
-    [effect, setEffect] = useState("unknown"),
-    [filters, setFilters] = useState({
-      feature_id: "",
-      task_id: "",
-      agent_instance_id: "",
-      session_id: "",
-      run_id: "",
-      integration_ref: "",
-      tool_ref: "",
-    });
+    [effect, setEffect] = useState("unknown");
   const load = useCallback(async () => {
     const query: Row = {
       local: !!project,
       project_id: project?.id,
       offset,
-      limit: 25,
+      limit: 50,
     };
-    for (const [key, value] of Object.entries(filters))
-      if (value) query[key] = value;
     const r = await request("query.tool_calls", query);
     setRows(r.records);
     setTotal(r.total);
     setSelected((old) => r.records.find((v: Row) => v.id === old?.id));
-  }, [request, project?.id, offset, JSON.stringify(filters)]);
+  }, [request, project?.id, offset]);
   useEffect(() => {
     let active = true;
     const run = () => {
@@ -2703,6 +2633,7 @@ export function CallHistory({
     <section className="panel" aria-label="工具调用记录">
       <div className="panel-heading">
         <h2>Tools调用记录</h2>
+        <span className="muted">按时间倒序 · 每页 50 条</span>
         <ActionButton
           onClick={async () => {
             captureFeedback();
@@ -2720,37 +2651,13 @@ export function CallHistory({
           刷新调用记录
         </ActionButton>
       </div>
-      <div className="integration-content">
-        <div className="form-grid">
-          {Object.entries(filters).map(([key, value]) => (
-            <label key={key}>
-              {
-                (
-                  {
-                    feature_id: "Feature ID",
-                    task_id: "Task ID",
-                    agent_instance_id: "Agent",
-                    session_id: "Session ID",
-                    run_id: "Run ID",
-                    integration_ref: "接入源修订 ID",
-                    tool_ref: "工具修订 ID",
-                  } as Row
-                )[key]
-              }
-              <input
-                value={value}
-                onChange={(e) => {
-                  captureFeedback();
-
-                  setOffset(0);
-                  setFilters({ ...filters, [key]: e.target.value });
-                }}
-              />
-            </label>
-          ))}
-        </div>
+      <div className="tool-call-content">
         <div className="tool-call-history">
-          {rows.length === 0 && <p className="muted">尚无工具调用记录。</p>}
+          {rows.length === 0 && (
+            <div className="empty">
+              <p>尚无工具调用记录。</p>
+            </div>
+          )}
           {rows.map((r, index) => (
             <div className="tool-call-history-item" key={r.id}>
               <div className="history-row">
@@ -2937,24 +2844,22 @@ export function CallHistory({
             </div>
           ))}
         </div>
-        <div className="actions">
+        <div className="pagination">
           <ActionButton
             disabled={!offset}
             onClick={() => {
               captureFeedback();
-              return setOffset(Math.max(0, offset - 25));
+              return setOffset(Math.max(0, offset - 50));
             }}
           >
             上一页
           </ActionButton>
-          <span>
-            {total ? offset + 1 : 0}–{Math.min(offset + 25, total)} / {total}
-          </span>
+          <span>第 {offset / 50 + 1} 页</span>
           <ActionButton
-            disabled={offset + 25 >= total}
+            disabled={offset + 50 >= total}
             onClick={() => {
               captureFeedback();
-              return setOffset(offset + 25);
+              return setOffset(offset + 50);
             }}
           >
             下一页

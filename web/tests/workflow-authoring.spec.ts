@@ -652,7 +652,7 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
   ]);
   await page.getByRole("tab", { name: "Tools", exact: true }).click();
   await expect(
-    page.getByRole("region", { name: "HTTP API 新建接入", exact: true }),
+    page.getByRole("region", { name: "HTTP API 接入管理", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("tab", { name: "调用记录", exact: true }),
