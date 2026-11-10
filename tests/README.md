@@ -26,6 +26,8 @@
 
 `http_contract.py` 启动真实 Host，并用不可用的 Docker/GitHub CLI 夹具阻断外部执行，验证 Cookie 会话鉴权、Host/Origin 限制、JS/CSS 资源、能力接口、中文和空格路径、跨进程写锁、命令幂等、Artifact 访问、项目切换和 SQLite 分库、SSE 项目隔离、退出与重启持久化。`--standalone` 会把二进制复制到临时目录再运行，用于证明嵌入资源不依赖源码目录。
 
+退出回归同时要求 HTTP 退出和 SIGINT 的 SSE 流读到 EOF，且 Host 在原有 4 秒总预算内以状态 0 结束。Host 的 `shutdown_during_tick` 单测在首个项目派发时触发退出，验证后续项目保持排队、已有执行者停止并清理、协议回执持久化。
+
 `runtime_preparation.py` 使用真实 HTTP、SQLite 和本地 Git；Docker CLI、GitHub 响应以及远程克隆入口使用明确的本地夹具。它验证打开项目不触发 Harness 准备、中断 clone 的核对恢复、并发准备复用、默认组合的安装固化、镜像缺失、构建失败重试和 Docker 离线等情况，不调用模型或真实 Docker daemon。
 
 构建 Host 后可单独执行：

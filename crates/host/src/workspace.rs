@@ -1537,51 +1537,76 @@ impl Workspace {
             Err(error) => Err(error),
         }
     }
-    pub fn tick(&self) -> Result<()> {
+    pub fn tick(&self, should_stop: impl Fn() -> bool) -> Result<()> {
+        if should_stop() {
+            return Ok(());
+        }
         self.configuration.drive_tool_calls()?;
-        let engines: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
-        let engines = engines
-            .into_iter()
-            .map(|e| {
-                let native = e
-                    .store
-                    .snapshot()?
-                    .projects
-                    .iter()
-                    .all(|p| p.execution_mode == "live");
-                e.store
-                    .has_pending_work()
-                    .map(|pending| (e, pending && native))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .filter_map(|(e, pending)| pending.then_some(e))
-            .collect::<Vec<_>>();
+        if should_stop() {
+            return Ok(());
+        }
+        let opened: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
+        let mut engines = vec![];
+        for engine in opened {
+            if should_stop() {
+                return Ok(());
+            }
+            if !engine.store.has_pending_work()? {
+                continue;
+            }
+            if engine
+                .store
+                .snapshot()?
+                .projects
+                .iter()
+                .all(|p| p.execution_mode == "live")
+            {
+                engines.push(engine);
+            }
+        }
         let limit = self.global.concurrency()?;
         let mut failure = None;
-        let mut running: Vec<usize> = engines
-            .iter()
-            .map(|e| {
-                Ok(e.store
+        let mut running = vec![];
+        for engine in &engines {
+            if should_stop() {
+                return Ok(());
+            }
+            running.push(
+                engine
+                    .store
                     .snapshot()?
                     .runs
                     .iter()
                     .filter(|r| r.status == Status::Running)
                     .count()
-                    + e.conversation_running()?)
-            })
-            .collect::<Result<_>>()?;
+                    + engine.conversation_running()?,
+            );
+        }
         let mut total: usize = running.iter().sum();
         // The scheduler is single-threaded across projects. Other running projects consume quota.
         for (index, e) in engines.iter().enumerate() {
-            if let Err(error) = self.tick_workflow_engine(e) {
+            // Finish the current scheduler stage, then leave remaining work queued.
+            // The Host waits for this tick before stopping and sealing owned writers.
+            if should_stop() {
+                break;
+            }
+            if let Err(error) = self.tick_workflow_engine(e, &should_stop) {
                 failure.get_or_insert(error);
+            }
+            if should_stop() {
+                break;
             }
             if let Err(error) = e.tick_repositories() {
                 failure.get_or_insert(error);
             }
+            if should_stop() {
+                break;
+            }
             if let Err(error) = e.tick_conversations(limit.saturating_sub(total - running[index])) {
                 failure.get_or_insert(error);
+            }
+            if should_stop() {
+                break;
             }
             if let Err(error) = e.tick(
                 limit
@@ -1590,8 +1615,14 @@ impl Workspace {
             ) {
                 failure.get_or_insert(error);
             }
-            if let Err(error) = self.tick_workflow_engine(e) {
+            if should_stop() {
+                break;
+            }
+            if let Err(error) = self.tick_workflow_engine(e, &should_stop) {
                 failure.get_or_insert(error);
+            }
+            if should_stop() {
+                break;
             }
             let experiences: Vec<_> = e
                 .store
@@ -1932,6 +1963,101 @@ mod adapter_injection_tests {
     use super::tests::{cmd, create, select};
     use super::*;
     #[test]
+    fn shutdown_during_tick_preserves_queued_work_and_cleans_up_the_started_writer() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        struct StopOnDispatch {
+            stopping: AtomicBool,
+            dispatched: AtomicUsize,
+            stopped: AtomicUsize,
+            cleaned: AtomicUsize,
+        }
+        impl ports::Harness for StopOnDispatch {
+            fn open_session(&self, request: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+                ports::Harness::open_session(&crate::test_runtime::IdleHarness, request)
+            }
+            fn dispatch_turn(&self, _: &ports::TurnDispatch) -> Result<()> {
+                self.dispatched.fetch_add(1, Ordering::SeqCst);
+                self.stopping.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            fn poll_session(&self, _: &Session) -> Result<Vec<ports::ConversationObservation>> {
+                Ok(vec![])
+            }
+            fn stop_session(
+                &self,
+                _: &Session,
+                execution: &RuntimeExecution,
+            ) -> Result<ports::WorkerStop> {
+                self.stopped.fetch_add(1, Ordering::SeqCst);
+                Ok(ports::WorkerStop {
+                    operation_id: execution.operation_id.clone(),
+                    writer_revoked: true,
+                    mode: "shutdown-test".into(),
+                    requires_successor: true,
+                })
+            }
+            fn cleanup_worker(&self, _: &Session, _: &RuntimeExecution) -> Result<()> {
+                self.cleaned.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+            fn session_log(&self, _: &RuntimeExecution) -> Result<Option<String>> {
+                Ok(Some("synthetic shutdown protocol".into()))
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let harness = Arc::new(StopOnDispatch {
+            stopping: AtomicBool::new(false),
+            dispatched: AtomicUsize::new(0),
+            stopped: AtomicUsize::new(0),
+            cleaned: AtomicUsize::new(0),
+        });
+        let mut providers = crate::test_runtime::adapters();
+        providers.harness = harness.clone();
+        let w = Workspace::open_with_adapters(dir.path(), providers).unwrap();
+        let mut engines = vec![];
+        for title in ["A", "B"] {
+            let pid = create(&w, title);
+            let engine = w.active_engine(Some(&pid)).unwrap();
+            crate::test_runtime::queue_conversation(&engine, &pid);
+            engines.push(engine);
+        }
+        harness.stopping.store(true, Ordering::SeqCst);
+        w.tick(|| harness.stopping.load(Ordering::SeqCst)).unwrap();
+        assert_eq!(harness.dispatched.load(Ordering::SeqCst), 0);
+        harness.stopping.store(false, Ordering::SeqCst);
+        w.tick(|| harness.stopping.load(Ordering::SeqCst)).unwrap();
+        assert_eq!(
+            harness.dispatched.load(Ordering::SeqCst),
+            1,
+            "shutdown during one project must prevent dispatch in the next project"
+        );
+        w.stop_owned_runtime().unwrap();
+        assert_eq!(harness.stopped.load(Ordering::SeqCst), 1);
+        assert_eq!(harness.cleaned.load(Ordering::SeqCst), 1);
+        let states: Vec<_> = engines
+            .iter()
+            .map(|e| e.store.snapshot().unwrap())
+            .collect();
+        assert_eq!(
+            states
+                .iter()
+                .filter(|s| s.turns[0].status == TurnStatus::Queued)
+                .count(),
+            1
+        );
+        let started = states.iter().find(|s| !s.executions.is_empty()).unwrap();
+        assert_eq!(started.turns[0].status, TurnStatus::NeedsReconciliation);
+        assert!(started.executions[0].writer_revoked);
+        assert_eq!(started.executions[0].status, Status::Released);
+        assert!(
+            started
+                .artifacts
+                .iter()
+                .any(|artifact| Some(&artifact.id)
+                    == started.executions[0].protocol_artifact.as_ref())
+        );
+    }
+    #[test]
     fn injected_providers_are_shared_after_opening_another_project() {
         let dir = tempfile::tempdir().unwrap();
         let providers = crate::test_runtime::adapters();
@@ -1950,7 +2076,7 @@ mod adapter_injection_tests {
                 .to_string();
             let e = w.active_engine(Some(&pid)).unwrap();
             let (_, tid) = crate::test_runtime::queue_conversation(&e, &pid);
-            w.tick().unwrap();
+            w.tick(|| false).unwrap();
             assert!(e.store.snapshot().unwrap().turns.iter().any(|t| t.id == tid
                 && [TurnStatus::Dispatching, TurnStatus::Running].contains(&t.status)));
             engines.push(e);
@@ -1977,7 +2103,7 @@ mod adapter_injection_tests {
                 .to_string();
             let e = w.active_engine(Some(&pid)).unwrap();
             crate::test_runtime::queue_conversation(&e, &pid);
-            w.tick().unwrap();
+            w.tick(|| false).unwrap();
             engines.push(e);
         }
         assert_eq!(engines[0].conversation_running().unwrap(), 1);

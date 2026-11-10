@@ -519,7 +519,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 }
                 if let Ok(w) = a.workspace() {
-                    w.tick()
+                    w.tick(|| a.stopping.load(Ordering::Relaxed))
                 } else {
                     Ok(())
                 }

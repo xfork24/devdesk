@@ -235,7 +235,7 @@ mod tests {
         )
         .unwrap();
         // This fixture has no repository adapter: first dispatch fails without external I/O.
-        w.tick().unwrap();
+        w.tick(|| false).unwrap();
         let e = w.active_engine(None).unwrap();
         let state = e.store.snapshot().unwrap();
         let op = state.repository_operations.first().unwrap();
@@ -261,7 +261,7 @@ mod tests {
                 .has_pending_work()
                 .unwrap()
         );
-        w.tick().unwrap();
+        w.tick(|| false).unwrap();
         let e = w.active_engine(None).unwrap();
         let state = e.store.snapshot().unwrap();
         let retried = &state.repository_operations[0];

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -17,6 +18,13 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT / 'target/debug/devdesk-host'
+
+def wait_for_shutdown(child, response, started):
+    # Require both SSE EOF and a clean exit within the original four-second budget.
+    response.read()
+    response.close()
+    assert child.wait(timeout=max(0, 4 - (time.monotonic() - started))) == 0
+    return time.monotonic() - started
 
 def run():
     with tempfile.TemporaryDirectory(prefix='devdesk-http-') as directory:
@@ -143,21 +151,24 @@ def run():
             except TimeoutError:
                 pass
             finally:
+                old_response.close()
                 old_stream.close()
             scoped_stream = http.client.HTTPConnection(authority, timeout=2)
             scoped_stream.request('GET', '/events?project_id=' + project_b, headers={'Cookie':cookie_header,'Last-Event-ID':pid+':999999'})
             scoped_response = scoped_stream.getresponse()
             assert scoped_response.readline().decode().strip().startswith('id: ' + project_b + ':')
+            scoped_response.close()
             scoped_stream.close()
             rpc('project.open', {'command_id':'restore-a','target':pid,'payload':{}})
             assert req('/artifacts/unknown').status==404
             # SSE stays connected while the host shuts down.
-            stream = http.client.HTTPConnection(authority)
+            stream = http.client.HTTPConnection(authority, timeout=2)
             stream.request('GET', '/events', headers={'Cookie':'; '.join(f'{c.name}={c.value}' for c in cookies)})
             response = stream.getresponse()
             assert response.status==200
+            started = time.monotonic()
             assert json.load(req('/shutdown', {}))['ok']
-            assert child.wait(timeout=4)==0
+            http_shutdown = wait_for_shutdown(child, response, started)
             stream.close()
             child.stdout.close()
             child.stderr.close()
@@ -170,9 +181,16 @@ def run():
             assert restored['active_project_id'] == pid
             assert restored['global_concurrency'] == 7
             assert len(restored['features']) == 1
-            req('/shutdown', {}).read()
-            assert child.wait(timeout=4)==0
-            print('PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE shutdown, restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors' + ('; standalone copied binary' if '--standalone' in sys.argv else ''))
+            # Ctrl+C must wake the same scheduler stop checks and terminate an idle SSE.
+            stream = http.client.HTTPConnection(url.removeprefix('http://'), timeout=2)
+            stream.request('GET', '/events?cursor=999999999', headers={'Cookie':'; '.join(f'{c.name}={c.value}' for c in cookies)})
+            response = stream.getresponse()
+            assert response.status == 200
+            started = time.monotonic()
+            child.send_signal(signal.SIGINT)
+            signal_shutdown = wait_for_shutdown(child, response, started)
+            stream.close()
+            print(f'PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE EOF and shutdown (HTTP {http_shutdown:.3f}s, SIGINT {signal_shutdown:.3f}s), restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors' + ('; standalone copied binary' if '--standalone' in sys.argv else ''))
         finally:
             if child.poll() is None:
                 child.terminate()

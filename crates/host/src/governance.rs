@@ -114,9 +114,19 @@ impl Workspace {
         })())
     }
 
-    pub(super) fn tick_workflow_engine(&self, e: &Engine) -> Result<()> {
+    pub(super) fn tick_workflow_engine(
+        &self,
+        e: &Engine,
+        should_stop: &dyn Fn() -> bool,
+    ) -> Result<()> {
+        if should_stop() {
+            return Ok(());
+        }
         e.evaluate_workflows()?;
         for intent in e.pending_workflow_intents()? {
+            if should_stop() {
+                return Ok(());
+            }
             let method = intent.data["method"]
                 .as_str()
                 .ok_or_else(|| err("storage", "流程意图缺少动作"))?;
@@ -140,6 +150,9 @@ impl Workspace {
                 .projects
                 .first()
                 .is_some_and(|p| p.execution_mode == "live");
+            if should_stop() {
+                return Ok(());
+            }
             let result = match method {
                 "session.open" => self.open_conversation(e, command),
                 "attempt.start" if live => self.resolve_live_attempt(e, command),
@@ -147,7 +160,11 @@ impl Workspace {
                 "merge.request" if live => self.resolve_live_merge(e, command),
                 _ => e.execute(method, command),
             };
+            // Persist the dispatched result even if shutdown was requested during the call.
             e.observe_workflow_intent(&intent.id, &result)?;
+        }
+        if should_stop() {
+            return Ok(());
         }
         e.evaluate_workflows()
     }
