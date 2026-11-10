@@ -51,7 +51,8 @@ npm --prefix web ci
 
 ## 文档
 
-- [当前架构与实现基线 v0.3](docs/plans/devdesk-v0.3/PLAN.md)、[Workflow 与工作台执行记录](docs/plans/workflow-and-workbench/EXECUTION.md)
+- [当前架构与实现基线 v0.4](docs/plans/devdesk-v0.4/PLAN.md)、[基线核对与验证记录](docs/plans/devdesk-v0.4/EXECUTION.md)
+- [历史架构与实现基线 v0.3](docs/plans/devdesk-v0.3/PLAN.md)、[Workflow 与工作台执行记录](docs/plans/workflow-and-workbench/EXECUTION.md)
 - [历史架构设计 v0.2](docs/plans/devdesk-v0.2/PLAN.md)、[原型实施计划](docs/plans/devdesk-prototype/PLAN.md)
 - [领域规范](docs/domain.md)、[协议](docs/protocol.md)、[架构与 ADR](docs/design.md)
 - [真实工程接入与副作用边界](docs/real-engineering.md)、[接入实施计划](docs/plans/real-engineering-integration/PLAN.md)
