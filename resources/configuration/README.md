@@ -18,7 +18,9 @@
 
 ## 默认工程流程
 
-默认 Feature 流程配置需求、独立检查、设计、规划、创建 Task、逐项调用 Task 子流程、整体测试、文档和候选接纳。默认 Task 流程配置测试编写、工作空间快照、实际 Red、实现、实际 Green、文档、交付复验、独立评审与候选检查、人工确认及接纳。TDD 顺序、测试目录、职责和确认策略均在 JSON 或所引用的 Skill/Spec 中，可以发布自己的流程替代。
+默认 Feature 流程配置需求、独立检查、设计、规划、创建 Task、逐项调用 Task 子流程、整体测试、文档和候选接纳。默认 Task 流程配置测试编写、最小可执行 Red 基线、工作空间快照、实际 Red、实现、实际 Green、文档、交付复验、独立评审与候选检查、人工确认及接纳。基线准备不改写独立断言、不实现新增业务，避免把入口缺失包装成业务 Red。TDD 顺序、测试目录、职责和确认策略均在 JSON 或所引用的 Skill/Spec 中，可以发布自己的流程替代。
+
+implementation.evidence 是必需的“原始执行证据”输出，直接保存逐次日志和对应测试、源码内容快照；临时路径或摘要不能替代交付。documentation、review、candidate_review 和 handoff 分别显式引用此端口。输入只带入声明的 delivery，不共享任意历史目录；输入来源 ID 和内容摘要由任务渲染器记录，产物由 Artifact 存储密封。
 
 默认六种职责是示例配置，不限制用户定义新 Role。所有引用在 `manifest.json` 中声明，模板重置按身份重建完整引用图，不通过 builtin ID 前缀猜测默认对象。`projections/` 保存当前执行配置的投影；`initial/` 只负责首次初始化 Agent 身份。
 
@@ -26,6 +28,6 @@
 
 Codex Agent 可在 Capability 和当前 Step 中显式选择平台工具，通过真实原生调用进入同一处理器；函数名称使用 `devdesk_` 加处理器名称的可移植映射。当前 DSH 不支持动态工具桥。需要批准的平台写入使用显式工具步骤和确认门禁。Git 候选返回实际父提交及确切 diff，供配置中的独立评审引用。
 
-内容检查输出按 Spec 的动态 key 提交 `approve`、`summary`、`checks[{key,passed,evidence}]`，检查集合须精确匹配。模型拒绝保留原报告；人工决定绑定确切输入及输出，只有 Step 明确允许时才能说明理由覆盖完成条件。
+内容检查输出按 Spec 的动态 key 提交 `approve`、`summary`、`checks[{key,passed,evidence}]`，检查集合须精确匹配。模型拒绝保留原报告；普通确认按 Step 的覆盖策略执行。显式手动 Approve 要求非空理由，绑定当前执行、确切输入及输出，单独保留人工例外，不改写原检查报告或冻结配置。
 
 模型显示名称与默认地址在 `model-provider-defaults.json`，实际 SDK 协议、认证与安全校验仍由适配器实现。MCP/HTTP 服务及凭据引用在数据库中配置；资源目录不包含密钥。

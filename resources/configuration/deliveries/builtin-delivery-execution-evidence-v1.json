@@ -1,0 +1,119 @@
+{
+  "template_key": "governance.builtin-delivery-execution-evidence-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-delivery-execution-evidence-v1",
+    "kind": "delivery_type",
+    "definition_id": "builtin-delivery-execution-evidence",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "原始执行证据",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "format": "json",
+      "body": "逐次真实执行的完整记录，作为命名输出持久化后由显式输入绑定传递。runs 按实际顺序记录阶段、完整命令、目录、起止时间、退出码、原始 stdout/stderr，以及该次执行对应的测试与实现文件内容和 SHA-256。不得仅提交 /tmp 路径、摘要或已通过声明；不得将 Agent 自行记录冒充平台测试回执。检查者应核对同一测试 Red→Green、真实业务断言和最终候选关联。",
+      "content_schema": {
+        "type": "object",
+        "required": [
+          "runs"
+        ],
+        "properties": {
+          "runs": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": [
+                "sequence",
+                "phase",
+                "command",
+                "cwd",
+                "started_at",
+                "finished_at",
+                "exit_code",
+                "stdout",
+                "stderr",
+                "files"
+              ],
+              "properties": {
+                "sequence": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "phase": {
+                  "enum": [
+                    "red",
+                    "green",
+                    "regression"
+                  ]
+                },
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "cwd": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "started_at": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "finished_at": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "exit_code": {
+                  "type": "integer"
+                },
+                "stdout": {
+                  "type": "string"
+                },
+                "stderr": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "path",
+                      "sha256",
+                      "content"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "content": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

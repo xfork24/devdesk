@@ -137,3 +137,22 @@ python3 tests/live/probe_default_engineering_workflow.py --binary target/debug/d
 ```
 
 真实模型探针只在显式调用时使用账户和专用测试资源。macOS 完整检查、自由业务原生验收、默认工程图与独立包已通过；Ubuntu 当前合同的 Codex 自由业务、模板重置后继续执行、完整默认工程图和独立 Linux 包本轮也已通过，确切结果见前文。按用户要求，本轮不验收 DSH/Ollama；真实 DSH 云模型工程运行仍未执行，DSH 的动态平台工具桥当前明确不支持，独立 Tool Step 不受此限制。不能将 SDK 本地夹具或历史版本报告当作这些范围的实机证明。
+
+
+## 2026-11-11：显式证据交付与手动 Approve
+
+现场复盘：Task 的实现评审已通过显式输入收到 implementation、documentation、Red、Green 与 verify；并非历史 delivery 没有传入。开发 Agent 将自行补跑的逐次 TDD 日志及源码快照留在隔离执行的 `/tmp/parity-evidence`，仅交付路径和摘要。文档步骤已说明未读取、未确认持久化，评审据此拒绝证明历史 TDD 顺序。另一处配置问题是测试设计 Skill/Spec 允许把实现缺失包装成受控断言，平台只据断言分类接受 Red；开发 Agent 已识别该 Red 不具有业务意义。
+
+修复：
+
+- 默认 Task 添加 `red_baseline`，由开发职责准备最小可调用接口和必要元数据，保留只读独立测试；测试与最小接口一并固定后再执行平台 Red。Skill/Spec 明确禁止将导入、模块或导出缺失改写为业务断言失败。
+- 添加带 JSON Schema 的“原始执行证据”Delivery；implementation 的必需 `evidence` 输出交付逐次命令、目录、起止时间、退出码、完整 stdout/stderr 及当时源码和测试的内容快照、SHA-256。只交临时路径不能通过结构校验。
+- documentation、review、candidate_review 的 `inputs.evidence` 和 handoff 参数分别显式引用该输出。沿既有 workflow_output/Artifact 路径密封存储；规范任务记录 source_output_id 与 value_digest，不注入未绑定输出或任意历史目录。
+- `workflow.step.approve` 提供独立人工例外决定，非空理由及确切 execution_id/input_digest/outputs 为必需；拒绝旧轮次、不同输入和不同产物，允许无关步骤推进造成的实例修订过期。原报告、冻结配置及实际测试回执保持原值。普通 confirm 继续遵守原覆盖策略。
+- 执行页对所有 waiting_confirmation 显示审批或校验未通过说明，并提供返工；手动理由逐执行保存。批准后显示人工例外及理由。
+
+验证：配置执行回归 28 项、Schema 合同 11 项、core 3 项通过；Chromium 覆盖自动/人工确认步骤的手动批准、页面重载、独立理由及连续批准；既有 Workflow 编辑与确切输入确认 9 项通过。跨步骤夹具实际执行生产和消费任务，检查原始记录、源输出 ID、摘要、未绑定输出隔离及存储重新打开；临时路径缺少内容被拒绝。夹具记录不作为真实 TDD/模型执行证据。
+
+当前项目已发布并采用 Task Workflow v5、Feature Workflow v6（包含更新后的开发/测试 Skill、Capability 与 Agent 绑定），配置编译和任务预览通过。既有 Feature 与子流程继续引用原冻结 v4，原始 reject 保留，未执行人工放行或自动返工。Host 已重新构建、签名并在原 4317 端口恢复。
+
+限制：本次验证了证据交付、最小可执行基线的配置闭包及审批链路，未替用户重跑新版本的完整真实模型/GitHub 交付。执行证据由 Agent 据真实工具输出整理，其身份不同于平台测试回执；Schema 保证交付结构，内容真实性与 Red/Green 对应关系仍需独立检查。规范任务沿用 512 KiB 大小上限，超过时会明确拒绝，不放宽为任意文件读取。

@@ -10,7 +10,7 @@ async function rpc(page: Page, method: string, params: any = {}) {
   return result.result;
 }
 for (const allowOverride of [false, true])
-  test(`未满足的完成条件：配置${allowOverride ? "允许说明理由后覆盖" : "禁止人工覆盖"}`, async ({
+  test(`校验未通过时可填写理由手动 Approve：${allowOverride ? "人工确认步骤" : "自动确认步骤"}`, async ({
     page,
   }) => {
     await page.goto("/");
@@ -36,7 +36,7 @@ for (const allowOverride of [false, true])
               name: "核对未满足条件",
               stage: "decision",
               executor: { type: "control" },
-              confirmation: "human",
+              confirmation: allowOverride ? "human" : "automatic",
               allow_completion_override: allowOverride,
               completion: {
                 op: "equals",
@@ -77,40 +77,148 @@ for (const allowOverride of [false, true])
       name: "当前工作流",
       exact: true,
     });
+    const approve = runtime.getByRole("button", {
+      name: "手动 Approve 此版本",
+      exact: true,
+    });
     await expect(
-      runtime.getByRole("button", { name: "确认此版本结果", exact: true }),
+      runtime.getByText(/校验未通过，完成条件尚未满足/),
     ).toBeVisible();
-    if (allowOverride) {
-      await runtime.getByLabel("明确覆盖未满足的完成条件").check();
-      await expect(
-        runtime.getByRole("button", { name: "确认此版本结果", exact: true }),
-      ).toBeDisabled();
-      await runtime
-        .getByLabel("确认说明")
-        .fill("已核实当前材料，记录人工例外。");
-      await runtime
-        .getByRole("button", { name: "确认此版本结果", exact: true })
-        .click();
-      await expect
-        .poll(
-          async () =>
-            (
-              await rpc(page, "query.workspace", { project_id: project.id })
-            ).configurations.find((r: any) => r.id === instance.id)?.data
-              .status,
-        )
-        .toBe("completed");
-    } else {
-      await expect(runtime.getByLabel("明确覆盖未满足的完成条件")).toHaveCount(
-        0,
-      );
-      await runtime
-        .getByRole("button", { name: "确认此版本结果", exact: true })
-        .click();
-      await expect(runtime.getByRole("alert")).toContainText("不允许直接通过");
-      const row = (
-        await rpc(page, "query.workspace", { project_id: project.id })
-      ).configurations.find((r: any) => r.id === instance.id);
-      expect(row.data.steps[0].status).toBe("waiting_confirmation");
-    }
+    await expect(
+      runtime.getByRole("button", { name: "从此步骤返工", exact: true }),
+    ).toBeVisible();
+    await expect(approve).toBeVisible();
+    await expect(approve).toBeDisabled();
+    await runtime.getByLabel("手动批准理由（必填）").fill("  ");
+    await expect(approve).toBeDisabled();
+    const reason = "已核实当前材料，接受本次校验缺口。";
+    await runtime.getByLabel("手动批准理由（必填）").fill(reason);
+    await expect(approve).toBeEnabled();
+    await approve.click();
+    await expect
+      .poll(
+        async () =>
+          (
+            await rpc(page, "query.workflow_instance", {
+              project_id: project.id,
+              id: instance.id,
+            })
+          ).runtime.status,
+      )
+      .toBe("completed");
+    await expect(
+      runtime.getByText(`已手动批准，原完成条件未满足：${reason}`, {
+        exact: true,
+      }),
+    ).toBeVisible();
+    const view = await rpc(page, "query.workflow_instance", {
+      project_id: project.id,
+      id: instance.id,
+    });
+    const confirmation = view.completion_status[view.runtime.steps[0].id];
+    expect(confirmation.satisfied).toBe(false);
+    expect(confirmation.confirmation.reason).toBe(reason);
+    expect(confirmation.confirmation.manual_approval).toBe(true);
+    expect(view.plan.steps[0].allow_completion_override).toBe(allowOverride);
+    await page.reload();
+    await expect(
+      runtime.getByText(`已手动批准，原完成条件未满足：${reason}`, {
+        exact: true,
+      }),
+    ).toBeVisible();
   });
+
+test("并行等待审批的步骤分别保存理由", async ({ page }) => {
+  await page.goto("/");
+  if (
+    (await page.request.get("/capabilities").then((r) => r.json()))
+      .setup_required
+  ) {
+    await page
+      .getByLabel("数据目录")
+      .fill(mkdtempSync(join(tmpdir(), "devdesk-multi-confirm-")));
+    await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+  }
+  const draft = await rpc(page, "workflow.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: "并行审批",
+      document: {
+        schema_version: 4,
+        stages: [{ key: "decision", name: "决定" }],
+        inputs: { accepted: { delivery_ref: "builtin-delivery-object-v1" } },
+        steps: ["first", "second"].map((key) => ({
+          key,
+          name: key,
+          stage: "decision",
+          executor: { type: "control" },
+          completion: {
+            op: "equals",
+            source: { step: "$input", port: "accepted" },
+            value: true,
+          },
+        })),
+      },
+    },
+  });
+  const workflow = await rpc(page, "workflow.publish", {
+    command_id: crypto.randomUUID(),
+    target: draft.id,
+    expected_revision: draft.revision,
+    payload: {},
+  });
+  const project = await rpc(page, "project.create", {
+    command_id: crypto.randomUUID(),
+    payload: { title: "并行审批项目" },
+  });
+  const instance = await rpc(page, "workflow.start", {
+    project_id: project.id,
+    command_id: crypto.randomUUID(),
+    target: project.id,
+    expected_revision: (
+      await rpc(page, "query.workspace", { project_id: project.id })
+    ).active_project.revision,
+    payload: {
+      workflow_ref: workflow.id,
+      role_agent_bindings: {},
+      inputs: { accepted: { value: false } },
+    },
+  });
+  await page.goto(`/?tab=execution&project_id=${project.id}`);
+  const first = page.getByRole("article", {
+    name: "步骤 · first",
+    exact: true,
+  });
+  const second = page.getByRole("article", {
+    name: "步骤 · second",
+    exact: true,
+  });
+  await first.getByLabel("手动批准理由（必填）").fill("第一步的人工决定");
+  await second.getByLabel("手动批准理由（必填）").focus();
+  await expect(second.getByLabel("手动批准理由（必填）")).toHaveValue("");
+  await expect(
+    second.getByRole("button", { name: "手动 Approve 此版本" }),
+  ).toBeDisabled();
+  await second.getByLabel("手动批准理由（必填）").fill("第二步的人工决定");
+  await first.getByRole("button", { name: "手动 Approve 此版本" }).click();
+  await expect(
+    first.getByText("已手动批准，原完成条件未满足：第一步的人工决定", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(second.getByLabel("手动批准理由（必填）")).toHaveValue(
+    "第二步的人工决定",
+  );
+  await second.getByRole("button", { name: "手动 Approve 此版本" }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await rpc(page, "query.workflow_instance", {
+            project_id: project.id,
+            id: instance.id,
+          })
+        ).runtime.status,
+    )
+    .toBe("completed");
+});

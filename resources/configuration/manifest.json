@@ -47,7 +47,8 @@
       "deliveries/builtin-delivery-review-v1.json",
       "deliveries/builtin-delivery-task-plan-v1.json",
       "deliveries/builtin-delivery-test-recipe-v1.json",
-      "deliveries/builtin-delivery-collection-v1.json"
+      "deliveries/builtin-delivery-collection-v1.json",
+      "deliveries/builtin-delivery-execution-evidence-v1.json"
     ],
     "capability": [
       "capabilities/builtin-capability-sol-high-codex-v2.json",

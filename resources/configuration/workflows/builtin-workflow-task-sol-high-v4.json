@@ -108,7 +108,7 @@
             "type": "agent",
             "role_ref": "builtin-role-tester"
           },
-          "task_instructions": "依据 Task 与设计，使用测试设计 Skill，在授权的 tests 目录编写行为断言。提交可由 node --test 执行的文件配方；无需指定镜像，平台会绑定确切环境。",
+          "task_instructions": "依据 Task 与设计，使用测试设计 Skill，在授权的 tests 目录编写行为断言。提交可由 node --test 执行的文件配方；无需指定镜像，平台会绑定确切环境。 缺少产品模块或导出属于运行前置条件错误，不能用 assert、捕获后转断言或伪造业务返回值把它包装成有效 Red；保留原始加载错误。后续 red_baseline 步骤会在不修改独立断言的前提下准备最小可调用接口。",
           "required_skill_refs": [
             "builtin-skill-test-design-v2"
           ],
@@ -130,11 +130,89 @@
           }
         },
         {
+          "key": "red_baseline",
+          "name": "准备可执行的 Red 基线",
+          "stage": "work",
+          "dependencies": [
+            "tests"
+          ],
+          "inputs": {
+            "task": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "item",
+                "pointer": ""
+              }
+            },
+            "design": {
+              "type": "source",
+              "source": {
+                "step": "$input",
+                "port": "design",
+                "pointer": ""
+              }
+            },
+            "recipe": {
+              "type": "source",
+              "source": {
+                "step": "tests",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "workspace",
+                "port": "result",
+                "pointer": ""
+              }
+            }
+          },
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-prd-v1"
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "agent",
+            "role_ref": "builtin-role-developer"
+          },
+          "task_instructions": "只准备独立测试可加载、可调用的最小接口和必要运行元数据，不实现本次新增业务，不改写 tests 目录的断言。依据 Task、设计和 recipe 核对真实现场；已有行为不得为了制造 Red 而破坏。缺少新模块时创建可加载但尚未满足新增行为的占位导出，使下一步平台 Red 来自真实业务断言差异。语法、导入、依赖错误不得作为业务 Red。提交准备摘要与修改范围；无法在授权内建立有效基线时返回 blocked。",
+          "required_skill_refs": [
+            "builtin-skill-tdd-implementation-v2"
+          ],
+          "spec_refs": [
+            "builtin-spec-stage-implementation-v1"
+          ],
+          "tags": [
+            "implementation"
+          ],
+          "access": {
+            "workspace_input": "workspace",
+            "writable_paths": [
+              "."
+            ],
+            "read_only_paths": [
+              "tests"
+            ],
+            "tool_refs": [
+              "builtin-tool-codex-native-v1"
+            ]
+          }
+        },
+        {
           "key": "tests_snapshot",
           "name": "固定代码版本",
           "stage": "work",
           "dependencies": [
-            "tests"
+            "red_baseline"
           ],
           "inputs": {},
           "outputs": {
@@ -162,7 +240,7 @@
               "allowed_paths": {
                 "type": "constant",
                 "value": [
-                  "tests"
+                  "."
                 ]
               }
             }
@@ -297,6 +375,10 @@
           "outputs": {
             "result": {
               "delivery_ref": "builtin-delivery-prd-v1"
+            },
+            "evidence": {
+              "delivery_ref": "builtin-delivery-execution-evidence-v1",
+              "required": true
             }
           },
           "budget": {
@@ -308,7 +390,7 @@
             "type": "agent",
             "role_ref": "builtin-role-developer"
           },
-          "task_instructions": "按 TDD Skill 实现当前 Task。使用独立测试及真实 Red 回执；保留 tests 目录中的断言，只修改其余授权文件。提交实现摘要与范围说明。",
+          "task_instructions": "按 TDD Skill 实现当前 Task。使用独立测试及真实 Red 回执；保留 tests 目录中的断言，只修改其余授权文件。提交实现摘要与范围说明。 必须同时提交 evidence 端口：将本节点实际执行的逐次业务 Red/Green/回归日志及当时测试、源码内容快照直接填入结构化 delivery；平台会密封持久化并传给明确引用此端口的后续步骤。不得只留下临时路径或摘要，也不得把“请协调方保存”视为已交付。保留原始输出与实际退出码，不虚构记录；记录未能取得时返回 blocked。",
           "required_skill_refs": [
             "builtin-skill-tdd-implementation-v2"
           ],
@@ -469,6 +551,14 @@
                 "port": "result",
                 "pointer": ""
               }
+            },
+            "evidence": {
+              "type": "source",
+              "source": {
+                "step": "implementation",
+                "port": "evidence",
+                "pointer": ""
+              }
             }
           },
           "outputs": {
@@ -485,7 +575,7 @@
             "type": "agent",
             "role_ref": "builtin-role-developer"
           },
-          "task_instructions": "依据 Task、实际代码版本和 Green 回执补充接口、使用方式、验收追溯与已知限制。",
+          "task_instructions": "依据 Task、实际代码版本和 Green 回执补充接口、使用方式、验收追溯与已知限制。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
           "required_skill_refs": [
             "builtin-skill-tdd-implementation-v2"
           ],
@@ -621,6 +711,14 @@
                 "port": "result",
                 "pointer": ""
               }
+            },
+            "evidence": {
+              "type": "source",
+              "source": {
+                "step": "implementation",
+                "port": "evidence",
+                "pointer": ""
+              }
             }
           },
           "outputs": {
@@ -638,7 +736,7 @@
             "type": "agent",
             "role_ref": "builtin-role-reviewer"
           },
-          "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。",
+          "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
           "required_skill_refs": [
             "builtin-skill-independent-review-v2"
           ],
@@ -805,7 +903,7 @@
             "type": "agent",
             "role_ref": "builtin-role-reviewer"
           },
-          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。由人类确认确切输入版本后再接纳。",
+          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。由人类确认确切输入版本后再接纳。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
           "required_skill_refs": [
             "builtin-skill-independent-review-v2"
           ],
@@ -866,6 +964,14 @@
               "source": {
                 "step": "verify",
                 "port": "result",
+                "pointer": ""
+              }
+            },
+            "evidence": {
+              "type": "source",
+              "source": {
+                "step": "implementation",
+                "port": "evidence",
                 "pointer": ""
               }
             }
@@ -1102,6 +1208,14 @@
                   "port": "result",
                   "pointer": ""
                 }
+              },
+              "evidence": {
+                "type": "source",
+                "source": {
+                  "step": "implementation",
+                  "port": "evidence",
+                  "pointer": ""
+                }
               }
             }
           },
@@ -1225,48 +1339,40 @@
       "template_ref": "governance.builtin-tool-codex-native-v1",
       "target": "revision"
     },
-    "/data/steps/2/outputs/result/delivery_ref": {
-      "template_ref": "governance.builtin-delivery-object-v1",
-      "target": "revision"
-    },
-    "/data/steps/2/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-workspace-snapshot-v1",
-      "target": "revision"
-    },
     "/data/steps/3/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
     "/data/steps/3/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "template_ref": "governance.builtin-tool-workspace-snapshot-v1",
       "target": "revision"
     },
     "/data/steps/4/outputs/result/delivery_ref": {
-      "template_ref": "governance.builtin-delivery-prd-v1",
-      "target": "revision"
-    },
-    "/data/steps/4/executor/role_ref": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/4/required_skill_refs/0": {
-      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
-      "target": "revision"
-    },
-    "/data/steps/4/spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-implementation-v1",
-      "target": "revision"
-    },
-    "/data/steps/4/access/tool_refs/0": {
-      "template_ref": "governance.builtin-tool-codex-native-v1",
-      "target": "revision"
-    },
-    "/data/steps/5/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
-    "/data/steps/5/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-workspace-snapshot-v1",
+    "/data/steps/4/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "target": "revision"
+    },
+    "/data/steps/5/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-prd-v1",
+      "target": "revision"
+    },
+    "/data/steps/5/executor/role_ref": {
+      "template_ref": "governance.builtin-role-developer-v1",
+      "target": "identity"
+    },
+    "/data/steps/5/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
+      "target": "revision"
+    },
+    "/data/steps/5/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/steps/5/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
       "target": "revision"
     },
     "/data/steps/6/outputs/result/delivery_ref": {
@@ -1274,59 +1380,59 @@
       "target": "revision"
     },
     "/data/steps/6/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "template_ref": "governance.builtin-tool-workspace-snapshot-v1",
       "target": "revision"
     },
     "/data/steps/7/outputs/result/delivery_ref": {
-      "template_ref": "governance.builtin-delivery-prd-v1",
-      "target": "revision"
-    },
-    "/data/steps/7/executor/role_ref": {
-      "template_ref": "governance.builtin-role-developer-v1",
-      "target": "identity"
-    },
-    "/data/steps/7/required_skill_refs/0": {
-      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
-      "target": "revision"
-    },
-    "/data/steps/7/spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-implementation-v1",
-      "target": "revision"
-    },
-    "/data/steps/8/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
-    "/data/steps/8/executor/tool_ref": {
+    "/data/steps/7/executor/tool_ref": {
       "template_ref": "governance.builtin-tool-tests-run-v1",
       "target": "revision"
     },
-    "/data/steps/9/outputs/result/delivery_ref": {
-      "template_ref": "governance.builtin-delivery-review-v1",
+    "/data/steps/8/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-prd-v1",
       "target": "revision"
     },
-    "/data/steps/9/executor/role_ref": {
-      "template_ref": "governance.builtin-role-reviewer-v1",
+    "/data/steps/8/executor/role_ref": {
+      "template_ref": "governance.builtin-role-developer-v1",
       "target": "identity"
     },
-    "/data/steps/9/required_skill_refs/0": {
-      "template_ref": "governance.builtin-skill-independent-review-v2",
+    "/data/steps/8/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
       "target": "revision"
     },
-    "/data/steps/9/spec_refs/0": {
+    "/data/steps/8/spec_refs/0": {
       "template_ref": "governance.builtin-spec-stage-implementation-v1",
       "target": "revision"
     },
-    "/data/steps/9/access/tool_refs/0": {
-      "template_ref": "governance.builtin-tool-codex-native-v1",
-      "target": "revision"
-    },
-    "/data/steps/10/outputs/result/delivery_ref": {
+    "/data/steps/9/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
-    "/data/steps/10/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-workspace-current-v1",
+    "/data/steps/9/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "target": "revision"
+    },
+    "/data/steps/10/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-review-v1",
+      "target": "revision"
+    },
+    "/data/steps/10/executor/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/10/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-independent-review-v2",
+      "target": "revision"
+    },
+    "/data/steps/10/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/steps/10/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
       "target": "revision"
     },
     "/data/steps/11/outputs/result/delivery_ref": {
@@ -1334,55 +1440,55 @@
       "target": "revision"
     },
     "/data/steps/11/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-git-candidate-v1",
-      "target": "revision"
-    },
-    "/data/steps/12/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-tests-run-v1",
+      "template_ref": "governance.builtin-tool-workspace-current-v1",
       "target": "revision"
     },
     "/data/steps/12/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
-    "/data/steps/13/executor/role_ref": {
-      "template_ref": "governance.builtin-role-reviewer-v1",
-      "target": "identity"
-    },
-    "/data/steps/13/required_skill_refs/0": {
-      "template_ref": "governance.builtin-skill-independent-review-v2",
+    "/data/steps/12/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-git-candidate-v1",
       "target": "revision"
     },
-    "/data/steps/13/spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-release-v1",
+    "/data/steps/13/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tests-run-v1",
       "target": "revision"
     },
     "/data/steps/13/outputs/result/delivery_ref": {
-      "template_ref": "governance.builtin-delivery-review-v1",
-      "target": "revision"
-    },
-    "/data/steps/13/access/tool_refs/0": {
-      "template_ref": "governance.builtin-tool-codex-native-v1",
-      "target": "revision"
-    },
-    "/data/steps/14/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
-    "/data/steps/14/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-git-advance-v1",
+    "/data/steps/14/executor/role_ref": {
+      "template_ref": "governance.builtin-role-reviewer-v1",
+      "target": "identity"
+    },
+    "/data/steps/14/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-independent-review-v2",
       "target": "revision"
     },
-    "/data/steps/15/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-git-publish-v1",
+    "/data/steps/14/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-release-v1",
+      "target": "revision"
+    },
+    "/data/steps/14/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-review-v1",
+      "target": "revision"
+    },
+    "/data/steps/14/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
       "target": "revision"
     },
     "/data/steps/15/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
       "target": "revision"
     },
+    "/data/steps/15/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-git-advance-v1",
+      "target": "revision"
+    },
     "/data/steps/16/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-materials-capture-v1",
+      "template_ref": "governance.builtin-tool-git-publish-v1",
       "target": "revision"
     },
     "/data/steps/16/outputs/result/delivery_ref": {
@@ -1390,11 +1496,43 @@
       "target": "revision"
     },
     "/data/steps/17/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-tasks-complete-v1",
+      "template_ref": "governance.builtin-tool-materials-capture-v1",
       "target": "revision"
     },
     "/data/steps/17/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/18/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-tasks-complete-v1",
+      "target": "revision"
+    },
+    "/data/steps/18/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/5/outputs/evidence/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-execution-evidence-v1",
+      "target": "revision"
+    },
+    "/data/steps/2/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-prd-v1",
+      "target": "revision"
+    },
+    "/data/steps/2/executor/role_ref": {
+      "template_ref": "governance.builtin-role-developer-v1",
+      "target": "identity"
+    },
+    "/data/steps/2/required_skill_refs/0": {
+      "template_ref": "governance.builtin-skill-tdd-implementation-v2",
+      "target": "revision"
+    },
+    "/data/steps/2/spec_refs/0": {
+      "template_ref": "governance.builtin-spec-stage-implementation-v1",
+      "target": "revision"
+    },
+    "/data/steps/2/access/tool_refs/0": {
+      "template_ref": "governance.builtin-tool-codex-native-v1",
       "target": "revision"
     }
   },

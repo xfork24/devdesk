@@ -567,6 +567,37 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         .decode()
         .unwrap();
     let review=task.steps.iter().find(|step|step.inputs.contains_key("verify")).expect("the shipped implementation Spec requires an actual delivery verification before review");
+    for key in ["documentation", "review", "candidate_review"] {
+        let consumer = task.steps.iter().find(|step| step.key == key).unwrap();
+        let InputBinding::Source { source } = &consumer.inputs["evidence"] else {
+            panic!("raw evidence must be an explicit upstream delivery")
+        };
+        let producer = task
+            .steps
+            .iter()
+            .find(|step| step.key == source.step)
+            .unwrap();
+        assert!(producer.outputs[&source.port].required);
+        assert_eq!(
+            producer.outputs[&source.port].delivery_ref,
+            "builtin-delivery-execution-evidence-v1"
+        );
+        assert!(task.ancestors(consumer).contains(producer.key.as_str()));
+    }
+    let baseline = task
+        .steps
+        .iter()
+        .find(|step| step.key == "red_baseline")
+        .unwrap();
+    let red = task.steps.iter().find(|step| step.key == "red").unwrap();
+    assert!(task.ancestors(red).contains(baseline.key.as_str()));
+    assert!(
+        baseline
+            .access
+            .read_only_paths
+            .iter()
+            .any(|path| path == "tests")
+    );
     let InputBinding::Source {
         source: verify_source,
     } = &review.inputs["verify"]
@@ -705,6 +736,228 @@ fn dynamic_spec_rejection_cannot_be_confirmed_and_rework_keeps_the_original_repo
     command(&engine,"workflow.step.confirm",run["id"].as_str(),json!({"step":"study","input_digest":after["steps"][0]["input_digest"],"outputs":after["steps"][0]["outputs"]})).unwrap();
     drive(&engine, 2);
     assert_eq!(instance(&engine, &run["id"])["status"], "completed");
+}
+
+#[test]
+fn explicit_manual_approval_requires_reason_and_exact_execution_and_preserves_rejection() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    let report = json!({"approve":false,"summary":"原始证据缺失","checks":[]});
+    recorder
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"completed","summary":"检查未通过","outputs":{"report":report}}));
+    let (role, agent) = research_agent(&engine);
+    let run = launch(
+        &engine,
+        &role,
+        &agent,
+        json!({
+            "outputs":{"report":{"delivery_ref":"builtin-delivery-object-v1"}},
+            "completion":{"op":"equals","source":{"step":"study","port":"report","pointer":"/approve"},"value":true}
+        }),
+    );
+    drive(&engine, 12);
+    let before = instance(&engine, &run["id"]);
+    let execution = &before["steps"][0];
+    assert_eq!(execution["status"], "waiting_confirmation");
+    let payload = json!({"step":"study","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"],"reason":"已核对功能，接受本轮历史证据缺失"});
+    for (key, value) in [
+        ("reason", json!("  ")),
+        ("execution_id", json!("old-execution")),
+        ("input_digest", json!("old-input")),
+        ("outputs", json!({})),
+    ] {
+        let mut invalid = payload.clone();
+        invalid[key] = value;
+        assert!(
+            command(
+                &engine,
+                "workflow.step.approve",
+                run["id"].as_str(),
+                invalid
+            )
+            .is_err(),
+            "{key}"
+        );
+    }
+    // Ordinary confirmation still respects the frozen workflow's override policy.
+    assert!(
+        command(
+            &engine,
+            "workflow.step.confirm",
+            run["id"].as_str(),
+            payload.clone()
+        )
+        .is_err()
+    );
+    // A stale instance revision from another step must not invalidate this
+    // exact execution's unchanged inputs and outputs.
+    engine
+        .execute(
+            "workflow.step.approve",
+            Command {
+                command_id: id(),
+                target: run["id"].as_str().map(str::to_owned),
+                expected_revision: run["revision"].as_u64(),
+                payload: payload.clone(),
+            },
+        )
+        .unwrap();
+    drive(&engine, 2);
+    let after = instance(&engine, &run["id"]);
+    assert_eq!(after["status"], "completed");
+    assert_eq!(after["plan"], before["plan"]);
+    assert_eq!(after["steps"][0]["outputs"], execution["outputs"]);
+    let view = engine
+        .query("query.workflow_instance", &json!({"id":run["id"]}), 4)
+        .unwrap();
+    let completion = &view["completion_status"][execution["id"].as_str().unwrap()];
+    assert_eq!(completion["satisfied"], false);
+    assert_eq!(completion["confirmation"]["manual_approval"], true);
+    assert_eq!(completion["confirmation"]["override_completion"], true);
+    assert_eq!(completion["confirmation"]["reason"], payload["reason"]);
+    assert_eq!(
+        view["outputs"][execution["outputs"]["report"].as_str().unwrap()]["value"],
+        report
+    );
+    command(
+        &engine,
+        "workflow.step.rework",
+        run["id"].as_str(),
+        json!({"step":"study"}),
+    )
+    .unwrap();
+    assert!(
+        command(
+            &engine,
+            "workflow.step.approve",
+            run["id"].as_str(),
+            payload
+        )
+        .is_err()
+    );
+}
+
+fn execution_evidence_fixture() -> Value {
+    json!({"runs":[
+        {"sequence":1,"phase":"red","command":"node --test tests/behavior.mjs","cwd":"/work","started_at":"2026-11-10T01:00:00Z","finished_at":"2026-11-10T01:00:01Z","exit_code":1,"stdout":"expected true, actual false","stderr":"","files":[{"path":"src/behavior.mjs","sha256":"a".repeat(64),"content":"export default false"},{"path":"tests/behavior.mjs","sha256":"b".repeat(64),"content":"test the public behavior"}]},
+        {"sequence":2,"phase":"green","command":"node --test tests/behavior.mjs","cwd":"/work","started_at":"2026-11-10T01:00:02Z","finished_at":"2026-11-10T01:00:03Z","exit_code":0,"stdout":"pass 1, fail 0","stderr":"","files":[{"path":"src/behavior.mjs","sha256":"c".repeat(64),"content":"export default true"},{"path":"tests/behavior.mjs","sha256":"b".repeat(64),"content":"test the public behavior"}]}
+    ]})
+}
+
+#[test]
+fn raw_evidence_contract_rejects_temp_paths_without_contents() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    recorder.responses.lock().unwrap().push(json!({"status":"completed","summary":"记录在临时目录","outputs":{"evidence":{"path":"/tmp/evidence","sha256":"a".repeat(64)}}}));
+    let (role, agent) = research_agent(&engine);
+    let run = launch(
+        &engine,
+        &role,
+        &agent,
+        json!({"outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence-v1"}}}),
+    );
+    drive(&engine, 12);
+    let runtime = instance(&engine, &run["id"]);
+    assert_eq!(runtime["steps"][0]["status"], "failed");
+    assert_eq!(runtime["steps"][0]["outputs"], json!({}));
+}
+
+#[test]
+fn declared_delivery_inputs_carry_persisted_raw_evidence_without_other_outputs() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut workbench = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    workbench.harness = recorder.clone();
+    let evidence = execution_evidence_fixture();
+    let (role, agent) = research_agent(&workbench);
+    recorder.responses.lock().unwrap().extend([
+        json!({"status":"completed","summary":"实际记录已交付","outputs":{"evidence":evidence,"unrelated":{"private_note":"unbound output must not reach reviewer"}}}),
+        json!({"status":"completed","summary":"已核对完整历史记录","outputs":{"result":{"checked":true}}})
+    ]);
+    let workflow = publish(
+        &workbench,
+        json!({"schema_version":4,"stages":[{"key":"work","name":"证据交付","default_role_ref":role["definition_id"]}],"steps":[
+            {"key":"produce","name":"记录执行","stage":"work","executor":{"type":"agent"},"task_instructions":"将真实记录作为 evidence 输出交付。","outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence-v1"},"unrelated":{"delivery_ref":"builtin-delivery-object-v1"}}},
+            {"key":"inspect","name":"检查证据","stage":"work","dependencies":["produce"],"executor":{"type":"agent"},"task_instructions":"只检查声明的 evidence 输入。","inputs":{"evidence":{"type":"source","source":{"step":"produce","port":"evidence"}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-object-v1"}}}
+        ]}),
+    );
+    let project = command(
+        &workbench,
+        "project.create",
+        None,
+        json!({"title":"证据范围"}),
+    )
+    .unwrap();
+    let run = command(&workbench, "workflow.start", project["id"].as_str(), json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["definition_id"].as_str().unwrap():agent["id"]}})).unwrap();
+    drive(&workbench, 24);
+    let state = workbench.store.snapshot().unwrap();
+    let runtime = instance(&workbench, &run["id"]);
+    assert_eq!(runtime["status"], "completed");
+    let output_id = runtime["steps"][0]["outputs"]["evidence"].as_str().unwrap();
+    let output = state.configuration(output_id).unwrap();
+    let artifact_id = output.data["artifact_id"].as_str().unwrap();
+    let artifact = state
+        .artifacts
+        .iter()
+        .find(|a| a.id == artifact_id)
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&workbench.artifacts.read(artifact).unwrap()).unwrap(),
+        evidence
+    );
+    let calls = recorder.calls.lock().unwrap();
+    let inspect: Value = serde_json::from_str(&calls[1].turn.input).unwrap();
+    assert_eq!(inspect["inputs"], json!({"evidence":evidence}));
+    assert_eq!(
+        inspect["input_sources"]["evidence"]["source_output_id"],
+        output_id
+    );
+    assert_eq!(
+        inspect["input_sources"]["evidence"]["value_digest"],
+        configuration_hash(&evidence)
+    );
+    assert!(
+        !calls[1]
+            .turn
+            .input
+            .contains("unbound output must not reach reviewer")
+    );
+    assert!(
+        inspect["authorization"]["writable_paths"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let artifact = artifact.clone();
+    let output_id = output_id.to_owned();
+    drop(calls);
+    drop(workbench);
+    let reopened = SqliteStore::open(dir.path()).unwrap();
+    assert_eq!(
+        reopened
+            .snapshot()
+            .unwrap()
+            .configuration(&output_id)
+            .unwrap()
+            .data["value"],
+        evidence
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(
+            &FileArtifacts::new(dir.path().into())
+                .read(&artifact)
+                .unwrap()
+        )
+        .unwrap(),
+        evidence
+    );
 }
 
 #[test]

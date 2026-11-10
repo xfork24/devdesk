@@ -1051,6 +1051,7 @@ impl Engine {
             "workflow.resume",
             "workflow.cancel",
             "workflow.step.confirm",
+            "workflow.step.approve",
             "workflow.step.input",
             "workflow.step.retry",
             "workflow.step.rework",
@@ -1071,7 +1072,11 @@ impl Engine {
             return Ok(None);
         };
         require(
-            command.expected_revision == Some(row.revision),
+            command.expected_revision == Some(row.revision)
+                || (method == "workflow.step.approve"
+                    && command
+                        .expected_revision
+                        .is_some_and(|revision| revision > 0 && revision <= row.revision)),
             "工作流状态已变化，请刷新",
         )?;
         let mut instance: ConfiguredWorkflowInstance = row.decode()?;
@@ -1131,18 +1136,26 @@ impl Engine {
                     .clone();
                 let execution = instance.steps[index].clone();
                 match method {
-                    "workflow.step.confirm" => {
+                    "workflow.step.confirm" | "workflow.step.approve" => {
+                        let manual = method == "workflow.step.approve";
                         require(
                             execution.status == StepExecutionStatus::WaitingConfirmation,
                             "步骤不在等待确认",
                         )?;
+                        require(!instance.cancel_requested, "流程已请求停止，不能批准结果")?;
+                        if manual {
+                            // Other steps may advance concurrently; this decision is bound to
+                            // the exact execution, inputs and outputs below, not their revisions.
+                            require(p["execution_id"] == execution.id, "步骤执行版本不匹配")?;
+                            text(p, "reason")?;
+                        }
                         require(
                             p["input_digest"] == execution.input_digest
                                 && p["outputs"] == json!(execution.outputs),
                             "确认内容版本不匹配",
                         )?;
                         let valid = step.completion.evaluate(&facts(state, &instance)?);
-                        if !valid {
+                        if !valid && !manual {
                             require(
                                 step.allow_completion_override && p["override_completion"] == true,
                                 "完成条件尚未满足，当前配置不允许直接通过",
@@ -1150,7 +1163,7 @@ impl Engine {
                             text(p, "reason")?;
                         }
                         state.governance.push(record("workflow_confirmation",execution.id.clone(),row.scope.clone(),"人工确认".into(),1,None,
-                            json!({"input_digest":execution.input_digest,"outputs":execution.outputs,"reason":p["reason"],"override_completion":!valid}),true));
+                            json!({"execution_id":execution.id,"input_digest":execution.input_digest,"outputs":execution.outputs,"reason":p["reason"],"override_completion":!valid,"manual_approval":manual}),true));
                     }
                     "workflow.step.reconcile" => {
                         require(
@@ -2266,8 +2279,25 @@ impl Engine {
                         .is_some_and(|id| executions.contains(id))
             })
             .collect::<Vec<_>>();
+        let instance: ConfiguredWorkflowInstance = match row.decode() {
+            Ok(instance) => instance,
+            Err(error) => return Some(Err(error)),
+        };
+        let current_facts = match facts(&state, &instance) {
+            Ok(facts) => facts,
+            Err(error) => return Some(Err(error)),
+        };
+        let completion_status = instance.steps.iter().map(|execution| {
+            let step = instance.plan.document.steps.iter().find(|step| step.key == execution.step).unwrap();
+            let confirmation = state.governance.iter().rev().find(|r| {
+                r.kind == "workflow_confirmation" && r.definition_id == execution.id
+                    && r.data["input_digest"] == execution.input_digest
+                    && r.data["outputs"] == json!(execution.outputs)
+            });
+            (&execution.id, json!({"satisfied":step.completion.evaluate(&current_facts),"confirmation":confirmation.map(|r| &r.data)}))
+        }).collect::<BTreeMap<_, _>>();
         Some(Ok(
-            json!({"record":row,"runtime":row.data,"plan":row.data["plan"]["document"],"outputs":outputs,"children":children}),
+            json!({"record":row,"runtime":row.data,"plan":row.data["plan"]["document"],"outputs":outputs,"children":children,"completion_status":completion_status}),
         ))
     }
 }
