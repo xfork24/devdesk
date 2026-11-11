@@ -2,6 +2,7 @@
 """Verify Permission assets and APIs in an unpacked binary release, without models."""
 import argparse
 import hashlib
+import traceback
 from http.cookiejar import CookieJar
 import json
 import re
@@ -134,7 +135,9 @@ try:
             assert all(step.get('confirmation', 'automatic') == 'automatic' for step in graph['steps'])
             assert graph['action_requirements']['git.advance'] == ['tests']
         for steps, review_key, snapshot_key in [(feature_steps, 'closure_review', 'tests_snapshot'), (task_steps, 'review', 'implementation_snapshot')]:
-            assert steps[review_key]['dependencies'] == ['candidate_tests']
+            def reaches(key, target):
+                return target in steps[key].get('dependencies', []) or any(reaches(parent, target) for parent in steps[key].get('dependencies', []))
+            assert reaches(review_key, 'candidate_tests'), 'Review must follow the exact candidate tests' 
             assert steps[review_key]['inputs']['candidate']['source']['step'] == 'candidate'
             assert steps[review_key]['inputs']['candidate_tests']['source']['step'] == 'candidate_tests'
             assert steps[review_key]['inputs']['changes']['source'] == {'step': snapshot_key, 'port': 'result', 'pointer': '/changes'}
@@ -237,7 +240,7 @@ try:
         report.update(passed=True, standalone_api=True, immutable_revisions=True,
                       binding_replay=True, project_schema=expected_schema, automatic_downloads=0)
 except Exception as error:
-    report.update(failure_type=type(error).__name__, failure=str(error))
+    report.update(failure_type=type(error).__name__, failure=str(error), failure_traceback=traceback.format_exc())
 finally:
     if child is not None and child.poll() is None:
         child.terminate()

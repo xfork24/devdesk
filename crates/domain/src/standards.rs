@@ -360,9 +360,78 @@ pub fn diff_standard_snapshots(left: &StandardSnapshot, right: &StandardSnapshot
             .map(|(id, _)| id)
             .unwrap_or(reference)
     }
+    fn workflow_content(node: &StandardNode) -> Value {
+        if node.kind == "workflow" {
+            if let Ok(mut workflow) =
+                serde_json::from_value::<WorkflowDefinition>(node.content.clone())
+            {
+                workflow.assign_node_ids(&node.reference);
+                return canonical_standard_content(&json!(workflow));
+            }
+        }
+        node.content.clone()
+    }
+    fn node_ids(value: &Value) -> BTreeSet<&str> {
+        value["steps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|step| step["node_id"].as_str())
+            .filter(|id| !id.is_empty())
+            .collect()
+    }
     fn fields(path: &str, a: &Value, b: &Value, out: &mut Vec<Value>) {
         if a == b {
             return;
+        }
+        if let (Some(a), Some(b)) = (a.as_array(), b.as_array()) {
+            fn keyed(items: &[Value]) -> Option<BTreeMap<String, &Value>> {
+                let pairs = items
+                    .iter()
+                    .map(|item| {
+                        let key = item["node_id"]
+                            .as_str()
+                            .filter(|id| !id.is_empty())
+                            .or_else(|| item["key"].as_str())?;
+                        Some((key.to_owned(), item))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                let map = pairs.iter().cloned().collect::<BTreeMap<_, _>>();
+                (map.len() == pairs.len()).then_some(map)
+            }
+            if (!a.is_empty() || !b.is_empty()) && a.iter().chain(b).all(Value::is_object) {
+                if let (Some(left), Some(right)) = (keyed(a), keyed(b)) {
+                    fn order(items: &[Value]) -> Vec<&str> {
+                        items
+                            .iter()
+                            .map(|item| {
+                                item["key"]
+                                    .as_str()
+                                    .or_else(|| item["node_id"].as_str())
+                                    .unwrap_or("")
+                            })
+                            .collect::<Vec<_>>()
+                    }
+                    if order(a) != order(b) {
+                        out.push(json!({"path":format!("{path}/$order"),"before":order(a),"after":order(b)}));
+                    }
+                    for key in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
+                        let old = left.get(key).copied().unwrap_or(&Value::Null);
+                        let new = right.get(key).copied().unwrap_or(&Value::Null);
+                        let label = old["key"]
+                            .as_str()
+                            .or_else(|| new["key"].as_str())
+                            .unwrap_or(key);
+                        fields(
+                            &format!("{path}/{}", label.replace('~', "~0").replace('/', "~1")),
+                            old,
+                            new,
+                            out,
+                        );
+                    }
+                    return;
+                }
+            }
         }
         if let (Some(a), Some(b)) = (a.as_object(), b.as_object()) {
             for key in a.keys().chain(b.keys()).collect::<BTreeSet<_>>() {
@@ -388,6 +457,17 @@ pub fn diff_standard_snapshots(left: &StandardSnapshot, right: &StandardSnapshot
         .iter()
         .map(|n| (n.reference.as_str(), n))
         .collect();
+    let left_content = left
+        .nodes
+        .iter()
+        .map(|node| (node.reference.as_str(), workflow_content(node)))
+        .collect::<BTreeMap<_, _>>();
+    let right_content = right
+        .nodes
+        .iter()
+        .map(|node| (node.reference.as_str(), workflow_content(node)))
+        .collect::<BTreeMap<_, _>>();
+    let mut aliases = BTreeMap::new();
     let mut matched = BTreeSet::new();
     for old in &left.nodes {
         let exact = right_nodes.get(old.reference.as_str()).copied();
@@ -401,13 +481,48 @@ pub fn diff_standard_snapshots(left: &StandardSnapshot, right: &StandardSnapshot
             .iter()
             .filter(|n| n.kind == old.kind && identity(&n.reference) == identity(&old.reference))
             .count();
-        let new =
-            exact.or_else(|| (candidates.len() == 1 && own_count == 1).then(|| candidates[0]));
+        let new = exact
+            .or_else(|| (candidates.len() == 1 && own_count == 1).then(|| candidates[0]))
+            .or_else(|| {
+                if old.kind != "workflow" {
+                    return None;
+                }
+                let ids = node_ids(&left_content[old.reference.as_str()]);
+                let candidates = right
+                    .nodes
+                    .iter()
+                    .filter(|node| {
+                        node.kind == "workflow"
+                            && !matched.contains(node.reference.as_str())
+                            && !ids.is_disjoint(&node_ids(&right_content[node.reference.as_str()]))
+                    })
+                    .collect::<Vec<_>>();
+                if candidates.len() != 1 {
+                    return None;
+                }
+                let ids = node_ids(&right_content[candidates[0].reference.as_str()]);
+                (left
+                    .nodes
+                    .iter()
+                    .filter(|node| {
+                        node.kind == "workflow"
+                            && !ids.is_disjoint(&node_ids(&left_content[node.reference.as_str()]))
+                    })
+                    .count()
+                    == 1)
+                    .then_some(candidates[0])
+            });
         if let Some(new) = new {
             matched.insert(new.reference.as_str());
+            aliases.insert(identity(&old.reference), identity(&new.reference));
             if old.reference != new.reference || old.content != new.content {
                 let mut diff = vec![];
-                fields("", &old.content, &new.content, &mut diff);
+                fields(
+                    "",
+                    &left_content[old.reference.as_str()],
+                    &right_content[new.reference.as_str()],
+                    &mut diff,
+                );
                 changes.push(json!({"kind":if diff.is_empty(){"reference_changed"}else{"definition_changed"},"source_kind":old.kind,"before_ref":old.reference,"after_ref":new.reference,"fields":diff}));
             }
         } else {
@@ -423,7 +538,7 @@ pub fn diff_standard_snapshots(left: &StandardSnapshot, right: &StandardSnapshot
         }
     }
     let edge_key = |e: &StandardEdge| {
-        json!({"from":identity(&e.from),"path":e.path,"relation":e.relation,"to":identity(&e.to)})
+        json!({"from":aliases.get(identity(&e.from)).copied().unwrap_or(identity(&e.from)),"path":e.path,"relation":e.relation,"to":aliases.get(identity(&e.to)).copied().unwrap_or(identity(&e.to))})
             .to_string()
     };
     let le: BTreeSet<_> = left.edges.iter().map(edge_key).collect();
@@ -487,4 +602,77 @@ pub fn standard_entry_snapshot(
         nodes,
         edges,
     })
+}
+
+#[cfg(test)]
+mod diff_tests {
+    use super::*;
+    fn snapshot(reference: &str, content: Value) -> StandardSnapshot {
+        StandardSnapshot {
+            digest_version: STANDARD_SNAPSHOT_VERSION.into(),
+            snapshot_digest: configuration_hash(&json!([reference, content])),
+            root_workflow_refs: vec![reference.into()],
+            nodes: vec![StandardNode {
+                reference: reference.into(),
+                kind: "workflow".into(),
+                name: "Work".into(),
+                content,
+            }],
+            edges: vec![StandardEdge {
+                from: reference.into(),
+                path: "steps/one/spec_refs".into(),
+                relation: "step_spec".into(),
+                to: "spec:1".into(),
+            }],
+        }
+    }
+    #[test]
+    fn a_derived_workflow_diff_locates_the_changed_step_and_preserves_relationship_identity() {
+        let document = json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"one","name":"Before","stage":"work","executor":{"type":"control"}}]});
+        let left = snapshot("published:1", document.clone());
+        let mut workflow: WorkflowDefinition = serde_json::from_value(document).unwrap();
+        workflow.assign_node_ids("published:1");
+        workflow.steps[0].name = "After".into();
+        let right = snapshot("execution-derived:1", json!(workflow));
+        let diff = diff_standard_snapshots(&left, &right);
+        let changes = diff["changes"].as_array().unwrap();
+        let changed = changes
+            .iter()
+            .find(|change| change["kind"] == "definition_changed")
+            .unwrap();
+        assert_eq!(
+            changed["fields"],
+            json!([{"path":"/steps/one/name","before":"Before","after":"After"}])
+        );
+        assert!(!changes.iter().any(|change| {
+            [
+                "added",
+                "removed",
+                "relationship_added",
+                "relationship_removed",
+            ]
+            .contains(&change["kind"].as_str().unwrap())
+        }));
+    }
+    #[test]
+    fn ambiguous_copied_node_identities_are_not_merged_into_one_workflow() {
+        let mut workflow:WorkflowDefinition=serde_json::from_value(json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"one","name":"Work","stage":"work","executor":{"type":"control"}}]})).unwrap();
+        workflow.assign_node_ids("original:1");
+        let mut left = snapshot("copy-a:1", json!(workflow));
+        let mut copy = left.nodes[0].clone();
+        copy.reference = "copy-b:1".into();
+        left.nodes.push(copy);
+        workflow.steps[0].name = "Changed".into();
+        let right = snapshot("derived:1", json!(workflow));
+        let diff = diff_standard_snapshots(&left, &right);
+        assert_eq!(
+            diff["changes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|change| change["kind"] == "definition_changed")
+                .count(),
+            0
+        );
+    }
 }
