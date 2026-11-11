@@ -347,3 +347,69 @@ fn native_configuration_has_no_prototype_provider_or_execution_controls() {
 }
 
 // Recorded native boundary facts exercise Run acceptance separately from worker transport.
+
+#[test]
+fn empty_or_cleared_datasets_initialize_despite_hidden_metadata() {
+    for marker in [
+        None,
+        Some("devdesk-schema-v1\n"),
+        Some("devdesk-schema-v1\\n"),
+        Some("devdesk-source-v2\n"),
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join(".DS_Store"), b"Finder metadata").unwrap();
+        std::fs::write(directory.path().join(".devdesk.lock"), b"").unwrap();
+        if let Some(marker) = marker {
+            std::fs::write(directory.path().join(".devdesk-dataset"), marker).unwrap();
+        }
+        let store = GlobalStore::open(directory.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join(".devdesk-dataset")).unwrap(),
+            "devdesk-source-v2\n"
+        );
+        assert!(directory.path().join("global.sqlite3").is_file());
+        drop(store);
+        let reopened = GlobalStore::open(directory.path()).unwrap();
+        assert!(reopened.snapshot().is_ok());
+    }
+}
+
+#[test]
+fn cleared_dataset_reinitialization_cannot_replace_an_active_lock() {
+    let directory = tempfile::tempdir().unwrap();
+    let marker = directory.path().join(".devdesk-dataset");
+    std::fs::write(&marker, "old marker").unwrap();
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(directory.path().join(".devdesk.lock"))
+        .unwrap();
+    fs2::FileExt::try_lock_exclusive(&lock).unwrap();
+    let error = GlobalStore::open(directory.path()).err().unwrap();
+    assert_eq!(error.code, "dataset_locked");
+    assert_eq!(std::fs::read_to_string(&marker).unwrap(), "old marker");
+    assert!(!directory.path().join("global.sqlite3").exists());
+    fs2::FileExt::unlock(&lock).unwrap();
+    assert!(GlobalStore::open(directory.path()).is_ok());
+}
+
+#[test]
+fn foreign_contents_are_not_treated_as_a_cleared_dataset() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("notes.txt"), "keep").unwrap();
+    assert!(GlobalStore::open(directory.path()).is_err());
+    assert!(!directory.path().join(".devdesk-dataset").exists());
+    assert!(!directory.path().join(".devdesk.lock").exists());
+    std::fs::write(directory.path().join(".devdesk-dataset"), "old marker").unwrap();
+    assert!(GlobalStore::open(directory.path()).is_err());
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("notes.txt")).unwrap(),
+        "keep"
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join(".devdesk-dataset")).unwrap(),
+        "old marker"
+    );
+}

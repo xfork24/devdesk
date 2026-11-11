@@ -320,21 +320,35 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
         reject_symlink(&root.join(name))?;
     }
     let marker = root.join(".devdesk-dataset");
-    if !marker.exists() {
-        let entries = fs::read_dir(&root)
-            .map_err(storage)?
-            .filter_map(|x| x.ok())
-            .collect::<Vec<_>>();
+    // Clearing a dataset in Finder can leave its hidden marker, lock and folder metadata.
+    // These files contain no dataset records; every other entry makes the directory nonempty.
+    let metadata_only = || -> Result<bool> {
+        for entry in fs::read_dir(&root).map_err(storage)? {
+            let entry = entry.map_err(storage)?;
+            if !matches!(
+                entry.file_name().to_str(),
+                Some(".devdesk-dataset" | ".devdesk.lock" | ".DS_Store")
+            ) || !entry.file_type().map_err(storage)?.is_file()
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    };
+    let validate_marker = || -> Result<()> {
         require(
-            entries.is_empty(),
+            marker.exists(),
             "目录非空且不是 DevDesk 数据集；请选择空目录",
         )?;
-        fs::write(&marker, "devdesk-source-v2\n").map_err(storage)?;
+        require(
+            fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-v2\n",
+            "数据集标记不受支持",
+        )
+    };
+    // Reject foreign or incompatible data before creating any metadata in that directory.
+    if !metadata_only()? {
+        validate_marker()?;
     }
-    require(
-        fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-v2\n",
-        "数据集标记不受支持",
-    )?;
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -344,6 +358,12 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
         .map_err(storage)?;
     fs2::FileExt::try_lock_exclusive(&lock)
         .map_err(|_| err("dataset_locked", "此 data 已由另一个 host 打开"))?;
+    // Recheck after obtaining ownership. Never replace a lock file that another Host can hold.
+    if metadata_only()? {
+        fs::write(&marker, "devdesk-source-v2\n").map_err(storage)?;
+    } else {
+        validate_marker()?;
+    }
     Ok((root, lock))
 }
 
