@@ -4762,39 +4762,6 @@
       "if": {
         "properties": {
           "method": {
-            "enum": [
-              "agent.connection.check",
-              "agent.model.verify"
-            ]
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "params": {
-            "type": "object",
-            "properties": {
-              "agent_revision_id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "project_id": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "agent_revision_id"
-            ],
-            "additionalProperties": false
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "method": {
             "pattern": "^(integration\\.(create|revise|retire|delete|disable|binding\\.(create|revise)|tool\\.(create|revise)|tools\\.publish|project\\.bind|discover|publish_tools|test|openapi\\.(preview|import))|skill\\.import(_package)?|tool\\.call\\.(cancel|reconcile|approve))$"
           }
         }

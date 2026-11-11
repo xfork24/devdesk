@@ -54,50 +54,29 @@ fn new_providers_require_a_complete_snapshot_and_matching_profile_digest() {
 }
 
 #[test]
-#[ignore = "requires the pinned Docker image and host-gateway access; no model inference"]
-fn ollama_directory_is_checked_from_host_and_selected_container() {
+fn ollama_directory_discovery_reads_host_metadata_without_inference() {
     use std::{io::Read, net::TcpListener};
-    let image = std::env::var("DEVDESK_DSH_MOCK_IMAGE").expect("set immutable image ID");
-    let server = TcpListener::bind("0.0.0.0:0").unwrap();
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = server.local_addr().unwrap().port();
     let thread = std::thread::spawn(move || {
-        for stream in server.incoming().take(2) {
-            let mut stream = stream.unwrap();
-            stream
-                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-                .unwrap();
-            let mut bytes = [0u8; 8192];
-            let n = stream.read(&mut bytes).unwrap();
-            assert!(String::from_utf8_lossy(&bytes[..n]).starts_with("GET /v1/models "));
-            let body = r#"{"data":[{"id":"devdesk-mock-model"}]}"#;
-            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
-        }
+        let (mut stream, _) = server.accept().unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut bytes = [0u8; 8192];
+        let n = stream.read(&mut bytes).unwrap();
+        assert!(String::from_utf8_lossy(&bytes[..n]).starts_with("GET /v1/models "));
+        let body = r#"{"data":[{"id":"devdesk-mock-model"}]}"#;
+        write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
     });
     let endpoint = format!("http://127.0.0.1:{port}/v1");
     let catalog = discover_ollama_models(&endpoint).unwrap();
+    assert_eq!(catalog["source"], "host_endpoint");
+    assert_eq!(catalog["models"], json!([{"id":"devdesk-mock-model"}]));
     assert_eq!(catalog["inference_verified"], false);
     assert_eq!(catalog["container_verified"], false);
-    let mut c = connection("ollama");
-    (c.endpoint, c.worker_endpoint, c.host_gateway) = ollama_endpoint(&endpoint).unwrap();
-    let b: RuntimeBinding=serde_json::from_value(json!({"model_connection":c,"model_profile_digest":configuration_digest(&json!(dsh_model_patch(&c,"devdesk-mock-model").unwrap())).unwrap(),"installation":{"id":id(),"key":{"provider":"dsh","version":"0.2.2-rc.1","os":"linux","arch":std::env::consts::ARCH},"artifact":{"kind":"docker_image","image_id":image},"source":"fixture","license":"MIT"},"adapter_version":"fixture","model":"devdesk-mock-model","tool_policy":"read_only","work_type":"discussion","configuration_digest":"fixture"})).unwrap();
-    let dataset = tempfile::tempdir().unwrap();
-    let result = check_container_connection(dataset.path(), &b, &id(), &id()).unwrap();
-    assert_eq!(result["container_verified"], true, "{result}");
-    assert_eq!(result["detail"]["model_present"], true);
-    assert_eq!(result["inference_verified"], false);
-    assert_eq!(
-        std::fs::read_dir(dataset.path().join("model-connection-checks"))
-            .unwrap()
-            .count(),
-        0
-    );
     thread.join().unwrap();
-    let closed = check_container_connection(dataset.path(), &b, &id(), &id()).unwrap();
-    assert_eq!(
-        closed["container_verified"], false,
-        "closed server cannot reuse prior host success"
-    );
-    assert_eq!(closed["inference_verified"], false);
+    assert!(discover_ollama_models(&endpoint).is_err());
 }
 
 #[test]

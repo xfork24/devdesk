@@ -115,7 +115,6 @@ query.project_configuration 附带 pinned_records 与 uses_archived_templates，
 
 `credentials.configure/status/check/authorize` 增加 model_provider；省略时默认 DeepSeek。configure 保留 provider=dsh，api_key 仅用于 vault 写入，不进入普通查询。Ollama 状态 auth_kind=none，不支持存储或授权 key。
 
-`agent.connection.check` 和 `agent.model.verify` 接收 project_id、agent_revision_id。前者创建带冻结绑定的完整 Agent Session，从 DSH 镜像查询模型目录，返回 container_verified 和 inference_verified=false；后者通过既有 session.open/conversation.send 提交真实模型与工具验证，返回 Session/Turn/marker，完成状态从 query.session 读取。
 
 RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。所选服务商需要的连接快照不完整时拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。
 

@@ -141,6 +141,14 @@ test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ p
 test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保留草稿", async ({
   page,
 }) => {
+  const runtimeRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/rpc")) {
+      const { method } = request.postDataJSON();
+      if (["session.open", "conversation.send"].includes(method))
+        runtimeRequests.push(method);
+    }
+  });
   await setup(page);
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   const name = "Browser Model " + crypto.randomUUID().slice(0, 5);
@@ -196,6 +204,13 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   await expect(
     page.getByRole("button", { name: new RegExp(agentName) }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "检查 DSH 容器连接", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "实际模型与工具验证", exact: true }),
+  ).toHaveCount(0);
+  expect(runtimeRequests).toEqual([]);
   await page.getByLabel("名称", { exact: true }).fill(agentName + " · 未保存");
   await page.reload();
   await expect(

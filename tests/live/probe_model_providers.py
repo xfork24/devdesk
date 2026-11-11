@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolated Host acceptance. DSH performs metadata checks only; live inference is opt-in Codex."""
+"""Isolated normal-session acceptance. DSH metadata discovery; Codex inference is opt-in."""
 from client import Client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -84,9 +84,11 @@ def main():
             model = c.command('model.create', payload={'name': 'Host Ollama fixture', 'data': {'provider': 'ollama', 'model': 'host-fixture-model', 'endpoint': f'http://127.0.0.1:{server.server_port}/v1', 'context_window': 32768, 'max_output_tokens': 4096, 'parameters': {'max_tokens': 2048}}})['id']
             cap = c.command('capability.create', payload={'name': 'Host Ollama capability', 'data': {'model_ref': model, 'harness_ref': 'builtin-harness-dsh-multi-provider:1', 'tools': ['builtin-tool-dsh-native:1'], 'skills': []}})['id']
             agent = c.command('agent.create', payload={'name': 'Host Ollama Agent', 'data': {'role_ref': 'builtin-role-analyst:1', 'capability_ref': cap}})['id']
-            checked = c.rpc('agent.connection.check', {'agent_revision_id': agent})
-            assert checked['container_verified'] and not checked['inference_verified'], checked
-            state = c.rpc('query.session', {'id': checked['session_id']})
+            catalog = c.rpc('models.list', {'model_provider': 'ollama', 'endpoint': f'http://127.0.0.1:{server.server_port}/v1'})
+            assert catalog['models'] == [{'id': 'host-fixture-model'}] and not catalog['inference_verified']
+            project_row = c.rpc('query.workspace')['active_project']
+            session = c.command('session.open', project, project_row['revision'], {'agent': agent, 'work_type': 'discussion', 'force_new': True})['id']
+            state = c.rpc('query.session', {'id': session})
             binding = state['session']['runtime_binding']
             assert binding['credential_ref'] is None
             assert binding['model_connection']['provider'] == 'ollama'
@@ -98,11 +100,14 @@ def main():
             stop()
             c = start()
             c.open(project)
-            assert c.rpc('query.session', {'id': checked['session_id']})['session']['runtime_binding'] == binding
-            rows += ['- 完整 Model → Capability → Agent → Session → 固定 DSH 镜像物化与容器目录查询通过。', '- Ollama 无凭据；连接和 profile 摘要冻结，Model 新修订与 Host 重启不改旧 Session。', '- DSH 模拟服务只收到一次 GET /v1/models，没有推理请求。']
+            assert c.rpc('query.session', {'id': session})['session']['runtime_binding'] == binding
+            rows += ['- 模型目录读取及普通 Model → Capability → Agent → Session 固定 DSH 绑定通过。', '- Ollama 无凭据；连接和 profile 摘要冻结，Model 新修订与 Host 重启不改旧 Session。', '- DSH 模拟服务只收到一次 GET /v1/models，没有推理请求。']
             if args.codex_auth_source:
-                result = c.rpc('agent.model.verify', {'agent_revision_id': 'builtin-agent-sol-high-analyst:3'})
-                session, turn, marker = result['session_id'], result['turn_id'], result['marker']
+                project_row = c.rpc('query.workspace')['active_project']
+                session = c.command('session.open', project, project_row['revision'], {'agent': 'builtin-agent-sol-high-analyst:3', 'work_type': 'discussion', 'force_new': True})['id']
+                current = c.rpc('query.session', {'id': session})
+                marker = 'provider-session-' + uuid.uuid4().hex
+                turn = c.command('conversation.send', session, current['session']['revision'], {'client_message_id': str(uuid.uuid4()), 'input': f'Use the native Bash tool once to print {marker}, then reply with that exact marker. Do not modify files.'})['id']
 
                 def completed():
                     view = c.rpc('query.session', {'id': session, 'limit': 100})
@@ -120,12 +125,12 @@ def main():
                 c = start()
                 c.open(project)
                 view = c.rpc('query.session', {'id': session})
-                turn = c.command('conversation.send', session, view['session']['revision'], {'client_message_id': str(uuid.uuid4()), 'input': 'Reply with the exact previous model-check marker from this conversation. Do not use tools.'})['id']
+                turn = c.command('conversation.send', session, view['session']['revision'], {'client_message_id': str(uuid.uuid4()), 'input': 'Reply with the exact previous marker from this conversation. Do not use tools.'})['id']
                 resumed = c.wait(completed, bool, timeout=300)
                 assert marker in '\n'.join(e['content'] for e in resumed['events'] if e['kind'] == 'assistant' and e['turn_id'] == turn)
                 assert resumed['session']['runtime_binding'] == original
                 assert resumed['session']['external_session'] == native
-                rows += [f'- Codex 真实模型：{original["model"]}；完整 Agent 实际验证、原生工具结果消费、Host 重启与原生会话恢复通过。', f'- Codex Session：`{session}`；恢复 Turn：`{turn}`。']
+                rows += [f'- Codex 真实模型：{original["model"]}；普通讨论的原生工具结果消费、Host 重启与原生会话恢复通过。', f'- Codex Session：`{session}`；恢复 Turn：`{turn}`。']
             assert all(method == 'GET' for method, _ in server_calls)
             secrets = []
             for auth in dataset.rglob('auth.json'):

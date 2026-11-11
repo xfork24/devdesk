@@ -59,6 +59,36 @@ mod tests {
                 .is_none()
         );
     }
+    #[test]
+    fn removed_agent_diagnostics_have_no_dispatch_or_runtime_side_effects() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let project = w
+            .dispatch(
+                "project.create",
+                json!({"command_id":id(),"payload":{"title":"Agent source editing"}}),
+            )
+            .unwrap();
+        let engine = w.active_engine(project["id"].as_str()).unwrap();
+        let before = engine.store.snapshot().unwrap();
+        for method in ["agent.connection.check", "agent.model.verify"] {
+            let params = json!({"project_id":project["id"],"agent_revision_id":default_configured_agent_id("analyst")});
+            assert!(w.model_provider_api(method, &params).is_none());
+            assert!(w.dispatch(method, params.clone()).is_err());
+            let mut command = params;
+            command["command_id"] = json!(id());
+            command["payload"] = json!({});
+            assert_eq!(
+                w.dispatch(method, command).unwrap_err().code,
+                "method_not_found"
+            );
+        }
+        let after = engine.store.snapshot().unwrap();
+        assert_eq!(after.sessions.len(), before.sessions.len());
+        assert_eq!(after.turns.len(), before.turns.len());
+        assert!(w.global.runtime_installations().unwrap().is_empty());
+    }
 }
 
 impl Workspace {
@@ -71,8 +101,6 @@ impl Workspace {
                 | "credentials.configure"
                 | "credentials.check"
                 | "credentials.authorize"
-                | "agent.connection.check"
-                | "agent.model.verify"
         ) {
             return None;
         }
@@ -80,9 +108,6 @@ impl Workspace {
             let allowed: &[&str] = match method {
                 "query.model_providers" => &["project_id"],
                 "models.list" => &["project_id", "model_provider", "endpoint"],
-                "agent.connection.check" | "agent.model.verify" => {
-                    &["project_id", "agent_revision_id"]
-                }
                 "credentials.configure" => &["project_id", "provider", "model_provider", "api_key"],
                 _ => &["project_id", "provider", "model_provider"],
             };
@@ -92,58 +117,6 @@ impl Workspace {
                     .is_some_and(|p| p.keys().all(|k| allowed.contains(&k.as_str()))),
                 "模型服务商请求包含未知字段",
             )?;
-            if method.starts_with("agent.") {
-                let e = self.active_engine(params["project_id"].as_str())?;
-                self.sync_configuration(&e)?;
-                let state = e.store.snapshot()?;
-                let project = state
-                    .projects
-                    .first()
-                    .ok_or_else(|| err("project_required", "请先打开项目"))?;
-                let agent = params["agent_revision_id"]
-                    .as_str()
-                    .ok_or_else(|| err("invalid_params", "需要完整 Agent 修订"))?;
-                if method == "agent.connection.check" {
-                    let a = state.resolve_agent(agent)?;
-                    let h: HarnessDefinition = state.configuration(&a.harness_ref)?.decode()?;
-                    require(
-                        h.provider == "dsh",
-                        "此元数据检查仅用于 DSH；Codex 请使用现有认证或实际 Agent 验证",
-                    )?;
-                }
-                let opened = self.dispatch("session.open", json!({"project_id":project.id,"command_id":id(),"target":project.id,"expected_revision":project.revision,
-                    "payload":{"agent":agent,"work_type":"discussion","force_new":true}}))?;
-                let session = opened["id"]
-                    .as_str()
-                    .ok_or_else(|| err("invalid_configuration", "缺少验证会话"))?;
-                let snapshot = e.store.snapshot()?;
-                let s = snapshot
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == session)
-                    .ok_or_else(|| err("not_found", "验证会话不存在"))?;
-                if method == "agent.connection.check" {
-                    let binding = s
-                        .runtime_binding
-                        .as_ref()
-                        .ok_or_else(|| err("invalid_configuration", "验证会话缺少绑定"))?;
-                    let mut checked =
-                        devdesk_adapters::model_providers::check_container_connection(
-                            Path::new(&self.global.root()),
-                            binding,
-                            &project.id,
-                            session,
-                        )?;
-                    checked["session_id"] = json!(session);
-                    return Ok(checked);
-                }
-                let marker = format!("devdesk-model-check-{}", id());
-                let turn = self.dispatch("conversation.send", json!({"project_id":project.id,"command_id":id(),"target":session,"expected_revision":s.revision,
-                    "payload":{"client_message_id":id(),"input":format!("Verify this configured model through the native Harness. Use the bash tool once to print the marker {marker}, then reply with that exact marker. Do not modify files.")}}))?;
-                return Ok(
-                    json!({"session_id":session,"turn_id":turn["id"],"marker":marker,"status":"submitted","inference_verified":false}),
-                );
-            }
             if method == "query.model_providers" {
                 return Ok(model_provider_catalog());
             }

@@ -572,69 +572,6 @@ export function ResourceEditor({
                 </p>
               </>
             )}
-            {kind === "agent" && old && (
-              <div className="full-width actions">
-                <ActionButton
-                  type="button"
-                  disabled={busy || !project}
-                  onClick={async () => {
-                    captureFeedback();
-
-                    (beginFeedback(), setBusy(true));
-                    setError("");
-                    setMessage("");
-                    try {
-                      const result = await request("agent.connection.check", {
-                        project_id: project?.id,
-                        agent_revision_id: old.id,
-                      });
-                      setMessage(
-                        result.container_verified
-                          ? `容器连接通过：${result.worker_endpoint}；模型${result.detail.model_present ? "已列出" : "未在目录列出"}，尚未验证推理。`
-                          : "容器连接未通过；请检查地址、网络或凭据。",
-                      );
-                    } catch (error) {
-                      setError(String(error));
-                    } finally {
-                      (endFeedback(), setBusy(false));
-                    }
-                  }}
-                >
-                  检查 DSH 容器连接
-                </ActionButton>
-                <ActionButton
-                  type="button"
-                  disabled={busy || !project}
-                  onClick={async () => {
-                    captureFeedback();
-
-                    (beginFeedback(), setBusy(true));
-                    setError("");
-                    setMessage("");
-                    try {
-                      const result = await request("agent.model.verify", {
-                        project_id: project?.id,
-                        agent_revision_id: old.id,
-                      });
-                      setMessage(
-                        `已提交实际模型验证。请在讨论页查看 Session ${result.session_id} 的终态与工具结果；提交不代表验证通过。`,
-                      );
-                    } catch (error) {
-                      setError(String(error));
-                    } finally {
-                      (endFeedback(), setBusy(false));
-                    }
-                  }}
-                >
-                  实际模型与工具验证
-                </ActionButton>
-                {!project && (
-                  <p className="muted">
-                    打开项目后可验证完整 Agent；实际验证会调用所选模型。
-                  </p>
-                )}
-              </div>
-            )}
             {kind === "capability" && (
               <>
                 {select("Model 精确版本", "model", "model_ref", false, true)}
