@@ -12,6 +12,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+const FRAME_LIMIT: usize = 1024 * 1024;
+const RESUME_REPLY_LIMIT: usize = 16 * FRAME_LIMIT;
+
+#[derive(serde::Deserialize)]
+struct ReplyHeader {
+    id: Option<u64>,
+    method: Option<String>,
+}
+
 struct Journal {
     file: Mutex<File>,
     secrets: Vec<String>,
@@ -207,6 +216,7 @@ pub(crate) struct JsonlProcess {
     writer: Option<std::thread::JoinHandle<()>>,
     frames: Receiver<(Value, usize)>,
     queued: Arc<AtomicUsize>,
+    resume_replies: Arc<Mutex<HashSet<u64>>>,
     failed: Arc<AtomicBool>,
     next: u64,
     journal: Option<Arc<Journal>>,
@@ -282,6 +292,8 @@ impl JsonlProcess {
         });
         let (tx, frames) = mpsc::sync_channel(4096);
         let queued = Arc::new(AtomicUsize::new(0));
+        let resume_replies = Arc::new(Mutex::new(HashSet::<u64>::new()));
+        let expected_resumes = resume_replies.clone();
         let budget = queued.clone();
         let signal = failed.clone();
         let log = journal.clone();
@@ -312,14 +324,29 @@ impl JsonlProcess {
                 let mut bytes = Vec::new();
                 let read = reader
                     .by_ref()
-                    .take(1024 * 1024 + 1)
+                    .take(RESUME_REPLY_LIMIT as u64 + 1)
                     .read_until(b'\n', &mut bytes);
                 if !matches!(read, Ok(1..)) {
                     break;
                 }
-                if bytes.len() > 1024 * 1024 {
+                if bytes.len() > RESUME_REPLY_LIMIT {
                     signal.store(true, Ordering::Release);
                     break;
+                }
+                if bytes.len() > FRAME_LIMIT {
+                    // Read only the envelope before allocating a large Value.
+                    // Only our outstanding resume metadata reply gets this limit.
+                    let allowed = serde_json::from_slice::<ReplyHeader>(&bytes)
+                        .ok()
+                        .filter(|h| h.method.is_none())
+                        .and_then(|h| h.id)
+                        .is_some_and(|id| {
+                            expected_resumes.lock().is_ok_and(|ids| ids.contains(&id))
+                        });
+                    if !allowed {
+                        signal.store(true, Ordering::Release);
+                        break;
+                    }
                 }
                 let frame = match serde_json::from_slice::<Value>(&bytes) {
                     Ok(frame) => frame,
@@ -328,6 +355,14 @@ impl JsonlProcess {
                         break;
                     }
                 };
+                let resume_reply = frame.get("method").is_none()
+                    && frame["id"].as_u64().is_some_and(|id| {
+                        expected_resumes.lock().is_ok_and(|ids| ids.contains(&id))
+                    });
+                if bytes.len() > FRAME_LIMIT && !resume_reply {
+                    signal.store(true, Ordering::Release);
+                    break;
+                }
                 if log
                     .as_ref()
                     .is_some_and(|log| log.append("in", &frame).is_err())
@@ -335,7 +370,7 @@ impl JsonlProcess {
                     signal.store(true, Ordering::Release);
                     break;
                 }
-                let frame = if let Some(log) = &log {
+                let mut frame = if let Some(log) = &log {
                     match log.inbound(frame) {
                         Ok(Some(frame)) => frame,
                         Ok(None) => continue,
@@ -347,6 +382,22 @@ impl JsonlProcess {
                 } else {
                     frame
                 };
+                if resume_reply {
+                    if let Some(id) = frame["id"].as_u64() {
+                        if let Ok(mut ids) = expected_resumes.lock() {
+                            ids.remove(&id);
+                        }
+                    }
+                    // The provider restores its history itself. Our caller needs
+                    // thread metadata, not another queued copy of every old turn.
+                    // The complete sanitized response was journaled above.
+                    if let Some(thread) = frame
+                        .pointer_mut("/result/thread")
+                        .and_then(Value::as_object_mut)
+                    {
+                        thread.remove("turns");
+                    }
+                }
                 // Keep bounded memory while avoiding a frame-count overflow when a
                 // valid evidence delivery arrives as thousands of tiny text deltas.
                 // Journal/sanitize first, and flush before every other frame so
@@ -370,6 +421,7 @@ impl JsonlProcess {
             writer: Some(writer),
             frames,
             queued,
+            resume_replies,
             failed,
             next: 1,
             capture: journal.is_some(),
@@ -411,7 +463,13 @@ impl JsonlProcess {
     pub fn submit(&mut self, method: &str, params: Value) -> Result<u64> {
         let id = self.next;
         self.next += 1;
-        self.send(&json!({"id":id,"method":method,"params":params}))?;
+        if method == "thread/resume" {
+            self.resume_replies.lock().map_err(storage)?.insert(id);
+        }
+        if let Err(error) = self.send(&json!({"id":id,"method":method,"params":params})) {
+            self.resume_replies.lock().map_err(storage)?.remove(&id);
+            return Err(error);
+        }
         Ok(id)
     }
     pub fn initialize_codex(&mut self) -> Result<()> {
@@ -438,7 +496,7 @@ impl JsonlProcess {
                 .map_err(|_| {
                     err(
                         "needs_reconciliation",
-                        format!("协议调用 {method} 超时或 worker 退出；禁止重复派发"),
+                        format!("协议调用 {method} 超时或协议通道关闭；禁止重复派发"),
                     )
                 })?;
             self.queued.fetch_sub(cost, Ordering::AcqRel);
@@ -514,6 +572,59 @@ impl Drop for JsonlProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resume_restores_large_history_without_requeueing_it_or_losing_the_journal() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let secret = "HARMLESS_RESUME_SECRET";
+        let mut command = Command::new("node");
+        command.args(["-e", "require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const q=JSON.parse(line);if(q.method==='thread/resume'){console.log(JSON.stringify({id:q.id,result:{thread:{id:'retained-thread',turns:[{id:'old',text:'x'.repeat(1200000),token:'HARMLESS_RESUME_SECRET'}]}}}));console.log(JSON.stringify({method:'turn/completed',params:{turn:{id:'last',status:'completed'}}}));}else{console.log(JSON.stringify({id:q.id,result:{ok:true}}));}});"]);
+        let mut wire = JsonlProcess::managed(command, file.path(), vec![secret.into()]).unwrap();
+        let result = wire
+            .request("thread/resume", json!({"threadId":"retained-thread"}))
+            .unwrap();
+        assert_eq!(result["thread"]["id"], "retained-thread");
+        assert!(result["thread"].get("turns").is_none());
+        assert!(wire.resume_replies.lock().unwrap().is_empty());
+        assert_eq!(wire.request("ping", json!({})).unwrap()["ok"], true);
+        assert!(
+            wire.drain()
+                .unwrap()
+                .iter()
+                .any(|frame| frame["method"] == "turn/completed")
+        );
+        let text = fs::read_to_string(file.path()).unwrap();
+        assert!(!text.contains(secret));
+        let response: Value = text
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .find(|entry| entry["frame"]["result"]["thread"]["id"] == "retained-thread")
+            .unwrap();
+        assert_eq!(
+            response["frame"]["result"]["thread"]["turns"][0]["text"]
+                .as_str()
+                .unwrap()
+                .len(),
+            1200000
+        );
+        assert!(!wire.failed.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn only_the_registered_resume_reply_can_exceed_the_normal_frame_limit() {
+        for mode in ["ordinary", "notification", "too_large"] {
+            let mut command = Command::new("node");
+            command.args(["-e", "const mode=process.argv[1];require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const q=JSON.parse(line),text='x'.repeat(mode==='too_large'?17000000:1200000);console.log(JSON.stringify(mode==='notification'?{id:q.id,method:'unexpected',params:{text}}:{id:q.id,result:{thread:{id:'t',turns:[{text}]}}}));});", mode]);
+            let mut wire = JsonlProcess::spawn(command).unwrap();
+            let method = if mode == "ordinary" {
+                "models/list"
+            } else {
+                "thread/resume"
+            };
+            assert!(wire.request(method, json!({})).is_err(), "{mode}");
+            assert!(wire.failed.load(Ordering::Acquire), "{mode}");
+        }
+    }
+
     #[test]
     fn evidence_text_bursts_preserve_full_content_and_terminal_receipts() {
         let mut command = Command::new("node");
