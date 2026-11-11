@@ -123,12 +123,14 @@ fn pack_record(
     stored.content_hash = configuration_hash(&stored.data);
     Ok(stored)
 }
-pub(super) fn restore_records(state: &mut EngineeringState) -> Result<()> {
+pub(super) fn restore_records(
+    state: &mut EngineeringState,
+    memo: &mut std::collections::BTreeMap<String, Value>,
+) -> Result<()> {
     let snapshot = state.clone();
-    let mut memo = std::collections::BTreeMap::new();
     for record in &mut state.governance {
         if !is_source(record) {
-            record.data = source_views::restore_with(&snapshot, &record.data, &mut memo)?;
+            record.data = source_views::restore_with(&snapshot, &record.data, memo)?;
             record.content_hash = configuration_hash(&record.data);
         }
     }

@@ -46,6 +46,7 @@ fn storage(e: impl std::fmt::Display) -> Error {
 pub struct SqliteStore {
     connection: Mutex<Connection>,
     writer: Mutex<()>,
+    source_views: Mutex<std::collections::BTreeMap<String, Value>>,
     root: PathBuf,
     _lock: File,
     project_id: Option<String>,
@@ -69,6 +70,7 @@ impl SqliteStore {
         Ok(Self {
             connection: Mutex::new(connection),
             writer: Mutex::new(()),
+            source_views: Mutex::new(Default::default()),
             root,
             _lock: lock,
             project_id: None,
@@ -137,6 +139,21 @@ impl SqliteStore {
         Ok(root)
     }
     fn load(conn: &Connection) -> Result<EngineeringState> {
+        Self::load_with(conn, &mut Default::default())
+    }
+    fn load_cached(&self, conn: &Connection) -> Result<EngineeringState> {
+        let mut memo = self.source_views.lock().map_err(storage)?;
+        // A plan descriptor contains only immutable source revisions and fixed choices.
+        // Keep a bounded request-independent memory cache; it never crosses the storage boundary.
+        if memo.len() >= 128 {
+            memo.clear();
+        }
+        Self::load_with(conn, &mut memo)
+    }
+    fn load_with(
+        conn: &Connection,
+        memo: &mut std::collections::BTreeMap<String, Value>,
+    ) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
         s.governance = source_store::load_records(conn)?;
         s.orchestration_wakeups = load_table(conn, "orchestration_wakeups")?;
@@ -156,14 +173,14 @@ impl SqliteStore {
         s.turns = turns
             .into_iter()
             .map(|v| {
-                source_views::restore(&s, &v)
+                source_views::restore_with(&s, &v, memo)
                     .and_then(|v| serde_json::from_value(v).map_err(storage))
             })
             .collect::<Result<_>>()?;
         s.executions = executions
             .into_iter()
             .map(|v| {
-                source_views::restore(&s, &v)
+                source_views::restore_with(&s, &v, memo)
                     .and_then(|v| serde_json::from_value(v).map_err(storage))
             })
             .collect::<Result<_>>()?;
@@ -171,7 +188,7 @@ impl SqliteStore {
         s.sessions = sessions
             .into_iter()
             .map(|v| {
-                source_views::restore(&s, &v)
+                source_views::restore_with(&s, &v, memo)
                     .and_then(|v| serde_json::from_value(v).map_err(storage))
             })
             .collect::<Result<_>>()?;
@@ -180,7 +197,7 @@ impl SqliteStore {
         s.snapshots = snapshots
             .into_iter()
             .map(|v| {
-                source_views::restore(&s, &v)
+                source_views::restore_with(&s, &v, memo)
                     .and_then(|v| serde_json::from_value(v).map_err(storage))
             })
             .collect::<Result<_>>()?;
@@ -188,7 +205,7 @@ impl SqliteStore {
         s.artifacts = load_table::<Artifact>(conn, "artifacts")?;
         s.events = load_table::<Event>(conn, "events")?;
         s.refresh_configuration_views()?;
-        source_store::restore_records(&mut s)?;
+        source_store::restore_records(&mut s, memo)?;
         Ok(s)
     }
     fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
@@ -489,7 +506,7 @@ impl EngineeringStore for SqliteStore {
         self.root.to_string_lossy().into_owned()
     }
     fn snapshot(&self) -> Result<EngineeringState> {
-        Self::load(&*self.connection.lock().map_err(storage)?)
+        self.load_cached(&*self.connection.lock().map_err(storage)?)
     }
     fn transact(
         &self,
@@ -510,12 +527,12 @@ impl EngineeringStore for SqliteStore {
                 require(saved == fp, "command_id 被不同参数复用")?;
                 let result: String = row.get(1).map_err(storage)?;
                 return source_views::restore(
-                    &Self::load(&conn)?,
+                    &self.load_cached(&conn)?,
                     &serde_json::from_str(&result).map_err(storage)?,
                 );
             }
         }
-        let mut state = Self::load(&conn)?;
+        let mut state = self.load_cached(&conn)?;
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;

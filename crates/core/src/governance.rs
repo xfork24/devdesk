@@ -475,6 +475,17 @@ impl Engine {
                         }
                     }
                 }
+                "delivery_type" => {
+                    let delivery: DeliveryTypeDefinition = decode(&data)?;
+                    delivery.validate()?;
+                    let mut references = std::collections::BTreeSet::new();
+                    for spec in delivery.spec_refs {
+                        require(references.insert(spec.clone()), "Delivery 规范引用不得重复")?;
+                        reference(s, &spec, "spec", &scope)?
+                            .decode::<ConfiguredSpecification>()?
+                            .validate()?;
+                    }
+                }
                 "capability" => crate::configuration::validate_capability(s, &data, &scope)?,
                 "model" => {
                     let m: ModelDefinition = decode(&data)?;

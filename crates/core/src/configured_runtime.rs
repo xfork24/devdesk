@@ -422,9 +422,23 @@ pub fn task_input(
         let source_output_id=match binding {InputBinding::Source{source} if source.step!="$input"=>instance.steps.iter().find(|step|step.step==source.step).and_then(|step|step.outputs.get(&source.port)),_=>None};
         (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"value_digest":execution.inputs.get(name).map(configuration_hash)}))
     }).collect();
+    let input_deliveries = step.inputs.values().filter_map(|binding| match binding {
+        InputBinding::Source { source } if source.step == "$input" => {
+            instance.plan.document.inputs.get(&source.port)
+        }
+        InputBinding::Source { source } => instance
+            .plan
+            .document
+            .steps
+            .iter()
+            .find(|step| step.key == source.step)
+            .and_then(|step| step.outputs.get(&source.port)),
+        _ => None,
+    });
     let document_specs: BTreeSet<_> = step
         .outputs
         .values()
+        .chain(input_deliveries)
         .filter_map(|port| definitions.get(&port.delivery_ref))
         .filter_map(|r| r.decode::<DeliveryTypeDefinition>().ok())
         .flat_map(|delivery| delivery.spec_refs)

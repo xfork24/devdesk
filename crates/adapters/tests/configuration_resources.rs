@@ -395,3 +395,58 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
         assert_eq!(after.configuration(&agent.id).unwrap(), agent);
     }
 }
+
+#[test]
+fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    assert!(
+        command(
+            &e,
+            "delivery_type.create",
+            None,
+            json!({"name":"Dangling spec","data":{"format":"markdown","spec_refs":["missing:1"]}})
+        )
+        .is_err()
+    );
+    let spec = command(&e, "spec.create", None, json!({"name":"Shared document norm","data":{"schema_version":3,"body":"One source of document requirements","checks":[]}})).unwrap();
+    let delivery = command(
+        &e,
+        "delivery_type.create",
+        None,
+        json!({"name":"Shared document","data":{"format":"markdown","spec_refs":[spec["id"]]}}),
+    )
+    .unwrap();
+    assert!(delivery["data"].get("body").is_none());
+    command(
+        &e,
+        "spec.revise",
+        spec["id"].as_str(),
+        json!({"name":"Shared document norm v2","data":{"schema_version":3,"body":"An explicitly adopted future norm","checks":[]}}),
+    )
+    .unwrap();
+    let draft = command(&e, "workflow.create", None, json!({"name":"Document flow","document":{"schema_version":5,"stages":[{"key":"work","name":"Work","default_role_ref":"builtin-role-analyst:1"}],"steps":[
+        {"key":"produce","name":"Produce","stage":"work","executor":{"type":"agent"},"task_instructions":"Write the document","outputs":{"document":{"delivery_ref":delivery["id"]}}},
+        {"key":"consume","name":"Consume","stage":"work","executor":{"type":"agent"},"task_instructions":"Read the document","dependencies":["produce"],"inputs":{"document":{"type":"source","source":{"step":"produce","port":"document"}}}}
+    ]}})).unwrap();
+    let workflow = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    for step in ["produce", "consume"] {
+        let preview = e.query("query.workflow_task_preview", &json!({"id":workflow["id"],"step":step,"preview_agent_ref":default_agent_id("analyst")}), 4).unwrap();
+        assert_eq!(
+            preview["task"]["document_specifications"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            preview["task"]["document_specifications"][0]["id"],
+            spec["id"]
+        );
+        assert_eq!(
+            preview["task"]["document_specifications"][0]["data"]["body"],
+            spec["data"]["body"]
+        );
+        assert_eq!(preview["task"]["specifications"], json!([]));
+    }
+}

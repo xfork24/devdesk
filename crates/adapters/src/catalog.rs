@@ -343,7 +343,7 @@ impl GlobalStore {
             ..Default::default()
         };
         state.refresh_configuration_views()?;
-        source_store::restore_records(&mut state)?;
+        source_store::restore_records(&mut state, &mut Default::default())?;
         Ok(state)
     }
 
