@@ -59,6 +59,7 @@ def manager_input(c, manager, text):
 def wait(c, root, manager, predicate, phase):
     deadline = time.monotonic() + args.timeout_seconds
     previous = None
+    conflict_deadlines = {}
     while time.monotonic() < deadline:
         workspace = c.rpc('query.workspace', {'feature_id': feature, 'limit': 100})
         instances = [r for r in workspace['configurations'] if r['kind'] == 'workflow_instance' and r['data']['root_instance_id'] == root]
@@ -70,8 +71,16 @@ def wait(c, root, manager, predicate, phase):
             previous = state
         (out / 'latest.json').write_text(json.dumps({'workspace': workspace, 'controller': controller}, ensure_ascii=False, indent=2))
         assert controller['record']['data']['status'] not in ['failed', 'budget_exhausted', 'needs_reconciliation'], 'Controller did not finish normally'
+        conflicts = {step['id'] for row in instances for step in row['data']['steps'] if step['status'] == 'failed' and step['step'] == 'advance' and step.get('reason') == '目标已变化'}
         for row in instances:
             for step in row['data']['steps']:
+                if step['id'] in conflicts:
+                    # Concurrent Tasks may legitimately invalidate an older candidate.
+                    # Let the real controller rework it; no result is bypassed here.
+                    assert time.monotonic() < conflict_deadlines.setdefault(step['id'], time.monotonic() + 900), 'Controller did not recover stale candidate'
+                    continue
+                if conflicts and step['status'] == 'failed' and step.get('reason') == '子流程执行失败':
+                    continue
                 assert step['status'] not in ['failed', 'needs_reconciliation', 'cancelled', 'waiting_input', 'waiting_confirmation'], (phase, step['path'], step['status'], step.get('reason'))
         if predicate(workspace, instances, current):
             session = controller['record']['data'].get('session_id')
@@ -137,6 +146,10 @@ try:
                             # Retrying the actual failed child restores its parent automatically.
                             # Retrying the invocation itself would replace preserved children.
                             continue
+                        if step['step'] == 'advance' and step['reason'] == '目标已变化':
+                            control(c, 'workflow.step.rework', row['id'], {'step': 'target', 'reason': '同 Feature 并行 Task 已推进目标；保留旧候选及回执，重新读取目标并重建、测试、评审新候选'})
+                            recovery.append({'instance': row['id'], 'execution': step['id'], 'step': 'advance', 'previous_status': 'failed', 'action': 'rework target and its dependent candidate/tests/reviews'})
+                            continue
                         # This query has no external mutation to reconcile. Business/test
                         # failures are never converted to success or silently bypassed.
                         assert step['step'] == 'target' and step['reason'] == '工作空间不属于当前执行范围', (row['id'], step['step'], step['reason'])
@@ -147,7 +160,7 @@ try:
                 control(c, 'workflow.resume', root)
             row = c.rpc('query.orchestration', {'id': manager})['record']
             c.command('orchestration.resume', manager, row['revision'], {'epoch': row['data']['epoch']})
-            manager_input(c, manager, '当前是同数据集恢复：真实 Task 读取所属 Feature 的 target 权限边界已修复；失败查询与中断的业务步骤已通过公开恢复命令重试，旧执行及真实证据均保留。继续已有两项 Task 及 Feature，保留已完成节点与 Standard 切换历史。中断的实现保留已有源码和真实 TDD 记录，按合同补齐证据，不伪造或重写旧记录。完成全部测试、独立评审、候选测试、Git 接纳与发布，显式 complete 子流程及根流程。禁止修改计划、豁免或跳过检查。')
+            manager_input(c, manager, '当前是同数据集恢复：真实 Task 读取所属 Feature 的 target 权限边界已修复；已核对的失败查询、中断步骤或过期候选已通过公开恢复命令重试或从 target 返工，旧执行及真实证据均保留。继续已有两项 Task 及 Feature，保留已完成节点与 Standard 切换历史。中断的实现保留已有源码和真实 TDD 记录，按合同补齐证据，不伪造或重写旧记录。完成全部测试、独立评审、候选测试、Git 接纳与发布，显式 complete 子流程及根流程。禁止修改计划、豁免或跳过检查。')
     else:
         project = c.command('project.open_github', payload={'repository': args.github_repo, 'mainline': 'main', 'title': 'Standard snapshot engineering acceptance'})['id']
         c.project = project
