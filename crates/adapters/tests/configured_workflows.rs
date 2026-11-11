@@ -1734,15 +1734,20 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
 
 #[test]
 fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_requests() {
-    actual_git_candidate(false);
+    actual_git_candidate(false, false);
 }
 
 #[test]
 fn explicit_waivers_allow_actual_git_without_inventing_test_or_human_receipts() {
-    actual_git_candidate(true);
+    actual_git_candidate(true, false);
 }
 
-fn actual_git_candidate(waived_advance: bool) {
+#[test]
+fn actual_task_reads_its_feature_merge_target_before_building_git_candidate() {
+    actual_git_candidate(false, true);
+}
+
+fn actual_git_candidate(waived_advance: bool, task_owner: bool) {
     fn git(path: &std::path::Path, args: &[&str]) -> String {
         let output = std::process::Command::new("git")
             .args([
@@ -1906,6 +1911,14 @@ fn actual_git_candidate(waived_advance: bool) {
         json!({"type":"source","source":{"step":"snapshot","port":"scope_diff"}});
     document["steps"][3]["inputs"]["candidate_diff"] =
         json!({"type":"source","source":{"step":"candidate","port":"diff"}});
+    if task_owner {
+        document["steps"].as_array_mut().unwrap().push(json!({"key":"target","name":"读取所属 Feature 目标","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current:1","arguments":{"owner_id":{"type":"constant","value":feature}}},"outputs":{"workspace":{"delivery_ref":"fixture-delivery-object:1"}}}));
+        document["steps"][2]["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("target"));
+        document["steps"][2]["executor"]["arguments"]["target_revision"] = json!({"type":"source","source":{"step":"target","port":"workspace","pointer":"/revision"}});
+    }
     if waived_advance {
         document["action_requirements"] = json!({"git.advance":["tests","confirmation"]});
         document["steps"].as_array_mut().unwrap().push(json!({"key":"advance","name":"带明确例外接纳","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-advance:1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"candidate":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"accepted":{"delivery_ref":"fixture-delivery-object:1"}}}));
@@ -1916,7 +1929,7 @@ fn actual_git_candidate(waived_advance: bool) {
             "workflow.start",
             Command {
                 command_id: id(),
-                target: Some(feature),
+                target: Some(if task_owner { task.clone() } else { feature.clone() }),
                 expected_revision: Some(1),
                 payload: json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}}),
             },
@@ -2010,7 +2023,20 @@ fn actual_git_candidate(waived_advance: bool) {
             .owner,
         task
     );
-    assert_ne!(calls[0].session.owner_id, task);
+    if task_owner {
+        assert_eq!(calls[0].session.owner_id, task);
+        let target = state
+            .configuration(
+                runtime["steps"][4]["outputs"]["workspace"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(target.data["value"]["owner_id"], feature);
+        assert_eq!(target.data["value"]["revision"], base);
+    } else {
+        assert_ne!(calls[0].session.owner_id, task);
+    }
     let snapshot = state
         .configuration(
             runtime["steps"][1]["outputs"]["workspace"]
