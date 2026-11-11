@@ -371,6 +371,45 @@ impl Workspace {
             let global = self.global.snapshot()?;
             let target_global =
                 target.is_some_and(|id| global.governance.iter().any(|r| r.id == id));
+            if method == "query.standard_usage" && params["project_id"].is_null() && target_global {
+                let reference = target.unwrap();
+                standard_snapshot(&global, reference, &Scope::Global)?;
+                let mut records = Vec::new();
+                let mut offset = 0;
+                loop {
+                    let (projects, total) = self.global.projects(offset, 100)?;
+                    for project in &projects {
+                        let state = SqliteStore::read_project_snapshot(
+                            Path::new(&self.global.root()),
+                            &project.id,
+                        )?;
+                        records.extend(
+                            state
+                                .governance
+                                .iter()
+                                .filter(|r| {
+                                    [
+                                        "project_configuration",
+                                        "work_configuration",
+                                        "workflow_plan_revision",
+                                    ]
+                                    .contains(&r.kind.as_str())
+                                        && r.data["standard_ref"] == reference
+                                })
+                                .map(|r| json!(r)),
+                        );
+                    }
+                    offset += projects.len();
+                    if offset >= total || projects.is_empty() {
+                        break;
+                    }
+                }
+                let offset = params["offset"].as_u64().unwrap_or(0) as usize;
+                let limit = params["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
+                return Ok(
+                    json!({"total":records.len(),"offset":offset,"records":records.into_iter().skip(offset).take(limit).collect::<Vec<_>>()}),
+                );
+            }
             let explicit_scope = params
                 .get("scope")
                 .or_else(|| params["payload"].get("scope"));

@@ -1,0 +1,56 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-review",
+  "revision": 2,
+  "name": "Review Report",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "json",
+    "spec_refs": [
+      "builtin-spec-delivery-review:1"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "approve",
+        "summary",
+        "checks"
+      ],
+      "properties": {
+        "approve": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "passed",
+              "evidence"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "passed": {
+                "type": "boolean"
+              },
+              "evidence": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "producer": {
+      "kind": "agent"
+    }
+  }
+}

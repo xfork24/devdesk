@@ -12,11 +12,11 @@
     "skills": [
       "builtin-skill-engineering-context:2",
       "builtin-skill-project-planning:2",
-      "builtin-skill-workflow-orchestration:2"
+      "builtin-skill-workflow-orchestration:1"
     ],
     "tools": [
       "builtin-tool-codex-native:1",
-      "builtin-tool-workflow-start:2",
+      "builtin-tool-workflow-start:1",
       "builtin-tool-workflow-inspect:1",
       "builtin-tool-workflow-events-read:1",
       "builtin-tool-workflow-outputs-read:1",
@@ -30,8 +30,8 @@
       "builtin-tool-workflow-pause:1",
       "builtin-tool-workflow-resume:1",
       "builtin-tool-workflow-cancel:1",
-      "builtin-tool-workflow-change-preview:2",
-      "builtin-tool-workflow-change-apply:2",
+      "builtin-tool-workflow-change-preview:1",
+      "builtin-tool-workflow-change-apply:1",
       "builtin-tool-workflow-materials-import:1",
       "builtin-tool-workflow-decision-request:1",
       "builtin-tool-workflow-execution-reconcile:1",

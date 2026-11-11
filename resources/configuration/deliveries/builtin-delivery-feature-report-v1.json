@@ -1,0 +1,18 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-feature-report",
+  "revision": 1,
+  "name": "Feature Report",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "markdown",
+    "spec_refs": [
+      "builtin-spec-delivery-feature-report:1"
+    ],
+    "producer": {
+      "kind": "agent"
+    }
+  }
+}

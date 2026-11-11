@@ -422,6 +422,31 @@ pub fn task_input(
         let source_output_id=match binding {InputBinding::Source{source} if source.step!="$input"=>instance.steps.iter().find(|step|step.step==source.step).and_then(|step|step.outputs.get(&source.port)),_=>None};
         (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"value_digest":execution.inputs.get(name).map(configuration_hash)}))
     }).collect();
+    let mut rendered_inputs = execution.inputs.clone();
+    for (name, value) in &execution.inputs {
+        let bytes = serde_json::to_vec(value).map_err(|e| err("serialization", e.to_string()))?;
+        if bytes.len() > 32768 {
+            if let Some(id) = input_sources
+                .get(name)
+                .and_then(|source| source["source_output_id"].as_str())
+            {
+                let pointer = match &step.inputs[name] {
+                    InputBinding::Source { source } => source.pointer.as_str(),
+                    _ => "",
+                };
+                let reader = instance.plan.definitions.values().find(|r| {
+                    r.kind == "tool"
+                        && r.data["qualified_name"] == "workflow.outputs.read"
+                        && step.access.tool_refs.contains(&r.id)
+                });
+                require(
+                    reader.is_some(),
+                    "大产物需要当前步骤授权的 workflow.outputs.read 完整读取能力",
+                )?;
+                rendered_inputs.insert(name.clone(), json!({"complete":false,"source_output_id":id,"pointer":pointer,"value_digest":configuration_hash(value),"total_bytes":bytes.len(),"read_tool":"devdesk_workflow_outputs_read","arguments":{"ids":[id],"pointer":pointer,"offset":0,"max_bytes":32768},"instructions":"Read every chunk through next_offset before judging this input. The reference is not the content."}));
+            }
+        }
+    }
     let input_deliveries = step.inputs.values().filter_map(|binding| match binding {
         InputBinding::Source { source } if source.step == "$input" => {
             instance.plan.document.inputs.get(&source.port)
@@ -451,7 +476,7 @@ pub fn task_input(
         "role":instance.plan.document.role(step).and_then(|id|instance.plan.roles.get(id).or_else(||instance.plan.roles.values().find(|role|role["role"]["id"]==id))),
         "stage":instance.plan.document.stages.iter().find(|s|s.key == step.stage),
         "task_instructions":step.task_instructions,"required_skills":step.required_skill_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),
-        "specifications":step.spec_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"document_specifications":document_specs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"inputs":execution.inputs,"input_sources":input_sources,
+        "specifications":step.spec_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"document_specifications":document_specs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"inputs":rendered_inputs,"input_sources":input_sources,
         "budget":step.budget,"authorization":{"workspace_input":step.access.workspace_input,"working_directory":step.access.working_directory,"writable_paths":step.access.writable_paths,"read_only_paths":step.access.read_only_paths,"tool_refs":step.access.tool_refs},"outputs":outputs,"completion":step.completion,"supplemental_input":supplemental,
         "output_contract":{"type":"object","required":["status","summary","outputs"],"additionalProperties":false,
             "description":"When status is completed, include every declared required output port. For needs_input or blocked, outputs may be empty.",
@@ -491,6 +516,132 @@ fn mapped_tool_outputs(
             Ok((name.clone(), value.clone()))
         })
         .collect()
+}
+
+fn output_provenance(
+    state: &EngineeringState,
+    row: &ConfigurationRecord,
+    step: &StepDefinition,
+    execution: &StepExecution,
+    name: &str,
+    definition: &DeliveryTypeDefinition,
+    value: &Value,
+) -> Result<Value> {
+    let mut provenance =
+        json!({"value_digest":configuration_hash(value),"spec_refs":definition.spec_refs});
+    match &step.executor {
+        StepExecutor::Tool { output_mapping, .. } => {
+            if let Some(call) = execution
+                .tool_call_id
+                .as_ref()
+                .and_then(|id| state.configuration(id).ok())
+                .filter(|r| r.kind == "platform_call")
+            {
+                let tool = call.data["request"]["definition"]["qualified_name"]
+                    .as_str()
+                    .unwrap_or("");
+                require(
+                    call.data["status"] == "succeeded"
+                        && call.data["request"]["execution_id"] == execution.id
+                        && call.data["request"]["instance_id"] == row.id,
+                    "交付缺少当前步骤的真实平台回执",
+                )?;
+                let pointer = output_mapping.get(name).map(String::as_str).unwrap_or("");
+                require(
+                    call.data["receipt"].pointer(pointer) == Some(value),
+                    "交付内容与真实工具回执不一致",
+                )?;
+                if let Some(DeliveryProducer::Platform { tools }) = &definition.producer {
+                    require(tools.iter().any(|t| t == tool), "交付来源工具不匹配")?;
+                }
+                provenance["kind"] = json!("platform");
+                provenance["call_id"] = json!(call.id);
+                provenance["tool"] = json!(tool);
+                provenance["pointer"] = json!(pointer);
+                if definition.format == "diff" {
+                    let receipt = &call.data["receipt"];
+                    let comparison = pointer
+                        .strip_suffix("/diff")
+                        .and_then(|p| receipt.pointer(p));
+                    let base = comparison
+                        .and_then(|v| v.get("base_revision"))
+                        .unwrap_or(&receipt["target_revision"]);
+                    let head = comparison
+                        .and_then(|v| v.get("revision"))
+                        .unwrap_or(&receipt["revision"]);
+                    require(
+                        base.is_string() && head.is_string(),
+                        "Diff 缺少确切比较端点",
+                    )?;
+                    provenance["base_revision"] = base.clone();
+                    provenance["revision"] = head.clone();
+                    provenance["comparison"] = json!(pointer);
+                }
+                return Ok(provenance);
+            }
+            require(
+                !matches!(definition.producer, Some(DeliveryProducer::Platform { .. })),
+                "平台交付不能由普通工具回执替代",
+            )?;
+            provenance["kind"] = json!("tool");
+        }
+        StepExecutor::Agent { .. } => {
+            require(
+                !matches!(
+                    definition.producer,
+                    Some(DeliveryProducer::Platform { .. } | DeliveryProducer::Workflow)
+                ),
+                "Agent 不能冒充平台或子流程产出",
+            )?;
+            provenance["kind"] = json!("agent");
+            provenance["turn_id"] = json!(execution.turn_id);
+        }
+        StepExecutor::Workflow { foreach, .. } => {
+            provenance["kind"] = json!("workflow");
+            let group = state
+                .governance
+                .iter()
+                .find(|r| r.kind == "workflow_children" && r.definition_id == execution.id)
+                .ok_or_else(|| err("output_invalid", "缺少实际子流程交付来源"))?;
+            let ids: Vec<String> = serde_json::from_value(group.data["children"].clone())
+                .map_err(|e| err("output_invalid", e.to_string()))?;
+            let children = ids
+                .iter()
+                .map(|id| {
+                    state
+                        .configuration(id)?
+                        .decode::<ConfiguredWorkflowInstance>()
+                })
+                .collect::<Result<Vec<_>>>()?;
+            require(
+                children.iter().all(|child| {
+                    child.status == StepExecutionStatus::Completed
+                        && child.parent_execution_id.as_ref() == Some(&execution.id)
+                }),
+                "汇总必须来自本次实际完成的子流程",
+            )?;
+            if let Some(collection) = foreach {
+                let parent: ConfiguredWorkflowInstance = row.decode()?;
+                let current = facts(state, &parent)?;
+                let members = current
+                    .value(&collection.source)
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| err("output_invalid", "汇总来源需要数组"))?;
+                require(
+                    children.len() == members.len()
+                        && children.iter().zip(members).all(|(child, member)| {
+                            child.inputs.get(&collection.item_input) == Some(member)
+                        }),
+                    "汇总任务成员遗漏、重复或顺序不符",
+                )?;
+            }
+            provenance["children"] = json!(ids);
+        }
+        StepExecutor::Control => {
+            provenance["kind"] = json!("control");
+        }
+    }
+    Ok(provenance)
 }
 
 fn intent(
@@ -1928,7 +2079,9 @@ impl Engine {
                         .map(|r| r.data["steps"].as_array().map_or(0, Vec::len))
                         .sum();
                     require(
-                        existing + members.len() * child_doc.steps.len() <= WORKFLOW_STEP_LIMIT,
+                        work_binding.is_some()
+                            || existing + members.len() * child_doc.steps.len()
+                                <= WORKFLOW_STEP_LIMIT,
                         "集合展开超过 1000 个步骤",
                     )?;
                     let mut children = vec![];
@@ -2021,6 +2174,37 @@ impl Engine {
                                 &child_doc,
                                 &effective_doc,
                             )?;
+                        }
+                        let active_count: usize = state
+                            .governance
+                            .iter()
+                            .filter(|r| {
+                                r.kind == "workflow_instance"
+                                    && r.data["root_instance_id"] == instance.root_instance_id
+                            })
+                            .map(|r| r.data["steps"].as_array().map_or(0, Vec::len))
+                            .sum();
+                        require(
+                            active_count + effective_doc.steps.len() <= WORKFLOW_STEP_LIMIT,
+                            "实际子流程展开超过 1000 个步骤",
+                        )?;
+                        let mut depth = 1;
+                        let mut ancestor = instance.parent_execution_id.clone();
+                        while let Some(parent) = ancestor {
+                            depth += 1;
+                            require(depth <= WORKFLOW_DEPTH_LIMIT, "实际调用深度超过 8")?;
+                            ancestor = state
+                                .governance
+                                .iter()
+                                .find(|r| {
+                                    r.kind == "workflow_instance"
+                                        && r.data["steps"].as_array().is_some_and(|steps| {
+                                            steps.iter().any(|e| e["id"] == parent)
+                                        })
+                                })
+                                .and_then(|r| {
+                                    r.data["parent_execution_id"].as_str().map(str::to_owned)
+                                });
                         }
                         let child_doc = &effective_doc;
                         let child = &effective_child;
@@ -2468,6 +2652,7 @@ impl Engine {
                     .ok_or_else(|| err("configuration_required", "输出类型不在闭包中"))?
                     .decode()?;
                 self.validate_configured_value(&definition, value)?;
+                output_provenance(state, row, step, execution, name, &definition, value)?;
                 if port.content_checks {
                     let expected = step
                         .spec_refs
@@ -2495,6 +2680,11 @@ impl Engine {
                 .into(),
         };
         for (name, value) in outputs {
+            let instance: ConfiguredWorkflowInstance = row.decode()?;
+            let definition: DeliveryTypeDefinition =
+                instance.plan.definitions[&step.outputs[name].delivery_ref].decode()?;
+            let provenance =
+                output_provenance(state, row, step, execution, name, &definition, value)?;
             let body =
                 serde_json::to_string(value).map_err(|e| err("serialization", e.to_string()))?;
             let artifact = self
@@ -2507,7 +2697,7 @@ impl Engine {
                 name.clone(),
                 1,
                 None,
-                json!({"execution_id":execution.id,"port":name,"delivery_ref":step.outputs[name].delivery_ref,"value":value,"artifact_id":artifact.id,"input_digest":execution.input_digest}),
+                json!({"execution_id":execution.id,"port":name,"delivery_ref":step.outputs[name].delivery_ref,"value":value,"artifact_id":artifact.id,"input_digest":execution.input_digest,"provenance":provenance}),
                 true,
             );
             execution.outputs.insert(name.clone(), output.id.clone());

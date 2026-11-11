@@ -604,7 +604,7 @@ fn generic_proposal_adopts_typed_material_with_sources_without_creating_business
             },
         )
         .unwrap();
-    let draft=e.execute("proposal.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"turn_id":turn,"content":{"delivery_ref":"builtin-delivery-object:1","title":"任意业务结果","value":{"risks":["scope"]},"input_refs":[material["id"]]}})}).unwrap();
+    let draft=e.execute("proposal.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"turn_id":turn,"content":{"delivery_ref":"fixture-delivery-object:1","title":"任意业务结果","value":{"risks":["scope"]},"input_refs":[material["id"]]}})}).unwrap();
     let adopted = e
         .execute(
             "proposal.adopt",
@@ -626,7 +626,7 @@ fn generic_proposal_adopts_typed_material_with_sources_without_creating_business
         document.input_refs,
         vec![material["id"].as_str().unwrap().to_string()]
     );
-    assert_eq!(document.kind, "builtin-delivery-object:1");
+    assert_eq!(document.kind, "fixture-delivery-object:1");
     assert!(document.body.contains("risks"));
     assert!(state.features.is_empty());
     assert!(state.tasks.is_empty());

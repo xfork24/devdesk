@@ -1,0 +1,13 @@
+{
+  "kind": "agent",
+  "identity": "builtin-agent-sol-high-tester",
+  "revision": 4,
+  "name": "测试 · Sol High / Codex",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "role_ref": "builtin-role-tester:1",
+    "capability_ref": "builtin-capability-tester-codex:3"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-test-recipe",
+  "revision": 2,
+  "name": "Test Doc",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "json",
+    "spec_refs": [
+      "builtin-spec-stage-test-design:2"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "scope",
+        "cases",
+        "recipe"
+      ],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "acceptance",
+              "expected",
+              "files"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "acceptance": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "expected": {
+                "type": "string",
+                "minLength": 1
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "recipe": {
+          "type": "object",
+          "required": [
+            "runner",
+            "files",
+            "timeout_seconds"
+          ],
+          "properties": {
+            "runner": {
+              "enum": [
+                "node_test"
+              ]
+            },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxItems": 100,
+              "uniqueItems": true
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "producer": {
+      "kind": "agent"
+    }
+  }
+}

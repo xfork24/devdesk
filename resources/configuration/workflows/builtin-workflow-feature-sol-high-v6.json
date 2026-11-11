@@ -7,7 +7,7 @@
     "kind": "global"
   },
   "data": {
-    "schema_version": 6,
+    "schema_version": 5,
     "stages": [
       {
         "key": "requirements",
@@ -54,7 +54,7 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-prd:1"
+            "delivery_ref": "builtin-delivery-prd:2"
           }
         },
         "budget": {
@@ -96,7 +96,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-review:1",
+            "delivery_ref": "builtin-delivery-review:2",
             "content_checks": true
           }
         },
@@ -152,7 +152,7 @@
         ],
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-workspace-snapshot:1"
           }
         }
       },
@@ -166,7 +166,7 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-engineering-constraints:1"
           }
         },
         "executor": {
@@ -202,7 +202,7 @@
             "execution_evidence": {
               "type": "constant",
               "value": {
-                "delivery_ref": "builtin-delivery-execution-evidence:1",
+                "delivery_ref": "builtin-delivery-execution-evidence:2",
                 "run_fields": [
                   "sequence",
                   "phase",
@@ -284,7 +284,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-design:1"
+            "delivery_ref": "builtin-delivery-design:2"
           }
         },
         "budget": {
@@ -345,7 +345,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-review:1",
+            "delivery_ref": "builtin-delivery-review:2",
             "content_checks": true
           }
         },
@@ -423,7 +423,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-task-plan:1"
+            "delivery_ref": "builtin-delivery-task-plan:2"
           }
         },
         "budget": {
@@ -440,7 +440,7 @@
           "builtin-skill-project-planning:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-project-planning:1"
+          "builtin-spec-stage-project-planning:2"
         ],
         "tags": [
           "planning"
@@ -489,7 +489,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-review:1",
+            "delivery_ref": "builtin-delivery-review:2",
             "content_checks": true
           }
         },
@@ -507,7 +507,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-project-planning:1"
+          "builtin-spec-stage-project-planning:2"
         ],
         "tags": [
           "plan_review"
@@ -543,7 +543,7 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-task-creation-report:1"
           }
         },
         "budget": {
@@ -585,7 +585,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-collection:1"
+            "delivery_ref": "builtin-delivery-collection:2"
           }
         },
         "budget": {
@@ -605,10 +605,6 @@
             "item_input": "item",
             "max_concurrency": 1,
             "min_items": 1
-          },
-          "work_binding": {
-            "input": "item",
-            "pointer": "/work_ref"
           }
         }
       },
@@ -622,7 +618,7 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-workspace-snapshot:1"
           }
         },
         "budget": {
@@ -687,7 +683,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-test-recipe:1"
+            "delivery_ref": "builtin-delivery-test-recipe:2"
           }
         },
         "budget": {
@@ -699,7 +695,7 @@
           "type": "agent",
           "role_ref": "builtin-role-tester:1"
         },
-        "task_instructions": "依据需求、设计和已完成的 Task 交付，使用独立测试设计 Skill，在授权测试目录补齐 Feature 整体的独立回归测试，并提交包含 Task 测试和 Feature 测试的完整 node --test 配方。Feature 整体测试由本步骤编写，不要求单个 Task 提前交付；文件尚不存在正是本步骤需要完成的工作，不因此返回 blocked。保留已有 Task 测试和实现，不修改测试目录以外的文件。方法、覆盖与失败处理按所加载 Skill 和 Spec 执行；后续工具会固定代码版本并运行配方，本步骤不冒充其回执。无需指定镜像。 必须遵守 inputs.engineering_constraints 中已声明的实现运行时、测试 runner、依赖及解释器边界。没有配置的能力不能作为待验证假设交给后续节点。",
+        "task_instructions": "依据需求、设计和已完成的 Task 交付，使用独立测试设计 Skill，在授权测试目录补齐 Feature 整体的独立回归测试，并提交包含 Task 测试和 Feature 测试的完整 node --test 配方。Feature 整体测试由本步骤编写，不要求单个 Task 提前交付；文件尚不存在正是本步骤需要完成的工作，不因此返回 blocked。保留已有 Task 测试和实现，不修改测试目录以外的文件。方法、覆盖与失败处理按所加载 Skill 和 Spec 执行；后续工具会固定代码版本并运行配方，本步骤不冒充其回执。无需指定镜像。 必须遵守 inputs.engineering_constraints 中已声明的实现运行时、测试 runner、依赖及解释器边界。没有配置的能力不能作为待验证假设交给后续节点。 提交 Test Doc：scope、cases 和 recipe；cases 每项含 id、acceptance、expected、files。recipe 含 runner、files、timeout_seconds，不包含镜像。",
         "required_skill_refs": [
           "builtin-skill-release-verification:2",
           "builtin-skill-test-design:2"
@@ -720,7 +716,7 @@
         "stage": "verification",
         "executor": {
           "type": "tool",
-          "tool_ref": "builtin-tool-workspace-snapshot:1",
+          "tool_ref": "builtin-tool-workspace-snapshot:2",
           "arguments": {
             "workspace": {
               "type": "source",
@@ -740,6 +736,10 @@
               "type": "constant",
               "value": true
             }
+          },
+          "output_mapping": {
+            "result": "",
+            "diff": "/changes/diff"
           }
         },
         "dependencies": [
@@ -747,7 +747,10 @@
         ],
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-workspace-snapshot:1"
+          },
+          "diff": {
+            "delivery_ref": "builtin-delivery-diff:2"
           }
         }
       },
@@ -761,7 +764,7 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-test-report:2"
           }
         },
         "budget": {
@@ -786,7 +789,7 @@
               "source": {
                 "step": "release_recipe",
                 "port": "result",
-                "pointer": ""
+                "pointer": "/recipe"
               }
             }
           }
@@ -806,7 +809,7 @@
         "name": "整理交付与限制",
         "stage": "delivery",
         "dependencies": [
-          "verification"
+          "candidate_tests"
         ],
         "inputs": {
           "requirements": {
@@ -856,11 +859,32 @@
               "port": "result",
               "pointer": "/changes"
             }
+          },
+          "candidate_diff": {
+            "type": "source",
+            "source": {
+              "step": "candidate",
+              "port": "diff"
+            }
+          },
+          "candidate": {
+            "type": "source",
+            "source": {
+              "step": "candidate",
+              "port": "result"
+            }
+          },
+          "candidate_tests": {
+            "type": "source",
+            "source": {
+              "step": "candidate_tests",
+              "port": "result"
+            }
           }
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-prd:1"
+            "delivery_ref": "builtin-delivery-feature-report:1"
           }
         },
         "budget": {
@@ -872,7 +896,7 @@
           "type": "agent",
           "role_ref": "builtin-role-tester:1"
         },
-        "task_instructions": "基于实际整体测试回执和 Task 结果，汇总验收追溯、使用方式、限制与交付说明。",
+        "task_instructions": "基于实际整体测试回执和 Task 结果，汇总验收追溯、使用方式、限制与交付说明。 显式读取提供的 Diff 端口及平台标识的比较端点，核对完整差异与实际测试版本；不得以变更说明替代真实 patch。",
         "required_skill_refs": [
           "builtin-skill-release-verification:2"
         ],
@@ -891,12 +915,12 @@
         "name": "读取工作空间",
         "stage": "integration",
         "dependencies": [
-          "closure"
+          "verification"
         ],
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-workspace-snapshot:1"
           }
         },
         "budget": {
@@ -925,7 +949,10 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-code-candidate:1"
+          },
+          "diff": {
+            "delivery_ref": "builtin-delivery-diff:2"
           }
         },
         "budget": {
@@ -953,6 +980,10 @@
                 "pointer": "/revision"
               }
             }
+          },
+          "output_mapping": {
+            "result": "",
+            "diff": "/diff"
           }
         }
       },
@@ -980,14 +1011,14 @@
               "source": {
                 "step": "release_recipe",
                 "port": "result",
-                "pointer": ""
+                "pointer": "/recipe"
               }
             }
           }
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-test-report:2"
           }
         },
         "completion": {
@@ -1005,7 +1036,7 @@
         "name": "独立核对 · closure",
         "stage": "delivery",
         "dependencies": [
-          "candidate_tests"
+          "closure"
         ],
         "inputs": {
           "requirements": {
@@ -1079,11 +1110,18 @@
               "port": "result",
               "pointer": ""
             }
+          },
+          "candidate_diff": {
+            "type": "source",
+            "source": {
+              "step": "candidate",
+              "port": "diff"
+            }
           }
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-review:1",
+            "delivery_ref": "builtin-delivery-review:2",
             "content_checks": true
           }
         },
@@ -1096,7 +1134,7 @@
           "type": "agent",
           "role_ref": "builtin-role-reviewer:1"
         },
-        "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。 使用 inputs.candidate 中协调器生成的完整基线 diff 核对变更范围，使用 inputs.changes 中确切快照前后 diff 核对独立测试和既有文件是否改变。核对 base_revision、revision 与真实测试回执及候选 source_revision 的对应关系，不要求 Agent 自行读取 Git 元数据，也不以实现者自述代替这些平台证据。 同时使用 inputs.candidate_tests 的实际候选测试回执，核对其 candidate 等于 inputs.candidate.revision；源码 Green/verify 对应 candidate.source_revision，不把两个不同 SHA 混为同一执行。",
+        "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。 使用 inputs.candidate 中协调器生成的完整基线 diff 核对变更范围，使用 inputs.changes 中确切快照前后 diff 核对独立测试和既有文件是否改变。核对 base_revision、revision 与真实测试回执及候选 source_revision 的对应关系，不要求 Agent 自行读取 Git 元数据，也不以实现者自述代替这些平台证据。 同时使用 inputs.candidate_tests 的实际候选测试回执，核对其 candidate 等于 inputs.candidate.revision；源码 Green/verify 对应 candidate.source_revision，不把两个不同 SHA 混为同一执行。 显式读取提供的 Diff 端口及平台标识的比较端点，核对完整差异与实际测试版本；不得以变更说明替代真实 patch。",
         "required_skill_refs": [
           "builtin-skill-independent-review:2"
         ],
@@ -1140,7 +1178,7 @@
           "type": "agent",
           "role_ref": "builtin-role-reviewer:1"
         },
-        "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 必须读取 tasks 中每个 Task 交接的原始 evidence：逐增量 Red/Green/回归命令、输出、退出码、文件快照、environment 和 termination；与确切候选和候选测试交叉核对，缺少事实时拒绝，不能用上游评审摘要代替。",
+        "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 必须读取 tasks 中每个 Task 交接的原始 evidence：逐增量 Red/Green/回归命令、输出、退出码、文件快照、environment 和 termination；与确切候选和候选测试交叉核对，缺少事实时拒绝，不能用上游评审摘要代替。 显式读取提供的 Diff 端口及平台标识的比较端点，核对完整差异与实际测试版本；不得以变更说明替代真实 patch。",
         "required_skill_refs": [
           "builtin-skill-independent-review:2"
         ],
@@ -1211,11 +1249,18 @@
               "port": "result",
               "pointer": ""
             }
+          },
+          "candidate_diff": {
+            "type": "source",
+            "source": {
+              "step": "candidate",
+              "port": "diff"
+            }
           }
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-review:1",
+            "delivery_ref": "builtin-delivery-review:2",
             "content_checks": true
           }
         },
@@ -1258,7 +1303,7 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-acceptance-report:1"
           }
         },
         "budget": {
@@ -1336,7 +1381,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-object:1"
+            "delivery_ref": "builtin-delivery-publication-report:1"
           }
         },
         "budget": {

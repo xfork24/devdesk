@@ -16,6 +16,10 @@ fn engine(path: &std::path::Path) -> Engine {
     .with_tool_executor(Arc::new(NativeTools::new(path).unwrap()));
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
+    e.store.transact(None,&mut |state| {
+        if state.configuration("fixture-standard-collection:1").is_err(){state.governance.push(SourceDefinition{kind:"delivery_type".into(),identity:"fixture-standard-collection".into(),revision:1,name:"Standard test collection".into(),scope:Scope::Global,data:json!({"format":"json","spec_refs":["fixture-spec:1"],"content_schema":{"type":"array"}})}.into_record()?);}
+        Ok(Value::Null)
+    }).unwrap();
     e
 }
 fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -> Result<Value> {
@@ -121,8 +125,8 @@ fn child(e: &Engine, marker: &str) -> String {
     let spec=command(e,"spec.create",None,json!({"name":marker,"data":{"schema_version":3,"body":format!("检查 {marker} 的实际材料来源"),"checks":[]}})).unwrap();
     publish(
         e,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"材料处理"}],"inputs":{"item":{"delivery_ref":"builtin-delivery-object:1"}},"steps":[
-        {"key":"capture","name":"封存材料","stage":"work","spec_refs":[spec["id"]],"executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"marker":{"type":"constant","value":marker},"item":{"type":"source","source":{"step":"$input","port":"item"}}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-object:1"}}},
+        json!({"schema_version":6,"stages":[{"key":"work","name":"材料处理"}],"inputs":{"item":{"delivery_ref":"fixture-delivery-object:1"}},"steps":[
+        {"key":"capture","name":"封存材料","stage":"work","spec_refs":[spec["id"]],"executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"marker":{"type":"constant","value":marker},"item":{"type":"source","source":{"step":"$input","port":"item"}}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
         {"key":"finish","name":"结束核对","stage":"work","dependencies":["capture"],"executor":{"type":"control"}}
     ],"outputs":{"result":{"step":"capture","port":"result"}}}),
     )
@@ -206,8 +210,8 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
     let parent = publish(
         &e,
         json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[
-            {"key":"create","name":"创建两项工作","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"a","title":"Task A","dependencies":[]},{"key":"b","title":"Task B","dependencies":[]}]}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-object:1"}}},
-            {"key":"call","name":"逐工作采用规范","stage":"work","dependencies":["create"],"executor":{"type":"workflow","workflow_ref":a,"work_binding":{"input":"item","pointer":"/work_ref"},"foreach":{"source":{"step":"create","port":"result","pointer":"/tasks"},"item_input":"item","max_concurrency":2,"min_items":2}},"outputs":{"result":{"delivery_ref":"builtin-delivery-collection:1"}}}
+            {"key":"create","name":"创建两项工作","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"a","title":"Task A","instructions":"按当前规范处理材料","dependencies":[]},{"key":"b","title":"Task B","instructions":"按当前规范处理材料","dependencies":[]}]}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
+            {"key":"call","name":"逐工作采用规范","stage":"work","dependencies":["create"],"executor":{"type":"workflow","workflow_ref":a,"work_binding":{"input":"item","pointer":"/work_ref"},"foreach":{"source":{"step":"create","port":"result","pointer":"/tasks"},"item_input":"item","max_concurrency":2,"min_items":2}},"outputs":{"result":{"delivery_ref":"fixture-standard-collection:1"}}}
         ]}),
     );
     let sa = capture(&e, vec![parent.clone(), a.clone()]);

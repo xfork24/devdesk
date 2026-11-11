@@ -137,7 +137,7 @@ fn custom_role_and_typed_business_step_publish_preview_and_reload() {
     let engine = engine(dir.path());
     let role=command(&engine,"role.create",None,json!({"name":"安全研究员","data":{"instructions":"调查输入材料的风险","visibility":{"kind":"global"}}})).unwrap();
     assert!(role["data"].get("execution_role").is_none());
-    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"body":"本次发现的风险与依据","format":"json","content_schema":{
+    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"spec_refs":["fixture-spec:1"],"body":"本次发现的风险与依据","format":"json","content_schema":{
         "type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
     let document = json!({"schema_version":6,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
         "key":"study","name":"识别风险","stage":"inquiry","executor":{"type":"agent"},"task_instructions":"按调研 Skill 分析并提交风险。",
@@ -274,7 +274,7 @@ fn child_closure_rejects_wrong_type_and_recursive_calls_before_publish() {
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"材料","data":{"body":"输入材料","format":"text"}}),
+        json!({"name":"材料","data":{"spec_refs":["fixture-spec:1"],"body":"输入材料","format":"text"}}),
     )
     .unwrap();
     let child = publish(
@@ -380,7 +380,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
         json!({"name":"调研 Agent","data":{"role_ref":role["id"],"capability_ref":cap["id"]}}),
     )
     .unwrap();
-    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"body":"风险列表","format":"json","content_schema":{"type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
+    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"spec_refs":["fixture-spec:1"],"body":"风险列表","format":"json","content_schema":{"type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
     let workflow = publish(
         &engine,
         json!({"schema_version":6,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
@@ -513,10 +513,10 @@ fn reusable_children_and_collection_members_have_distinct_execution_paths() {
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"条目","data":{"body":"输入条目","format":"text"}}),
+        json!({"name":"条目","data":{"spec_refs":["fixture-spec:1"],"body":"输入条目","format":"text"}}),
     )
     .unwrap();
-    let array=command(&engine,"delivery_type.create",None,json!({"name":"条目集合","data":{"body":"输入集合","format":"json","content_schema":{"type":"array","items":{"type":"string"},"minItems":2}}})).unwrap();
+    let array=command(&engine,"delivery_type.create",None,json!({"name":"条目集合","data":{"spec_refs":["fixture-spec:1"],"body":"输入集合","format":"json","content_schema":{"type":"array","items":{"type":"string"},"minItems":2}}})).unwrap();
     let child = publish(
         &engine,
         json!({"schema_version":6,"stages":[{"key":"work","name":"处理"}],"inputs":{"entry":{"delivery_ref":text["id"]}},
@@ -818,7 +818,7 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         assert!(producer.outputs[&source.port].required);
         assert_eq!(
             producer.outputs[&source.port].delivery_ref,
-            "builtin-delivery-execution-evidence:1"
+            "builtin-delivery-execution-evidence:2"
         );
         assert!(task.ancestors(consumer).contains(producer.key.as_str()));
     }
@@ -976,7 +976,7 @@ fn automatic_review_blocks_rejection_and_advances_after_rework_without_confirmat
         &engine,
         &role,
         &agent,
-        json!({"confirmation":"automatic","spec_refs":[spec["id"]],"outputs":{"report":{"delivery_ref":"builtin-delivery-review:1","content_checks":true}},"completion":{"op":"equals","source":{"step":"study","port":"report","pointer":"/approve"},"value":true}}),
+        json!({"confirmation":"automatic","spec_refs":[spec["id"]],"outputs":{"report":{"delivery_ref":"builtin-delivery-review:2","content_checks":true}},"completion":{"op":"equals","source":{"step":"study","port":"report","pointer":"/approve"},"value":true}}),
     );
     drive(&engine, 12);
     let rejected = instance(&engine, &run["id"]);
@@ -1028,7 +1028,7 @@ fn dynamic_spec_rejection_cannot_be_confirmed_and_rework_keeps_the_original_repo
         &engine,
         &role,
         &agent,
-        json!({"spec_refs":[spec["id"]],"outputs":{"report":{"delivery_ref":"builtin-delivery-review:1","content_checks":true}},"completion":{"op":"equals","source":{"step":"study","port":"report","pointer":"/approve"},"value":true},"confirmation":"human"}),
+        json!({"spec_refs":[spec["id"]],"outputs":{"report":{"delivery_ref":"builtin-delivery-review:2","content_checks":true}},"completion":{"op":"equals","source":{"step":"study","port":"report","pointer":"/approve"},"value":true},"confirmation":"human"}),
     );
     drive(&engine, 12);
     let before = instance(&engine, &run["id"]);
@@ -1081,7 +1081,7 @@ fn explicit_manual_approval_requires_reason_and_exact_execution_and_preserves_re
         &role,
         &agent,
         json!({
-            "outputs":{"report":{"delivery_ref":"builtin-delivery-object:1"}},
+            "outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}},
             "completion":{"op":"equals","source":{"step":"study","port":"report","pointer":"/approve"},"value":true}
         }),
     );
@@ -1194,7 +1194,7 @@ fn raw_evidence_contract_rejects_temp_paths_without_contents() {
         &engine,
         &role,
         &agent,
-        json!({"outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence:1"}}}),
+        json!({"outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence:2"}}}),
     );
     drive(&engine, 12);
     let runtime = instance(&engine, &run["id"]);
@@ -1219,7 +1219,7 @@ fn raw_evidence_rejects_missing_environment_or_termination_before_review() {
             &engine,
             &role,
             &agent,
-            json!({"outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence:1"}}}),
+            json!({"outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence:2"}}}),
         );
         drive(&engine, 12);
         let runtime = instance(&engine, &run["id"]);
@@ -1311,12 +1311,28 @@ fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
 
 #[test]
 fn declared_delivery_inputs_carry_persisted_raw_evidence_without_other_outputs() {
+    persisted_evidence_case(false);
+}
+
+#[test]
+fn large_delivery_inputs_are_read_in_full_from_their_authorized_output_reference() {
+    persisted_evidence_case(true);
+}
+
+fn persisted_evidence_case(large: bool) {
     let dir = tempfile::tempdir().unwrap();
     let mut workbench = engine(dir.path());
     let recorder = Arc::new(RecordingAgent::default());
     workbench.harness = recorder.clone();
-    let evidence = execution_evidence_fixture();
-    let (role, agent) = research_agent(&workbench);
+    let mut evidence = execution_evidence_fixture();
+    if large {
+        evidence["runs"][0]["stdout"] = json!("原始执行日志\n".repeat(12000));
+    }
+    let (role, mut agent) = research_agent(&workbench);
+    if large {
+        let capability = command(&workbench,"capability.create",None,json!({"name":"Evidence reader","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,"builtin-tool-workflow-outputs-read:2"]}})).unwrap();
+        agent = command(&workbench,"agent.revise",agent["id"].as_str(),json!({"name":"Evidence reader","data":{"role_ref":role["id"],"capability_ref":capability["id"]}})).unwrap();
+    }
     recorder.responses.lock().unwrap().extend([
         json!({"status":"completed","summary":"实际记录已交付","outputs":{"evidence":evidence,"unrelated":{"private_note":"unbound output must not reach reviewer"}}}),
         json!({"status":"completed","summary":"已核对完整历史记录","outputs":{"result":{"checked":true}}})
@@ -1324,8 +1340,8 @@ fn declared_delivery_inputs_carry_persisted_raw_evidence_without_other_outputs()
     let workflow = publish(
         &workbench,
         json!({"schema_version":6,"stages":[{"key":"work","name":"证据交付","default_role_ref":role["id"]}],"steps":[
-            {"key":"produce","name":"记录执行","stage":"work","executor":{"type":"agent"},"task_instructions":"将真实记录作为 evidence 输出交付。","outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence:1"},"unrelated":{"delivery_ref":"builtin-delivery-object:1"}}},
-            {"key":"inspect","name":"检查证据","stage":"work","dependencies":["produce"],"executor":{"type":"agent"},"task_instructions":"只检查声明的 evidence 输入。","inputs":{"evidence":{"type":"source","source":{"step":"produce","port":"evidence"}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-object:1"}}}
+            {"key":"produce","name":"记录执行","stage":"work","executor":{"type":"agent"},"task_instructions":"将真实记录作为 evidence 输出交付。","outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence:2"},"unrelated":{"delivery_ref":"fixture-delivery-object:1"}}},
+            {"key":"inspect","name":"检查证据","stage":"work","dependencies":["produce"],"executor":{"type":"agent"},"task_instructions":"只检查声明的 evidence 输入。","access":{"tool_refs":if large {json!(["builtin-tool-workflow-outputs-read:2"])} else {json!([])}},"inputs":{"evidence":{"type":"source","source":{"step":"produce","port":"evidence"}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}
         ]}),
     );
     let project = command(
@@ -1354,7 +1370,34 @@ fn declared_delivery_inputs_carry_persisted_raw_evidence_without_other_outputs()
     );
     let calls = recorder.calls.lock().unwrap();
     let inspect: Value = serde_json::from_str(&calls[1].turn.input).unwrap();
-    assert_eq!(inspect["inputs"], json!({"evidence":evidence}));
+    if large {
+        assert_eq!(inspect["inputs"]["evidence"]["complete"], false);
+        assert_eq!(inspect["inputs"]["evidence"]["source_output_id"], output_id);
+        assert!(calls[1].turn.input.len() < 32768);
+        let mut offset = 0;
+        let mut serialized = String::new();
+        loop {
+            let chunk = workbench
+                .query(
+                    "workflow.outputs.read",
+                    &json!({"id":run["id"],"ids":[output_id],"offset":offset,"max_bytes":32768}),
+                    4,
+                )
+                .unwrap();
+            let output = &chunk["outputs"][0];
+            serialized.push_str(output["value_chunk"].as_str().unwrap());
+            match output["next_offset"].as_u64() {
+                Some(next) => offset = next,
+                None => break,
+            }
+        }
+        assert_eq!(
+            serde_json::from_str::<Value>(&serialized).unwrap(),
+            evidence
+        );
+    } else {
+        assert_eq!(inspect["inputs"], json!({"evidence":evidence}));
+    }
     assert_eq!(
         inspect["input_sources"]["evidence"]["source_output_id"],
         output_id
@@ -1416,7 +1459,7 @@ fn supplemental_input_uses_the_same_canonical_task_and_cannot_rewrite_the_step()
         &engine,
         &role,
         &agent,
-        json!({"outputs":{"risks":{"delivery_ref":"builtin-delivery-object:1"}}}),
+        json!({"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
     );
     drive(&engine, 12);
     let data = instance(&engine, &run["id"]);
@@ -1460,7 +1503,7 @@ fn invalid_typed_output_fails_and_retry_creates_a_new_execution_without_changing
         &engine,
         &role,
         &agent,
-        json!({"inputs":{"scope":{"type":"constant","value":"current input"}},"outputs":{"risks":{"delivery_ref":"builtin-delivery-object:1"}}}),
+        json!({"inputs":{"scope":{"type":"constant","value":"current input"}},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
     );
     drive(&engine, 12);
     let before = instance(&engine, &run["id"]);
@@ -1495,7 +1538,7 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
     let engine = engine(dir.path());
     let workflow = publish(
         &engine,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"资料封存"}],"steps":[{"key":"capture","name":"封存输入","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"exact input"}}}},"outputs":{"receipt":{"delivery_ref":"builtin-delivery-object:1"}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"资料封存"}],"steps":[{"key":"capture","name":"封存输入","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"exact input"}}}},"outputs":{"receipt":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"资料项目"})).unwrap();
     let run = command(
@@ -1544,7 +1587,7 @@ fn invalid_child_dispatch_is_rejected_without_blocking_independent_work() {
     let engine = engine(dir.path());
     let child = publish(
         &engine,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd:1"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd:2"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
     );
     let parent = publish(
         &engine,
@@ -1845,14 +1888,27 @@ fn actual_git_candidate(waived_advance: bool) {
     )
     .unwrap();
     let mut document = json!({"schema_version":6,"stages":[{"key":"work","name":"Git 工具"}],"steps":[
-        {"key":"current","name":"当前版本","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current:1","arguments":{"owner_id":{"type":"constant","value":task}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object:1"}}},
-        {"key":"snapshot","name":"固定实际代码","stage":"work","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot:1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["addition.txt"]},"include_diff":{"type":"constant","value":true}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object:1"}}},
-        {"key":"candidate","name":"实际候选","stage":"work","dependencies":["snapshot"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-candidate:1","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"target_revision":{"type":"constant","value":base}}},"outputs":{"candidate":{"delivery_ref":"builtin-delivery-object:1"}}}
-      ,{"key":"inspect","name":"读取授权的 Task 候选","stage":"work","dependencies":["candidate"],"executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"检查明确提供的代码视图。","inputs":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}},"changes":{"type":"source","source":{"step":"snapshot","port":"workspace","pointer":"/changes"}}},"access":{"workspace_input":"workspace"},"outputs":{"risks":{"delivery_ref":"builtin-delivery-object:1"}}}
+        {"key":"current","name":"当前版本","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current:1","arguments":{"owner_id":{"type":"constant","value":task}}},"outputs":{"workspace":{"delivery_ref":"fixture-delivery-object:1"}}},
+        {"key":"snapshot","name":"固定实际代码","stage":"work","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot:2","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["addition.txt"]},"include_diff":{"type":"constant","value":true}}},"outputs":{"workspace":{"delivery_ref":"fixture-delivery-object:1"}}},
+        {"key":"candidate","name":"实际候选","stage":"work","dependencies":["snapshot"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-candidate:1","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"target_revision":{"type":"constant","value":base}}},"outputs":{"candidate":{"delivery_ref":"fixture-delivery-object:1"}}}
+      ,{"key":"inspect","name":"读取授权的 Task 候选","stage":"work","dependencies":["candidate"],"executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"检查明确提供的代码视图。","inputs":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}},"changes":{"type":"source","source":{"step":"snapshot","port":"workspace","pointer":"/changes"}}},"access":{"workspace_input":"workspace"},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}
     ]});
+    document["steps"][1]["outputs"]["diff"] = json!({"delivery_ref":"builtin-delivery-diff:2"});
+    document["steps"][1]["outputs"]["scope_diff"] =
+        json!({"delivery_ref":"builtin-delivery-diff:2"});
+    document["steps"][1]["executor"]["output_mapping"] =
+        json!({"workspace":"","diff":"/changes/diff","scope_diff":"/scope_changes/diff"});
+    document["steps"][1]["executor"]["arguments"]["diff_base"] =
+        json!({"type":"source","source":{"step":"current","port":"workspace"}});
+    document["steps"][2]["outputs"]["diff"] = json!({"delivery_ref":"builtin-delivery-diff:2"});
+    document["steps"][2]["executor"]["output_mapping"] = json!({"candidate":"","diff":"/diff"});
+    document["steps"][3]["inputs"]["diff"] =
+        json!({"type":"source","source":{"step":"snapshot","port":"scope_diff"}});
+    document["steps"][3]["inputs"]["candidate_diff"] =
+        json!({"type":"source","source":{"step":"candidate","port":"diff"}});
     if waived_advance {
         document["action_requirements"] = json!({"git.advance":["tests","confirmation"]});
-        document["steps"].as_array_mut().unwrap().push(json!({"key":"advance","name":"带明确例外接纳","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-advance:1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"candidate":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"accepted":{"delivery_ref":"builtin-delivery-object:1"}}}));
+        document["steps"].as_array_mut().unwrap().push(json!({"key":"advance","name":"带明确例外接纳","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-advance:1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"candidate":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"accepted":{"delivery_ref":"fixture-delivery-object:1"}}}));
     }
     let workflow = publish(&engine, document);
     let run = engine
@@ -1969,10 +2025,48 @@ fn actual_git_candidate(waived_advance: bool) {
         changes["diff"].as_str().unwrap().trim(),
         git(
             &repo,
-            &["diff", &base, changes["revision"].as_str().unwrap()]
+            &[
+                "diff",
+                "--binary",
+                "--full-index",
+                "--find-renames",
+                &base,
+                changes["revision"].as_str().unwrap()
+            ]
         )
     );
     assert!(changes["diff"].as_str().unwrap().contains("+actual change"));
+    for (index, port) in [(1, "diff"), (1, "scope_diff"), (2, "diff")] {
+        let output = state
+            .configuration(runtime["steps"][index]["outputs"][port].as_str().unwrap())
+            .unwrap();
+        assert_eq!(output.data["delivery_ref"], "builtin-delivery-diff:2");
+        assert_eq!(output.data["provenance"]["kind"], "platform");
+        assert_eq!(output.data["provenance"]["base_revision"], base);
+        assert_eq!(
+            output.data["provenance"]["value_digest"],
+            configuration_hash(&output.data["value"])
+        );
+        assert!(
+            output.data["value"]
+                .as_str()
+                .unwrap()
+                .contains("+actual change")
+        );
+    }
+    assert!(
+        calls[0].configured_task.as_ref().unwrap().task["inputs"]["diff"]
+            .as_str()
+            .unwrap()
+            .contains("+actual change")
+    );
+    assert!(
+        calls[0].configured_task.as_ref().unwrap().task["inputs"]["candidate_diff"]
+            .as_str()
+            .unwrap()
+            .contains("+actual change")
+    );
+
     assert_eq!(
         calls[0].configured_task.as_ref().unwrap().task["inputs"]["changes"],
         *changes
@@ -2044,7 +2138,7 @@ fn supplemental_human_wait_does_not_consume_the_configured_execution_budget() {
         &engine,
         &role,
         &agent,
-        json!({"budget":{"max_turns":3,"timeout_seconds":10,"retry_limit":1},"outputs":{"risks":{"delivery_ref":"builtin-delivery-object:1"}}}),
+        json!({"budget":{"max_turns":3,"timeout_seconds":10,"retry_limit":1},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
     );
     drive(&engine, 8);
     assert_eq!(
@@ -2114,7 +2208,7 @@ fn task_creation_keeps_business_metadata_and_dependent_worktrees_use_the_latest_
         .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"任务创建"}],"steps":[{"key":"tasks","name":"建立任务","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"第一项","instructions":"初始工作","dependencies":[],"business_metadata":{"category":"investigation"}},{"key":"second","title":"后继项","instructions":"使用前项结果","dependencies":["first"]}]}}},"outputs":{"tasks":{"delivery_ref":"builtin-delivery-object:1"}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"任务创建"}],"steps":[{"key":"tasks","name":"建立任务","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"第一项","instructions":"初始工作","dependencies":[],"business_metadata":{"category":"investigation"}},{"key":"second","title":"后继项","instructions":"使用前项结果","dependencies":["first"]}]}}},"outputs":{"tasks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
     );
     let run = engine
         .execute(
@@ -2199,14 +2293,14 @@ fn canonical_output_contract_describes_text_values_dynamic_checks_and_conditiona
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"调研正文","data":{"body":"普通 Markdown 正文","format":"markdown"}}),
+        json!({"name":"调研正文","data":{"spec_refs":["fixture-spec:1"],"body":"普通 Markdown 正文","format":"markdown"}}),
     )
     .unwrap();
     let report = command(
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"动态报告","data":{"body":"按本次检查集合提交报告","format":"json"}}),
+        json!({"name":"动态报告","data":{"spec_refs":["fixture-spec:1"],"body":"按本次检查集合提交报告","format":"json"}}),
     )
     .unwrap();
     let workflow = publish(
@@ -2254,7 +2348,7 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
     let (role, agent) = research_agent(&engine);
     let child = publish(
         &engine,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"study","name":"调查","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"处理当前任务","outputs":{"risks":{"delivery_ref":"builtin-delivery-object:1"}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"study","name":"调查","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"处理当前任务","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
     );
     let parent = publish(
         &engine,
@@ -2596,7 +2690,7 @@ fn configured_task_completion_works_without_git_and_releases_declared_dependenci
     let workflow = publish(
         &engine,
         json!({"schema_version":6,"stages":[{"key":"research","name":"材料调查"}],"steps":[
-            {"key":"create","name":"创建明确任务","stage":"research","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"整理材料","dependencies":[]},{"key":"second","title":"核对材料","dependencies":["first"]}]}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-object:1"}}},
+            {"key":"create","name":"创建明确任务","stage":"research","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"整理材料","dependencies":[]},{"key":"second","title":"核对材料","dependencies":["first"]}]}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
             {"key":"first","name":"接纳第一项","stage":"research","dependencies":["create"],"executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete:1","arguments":{"task_id":{"type":"source","source":{"step":"create","port":"result","pointer":"/tasks/0/id"}}}}},
             {"key":"second","name":"接纳后继项","stage":"research","dependencies":["first"],"executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete:1","arguments":{"task_id":{"type":"source","source":{"step":"create","port":"result","pointer":"/tasks/1/id"}}}}}
         ]}),
@@ -2744,7 +2838,7 @@ fn changing_a_running_task_waits_for_stop_and_never_reuses_the_old_contract() {
         &engine,
         &role,
         &agent,
-        json!({"task_instructions":"原任务只调查原材料。","outputs":{"risks":{"delivery_ref":"builtin-delivery-object:1"}}}),
+        json!({"task_instructions":"原任务只调查原材料。","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
     );
     drive(&engine, 3);
     let before = instance(&engine, &run["id"]);

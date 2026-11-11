@@ -533,7 +533,17 @@ impl CliGit {
         require(valid_oid(base) && valid_oid(head), "diff 必须使用固定对象")?;
         self.output(
             &repo,
-            &["diff", "--no-ext-diff", "--no-textconv", base, head, "--"],
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--binary",
+                "--full-index",
+                "--find-renames",
+                base,
+                head,
+                "--",
+            ],
         )
     }
     pub fn validate_view(&self, c: &GitContext, revision: &str) -> Result<()> {

@@ -21,3 +21,5 @@ Standard 页面提供只读规范、生成、比较与归档；Feature 与 Task 
 ## 整合与验收
 
 main 上并行的 Delivery 内容标准改造已进入当前整合基线。合并时必须保留 Delivery 必需 Spec、有效输出检查、真实 Diff、Test Doc/Test Report 和大产物读取链路，并同步源修订及权限引用。此处只记录真实完成的验证结果。
+
+整合基线为 main `269150b`。采用 Delivery 后的完整业务图发布 Workflow 源修订 6，Permission Context 源修订 3、Standard 源修订 3；Standard 数据合同仍为 v4，Workflow 数据合同为 v6。保留先前源文件作为历史基线，不把它们重新发布为当前源。PM 的新原生工具参数与编排 renderer 使用独立 Capability 4、Agent 5 和 Skill 2；其他职责保留 Delivery 改造的 Agent 4 与各自 Capability。

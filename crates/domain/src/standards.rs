@@ -253,7 +253,8 @@ pub fn resolve_standard_sources(
                 }
                 "delivery_type" => {
                     let delivery: DeliveryTypeDefinition = source.decode()?;
-                    delivery.validate()?;
+                    self.state
+                        .validate_delivery_specs(&delivery, &source.scope)?;
                     for spec in &delivery.spec_refs {
                         self.link(
                             &source,

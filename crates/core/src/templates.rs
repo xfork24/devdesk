@@ -135,7 +135,7 @@ fn materialize(
             "standard" => {
                 standard_snapshot(&s, &r.id, &r.scope)?;
             }
-            "delivery_type" => r.decode::<DeliveryTypeDefinition>()?.validate()?,
+            "delivery_type" => s.validate_delivery_specs(&r.decode()?, &r.scope)?,
             _ => {}
         }
     }

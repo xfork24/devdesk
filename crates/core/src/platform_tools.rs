@@ -242,8 +242,13 @@ impl Engine {
                     },
                     "Permission 未允许该平台工具",
                 )?;
-                if !["workspace.current", "materials.capture", "tests.run"]
-                    .contains(&platform.definition.qualified_name.as_str())
+                if ![
+                    "workspace.current",
+                    "materials.capture",
+                    "tests.run",
+                    "workflow.outputs.read",
+                ]
+                .contains(&platform.definition.qualified_name.as_str())
                 {
                     require(
                         policy.filesystem != FilesystemPermission::ReadOnly,
@@ -587,6 +592,53 @@ impl Engine {
     ) -> Result<Option<Value>> {
         let p = &request.arguments;
         match request.definition.qualified_name.as_str() {
+            "workflow.outputs.read" => {
+                let instance: ConfiguredWorkflowInstance =
+                    state.configuration(&request.instance_id)?.decode()?;
+                let execution = instance
+                    .steps
+                    .iter()
+                    .find(|e| e.id == request.step_execution_id())
+                    .ok_or_else(|| err("not_found", "读取产物的步骤不存在"))?;
+                let step = instance
+                    .plan
+                    .document
+                    .steps
+                    .iter()
+                    .find(|s| s.key == execution.step)
+                    .unwrap();
+                let pointer = p["pointer"].as_str().unwrap_or("");
+                let ids: Vec<String> = serde_json::from_value(p["ids"].clone())
+                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                require(
+                    !ids.is_empty()
+                        && ids.iter().all(|id| {
+                            step.inputs.values().any(|binding| match binding {
+                                InputBinding::Source { source } if source.step != "$input" => {
+                                    source.pointer == pointer
+                                        && instance
+                                            .steps
+                                            .iter()
+                                            .find(|e| e.step == source.step)
+                                            .and_then(|e| e.outputs.get(&source.port))
+                                            == Some(id)
+                                }
+                                InputBinding::Material { material_ref } => {
+                                    pointer.is_empty() && material_ref == id
+                                }
+                                _ => false,
+                            })
+                        }),
+                    "只能读取当前步骤显式输入的产物及字段",
+                )?;
+                let mut query = p.clone();
+                query["id"] = json!(request.instance_id);
+                query["instance_id"] = json!(request.instance_id);
+                query["project_id"] = json!(request.project_id);
+                self.workflow_control_query("workflow.outputs.read", &query)
+                    .unwrap()
+                    .map(Some)
+            }
             "workspace.current" => {
                 let context = match self.platform_context(state, request, p["owner_id"].as_str()) {
                     Err(error) if error.code == "resource_pending" => return Ok(None),
@@ -645,6 +697,17 @@ impl Engine {
                 if p["include_diff"] == true {
                     let base = text(&p["workspace"], "revision")?;
                     receipt["changes"] = json!({"base_revision":base,"revision":revision,"diff":self.git.diff(&context,&base,&revision)?});
+                }
+                if let Some(base) = p.get("diff_base") {
+                    require(
+                        base["workspace_id"] == p["workspace"]["workspace_id"],
+                        "范围 Diff 必须使用同一工作区的真实快照",
+                    )?;
+                    let mut baseline_request = request.clone();
+                    baseline_request.arguments["workspace"] = base.clone();
+                    self.platform_grant(state, &baseline_request)?;
+                    let base = text(base, "revision")?;
+                    receipt["scope_changes"] = json!({"base_revision":base,"revision":revision,"diff":self.git.diff(&context,&base,&revision)?});
                 }
                 Ok(Some(receipt))
             }
@@ -1049,6 +1112,10 @@ impl Engine {
                                     }
                                 }
                                 member["feature_id"] = json!(feature.id);
+                                member["dependency_keys"] =
+                                    item.get("dependencies").cloned().unwrap_or(json!([]));
+                                member["dependencies"] =
+                                    json!(state.tasks.last().unwrap().dependencies);
                                 members.push(member);
                             }
                             receipt = json!({"tasks":members});

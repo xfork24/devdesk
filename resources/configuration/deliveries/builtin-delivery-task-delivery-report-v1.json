@@ -1,0 +1,103 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-task-delivery-report",
+  "revision": 1,
+  "name": "Task Delivery Report",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "json",
+    "spec_refs": [
+      "builtin-spec-delivery-task-delivery-report:1"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "inputs",
+        "captured_at",
+        "operation_id"
+      ],
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "required": [
+            "task",
+            "workspace",
+            "red",
+            "green",
+            "review",
+            "candidate",
+            "candidate_tests",
+            "candidate_review",
+            "publication",
+            "verify",
+            "evidence",
+            "documentation",
+            "diff",
+            "candidate_diff"
+          ],
+          "properties": {
+            "task": {
+              "type": "object"
+            },
+            "workspace": {
+              "type": "object"
+            },
+            "red": {
+              "type": "object"
+            },
+            "green": {
+              "type": "object"
+            },
+            "review": {
+              "type": "object"
+            },
+            "candidate": {
+              "type": "object"
+            },
+            "candidate_tests": {
+              "type": "object"
+            },
+            "candidate_review": {
+              "type": "object"
+            },
+            "publication": {
+              "type": "object"
+            },
+            "verify": {
+              "type": "object"
+            },
+            "evidence": {
+              "type": "object"
+            },
+            "documentation": {
+              "type": "string"
+            },
+            "diff": {
+              "type": "string"
+            },
+            "candidate_diff": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "captured_at": {
+          "type": "integer"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "materials.capture"
+      ]
+    }
+  }
+}

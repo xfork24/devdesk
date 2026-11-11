@@ -225,33 +225,19 @@ fn factory_workflow_business_contracts_match_the_pre_refactor_baseline() {
     for (source, digest) in [
         (
             include_str!(
-                "../../../resources/configuration/workflows/builtin-workflow-feature-sol-high-v6.json"
+                "../../../resources/configuration/workflows/builtin-workflow-feature-sol-high-v5.json"
             ),
             "ed453ae0e68249f612350dec3e5159c0c889ed7ff27c1b002c6be5d4473b0508",
         ),
         (
             include_str!(
-                "../../../resources/configuration/workflows/builtin-workflow-task-sol-high-v6.json"
+                "../../../resources/configuration/workflows/builtin-workflow-task-sol-high-v5.json"
             ),
             "3124b77dffe25d4484585666625623a33d9a5bef7cf89be25105ac5eaa8cc581",
         ),
     ] {
         let value: Value = serde_json::from_str(source).unwrap();
-        let mut data = value["data"].clone();
-        data["schema_version"] = json!(5);
-        for step in data["steps"].as_array_mut().unwrap() {
-            if let Some(executor) = step.get_mut("executor").and_then(Value::as_object_mut) {
-                executor.remove("work_binding");
-            }
-        }
-        let legacy = data.to_string().replace(
-            "builtin-workflow-task-sol-high:5",
-            "builtin-workflow-task-sol-high:4",
-        );
-        assert_eq!(
-            configuration_hash(&serde_json::from_str::<Value>(&legacy).unwrap()),
-            digest
-        );
+        assert_eq!(configuration_hash(&value["data"]), digest);
     }
     // The 11 explicit grants from the original 42 steps moved without changing any path or tool scope.
     let permission: Value = serde_json::from_str(include_str!(
@@ -259,21 +245,7 @@ fn factory_workflow_business_contracts_match_the_pre_refactor_baseline() {
     ))
     .unwrap();
     assert_eq!(
-        configuration_hash(
-            &serde_json::from_str::<Value>(
-                &permission["data"]["step_grants"]
-                    .to_string()
-                    .replace(
-                        "builtin-workflow-feature-sol-high:5",
-                        "builtin-workflow-feature-sol-high:4"
-                    )
-                    .replace(
-                        "builtin-workflow-task-sol-high:5",
-                        "builtin-workflow-task-sol-high:4"
-                    )
-            )
-            .unwrap()
-        ),
+        configuration_hash(&permission["data"]["step_grants"]),
         "fb1cbd3c102766d4a847f780a8e0521895d1f42ac4cc1ea4ed700a381275138e"
     );
 }
@@ -446,7 +418,7 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
         )
         .is_err()
     );
-    let spec = command(&e, "spec.create", None, json!({"name":"Shared document norm","data":{"schema_version":3,"body":"One source of document requirements","checks":[]}})).unwrap();
+    let spec = command(&e, "spec.create", None, json!({"name":"Shared document norm","data":{"schema_version":3,"body":"One source of document requirements","checks":[{"key":"content","name":"Content","instructions":"Verify document content and exact source."}]}})).unwrap();
     let delivery = command(
         &e,
         "delivery_type.create",
@@ -486,4 +458,100 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
         );
         assert_eq!(preview["task"]["specifications"], json!([]));
     }
+}
+
+#[test]
+fn delivery_catalog_has_content_standards_and_real_diff_ports() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let state = e.store.snapshot().unwrap();
+    let deliveries: Vec<_> = state
+        .governance
+        .iter()
+        .filter(|r| r.kind == "delivery_type" && r.id != "fixture-delivery-object:1")
+        .collect();
+    assert_eq!(deliveries.len(), 21);
+    for delivery in &deliveries {
+        state
+            .validate_delivery_specs(&delivery.decode().unwrap(), &delivery.scope)
+            .unwrap();
+        assert_ne!(delivery.name, "结构化材料");
+    }
+    for name in [
+        "Review Report",
+        "Task Doc",
+        "Test Doc",
+        "Execution Report",
+        "Task Report",
+        "Test Report",
+        "Diff",
+    ] {
+        assert!(deliveries.iter().any(|r| r.name == name), "{name}");
+    }
+    for (method, data) in [
+        (
+            "delivery_type.create",
+            json!({"format":"text","body":"Only a description"}),
+        ),
+        (
+            "delivery_type.create",
+            json!({"format":"text","spec_refs":[]}),
+        ),
+        (
+            "delivery_type.create",
+            json!({"format":"text","spec_refs":["missing:1"]}),
+        ),
+    ] {
+        assert!(command(&e, method, None, json!({"name":"Invalid", "data":data})).is_err());
+    }
+    for kind in ["feature", "task"] {
+        let workflow = state
+            .configuration(&format!("builtin-workflow-{kind}-sol-high:5"))
+            .unwrap();
+        let plan = e
+            .compile_configured_workflow(&state, workflow, &Scope::Global, None)
+            .unwrap();
+        for step in &plan.document.steps {
+            for port in step.outputs.values() {
+                assert_ne!(port.delivery_ref, "builtin-delivery-object:1");
+            }
+        }
+        for key in [
+            "candidate",
+            if kind == "task" {
+                "implementation_snapshot"
+            } else {
+                "tests_snapshot"
+            },
+        ] {
+            let step = plan.document.steps.iter().find(|s| s.key == key).unwrap();
+            assert_eq!(step.outputs["diff"].delivery_ref, "builtin-delivery-diff:2");
+        }
+        for key in [
+            "candidate_review",
+            if kind == "task" {
+                "review"
+            } else {
+                "closure_review"
+            },
+        ] {
+            let step = plan.document.steps.iter().find(|s| s.key == key).unwrap();
+            assert!(step.inputs.contains_key("candidate_diff"));
+        }
+    }
+    let mut forged = state
+        .configuration("builtin-workflow-task-sol-high:6")
+        .unwrap()
+        .data
+        .clone();
+    forged["steps"][0]["executor"] = json!({"type":"agent","role_ref":"builtin-role-developer:1"});
+    forged["steps"][0]["task_instructions"] = json!("Pretend to make a real snapshot");
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"Forged producer","document":forged}),
+    )
+    .unwrap();
+    assert!(command(&e, "workflow.publish", draft["id"].as_str(), json!({})).is_err());
 }

@@ -731,10 +731,40 @@ pub fn compile_workflow_sources(
                 plan.definitions
                     .insert(definition.id.clone(), definition.clone());
             }
-            for (name, port) in step.outputs.iter().chain(&doc.inputs) {
+            for (name, port, is_output) in step
+                .outputs
+                .iter()
+                .map(|(n, p)| (n, p, true))
+                .chain(doc.inputs.iter().map(|(n, p)| (n, p, false)))
+            {
                 let output = reference(state, &port.delivery_ref, "delivery_type", scope)?;
                 let definition: DeliveryTypeDefinition = output.decode()?;
-                definition.validate()?;
+                state.validate_delivery_specs(&definition, scope)?;
+                if is_output {
+                    match (&definition.producer, &step.executor) {
+                        (Some(DeliveryProducer::Agent), StepExecutor::Agent { .. })
+                        | (Some(DeliveryProducer::Workflow), StepExecutor::Workflow { .. })
+                        | (None, _) => {}
+                        (
+                            Some(DeliveryProducer::Platform { tools }),
+                            StepExecutor::Tool { tool_ref, .. },
+                        ) => {
+                            let tool: ToolDefinition =
+                                reference(state, tool_ref, "tool", scope)?.decode()?;
+                            require(
+                                tool.implementation == "platform"
+                                    && tools.contains(&tool.qualified_name),
+                                "Delivery 必须由声明的平台工具产生",
+                            )?;
+                        }
+                        _ => {
+                            return Err(err(
+                                "invalid_configuration",
+                                "Delivery 生产者与步骤执行方式不匹配",
+                            ));
+                        }
+                    }
+                }
                 if let Some(schema) = &definition.content_schema {
                     if let Some(validator) = validator {
                         validator.validate_schema(schema)?;
@@ -776,8 +806,21 @@ pub fn compile_workflow_sources(
                 }
                 require(!keys.is_empty(), "内容判断输出需要 Spec 检查项")?;
             }
+            let delivery_specs: BTreeMap<_, _> = step
+                .outputs
+                .iter()
+                .map(|(name, port)| {
+                    let refs = plan
+                        .definitions
+                        .get(&port.delivery_ref)
+                        .and_then(|r| r.decode::<DeliveryTypeDefinition>().ok())
+                        .map(|d| d.spec_refs)
+                        .unwrap_or_default();
+                    (name.clone(), refs)
+                })
+                .collect();
             plan.specification_view.push(json!({"path":location,"step":step.key,"role_ref":doc.role(step).and_then(|id|crate::configuration::role_record(state,id).ok()).map(|role|&role.definition_id),
-                    "spec_refs":step.spec_refs,"outputs":step.outputs,"completion":step.completion,"tags":step.tags}));
+                    "spec_refs":step.spec_refs,"delivery_spec_refs":delivery_specs,"outputs":step.outputs,"completion":step.completion,"tags":step.tags}));
             match &step.executor {
                 StepExecutor::Tool { tool_ref, .. } => {
                     let tool = reference(state, tool_ref, "tool", scope)?;

@@ -3025,13 +3025,56 @@
         "spec_refs": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "producer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "agent",
+                    "workflow"
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "platform"
+                },
+                "tools": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "tools"
+              ],
+              "additionalProperties": false
+            }
+          ]
         }
       },
       "required": [
-        "format"
+        "format",
+        "spec_refs"
       ],
       "additionalProperties": false
     },
@@ -4526,6 +4569,103 @@
         "workflow_ref",
         "role_agent_bindings",
         "permission_context_ref"
+      ],
+      "additionalProperties": false
+    },
+    "StandardNode": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "source-reference.schema.json"
+        },
+        "kind": {
+          "enum": [
+            "workflow",
+            "delivery_type",
+            "spec"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "content": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "reference",
+        "kind",
+        "name",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "StandardEdge": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "source-reference.schema.json"
+        },
+        "to": {
+          "$ref": "source-reference.schema.json"
+        },
+        "path": {
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "workflow_call",
+            "delivery",
+            "step_spec",
+            "delivery_spec"
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "path",
+        "relation"
+      ],
+      "additionalProperties": false
+    },
+    "StandardSnapshot": {
+      "type": "object",
+      "properties": {
+        "digest_version": {
+          "const": "standard-snapshot/v1"
+        },
+        "snapshot_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "root_workflow_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "source-reference.schema.json"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StandardNode"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StandardEdge"
+          }
+        }
+      },
+      "required": [
+        "digest_version",
+        "snapshot_digest",
+        "root_workflow_refs",
+        "nodes",
+        "edges"
       ],
       "additionalProperties": false
     }

@@ -16,6 +16,7 @@ import { RoleManager } from "./RoleManager";
 import { JsonField } from "./WorkflowDeliveries";
 import { StandardManager } from "./StandardManager";
 import { WorkflowSpecifications } from "./WorkflowSpecifications";
+import { DeliverySpecPreview } from "./DeliveryContent";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
 import {
   latest,
@@ -957,6 +958,9 @@ export function ResourceEditor({
             )}
             {kind === "delivery_type" && (
               <>
+                <p className="muted full-width">
+                  每种交付必须关联内容 Spec，定义应交付内容、来源和验收标准。
+                </p>
                 <RevisionSelect
                   label="内容规范"
                   multiple
@@ -964,6 +968,18 @@ export function ResourceEditor({
                   value={data.spec_refs || []}
                   onChange={(spec_refs) => patch({ spec_refs })}
                 />
+                <DeliverySpecPreview
+                  references={data.spec_refs || []}
+                  records={records}
+                />
+                {data.producer ? (
+                  <p>
+                    产出来源：{data.producer.kind}
+                    {data.producer.tools
+                      ? ` · ${data.producer.tools.join("、")}`
+                      : ""}
+                  </p>
+                ) : null}
                 <label>
                   交付物格式
                   <ActionSelect

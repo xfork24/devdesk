@@ -169,7 +169,7 @@ test("重置失败可重试，确认前并发修改要求重新预览", async ({
     command_id: crypto.randomUUID(),
     payload: {
       name: "Concurrent delivery",
-      data: { format: "markdown", body: "concurrent" },
+      data: { format: "markdown", spec_refs: ["builtin-spec-stage-prd:1"], body: "concurrent" },
     },
   });
   await dialog.getByRole("button", { name: "确认重置", exact: true }).click();

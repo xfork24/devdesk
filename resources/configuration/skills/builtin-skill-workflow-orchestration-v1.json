@@ -1,7 +1,7 @@
 {
   "kind": "skill",
   "identity": "builtin-skill-workflow-orchestration",
-  "revision": 2,
+  "revision": 1,
   "name": "工作流编排",
   "scope": {
     "kind": "global"

@@ -3,6 +3,7 @@ import { WorkflowController, WorkflowPlanChanges } from "./WorkflowController";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton, useActionFeedback } from "./ActionFeedback";
 import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
+import { DeliveryOutput } from "./DeliveryContent";
 
 type Props = {
   nested?: boolean;
@@ -490,13 +491,10 @@ export function WorkflowInstanceView({
                           return output ? (
                             <details key={port}>
                               <summary>产物 · {port}</summary>
-                              {typeof output.value === "string" ? (
-                                <MarkdownPreview text={output.value} />
-                              ) : (
-                                <pre>
-                                  {JSON.stringify(output.value, null, 2)}
-                                </pre>
-                              )}
+                              <DeliveryOutput
+                                output={output}
+                                definitions={runtime.plan?.definitions || {}}
+                              />
                             </details>
                           ) : null;
                         },

@@ -110,7 +110,8 @@ export function WorkStandard({
     };
   }, [workflow, request, projectId]);
   const snapshot = records.find((r) => r.id === selected);
-  const roots: string[] = snapshot?.workflow_refs || snapshot?.data.root_workflow_refs || [];
+  const roots: string[] =
+    snapshot?.workflow_refs || snapshot?.data.root_workflow_refs || [];
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");

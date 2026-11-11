@@ -199,7 +199,7 @@ mod tests {
         let a = create(&w, "Project A");
         let b = create(&w, "Project B");
         select(&w, &a);
-        let local=write(&w,"delivery_type.create",None,json!({"name":"Local custom delivery","scope":{"kind":"project","project_id":a},"data":{"format":"markdown","body":"custom delivery"}}),Some(&a)).unwrap();
+        let local=write(&w,"delivery_type.create",None,json!({"name":"Local custom delivery","scope":{"kind":"project","project_id":a},"data":{"format":"markdown","spec_refs":["builtin-spec-stage-prd:1"],"body":"custom delivery"}}),Some(&a)).unwrap();
         let role=write(&w,"role.revise",Some(&default_role_id("analyst")),json!({"name":"Edited analyst","data":{"instructions":"custom responsibility","visibility":{"kind":"global"}}}),None).unwrap();
         let defaults = w
             .dispatch("query.configuration_defaults", json!({"project_id":a}))
@@ -370,7 +370,7 @@ mod tests {
             &w,
             "delivery_type.create",
             None,
-            json!({"name":"Extra","data":{"format":"markdown","body":"extra"}}),
+            json!({"name":"Extra","data":{"format":"markdown","spec_refs":["builtin-spec-stage-prd:1"],"body":"extra"}}),
             None,
         )
         .unwrap();
@@ -392,7 +392,7 @@ mod tests {
         assert_eq!(json!(w.global.snapshot().unwrap()), json!(before));
         w.dispatch("configuration.templates.reset", reset_command(&w))
             .unwrap();
-        let stale=w.dispatch("delivery_type.create",json!({"command_id":id(),"expected_catalog_generation":1,"payload":{"name":"Stale","data":{"format":"markdown","body":"stale"}}})).unwrap_err();
+        let stale=w.dispatch("delivery_type.create",json!({"command_id":id(),"expected_catalog_generation":1,"payload":{"name":"Stale","data":{"format":"markdown","spec_refs":["builtin-spec-stage-prd:1"],"body":"stale"}}})).unwrap_err();
         assert_eq!(stale.code, "catalog_changed");
         assert_eq!(w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"expected_catalog_generation":1,"payload":{"name":"Stale edit","data":{"instructions":"old body","visibility":{"kind":"global"}}}})).unwrap_err().code,"catalog_changed");
     }

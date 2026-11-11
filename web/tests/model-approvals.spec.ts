@@ -9,6 +9,36 @@ async function rpc(page: Page, method: string, params: any = {}) {
   expect(result.error, JSON.stringify(result)).toBeUndefined();
   return result.result;
 }
+async function approvalDelivery(page: Page) {
+  const spec = await rpc(page, "spec.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: "审批场景规范",
+      data: {
+        schema_version: 3,
+        body: "核对明确提供的审批值。",
+        checks: [
+          {
+            key: "value",
+            name: "审批值",
+            instructions: "核对当前输入和完成条件。",
+          },
+        ],
+      },
+    },
+  });
+  return rpc(page, "delivery_type.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: "审批材料",
+      data: {
+        format: "json",
+        spec_refs: [spec.id],
+        content_schema: { type: "object" },
+      },
+    },
+  });
+}
 for (const allowOverride of [false, true])
   test(`校验未通过时可填写理由手动 Approve：${allowOverride ? "人工确认步骤" : "自动确认步骤"}`, async ({
     page,
@@ -23,6 +53,7 @@ for (const allowOverride of [false, true])
         .fill(mkdtempSync(join(tmpdir(), "devdesk-confirm-")));
       await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
     }
+    const delivery = await approvalDelivery(page);
     const draft = await rpc(page, "workflow.create", {
       command_id: crypto.randomUUID(),
       payload: {
@@ -45,7 +76,7 @@ for (const allowOverride of [false, true])
               },
             },
           ],
-          inputs: { accepted: { delivery_ref: "builtin-delivery-object:1" } },
+          inputs: { accepted: { delivery_ref: delivery.id } },
         },
       },
     });
@@ -148,6 +179,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
       .fill(mkdtempSync(join(tmpdir(), "devdesk-multi-confirm-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
   }
+  const delivery = await approvalDelivery(page);
   const draft = await rpc(page, "workflow.create", {
     command_id: crypto.randomUUID(),
     payload: {
@@ -155,7 +187,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
       document: {
         schema_version: 6,
         stages: [{ key: "decision", name: "决定" }],
-        inputs: { accepted: { delivery_ref: "builtin-delivery-object:1" } },
+        inputs: { accepted: { delivery_ref: delivery.id } },
         steps: ["first", "second"].map((key) => ({
           key,
           name: key,

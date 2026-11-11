@@ -568,6 +568,14 @@ impl Engine {
                 delivery.kind == "delivery_type" && delivery.scope.visible_from(&row.scope),
                 "交付类型不可用",
             )?;
+            let definition: DeliveryTypeDefinition = delivery.decode()?;
+            require(
+                !matches!(
+                    definition.producer,
+                    Some(DeliveryProducer::Platform { .. } | DeliveryProducer::Workflow)
+                ),
+                "平台或子流程产出必须引用实际执行，不能通过导入材料创建",
+            )?;
             let value = c
                 .payload
                 .get("value")
@@ -1019,7 +1027,10 @@ impl Engine {
                             && ["workflow_output", "typed_material"].contains(&r.kind.as_str()),
                         "产物不属于当前流程",
                     )?;
-                    let serialized = serde_json::to_string(&r.data["value"]).unwrap();
+                    let value = r.data["value"]
+                        .pointer(p["pointer"].as_str().unwrap_or(""))
+                        .ok_or_else(|| err("invalid_params", "产物字段不存在"))?;
+                    let serialized = serde_json::to_string(value).unwrap();
                     let budget = p["max_bytes"].as_u64().unwrap_or(16384).clamp(1024, 65536)
                         as usize
                         / count;
@@ -1037,7 +1048,9 @@ impl Engine {
                         data.as_object_mut().unwrap().remove("value");
                         out.push(json!({"id":r.id,"data":data,"value_chunk":&serialized[offset..end],"offset":offset,"next_offset":if end<serialized.len(){Some(end)}else{None},"total_bytes":serialized.len()}));
                     } else {
-                        out.push(json!(r));
+                        let mut scoped = json!(r);
+                        scoped["data"]["value"] = value.clone();
+                        out.push(scoped);
                     }
                 }
                 return Ok(json!({"outputs":out}));

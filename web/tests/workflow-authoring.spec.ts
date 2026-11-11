@@ -27,6 +27,30 @@ async function rpc(page: Page, method: string, params: any = {}) {
   expect(value.error, JSON.stringify(value)).toBeUndefined();
   return value.result;
 }
+
+test("内置 Delivery 全部关联内容标准并可查看确切规范", async ({ page }) => {
+  await setup(page);
+  const catalog = await rpc(page, "query.configurations", {kind:"delivery_type",limit:100});
+  const specs = await rpc(page, "query.configurations", {kind:"spec",limit:100});
+  const deliveries = catalog.records.filter((r: any) => r.definition_id.startsWith("builtin-delivery-"));
+  expect(deliveries).toHaveLength(21);
+  expect(deliveries.some((r: any) => r.name === "结构化材料")).toBe(false);
+  for (const delivery of deliveries) {
+    expect(delivery.data.spec_refs.length).toBeGreaterThan(0);
+    for (const id of delivery.data.spec_refs) {
+      const spec = specs.records.find((r: any) => r.id === id);
+      expect(spec?.data.body.length).toBeGreaterThan(0);
+      expect(spec?.data.checks.length).toBeGreaterThan(0);
+    }
+  }
+  await page.getByRole("button", {name:"流程与规范",exact:true}).click();
+  await page.getByRole("tab", {name:"Delivery",exact:true}).click();
+  await page.getByRole("button", {name:/^Test Report\s/}).click();
+  const report = deliveries.find((r: any) => r.name === "Test Report");
+  await expect(page.getByLabel("内容规范", {exact:true})).toHaveValues(report.data.spec_refs);
+  await page.getByLabel("交付内容标准", {exact:true}).locator("summary").click();
+  await expect(page.getByLabel("交付内容标准", {exact:true})).toContainText("平台 tests.run");
+});
 test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", async ({
   page,
 }) => {
@@ -662,7 +686,17 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
     command_id: crypto.randomUUID(),
     payload: {
       name: name + " 规范",
-      data: { schema_version: 3, body: "风险材料和真实来源。", checks: [] },
+      data: {
+        schema_version: 3,
+        body: "风险材料和真实来源。",
+        checks: [
+          {
+            key: "source",
+            name: "来源",
+            instructions: "核对风险材料和真实来源。",
+          },
+        ],
+      },
     },
   });
   await page.reload();

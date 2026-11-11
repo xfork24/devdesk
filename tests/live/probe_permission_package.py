@@ -165,12 +165,14 @@ try:
         dependencies(implementation_review['key'])
         assert verify_step['executor']['type'] == 'tool' and verify_step['key'] in ancestors
         # Exercise the actual standalone scheduler and platform handler without a model or fake Session.
+        spec = command('spec.create', {'name': '包验收记录规范', 'data': {'schema_version': 3, 'body': '记录当前包验收明确提供的 version 输入与真实封存操作。', 'checks': [{'key': 'version', 'name': '输入版本', 'instructions': '核对 version 为本次提供的值且回执来自当前封存操作。'}]}})
+        delivery = command('delivery_type.create', {'name': '包验收记录', 'data': {'format': 'json', 'spec_refs': [spec['id']], 'content_schema': {'type': 'object', 'required': ['inputs', 'captured_at', 'operation_id']}}})
         generic = command('workflow.create', {'name': 'Standalone configured capture', 'document': {
             'schema_version': 5, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [
                 {'key': 'ready', 'name': '准备', 'stage': 'audit', 'executor': {'type': 'control'}},
                 {'key': 'capture', 'name': '记录实际输入', 'stage': 'audit', 'dependencies': ['ready'],
                  'executor': {'type': 'tool', 'tool_ref': capture['id'], 'arguments': {'value': {'type': 'constant', 'value': {'version': 5}}}},
-                 'outputs': {'result': {'delivery_ref': 'builtin-delivery-object:1'}}}
+                 'outputs': {'result': {'delivery_ref': delivery['id']}}}
             ]}})
         generic = command('workflow.publish', {}, generic['id'], generic['revision'])
         active = rpc('query.workspace')['active_project']

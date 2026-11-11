@@ -232,6 +232,9 @@ impl EngineeringState {
         let mut versions = BTreeSet::new();
         for r in &self.governance {
             require(ids.insert(&r.id), "配置 ID 重复")?;
+            if r.kind == "delivery_type" && !before.governance.iter().any(|old| old == r) {
+                self.validate_delivery_specs(&r.decode()?, &r.scope)?;
+            }
             if r.is_definition() || r.kind == "project_configuration" {
                 require(
                     versions.insert((&r.kind, &r.definition_id, r.version)),

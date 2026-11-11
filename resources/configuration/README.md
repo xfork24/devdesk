@@ -13,13 +13,17 @@
 | Skill | 工作方法和工具需求，不复制职责、文档规范或权限。 |
 | Tool | 参数合同、处理器或接入来源，以及技术运行环境需求。 |
 | Workflow | 原有 Stage、Step、依赖、任务正文、端口、预算、业务完成条件及确认要求。 |
-| Delivery | 格式、离线 JSON Schema 与 `spec_refs`。PRD、Design 的内容要求仅由对应 Spec 定义。 |
+| Delivery | 格式、离线 JSON Schema、必填 `spec_refs` 与可选的产出来源约束。所有交付的内容要求由对应 Spec 定义。 |
 | Spec | 唯一规范正文和内容检查项。 |
 | Standard | Workflow、Delivery、Spec 及声明关系的不可变快照，使用者分别引用。 |
 | Permission Profile | 文件、网络、工具和审批策略。 |
 | Permission Context | Sandbox 及权限绑定选择、Workflow/Step 的授权范围、Controller 操作策略。 |
 
 Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` 引用 Markdown。文本归其源修订所有，不向 Agent、Delivery 或执行配置复制。
+
+当前发布 21 种 Delivery。Review Report、Task Doc、Test Doc、Execution Report、Task Report 分别用于评审、任务规划、测试设计、逐次执行和任务汇总；工作区、任务创建、测试回执、候选、接纳、发布、交接及完成记录使用具体类型，不再使用通用“结构化材料”。每种 Delivery 关联非空正文及具体检查项的内容 Spec。
+
+平台产出的 `producer` 声明允许的工具处理器，运行时核对真实调用、当前步骤和输出映射；名称及自述状态不作为来源证明。快照和候选的 Diff 通过独立输出端口传递，保留比较端点、平台操作、内容摘要与 Artifact。Test Doc 的可执行部分位于 `recipe`，测试工具显式消费该字段。
 
 ## 权限与环境
 

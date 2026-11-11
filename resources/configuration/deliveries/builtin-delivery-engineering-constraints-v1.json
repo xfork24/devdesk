@@ -1,0 +1,64 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-engineering-constraints",
+  "revision": 1,
+  "name": "Engineering Constraints Doc",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "json",
+    "spec_refs": [
+      "builtin-spec-delivery-engineering-constraints:1"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "inputs",
+        "captured_at",
+        "operation_id"
+      ],
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "required": [
+            "test_recipe",
+            "implementation_runtime",
+            "source",
+            "execution_evidence"
+          ],
+          "properties": {
+            "test_recipe": {
+              "type": "object"
+            },
+            "implementation_runtime": {
+              "type": "object"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            },
+            "execution_evidence": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": true
+        },
+        "captured_at": {
+          "type": "integer"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "materials.capture"
+      ]
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "kind": "agent",
   "identity": "builtin-agent-sol-high-tester",
-  "revision": 4,
+  "revision": 3,
   "name": "测试 · Sol High / Codex",
   "scope": {
     "kind": "global"

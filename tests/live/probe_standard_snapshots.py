@@ -98,7 +98,9 @@ try:
     feature_source = c.rpc('query.workflow', {'id': defaults['workflow_ref']})
     task_source = c.rpc('query.workflow', {'id': defaults['task_workflow_ref']})
     feature_doc = json.loads(json.dumps(feature_source['data']))
-    feature_doc.setdefault('inputs', {})['goal'] = {'delivery_ref': 'builtin-delivery-object:1'}
+    goal_spec=c.command('spec.create',payload={'name':'Engineering goal input','data':{'schema_version':3,'body':'输入应完整提供本次工程目标与验收事实。','checks':[{'key':'goal_input','name':'工程目标','instructions':'核对 instructions 是完整、非空的工程目标。'}]}})
+    goal_delivery=c.command('delivery_type.create',payload={'name':'Engineering goal','data':{'format':'json','spec_refs':[goal_spec['id']],'content_schema':{'type':'object','required':['instructions'],'properties':{'instructions':{'type':'string','minLength':1}}}}})
+    feature_doc.setdefault('inputs', {})['goal'] = {'delivery_ref': goal_delivery['id']}
     first = next(s for s in feature_doc['steps'] if s['executor']['type'] == 'agent')
     first.setdefault('inputs', {})['goal'] = {'type': 'source', 'source': {'step': '$input', 'port': 'goal'}}
     invocation = next(s for s in feature_doc['steps'] if s['executor']['type'] == 'workflow' and s['executor'].get('work_binding'))
