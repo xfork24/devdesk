@@ -4,6 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [源配置与执行解析](../source-configuration.md) | [实施验收](source-configuration/EXECUTION.md) | 已合入本地 main；源协议 v2、权限独立、文档规范复用、按需视图；207 项 Rust、debug/release 各 43 项浏览器及独立 macOS 包通过；只支持新数据 |
 | [Harness 驱动工作流改造](harness-workflow-orchestration/PLAN.md) | [实施验收](harness-workflow-orchestration/EXECUTION.md)、[main 合并验收](harness-workflow-orchestration/MERGE.md)、[合同](harness-workflow-orchestration/CONTRACT.md) | P0—P8 已完成并合并 main；202 项 Rust、debug/release 各 43 项浏览器、实际 Git/Docker/权限、真实旧库升级及独立 macOS arm64 包通过；追加无人值守 Feature 22/Task 20、两轮 TDD 完整证据与 PR #35/#36 通过，0 人工 approve/旁路/豁免；编排当前支持 Codex |
 | [Workflow 通用步骤与业务配置改造](workflow-business-configuration/PLAN.md) | [执行记录](workflow-business-configuration/EXECUTION.md)、[合同](workflow-business-configuration/CONTRACT.md)、[硬编码审查](workflow-business-configuration/AUDIT.md) | 已实施；Ubuntu 当前合同仅 Codex 验收通过：154 项 Rust、debug/release 各 41 项浏览器、独立 Linux 包，真实 Feature 21 步 / Task 18 步及 PR #29/#30 完成；不迁移旧开发数据 |
 | [默认模板资源与重置模板定义](configuration-template-reset/PLAN.md) | [实施验收](configuration-template-reset/EXECUTION.md)、[合同](configuration-template-reset/CONTRACT.md) | 已实施；Ubuntu 当前 global 13 / project 44 合同通过完整检查与独立 Linux 包；重置、重启后真实 Codex 按归档项目绑定继续运行，旧任务、产物及凭据保留 |
