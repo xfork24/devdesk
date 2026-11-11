@@ -14,6 +14,9 @@ def verify_evidence(client, rows, output):
   assert step['status']=='completed', (key,step['status'])
   return view['outputs'][step['outputs']['result']]['value']
  child=children[0]
+ for view in views.values():
+  assert all(step.get('confirmation','automatic')=='automatic' for step in view['plan']['steps'])
+  assert all(not status['confirmation'] for status in view['completion_status'].values()), 'Unexpected confirm or approve record'
  implementation=next(step for step in child['runtime']['steps'] if step['step']=='implementation')
  evidence_id=implementation['outputs']['evidence'];evidence=child['outputs'][evidence_id]['value']
  assert {'red','green'} <= {run['phase'] for run in evidence['runs']}, 'Raw evidence must include actual Red and Green'
@@ -59,37 +62,34 @@ try:
  runtime=c.rpc('runtime.prepare',{'provider':'codex'});image=runtime['artifact']['image_id']
  defaults=c.rpc('query.configuration_defaults');workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v4-{suffix}/greeting.mjs';task_test=f'tests/workflow-v4-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v4-{suffix}-feature/behavior.test.mjs';increment_test=f'test/workflow-v4-{suffix}-increments.test.mjs'
  goal=f'''本次验收事实已经全部确定，无需等待用户补充：在已有仓库新增依赖免费的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 `Hello, <trimmed>!`；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；独立 tests 断言保持只读，自有增量测试可按冻结 Task 的各个增量逐步增加并分别采集 Red/Green；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。测试使用 node:test、node:assert/strict，无 npm 安装、无联网、无外部依赖。测试 import 为 ../../{module}。模块或导出缺失属于运行前置条件错误，不使用动态 import 的 catch、assert.fail 或伪造返回值将它包装成业务 Red；由 Task Workflow 的 red_baseline 步骤准备可调用的最小接口，平台 Red 必须来自真实业务断言差异。实施逐次原始日志及测试/源码内容快照通过必需 evidence 输出交付，不能只提交临时路径或摘要。Task 配方仅运行 {task_test}；Feature 和最终候选配方运行 {task_test} 与 {feature_test} 两个文件。固定 Node TestRecipe 的 runner=node_test、image={image}、timeout_seconds=60。测试、实现、文档和独立评审必须按各自 Skill 和当前 Step 合同真实完成，不能把计划、模型自述或未运行内容当作工具回执。业务文档通过当前输出端口交付。'''
- workflow['steps'][0]['task_instructions']+='\n\n'+goal
- draft=c.command('workflow.create',payload={'name':'Default engineering v4 '+suffix,'document':workflow});published=c.command('workflow.publish',draft['id'],draft['revision']);p=c.rpc('query.workspace')['active_project']
- configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings']})
+ assert all(step.get('confirmation','automatic')=='automatic' for step in workflow['steps'])
+ p=c.rpc('query.workspace')['active_project']
+ configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':defaults['workflow_ref'],'role_agent_bindings':defaults['role_agent_bindings']})
  feature=c.command('feature.create',payload={'project_id':project,'title':'Workflow v4 greeting '+suffix,'configuration_revision_id':configuration['id']})['id']
- (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
- last=None;confirmed=set();inputs=set();deadline=time.monotonic()+2400
+ (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':defaults['workflow_ref'],'suffix':suffix,'goal':goal},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
+ last=None;inputs=set();deadline=time.monotonic()+2400
  while time.monotonic()<deadline:
   view=c.rpc('query.workspace',{'feature_id':feature});rows=[r for r in view['configurations'] if r['kind']=='workflow_instance' and r['data']['owner_id']==feature];root=next(r for r in rows if r['data']['parent_execution_id'] is None)
   status=[(r['id'],s['path'],s['status'],s['reason']) for r in rows for s in r['data']['steps'] if s['status'] not in ['completed','queued','skipped']]
   if status!=last:print(status,flush=True);last=status
   (OUT/'latest.json').write_text(json.dumps(view,ensure_ascii=False,indent=2))
+  assert root['data']['workflow_ref']==defaults['workflow_ref'], 'Feature did not inherit the project default'
   for row in rows:
    for step in row['data']['steps']:
     if step['status'] in ['failed','needs_reconciliation','cancelled']:
      detail=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'failed-instance.json').write_text(json.dumps(detail,ensure_ascii=False,indent=2));raise RuntimeError((step['path'],step['status'],step['reason']))
     if step['status']=='waiting_input':
      key=(step['id'],step['sequence'])
-     if key in inputs or step['sequence']>3:raise RuntimeError('Repeated clarification: '+step['path'])
-     c.command('workflow.step.input',row['id'],row['revision'],{'step':step['step'],'input':goal+'\n当前流程已提供并接纳的输出引用：'+json.dumps({s['step']:s['outputs'] for s in row['data']['steps'] if s['outputs']},ensure_ascii=False)+'。本次使用 Workflow 端口材料，不存在另一个未声明的提案采纳过程。'});inputs.add(key);break
-    if step['status']=='waiting_confirmation' and step['id'] not in confirmed:
+     if inputs or step['step']!='requirements' or row['id']!=root['id']:raise RuntimeError('Unexpected clarification after initial requirements: '+step['path'])
+     c.command('workflow.step.input',row['id'],row['revision'],{'step':step['step'],'input':goal});inputs.add(key);break
+    if step['status']=='waiting_confirmation':
      pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-confirmation.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
-     definition=next(definition for definition in pending['plan']['steps'] if definition['key']==step['step'])
-     rejected=[name for name,port in definition.get('outputs',{}).items() if port.get('content_checks') and pending['outputs'][step['outputs'][name]]['value']['approve'] is False]
-     if rejected or not pending['completion_status'][step['id']]['satisfied']:raise RuntimeError('Completion or content review rejected '+step['path']+': '+step['reason'])
-     c.command('workflow.step.confirm',row['id'],row['revision'],{'step':step['step'],'input_digest':step['input_digest'],'outputs':step['outputs'],'reason':'专用验收：核对当前确切输入、模型报告及实际工具回执；不覆盖未满足条件。'})
-     confirmed.add(step['id']);print('Confirmed:',step['path'],flush=True);break
+     raise RuntimeError('Default workflow must not need an external confirmation: '+step['path']+': '+step['reason'])
   if root['data']['status']=='completed':
    assert view['detail']['feature']['status']=='completed';assert len(view['detail']['tasks'])==1 and view['detail']['tasks'][0]['status']=='completed'
    publications=verify_evidence(c,rows,OUT)
    print('PASS native default engineering Workflow',root['id'],flush=True)
-   (OUT/'report.md').write_text('# Native default engineering Workflow v4\n\nPassed through actual Codex, managed Git, Docker Red/Green and candidate tests; both GitHub PRs merged at their exact candidate SHA.\n\nRoot: '+root['id']+'\nFeature: '+feature+'\nConfirmations: '+str(len(confirmed))+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n');break
+   (OUT/'report.md').write_text('# Native default engineering Workflow v4\n\nPassed through actual Codex, managed Git, Docker Red/Green and candidate tests; both GitHub PRs merged at their exact candidate SHA.\n\nRoot: '+root['id']+'\nFeature: '+feature+'\nConfirmations: 0 (no confirm or approve commands)\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n');break
   time.sleep(1)
  else:raise TimeoutError('Default engineering workflow')
 except BaseException as error:

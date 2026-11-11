@@ -18,7 +18,7 @@
         {
           "key": "work",
           "name": "Task 交付",
-          "description": "显式 TDD、独立检查、确切代码候选与人工确认。"
+          "description": "显式 TDD、独立检查、确切代码候选及满足完成条件后的自动接纳。"
         }
       ],
       "inputs": {
@@ -948,7 +948,7 @@
             "type": "agent",
             "role_ref": "builtin-role-reviewer"
           },
-          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。由人类确认确切输入版本后再接纳。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
+          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由 Workflow 引擎自动接纳确切输入及候选；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
           "required_skill_refs": [
             "builtin-skill-independent-review-v2"
           ],
@@ -1054,7 +1054,7 @@
               }
             ]
           },
-          "confirmation": "human",
+          "confirmation": "automatic",
           "budget": {
             "max_turns": 8,
             "timeout_seconds": 1800,

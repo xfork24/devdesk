@@ -551,6 +551,43 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         )
         .unwrap();
     assert_eq!(plan.roles.len(), 6);
+    for workflow in plan
+        .definitions
+        .values()
+        .filter(|row| row.kind == "workflow")
+    {
+        let definition: WorkflowDefinition = workflow.decode().unwrap();
+        assert!(
+            definition.steps.iter().all(|step| {
+                step.confirmation == ConfirmationPolicy::Automatic
+                    && !step.allow_completion_override
+            }),
+            "default workflows must advance through satisfied checks without confirm/approve commands"
+        );
+    }
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"Future Feature defaults"}),
+    )
+    .unwrap();
+    let configuration = command(&engine, "project.configuration.update", project["id"].as_str(), json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"]})).unwrap();
+    let feature = command(&engine, "feature.create", None, json!({"project_id":project["id"],"title":"Created through the normal entry point","configuration_revision_id":configuration["id"]})).unwrap();
+    let created = engine.store.snapshot().unwrap();
+    let frozen: ConfiguredWorkflowPlan = serde_json::from_value(
+        created
+            .governance
+            .iter()
+            .find(|row| row.kind == "workflow_instance" && row.data["owner_id"] == feature["id"])
+            .unwrap()
+            .data["plan"]
+            .clone(),
+    )
+    .unwrap();
+    assert_eq!(frozen.workflow_revision_id, plan.workflow_revision_id);
+    assert_eq!(frozen.document, plan.document);
+    assert_eq!(frozen.definitions, plan.definitions);
     for key in [
         "design",
         "design_review",
@@ -721,6 +758,8 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         .unwrap();
     definition.validate().unwrap();
     for step in &definition.steps {
+        assert_eq!(step.confirmation, ConfirmationPolicy::Automatic);
+        assert!(!step.allow_completion_override);
         for port in step.outputs.values() {
             assert!(restored.configuration(&port.delivery_ref).is_ok());
         }
@@ -733,6 +772,60 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
             );
         }
     }
+}
+
+#[test]
+fn automatic_review_blocks_rejection_and_advances_after_rework_without_confirmation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    engine.harness = recorder.clone();
+    for passed in [false, true] {
+        recorder.responses.lock().unwrap().push(json!({"status":"completed","summary":"独立证据核对","outputs":{"report":{"approve":passed,"summary":"核对原始证据","checks":[{"key":"evidence","passed":passed,"evidence":"逐项核对输入中封存的原始记录"}]}}}));
+    }
+    let (role, agent) = research_agent(&engine);
+    let spec = command(&engine, "spec.create", None, json!({"name":"证据规范","data":{"schema_version":3,"body":"检查完整证据","checks":[{"key":"evidence","name":"原始证据","instructions":"核对实际记录"}]}})).unwrap();
+    let run = launch(
+        &engine,
+        &role,
+        &agent,
+        json!({"confirmation":"automatic","spec_refs":[spec["id"]],"outputs":{"report":{"delivery_ref":"builtin-delivery-review-v1","content_checks":true}},"completion":{"op":"equals","source":{"step":"study","port":"report","pointer":"/approve"},"value":true}}),
+    );
+    drive(&engine, 12);
+    let rejected = instance(&engine, &run["id"]);
+    assert_eq!(rejected["steps"][0]["status"], "waiting_confirmation");
+    let report = rejected["steps"][0]["outputs"]["report"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    drive(&engine, 6);
+    assert_eq!(
+        instance(&engine, &run["id"])["steps"][0]["status"],
+        "waiting_confirmation"
+    );
+    command(
+        &engine,
+        "workflow.step.rework",
+        run["id"].as_str(),
+        json!({"step":"study"}),
+    )
+    .unwrap();
+    drive(&engine, 12);
+    assert_eq!(instance(&engine, &run["id"])["status"], "completed");
+    let state = engine.store.snapshot().unwrap();
+    assert_eq!(
+        state.configuration(&report).unwrap().data["value"]["approve"],
+        false
+    );
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|row| row.kind == "workflow_confirmation")
+    );
+    assert!(!state.events.iter().any(|event| {
+        ["workflow.step.confirm", "workflow.step.approve"].contains(&event.kind.as_str())
+    }));
 }
 
 #[test]
