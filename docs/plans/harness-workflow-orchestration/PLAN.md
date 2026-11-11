@@ -1,6 +1,6 @@
 # Harness 驱动工作流改造方案与实施计划
 
-日期：2026-11-11。状态：P0—P8 已实施并验收，见 EXECUTION.md。合并 main 的最新业务图及再次验收见 MERGE.md；当前默认 Feature 22 步、Task 20 步，采用 automatic 确认策略，仍由 Harness 显式推进。
+日期：2026-11-11。状态：P0—P8 已实施并验收，见 EXECUTION.md。合并 main 的最新业务图及再次验收见 MERGE.md；当前默认 Feature 22 步、Task 20 步，采用 automatic 确认策略，仍由 Harness 显式推进。 main 合并后 202 项 Rust、86 项浏览器及全新无人值守 Feature/Task（PR #35/#36）复验通过，完整 TDD 已核对至实际 Harness 发送封套，无人工 approve、旁路或豁免。
 
 DevDesk 将由运行在 Harness 中的项目经理 Agent 决定工作流如何推进。用户通过项目经理对话启动工作、调整计划、处理返工、修改运行中的工作流或绕过阶段；core 提供执行工具、状态接纳、授权检查和真实事实存储。
 
