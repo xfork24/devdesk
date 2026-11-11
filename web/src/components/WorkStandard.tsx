@@ -69,6 +69,7 @@ export function WorkStandard({
               "",
           );
           setPreview(undefined);
+          setWorkComparison(undefined);
           setBindings(
             instance?.data.role_agent_bindings ||
               data.configuration?.data.role_agent_bindings ||
@@ -314,7 +315,7 @@ export function WorkStandard({
       }}>
         <summary>与其他工作比较规范</summary>
         <label>比较工作
-          <select value={compareOwner} onChange={(event) => {setCompareOwner(event.target.value);setWorkComparison(undefined);}}>
+          <select aria-label="比较工作" value={compareOwner} onChange={(event) => {setCompareOwner(event.target.value);setWorkComparison(undefined);}}>
             <option value="">请选择工作</option>
             {compareChoices.filter((row) => row.id !== owner.id).map((row) => <option key={row.id} value={row.id}>{row.project_title} / {row.work.kind === "project" ? "Project" : row.work.kind === "feature" ? "Feature" : "Task"} · {row.title}</option>)}
           </select>
