@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { RevisionSelect, type Row } from "./configuration-ui";
+import { DeliverySpecPreview } from "./DeliveryContent";
 
 export function JsonField({
   label,
@@ -275,6 +276,13 @@ export function WorkflowDeliveries({
                   outputs: { ...outputs, [name]: { ...output, delivery_ref } },
                 })
               }
+            />
+            <DeliverySpecPreview
+              references={
+                types.find((row) => row.id === output.delivery_ref)?.data
+                  .spec_refs || []
+              }
+              records={records}
             />
             <label>
               <input

@@ -3025,13 +3025,56 @@
         "spec_refs": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "producer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "agent",
+                    "workflow"
+                  ]
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "platform"
+                },
+                "tools": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "tools"
+              ],
+              "additionalProperties": false
+            }
+          ]
         }
       },
       "required": [
-        "format"
+        "format",
+        "spec_refs"
       ],
       "additionalProperties": false
     },

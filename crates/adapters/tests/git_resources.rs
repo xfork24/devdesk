@@ -148,6 +148,52 @@ fn actual_worktrees_single_parent_candidate_cas_and_recovery() {
             .candidate(&context, &source, &candidate, &candidate_op)
             .is_err()
     );
+    // A delivery patch must retain non-text changes and the complete object IDs.
+    let task_path = Path::new(&context.source.worktree);
+    fs::rename(
+        task_path.join("addition.txt"),
+        task_path.join("renamed.txt"),
+    )
+    .unwrap();
+    fs::remove_file(task_path.join("base.txt")).unwrap();
+    fs::write(task_path.join("binary.bin"), [0, 1, 2, 0, 255, 128]).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        fs::set_permissions(
+            task_path.join("renamed.txt"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        symlink("renamed.txt", task_path.join("link")).unwrap();
+    }
+    let changed = adapter.snapshot_worktree(&context, &source, &id()).unwrap();
+    let patch = adapter.diff(&context, &source, &changed).unwrap();
+    assert!(patch.contains("GIT binary patch"));
+    assert!(patch.contains("rename from addition.txt"));
+    assert!(patch.contains("deleted file mode"));
+    #[cfg(unix)]
+    {
+        assert!(patch.contains("100755"));
+        assert!(patch.contains("120000"));
+    }
+    assert_eq!(
+        patch.trim(),
+        git(
+            &repo,
+            &[
+                "diff",
+                "--binary",
+                "--full-index",
+                "--find-renames",
+                &source,
+                &changed,
+                "--"
+            ]
+        )
+    );
+    assert_eq!(adapter.diff(&context, &changed, &changed).unwrap(), "");
+    assert!(adapter.diff(&context, "HEAD", &changed).is_err());
 }
 #[test]
 fn dirty_targets_and_foreign_contexts_are_rejected_without_modifying_refs() {

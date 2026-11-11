@@ -646,7 +646,7 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
         e,
         command(
             "session.open",
-            json!({"agent":"builtin-agent-sol-high-analyst:3","binding":binding}),
+            json!({"agent":"builtin-agent-sol-high-analyst:4","binding":binding}),
             Some(&project),
             Some(revision),
         ),

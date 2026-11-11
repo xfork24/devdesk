@@ -1,0 +1,30 @@
+{
+  "kind": "spec",
+  "identity": "builtin-spec-delivery-task-report",
+  "revision": 1,
+  "name": "Task Report 内容规范",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "schema_version": 3,
+    "body_file": "task-report.md",
+    "checks": [
+      {
+        "key": "task_report_content",
+        "name": "content",
+        "instructions": "成员完整且与真实完成的子流程身份、任务及版本对应。"
+      },
+      {
+        "key": "task_report_source",
+        "name": "source",
+        "instructions": "汇总由 Workflow foreach 从已完成子流程输出形成，不由 Agent 拼造完成事实。"
+      },
+      {
+        "key": "task_report_consistency",
+        "name": "consistency",
+        "instructions": "核对本规范要求的对象、版本、依赖和结果一致；指出具体差异和影响。"
+      }
+    ]
+  }
+}

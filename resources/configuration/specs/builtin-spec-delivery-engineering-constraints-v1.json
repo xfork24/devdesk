@@ -1,0 +1,30 @@
+{
+  "kind": "spec",
+  "identity": "builtin-spec-delivery-engineering-constraints",
+  "revision": 1,
+  "name": "Engineering Constraints Doc 内容规范",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "schema_version": 3,
+    "body_file": "engineering-constraints.md",
+    "checks": [
+      {
+        "key": "engineering_constraints_content",
+        "name": "content",
+        "instructions": "逐项核对必需字段和业务内容，范围与上述用途一致。"
+      },
+      {
+        "key": "engineering_constraints_source",
+        "name": "source",
+        "instructions": "通过真实平台操作、输入和回执核对项目、Task、版本与来源，不接受自述替代。"
+      },
+      {
+        "key": "engineering_constraints_consistency",
+        "name": "consistency",
+        "instructions": "核对本规范要求的对象、版本、依赖和结果一致；指出具体差异和影响。"
+      }
+    ]
+  }
+}

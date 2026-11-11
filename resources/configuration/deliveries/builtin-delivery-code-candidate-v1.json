@@ -1,0 +1,67 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-code-candidate",
+  "revision": 1,
+  "name": "Code Candidate",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "json",
+    "spec_refs": [
+      "builtin-spec-delivery-code-candidate:1"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "revision",
+        "source_revision",
+        "target_revision",
+        "parents",
+        "workspace_id",
+        "owner_id",
+        "operation_id"
+      ],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "source_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "target_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          }
+        },
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "git.candidate"
+      ]
+    }
+  }
+}

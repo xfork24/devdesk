@@ -47,7 +47,7 @@ canonical `agent-task/v5` 包含 Stage 背景、Step 任务、职责、能力、
 
 模型内容报告使用 Spec 当前的任意 key：`approve`、`summary`、`checks[{key,passed,evidence}]`。拒绝保留原报告；普通 confirm 覆盖完成条件仍要求 Step 明确允许。独立的 `workflow.step.approve` 是显式人工例外入口，payload 必须提供 step、execution_id、input_digest、outputs 和非空 reason；仅允许 waiting_confirmation 且未请求停止的流程，保存 manual_approval 与 override_completion，绑定确切输入输出，不改写原结论或冻结配置。没有隐藏的固定四项检查。
 
-默认 Task 的 implementation.evidence 使用“原始执行证据”delivery：runs 包含执行序号、阶段、命令、目录、起止时间、退出码、stdout/stderr，以及对应测试和源码的 path、sha256、content。缺少必需证据或仅提供临时路径会被输出 Schema 拒绝。后续 documentation、review、candidate_review 的 inputs.evidence 和 handoff 工具参数显式绑定此端口；原始内容沿现有 workflow_output / Artifact 存储，来源及 value_digest 进入规范任务。此交付是 Agent 记录，不能冒充平台测试回执。
+默认 Task 的 implementation.evidence 使用 Execution Report delivery：runs 包含执行序号、阶段、命令、目录、起止时间、退出码、stdout/stderr，以及对应测试和源码的 path、sha256、content。缺少必需证据或仅提供临时路径会被输出 Schema 拒绝。后续 documentation、review、candidate_review 的 inputs.evidence 和 handoff 工具参数显式绑定此端口；原始内容沿现有 workflow_output / Artifact 存储，来源及 value_digest 进入规范任务。此交付是 Agent 记录，不能冒充 Test Report 的平台测试回执。
 
 `conversation.send` 不能提交伪造的 task、frozen_task、task_instructions 或 task_source。Workflow 会话只接受来自当前冻结执行意图的输入；补充输入仍沿用原 Step 任务。会话或轮次派发失败及时成为步骤失败，子流程重试恢复对应父调用。暂停与人工等待不消耗活动预算。
 

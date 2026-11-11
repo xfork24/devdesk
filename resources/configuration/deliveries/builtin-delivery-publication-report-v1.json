@@ -1,0 +1,43 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-publication-report",
+  "revision": 1,
+  "name": "Publication Report",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "json",
+    "spec_refs": [
+      "builtin-spec-delivery-publication-report:1"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "revision",
+        "pull_request",
+        "operation_id"
+      ],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "pull_request": {
+          "type": "object"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "git.publish"
+      ]
+    }
+  }
+}

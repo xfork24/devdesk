@@ -1,0 +1,30 @@
+{
+  "kind": "spec",
+  "identity": "builtin-spec-delivery-review",
+  "revision": 1,
+  "name": "Review Report 内容规范",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "schema_version": 3,
+    "body_file": "review.md",
+    "checks": [
+      {
+        "key": "review_content",
+        "name": "content",
+        "instructions": "逐项核对报告必填字段、检查集合或逐增量事实，内容充分且有可定位依据。"
+      },
+      {
+        "key": "review_source",
+        "name": "source",
+        "instructions": "保留 Agent 作者与执行来源；交叉核对平台报告和确切代码快照。"
+      },
+      {
+        "key": "review_consistency",
+        "name": "consistency",
+        "instructions": "核对本规范要求的对象、版本、依赖和结果一致；指出具体差异和影响。"
+      }
+    ]
+  }
+}

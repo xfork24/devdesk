@@ -1,0 +1,43 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-task-completion-report",
+  "revision": 1,
+  "name": "Task Completion Report",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "json",
+    "spec_refs": [
+      "builtin-spec-delivery-task-completion-report:1"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "status",
+        "operation_id"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "completed"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "tasks.complete"
+      ]
+    }
+  }
+}

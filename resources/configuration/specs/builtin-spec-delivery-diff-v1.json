@@ -1,0 +1,30 @@
+{
+  "kind": "spec",
+  "identity": "builtin-spec-delivery-diff",
+  "revision": 1,
+  "name": "Diff 内容规范",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "schema_version": 3,
+    "body_file": "diff.md",
+    "checks": [
+      {
+        "key": "diff_content",
+        "name": "content",
+        "instructions": "内容与指定 base/head 的 Git 比较完全一致，无静默截断；修改范围符合当前任务。"
+      },
+      {
+        "key": "diff_source",
+        "name": "source",
+        "instructions": "Diff 仅从真实快照或候选工具回执映射产生；评审与交接引用确切 Diff Artifact。"
+      },
+      {
+        "key": "diff_consistency",
+        "name": "consistency",
+        "instructions": "核对本规范要求的对象、版本、依赖和结果一致；指出具体差异和影响。"
+      }
+    ]
+  }
+}

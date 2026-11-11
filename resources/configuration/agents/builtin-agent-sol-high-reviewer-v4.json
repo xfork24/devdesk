@@ -1,0 +1,13 @@
+{
+  "kind": "agent",
+  "identity": "builtin-agent-sol-high-reviewer",
+  "revision": 4,
+  "name": "评审 · Sol High / Codex",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "role_ref": "builtin-role-reviewer:1",
+    "capability_ref": "builtin-capability-reviewer-codex:3"
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-test-report",
+  "revision": 2,
+  "name": "Test Report",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "test_report",
+    "spec_refs": [
+      "builtin-spec-delivery-test-report:1"
+    ],
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "operation_id",
+        "status",
+        "candidate",
+        "environment",
+        "origin",
+        "assertion_failed",
+        "expected_failure",
+        "failure_type",
+        "recipe",
+        "execution"
+      ],
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "succeeded",
+            "failed"
+          ]
+        },
+        "candidate": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "const": "external"
+        },
+        "assertion_failed": {
+          "type": "boolean"
+        },
+        "expected_failure": {
+          "type": "boolean"
+        },
+        "failure_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recipe": {
+          "type": "object",
+          "required": [
+            "runner",
+            "files",
+            "timeout_seconds"
+          ],
+          "properties": {
+            "runner": {
+              "enum": [
+                "node_test"
+              ]
+            },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300
+            }
+          }
+        },
+        "execution": {
+          "type": "object",
+          "required": [
+            "command",
+            "cwd",
+            "started_at",
+            "finished_at",
+            "exit_code",
+            "stdout",
+            "stderr",
+            "files"
+          ],
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "started_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "finished_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "exit_code": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            },
+            "files": {
+              "type": "array"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "tests.run"
+      ]
+    }
+  }
+}

@@ -31,9 +31,13 @@ Permission Profile 保存底层策略，Permission Context 选择 Sandbox、绑�
 
 ## 文档规范
 
-Delivery 描述格式和结构合同，`spec_refs` 指向唯一内容规范。PRD 及 Design Doc 的正文只保存在 Spec。任务渲染时按输出 Delivery 解析对应规范；内容报告及完成门禁仍使用 Step 明确声明的检查集合，避免配置重构改变业务检查行为。
+Delivery 描述格式、结构合同及允许的产出来源，必填 `spec_refs` 指向内容规范。所有交付的规范正文只保存在 Spec；创建、导入、模板加载及 Workflow 发布均校验有效规范和具体检查项。任务渲染时按输入输出 Delivery 解析对应规范；Review Report 的业务检查集合仍由评审 Step 明确声明，报告自身规范不递归加入该集合。
 
 生产、输入传递和评审都使用产物所属 Delivery 修订及其固定 Spec 修订，不读取当前默认规范替代历史依据。实际 PRD、设计文档和报告属于 Artifact，不是配置。
+
+平台工具映射的交付保存 `provenance`：实际调用、处理器、输出指针、内容摘要和规范引用。Diff 另外记录确切起始与结果版本；快照增量、Task 整体修改和候选修改分别输出并传入评审与交接。平台产出不能通过 Agent 提案或材料导入伪造。
+
+超过 32 KiB 的显式上游产物输入可渲染为带摘要、字段指针和读取参数的引用。当前步骤必须获得 `workflow.outputs.read` 的能力与授权，按 `next_offset` 读取完整内容；业务 Agent 只能读取自己显式输入的产物和字段。原始内容仍保存为不可变 Artifact，缺少完整读取能力时阻塞派发。
 
 ## 数据边界
 

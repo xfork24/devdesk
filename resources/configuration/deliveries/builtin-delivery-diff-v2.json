@@ -1,0 +1,25 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-diff",
+  "revision": 2,
+  "name": "Diff",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "diff",
+    "spec_refs": [
+      "builtin-spec-delivery-diff:1"
+    ],
+    "content_schema": {
+      "type": "string"
+    },
+    "producer": {
+      "kind": "platform",
+      "tools": [
+        "workspace.snapshot",
+        "git.candidate"
+      ]
+    }
+  }
+}
