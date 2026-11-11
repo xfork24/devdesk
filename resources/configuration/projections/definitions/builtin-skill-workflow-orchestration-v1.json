@@ -1,0 +1,18 @@
+{
+  "template_key": "definitions.builtin-skill-workflow-orchestration-v1",
+  "storage": "definitions",
+  "record": {
+    "id": "builtin-skill-workflow-orchestration-v1",
+    "family": "skill",
+    "name": "工作流编排",
+    "version": 1,
+    "supersedes": null,
+    "body": "",
+    "agent_profile": null
+  },
+  "text_files": {
+    "/body": "skills/workflow-orchestration.md"
+  },
+  "references": {},
+  "initial_only": false
+}

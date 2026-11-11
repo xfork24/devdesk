@@ -1,0 +1,65 @@
+{
+  "template_key": "governance.builtin-tool-workflow-events-read-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-events-read-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-events-read",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "读取根实例事件",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.events.read",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "description": "Read scoped events after cursor; follow next_cursor."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

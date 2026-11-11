@@ -300,5 +300,18 @@ CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(kind) W
 CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id) WHERE kind='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
 
-PRAGMA user_version=44;
+PRAGMA user_version=45;
+
+CREATE TABLE orchestration_wakeups (
+ id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,
+ status TEXT NOT NULL, turn_id TEXT, created_at INTEGER NOT NULL,
+ UNIQUE(controller_id,event_cursor)
+);
+CREATE INDEX orchestration_wakeups_pending ON orchestration_wakeups(status,controller_id);
+CREATE TABLE orchestration_leases (
+ id TEXT PRIMARY KEY, controller_id TEXT NOT NULL UNIQUE, owner_id TEXT NOT NULL,
+ root_instance_id TEXT, epoch INTEGER NOT NULL CHECK(epoch>0), expires_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX orchestration_root_writer ON orchestration_leases(root_instance_id) WHERE root_instance_id IS NOT NULL;
+
 COMMIT;

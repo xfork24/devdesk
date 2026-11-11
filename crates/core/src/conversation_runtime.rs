@@ -411,7 +411,7 @@ impl Engine {
                 Ok(())
             })();
             if let Err(error) = result {
-                self.unknown_conversation(&session, &turn.id, &error.code)?;
+                self.unknown_conversation(&session, &turn.id, &error.to_string())?;
             }
         }
         Ok(())

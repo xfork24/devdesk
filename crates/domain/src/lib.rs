@@ -2,10 +2,14 @@ mod integrations;
 pub use integrations::*;
 mod configuration;
 pub use configuration::*;
+mod orchestration;
 mod template_catalog;
 mod workflow;
+mod workflow_change;
+pub use orchestration::*;
 pub use template_catalog::*;
 pub use workflow::*;
+pub use workflow_change::*;
 mod deliverable;
 pub use deliverable::*;
 mod agent_task;
@@ -261,6 +265,10 @@ pub struct Event {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EngineeringState {
+    #[serde(default)]
+    pub orchestration_wakeups: Vec<OrchestrationWakeup>,
+    #[serde(default)]
+    pub orchestration_leases: Vec<OrchestrationLease>,
     #[serde(default)]
     pub governance: Vec<ConfigurationRecord>,
     #[serde(default)]

@@ -47,6 +47,13 @@ pub struct SqliteStore {
     _lock: File,
     project_id: Option<String>,
 }
+impl Drop for SqliteStore {
+    fn drop(&mut self) {
+        // Explicit release also fences transient descriptors inherited by a concurrently
+        // spawned child before exec closes them; reopening must not wait on that child.
+        let _ = fs2::FileExt::unlock(&self._lock);
+    }
+}
 impl SqliteStore {
     pub fn open(path: &Path) -> Result<Self> {
         let (root, lock) = lock_dataset(path)?;
@@ -129,6 +136,8 @@ impl SqliteStore {
     fn load(conn: &Connection) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
         s.governance = load_table(conn, "governance_records")?;
+        s.orchestration_wakeups = load_table(conn, "orchestration_wakeups")?;
+        s.orchestration_leases = load_table(conn, "orchestration_leases")?;
         s.turns = load_table(conn, "turns")?;
         s.conversation_events = load_table(conn, "conversation_events")?;
         s.interactions = load_table(conn, "interactions")?;
@@ -152,6 +161,18 @@ impl SqliteStore {
         Ok(s)
     }
     fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
+        save_table(
+            conn,
+            "orchestration_wakeups",
+            &s.orchestration_wakeups,
+            &before.orchestration_wakeups,
+        )?;
+        save_table(
+            conn,
+            "orchestration_leases",
+            &s.orchestration_leases,
+            &before.orchestration_leases,
+        )?;
         save_table(
             conn,
             "governance_records",
@@ -251,8 +272,8 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 44,
-        "数据集不是当前项目结构，请删除过时开发数据后重新建立",
+        version == 0 || version == 45,
+        "数据集需要显式离线升级，请运行 scripts/upgrade/harness-v5.py --help",
     )?;
     if version == 0 {
         connection
@@ -385,6 +406,7 @@ impl EngineeringStore for SqliteStore {
         // Idle projects must not deserialize their complete protocol history on every tick.
         let conn = self.connection.lock().map_err(storage)?;
         conn.query_row("SELECT
+          EXISTS(SELECT 1 FROM governance_records WHERE kind='workflow_controller' AND json_extract(data,'$.status')='active') OR
           EXISTS(SELECT 1 FROM governance_records WHERE kind='workflow_instance' AND json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('cancelled','completed','failed','needs_reconciliation')) OR
           EXISTS(SELECT 1 FROM governance_records WHERE kind='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR
           EXISTS(SELECT 1 FROM governance_records WHERE kind='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
@@ -427,8 +449,14 @@ impl EngineeringStore for SqliteStore {
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;
-        state.validate_governance(&before)?;
-        state.validate_conversations(&before)?;
+        let changed = serde_json::to_vec(&before).map_err(storage)?
+            != serde_json::to_vec(&state).map_err(storage)?;
+        // Idle observations cannot introduce a new invalid state. Avoid parsing
+        // and hashing every historical task/plan again on each empty poll.
+        if changed {
+            state.validate_governance(&before)?;
+            state.validate_conversations(&before)?;
+        }
         if let Some(id) = &self.project_id {
             require(
                 state.projects.len() <= 1 && state.projects.iter().all(|p| &p.id == id),
@@ -439,9 +467,7 @@ impl EngineeringStore for SqliteStore {
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if serde_json::to_vec(&before).map_err(storage)?
-            != serde_json::to_vec(&state).map_err(storage)?
-        {
+        if changed {
             Self::save(&tx, &state, &before)?;
         }
         if let Some((id, fp)) = key {

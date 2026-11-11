@@ -1,0 +1,59 @@
+{
+  "template_key": "governance.builtin-tool-workflow-cancel-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-cancel-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-cancel",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "取消当前流程",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.cancel",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_revision_id"
+        ],
+        "additionalProperties": false,
+        "description": "Stop pending work and await real stop evidence; already applied external effects remain facts."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

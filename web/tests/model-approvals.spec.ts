@@ -28,7 +28,7 @@ for (const allowOverride of [false, true])
       payload: {
         name: "确切版本确认",
         document: {
-          schema_version: 4,
+          schema_version: 5,
           stages: [{ key: "decision", name: "决定" }],
           steps: [
             {
@@ -77,6 +77,9 @@ for (const allowOverride of [false, true])
       name: "当前工作流",
       exact: true,
     });
+    await runtime
+      .getByRole("button", { name: "执行步骤", exact: true })
+      .click();
     const approve = runtime.getByRole("button", {
       name: "手动 Approve 此版本",
       exact: true,
@@ -95,6 +98,12 @@ for (const allowOverride of [false, true])
     await runtime.getByLabel("手动批准理由（必填）").fill(reason);
     await expect(approve).toBeEnabled();
     await approve.click();
+    await runtime
+      .getByRole("button", { name: "接纳结果", exact: true })
+      .click();
+    await runtime
+      .getByRole("button", { name: "完成流程", exact: true })
+      .click();
     await expect
       .poll(
         async () =>
@@ -144,7 +153,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
     payload: {
       name: "并行审批",
       document: {
-        schema_version: 4,
+        schema_version: 5,
         stages: [{ key: "decision", name: "决定" }],
         inputs: { accepted: { delivery_ref: "builtin-delivery-object-v1" } },
         steps: ["first", "second"].map((key) => ({
@@ -185,6 +194,15 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
     },
   });
   await page.goto(`/?tab=execution&project_id=${project.id}`);
+  const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
+  await runtime
+    .getByRole("button", { name: "执行步骤", exact: true })
+    .first()
+    .click();
+  await runtime
+    .getByRole("article", { name: "步骤 · second", exact: true })
+    .getByRole("button", { name: "执行步骤", exact: true })
+    .click();
   const first = page.getByRole("article", {
     name: "步骤 · first",
     exact: true,
@@ -210,6 +228,9 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
     "第二步的人工决定",
   );
   await second.getByRole("button", { name: "手动 Approve 此版本" }).click();
+  await first.getByRole("button", { name: "接纳结果", exact: true }).click();
+  await second.getByRole("button", { name: "接纳结果", exact: true }).click();
+  await runtime.getByRole("button", { name: "完成流程", exact: true }).click();
   await expect
     .poll(
       async () =>

@@ -1,4 +1,6 @@
-//! Configuration-driven execution through actual SQLite and Artifact storage.
+#[path = "../../../tests/support/control.rs"]
+mod control_fixture;
+// Configuration-driven execution through actual SQLite and Artifact storage.
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
 #[path = "../../../tests/support/schemas.rs"]
@@ -85,7 +87,7 @@ fn custom_role_and_typed_business_step_publish_preview_and_reload() {
     assert!(role["data"].get("execution_role").is_none());
     let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"body":"本次发现的风险与依据","format":"json","content_schema":{
         "type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
-    let document = json!({"schema_version":4,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["definition_id"]}],"steps":[{
+    let document = json!({"schema_version":5,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["definition_id"]}],"steps":[{
         "key":"study","name":"识别风险","stage":"inquiry","executor":{"type":"agent"},"task_instructions":"按调研 Skill 分析并提交风险。",
         "outputs":{"risks":{"delivery_ref":output["id"]}}}]});
     let workflow = publish(&engine, document.clone());
@@ -150,7 +152,7 @@ fn control_workflow_runs_and_confirmation_is_bound_to_exact_content() {
     let engine = engine(dir.path());
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"decision","name":"业务决定"}],"steps":[
+        json!({"schema_version":5,"stages":[{"key":"decision","name":"业务决定"}],"steps":[
         {"key":"check","name":"确认范围","stage":"decision","executor":{"type":"control"},"confirmation":"human"},
         {"key":"finish","name":"结束","stage":"decision","executor":{"type":"control"},"dependencies":["check"]}]}),
     );
@@ -173,7 +175,7 @@ fn control_workflow_runs_and_confirmation_is_bound_to_exact_content() {
         &instance["data"],
     );
     let instance_id = instance["id"].as_str().unwrap();
-    engine.evaluate_workflows().unwrap();
+    control_fixture::evaluate(&engine).unwrap();
     let row = engine
         .store
         .snapshot()
@@ -199,7 +201,7 @@ fn control_workflow_runs_and_confirmation_is_bound_to_exact_content() {
         json!({"step":"check","input_digest":row.data["steps"][0]["input_digest"],"outputs":{}}),
     )
     .unwrap();
-    engine.evaluate_workflows().unwrap();
+    control_fixture::evaluate(&engine).unwrap();
     assert_eq!(
         engine
             .store
@@ -225,10 +227,10 @@ fn child_closure_rejects_wrong_type_and_recursive_calls_before_publish() {
     .unwrap();
     let child = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"工作"}],"inputs":{"source":{"delivery_ref":kind["id"]}},
+        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"inputs":{"source":{"delivery_ref":kind["id"]}},
         "steps":[{"key":"gate","name":"检查材料","stage":"work","executor":{"type":"control"}}]}),
     );
-    let parent = json!({"schema_version":4,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"nested","name":"调用","stage":"work",
+    let parent = json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"nested","name":"调用","stage":"work",
         "executor":{"type":"workflow","workflow_ref":child["id"]}}]});
     let draft = command(
         &engine,
@@ -242,6 +244,7 @@ fn child_closure_rejects_wrong_type_and_recursive_calls_before_publish() {
 
 #[derive(Default)]
 struct RecordingAgent {
+    hold: std::sync::atomic::AtomicBool,
     responses: Mutex<Vec<Value>>,
     calls: Mutex<Vec<ports::TurnDispatch>>,
     pending: Mutex<HashMap<Id, Vec<ports::ConversationObservation>>>,
@@ -281,6 +284,9 @@ impl ports::Harness for RecordingAgent {
         Ok(())
     }
     fn poll_session(&self, session: &Session) -> Result<Vec<ports::ConversationObservation>> {
+        if self.hold.load(std::sync::atomic::Ordering::SeqCst) {
+            return Ok(vec![]);
+        }
         Ok(self
             .pending
             .lock()
@@ -319,7 +325,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
     let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"body":"风险列表","format":"json","content_schema":{"type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["definition_id"]}],"steps":[{
+        json!({"schema_version":5,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["definition_id"]}],"steps":[{
         "key":"study","name":"识别风险","stage":"inquiry","executor":{"type":"agent"},"task_instructions":"只调查当前材料，提交风险清单。",
         "outputs":{"risks":{"delivery_ref":output["id"]}}}]}),
     );
@@ -353,7 +359,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
         "artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"explicit native port fixture","license":"test"},
         "adapter_version":"fixture/v1","model":"fixture-model","tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)})).unwrap();
     for _ in 0..12 {
-        engine.evaluate_workflows().unwrap();
+        control_fixture::evaluate(&engine).unwrap();
         for intent in engine.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
@@ -418,12 +424,12 @@ fn reusable_children_and_collection_members_have_distinct_execution_paths() {
     let array=command(&engine,"delivery_type.create",None,json!({"name":"条目集合","data":{"body":"输入集合","format":"json","content_schema":{"type":"array","items":{"type":"string"},"minItems":2}}})).unwrap();
     let child = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"处理"}],"inputs":{"entry":{"delivery_ref":text["id"]}},
+        json!({"schema_version":5,"stages":[{"key":"work","name":"处理"}],"inputs":{"entry":{"delivery_ref":text["id"]}},
         "steps":[{"key":"gate","name":"完成条目","stage":"work","executor":{"type":"control"}}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"分发"}],"inputs":{"entries":{"delivery_ref":array["id"]}},"steps":[{
+        json!({"schema_version":5,"stages":[{"key":"work","name":"分发"}],"inputs":{"entries":{"delivery_ref":array["id"]}},"steps":[{
         "key":"members","name":"处理集合","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"],"foreach":{
             "source":{"step":"$input","port":"entries"},"item_input":"entry","max_concurrency":1,"min_items":2}}}]}),
     );
@@ -445,7 +451,7 @@ fn reusable_children_and_collection_members_have_distinct_execution_paths() {
     );
     let instance=command(&engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":parent["id"],"role_agent_bindings":{},"inputs":{"entries":["A","B"]}})).unwrap();
     for _ in 0..6 {
-        engine.evaluate_workflows().unwrap();
+        control_fixture::evaluate(&engine).unwrap();
     }
     let state = engine.store.snapshot().unwrap();
     let root = state
@@ -477,7 +483,7 @@ fn fixture_binding() -> RuntimeBinding {
 }
 fn drive(engine: &Engine, rounds: usize) {
     for _ in 0..rounds {
-        engine.evaluate_workflows().unwrap();
+        control_fixture::evaluate(&engine).unwrap();
         for row in engine.pending_workflow_intents().unwrap() {
             let method = row.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
@@ -514,10 +520,12 @@ fn launch(engine: &Engine, role: &Value, agent: &Value, mut step: Value) -> Valu
     step["name"] = json!("调查");
     step["stage"] = json!("work");
     step["executor"] = json!({"type":"agent","role_ref":role["definition_id"]});
-    step["task_instructions"] = json!("只调查本次任务，使用已加载的 Skill 方法。");
+    if step["task_instructions"].is_null() {
+        step["task_instructions"] = json!("只调查本次任务，使用已加载的 Skill 方法。");
+    }
     let workflow = publish(
         engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"调查"}],"steps":[step]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"调查"}],"steps":[step]}),
     );
     let project = command(engine, "project.create", None, json!({"title":"调查项目"})).unwrap();
     command(engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["definition_id"].as_str().unwrap():agent["id"]}})).unwrap()
@@ -591,6 +599,27 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         .unwrap();
     let red = task.steps.iter().find(|step| step.key == "red").unwrap();
     assert!(task.ancestors(red).contains(baseline.key.as_str()));
+    let sealed_tests = task
+        .steps
+        .iter()
+        .find(|step| step.key == "tests_author_snapshot")
+        .unwrap();
+    assert!(matches!(sealed_tests.executor, StepExecutor::Tool { .. }));
+    assert!(task.ancestors(baseline).contains(sealed_tests.key.as_str()));
+    assert!(
+        matches!(&baseline.inputs["workspace"], InputBinding::Source { source } if source.step == sealed_tests.key)
+    );
+    let red_snapshot = task
+        .steps
+        .iter()
+        .find(|step| step.key == "tests_snapshot")
+        .unwrap();
+    let StepExecutor::Tool { arguments, .. } = &red_snapshot.executor else {
+        panic!("Red snapshot must be an actual platform tool")
+    };
+    assert!(
+        matches!(&arguments["workspace"], InputBinding::Source { source } if source.step == sealed_tests.key)
+    );
     assert!(
         baseline
             .access
@@ -763,7 +792,7 @@ fn explicit_manual_approval_requires_reason_and_exact_execution_and_preserves_re
     drive(&engine, 12);
     let before = instance(&engine, &run["id"]);
     let execution = &before["steps"][0];
-    assert_eq!(execution["status"], "waiting_confirmation");
+    assert_eq!(execution["status"], "awaiting_acceptance");
     let payload = json!({"step":"study","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"],"reason":"已核对功能，接受本轮历史证据缺失"});
     for (key, value) in [
         ("reason", json!("  ")),
@@ -824,13 +853,15 @@ fn explicit_manual_approval_requires_reason_and_exact_execution_and_preserves_re
         view["outputs"][execution["outputs"]["report"].as_str().unwrap()]["value"],
         report
     );
-    command(
-        &engine,
-        "workflow.step.rework",
-        run["id"].as_str(),
-        json!({"step":"study"}),
-    )
-    .unwrap();
+    assert!(
+        command(
+            &engine,
+            "workflow.step.rework",
+            run["id"].as_str(),
+            json!({"step":"study"}),
+        )
+        .is_err()
+    ); // Completed roots are immutable; later work uses a successor.
     assert!(
         command(
             &engine,
@@ -883,7 +914,7 @@ fn declared_delivery_inputs_carry_persisted_raw_evidence_without_other_outputs()
     ]);
     let workflow = publish(
         &workbench,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"证据交付","default_role_ref":role["definition_id"]}],"steps":[
+        json!({"schema_version":5,"stages":[{"key":"work","name":"证据交付","default_role_ref":role["definition_id"]}],"steps":[
             {"key":"produce","name":"记录执行","stage":"work","executor":{"type":"agent"},"task_instructions":"将真实记录作为 evidence 输出交付。","outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence-v1"},"unrelated":{"delivery_ref":"builtin-delivery-object-v1"}}},
             {"key":"inspect","name":"检查证据","stage":"work","dependencies":["produce"],"executor":{"type":"agent"},"task_instructions":"只检查声明的 evidence 输入。","inputs":{"evidence":{"type":"source","source":{"step":"produce","port":"evidence"}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-object-v1"}}}
         ]}),
@@ -1055,7 +1086,7 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
     let engine = engine(dir.path());
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"资料封存"}],"steps":[{"key":"capture","name":"封存输入","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture-v1","arguments":{"material":{"type":"constant","value":{"source":"exact input"}}}},"outputs":{"receipt":{"delivery_ref":"builtin-delivery-object-v1"}}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"资料封存"}],"steps":[{"key":"capture","name":"封存输入","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture-v1","arguments":{"material":{"type":"constant","value":{"source":"exact input"}}}},"outputs":{"receipt":{"delivery_ref":"builtin-delivery-object-v1"}}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"资料项目"})).unwrap();
     let run = command(
@@ -1099,16 +1130,16 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
 }
 
 #[test]
-fn invalid_child_input_fails_only_its_own_step_and_independent_work_can_progress() {
+fn invalid_child_dispatch_is_rejected_without_blocking_independent_work() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());
     let child = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd-v1"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd-v1"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"分支"}],"steps":[{"key":"bad","name":"无效子流程输入","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]},"inputs":{"material":{"type":"constant","value":123}}},{"key":"good","name":"独立分支","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"分支"}],"steps":[{"key":"bad","name":"无效子流程输入","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]},"inputs":{"material":{"type":"constant","value":123}}},{"key":"good","name":"独立分支","stage":"work","executor":{"type":"control"}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"分支项目"})).unwrap();
     let run = command(
@@ -1120,7 +1151,16 @@ fn invalid_child_input_fails_only_its_own_step_and_independent_work_can_progress
     .unwrap();
     drive(&engine, 2);
     let data = instance(&engine, &run["id"]);
-    assert_eq!(data["steps"][0]["status"], "failed");
+    assert_eq!(data["steps"][0]["status"], "queued");
+    assert!(
+        control_fixture::command(
+            &engine,
+            "workflow.step.dispatch",
+            run["id"].as_str().unwrap(),
+            json!({"step":"bad"})
+        )
+        .is_err()
+    );
     assert_eq!(data["steps"][1]["status"], "completed");
 }
 
@@ -1130,7 +1170,7 @@ fn stale_start_and_unprepared_agent_session_are_rejected_before_dispatch() {
     let engine = engine(dir.path());
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"版本保护"})).unwrap();
     let error = engine
@@ -1163,11 +1203,11 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
     let engine = engine(dir.path());
     let child = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"并行工作"}],"steps":[
+        json!({"schema_version":5,"stages":[{"key":"work","name":"并行工作"}],"steps":[
       {"key":"left","name":"分支一","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}},
       {"key":"right","name":"分支二","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
     );
@@ -1185,8 +1225,8 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
         json!({"workflow_ref":parent["id"],"role_agent_bindings":{}}),
     )
     .unwrap();
-    engine.evaluate_workflows().unwrap();
-    engine.evaluate_workflows().unwrap();
+    control_fixture::evaluate(&engine).unwrap();
+    control_fixture::evaluate(&engine).unwrap();
     let state = engine.store.snapshot().unwrap();
     let root = state.configuration(run["id"].as_str().unwrap()).unwrap();
     let first = root.data["steps"][0]["id"].clone();
@@ -1204,8 +1244,8 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
         .unwrap()
         .clone();
     command(&engine, "workflow.cancel", Some(&left.id), json!({})).unwrap();
-    engine.evaluate_workflows().unwrap();
-    engine.evaluate_workflows().unwrap();
+    control_fixture::evaluate(&engine).unwrap();
+    control_fixture::evaluate(&engine).unwrap();
     let state = engine.store.snapshot().unwrap();
     assert_eq!(
         state.configuration(&left.id).unwrap().data["status"],
@@ -1226,7 +1266,7 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
         json!({"step":"left"}),
     )
     .unwrap();
-    engine.evaluate_workflows().unwrap();
+    control_fixture::evaluate(&engine).unwrap();
     let state = engine.store.snapshot().unwrap();
     let root = state.configuration(run["id"].as_str().unwrap()).unwrap();
     assert_ne!(root.data["steps"][0]["id"], first);
@@ -1242,6 +1282,15 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
 
 #[test]
 fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_requests() {
+    actual_git_candidate(false);
+}
+
+#[test]
+fn explicit_waivers_allow_actual_git_without_inventing_test_or_human_receipts() {
+    actual_git_candidate(true);
+}
+
+fn actual_git_candidate(waived_advance: bool) {
     fn git(path: &std::path::Path, args: &[&str]) -> String {
         let output = std::process::Command::new("git")
             .args([
@@ -1386,15 +1435,17 @@ fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_
         "actual change\n",
     )
     .unwrap();
-    let workflow = publish(
-        &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"Git 工具"}],"steps":[
-            {"key":"current","name":"当前版本","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current-v1","arguments":{"owner_id":{"type":"constant","value":task}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object-v1"}}},
-            {"key":"snapshot","name":"固定实际代码","stage":"work","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot-v1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["addition.txt"]}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object-v1"}}},
-            {"key":"candidate","name":"实际候选","stage":"work","dependencies":["snapshot"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-candidate-v1","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"target_revision":{"type":"constant","value":base}}},"outputs":{"candidate":{"delivery_ref":"builtin-delivery-object-v1"}}}
-          ,{"key":"inspect","name":"读取授权的 Task 候选","stage":"work","dependencies":["candidate"],"executor":{"type":"agent","role_ref":role["definition_id"]},"task_instructions":"检查明确提供的代码视图。","inputs":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}}},"access":{"workspace_input":"workspace"},"outputs":{"risks":{"delivery_ref":"builtin-delivery-object-v1"}}}
-        ]}),
-    );
+    let mut document = json!({"schema_version":5,"stages":[{"key":"work","name":"Git 工具"}],"steps":[
+        {"key":"current","name":"当前版本","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current-v1","arguments":{"owner_id":{"type":"constant","value":task}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object-v1"}}},
+        {"key":"snapshot","name":"固定实际代码","stage":"work","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot-v1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["addition.txt"]}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object-v1"}}},
+        {"key":"candidate","name":"实际候选","stage":"work","dependencies":["snapshot"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-candidate-v1","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"target_revision":{"type":"constant","value":base}}},"outputs":{"candidate":{"delivery_ref":"builtin-delivery-object-v1"}}}
+      ,{"key":"inspect","name":"读取授权的 Task 候选","stage":"work","dependencies":["candidate"],"executor":{"type":"agent","role_ref":role["definition_id"]},"task_instructions":"检查明确提供的代码视图。","inputs":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}}},"access":{"workspace_input":"workspace"},"outputs":{"risks":{"delivery_ref":"builtin-delivery-object-v1"}}}
+    ]});
+    if waived_advance {
+        document["action_requirements"] = json!({"git.advance":["tests","confirmation"]});
+        document["steps"].as_array_mut().unwrap().push(json!({"key":"advance","name":"带明确例外接纳","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-advance-v1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"candidate":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"accepted":{"delivery_ref":"builtin-delivery-object-v1"}}}));
+    }
+    let workflow = publish(&engine, document);
     let run = engine
         .execute(
             "workflow.start",
@@ -1406,7 +1457,32 @@ fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_
             },
         )
         .unwrap();
-    engine.evaluate_workflows().unwrap();
+    if waived_advance {
+        let current = instance(&engine, &run["id"]);
+        let definition = current["plan"]["document"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["key"] == "advance")
+            .unwrap();
+        let changes = json!({"plan_revision_id":current["active_plan_revision_id"],"reason":"专用验收：明确不运行候选测试且不请求人工确认，保留未验证事实","operations":[{"type":"waive","node_id":definition["node_id"],"requirement":"tests"},{"type":"waive","node_id":definition["node_id"],"requirement":"confirmation"}]});
+        let preview = engine
+            .query(
+                "workflow.change.preview",
+                &json!({"id":run["id"],"changeset":changes}),
+                4,
+            )
+            .unwrap();
+        let r = engine
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(run["id"].as_str().unwrap())
+            .unwrap()
+            .revision;
+        engine.execute("workflow.change.apply",Command{command_id:id(),target:Some(run["id"].as_str().unwrap().into()),expected_revision:Some(r),payload:json!({"plan_revision_id":current["active_plan_revision_id"],"changeset":changes,"preview_hash":preview["preview_hash"]})}).unwrap();
+    }
+    control_fixture::evaluate(&engine).unwrap();
     let intent = engine.pending_workflow_intents().unwrap().remove(0);
     let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
     let mut forged = engine
@@ -1435,6 +1511,27 @@ fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_
         git(&repo, &["show", &format!("{candidate}:addition.txt")]),
         "actual change"
     );
+    if waived_advance {
+        assert_eq!(git(&repo, &["rev-parse", &feature_work.branch]), candidate);
+        let permits: Vec<_> = state
+            .governance
+            .iter()
+            .filter(|r| r.kind == "workflow_action_permit")
+            .collect();
+        assert!(!permits.is_empty());
+        assert_eq!(
+            permits.last().unwrap().data["requirements"],
+            json!({"tests":"waived","confirmation":"waived"})
+        );
+        assert!(
+            !state
+                .governance
+                .iter()
+                .any(|r| r.kind == "workflow_confirmation"
+                    || (r.kind == "platform_call"
+                        && r.data["request"]["definition"]["qualified_name"] == "tests.run"))
+        );
+    }
     let calls = recorder.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(
@@ -1457,15 +1554,15 @@ fn ancestor_pause_suspends_nested_dispatch_without_overriding_a_child_pause() {
     let engine = engine(dir.path());
     let leaf = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"末层"}],"steps":[{"key":"capture","name":"封存","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture-v1"}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"末层"}],"steps":[{"key":"capture","name":"封存","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture-v1"}}]}),
     );
     let middle = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"中层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":leaf["id"]}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"中层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":leaf["id"]}}]}),
     );
     let root = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"根层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":middle["id"]}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"根层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":middle["id"]}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"暂停边界"})).unwrap();
     let run = command(
@@ -1476,7 +1573,7 @@ fn ancestor_pause_suspends_nested_dispatch_without_overriding_a_child_pause() {
     )
     .unwrap();
     for _ in 0..3 {
-        engine.evaluate_workflows().unwrap();
+        control_fixture::evaluate(&engine).unwrap();
     }
     let intent = engine.pending_workflow_intents().unwrap().remove(0);
     let prepared: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
@@ -1586,7 +1683,7 @@ fn task_creation_keeps_business_metadata_and_dependent_worktrees_use_the_latest_
         .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"任务创建"}],"steps":[{"key":"tasks","name":"建立任务","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create-v1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"第一项","instructions":"初始工作","dependencies":[],"business_metadata":{"category":"investigation"}},{"key":"second","title":"后继项","instructions":"使用前项结果","dependencies":["first"]}]}}},"outputs":{"tasks":{"delivery_ref":"builtin-delivery-object-v1"}}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"任务创建"}],"steps":[{"key":"tasks","name":"建立任务","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create-v1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"第一项","instructions":"初始工作","dependencies":[],"business_metadata":{"category":"investigation"}},{"key":"second","title":"后继项","instructions":"使用前项结果","dependencies":["first"]}]}}},"outputs":{"tasks":{"delivery_ref":"builtin-delivery-object-v1"}}}]}),
     );
     let run = engine
         .execute(
@@ -1683,7 +1780,7 @@ fn canonical_output_contract_describes_text_values_dynamic_checks_and_conditiona
     .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"自定义评估"}],"steps":[{"key":"evaluate","name":"评估","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"输出正文与内容判断。","spec_refs":[spec["id"]],"outputs":{"document":{"delivery_ref":text["id"]},"review":{"delivery_ref":report["id"],"content_checks":true}}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"自定义评估"}],"steps":[{"key":"evaluate","name":"评估","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"输出正文与内容判断。","spec_refs":[spec["id"]],"outputs":{"document":{"delivery_ref":text["id"]},"review":{"delivery_ref":report["id"],"content_checks":true}}}]}),
     );
     let preview = engine
         .query(
@@ -1726,16 +1823,16 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
     let (role, agent) = research_agent(&engine);
     let child = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"study","name":"调查","stage":"work","executor":{"type":"agent","role_ref":role["definition_id"]},"task_instructions":"处理当前任务","outputs":{"risks":{"delivery_ref":"builtin-delivery-object-v1"}}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"study","name":"调查","stage":"work","executor":{"type":"agent","role_ref":role["definition_id"]},"task_instructions":"处理当前任务","outputs":{"risks":{"delivery_ref":"builtin-delivery-object-v1"}}}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"work","name":"父工作"}],"steps":[{"key":"child","name":"子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+        json!({"schema_version":5,"stages":[{"key":"work","name":"父工作"}],"steps":[{"key":"child","name":"子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"派发恢复"})).unwrap();
     let run=command(&engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":parent["id"],"role_agent_bindings":{role["definition_id"].as_str().unwrap():agent["id"]}})).unwrap();
     for _ in 0..6 {
-        engine.evaluate_workflows().unwrap();
+        control_fixture::evaluate(&engine).unwrap();
         for intent in engine.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut cmd: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
@@ -1748,8 +1845,8 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
             engine.observe_workflow_intent(&intent.id, &result).unwrap();
         }
     }
-    engine.evaluate_workflows().unwrap();
-    engine.evaluate_workflows().unwrap();
+    control_fixture::evaluate(&engine).unwrap();
+    control_fixture::evaluate(&engine).unwrap();
     let state = engine.store.snapshot().unwrap();
     let child = state
         .governance
@@ -1886,7 +1983,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
     );
     let mut checked = false;
     for _ in 0..16 {
-        engine.evaluate_workflows().unwrap();
+        control_fixture::evaluate(&engine).unwrap();
         for intent in engine.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut invocation: Command =
@@ -2067,7 +2164,7 @@ fn configured_task_completion_works_without_git_and_releases_declared_dependenci
         .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"research","name":"材料调查"}],"steps":[
+        json!({"schema_version":5,"stages":[{"key":"research","name":"材料调查"}],"steps":[
             {"key":"create","name":"创建明确任务","stage":"research","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create-v1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"整理材料","dependencies":[]},{"key":"second","title":"核对材料","dependencies":["first"]}]}}},"outputs":{"result":{"delivery_ref":"builtin-delivery-object-v1"}}},
             {"key":"first","name":"接纳第一项","stage":"research","dependencies":["create"],"executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete-v1","arguments":{"task_id":{"type":"source","source":{"step":"create","port":"result","pointer":"/tasks/0/id"}}}}},
             {"key":"second","name":"接纳后继项","stage":"research","dependencies":["first"],"executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete-v1","arguments":{"task_id":{"type":"source","source":{"step":"create","port":"result","pointer":"/tasks/1/id"}}}}}
@@ -2149,7 +2246,7 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
         .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":4,"stages":[{"key":"research","name":"调查","default_role_ref":role["definition_id"]}],"steps":[
+        json!({"schema_version":5,"stages":[{"key":"research","name":"调查","default_role_ref":role["definition_id"]}],"steps":[
             {"key":"first","name":"第一项","stage":"research","executor":{"type":"agent"},"task_instructions":"分析第一项材料"},
             {"key":"gate","name":"继续独立调查","stage":"research","executor":{"type":"control"},"confirmation":"human"},
             {"key":"second","name":"第二项","stage":"research","dependencies":["gate"],"executor":{"type":"agent"},"task_instructions":"分析第二项材料"}
@@ -2158,7 +2255,7 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     let run = command(&engine, "workflow.start", Some(&task), json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["definition_id"].as_str().unwrap():agent["id"]}})).unwrap();
     // Prepare the first Turn without dispatching it. It remains an actual active queued Turn.
     for _ in 0..2 {
-        engine.evaluate_workflows().unwrap();
+        control_fixture::evaluate(&engine).unwrap();
         for intent in engine.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut request: Command =
@@ -2180,7 +2277,7 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
         json!({"step":"gate","input_digest":gate["input_digest"],"outputs":gate["outputs"]}),
     )
     .unwrap();
-    engine.evaluate_workflows().unwrap();
+    control_fixture::evaluate(&engine).unwrap();
     let intents = engine.pending_workflow_intents().unwrap();
     assert_eq!(intents.len(), 1);
     let intent = &intents[0];
@@ -2201,4 +2298,100 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
     );
     assert!(state.turns.iter().any(|turn| turn.status.active()));
     assert_ne!(state.sessions[0].runtime_binding, None);
+}
+
+#[test]
+fn changing_a_running_task_waits_for_stop_and_never_reuses_the_old_contract() {
+    use std::sync::atomic::Ordering;
+    let directory = tempfile::tempdir().unwrap();
+    let mut engine = engine(directory.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    recorder.hold.store(true, Ordering::SeqCst);
+    engine.harness = recorder.clone();
+    let (role, agent) = research_agent(&engine);
+    let run = launch(
+        &engine,
+        &role,
+        &agent,
+        json!({"task_instructions":"原任务只调查原材料。","outputs":{"risks":{"delivery_ref":"builtin-delivery-object-v1"}}}),
+    );
+    drive(&engine, 3);
+    let before = instance(&engine, &run["id"]);
+    assert_eq!(before["steps"][0]["status"], "running");
+    let old = before["steps"][0].clone();
+    assert!(old["turn_id"].is_string());
+    let mut step = before["plan"]["document"]["steps"][0].clone();
+    step["task_instructions"] = json!("新任务调查更新后的材料，不复用原调查。");
+    let changes = json!({"plan_revision_id":before["active_plan_revision_id"],"reason":"用户修改进行中的调查范围","operations":[{"type":"upsert_step","step":step}]});
+    let preview = engine
+        .query(
+            "workflow.change.preview",
+            &json!({"id":run["id"],"changeset":changes}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(preview["must_stop"].as_array().unwrap().len(), 1);
+    let applied=command(&engine,"workflow.change.apply",run["id"].as_str(),json!({"plan_revision_id":before["active_plan_revision_id"],"changeset":changes,"preview_hash":preview["preview_hash"]})).unwrap();
+    assert_eq!(applied["status"], "waiting_quiescence");
+    assert_eq!(
+        instance(&engine, &run["id"])["active_plan_revision_id"],
+        before["active_plan_revision_id"]
+    );
+    drop(engine);
+    let mut engine = self::engine(directory.path());
+    engine.harness = recorder.clone();
+    engine.tick_conversations(4).unwrap();
+    engine.drive_workflow_changes().unwrap();
+    let after = instance(&engine, &run["id"]);
+    assert_ne!(
+        after["active_plan_revision_id"],
+        before["active_plan_revision_id"]
+    );
+    assert_ne!(after["steps"][0]["id"], old["id"]);
+    assert_eq!(after["steps"][0]["outputs"], json!({}));
+    let state = engine.store.snapshot().unwrap();
+    assert!(
+        state
+            .executions
+            .iter()
+            .filter(|e| e.session_id == old["session_id"])
+            .all(|e| e.writer_revoked)
+    );
+    assert!(
+        state
+            .governance
+            .iter()
+            .any(|r| r.kind == "workflow_execution_history"
+                && r.definition_id == old["id"]
+                && r.data["contract_digest"] == old["contract_digest"])
+    );
+    let history = engine
+        .query("query.workflow_instance", &json!({"id":run["id"]}), 4)
+        .unwrap();
+    assert_eq!(
+        history["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == "workflow_execution_history" && r["data"]["id"] == old["id"])
+            .unwrap()["frozen_step"]["task_instructions"],
+        "原任务只调查原材料。"
+    );
+    recorder.hold.store(false, Ordering::SeqCst);
+    drive(&engine, 6);
+    let final_state = instance(&engine, &run["id"]);
+    assert_eq!(final_state["status"], "completed");
+    assert_ne!(final_state["steps"][0]["session_id"], old["session_id"]);
+    assert_ne!(
+        final_state["steps"][0]["contract_digest"],
+        old["contract_digest"]
+    );
+    assert!(
+        recorder
+            .pending
+            .lock()
+            .unwrap()
+            .contains_key(old["session_id"].as_str().unwrap()),
+        "late old messages stay associated with the retired worker"
+    );
 }

@@ -573,35 +573,43 @@ impl RuntimeWorkers {
                         .and_then(|a| a.integration_lock.as_ref())
                         .is_some()
                     {
-                        let discovered = wire
-                            .request("skills/list", json!({"cwds":["/work"],"forceReload":true}))?;
-                        let entries = discovered["data"].as_array().ok_or_else(|| {
-                            err("skill_contract", "固定 Codex 未返回可核验的原生 Skill 目录")
-                        })?;
-                        for skill in entries
-                            .iter()
-                            .flat_map(|entry| entry["skills"].as_array().into_iter().flatten())
-                            .filter(|skill| skill["enabled"] == true)
-                        {
-                            let path = skill["path"]
-                                .as_str()
-                                .ok_or_else(|| err("skill_contract", "原生 Skill 缺少确切路径"))?;
-                            wire.request(
-                                "skills/config/write",
-                                json!({"path":path,"enabled":false}),
+                        // Native discovery can reveal another batch after disabling a batch.
+                        // Keep the boundary explicit and bounded before admitting any model turn.
+                        let mut disabled = false;
+                        let mut previous = std::collections::BTreeSet::new();
+                        for _ in 0..32 {
+                            let discovered = wire.request(
+                                "skills/list",
+                                json!({"cwds":["/work"],"forceReload":true}),
                             )?;
-                        }
-                        let reloaded = wire
-                            .request("skills/list", json!({"cwds":["/work"],"forceReload":true}))?;
-                        require(
-                            !reloaded["data"]
-                                .as_array()
-                                .into_iter()
-                                .flatten()
+                            let entries = discovered["data"].as_array().ok_or_else(|| {
+                                err("skill_contract", "固定 Codex 未返回可核验的原生 Skill 目录")
+                            })?;
+                            let paths = entries
+                                .iter()
                                 .flat_map(|entry| entry["skills"].as_array().into_iter().flatten())
-                                .any(|skill| skill["enabled"] == true),
-                            "无法关闭未选择的原生 Skill 发现",
-                        )?;
+                                .filter(|skill| skill["enabled"] == true)
+                                .map(|skill| {
+                                    skill["path"].as_str().map(str::to_owned).ok_or_else(|| {
+                                        err("skill_contract", "原生 Skill 缺少确切路径")
+                                    })
+                                })
+                                .collect::<Result<std::collections::BTreeSet<_>>>()?;
+                            if paths.is_empty() {
+                                disabled = true;
+                                break;
+                            }
+                            require(paths != previous, "无法关闭未选择的原生 Skill 发现")?;
+                            require(paths.len() <= 512, "原生 Skill 发现超出边界预算")?;
+                            for path in &paths {
+                                wire.request(
+                                    "skills/config/write",
+                                    json!({"path":path,"enabled":false}),
+                                )?;
+                            }
+                            previous = paths;
+                        }
+                        require(disabled, "原生 Skill 发现未在预算内静止")?;
                     }
                     let mut args = json!({"cwd":"/work","model":binding.model,"approvalPolicy":{"granular":{"sandbox_approval":false,"request_permissions":false,"mcp_elicitations":false,"rules":true,"skill_approval":false}},"developerInstructions":instructions});
                     if let Some(p) = &binding.permissions {
@@ -631,7 +639,14 @@ impl RuntimeWorkers {
                     } else {
                         "thread/start"
                     };
-                    let result = wire.request(method, args)?;
+                    let result = if method == "thread/resume" {
+                        // Restoring a controller's native tool history can exceed
+                        // the short metadata RPC budget. Input is still sent only
+                        // after this bounded restore has actually succeeded.
+                        wire.request_for(method, args, std::time::Duration::from_secs(60))?
+                    } else {
+                        wire.request(method, args)?
+                    };
                     string(&result["thread"], "id")
                 }
                 HarnessProvider::Dsh => {

@@ -12,7 +12,8 @@
       "role": "builtin-role-project-manager",
       "skill_revisions": [
         "builtin-skill-engineering-context-v2",
-        "builtin-skill-project-planning-v2"
+        "builtin-skill-project-planning-v2",
+        "builtin-skill-workflow-orchestration-v1"
       ],
       "tool_policy": "read_only"
     }
@@ -32,6 +33,10 @@
     "/agent_profile/role": {
       "template_ref": "governance.builtin-role-project-manager-v1",
       "target": "identity"
+    },
+    "/agent_profile/skill_revisions/2": {
+      "template_ref": "governance.builtin-skill-workflow-orchestration-v1",
+      "target": "revision"
     }
   },
   "initial_only": false

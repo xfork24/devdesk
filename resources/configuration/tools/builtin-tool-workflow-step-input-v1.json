@@ -1,0 +1,67 @@
+{
+  "template_key": "governance.builtin-tool-workflow-step-input-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-step-input-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-step-input",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "补充等待中的输入",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.step.input",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          },
+          "input": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_revision_id",
+          "step",
+          "input"
+        ],
+        "additionalProperties": false,
+        "description": "Continue a waiting_input step within its turn budget; task instructions remain frozen."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

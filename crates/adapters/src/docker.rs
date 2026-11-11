@@ -62,6 +62,83 @@ pub struct ContainerReceipt {
     pub status: String,
     pub exit_code: i64,
     pub specification_digest: String,
+    #[serde(default)]
+    pub started_at: Option<u64>,
+    #[serde(default)]
+    pub finished_at: Option<u64>,
+}
+
+fn container_timestamp(value: &Value) -> Result<Option<u64>> {
+    let Some(raw) = value.as_str().filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let parsed = chrono::DateTime::parse_from_rfc3339(raw).map_err(storage)?;
+    // Docker uses year 0001 for containers which have not started or finished.
+    Ok(u64::try_from(parsed.timestamp_millis()).ok())
+}
+
+impl ContainerReceipt {
+    pub fn runtime_millis(&self, now: u64) -> Result<u64> {
+        let started = self
+            .started_at
+            .ok_or_else(|| err("needs_reconciliation", "容器缺少实际开始时间"))?;
+        let end = if self.running {
+            now
+        } else {
+            self.finished_at
+                .ok_or_else(|| err("needs_reconciliation", "容器缺少实际结束时间"))?
+        };
+        end.checked_sub(started)
+            .ok_or_else(|| err("needs_reconciliation", "容器执行时钟顺序无效"))
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    #[test]
+    fn delayed_observation_keeps_actual_runtime_and_exposes_real_overruns() {
+        let mut receipt = ContainerReceipt {
+            name: "fixture".into(),
+            id: "fixture".into(),
+            image: "fixture".into(),
+            running: false,
+            status: "exited".into(),
+            exit_code: 0,
+            specification_digest: "fixture".into(),
+            started_at: Some(1_000),
+            finished_at: Some(1_212),
+        };
+        assert_eq!(receipt.runtime_millis(120_000).unwrap(), 212);
+        receipt.finished_at = Some(62_000);
+        assert!(receipt.runtime_millis(120_000).unwrap() > 60_000);
+        receipt.running = true;
+        assert_eq!(receipt.runtime_millis(61_001).unwrap(), 60_001);
+        receipt.started_at = None;
+        assert!(receipt.runtime_millis(120_000).is_err());
+        receipt.running = false;
+        receipt.started_at = Some(2_000);
+        receipt.finished_at = Some(1_000);
+        assert!(receipt.runtime_millis(120_000).is_err());
+    }
+
+    #[test]
+    fn docker_nanosecond_clocks_preserve_execution_time_and_unset_values() {
+        let start = container_timestamp(&json!("2026-11-11T00:02:02.615626166Z"))
+            .unwrap()
+            .unwrap();
+        let end = container_timestamp(&json!("2026-11-11T00:02:02.827730541Z"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(end - start, 212);
+        assert_eq!(
+            container_timestamp(&json!("0001-01-01T00:00:00Z")).unwrap(),
+            None
+        );
+        assert_eq!(container_timestamp(&Value::Null).unwrap(), None);
+        assert!(container_timestamp(&json!("not a timestamp")).is_err());
+    }
 }
 
 pub struct DockerSandbox {
@@ -253,6 +330,8 @@ impl DockerSandbox {
                 status: row["State"]["Status"].as_str().unwrap_or("unknown").into(),
                 exit_code: row["State"]["ExitCode"].as_i64().unwrap_or(-1),
                 specification_digest: digest.into(),
+                started_at: container_timestamp(&row["State"]["StartedAt"])?,
+                finished_at: container_timestamp(&row["State"]["FinishedAt"])?,
             },
             row.clone(),
         )))
@@ -726,16 +805,26 @@ impl DockerSandbox {
         Ok(command)
     }
     pub fn logs(&self, operation: &str) -> Result<String> {
+        Ok(self.logs_split(operation)?.0)
+    }
+    pub fn logs_split(&self, operation: &str) -> Result<(String, String)> {
         let receipt = self
             .inspect(operation)?
             .ok_or_else(|| err("needs_reconciliation", "测试容器已丢失"))?;
         require(!receipt.running, "日志仅在执行静止后导出")?;
-        let output = self.call(vec!["logs".into(), receipt.name])?;
+        let output = crate::process::capture_split(
+            "docker",
+            &["logs".into(), receipt.name],
+            Duration::from_secs(30),
+        )?;
         require(
             output.code == 0 && !output.truncated,
             "容器日志不可完整导出",
         )?;
-        String::from_utf8(output.stdout).map_err(storage)
+        Ok((
+            String::from_utf8(output.stdout).map_err(storage)?,
+            String::from_utf8(output.stderr).map_err(storage)?,
+        ))
     }
     pub fn start(&self, operation_id: &str) -> Result<ContainerReceipt> {
         let name = Self::name(operation_id)?;

@@ -1,0 +1,463 @@
+{
+  "template_key": "governance.builtin-tool-workflow-change-apply-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-change-apply-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-change-apply",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "应用已预演的变更",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.change.apply",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          },
+          "changeset": {
+            "type": "object",
+            "properties": {
+              "plan_revision_id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "operations": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 128,
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "replace_plan"
+                        },
+                        "document": {
+                          "type": "object",
+                          "description": "Use the current WorkflowDefinition from workflow.inspect; core compiles the full contract."
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "document"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "upsert_step"
+                        },
+                        "step": {
+                          "type": "object",
+                          "description": "Use the current StepDefinition from workflow.inspect; core compiles the full contract."
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "step"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "remove_step"
+                        },
+                        "node_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "node_id"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "upsert_stage"
+                        },
+                        "stage": {
+                          "type": "object",
+                          "description": "Use the current StageDefinition from workflow.inspect; core compiles the full contract."
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "stage"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "bypass_stage"
+                        },
+                        "stage": {
+                          "type": "string"
+                        },
+                        "substitutions": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "source"
+                                  },
+                                  "source": {
+                                    "type": "object",
+                                    "properties": {
+                                      "step": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "port": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "pointer": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "step",
+                                      "port"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "source"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "constant"
+                                  },
+                                  "value": {}
+                                },
+                                "required": [
+                                  "type",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "const": "material"
+                                  },
+                                  "material_ref": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "material_ref"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "stage"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "bind_input"
+                        },
+                        "node_id": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        },
+                        "binding": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "const": "source"
+                                },
+                                "source": {
+                                  "type": "object",
+                                  "properties": {
+                                    "step": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "port": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "pointer": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "step",
+                                    "port"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "source"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "const": "constant"
+                                },
+                                "value": {}
+                              },
+                              "required": [
+                                "type",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "const": "material"
+                                },
+                                "material_ref": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "material_ref"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "node_id",
+                        "input",
+                        "binding"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "set_bindings"
+                        },
+                        "bindings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "bindings"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "set_inputs"
+                        },
+                        "inputs": {
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "inputs"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "waive"
+                        },
+                        "node_id": {
+                          "type": "string"
+                        },
+                        "requirement": {
+                          "enum": [
+                            "completion",
+                            "confirmation",
+                            "tests",
+                            "independence",
+                            "coverage"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "node_id",
+                        "requirement"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "revise_task_scope"
+                        },
+                        "task_id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "type": "object",
+                          "properties": {
+                            "input_refs": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "acceptance": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "input_refs",
+                            "acceptance"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "task_id",
+                        "title",
+                        "scope"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "const": "revise_task_dependencies"
+                        },
+                        "task_id": {
+                          "type": "string"
+                        },
+                        "dependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "task_id",
+                        "dependencies"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "plan_revision_id",
+              "reason",
+              "operations"
+            ],
+            "additionalProperties": false
+          },
+          "preview_hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_revision_id",
+          "changeset",
+          "preview_hash"
+        ],
+        "additionalProperties": false,
+        "description": "Reuse the exact previewed changeset and preview_hash. Returns a durable change ID; waiting_quiescence means stop and wait before the new plan activates."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

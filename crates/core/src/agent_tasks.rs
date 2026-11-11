@@ -34,6 +34,46 @@ impl Engine {
         next: &str,
     ) -> Result<()> {
         let Some(source) = session_binding(state, previous).cloned() else {
+            if let Some(source) = crate::controllers::binding(state, previous).cloned() {
+                let row = state
+                    .configuration(source.data["controller_id"].as_str().unwrap_or(""))?
+                    .clone();
+                let mut controller: WorkflowController = row.decode()?;
+                require(
+                    controller.session_id.as_deref() == Some(previous),
+                    "编排后继来源已失效",
+                )?;
+                controller.session_id = Some(next.into());
+                controller.epoch += 1;
+                let mut data = source.data;
+                data["epoch"] = json!(controller.epoch);
+                state.governance.push(record(
+                    "controller_session",
+                    next.into(),
+                    source.scope,
+                    source.name,
+                    1,
+                    None,
+                    data,
+                    true,
+                ));
+                if let Some(lease) = state
+                    .orchestration_leases
+                    .iter_mut()
+                    .find(|l| l.controller_id == row.id)
+                {
+                    lease.epoch = controller.epoch;
+                    lease.expires_at = now() + controller.policy.timeout_seconds * 1000;
+                }
+                update_record(
+                    state
+                        .governance
+                        .iter_mut()
+                        .find(|r| r.id == row.id)
+                        .unwrap(),
+                    json!(controller),
+                );
+            }
             return Ok(());
         };
         let row = state

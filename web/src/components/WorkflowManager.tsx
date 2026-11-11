@@ -26,7 +26,7 @@ type Props = {
   refresh: () => Promise<unknown>;
 };
 const emptyDocument = () => ({
-  schema_version: 4,
+  schema_version: 5,
   stages: [
     { key: "work", name: "工作", description: "", default_role_ref: null },
   ],
@@ -85,7 +85,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   const [authoring, setAuthoring] = useState<Row>();
   const [importText, setImportText] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:v4:workflow:${project?.id || "global"}`,
+    `devdesk:v5:workflow:${project?.id || "global"}`,
     () => ({
       selected: "",
       revision: 1,
@@ -137,7 +137,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     (row: Row) => {
       const document =
         row.kind === "workflow_draft" ? row.data.document : row.data;
-      if (document.schema_version !== 4) {
+      if (document.schema_version !== 5) {
         setError("此流程使用过时的开发合同，请重建配置。");
         return;
       }
@@ -178,7 +178,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     ? document.steps.find((step: Row) => step.key === draft.node.slice(5))
     : undefined;
   const workflows = rows.filter(
-    (row) => row.kind === "workflow" && row.data.schema_version === 4,
+    (row) => row.kind === "workflow" && row.data.schema_version === 5,
   );
   const update = (patch: Row) => {
     setValidation(undefined);
@@ -331,7 +331,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     (row) =>
       (row.kind === "workflow_draft"
         ? row.data.document?.schema_version
-        : row.data.schema_version) === 4,
+        : row.data.schema_version) === 5,
   );
   return (
     <section
@@ -434,11 +434,11 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     const value = JSON.parse(importText);
                     const imported = value.document || value;
                     if (
-                      imported.schema_version !== 4 ||
+                      imported.schema_version !== 5 ||
                       !Array.isArray(imported.steps) ||
                       !Array.isArray(imported.stages)
                     )
-                      throw new Error("请选择 Workflow v4 的完整定义。");
+                      throw new Error("请选择 Workflow v5 的完整定义。");
                     setDraft((current) => ({
                       ...current,
                       selected: "",

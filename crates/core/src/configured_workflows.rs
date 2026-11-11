@@ -73,7 +73,8 @@ impl Engine {
             require(!stack.contains(&workflow.id), "子流程引用存在环")?;
             require(stack.len() < WORKFLOW_DEPTH_LIMIT, "子流程深度超过 8")?;
             stack.push(workflow.id.clone());
-            let doc: WorkflowDefinition = workflow.decode()?;
+            let mut doc: WorkflowDefinition = workflow.decode()?;
+            doc.assign_node_ids(&workflow.definition_id);
             doc.validate()?;
             *count += doc.steps.len();
             require(*count <= WORKFLOW_STEP_LIMIT, "展开流程超过 1000 个步骤")?;
@@ -505,9 +506,9 @@ impl Engine {
             state.governance.push(row);
             return Ok(Some(result));
         }
-        let is_current = document.is_some_and(|doc| doc["schema_version"] == 4)
+        let is_current = document.is_some_and(|doc| doc["schema_version"] == 5)
             || selected.as_ref().is_some_and(|r| {
-                r.data["schema_version"] == 4 || r.data["document"]["schema_version"] == 4
+                r.data["schema_version"] == 5 || r.data["document"]["schema_version"] == 5
             });
         if !is_current {
             return Ok(None);
@@ -531,6 +532,33 @@ impl Engine {
                 let bindings: BTreeMap<Id, Id> =
                     serde_json::from_value(p["role_agent_bindings"].clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?;
+                if let Some(role_ref) = p["orchestrator_role_ref"].as_str() {
+                    let role = crate::configuration::role_record(state, role_ref)?;
+                    let agent = bindings
+                        .get(&role.definition_id)
+                        .ok_or_else(|| err("configuration_required", "编排 Role 未绑定 Agent"))?;
+                    let composition: AgentComposition =
+                        reference(state, agent, "agent", &scope)?.decode()?;
+                    require(composition.role == role.definition_id, "编排身份不匹配")?;
+                    require(
+                        state.configuration(&composition.harness_ref)?.data["provider"] == "codex",
+                        "此 Harness 尚不支持编排原生工具桥",
+                    )?;
+                    let policy: WorkflowControlPolicy =
+                        serde_json::from_value(p["control_policy"].clone())
+                            .map_err(|e| err("configuration_required", e.to_string()))?;
+                    policy.validate()?;
+                    require(
+                        composition.tools.iter().any(|id| {
+                            state.configuration(id).is_ok_and(|r| {
+                                r.data["qualified_name"]
+                                    .as_str()
+                                    .is_some_and(|n| crate::controllers::CONTROL_TOOLS.contains(&n))
+                            })
+                        }),
+                        "编排能力缺少控制工具",
+                    )?;
+                }
                 let plan =
                     self.compile_configured_workflow(state, &workflow, &scope, Some(&bindings))?;
                 let baseline = if let Some(id) = p["standard_ref"].as_str() {
@@ -552,7 +580,7 @@ impl Engine {
                     old.as_ref().map_or(1, |r| r.version + 1),
                     old.map(|r| r.id),
                     json!({"schema_version":3,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":p["standard_ref"],
-                    "specification_snapshot":plan.specification_snapshot,"baseline_check":baseline}),
+                    "specification_snapshot":plan.specification_snapshot,"baseline_check":baseline,"orchestrator_role_ref":p["orchestrator_role_ref"],"control_policy":p["control_policy"]}),
                     true,
                 );
                 let result = json!(row);
@@ -584,7 +612,7 @@ impl Engine {
                     .ok_or_else(|| err("invalid_params", "缺少流程正文"))?;
                 let definition: WorkflowDefinition = serde_json::from_value(doc.clone())
                     .map_err(|e| err("invalid_workflow", e.to_string()))?;
-                require(definition.schema_version == 4, "草稿需要 Workflow v4")?;
+                require(definition.schema_version == 5, "草稿需要 Workflow v5")?;
                 let identity = if method == "workflow.draft.create" {
                     selected
                         .as_ref()
@@ -623,7 +651,7 @@ impl Engine {
                 let doc = document.cloned().unwrap_or(old.data["document"].clone());
                 let definition: WorkflowDefinition = serde_json::from_value(doc.clone())
                     .map_err(|e| err("invalid_workflow", e.to_string()))?;
-                require(definition.schema_version == 4, "草稿需要 Workflow v4")?;
+                require(definition.schema_version == 5, "草稿需要 Workflow v5")?;
                 let row = state
                     .governance
                     .iter_mut()
@@ -804,7 +832,7 @@ impl Engine {
         if row.kind == "workflow_draft" {
             row.data = row.data["document"].clone();
         }
-        if row.data["schema_version"] != 4 {
+        if row.data["schema_version"] != 5 {
             return None;
         }
         Some((|| {
@@ -870,6 +898,9 @@ impl Engine {
                 }
                 let step = step.clone();
                 let execution = StepExecution {
+                    plan_revision_id: String::new(),
+                    node_id: step.node_id.clone(),
+                    contract_digest: configuration_hash(&step),
                     id: "preview".into(),
                     workflow_instance_id: "preview".into(),
                     workflow_revision_id: row.id.clone(),
@@ -889,6 +920,9 @@ impl Engine {
                                 key.clone(),
                                 match binding {
                                     InputBinding::Constant { value } => value.clone(),
+                                    InputBinding::Material { material_ref } => {
+                                        json!({"unresolved_material":material_ref})
+                                    }
                                     InputBinding::Source { source } => {
                                         json!({"unresolved_source":source})
                                     }
@@ -906,7 +940,9 @@ impl Engine {
                     reason: String::new(),
                 };
                 let instance = ConfiguredWorkflowInstance {
-                    schema_version: 4,
+                    active_plan_revision_id: "preview".into(),
+                    control_version: 1,
+                    schema_version: 5,
                     owner_id: "preview".into(),
                     workflow_ref: row.id.clone(),
                     project_id: scope.project().unwrap_or("").into(),
@@ -935,7 +971,7 @@ impl Engine {
                     )
             });
             Ok(
-                json!({"valid":baseline.as_ref().is_none_or(|b|b["valid"]==true),"schema_version":4,"roles":plan.roles.values().collect::<Vec<_>>(),"specification_snapshot":plan.specification_snapshot,
+                json!({"valid":baseline.as_ref().is_none_or(|b|b["valid"]==true),"schema_version":5,"roles":plan.roles.values().collect::<Vec<_>>(),"specification_snapshot":plan.specification_snapshot,
                 "baseline_check":baseline,"document":plan.document,"definition_hashes":plan.definitions.iter().map(|(id,r)|(id,&r.content_hash)).collect::<BTreeMap<_,_>>()}),
             )
         })())

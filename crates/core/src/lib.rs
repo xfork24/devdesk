@@ -4,7 +4,11 @@ mod builtin_defaults;
 mod configuration;
 mod configured_runtime;
 mod configured_workflows;
+mod controllers;
+mod orchestration;
 mod platform_tools;
+pub use controllers::CONTROL_TOOLS;
+mod workflow_changes;
 pub use configured_runtime::{
     ConfiguredAgentRequest, ConfiguredToolRequest, ConfiguredWorkflowInstance,
 };
@@ -460,6 +464,9 @@ impl Engine {
         Ok(result)
     }
     fn apply_command(&self, method: &str, c: &Command, s: &mut EngineeringState) -> Result<Value> {
+        if let Some(result) = self.orchestration_command(method, c, s)? {
+            return Ok(result);
+        }
         if let Some(result) = self.configured_runtime_command(method, c, s)? {
             return Ok(result);
         }
@@ -469,7 +476,9 @@ impl Engine {
 
         if let Some(target) = &c.target {
             if let Some(actual) = revision(s, target) {
-                if c.expected_revision != Some(actual) {
+                if c.expected_revision != Some(actual)
+                    && !(method == "conversation.send" && crate::controllers::authorized_send(s, c))
+                {
                     return Err(err(
                         "revision_conflict",
                         format!("当前 revision={actual}，请刷新后重试"),
@@ -686,13 +695,43 @@ impl Engine {
         Ok(result)
     }
     pub fn tick(&self, global_limit: usize) -> Result<()> {
+        self.drive_controllers()?;
         self.drive_tool_calls()?;
         self.drive_platform_tools()?;
         self.tick_repositories()?;
         self.tick_conversations(global_limit)?;
-        self.evaluate_configured_workflows()
+        self.evaluate_configured_workflows()?;
+        self.drive_workflow_changes()?;
+        self.drive_workflow_segments()?;
+        self.drive_controllers()
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if method == "query.orchestration" {
+            let s = self.store.snapshot()?;
+            let row = s.governance.iter().rev().find(|r| {
+                r.kind == "workflow_controller"
+                    && (p["id"].as_str() == Some(r.id.as_str())
+                        || p["root_instance_id"]
+                            .as_str()
+                            .is_some_and(|id| r.data["root_instance_id"] == id)
+                        || p["owner_id"]
+                            .as_str()
+                            .is_some_and(|id| r.data["owner_id"] == id))
+            });
+            if let Some(row) = row {
+                if let Some(project) = p["project_id"].as_str() {
+                    require(row.scope.project() == Some(project), "编排控制器跨项目")?;
+                }
+                let sid = row.data["session_id"].as_str();
+                return Ok(
+                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.kind=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"decisions":s.governance.iter().filter(|r|r.kind=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|instance| instance.data["root_instance_id"]==row.data["root_instance_id"])).rev().take(20).collect::<Vec<_>>() }),
+                );
+            }
+            return Ok(json!({"record":null,"messages":[],"calls":[],"decisions":[]}));
+        }
+        if let Some(result) = self.workflow_control_query(method, p) {
+            return result;
+        }
         if let Some(result) = self.configured_runtime_query(method, p) {
             return result;
         }

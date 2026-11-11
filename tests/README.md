@@ -5,14 +5,14 @@
 | 位置 | 验证内容 |
 |---|---|
 | `crates/*/src/` | 领域规则、协议解析、权限落实、进程/凭据边界、Host 装配及项目隔离。 |
-| `crates/adapters/tests/configured_workflows.rs` | 自由 Role、Workflow v4 发布和重载、确切任务派发、动态 Spec、结构化产物、人工确认、补充输入、重试、返工、子流程集合、取消、祖先暂停、平台调用防伪及真实 Git 工作空间/候选。 |
+| `crates/adapters/tests/configured_workflows.rs` | 自由 Role、Workflow v5 发布和重载、确切任务派发、动态 Spec、结构化产物、人工确认、补充输入、重试、返工、子流程集合、取消、祖先暂停、平台调用防伪及真实 Git 工作空间/候选。 |
 | `crates/adapters/tests/conversations.rs` | 原生轮次、消费及停止证明、不可变绑定、未知结果不重发、通用材料提案与输入引用。 |
 | `crates/adapters/tests/schema_contracts.rs` | 离线编译全部 Schema / `$defs`，检查当前配置、Serde、实际冻结计划及 StepExecution。 |
 | 其他 `crates/adapters/tests/` | SQLite、Artifact、配置修订、Git、运行安装、Tool/Skill、权限及 Docker 资源边界。 |
 | `web/tests/` | 浏览器编辑/保存/发布/重载、任务上下文、输入输出引用、阶段与真实子流程、确认规则、配置导航、权限、接入和历史。 |
 | `tests/entrypoints/` | 真实 Host 的 HTTP、安全、SQLite 分库、幂等、模板重置、延迟环境准备、退出与重启。 |
 | `tests/fixtures/` / `tests/support/` | 协议样本、固定数据和只编译进测试的接口替身。业务示例不是产品限制。 |
-| `tests/reporters/node-reporter.mjs` | 随产品嵌入的 Node 测试报告器，返回实际断言和环境错误分类。 |
+| `tests/reporters/node-reporter.mjs` | 随产品嵌入的 Node 测试报告器，返回真实分类、错误消息/堆栈/原因链及隔离测试的 stdout/stderr；测试输出始终作为数据封装，不能伪造顶层分类。 |
 
 ## 默认检查
 
@@ -54,10 +54,22 @@ python3 tests/live/probe_configured_workflow.py --binary target/debug/devdesk-ho
 python3 tests/live/probe_default_engineering_workflow.py --binary target/debug/devdesk-host --codex-auth-source /专用/auth.json --github-repo owner/dedicated-test-repo
 ```
 
-两者都可用 `--report-directory` 指定临时证据目录。运行程序先复制二进制，避免同时构建影响正在执行的程序。不要把登录文件或证据写入源码目录。
+两者都可用 `--report-directory` 指定临时证据目录。完整工程推荐使用 `target/release/devdesk-host`；通过同一证据目录的 `--resume` 可接管原根实例，先核对中断执行，再以新执行身份重试，保留已接纳成果。工程探针默认最多等待三小时，可用 `--timeout-seconds` 调整验收入口的等待时限，不改变工作流本身的预算或门禁。运行程序先复制二进制，避免同时构建影响正在执行的程序。不要把登录文件或证据写入源码目录。
+
+工程结束后可运行 `python3 tests/live/verify_engineering_evidence.py /临时证据目录`，不调用模型地复核完整状态、无绕过/豁免、精确人工确认、实际测试回执、原始文件/Git blob 以及两个 PR 的确切发布版本。
 
 `probe_permission_package.py` 检查解包发布程序的权限资产、配置发布、当前任务预览、数据库结构及独立运行，不调用模型。其他有效的 `tests/live/` 探针分别覆盖凭据、供应商协议、安装、经验和外部接入，使用前阅读其参数和外部依赖。
 
 macOS 凭据助手专项入口为 `tests/entrypoints/credential_helper_startup.py` 与 `credential_helper_runtime.py`；它们使用隔离签名探针，不读取或保存模型凭据，不替换共享助手。Linux Secret Service 与权限后端须在 Linux 实机单独验证。
 
 日志、JSON/JSONL、截图和临时脚本写入临时目录；计划目录只保留 Markdown 计划、合同和执行报告。
+
+Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和真实原生调用来源（Harness 端口夹具）。`tests/entrypoints/harness_upgrade.py` 验证旧库离线转换、锁、跨库检查点恢复、数据保留及新 Host 继续执行。
+
+`tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_default_engineering_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
+
+若保留了真正的 v4 程序，可补验完整出厂目录曾重置到第二代后的转换。此入口只读源二进制，所有新数据均写入隔离的证据目录：
+
+```bash
+python3 tests/live/probe_harness_upgrade_legacy.py --legacy-binary /旧版/devdesk-host --binary target/release/devdesk-host --report-directory /tmp/devdesk-upgrade-evidence
+```

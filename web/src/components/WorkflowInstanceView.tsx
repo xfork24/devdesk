@@ -1,3 +1,4 @@
+import { WorkflowController, WorkflowPlanChanges } from "./WorkflowController";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton, useActionFeedback } from "./ActionFeedback";
 import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
@@ -14,7 +15,8 @@ const stateLabels: Record<string, string> = {
   queued: "等待前置",
   running: "执行中",
   waiting_input: "等待输入",
-  waiting_confirmation: "等待确认",
+  waiting_confirmation: "等待人类确认",
+  awaiting_acceptance: "等待接纳",
   completed: "已完成",
   failed: "失败",
   cancelled: "已取消",
@@ -74,12 +76,20 @@ export function WorkflowInstanceView({
     setBusy(true);
     setError("");
     try {
+      const fresh = await request("query.workflow_instance", {
+        id: current.id,
+        project_id: projectId,
+      });
       await request(method, {
         project_id: projectId,
         command_id: crypto.randomUUID(),
         target: current.id,
-        expected_revision: current.revision,
-        payload,
+        expected_revision: fresh.record.revision,
+        payload: {
+          plan_revision_id: runtime.active_plan_revision_id,
+          control_version: fresh.runtime.control_version,
+          ...payload,
+        },
       });
       await load();
       await refresh();
@@ -136,6 +146,22 @@ export function WorkflowInstanceView({
               </ActionButton>
               <ActionButton
                 type="button"
+                disabled={
+                  busy ||
+                  !runtime.steps.every((s: Row) =>
+                    ["completed", "skipped"].includes(s.status),
+                  )
+                }
+                onClick={() =>
+                  void act("workflow.complete", {
+                    reason: "用户确认完成当前流程",
+                  })
+                }
+              >
+                完成流程
+              </ActionButton>
+              <ActionButton
+                type="button"
                 disabled={busy || runtime.cancel_requested}
                 onClick={() => void act("workflow.cancel")}
               >
@@ -145,6 +171,76 @@ export function WorkflowInstanceView({
           ) : null}
         </div>
       </div>
+      {!nested && (
+        <WorkflowController
+          request={request}
+          instance={current}
+          projectId={projectId}
+          refresh={async () => {
+            await load();
+            await refresh();
+          }}
+        />
+      )}
+      {!runtime.cancel_requested &&
+        !["completed", "cancelled"].includes(runtime.status) && (
+          <WorkflowPlanChanges
+            request={request}
+            instance={current}
+            projectId={projectId}
+            refresh={async () => {
+              await load();
+              await refresh();
+            }}
+          />
+        )}
+      {!!data?.history?.length && (
+        <details className="panel">
+          <summary>计划与执行历史</summary>
+          {data.history.map((r: Row) => (
+            <article key={r.id}>
+              <p>
+                {r.name} · {r.kind} · {r.id}
+              </p>
+              {r.kind === "workflow_plan_revision" && (
+                <p>来源计划：{r.data.parent_revision_id || "初始计划"}</p>
+              )}
+              {r.kind === "workflow_execution_history" && (
+                <details>
+                  <summary>
+                    {r.data.step} ·{" "}
+                    {stateLabels[r.data.status] || r.data.status} · 原合同{" "}
+                    {r.data.contract_digest}
+                  </summary>
+                  <MarkdownPreview
+                    text={
+                      r.frozen_step?.task_instructions ||
+                      `执行方式：${r.frozen_step?.executor?.type || "未知"}`
+                    }
+                  />
+                  <p>当时输入与交付引用</p>
+                  <pre>
+                    {JSON.stringify(
+                      { inputs: r.data.inputs, outputs: r.data.outputs },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                  {r.data.session_id && (
+                    <ActionButton
+                      onClick={() =>
+                        onDiscussion(r.data.session_id, runtime.owner_id)
+                      }
+                    >
+                      查看原会话与产物
+                    </ActionButton>
+                  )}
+                </details>
+              )}
+            </article>
+          ))}
+        </details>
+      )}
       {(plan?.stages || []).map((stage: Row) => {
         const definitions = plan.steps.filter(
           (step: Row) => step.stage === stage.key,
@@ -204,6 +300,39 @@ export function WorkflowInstanceView({
                       </ActionButton>
                       {execution.reason ? <p>{execution.reason}</p> : null}
                       <div className="actions">
+                        {execution.status === "queued" && (
+                          <ActionButton
+                            type="button"
+                            disabled={busy || runtime.paused}
+                            onClick={() =>
+                              void act("workflow.step.dispatch", {
+                                step: execution.step,
+                              })
+                            }
+                          >
+                            执行步骤
+                          </ActionButton>
+                        )}
+                        {[
+                          "awaiting_acceptance",
+                          "waiting_confirmation",
+                        ].includes(execution.status) && (
+                          <ActionButton
+                            type="button"
+                            disabled={busy}
+                            onClick={() =>
+                              void act("workflow.step.accept", {
+                                step: execution.step,
+                                execution_id: execution.id,
+                                input_digest: execution.input_digest,
+                                outputs: execution.outputs,
+                                reason: "用户核对并接纳结果",
+                              })
+                            }
+                          >
+                            接纳结果
+                          </ActionButton>
+                        )}
                         {execution.session_id ? (
                           <ActionButton
                             type="button"
@@ -235,6 +364,7 @@ export function WorkflowInstanceView({
                           "failed",
                           "cancelled",
                           "waiting_confirmation",
+                          "awaiting_acceptance",
                         ].includes(execution.status) ? (
                           <ActionButton
                             type="button"
@@ -285,7 +415,9 @@ export function WorkflowInstanceView({
                           </ActionButton>
                         </label>
                       ) : null}
-                      {execution.status === "waiting_confirmation" ? (
+                      {["waiting_confirmation", "awaiting_acceptance"].includes(
+                        execution.status,
+                      ) ? (
                         <div role="group" aria-label="步骤审批">
                           {unmet ? (
                             <p role="status">

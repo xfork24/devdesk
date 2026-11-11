@@ -250,10 +250,7 @@ impl EngineeringState {
                     "配置身份和 Scope 不可更改",
                 )?;
                 if old.immutable {
-                    require(
-                        serde_json::to_value(old).unwrap() == serde_json::to_value(r).unwrap(),
-                        "已发布配置和锁不可更改",
-                    )?;
+                    require(old == r, "已发布配置和锁不可更改")?;
                 }
                 if r.kind == "agent_instance" {
                     require(

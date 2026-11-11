@@ -9,6 +9,7 @@ pub type AgentRole = String;
 pub enum WorkType {
     Workflow,
     Discussion,
+    Orchestration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

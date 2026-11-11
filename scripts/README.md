@@ -13,6 +13,7 @@
 | `check/` | `doctor.sh` | 检查宿主环境、Docker、GitHub CLI 和所选权限后端 |
 | `release/` | `package.sh` | 先构建，再生成本机独立运行包与 SHA-256 文件 |
 | `release/` | `package-source.sh` | 打包当前工作区源码与文件清单，排除运行数据和构建产物 |
+| `upgrade/` | `harness-v5.py` | 停止 Host 后离线预演或转换 v4 数据；外部备份、跨库 journal 与中断续接，保留原始历史 |
 | `platform/macos/` | `setup-macos-signing.sh` | 准备或导入 DevDesk 本地稳定签名身份 |
 | `platform/macos/` | `install-macos-credential-helper.sh` | `--ensure` 校验并复用兼容助手供启动/构建使用；更新既有安装需显式 `--update` |
 | `platform/macos/` | `sign-macos.sh` | 对指定 Host 或助手二进制应用配置好的签名身份 |

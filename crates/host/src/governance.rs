@@ -132,8 +132,18 @@ impl Workspace {
                             steps.iter().any(|step| step["id"] == intent.definition_id)
                         })
                 })
-                .and_then(|r| r.data["owner_id"].as_str());
-            if owner.is_none() || owner.is_some_and(|owner| state.workflow_paused(owner)) {
+                .and_then(|r| r.data["owner_id"].as_str())
+                .or_else(|| {
+                    state
+                        .governance
+                        .iter()
+                        .find(|r| r.kind == "workflow_controller" && r.id == intent.definition_id)
+                        .and_then(|r| r.data["owner_id"].as_str())
+                });
+            if owner.is_none()
+                || (intent.data["controller"] != true
+                    && owner.is_some_and(|owner| state.workflow_paused(owner)))
+            {
                 continue;
             }
             if should_stop() {
@@ -254,7 +264,7 @@ impl Workspace {
         }) {
             r.id.clone()
         } else {
-            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen{Some(feature)}else{None}})})?["id"].as_str().unwrap().into()
+            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen && !command.payload["controller_id"].is_string(){Some(feature)}else{None},"frozen_controller_id":command.payload["controller_id"]})})?["id"].as_str().unwrap().into()
         };
         resolve_model_connection(&model, &harness)?;
         require(

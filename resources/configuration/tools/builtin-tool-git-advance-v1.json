@@ -31,8 +31,7 @@
         "additionalProperties": false,
         "required": [
           "workspace",
-          "candidate",
-          "test_receipt"
+          "candidate"
         ]
       },
       "output_schema": {

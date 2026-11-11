@@ -1,31 +1,61 @@
 {
-  "template_key": "governance.builtin-workflow-feature-sol-high-v4",
+  "template_key": "governance.builtin-workflow-feature-sol-high-v5",
   "storage": "governance",
   "record": {
-    "id": "builtin-workflow-feature-sol-high-v4",
+    "id": "builtin-workflow-feature-sol-high-v5",
     "kind": "workflow",
     "definition_id": "builtin-workflow-feature-sol-high",
     "scope": {
       "kind": "global"
     },
     "name": "默认 Feature 开发流程",
-    "version": 4,
+    "version": 5,
     "supersedes": null,
     "content_hash": "",
     "data": {
-      "schema_version": 4,
+      "schema_version": 5,
       "stages": [
         {
-          "key": "work",
-          "name": "Feature 交付",
-          "description": "需求、设计、任务划分、真实 TDD、独立检查与人工接纳均为可编辑配置。"
+          "key": "requirements",
+          "name": "需求",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "design",
+          "name": "设计",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "planning",
+          "name": "任务规划",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "implementation",
+          "name": "实施",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "verification",
+          "name": "整体验证",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "delivery",
+          "name": "交付整理",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "integration",
+          "name": "接纳发布",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
         }
       ],
       "steps": [
         {
           "key": "requirements",
           "name": "澄清需求与 PRD",
-          "stage": "work",
+          "stage": "requirements",
           "dependencies": [],
           "inputs": {},
           "outputs": {
@@ -56,7 +86,7 @@
         {
           "key": "requirements_review",
           "name": "独立核对 · prd",
-          "stage": "work",
+          "stage": "requirements",
           "dependencies": [
             "requirements"
           ],
@@ -118,7 +148,7 @@
         {
           "key": "source_workspace",
           "name": "读取设计基线",
-          "stage": "work",
+          "stage": "design",
           "executor": {
             "type": "tool",
             "tool_ref": "builtin-tool-workspace-current-v1"
@@ -135,7 +165,7 @@
         {
           "key": "design",
           "name": "设计架构与接口",
-          "stage": "work",
+          "stage": "design",
           "dependencies": [
             "requirements_review",
             "source_workspace"
@@ -193,7 +223,7 @@
         {
           "key": "design_review",
           "name": "独立核对 · architecture",
-          "stage": "work",
+          "stage": "design",
           "dependencies": [
             "design"
           ],
@@ -263,7 +293,7 @@
         {
           "key": "planning",
           "name": "划分实施任务",
-          "stage": "work",
+          "stage": "planning",
           "dependencies": [
             "design_review"
           ],
@@ -313,7 +343,7 @@
         {
           "key": "plan_review",
           "name": "独立核对 · project-planning",
-          "stage": "work",
+          "stage": "planning",
           "dependencies": [
             "planning"
           ],
@@ -392,7 +422,7 @@
         {
           "key": "tasks",
           "name": "创建任务集合",
-          "stage": "work",
+          "stage": "planning",
           "dependencies": [
             "plan_review"
           ],
@@ -425,7 +455,7 @@
         {
           "key": "implementation",
           "name": "执行各 Task",
-          "stage": "work",
+          "stage": "implementation",
           "dependencies": [
             "tasks"
           ],
@@ -446,12 +476,12 @@
           },
           "budget": {
             "max_turns": 30,
-            "timeout_seconds": 1800,
+            "timeout_seconds": 7200,
             "retry_limit": 3
           },
           "executor": {
             "type": "workflow",
-            "workflow_ref": "builtin-workflow-task-sol-high-v4",
+            "workflow_ref": "builtin-workflow-task-sol-high-v5",
             "foreach": {
               "source": {
                 "step": "tasks",
@@ -467,7 +497,7 @@
         {
           "key": "workspace",
           "name": "读取工作空间",
-          "stage": "work",
+          "stage": "verification",
           "dependencies": [
             "implementation"
           ],
@@ -491,7 +521,7 @@
         {
           "key": "release_recipe",
           "name": "编写整体回归测试",
-          "stage": "work",
+          "stage": "verification",
           "dependencies": [
             "workspace"
           ],
@@ -568,7 +598,7 @@
         {
           "key": "tests_snapshot",
           "name": "固定 Feature 测试版本",
-          "stage": "work",
+          "stage": "verification",
           "executor": {
             "type": "tool",
             "tool_ref": "builtin-tool-workspace-snapshot-v1",
@@ -601,7 +631,7 @@
         {
           "key": "verification",
           "name": "执行测试",
-          "stage": "work",
+          "stage": "verification",
           "dependencies": [
             "tests_snapshot"
           ],
@@ -651,7 +681,7 @@
         {
           "key": "closure",
           "name": "整理交付与限制",
-          "stage": "work",
+          "stage": "delivery",
           "dependencies": [
             "verification"
           ],
@@ -733,7 +763,7 @@
         {
           "key": "closure_review",
           "name": "独立核对 · closure",
-          "stage": "work",
+          "stage": "delivery",
           "dependencies": [
             "closure"
           ],
@@ -843,7 +873,7 @@
         {
           "key": "mainline",
           "name": "读取工作空间",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "closure_review"
           ],
@@ -872,7 +902,7 @@
         {
           "key": "candidate",
           "name": "准备代码候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "mainline"
           ],
@@ -913,7 +943,7 @@
         {
           "key": "candidate_tests",
           "name": "验证确切候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "candidate"
           ],
@@ -957,7 +987,7 @@
         {
           "key": "candidate_review",
           "name": "独立核对并确认候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "candidate_tests"
           ],
@@ -1073,7 +1103,7 @@
         {
           "key": "advance",
           "name": "接纳确切候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "candidate_review"
           ],
@@ -1122,7 +1152,7 @@
         {
           "key": "publish",
           "name": "同步并核对 GitHub",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "advance"
           ],
@@ -1177,6 +1207,12 @@
       },
       "completion": {
         "op": "always"
+      },
+      "action_requirements": {
+        "git.advance": [
+          "confirmation",
+          "tests"
+        ]
       }
     },
     "immutable": true,
@@ -1302,7 +1338,7 @@
       "target": "revision"
     },
     "/data/steps/8/executor/workflow_ref": {
-      "template_ref": "governance.builtin-workflow-task-sol-high-v4",
+      "template_ref": "governance.builtin-workflow-task-sol-high-v5",
       "target": "revision"
     },
     "/data/steps/9/outputs/result/delivery_ref": {

@@ -373,6 +373,10 @@ fn materialize(
     ] {
         defaults[key] = json!(resolve(text(&b.defaults, key)?.as_str(), false)?);
     }
+    defaults["orchestrator_role_ref"] = json!(resolve(
+        text(&b.defaults, "orchestrator_role_ref")?.as_str(),
+        true
+    )?);
     defaults["role_agent_bindings"] = json!(
         b.defaults["role_agent_bindings"]
             .as_object()

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "bundle_version": "2026.11.10-current",
+  "bundle_version": "2026.11.11-harness-v5",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -19,7 +19,8 @@
       "skills/builtin-skill-test-design-v2.json",
       "skills/builtin-skill-tdd-implementation-v2.json",
       "skills/builtin-skill-release-verification-v2.json",
-      "skills/builtin-skill-independent-review-v2.json"
+      "skills/builtin-skill-independent-review-v2.json",
+      "skills/builtin-skill-workflow-orchestration-v1.json"
     ],
     "spec": [
       "specs/builtin-spec-stage-prd-v1.json",
@@ -35,8 +36,8 @@
       "standards/builtin-standard-engineering-v1.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-sol-high-v4.json",
-      "workflows/builtin-workflow-feature-sol-high-v4.json"
+      "workflows/builtin-workflow-task-sol-high-v5.json",
+      "workflows/builtin-workflow-feature-sol-high-v5.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v1.json",
@@ -88,7 +89,28 @@
       "tools/builtin-tool-git-candidate-v1.json",
       "tools/builtin-tool-git-advance-v1.json",
       "tools/builtin-tool-git-publish-v1.json",
-      "tools/builtin-tool-tasks-complete-v1.json"
+      "tools/builtin-tool-tasks-complete-v1.json",
+      "tools/builtin-tool-workflow-start-v1.json",
+      "tools/builtin-tool-workflow-inspect-v1.json",
+      "tools/builtin-tool-workflow-events-read-v1.json",
+      "tools/builtin-tool-workflow-outputs-read-v1.json",
+      "tools/builtin-tool-workflow-execution-inspect-v1.json",
+      "tools/builtin-tool-workflow-step-dispatch-v1.json",
+      "tools/builtin-tool-workflow-step-accept-v1.json",
+      "tools/builtin-tool-workflow-step-input-v1.json",
+      "tools/builtin-tool-workflow-step-retry-v1.json",
+      "tools/builtin-tool-workflow-step-rework-v1.json",
+      "tools/builtin-tool-workflow-execution-stop-v1.json",
+      "tools/builtin-tool-workflow-pause-v1.json",
+      "tools/builtin-tool-workflow-resume-v1.json",
+      "tools/builtin-tool-workflow-cancel-v1.json",
+      "tools/builtin-tool-workflow-change-preview-v1.json",
+      "tools/builtin-tool-workflow-change-apply-v1.json",
+      "tools/builtin-tool-workflow-materials-import-v1.json",
+      "tools/builtin-tool-workflow-decision-request-v1.json",
+      "tools/builtin-tool-workflow-execution-reconcile-v1.json",
+      "tools/builtin-tool-workflow-complete-v1.json",
+      "tools/builtin-tool-workflow-segment-dispatch-v1.json"
     ],
     "permission_profile": [
       "permission-profiles/permission-harness-full-access-v2-r1.json",
@@ -114,7 +136,8 @@
       "projections/definitions/builtin-agent-sol-high-tester-v3.json",
       "projections/definitions/builtin-agent-sol-high-reviewer-v3.json",
       "projections/harnesses/builtin-harness-codex-managed-v1.json",
-      "projections/sandboxes/builtin-sandbox-codex-docker-v1.json"
+      "projections/sandboxes/builtin-sandbox-codex-docker-v1.json",
+      "projections/definitions/builtin-skill-workflow-orchestration-v1.json"
     ],
     "initial": [
       "initial/agent_instance/builtin-instance-sol-high-analyst-v1.json",

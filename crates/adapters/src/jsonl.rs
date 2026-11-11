@@ -384,7 +384,7 @@ impl JsonlProcess {
                 .map_err(|_| {
                     err(
                         "needs_reconciliation",
-                        "协议调用超时或 worker 退出；禁止重复派发",
+                        format!("协议调用 {method} 超时或 worker 退出；禁止重复派发"),
                     )
                 })?;
             self.queued.fetch_sub(cost, Ordering::AcqRel);

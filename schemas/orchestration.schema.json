@@ -1,0 +1,679 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk Harness orchestration v1",
+  "$ref": "#/$defs/WorkflowChangeSet",
+  "$defs": {
+    "WorkflowControlPolicy": {
+      "type": "object",
+      "properties": {
+        "allowed_operations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "human_operations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "waivable_requirements": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "allow_task_revision": {
+          "type": "boolean"
+        },
+        "max_turns_per_wakeup": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "max_tool_calls_per_turn": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      },
+      "required": [
+        "allowed_operations",
+        "human_operations",
+        "waivable_requirements",
+        "allow_task_revision",
+        "max_turns_per_wakeup",
+        "max_tool_calls_per_turn",
+        "timeout_seconds"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowChangeOperation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "replace_plan"
+            },
+            "document": {
+              "$ref": "rpc.schema.json#/$defs/WorkflowDefinition"
+            }
+          },
+          "required": [
+            "type",
+            "document"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "upsert_step"
+            },
+            "step": {
+              "$ref": "rpc.schema.json#/$defs/StepDefinition"
+            }
+          },
+          "required": [
+            "type",
+            "step"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "remove_step"
+            },
+            "node_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "node_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "upsert_stage"
+            },
+            "stage": {
+              "$ref": "rpc.schema.json#/$defs/StageDefinition"
+            }
+          },
+          "required": [
+            "type",
+            "stage"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "bypass_stage"
+            },
+            "stage": {
+              "type": "string"
+            },
+            "substitutions": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "rpc.schema.json#/$defs/InputBinding"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "stage"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "bind_input"
+            },
+            "node_id": {
+              "type": "string"
+            },
+            "input": {
+              "type": "string"
+            },
+            "binding": {
+              "$ref": "rpc.schema.json#/$defs/InputBinding"
+            }
+          },
+          "required": [
+            "type",
+            "node_id",
+            "input",
+            "binding"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "set_bindings"
+            },
+            "bindings": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "bindings"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "set_inputs"
+            },
+            "inputs": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "type",
+            "inputs"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "waive"
+            },
+            "node_id": {
+              "type": "string"
+            },
+            "requirement": {
+              "enum": [
+                "completion",
+                "confirmation",
+                "tests",
+                "independence",
+                "coverage"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "node_id",
+            "requirement"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "revise_task_scope"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "object",
+              "properties": {
+                "input_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "acceptance": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "input_refs",
+                "acceptance"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "task_id",
+            "title",
+            "scope"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "revise_task_dependencies"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "dependencies": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "task_id",
+            "dependencies"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WorkflowChangeSet": {
+      "type": "object",
+      "properties": {
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/WorkflowChangeOperation"
+          }
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "reason",
+        "operations"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowActor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "human"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "controller"
+            },
+            "controller_id": {
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "turn_id": {
+              "type": "string"
+            },
+            "epoch": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "kind",
+            "controller_id",
+            "session_id",
+            "turn_id",
+            "epoch"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "segment"
+            },
+            "authorization_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "authorization_id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TypedMaterial": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "root_instance_id": {
+          "type": "string"
+        },
+        "delivery_ref": {
+          "type": "string"
+        },
+        "value": {},
+        "value_digest": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "root_instance_id",
+        "delivery_ref",
+        "value",
+        "value_digest",
+        "artifact_id",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowController": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "agent_revision_id": {
+          "type": "string"
+        },
+        "role_ref": {
+          "type": "string"
+        },
+        "policy_digest": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "last_state_digest": {
+          "type": "string"
+        },
+        "last_result_digest": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "root_instance_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "predecessor_session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event_cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wakeup_turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "policy": {
+          "$ref": "#/$defs/WorkflowControlPolicy"
+        }
+      },
+      "required": [
+        "project_id",
+        "owner_id",
+        "agent_revision_id",
+        "role_ref",
+        "policy_digest",
+        "status",
+        "last_state_digest",
+        "last_result_digest",
+        "reason",
+        "root_instance_id",
+        "session_id",
+        "predecessor_session_id",
+        "snapshot_id",
+        "epoch",
+        "event_cursor",
+        "wakeup_turns",
+        "policy"
+      ],
+      "additionalProperties": false
+    },
+    "OrchestrationLease": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "controller_id": {
+          "type": "string"
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "root_instance_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "controller_id",
+        "owner_id",
+        "root_instance_id",
+        "epoch",
+        "expires_at"
+      ],
+      "additionalProperties": false
+    },
+    "OrchestrationWakeup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "controller_id": {
+          "type": "string"
+        },
+        "event_cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "controller_id",
+        "event_cursor",
+        "status",
+        "turn_id",
+        "created_at"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowDecision": {
+      "type": "object",
+      "properties": {
+        "root_instance_id": {
+          "type": "string"
+        },
+        "instance_id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "input_digest": {
+          "type": "string"
+        },
+        "execution_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actor": {
+          "$ref": "#/$defs/WorkflowActor"
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "root_instance_id",
+        "instance_id",
+        "plan_revision_id",
+        "operation",
+        "reason",
+        "input_digest",
+        "execution_id",
+        "actor",
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowActionPermit": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "candidate_digest": {
+          "type": "string"
+        },
+        "target_revision": {
+          "type": "string"
+        },
+        "requirements": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "satisfied",
+              "waived"
+            ]
+          }
+        },
+        "decision_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "instance_id",
+        "plan_revision_id",
+        "candidate_digest",
+        "target_revision",
+        "requirements",
+        "decision_refs"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

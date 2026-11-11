@@ -8,7 +8,7 @@
 |---|---|
 | Role | 任意业务身份及职责说明，不决定执行权限。 |
 | Capability / Agent | 精确 Model、Harness、Skills、Tools、Permission 选择，以及明确的执行能力上限。 |
-| Workflow v4 / Stage | 输入输出、步骤依赖、业务分组、背景、阶段默认 Role。 |
+| Workflow v5 / Stage | 输入输出、步骤依赖、业务分组、背景、阶段默认 Role。 |
 | Step | Agent 任务指令、必需 Skills、Spec、材料引用、输出合同、访问范围、预算及完成要求。 |
 | Delivery | 内容说明、格式及可选离线 JSON Schema；不是一组固定业务文档。 |
 | Spec v3 | 正文、Role/交付类型/标签选择器、任意内容检查项。 |
