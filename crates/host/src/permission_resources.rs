@@ -514,7 +514,7 @@ mod tests {
             harness: PermissionSelection::FollowTarget,
             sandbox: PermissionSelection::FollowTarget,
         };
-        let data = w
+        let mut data = w
             .global
             .snapshot()
             .unwrap()
@@ -522,6 +522,18 @@ mod tests {
             .unwrap()
             .data
             .clone();
+        // This fixture authors an explicit binding without an integration lock.
+        // Keep its capability native-only; platform input readers are frozen by
+        // actual Workflow sessions and belong to their separate integration tests.
+        let sources = w.global.snapshot().unwrap();
+        let mut capability = sources
+            .configuration(data["capability_ref"].as_str().unwrap())
+            .unwrap()
+            .data
+            .clone();
+        capability["tools"] = json!([DEFAULT_NATIVE_TOOL_ID]);
+        let capability = w.dispatch("capability.create", json!({"command_id":id(),"payload":{"name":"Native permission fixture","data":capability}})).unwrap();
+        data["capability_ref"] = capability["id"].clone();
         let agent=w.dispatch("agent.create",json!({"command_id":id(),"payload":{"name":"Followed runtime analyst","data":data}})).unwrap()["id"].as_str().unwrap().to_owned();
         let e = w.active_engine(Some(&project)).unwrap();
         w.sync_configuration(&e).unwrap();
