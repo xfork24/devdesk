@@ -7,7 +7,7 @@ def verify_evidence(client, rows, output):
  root=next(v for v in views.values() if v['runtime']['parent_execution_id'] is None)
  children=[v for v in views.values() if v['runtime']['parent_execution_id'] is not None]
  assert len(children)==1, 'Expected one actual Task invocation'
- child=children[0];context=json.loads((output/'context.json').read_text());task_snapshots={}
+ child=children[0];context=json.loads((output/'context.json').read_text());task_snapshots={};wire_deliveries={}
  database=output/'data/projects'/root['runtime']['project_id']/'engineering.sqlite3'
  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
   assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='workflow_waiver'").fetchone()[0]==0
@@ -77,6 +77,16 @@ def verify_evidence(client, rows, output):
  def task(view,key):
   current=step(view,key);ident=current['turn_id']
   result=client.rpc('query.execution_task',{'turn_id':ident});task_snapshots[ident]=result
+  if ident not in wire_deliveries:
+   rendered=result['task']['rendered_input'];observed=None
+   journals=output/'data/projects'/view['runtime']['project_id']/'execution/sessions'/current['session_id']/'coordinator'
+   for journal in journals.glob('*.jsonl'):
+    for line in journal.open():
+     envelope=json.loads(line);frame=envelope['frame']
+     if envelope['direction']=='out' and frame.get('method')=='turn/start' and any(rendered in part.get('text','') for part in frame['params']['input'] if part.get('type')=='text'):
+      observed={'workflow':view['record']['id'],'step':key,'turn':ident,'session':current['session_id'],'journal':journal.name,'task_digest':result['task']['digest'],'rendered_utf8_bytes':len(rendered.encode()),'complete_task_sent':True}
+   assert observed is not None,'Complete review task absent from actual native turn/start: '+key
+   wire_deliveries[ident]=observed
   return result['task']['task']
  def normalized(path,cwd='/work'):
   if path.startswith(cwd.rstrip('/')+'/'):path=path[len(cwd.rstrip('/'))+1:]
@@ -205,6 +215,7 @@ def verify_evidence(client, rows, output):
   pr=published['pull_request'];assert pr['merged'] and pr['merge_commit']==pr['head']==candidate['revision'];publications.append(published)
  for ident,view in views.items():(output/(ident+'.json')).write_text(json.dumps(view,ensure_ascii=False,indent=2))
  (output/'execution-tasks.json').write_text(json.dumps(task_snapshots,ensure_ascii=False,indent=2))
+ (output/'reviewer-wire-deliveries.json').write_text(json.dumps(list(wire_deliveries.values()),ensure_ascii=False,indent=2))
  (output/'raw-tdd-evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2))
  (output/'publication-evidence.json').write_text(json.dumps(publications,ensure_ascii=False,indent=2))
  validation={'passed':True,'runs':len(runs),'increment_pairs':pairs,'unchanged_test_files':sorted(red_files),'platform_red_copied':platform_copy,'declared_run_fields':required,'no_bypass_or_waivers':True,'human_confirmation_count':human_confirmations,'human_confirmations_match_exact_results':True,'consumer_task_provenance_matches':True,'diagnostic_operation_id':diagnostic_red['operation_id'],'final_candidate_files_match_evidence':True,'independent_feature_test_included':True,'red_revision':red['candidate'],'green_revision':green['candidate']}

@@ -2,6 +2,8 @@
 
 日期：2026-11-11。状态：P0—P8 已完成，A01—A18 验收通过。
 
+本报告记录 `25e9c53` 独立 worktree 的实施与当时的验收。后续 main 合并保留了更新的业务图、增量证据和 automatic 确认策略；当前合并结果与再次验收见 [MERGE.md](MERGE.md)。
+
 工作副本：`/Users/hengliu/.codex/worktrees/harness-workflow-orchestration/devdesk`。分支：`codex/harness-workflow-orchestration`；起点：`e0826a9`。原 main 工作区及用户修改保留；未对原数据集执行升级。所有真实工程操作使用隔离临时数据集及专用测试仓库；本次实现未合并或推送到 main。
 
 ## 实施结果
