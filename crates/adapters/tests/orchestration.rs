@@ -2011,3 +2011,46 @@ fn an_instance_can_revise_its_plan_after_the_template_directory_is_reset() {
         before["runtime"]["plan"]["roles"]
     );
 }
+
+#[test]
+fn source_control_policy_is_canonical_after_reload_without_changing_authorization() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let root = start(&e, document());
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5"})).unwrap();
+    let controller = opened["id"].as_str().unwrap().to_owned();
+    let before = e
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(&controller)
+        .unwrap()
+        .data
+        .clone();
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(&controller),
+        json!({"epoch":1,"input":"按既有授权核对当前工作"}),
+    )
+    .unwrap();
+    drop(e);
+    let e = engine(dir.path());
+    cmd(
+        &e,
+        "orchestration.input",
+        Some(&controller),
+        json!({"epoch":1,"input":"继续核对既有授权"}),
+    )
+    .unwrap();
+    let after = e
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(&controller)
+        .unwrap()
+        .data
+        .clone();
+    assert_eq!(before["policy"], after["policy"]);
+    assert_eq!(before["policy_digest"], after["policy_digest"]);
+}
