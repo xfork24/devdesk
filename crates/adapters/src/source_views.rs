@@ -59,168 +59,8 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
         return Ok(value.clone());
     }
     if value.is_object() {
-        if value.get("$source").is_some() {
-            return Ok(json!({"$source":"literal","value":value}));
-        }
-        if value.get("identity").is_some()
-            && value.get("revision").is_some()
-            && value.get("kind").is_some()
-        {
-            if let Ok(source) = serde_json::from_value::<SourceDefinition>(value.clone()) {
-                let reference = source_reference(&source.identity, source.revision)?;
-                if state
-                    .configuration(&reference)
-                    .is_ok_and(|r| r.source() == source)
-                {
-                    return Ok(json!({"$source":"source_definition","ref":reference}));
-                }
-            }
-        }
-        if value["renderer_version"] == "agent-task/v6"
-            && value["source"]["workflow_instance_id"]
-                .as_str()
-                .is_some_and(|id| {
-                    state
-                        .configuration(id)
-                        .is_ok_and(|r| r.kind == "workflow_instance")
-                })
-        {
-            let selection = json!({"$source":"task","source":value["source"],"inputs":value["inputs"],"input_sources":value["input_sources"],
-                "agent_ref":value["agent"]["id"],"supplemental_input":value["supplemental_input"]});
-            if restore(state, &selection).is_ok_and(|restored| restored == *value) {
-                return Ok(selection);
-            }
-            return Ok(value.clone());
-        }
-        if value.get("epoch").is_some()
-            && value.get("policy_digest").is_some()
-            && value.get("permission_context_ref").is_some()
-        {
-            let mut stored = serde_json::Map::new();
-            for (key, item) in value.as_object().unwrap() {
-                if !["policy", "policy_digest"].contains(&key.as_str()) {
-                    stored.insert(key.clone(), pack(state, item)?);
-                }
-            }
-            stored.insert(
-                "policy".into(),
-                json!({"$source":"control_policy","context_ref":value["permission_context_ref"]}),
-            );
-            return Ok(Value::Object(stored));
-        }
-        if value.get("installation").is_some()
-            && value.get("configuration_digest").is_some()
-            && value["agent_configuration"].is_object()
-        {
-            return Ok(
-                json!({"$source":"runtime_binding","installation":value["installation"],"adapter_version":value["adapter_version"],
-                "agent_configuration":pack(state,&value["agent_configuration"])?,"permissions":pack(state,&value["permissions"])?,
-                "work_type":value["work_type"],"credential_ref":value["credential_ref"]}),
-            );
-        }
-        if value.get("agent_revision_id").is_some() && value.get("composition_hash").is_some() {
-            return Ok(
-                json!({"$source":"agent_execution","agent_ref":value["agent_revision_id"],"instance_ref":value["agent_instance_id"],
-                "integration_lock":pack(state,&value["integration_lock"])?}),
-            );
-        }
-        if value["binding_lock"].is_object()
-            && value.get("enforcement").is_some()
-            && value.get("scope").is_some()
-        {
-            return Ok(
-                json!({"$source":"execution_permissions","harness_binding_ref":value["binding_lock"]["harness"]["binding_revision_id"],
-                "sandbox_binding_ref":value["binding_lock"]["sandbox"]["binding_revision_id"],"scope":value["scope"]}),
-            );
-        }
-        if value.get("files").is_some()
-            && value.get("requires_tools").is_some()
-            && value.get("body").is_some()
-        {
-            if let Some(package) = state
-                .governance
-                .iter()
-                .find(|r| r.kind == "skill_package" && r.data == *value)
-            {
-                return Ok(json!({"$source":"skill_package","ref":package.id}));
-            }
-        }
-        if value.get("workflow_revision_id").is_some() && value.get("specification_view").is_some()
-        {
-            let plan: ConfiguredWorkflowPlan =
-                serde_json::from_value(value.clone()).map_err(storage)?;
-            let mut bindings = BTreeMap::new();
-            let mut permissions = BTreeMap::new();
-            let mut connections = BTreeMap::new();
-            for (agent, lock) in &plan.integration_locks {
-                let composition = state.resolve_agent(agent)?;
-                bindings.insert(composition.role_ref.unwrap(), agent.clone());
-                for tool in &lock.tools {
-                    connections.insert(tool.revision_id.clone(), tool.binding_ref.clone());
-                }
-            }
-            for (key, lock) in &plan.permission_locks {
-                permissions.insert(key.clone(),json!({"harness":lock.harness.binding_revision_id,"sandbox":lock.sandbox.binding_revision_id}));
-            }
-            for (tool, bound) in &plan.tool_bindings {
-                connections.insert(tool.clone(), bound.binding_ref.clone());
-            }
-            // The consumer owns this execution selection. A store may contain multiple
-            // projects; the first catalog entry is unrelated to this particular plan.
-            let project_id = plan
-                .work_configuration_ref
-                .as_deref()
-                .and_then(|id| state.configuration(id).ok())
-                .and_then(|r| r.scope.project())
-                .or_else(|| {
-                    state
-                        .governance
-                        .iter()
-                        .find(|r| r.kind == "workflow_plan_revision" && r.data["plan"] == *value)
-                        .and_then(|r| r.scope.project())
-                })
-                .or_else(|| {
-                    state
-                        .configuration(&plan.workflow_revision_id)
-                        .ok()
-                        .and_then(|r| r.scope.project())
-                })
-                .or_else(|| (state.projects.len() == 1).then(|| state.projects[0].id.as_str()));
-            return Ok(
-                json!({"$source":"workflow_plan","workflow_ref":plan.workflow_revision_id,"standard_ref":plan.standard_ref,"work_configuration_ref":plan.work_configuration_ref,"role_agent_bindings":bindings,
-                "permission_context_ref":plan.permission_context_ref,"permission_workflow_ref":plan.permission_workflow_ref,"permission_bindings":permissions,"integration_bindings":connections,
-                "project_id":project_id}),
-            );
-        }
-        // Copies embedded in receipts/tasks are regenerated from their owning source.
-        if value.get("definition_id").is_some() && value.get("content_hash").is_some() {
-            if let Some(id) = value["id"].as_str() {
-                if state
-                    .configuration(id)
-                    .is_ok_and(|r| source_store::is_source(r) && json!(r) == *value)
-                {
-                    return Ok(json!({"$source":"source","ref":id}));
-                }
-            }
-        }
-        if value.get("binding_revision_id").is_some()
-            && value.get("profile_hash").is_some()
-            && value.get("profile").is_some()
-        {
-            let reference =
-                json!({"$source":"bound_permission","binding_ref":value["binding_revision_id"]});
-            if restore(state, &reference).is_ok_and(|expected| expected == *value) {
-                return Ok(reference);
-            }
-        }
-        if value.get("integration_hash").is_some()
-            && value.get("binding_ref").is_some()
-            && value.get("definition").is_some()
-        {
-            let reference = json!({"$source":"bound_tool","tool_ref":value["revision_id"],"binding_ref":value["binding_ref"]});
-            if restore(state, &reference).is_ok_and(|expected| expected == *value) {
-                return Ok(reference);
-            }
+        if let Some(encoded) = pack_reference(state, value)? {
+            return Ok(encoded);
         }
         let mut object = serde_json::Map::new();
         for (key, item) in value.as_object().unwrap() {
@@ -268,6 +108,172 @@ fn bound_permission(state: &EngineeringState, id: &str) -> Result<BoundPermissio
     )
 }
 
+fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Value>> {
+    if value.get("$source").is_some() {
+        return Ok(Some(json!({"$source":"literal","value":value})));
+    }
+    if value.get("identity").is_some()
+        && value.get("revision").is_some()
+        && value.get("kind").is_some()
+    {
+        if let Ok(source) = serde_json::from_value::<SourceDefinition>(value.clone()) {
+            let reference = source_reference(&source.identity, source.revision)?;
+            if state
+                .configuration(&reference)
+                .is_ok_and(|r| r.source() == source)
+            {
+                return Ok(Some(json!({"$source":"source_definition","ref":reference})));
+            }
+        }
+    }
+    if value["renderer_version"] == "agent-task/v6"
+        && value["source"]["workflow_instance_id"]
+            .as_str()
+            .is_some_and(|id| {
+                state
+                    .configuration(id)
+                    .is_ok_and(|r| r.kind == "workflow_instance")
+            })
+    {
+        let selection = json!({"$source":"task","source":value["source"],"inputs":value["inputs"],"input_sources":value["input_sources"],
+                "agent_ref":value["agent"]["id"],"supplemental_input":value["supplemental_input"]});
+        if restore(state, &selection).is_ok_and(|restored| restored == *value) {
+            return Ok(Some(selection));
+        }
+        return Ok(Some(value.clone()));
+    }
+    if value.get("epoch").is_some()
+        && value.get("policy_digest").is_some()
+        && value.get("permission_context_ref").is_some()
+    {
+        let mut stored = serde_json::Map::new();
+        for (key, item) in value.as_object().unwrap() {
+            if !["policy", "policy_digest"].contains(&key.as_str()) {
+                stored.insert(key.clone(), pack(state, item)?);
+            }
+        }
+        stored.insert(
+            "policy".into(),
+            json!({"$source":"control_policy","context_ref":value["permission_context_ref"]}),
+        );
+        return Ok(Some(Value::Object(stored)));
+    }
+    if value.get("installation").is_some()
+        && value.get("configuration_digest").is_some()
+        && value["agent_configuration"].is_object()
+    {
+        return Ok(Some(
+            json!({"$source":"runtime_binding","installation":value["installation"],"adapter_version":value["adapter_version"],
+                "agent_configuration":pack(state,&value["agent_configuration"])?,"permissions":pack(state,&value["permissions"])?,
+                "work_type":value["work_type"],"credential_ref":value["credential_ref"]}),
+        ));
+    }
+    if value.get("agent_revision_id").is_some() && value.get("composition_hash").is_some() {
+        return Ok(Some(
+            json!({"$source":"agent_execution","agent_ref":value["agent_revision_id"],"instance_ref":value["agent_instance_id"],
+                "integration_lock":pack(state,&value["integration_lock"])?}),
+        ));
+    }
+    if value["binding_lock"].is_object()
+        && value.get("enforcement").is_some()
+        && value.get("scope").is_some()
+    {
+        return Ok(Some(
+            json!({"$source":"execution_permissions","harness_binding_ref":value["binding_lock"]["harness"]["binding_revision_id"],
+                "sandbox_binding_ref":value["binding_lock"]["sandbox"]["binding_revision_id"],"scope":value["scope"]}),
+        ));
+    }
+    if value.get("files").is_some()
+        && value.get("requires_tools").is_some()
+        && value.get("body").is_some()
+    {
+        if let Some(package) = state
+            .governance
+            .iter()
+            .find(|r| r.kind == "skill_package" && r.data == *value)
+        {
+            return Ok(Some(json!({"$source":"skill_package","ref":package.id})));
+        }
+    }
+    if value.get("workflow_revision_id").is_some() && value.get("specification_view").is_some() {
+        let plan: ConfiguredWorkflowPlan =
+            serde_json::from_value(value.clone()).map_err(storage)?;
+        let mut bindings = BTreeMap::new();
+        let mut permissions = BTreeMap::new();
+        let mut connections = BTreeMap::new();
+        for (agent, lock) in &plan.integration_locks {
+            let composition = state.resolve_agent(agent)?;
+            bindings.insert(composition.role_ref.unwrap(), agent.clone());
+            for tool in &lock.tools {
+                connections.insert(tool.revision_id.clone(), tool.binding_ref.clone());
+            }
+        }
+        for (key, lock) in &plan.permission_locks {
+            permissions.insert(key.clone(),json!({"harness":lock.harness.binding_revision_id,"sandbox":lock.sandbox.binding_revision_id}));
+        }
+        for (tool, bound) in &plan.tool_bindings {
+            connections.insert(tool.clone(), bound.binding_ref.clone());
+        }
+        // The consumer owns this execution selection. A store may contain multiple
+        // projects; the first catalog entry is unrelated to this particular plan.
+        let project_id = plan
+            .work_configuration_ref
+            .as_deref()
+            .and_then(|id| state.configuration(id).ok())
+            .and_then(|r| r.scope.project())
+            .or_else(|| {
+                state
+                    .governance
+                    .iter()
+                    .find(|r| r.kind == "workflow_plan_revision" && r.data["plan"] == *value)
+                    .and_then(|r| r.scope.project())
+            })
+            .or_else(|| {
+                state
+                    .configuration(&plan.workflow_revision_id)
+                    .ok()
+                    .and_then(|r| r.scope.project())
+            })
+            .or_else(|| (state.projects.len() == 1).then(|| state.projects[0].id.as_str()));
+        return Ok(Some(
+            json!({"$source":"workflow_plan","workflow_ref":plan.workflow_revision_id,"standard_ref":plan.standard_ref,"work_configuration_ref":plan.work_configuration_ref,"role_agent_bindings":bindings,
+                "permission_context_ref":plan.permission_context_ref,"permission_workflow_ref":plan.permission_workflow_ref,"permission_bindings":permissions,"integration_bindings":connections,
+                "project_id":project_id}),
+        ));
+    }
+    // Copies embedded in receipts/tasks are regenerated from their owning source.
+    if value.get("definition_id").is_some() && value.get("content_hash").is_some() {
+        if let Some(id) = value["id"].as_str() {
+            if state
+                .configuration(id)
+                .is_ok_and(|r| source_store::is_source(r) && json!(r) == *value)
+            {
+                return Ok(Some(json!({"$source":"source","ref":id})));
+            }
+        }
+    }
+    if value.get("binding_revision_id").is_some()
+        && value.get("profile_hash").is_some()
+        && value.get("profile").is_some()
+    {
+        let reference =
+            json!({"$source":"bound_permission","binding_ref":value["binding_revision_id"]});
+        if restore(state, &reference).is_ok_and(|expected| expected == *value) {
+            return Ok(Some(reference));
+        }
+    }
+    if value.get("integration_hash").is_some()
+        && value.get("binding_ref").is_some()
+        && value.get("definition").is_some()
+    {
+        let reference = json!({"$source":"bound_tool","tool_ref":value["revision_id"],"binding_ref":value["binding_ref"]});
+        if restore(state, &reference).is_ok_and(|expected| expected == *value) {
+            return Ok(Some(reference));
+        }
+    }
+    Ok(None)
+}
+
 pub(super) fn restore(state: &EngineeringState, value: &Value) -> Result<Value> {
     restore_with(state, value, &mut BTreeMap::new())
 }
@@ -285,6 +291,53 @@ pub(super) fn restore_with(
             return Ok(json!(restore_with(state, &encoded, memo)?.to_string()));
         }
     }
+    if value["$source"].is_string() {
+        return restore_reference(state, value, memo);
+    }
+    match value {
+        Value::Object(items) => {
+            let mut object = items
+                .iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k.clone(),
+                        if factual_field(k) {
+                            v.clone()
+                        } else {
+                            restore_with(state, v, memo)?
+                        },
+                    ))
+                })
+                .collect::<Result<serde_json::Map<_, _>>>()?;
+            if object.contains_key("epoch")
+                && object.contains_key("permission_context_ref")
+                && object.contains_key("policy")
+            {
+                object.insert(
+                    "policy_digest".into(),
+                    json!(configuration_hash(
+                        &serde_json::from_value::<WorkflowControlPolicy>(object["policy"].clone())
+                            .map_err(storage)?
+                    )),
+                );
+            }
+            Ok(Value::Object(object))
+        }
+        Value::Array(items) => items
+            .iter()
+            .map(|v| restore_with(state, v, memo))
+            .collect::<Result<Vec<_>>>()
+            .map(Value::Array),
+        _ => Ok(value.clone()),
+    }
+}
+
+// Keep the large typed reconstruction frame off the generic JSON recursion path.
+fn restore_reference(
+    state: &EngineeringState,
+    value: &Value,
+    memo: &mut BTreeMap<String, Value>,
+) -> Result<Value> {
     match value["$source"].as_str() {
         Some("literal") => return Ok(value["value"].clone()),
         Some("source_definition") => {
@@ -608,43 +661,7 @@ pub(super) fn restore_with(
             return Ok(plan);
         }
         Some(_) => return Err(err("storage", "未知源视图类型")),
-        None => {}
-    }
-    match value {
-        Value::Object(items) => {
-            let mut object = items
-                .iter()
-                .map(|(k, v)| {
-                    Ok((
-                        k.clone(),
-                        if factual_field(k) {
-                            v.clone()
-                        } else {
-                            restore_with(state, v, memo)?
-                        },
-                    ))
-                })
-                .collect::<Result<serde_json::Map<_, _>>>()?;
-            if object.contains_key("epoch")
-                && object.contains_key("permission_context_ref")
-                && object.contains_key("policy")
-            {
-                object.insert(
-                    "policy_digest".into(),
-                    json!(configuration_hash(
-                        &serde_json::from_value::<WorkflowControlPolicy>(object["policy"].clone())
-                            .map_err(storage)?
-                    )),
-                );
-            }
-            Ok(Value::Object(object))
-        }
-        Value::Array(items) => items
-            .iter()
-            .map(|v| restore_with(state, v, memo))
-            .collect::<Result<Vec<_>>>()
-            .map(Value::Array),
-        _ => Ok(value.clone()),
+        None => return Err(err("storage", "源视图标记缺失")),
     }
 }
 
@@ -678,6 +695,26 @@ mod tests {
             restore(&state, &pack(&state, &actual).unwrap()).unwrap(),
             actual
         );
+    }
+    #[test]
+    fn nested_material_metadata_round_trips_on_the_normal_worker_stack() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let state = EngineeringState::default();
+                let mut value = json!({"leaf":"actual metadata"});
+                for _ in 0..48 {
+                    value = json!({"metadata":[value]});
+                }
+                let original = json!({"record":value.to_string()});
+                assert_eq!(
+                    restore(&state, &pack(&state, &original).unwrap()).unwrap(),
+                    original
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
     #[test]
     fn user_objects_cannot_be_confused_with_storage_references() {
