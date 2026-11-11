@@ -627,6 +627,37 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         .unwrap()
         .decode()
         .unwrap();
+    let constraints = plan
+        .document
+        .steps
+        .iter()
+        .find(|step| step.key == "engineering_constraints")
+        .unwrap();
+    let StepExecutor::Tool { arguments, .. } = &constraints.executor else {
+        panic!("constraints must be captured")
+    };
+    let InputBinding::Constant {
+        value: evidence_contract,
+    } = &arguments["execution_evidence"]
+    else {
+        panic!("the planner must receive the declared evidence contract")
+    };
+    let evidence_type: DeliveryTypeDefinition = state
+        .configuration(evidence_contract["delivery_ref"].as_str().unwrap())
+        .unwrap()
+        .decode()
+        .unwrap();
+    let schema = evidence_type.content_schema.unwrap();
+    assert_eq!(
+        evidence_contract["run_fields"],
+        schema["properties"]["runs"]["items"]["required"]
+    );
+    for key in ["environment", "termination"] {
+        assert_eq!(
+            evidence_contract[format!("{key}_fields")],
+            schema["properties"]["runs"]["items"]["properties"][key]["required"]
+        );
+    }
     let review=task.steps.iter().find(|step|step.inputs.contains_key("verify")).expect("the shipped implementation Spec requires an actual delivery verification before review");
     for key in ["documentation", "review", "candidate_review"] {
         let consumer = task.steps.iter().find(|step| step.key == key).unwrap();
@@ -981,10 +1012,16 @@ fn explicit_manual_approval_requires_reason_and_exact_execution_and_preserves_re
 }
 
 fn execution_evidence_fixture() -> Value {
-    json!({"runs":[
+    let mut value = json!({"runs":[
         {"sequence":1,"phase":"red","command":"node --test tests/behavior.mjs","cwd":"/work","started_at":"2026-11-10T01:00:00Z","finished_at":"2026-11-10T01:00:01Z","exit_code":1,"stdout":"expected true, actual false","stderr":"","files":[{"path":"src/behavior.mjs","sha256":"a".repeat(64),"content":"export default false"},{"path":"tests/behavior.mjs","sha256":"b".repeat(64),"content":"test the public behavior"}]},
         {"sequence":2,"phase":"green","command":"node --test tests/behavior.mjs","cwd":"/work","started_at":"2026-11-10T01:00:02Z","finished_at":"2026-11-10T01:00:03Z","exit_code":0,"stdout":"pass 1, fail 0","stderr":"","files":[{"path":"src/behavior.mjs","sha256":"c".repeat(64),"content":"export default true"},{"path":"tests/behavior.mjs","sha256":"b".repeat(64),"content":"test the public behavior"}]}
-    ]})
+    ]});
+    for run in value["runs"].as_array_mut().unwrap() {
+        run["environment"] =
+            json!({"runtime":"node","version":"fixture","platform":"linux","arch":"arm64"});
+        run["termination"] = json!({"status":"exited","signal":null,"error":null,"timed_out":false,"cancelled":false});
+    }
+    value
 }
 
 #[test]
@@ -1005,6 +1042,32 @@ fn raw_evidence_contract_rejects_temp_paths_without_contents() {
     let runtime = instance(&engine, &run["id"]);
     assert_eq!(runtime["steps"][0]["status"], "failed");
     assert_eq!(runtime["steps"][0]["outputs"], json!({}));
+}
+
+#[test]
+fn raw_evidence_rejects_missing_environment_or_termination_before_review() {
+    for missing in ["environment", "termination"] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let recorder = Arc::new(RecordingAgent::default());
+        engine.harness = recorder.clone();
+        let mut raw = execution_evidence_fixture();
+        raw["runs"][0].as_object_mut().unwrap().remove(missing);
+        recorder.responses.lock().unwrap().push(
+            json!({"status":"completed","summary":"证据字段不完整","outputs":{"evidence":raw}}),
+        );
+        let (role, agent) = research_agent(&engine);
+        let run = launch(
+            &engine,
+            &role,
+            &agent,
+            json!({"outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence-v1"}}}),
+        );
+        drive(&engine, 12);
+        let runtime = instance(&engine, &run["id"]);
+        assert_eq!(runtime["steps"][0]["status"], "failed", "{missing}");
+        assert_eq!(runtime["steps"][0]["outputs"], json!({}));
+    }
 }
 
 #[test]

@@ -435,7 +435,7 @@
             "type": "agent",
             "role_ref": "builtin-role-developer"
           },
-          "task_instructions": "按 TDD Skill 实现当前 Task。使用独立测试及真实 Red 回执；保留 tests 目录中的断言，只修改其余授权文件。提交实现摘要与范围说明。 必须同时提交 evidence 端口：将本节点实际执行的逐次业务 Red/Green/回归日志及当时测试、源码内容快照直接填入结构化 delivery；平台会密封持久化并传给明确引用此端口的后续步骤。不得只留下临时路径或摘要，也不得把“请协调方保存”视为已交付。保留原始输出与实际退出码，不虚构记录；记录未能取得时返回 blocked。 开始写实现前，逐项提取当前 Task 与设计已经规定的 TDD 增量，按增量顺序执行并留存每个增量自己的 Red 与 Green。不得将多轮要求降格为建议，也不得用一次性完整实现加全量 Red/Green 代替已约定的多轮过程。tests 是独立的只读全量套件；需要分增量开发时，可以在其余已授权路径创建和维护本节点拥有的增量测试，而不能改写 tests。中间增量只需让对应目标用例转绿，全量独立套件留到所有增量完成后通过。evidence 必须包含每个约定增量的真实命令、原始输出、退出码及当时的测试和源码内容快照；任一增量记录缺失时返回 blocked，不得在 README 或交付摘要中宣称该要求已满足。",
+          "task_instructions": "按 TDD Skill 实现当前 Task。使用独立测试及真实 Red 回执；保留 tests 目录中的断言，只修改其余授权文件。提交实现摘要与范围说明。 必须同时提交 evidence 端口：将本节点实际执行的逐次业务 Red/Green/回归日志及当时测试、源码内容快照直接填入结构化 delivery；平台会密封持久化并传给明确引用此端口的后续步骤。不得只留下临时路径或摘要，也不得把“请协调方保存”视为已交付。保留原始输出与实际退出码，不虚构记录；记录未能取得时返回 blocked。 开始写实现前，逐项提取当前 Task 与设计已经规定的 TDD 增量，按增量顺序执行并留存每个增量自己的 Red 与 Green。不得将多轮要求降格为建议，也不得用一次性完整实现加全量 Red/Green 代替已约定的多轮过程。tests 是独立的只读全量套件；需要分增量开发时，可以在其余已授权路径创建和维护本节点拥有的增量测试，而不能改写 tests。中间增量只需让对应目标用例转绿，全量独立套件留到所有增量完成后通过。evidence 必须包含每个约定增量的真实命令、原始输出、退出码及当时的测试和源码内容快照；任一增量记录缺失时返回 blocked，不得在 README 或交付摘要中宣称该要求已满足。 每条 run 同时采集实际 environment={runtime,version,platform,arch} 与 termination={status,signal,error,timed_out,cancelled}。从实际运行时和进程结果取得字段；正常退出也显式 signal=null、error=null、timed_out=false、cancelled=false。不得事后补造历史字段，也不收集无关环境变量或凭据。",
           "required_skill_refs": [
             "builtin-skill-tdd-implementation-v2"
           ],
@@ -620,7 +620,7 @@
             "type": "agent",
             "role_ref": "builtin-role-developer"
           },
-          "task_instructions": "依据 Task、实际代码版本和 Green 回执补充接口、使用方式、验收追溯与已知限制。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
+          "task_instructions": "依据 Task、实际代码版本和 Green 回执补充接口、使用方式、验收追溯与已知限制。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。 逐条核对 environment 与 termination 的必填字段，以及退出码、信号、执行错误、超时和取消状态的一致性；未知或中断记录不能作为 Green。",
           "required_skill_refs": [
             "builtin-skill-tdd-implementation-v2"
           ],
@@ -781,7 +781,7 @@
             "type": "agent",
             "role_ref": "builtin-role-reviewer"
           },
-          "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
+          "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。 逐条核对 environment 与 termination 的必填字段，以及退出码、信号、执行错误、超时和取消状态的一致性；未知或中断记录不能作为 Green。",
           "required_skill_refs": [
             "builtin-skill-independent-review-v2"
           ],
@@ -948,7 +948,7 @@
             "type": "agent",
             "role_ref": "builtin-role-reviewer"
           },
-          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由 Workflow 引擎自动接纳确切输入及候选；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。",
+          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由 Workflow 引擎自动接纳确切输入及候选；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。 逐条核对 environment 与 termination 的必填字段，以及退出码、信号、执行错误、超时和取消状态的一致性；未知或中断记录不能作为 Green。",
           "required_skill_refs": [
             "builtin-skill-independent-review-v2"
           ],

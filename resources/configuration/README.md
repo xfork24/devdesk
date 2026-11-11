@@ -20,7 +20,7 @@
 
 默认 Feature 流程配置需求、独立检查、设计、规划、创建 Task、逐项调用 Task 子流程、整体测试、文档和候选接纳。默认 Task 流程配置测试编写、最小可执行 Red 基线、工作空间快照、实际 Red、实现、实际 Green、文档、交付复验、独立评审与候选检查及自动接纳。三个原确认节点均为 `confirmation: automatic`，由引擎在原完成条件满足后推进，不依赖脚本调用 confirm 或 Approve。评审拒绝、证据缺失及测试失败仍阻塞，原报告保留。需要人工确认的自定义流程仍可显式选择 human。基线准备不改写独立断言、不实现新增业务，避免把入口缺失包装成业务 Red。TDD 顺序、测试目录、职责和确认策略均在 JSON 或所引用的 Skill/Spec 中，可以发布自己的流程替代。
 
-implementation.evidence 是必需的“原始执行证据”输出，直接保存逐次日志和对应测试、源码内容快照；临时路径或摘要不能替代交付。documentation、review、candidate_review 和 handoff 分别显式引用此端口。输入只带入声明的 delivery，不共享任意历史目录；输入来源 ID 和内容摘要由任务渲染器记录，产物由 Artifact 存储密封。
+implementation.evidence 是必需的“原始执行证据”输出，直接保存逐次日志、实际运行时版本、退出/信号/错误/超时/取消状态，以及对应测试、源码内容快照；临时路径或摘要不能替代交付。结构不完整的记录在生产节点就被拒绝。documentation、review、candidate_review 和 handoff 分别显式引用此端口，独立核对执行事实、快照及候选关联。输入只带入声明的 delivery，不共享任意历史目录；输入来源 ID 和内容摘要由任务渲染器记录，产物由 Artifact 存储密封。规划节点收到的证据字段合同与 Delivery Schema 保持一致，不能要求作者交付 Schema 无法表达的必填字段。
 
 默认 Feature 把 Node 实现与 node_test 测试合同通过“固定工程执行约束”步骤封存为 delivery，显式提供给设计、规划、对应评审及回归测试编写节点。选择其他运行时应同时配置可执行的工具与环境，不把未配置的解释器视作后续可以假定存在的能力。
 

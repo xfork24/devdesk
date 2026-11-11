@@ -174,6 +174,52 @@
               "source": {
                 "type": "constant",
                 "value": "当前默认 Workflow 与 tests.run/TestRecipe 声明的执行合同，不是环境实测回执。若要采用其他解释器或 runner，先显式修改 Workflow 与执行工具，不能把未配置能力留给实现阶段猜测。"
+              },
+              "execution_evidence": {
+                "type": "constant",
+                "value": {
+                  "delivery_ref": "builtin-delivery-execution-evidence-v1",
+                  "run_fields": [
+                    "sequence",
+                    "phase",
+                    "command",
+                    "cwd",
+                    "started_at",
+                    "finished_at",
+                    "exit_code",
+                    "stdout",
+                    "stderr",
+                    "files",
+                    "environment",
+                    "termination"
+                  ],
+                  "environment_fields": [
+                    "runtime",
+                    "version",
+                    "platform",
+                    "arch"
+                  ],
+                  "termination_fields": [
+                    "status",
+                    "signal",
+                    "error",
+                    "timed_out",
+                    "cancelled"
+                  ],
+                  "phase_values": [
+                    "red",
+                    "green",
+                    "regression"
+                  ],
+                  "termination_status_values": [
+                    "exited",
+                    "signalled",
+                    "timed_out",
+                    "cancelled",
+                    "unknown"
+                  ],
+                  "instructions": "按此合同为每轮实际执行采集原始字段；不得把 Task 必填证据字段扩展为本合同无法表达的格式。需要额外字段时先修改显式交付合同，不要求用摘要替代原始记录。"
+                }
               }
             }
           }
@@ -370,7 +416,7 @@
             "type": "agent",
             "role_ref": "builtin-role-project-manager"
           },
-          "task_instructions": "按项目规划 Skill 将需求与设计拆成可交付 Task 集合。每个任务包含唯一 key、title、instructions、dependencies；依赖使用任务 key，必须是 DAG。 必须遵守 inputs.engineering_constraints 中已声明的实现运行时、测试 runner、依赖及解释器边界。没有配置的能力不能作为待验证假设交给后续节点。 每项 Task 必须包含可通过真实业务 Red/Green 验收的实现范围；独立测试、文档、证据核验和候选评审由 Task Workflow 对应节点承担，不另建纯验证或纯证据 Task。小功能优先保持单一实现 Task。每项 instructions 明确各个 TDD 增量、开发自有增量测试与独立只读 tests 的所有权，以及逐增量原始证据交付责任。",
+          "task_instructions": "按项目规划 Skill 将需求与设计拆成可交付 Task 集合。每个任务包含唯一 key、title、instructions、dependencies；依赖使用任务 key，必须是 DAG。 必须遵守 inputs.engineering_constraints 中已声明的实现运行时、测试 runner、依赖及解释器边界。没有配置的能力不能作为待验证假设交给后续节点。 每项 Task 必须包含可通过真实业务 Red/Green 验收的实现范围；独立测试、文档、证据核验和候选评审由 Task Workflow 对应节点承担，不另建纯验证或纯证据 Task。小功能优先保持单一实现 Task。每项 instructions 明确各个 TDD 增量、开发自有增量测试与独立只读 tests 的所有权，以及逐增量原始证据交付责任。 每次执行的证据字段遵守 inputs.engineering_constraints.execution_evidence；不得在 Task 中强制要求该合同无法表达的字段，也不得要求把执行元数据混入原始 stdout。",
           "required_skill_refs": [
             "builtin-skill-project-planning-v2"
           ],
@@ -1538,6 +1584,10 @@
     },
     "/data/steps/3/executor/tool_ref": {
       "template_ref": "governance.builtin-tool-materials-capture-v1",
+      "target": "revision"
+    },
+    "/data/steps/3/executor/arguments/execution_evidence/value/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-execution-evidence-v1",
       "target": "revision"
     }
   },

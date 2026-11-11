@@ -22,6 +22,10 @@ def verify_evidence(client, rows, output):
  assert {'red','green'} <= {run['phase'] for run in evidence['runs']}, 'Raw evidence must include actual Red and Green'
  for run in evidence['runs']:
   assert isinstance(run['stdout'],str) and isinstance(run['stderr'],str)
+  assert {'runtime','version','platform','arch'} <= set(run['environment'])
+  assert {'status','signal','error','timed_out','cancelled'} <= set(run['termination'])
+  if run['phase']=='green':
+   assert run['exit_code']==0 and run['termination']=={'status':'exited','signal':None,'error':None,'timed_out':False,'cancelled':False}
   for source in run['files']:
    assert hashlib.sha256(source['content'].encode()).hexdigest()==source['sha256'], ('Evidence snapshot digest mismatch',run['sequence'],source['path'])
  for key in ['documentation','review','candidate_review']:
