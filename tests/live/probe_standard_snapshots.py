@@ -143,6 +143,7 @@ Feature 全量测试为 tests/{directory}-feature/behavior.test.mjs，覆盖两�
     root = c.rpc('query.workflow_instance', {'owner_id': feature})['record']['id']
     initial = c.rpc('query.workflow_instance', {'id': root})
     manager = c.command('orchestration.open', root, initial['record']['revision'])['id']
+    (out / 'context.json').write_text(json.dumps({'project': project, 'feature': feature, 'root': root, 'manager': manager, 'sa': {'id': sa['id']}, 'sb': {'id': sb['id']}, 'wf': {'id': wf['id']}, 'wb': {'id': wb['id']}, 'pa': pa, 'pb': pb, 'original_binary_sha256': hashlib.sha256(private.read_bytes()).hexdigest()}, ensure_ascii=False, indent=2))
     manager_input(c, manager, '首个业务 Agent 的 inputs.goal 已包含完整任务事实。按当前工作流完成需求、设计、规划和真实 Task 创建并接纳创建结果。必须恰好创建 Add、Twice 两个 Task。之后立即 workflow.pause 根流程并结束 Turn，保持 Task 子调用未派发；等待验收入口设置第二项工作的规范。不要修改计划、绕过或豁免。')
     workspace, instances, paused = wait(c, root, manager, lambda ws, rows, parent: len(ws['detail']['tasks']) == 2 and parent['data']['paused'] and len(rows) == 1, 'Task creation')
     tasks = workspace['detail']['tasks']
@@ -203,6 +204,10 @@ Feature 全量测试为 tests/{directory}-feature/behavior.test.mjs，覆盖两�
     succeeded = [r for r in calls if r['status'] == 'succeeded']
     names = [r['request']['definition']['qualified_name'] for r in succeeded]
     assert names.count('tests.run') >= 6 and names.count('git.advance') >= 3 and names.count('git.publish') >= 3
+    from verify_standard_history import verify
+    integrity = verify(out)
+    (out / 'integrity-report.json').write_text(json.dumps(integrity, ensure_ascii=False, indent=2))
+    report['history_integrity'] = integrity
     report.update(passed=True, project=project, feature=feature, tasks=[ta['id'], tb['id']], initial_standards=[original_standard, sb['id']], switched_plan=old_plan, original_executions=[s['id'] for s in old_executions], native_task_count=len(all_sessions), test_receipts=names.count('tests.run'), git_advances=names.count('git.advance'), git_publications=names.count('git.publish'), binary_sha256=hashlib.sha256(private.read_bytes()).hexdigest())
     (out / 'final.json').write_text(json.dumps(workspace, ensure_ascii=False, indent=2))
     print('PASS real two-Task Standard adoption, historical switch, restart and engineering receipts', flush=True)
