@@ -104,11 +104,11 @@ export function RoleConversation({
       : owner === feature?.id
         ? feature
         : tasks.find((t) => t.id === owner);
-  const workLock = configurations.find(
+  const workLock = configurations.filter(
     (r) =>
       r.kind === "work_configuration" &&
       r.definition_id === owner,
-  );
+  ).at(-1);
   const runtime = configurations.filter(
     (r) =>
       r.kind === "workflow_instance" &&
@@ -125,6 +125,9 @@ export function RoleConversation({
   const recommended = plan?.steps.find(
     (s: Row) => s.key === recommendedExecution?.step,
   );
+  const boundAgents = runtime?.data.plan?.definitions
+    ? Object.values(runtime.data.plan.definitions as Row).filter((row:any) => row.kind === "agent").map((row:any) => row.id as string)
+    : Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}) as string[];
   const composite = catalog.find((r) => r.id === agent && r.kind === "agent");
   const capability = catalog.find(
     (r) => r.id === composite?.data.capability_ref,
@@ -133,12 +136,12 @@ export function RoleConversation({
   useEffect(() => {
     if (!workLock || owner === project.id || global || sessionId) return;
     if (
-      !Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}).includes(agent)
+      !boundAgents.includes(agent)
     ) {
       setAgent(recommendation || "");
       setInstanceId("");
     }
-  }, [workLock?.id, owner, recommendation, sessionId]);
+  }, [workLock?.id, runtime?.data.active_plan_revision_id, owner, recommendation, sessionId]);
   useEffect(() => {
     let current = true;
     if (!agent || catalog.some((r) => r.id === agent)) return;
@@ -184,7 +187,7 @@ export function RoleConversation({
         detail?.session.agent === a.id) &&
       (detail?.session.agent === a.id ||
         (workLock && owner !== project.id && !global
-          ? Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}).includes(
+          ? boundAgents.includes(
               a.id,
             )
           : !choices.some((d) => d.supersedes === a.id))),
@@ -197,7 +200,7 @@ export function RoleConversation({
         (!workLock ||
           owner === project.id ||
           global ||
-          Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}).includes(
+          boundAgents.includes(
             r.id,
           )),
     );
@@ -212,7 +215,7 @@ export function RoleConversation({
           ? current
           : selected.id,
       );
-  }, [catalog, owner, recommendation, sessionId, composite?.id]);
+  }, [catalog, owner, runtime?.data.active_plan_revision_id, workLock?.id, recommendation, sessionId, composite?.id]);
   const instances = catalog.filter(
     (r) =>
       r.kind === "agent_instance" &&
@@ -559,10 +562,8 @@ export function RoleConversation({
                         ...(!global &&
                         owner !== project.id &&
                         runtime?.data.role_agent_bindings &&
-                        Object.values(
-                          runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {},
-                        ).includes(composite.id)
-                          ? { frozen_feature_id: feature?.id }
+                        boundAgents.includes(composite.id)
+                          ? { frozen_work_id: owner }
                           : {}),
                         scope: global
                           ? { kind: "global" }

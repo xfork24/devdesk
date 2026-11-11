@@ -670,11 +670,20 @@ impl Engine {
                             && row.data["agent_revision_id"] == key,
                         "Agent 不属于指定编排控制器",
                     )?;
-                } else if let Some(feature) = p["frozen_feature_id"].as_str() {
+                } else if let Some(work) = p["frozen_work_id"]
+                    .as_str()
+                    .or_else(|| p["frozen_feature_id"].as_str())
+                {
+                    let selected_work = work_reference(s, work)?;
+                    require(
+                        selected_work.scope(s)?.project() == scope.project(),
+                        "冻结工作范围不匹配",
+                    )?;
                     require(
                         s.governance.iter().any(|r| {
                             r.kind == "workflow_instance"
-                                && r.data["owner_id"] == feature
+                                && r.data["owner_id"] == work
+                                && crate::standards::is_work_root(s, r)
                                 && r.scope.project() == scope.project()
                                 && r.data["plan"]["definitions"][&key]["content_hash"]
                                     == agent.content_hash
