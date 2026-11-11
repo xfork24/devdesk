@@ -70,10 +70,13 @@ def verify(directory: Path):
     publications = []
     pairs_by_task = {}
     task_test_files = set()
+    task_test_contents = {}
     for _, child in instances:
         if child['parent_execution_id'] is not None:
             red_step = next(step for step in child['steps'] if step['step'] == 'red')
-            task_test_files.update(by_id[red_step['outputs']['result']][1]['value']['recipe']['files'])
+            red_receipt = by_id[red_step['outputs']['result']][1]['value']
+            task_test_files.update(red_receipt['recipe']['files'])
+            task_test_contents.update({file['path']: file['content'] for file in red_receipt['execution']['files']})
     assert len(task_test_files) == 2
     add_test = next(path for path in task_test_files if '-add/behavior.test.mjs' in path)
     expected_feature_tests = task_test_files | {add_test.replace('-add/behavior.test.mjs', '-feature/behavior.test.mjs')}
@@ -89,6 +92,8 @@ def verify(directory: Path):
         for file in tests['execution']['files']:
             assert hashlib.sha256(file['content'].encode()).hexdigest() == file['sha256']
             assert blob(candidate['revision'], file['path']) == file['content'].encode()
+            if file['path'] in task_test_contents:
+                assert file['content'] == task_test_contents[file['path']], 'Frozen independent Task tests changed during Feature integration'
         pr = publication['pull_request']
         assert pr['merged'] and pr['merge_commit'] == pr['head'] == candidate['revision']
         publications.append({'owner_id': instance['owner_id'], 'candidate': candidate['revision'], 'pull_request': pr})
