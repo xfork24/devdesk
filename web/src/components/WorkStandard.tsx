@@ -24,7 +24,8 @@ export function WorkStandard({
 }) {
   const [records, setRecords] = useState<Row[]>([]),
     [configuration, setConfiguration] = useState<Row>(),
-    [history, setHistory] = useState<Row[]>([]);
+    [history, setHistory] = useState<Row[]>([]),
+    [historyLoading, setHistoryLoading] = useState(true);
   const [selected, setSelected] = useState(""),
     [workflow, setWorkflow] = useState(""),
     [reason, setReason] = useState("");
@@ -45,19 +46,34 @@ export function WorkStandard({
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      loadCatalog(request, { id: projectId }, true),
-      request("query.work_configuration", {
-        project_id: projectId,
-        owner_id: owner.id,
-      }),
-      request("query.project_configuration", { project_id: projectId }),
-    ])
-      .then(([rows, data, defaults]) => {
+    setHistoryLoading(true);
+    void loadCatalog(request, { id: projectId }, true)
+      .then((rows) => {
+        if (active) setRecords(rows);
+      })
+      .catch((e) => {
+        if (active) setError(String(e));
+      });
+    const work = request("query.work_configuration", {
+      project_id: projectId,
+      owner_id: owner.id,
+    })
+      .then((data) => {
         if (active) {
-          setRecords(rows);
           setConfiguration(data.configuration);
           setHistory(data.history || []);
+        }
+        return data;
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    void Promise.all([
+      work,
+      request("query.project_configuration", { project_id: projectId }),
+    ])
+      .then(([data, defaults]) => {
+        if (active) {
           setSelected(
             instance?.data.plan.standard_ref ||
               data.configuration?.data.standard_ref ||
@@ -305,44 +321,119 @@ export function WorkStandard({
           ) : null}
         </>
       ) : null}
-      <details onToggle={(event) => {
-        if (event.currentTarget.open && !compareChoices.length)
-          void run(async () => {
-            const value = await request("query.work_standard_choices", {project_id: projectId, limit: 100});
-            setCompareChoices(value.records);
-            setChoiceTotal(value.total);
-          });
-      }}>
+      <details
+        onToggle={(event) => {
+          if (event.currentTarget.open && !compareChoices.length)
+            void run(async () => {
+              const value = await request("query.work_standard_choices", {
+                project_id: projectId,
+                limit: 100,
+              });
+              setCompareChoices(value.records);
+              setChoiceTotal(value.total);
+            });
+        }}
+      >
         <summary>与其他工作比较规范</summary>
-        <label>比较工作
-          <select aria-label="比较工作" value={compareOwner} onChange={(event) => {setCompareOwner(event.target.value);setWorkComparison(undefined);}}>
+        <label>
+          比较工作
+          <select
+            aria-label="比较工作"
+            value={compareOwner}
+            onChange={(event) => {
+              setCompareOwner(event.target.value);
+              setWorkComparison(undefined);
+            }}
+          >
             <option value="">请选择工作</option>
-            {compareChoices.filter((row) => row.id !== owner.id).map((row) => <option key={row.id} value={row.id}>{row.project_title} / {row.work.kind === "project" ? "Project" : row.work.kind === "feature" ? "Feature" : "Task"} · {row.title}</option>)}
+            {compareChoices
+              .filter((row) => row.id !== owner.id)
+              .map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.project_title} /{" "}
+                  {row.work.kind === "project"
+                    ? "Project"
+                    : row.work.kind === "feature"
+                      ? "Feature"
+                      : "Task"}{" "}
+                  · {row.title}
+                </option>
+              ))}
           </select>
         </label>
-        {compareChoices.length < choiceTotal ? <ActionButton disabled={busy} onClick={() => void run(async () => {
-          const value = await request("query.work_standard_choices", {project_id:projectId,offset:compareChoices.length,limit:100});
-          setCompareChoices((rows) => [...rows,...value.records]);
-          setChoiceTotal(value.total);
-        })}>加载更多工作</ActionButton> : null}
-        <ActionButton disabled={busy || !compareOwner} onClick={() => void run(async () => {
-          setWorkComparison(await request("query.work_standard_diff",{project_id:projectId,before_owner_id:owner.id,after_owner_id:compareOwner}));
-        })}>比较工作规范</ActionButton>
-        {workComparison ? <>
-          <p>双方实际入口的规范差异</p>
-          <StandardDiff diff={workComparison.entry_diff} />
-          <details><summary>完整快照差异与采用依据</summary>
-            <StandardDiff diff={workComparison.diff} />
-            {[workComparison.before,workComparison.after].map((selection:Row,index:number) => <section key={index}>
-              <p>{index === 0 ? "当前工作" : "比较工作"} · {selection.standard_ref} · {selection.basis === "execution" ? "实际运行计划" : "尚未执行的配置"}</p>
-              <p>子工作：{selection.children.length} · 运行例外：{selection.exceptions.length}</p>
-              <ul>{selection.children.map((child:Row,index:number) => <li key={index}>{child.owner_id} · {child.standard_ref}</li>)}</ul>
-            </section>)}
-          </details>
-        </> : null}
+        {compareChoices.length < choiceTotal ? (
+          <ActionButton
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const value = await request("query.work_standard_choices", {
+                  project_id: projectId,
+                  offset: compareChoices.length,
+                  limit: 100,
+                });
+                setCompareChoices((rows) => [...rows, ...value.records]);
+                setChoiceTotal(value.total);
+              })
+            }
+          >
+            加载更多工作
+          </ActionButton>
+        ) : null}
+        <ActionButton
+          disabled={busy || !compareOwner}
+          onClick={() =>
+            void run(async () => {
+              setWorkComparison(
+                await request("query.work_standard_diff", {
+                  project_id: projectId,
+                  before_owner_id: owner.id,
+                  after_owner_id: compareOwner,
+                }),
+              );
+            })
+          }
+        >
+          比较工作规范
+        </ActionButton>
+        {workComparison ? (
+          <>
+            <p>双方实际入口的规范差异</p>
+            <StandardDiff diff={workComparison.entry_diff} />
+            <details>
+              <summary>完整快照差异与采用依据</summary>
+              <StandardDiff diff={workComparison.diff} />
+              {[workComparison.before, workComparison.after].map(
+                (selection: Row, index: number) => (
+                  <section key={index}>
+                    <p>
+                      {index === 0 ? "当前工作" : "比较工作"} ·{" "}
+                      {selection.standard_ref} ·{" "}
+                      {selection.basis === "execution"
+                        ? "实际运行计划"
+                        : "尚未执行的配置"}
+                    </p>
+                    <p>
+                      子工作：{selection.children.length} · 运行例外：
+                      {selection.exceptions.length}
+                    </p>
+                    <ul>
+                      {selection.children.map((child: Row, index: number) => (
+                        <li key={index}>
+                          {child.owner_id} · {child.standard_ref}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ),
+              )}
+            </details>
+          </>
+        ) : null}
       </details>
       <details>
-        <summary>规范采用历史（{history.length}）</summary>
+        <summary>
+          规范采用历史（{historyLoading ? "加载中" : history.length}）
+        </summary>
         <ul>
           {history.map((plan: Row) => (
             <li key={plan.id}>
