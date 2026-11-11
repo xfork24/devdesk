@@ -54,7 +54,7 @@ flowchart LR
 
 测试在固定、无模型凭据、禁网、只读代码导出的 Docker 环境运行。Node 报告器区分断言失败和环境故障，stdout 中的伪造报告不构成证据。
 
-候选工具返回实际父提交与确切 diff。默认配置执行独立评审、候选测试及确切确认；Git 接纳核对真实候选和测试回执。本地 CAS、远端精确 lease 与 PR merged 是分别记录的事实，不存在跨系统原子事务。目标变化使旧候选不可直接接纳，未知推进必须先核对。
+候选工具返回实际父提交与确切 diff。默认配置执行独立评审、候选测试及项目经理的显式接纳，automatic 确认策略无需 Human 签署；Git 接纳核对真实候选和测试回执。本地 CAS、远端精确 lease 与 PR merged 是分别记录的事实，不存在跨系统原子事务。目标变化使旧候选不可直接接纳，未知推进必须先核对。
 
 ## 权限、运行时与供应商
 
@@ -69,3 +69,5 @@ Permission profile 与目标绑定分别版本化。两层权限、Scope、工�
 React Web 在 Rust 构建时嵌入，发布程序不依赖源码或宿主 Node。配置两列编辑器、通用阶段/步骤视图、确切任务预览、材料与确认都读取同一后端事实。讨论与经验按 AgentID 归属，选择变化使旧异步响应失效。
 
 验证覆盖 Rust、HTTP、debug / release Chromium、真实 Git / Docker、原生模型和独立包。真实模型、SDK 本地夹具和接口替身分别报告；Linux worker 不能代替 Ubuntu 宿主验收。当前证据及限制见 [执行记录](plans/workflow-business-configuration/EXECUTION.md)。
+
+运行计划修订按新图实际引用的角色、资源和权限/集成锁计算影响；子流程重新编译时移除未使用的父级闭包资源，不会使已完成前缀失效。`workflow.change.preview/apply` 支持单独的 `revert_change {change_id}`：只可回退本实例最近应用的纯 `upsert_step` 变更，且全部受影响的替代执行仍未启动，不包含子流程调用。core 校验原冻结计划、输入和不可变执行历史，创建新的计划修订并逐字复用原回执；原始拒绝、原变更和被撤回的 queued 执行均保留。已启动、跨实例、混合操作或存在新外部作用时拒绝回退。

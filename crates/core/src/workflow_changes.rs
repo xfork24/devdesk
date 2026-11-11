@@ -18,6 +18,10 @@ struct Preview {
     waivers: Vec<(String, String)>,
     footprint: Value,
     preview_hash: String,
+    #[serde(default)]
+    restored_executions: Vec<StepExecution>,
+    #[serde(default)]
+    reverted_change_id: Option<Id>,
 }
 
 fn pending(state: &EngineeringState, instance_id: &str) -> bool {
@@ -39,6 +43,118 @@ pub(crate) fn change_pending(state: &EngineeringState, id: &str) -> bool {
 }
 
 impl Engine {
+    /// Undo only the latest step revision, before any replacement execution ran.
+    /// Historical receipts are reused verbatim; rejection and pending states survive.
+    fn revert_preview(
+        &self,
+        state: &EngineeringState,
+        row: &ConfigurationRecord,
+        old: &ConfiguredWorkflowInstance,
+        changes: &WorkflowChangeSet,
+        change_id: &str,
+    ) -> Result<Preview> {
+        let change = state.configuration(change_id)?;
+        require(
+            change.kind == "workflow_change"
+                && change.definition_id == row.id
+                && change.data["status"] == "applied"
+                && change.data["new_plan_revision_id"] == old.active_plan_revision_id,
+            "只能回退本实例最近已应用的变更",
+        )?;
+        let source_changes: WorkflowChangeSet =
+            serde_json::from_value(change.data["changeset"].clone())
+                .map_err(|e| err("invalid_configuration", e.to_string()))?;
+        require(
+            source_changes
+                .operations
+                .iter()
+                .all(|op| matches!(op, WorkflowChangeOperation::UpsertStep { .. })),
+            "只支持回退节点修订，不撤销输入、范围、豁免或外部作用",
+        )?;
+        let previous = state.configuration(&source_changes.plan_revision_id)?;
+        require(
+            previous.kind == "workflow_plan_revision" && previous.data["instance_id"] == row.id,
+            "原计划不属于此实例",
+        )?;
+        let source: Preview = serde_json::from_value(change.data["preview"].clone())
+            .map_err(|e| err("invalid_configuration", e.to_string()))?;
+        let plan: ConfiguredWorkflowPlan = serde_json::from_value(previous.data["plan"].clone())
+            .map_err(|e| err("invalid_configuration", e.to_string()))?;
+        require(
+            json!(old.plan) == json!(source.plan)
+                && json!(old.inputs) == previous.data["inputs"]
+                && json!(old.role_agent_bindings) == previous.data["role_agent_bindings"],
+            "当前合同或输入已变化",
+        )?;
+        // Child calls could have changed descendants even without tool outputs.
+        require(
+            plan.document
+                .steps
+                .iter()
+                .chain(source.document.steps.iter())
+                .all(|s| {
+                    !source.affected.contains(&s.key)
+                        || !matches!(s.executor, StepExecutor::Workflow { .. })
+                }),
+            "回退不能恢复子流程调用",
+        )?;
+        let executions: Vec<_> = old
+            .steps
+            .iter()
+            .filter(|e| source.affected.contains(&e.step))
+            .cloned()
+            .collect();
+        require(
+            executions.iter().all(|e| {
+                e.status == StepExecutionStatus::Queued
+                    && e.inputs.is_empty()
+                    && e.input_digest.is_empty()
+                    && e.outputs.is_empty()
+                    && e.session_id.is_none()
+                    && e.turn_id.is_none()
+                    && e.tool_call_id.is_none()
+                    && e.started.is_none()
+                    && e.finished.is_none()
+            }),
+            "替代执行已经启动，不能回退",
+        )?;
+        let restored: Vec<StepExecution> =
+            serde_json::from_value(source.footprint["executions"].clone())
+                .map_err(|e| err("invalid_configuration", e.to_string()))?;
+        require(!restored.is_empty(), "原变更没有可恢复执行")?;
+        for execution in &restored {
+            require(
+                execution.workflow_instance_id == row.id
+                    && state.governance.iter().any(|r| {
+                        r.kind == "workflow_execution_history"
+                            && r.definition_id == execution.id
+                            && r.data == json!(execution)
+                    })
+                    && plan.document.steps.iter().any(|s| {
+                        s.node_id == execution.node_id
+                            && configuration_hash(s) == execution.contract_digest
+                    }),
+                "原执行与不可变历史或原合同不符",
+            )?;
+        }
+        let footprint = json!({"executions":executions,"tasks":[],"children":[]});
+        let preview_hash = configuration_hash(&(changes, &plan, &restored, &footprint));
+        Ok(Preview {
+            document: plan.document.clone(),
+            plan,
+            bindings: old.role_agent_bindings.clone(),
+            inputs: old.inputs.clone(),
+            affected: source.affected,
+            budget_updates: BTreeSet::new(),
+            bypassed: BTreeSet::new(),
+            waivers: vec![],
+            footprint,
+            preview_hash,
+            restored_executions: restored,
+            reverted_change_id: Some(change_id.to_owned()),
+        })
+    }
+
     fn change_preview_in(
         &self,
         state: &EngineeringState,
@@ -51,6 +167,13 @@ impl Engine {
             changes.plan_revision_id == old.active_plan_revision_id,
             "计划已变化",
         )?;
+        if let Some(change_id) = changes.operations.iter().find_map(|op| match op {
+            WorkflowChangeOperation::RevertChange { change_id } => Some(change_id),
+            _ => None,
+        }) {
+            require(changes.operations.len() == 1, "回退必须单独预演和应用")?;
+            return self.revert_preview(state, row, &old, changes, change_id);
+        }
         let mut document = old.plan.document.clone();
         let mut bindings = old.role_agent_bindings.clone();
         let mut inputs = old.inputs.clone();
@@ -74,6 +197,7 @@ impl Engine {
         let mut task_changes = vec![];
         for op in &changes.operations {
             match op {
+                WorkflowChangeOperation::RevertChange { .. } => unreachable!(),
                 WorkflowChangeOperation::ReplacePlan { document: d } => document = d.clone(),
                 WorkflowChangeOperation::UpsertStep { step } => {
                     if let Some(slot) = document.steps.iter_mut().find(|s| {
@@ -449,9 +573,24 @@ impl Engine {
                 .map(|(k, r)| (k.clone(), r.content_hash.clone()))
                 .collect::<BTreeMap<_, _>>()
         };
-        if plan.roles != old.plan.roles
-            || definitions(&plan) != definitions(&old.plan)
-            || json!(plan.permission_locks) != json!(old.plan.permission_locks)
+        // Children inherit their parent's compiled closure. Dropping unused parent
+        // resources does not change any child execution contract.
+        let old_definitions = definitions(&old.plan);
+        if plan
+            .roles
+            .iter()
+            .any(|(k, v)| old.plan.roles.get(k) != Some(v))
+            || definitions(&plan)
+                .iter()
+                .any(|(k, v)| old_definitions.get(k) != Some(v))
+            || plan
+                .permission_locks
+                .iter()
+                .any(|(k, v)| old.plan.permission_locks.get(k).map(|v| json!(v)) != Some(json!(v)))
+            || plan
+                .integration_locks
+                .iter()
+                .any(|(k, v)| old.plan.integration_locks.get(k).map(|v| json!(v)) != Some(json!(v)))
         {
             affected.extend(old.plan.document.steps.iter().map(|s| s.key.clone()));
         }
@@ -484,6 +623,8 @@ impl Engine {
             waivers,
             footprint,
             preview_hash,
+            restored_executions: vec![],
+            reverted_change_id: None,
         })
     }
 
@@ -507,7 +648,7 @@ impl Engine {
             .map(|e| e.id.clone())
             .collect::<Vec<_>>();
         Ok(
-            json!({"preview_hash":preview.preview_hash,"affected":preview.affected,"budget_updates":preview.budget_updates,"bypassed":preview.bypassed,"waivers":preview.waivers,"must_stop":stop,"document":preview.document,"plan_revision_id":instance.active_plan_revision_id,"changeset":changes}),
+            json!({"preview_hash":preview.preview_hash,"affected":preview.affected,"budget_updates":preview.budget_updates,"bypassed":preview.bypassed,"waivers":preview.waivers,"must_stop":stop,"document":preview.document,"plan_revision_id":instance.active_plan_revision_id,"changeset":changes,"reverted_change_id":preview.reverted_change_id,"restored_execution_ids":preview.restored_executions.iter().map(|e|&e.id).collect::<Vec<_>>()}),
         )
     }
 
@@ -782,6 +923,13 @@ impl Engine {
             .steps
             .iter()
             .map(|step| {
+                if let Some(e) = preview
+                    .restored_executions
+                    .iter()
+                    .find(|e| e.node_id == step.node_id)
+                {
+                    return e.clone();
+                }
                 if !preview.affected.contains(&step.key) {
                     if let Some(e) = old_steps.iter().find(|e| e.node_id == step.node_id) {
                         return e.clone();
@@ -841,7 +989,7 @@ impl Engine {
         freeze_plan(state, &mut instance, &row.scope, &changes.reason)?;
         for execution in &instance.steps {
             if execution.plan_revision_id != instance.active_plan_revision_id {
-                state.governance.push(record("workflow_carry_forward",execution.id.clone(),row.scope.clone(),execution.step.clone(),1,None,json!({"from_plan":previous_plan,"to_plan":instance.active_plan_revision_id,"source_plan":execution.plan_revision_id,"execution_id":execution.id,"contract_digest":execution.contract_digest,"input_digest":execution.input_digest,"outputs":execution.outputs,"invocation_timeout_extended":preview.budget_updates.contains(&execution.step)}),true));
+                state.governance.push(record("workflow_carry_forward",execution.id.clone(),row.scope.clone(),execution.step.clone(),1,None,json!({"from_plan":previous_plan,"to_plan":instance.active_plan_revision_id,"source_plan":execution.plan_revision_id,"execution_id":execution.id,"contract_digest":execution.contract_digest,"input_digest":execution.input_digest,"outputs":execution.outputs,"invocation_timeout_extended":preview.budget_updates.contains(&execution.step),"reverted_change_id":preview.reverted_change_id}),true));
             }
         }
         for e in instance

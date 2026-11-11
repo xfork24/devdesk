@@ -5,6 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkflowChangeOperation {
+    RevertChange {
+        change_id: Id,
+    },
     ReplacePlan {
         document: WorkflowDefinition,
     },

@@ -295,6 +295,23 @@
             "dependencies"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "revert_change"
+            },
+            "change_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "change_id"
+          ],
+          "additionalProperties": false
         }
       ]
     },

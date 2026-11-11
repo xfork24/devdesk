@@ -924,6 +924,215 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
 }
 
 #[test]
+fn revising_child_ignores_unused_parent_roles_and_resource_locks() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let draft = cmd(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"子流程","document":document()}),
+    )
+    .unwrap();
+    let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let root = start(
+        &e,
+        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[
+            {"key":"call","name":"调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}},
+            {"key":"parent_only","name":"父流程独有职责","stage":"work","task_instructions":"读取父流程需求","executor":{"type":"agent","role_ref":"builtin-role-analyst-v1"}}
+        ]}),
+    );
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"call"}),
+    )
+    .unwrap();
+    let state = e.store.snapshot().unwrap();
+    let child = state
+        .governance
+        .iter()
+        .find(|r| r.kind == "workflow_instance" && r.id != root)
+        .unwrap()
+        .id
+        .clone();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&child),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    accept(&e, &child, "one");
+    let before = runtime(&e, &child);
+    assert!(
+        !before["runtime"]["plan"]["roles"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    let mut step = before["runtime"]["plan"]["document"]["steps"][1].clone();
+    step["name"] = json!("新的尾部交付说明");
+    let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"仅修订尾部","operations":[{"type":"upsert_step","step":step}]});
+    let preview = e
+        .query(
+            "workflow.change.preview",
+            &json!({"id":child,"changeset":changes}),
+            4,
+        )
+        .unwrap();
+    assert_eq!(preview["affected"], json!(["two"]));
+    cmd(
+        &e,
+        "workflow.change.apply",
+        Some(&child),
+        json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
+    )
+    .unwrap();
+    let after = runtime(&e, &child);
+    assert_eq!(after["runtime"]["steps"][0], before["runtime"]["steps"][0]);
+    assert!(
+        after["runtime"]["plan"]["roles"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn reverting_unstarted_step_revision_restores_exact_receipts_and_rejects_started_or_foreign_changes()
+ {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let root = start(&e, document());
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    accept(&e, &root, "one");
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"two"}),
+    )
+    .unwrap();
+    let before = runtime(&e, &root);
+    let operations = before["runtime"]["plan"]["document"]["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            let mut step = s.clone();
+            step["name"] = json!("修订合同");
+            json!({"type":"upsert_step","step":step})
+        })
+        .collect::<Vec<_>>();
+    let changes = json!({"plan_revision_id":before["runtime"]["active_plan_revision_id"],"reason":"修订全部合同","operations":operations});
+    let preview = e
+        .query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":changes}),
+            4,
+        )
+        .unwrap();
+    let applied = cmd(
+        &e,
+        "workflow.change.apply",
+        Some(&root),
+        json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
+    )
+    .unwrap();
+    let changed = runtime(&e, &root);
+    assert!(
+        changed["runtime"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["status"] == "queued")
+    );
+    let revert = json!({"plan_revision_id":changed["runtime"]["active_plan_revision_id"],"reason":"撤回尚未启动的修订","operations":[{"type":"revert_change","change_id":applied["id"]}]});
+    let foreign = start(&e, document());
+    let mut foreign_revert = revert.clone();
+    foreign_revert["plan_revision_id"] =
+        runtime(&e, &foreign)["runtime"]["active_plan_revision_id"].clone();
+    assert!(
+        e.query(
+            "workflow.change.preview",
+            &json!({"id":foreign,"changeset":foreign_revert}),
+            4
+        )
+        .is_err()
+    );
+    let preview = e
+        .query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":revert}),
+            4,
+        )
+        .unwrap();
+    cmd(
+        &e,
+        "workflow.change.apply",
+        Some(&root),
+        json!({"changeset":revert,"preview_hash":preview["preview_hash"]}),
+    )
+    .unwrap();
+    let restored = runtime(&e, &root);
+    assert_eq!(restored["runtime"]["steps"], before["runtime"]["steps"]);
+    assert_eq!(restored["runtime"]["plan"], before["runtime"]["plan"]);
+    assert_ne!(
+        restored["runtime"]["active_plan_revision_id"],
+        before["runtime"]["active_plan_revision_id"]
+    );
+    assert!(
+        e.query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":revert}),
+            4
+        )
+        .is_err()
+    );
+    accept(&e, &root, "two");
+    let mut changes = changes;
+    changes["plan_revision_id"] = runtime(&e, &root)["runtime"]["active_plan_revision_id"].clone();
+    let preview = e
+        .query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":changes}),
+            4,
+        )
+        .unwrap();
+    let applied = cmd(
+        &e,
+        "workflow.change.apply",
+        Some(&root),
+        json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
+    )
+    .unwrap();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    let revert = json!({"plan_revision_id":runtime(&e,&root)["runtime"]["active_plan_revision_id"],"reason":"禁止丢弃已启动的替代执行","operations":[{"type":"revert_change","change_id":applied["id"]}]});
+    assert!(
+        e.query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":revert}),
+            4
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
