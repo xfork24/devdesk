@@ -1,6 +1,6 @@
 # Standard 不可变规范快照实施与验收记录
 
-日期：2026-11-11。状态：代码与统一回归完成；真实双 Task 已完整完成，Feature 最终评审与发布进行中。
+日期：2026-11-11。状态：实施、main 统一回归、真实双 Task / Feature 工程验收与只读历史审计全部完成。
 
 实施工作区 `/Users/hengliu/.codex/worktrees/standard-snapshot/devdesk`，分支 `codex/standard-snapshot`，起点 `b70cd10`。与 main 上的 Delivery 改造 `269150b` 整合后，首次合入 main 为 `79d7d96`；后续验收修复继续从该 worktree 提交并合回 main。用户要求的统一测试在 main 执行，原 main 中未跟踪的 `review/` 保留。
 
@@ -47,14 +47,35 @@ Rust 与浏览器的 Harness 夹具明确属于离线回归，不计为真实模
 - Add：`0077fb77-0cc3-4a78-ba9f-b4593cef459b`，实际入口 `builtin-workflow-task-sol-high:6`，原 Standard 为 `standard.d7015ba25912e198bbf3061f21393b77b981ad8166663b95c819a36a8a8f493e:1`。
 - Twice：`257367ea-4e82-4df8-b02a-5a0450bc6296`，实际入口 `builtin-workflow-task-sol-high:7`，Standard 为 `standard.88c600e58aac3445ec427f66fbc1eccdd993e5e48e3d000532472b086167431e:1`，包含额外的 `standard_b_trace` 检查。
 
-两个子实例已按各自配置执行原生独立测试并固定快照，随后 Add 显式切换为 Standard B。旧计划、输入、输出及原生任务文本经签名 release 重启核验，仍指向原 Standard A；Twice 的初始执行依据为 B。两项实现分别保留两轮真实 Red/Green 和一次回归运行，每条交付运行记录已与原生命令观察对应。两项 Task 的 20 个节点及各自子流程均已完整完成并真实发布；Feature 全量及最终候选各运行 64 项测试，均为 64 通过、0 失败、0 跳过，三份指定测试均包含在配方中，两份 Task 独立测试内容保持冻结版本。当前仍待 Feature 两轮独立评审与最终发布，不将阶段成功记为完整闭环通过。
+两个子实例已按各自配置执行原生独立测试并固定快照，随后 Add 显式切换为 Standard B。旧计划、输入、输出及原生任务文本经签名 release 重启核验，仍指向原 Standard A；Twice 的初始执行依据为 B。两项实现分别保留两轮真实 Red/Green 和一次回归运行，每条交付运行记录已与原生命令观察对应。两项 Task 的 20 个节点及各自子流程均已完整完成并真实发布；Feature 全量及最终候选各运行 64 项测试，均为 64 通过、0 失败、0 跳过，三份指定测试均包含在配方中，两份 Task 独立测试内容保持冻结版本。Feature 两轮独立评审、最终接纳与发布均已完成，根流程已显式结束。只读审计确认 62 个当前业务节点全部完成，无跳过、无豁免。
 
 该运行在 main 的已合入版本启动；计划中的历史恢复重启已使用当时最终签名 release。`context.json` 保留最初与重启二进制 SHA256。排队管理轮次自然完成，未执行额外取消或改写业务记录。
 
-此前隔离运行 a 定位到控制策略重建问题，b 定位到 debug JSON 源视图栈溢出，均已修复并保留失败证据；它们不作为通过证据。真实验收完成后在本记录补充确切计划、执行与测试 / Git 回执数量。
+此前隔离运行 a 定位到控制策略重建问题，b 定位到 debug JSON 源视图栈溢出，均已修复并保留失败证据；它们不作为通过证据。最终通过证据为运行 c 的同数据集完整闭环；早期失败日志继续保留。
 
 真实执行进一步定位并修复了实际 Task 读取所属 Feature 合入目标的边界遗漏：只允许 `workspace.current` 读取其所属 Feature 的确切版本，不扩展快照、测试和 Git 写操作授权。main 新增真实 Git 回归通过，相关 `configured_workflows` 36 项、`standard_snapshots` 5 项全部通过；日志 `/tmp/devdesk-standard-main-scope-regression-20261111.log`。同一数据集在修复后的签名 release 恢复，只重试失败的只读目标查询，父调用自动恢复，保留原 Task 实例。恢复脚本首次严格检查遇到父调用传播的失败后退出，随后改为只恢复实际失败子步骤；该脚本修正没有重建子调用或改写业务结果。
 
-Twice 的 20 个节点及子流程先行全部完成并真实发布。Add 的旧候选随后因同一 Feature 目标已被 Twice 推进而被 CAS 拒绝（`目标已变化`）；这是并发保护，不将旧候选强行视为已接纳。探针原先在任何失败时停止，现允许真实控制者处理该明确冲突，并通过公开 `workflow.step.rework(target)` 在同一实例重新读取目标、构建、测试和评审候选。上游实现、两轮 TDD、旧候选及失败回执保持原记录；没有重建 Task、放宽检查或新增 Standard 变更。Add 已完成新目标读取、候选重建、测试、两轮独立评审、Git 接纳及发布，并以原 Task 实例完整结束。最终 Feature 闭环仍待评审与发布。
+Twice 的 20 个节点及子流程先行全部完成并真实发布。Add 的旧候选随后因同一 Feature 目标已被 Twice 推进而被 CAS 拒绝（`目标已变化`）；这是并发保护，不将旧候选强行视为已接纳。探针原先在任何失败时停止，现允许真实控制者处理该明确冲突，并通过公开 `workflow.step.rework(target)` 在同一实例重新读取目标、构建、测试和评审候选。上游实现、两轮 TDD、旧候选及失败回执保持原记录；没有重建 Task、放宽检查或新增 Standard 变更。Add 已完成新目标读取、候选重建、测试、两轮独立评审、Git 接纳及发布，并以原 Task 实例完整结束。Feature 随后以已测试的精确候选完成两轮独立评审、接纳、发布与根流程结束。
 
 最新独立包由 main 构建并验证通过，报告 `/tmp/devdesk-standard-package-current-20261111.json`、日志 `/tmp/devdesk-standard-package-probe-current-20261111.log`。包内运行程序 SHA256 为 `b81410fa76a49bb297e4525b00f355939581e1e9fdb84cfaf7ab65c7be14669c`；脱离源码启动、权限资产、不可变修订、纯 Standard 源、归档和重启历史恢复均通过，无模型调用。真实工程当前使用私有签名程序 SHA256 `322e143b34b20acf0d2dfa6cc4c49255128499bec498f13c4f0eadc63c0678da`；两次构建之间运行代码无改动，包另做独立验证，不将不同二进制 SHA 混为同一次测试。
+
+## 最终验收结论
+
+`tests/live/verify_standard_history.py` 直接只读核对 SQLite、真实原生命令日志与 Git 对象，不调用模型、不派发新工作。报告 `/tmp/devdesk-standard-real-20261111-c/integrity-report.json`，执行日志 `/tmp/devdesk-standard-history-final-20261111.log`；真实流程日志 `/tmp/devdesk-standard-main-real-20261111-c-resume3.log`。
+
+- 一个 Feature 根实例和两个真实 Task 实例全部完成，当前节点合计 62，全部为 completed，无 skipped、无 workflow_waiver。
+- 两项 Task 分别以 A / B 的确切 Workflow 与 Standard 开始原生执行；A 的早期测试、输入及代码快照固定后，显式采用 B。只有这一条 Standard 变更，没有改变父 Feature 的 Standard A。
+- 旧计划、3 个早期已执行节点的输入摘要、完整输入、输出引用及输出内容与切换前快照完全一致；初次子调用的 A / B 引用保留。历史原生输入经重启仍指向其原始依据。
+- 两项实现各有 2 轮独立 Red/Green 和一次回归运行，所有交付运行记录均能在实际原生命令输出中找到；每对 Red/Green 使用相同命令及测试内容。两项最终独立评审均实际返回 `standard_b_trace: passed`。
+- 成功的真实平台测试回执为 11 份，Git 接纳和发布各 3 份。Feature 全量与最终候选均为 64 / 64 通过，0 失败、0 跳过；配方包含两份 Task 独立测试及 Feature 测试，Task 独立测试内容在集成后保持冻结值。
+- 三个发布回执的 head、merge_commit 与各自通过测试的 candidate SHA 完全相同；发布事实来自真实平台账本，不根据模型自述推断。
+
+| 工作 | 专用测试仓库 PR | 实际测试并发布的候选 SHA |
+|---|---|---|
+| Twice | [#37](https://github.com/xfork24/devdesk-integration-test/pull/37) | `e2d8635e1325cd8b825223e0a252aaedce6b407f` |
+| Add | [#38](https://github.com/xfork24/devdesk-integration-test/pull/38) | `f2016637ce338e0a4b1ff4abef573c8a5ca45902` |
+| Feature | [#39](https://github.com/xfork24/devdesk-integration-test/pull/39) | `6002ecc0e431acf6a5e34796a54141aa29821623` |
+
+发布包为 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz`，SHA256 以同名 `.sha256` 文件为准。独立运行验证后，收尾只更新包内 Markdown；最终运行资产字节与权限的一致性、文档提交信息和封包 SHA 记录在 `/tmp/devdesk-standard-package-current-20261111.json`，实际验证时的原包另保留在 `/tmp/devdesk-standard-package-runtime-validated-20261111.tar.gz`。
+
+环境为 macOS / arm64、Chromium、真实 Codex 0.167.0 和固定 Docker 镜像。此记录不把本机检查称为 Linux Host 实机验收。当前实现只支持新的数据集协议；旧数据未迁移、未改写。
