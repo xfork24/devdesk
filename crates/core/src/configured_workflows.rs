@@ -783,10 +783,40 @@ pub fn compile_workflow_sources(
                 plan.definitions
                     .insert(definition.id.clone(), definition.clone());
             }
-            for (name, port) in step.outputs.iter().chain(&doc.inputs) {
+            for (name, port, is_output) in step
+                .outputs
+                .iter()
+                .map(|(n, p)| (n, p, true))
+                .chain(doc.inputs.iter().map(|(n, p)| (n, p, false)))
+            {
                 let output = reference(state, &port.delivery_ref, "delivery_type", scope)?;
                 let definition: DeliveryTypeDefinition = output.decode()?;
-                definition.validate()?;
+                state.validate_delivery_specs(&definition, scope)?;
+                if is_output {
+                    match (&definition.producer, &step.executor) {
+                        (Some(DeliveryProducer::Agent), StepExecutor::Agent { .. })
+                        | (Some(DeliveryProducer::Workflow), StepExecutor::Workflow { .. })
+                        | (None, _) => {}
+                        (
+                            Some(DeliveryProducer::Platform { tools }),
+                            StepExecutor::Tool { tool_ref, .. },
+                        ) => {
+                            let tool: ToolDefinition =
+                                reference(state, tool_ref, "tool", scope)?.decode()?;
+                            require(
+                                tool.implementation == "platform"
+                                    && tools.contains(&tool.qualified_name),
+                                "Delivery 必须由声明的平台工具产生",
+                            )?;
+                        }
+                        _ => {
+                            return Err(err(
+                                "invalid_configuration",
+                                "Delivery 生产者与步骤执行方式不匹配",
+                            ));
+                        }
+                    }
+                }
                 if let Some(schema) = &definition.content_schema {
                     if let Some(validator) = validator {
                         validator.validate_schema(schema)?;

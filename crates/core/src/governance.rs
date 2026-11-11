@@ -477,7 +477,7 @@ impl Engine {
                 }
                 "delivery_type" => {
                     let delivery: DeliveryTypeDefinition = decode(&data)?;
-                    delivery.validate()?;
+                    s.validate_delivery_specs(&delivery, &scope)?;
                     let mut references = std::collections::BTreeSet::new();
                     for spec in delivery.spec_refs {
                         require(references.insert(spec.clone()), "Delivery 规范引用不得重复")?;

@@ -1,0 +1,18 @@
+{
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-baseline-doc",
+  "revision": 1,
+  "name": "Baseline Doc",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "format": "markdown",
+    "spec_refs": [
+      "builtin-spec-delivery-baseline-doc:1"
+    ],
+    "producer": {
+      "kind": "agent"
+    }
+  }
+}

@@ -49,7 +49,7 @@ def run():
             delivery_count = rpc("query.configurations", {"kind": "delivery_type", "limit": 100})["total"]
             rpc("settings.update", {"global_concurrency": 3, "default_harness": "dsh"})
             custom = rpc("delivery_type.create", {"command_id": "custom-delivery", "payload": {
-                "name": "Standalone custom delivery", "data": {"format": "markdown", "body": "database copy"}
+                "name": "Standalone custom delivery", "data": {"format": "markdown", "spec_refs": ["builtin-spec-stage-prd:1"], "body": "database copy"}
             }})
             preview = rpc("query.template_reset_preview")
             command = {"command_id": "reset-standalone", "payload": {

@@ -132,7 +132,7 @@ fn materialize(
             "workflow" => {
                 r.decode::<WorkflowDefinition>()?.validate()?;
             }
-            "delivery_type" => r.decode::<DeliveryTypeDefinition>()?.validate()?,
+            "delivery_type" => s.validate_delivery_specs(&r.decode()?, &r.scope)?,
             _ => {}
         }
     }

@@ -1,0 +1,21 @@
+{
+  "kind": "capability",
+  "identity": "builtin-capability-developer-codex",
+  "revision": 3,
+  "name": "开发能力 · Sol High / Codex",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "harness_ref": "builtin-harness-codex-managed:1",
+    "model_ref": "builtin-model-gpt-6-1-sol-high:1",
+    "skills": [
+      "builtin-skill-engineering-context:2",
+      "builtin-skill-tdd-implementation:2"
+    ],
+    "tools": [
+      "builtin-tool-codex-native:1",
+      "builtin-tool-workflow-outputs-read:2"
+    ]
+  }
+}

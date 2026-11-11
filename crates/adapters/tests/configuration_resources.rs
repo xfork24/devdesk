@@ -418,7 +418,7 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
         )
         .is_err()
     );
-    let spec = command(&e, "spec.create", None, json!({"name":"Shared document norm","data":{"schema_version":3,"body":"One source of document requirements","checks":[]}})).unwrap();
+    let spec = command(&e, "spec.create", None, json!({"name":"Shared document norm","data":{"schema_version":3,"body":"One source of document requirements","checks":[{"key":"content","name":"Content","instructions":"Verify document content and exact source."}]}})).unwrap();
     let delivery = command(
         &e,
         "delivery_type.create",
@@ -458,4 +458,100 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
         );
         assert_eq!(preview["task"]["specifications"], json!([]));
     }
+}
+
+#[test]
+fn delivery_catalog_has_content_standards_and_real_diff_ports() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let state = e.store.snapshot().unwrap();
+    let deliveries: Vec<_> = state
+        .governance
+        .iter()
+        .filter(|r| r.kind == "delivery_type" && r.id != "fixture-delivery-object:1")
+        .collect();
+    assert_eq!(deliveries.len(), 21);
+    for delivery in &deliveries {
+        state
+            .validate_delivery_specs(&delivery.decode().unwrap(), &delivery.scope)
+            .unwrap();
+        assert_ne!(delivery.name, "结构化材料");
+    }
+    for name in [
+        "Review Report",
+        "Task Doc",
+        "Test Doc",
+        "Execution Report",
+        "Task Report",
+        "Test Report",
+        "Diff",
+    ] {
+        assert!(deliveries.iter().any(|r| r.name == name), "{name}");
+    }
+    for (method, data) in [
+        (
+            "delivery_type.create",
+            json!({"format":"text","body":"Only a description"}),
+        ),
+        (
+            "delivery_type.create",
+            json!({"format":"text","spec_refs":[]}),
+        ),
+        (
+            "delivery_type.create",
+            json!({"format":"text","spec_refs":["missing:1"]}),
+        ),
+    ] {
+        assert!(command(&e, method, None, json!({"name":"Invalid", "data":data})).is_err());
+    }
+    for kind in ["feature", "task"] {
+        let workflow = state
+            .configuration(&format!("builtin-workflow-{kind}-sol-high:5"))
+            .unwrap();
+        let plan = e
+            .compile_configured_workflow(&state, workflow, &Scope::Global, None)
+            .unwrap();
+        for step in &plan.document.steps {
+            for port in step.outputs.values() {
+                assert_ne!(port.delivery_ref, "builtin-delivery-object:1");
+            }
+        }
+        for key in [
+            "candidate",
+            if kind == "task" {
+                "implementation_snapshot"
+            } else {
+                "tests_snapshot"
+            },
+        ] {
+            let step = plan.document.steps.iter().find(|s| s.key == key).unwrap();
+            assert_eq!(step.outputs["diff"].delivery_ref, "builtin-delivery-diff:2");
+        }
+        for key in [
+            "candidate_review",
+            if kind == "task" {
+                "review"
+            } else {
+                "closure_review"
+            },
+        ] {
+            let step = plan.document.steps.iter().find(|s| s.key == key).unwrap();
+            assert!(step.inputs.contains_key("candidate_diff"));
+        }
+    }
+    let mut forged = state
+        .configuration("builtin-workflow-task-sol-high:5")
+        .unwrap()
+        .data
+        .clone();
+    forged["steps"][0]["executor"] = json!({"type":"agent","role_ref":"builtin-role-developer:1"});
+    forged["steps"][0]["task_instructions"] = json!("Pretend to make a real snapshot");
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"Forged producer","document":forged}),
+    )
+    .unwrap();
+    assert!(command(&e, "workflow.publish", draft["id"].as_str(), json!({})).is_err());
 }

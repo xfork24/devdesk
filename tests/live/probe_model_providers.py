@@ -104,7 +104,7 @@ def main():
             rows += ['- 模型目录读取及普通 Model → Capability → Agent → Session 固定 DSH 绑定通过。', '- Ollama 无凭据；连接和 profile 摘要冻结，Model 新修订与 Host 重启不改旧 Session。', '- DSH 模拟服务只收到一次 GET /v1/models，没有推理请求。']
             if args.codex_auth_source:
                 project_row = c.rpc('query.workspace')['active_project']
-                session = c.command('session.open', project, project_row['revision'], {'agent': 'builtin-agent-sol-high-analyst:3', 'work_type': 'discussion', 'force_new': True})['id']
+                session = c.command('session.open', project, project_row['revision'], {'agent': 'builtin-agent-sol-high-analyst:4', 'work_type': 'discussion', 'force_new': True})['id']
                 current = c.rpc('query.session', {'id': session})
                 marker = 'provider-session-' + uuid.uuid4().hex
                 turn = c.command('conversation.send', session, current['session']['revision'], {'client_message_id': str(uuid.uuid4()), 'input': f'Use the native Bash tool once to print {marker}, then reply with that exact marker. Do not modify files.'})['id']

@@ -91,7 +91,15 @@ impl Engine {
                     "delivery_type",
                     &scope,
                 )?;
-                self.validate_configured_value(&delivery.decode()?, &content.value)?;
+                let definition: DeliveryTypeDefinition = delivery.decode()?;
+                require(
+                    !matches!(
+                        definition.producer,
+                        Some(DeliveryProducer::Platform { .. } | DeliveryProducer::Workflow)
+                    ),
+                    "提案不能冒充平台或子流程产出",
+                )?;
+                self.validate_configured_value(&definition, &content.value)?;
                 for input in &content.input_refs {
                     let same_project =
                         state

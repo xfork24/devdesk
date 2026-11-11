@@ -56,7 +56,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
             s.sessions.push(Session {
                 id: sid.clone(),
                 owner_id: project.into(),
-                agent: "builtin-agent-sol-high-analyst:3".into(),
+                agent: "builtin-agent-sol-high-analyst:4".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "fixture-docker".into(),
                 snapshot_id: None,
@@ -135,6 +135,17 @@ pub fn configure_project(e: &Engine, project: &str) {
 
 /// Explicit fixture grants for current built-in targets, through the production v2 command.
 pub fn bind_default_permissions(e: &Engine) {
+    e.store.transact(None, &mut |s| {
+        if s.configuration("fixture-spec:1").is_err() {
+            for (kind, identity, data) in [
+                ("spec", "fixture-spec", json!({"schema_version":3,"body":"测试场景明确声明的输入、输出和断言；逐项核对类型、值和来源，不作为产品默认规范。","checks":[{"key":"fixture_content","name":"场景内容","instructions":"核对本测试明确声明的字段、预期和实际来源。"}]})),
+                ("delivery_type", "fixture-delivery-object", json!({"format":"json","spec_refs":["fixture-spec:1"],"content_schema":{"type":"object"}})),
+            ] {
+                s.governance.push(SourceDefinition {kind:kind.into(),identity:identity.into(),revision:1,name:identity.into(),scope:Scope::Global,data}.into_record()?);
+            }
+        }
+        Ok(json!(null))
+    }).unwrap();
     let s = e.store.snapshot().unwrap();
     let mut bindings = Vec::new();
     for (kind, id, profile) in [
