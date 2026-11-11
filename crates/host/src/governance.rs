@@ -325,7 +325,15 @@ impl Workspace {
             || method == "standard.archive"
             || method == "work.configuration.update"
             || method == "configuration.retire"
-            || method.starts_with("workflow.")
+            || (method.starts_with("workflow.")
+                && ![
+                    "workflow.inspect",
+                    "workflow.change.preview",
+                    "workflow.execution.inspect",
+                    "workflow.outputs.read",
+                    "workflow.events.read",
+                ]
+                .contains(&method))
             || method.starts_with("model.")
             || method.starts_with("tool.")
             || method.starts_with("harness.")
@@ -339,6 +347,11 @@ impl Workspace {
             || (["agent.create", "agent.revise"].contains(&method)
                 && params["payload"].get("data").is_some());
         let query = [
+            "workflow.inspect",
+            "workflow.change.preview",
+            "workflow.execution.inspect",
+            "workflow.outputs.read",
+            "workflow.events.read",
             "standard.capture.preview",
             "query.standard",
             "query.standard_diff",
@@ -415,7 +428,8 @@ impl Workspace {
                 .or_else(|| params["payload"].get("scope"));
             let local = !method.starts_with("role.")
                 && ((params["project_id"].is_string()
-                    && (method == "query.workflow_task_preview"
+                    && (method.starts_with("query.workflow")
+                        || method == "query.specification_audit"
                         || method.starts_with("query.standard")
                         || method.starts_with("query.work_")
                         || method == "standard.capture.preview"))

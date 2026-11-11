@@ -247,6 +247,12 @@ export function StandardManager({
     };
   }, [request, project?.id]);
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (selected) params.set("standard_id", selected);
+    else params.delete("standard_id");
+    history.replaceState(null, "", `?${params}`);
+  }, [selected]);
+  useEffect(() => {
     const current = ++epoch.current;
     setSnapshot(undefined);
     setUsage(undefined);

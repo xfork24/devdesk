@@ -76,6 +76,11 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
     await page.getByRole("button", { name: nav, exact: true }).click();
     for (const tab of tabs) {
       await page.getByRole("tab", { name: tab, exact: true }).click();
+      if (tab === "Standard") {
+        await expect(page.getByText("从 Workflow 生成快照", { exact: true })).toBeVisible();
+        await expect(page.getByRole("button", {name:"添加覆盖规则"})).toHaveCount(0);
+        continue;
+      }
       await expect(
         page.locator(".configuration-list").getByRole("button").first(),
       ).toHaveText(`新建 ${tab}`);
