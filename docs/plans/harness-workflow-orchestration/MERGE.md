@@ -13,7 +13,7 @@
 | docs/plans/README.md | f41d6b44dd739ec460ff58a12f5478fcdea6390282f0cd6869a787279a1ba584 |
 | docs/plans/harness-workflow-orchestration/PLAN.md | 17b4117e1187f2f7b75fbfc5f3c4c3edcce37799c20a3b6cd41172d5b00f22ba |
 
-提交中的文档采用完整实施结果。最终交付按表中原始字节恢复以上两个文件为工作区未提交改动，包括原草稿的待实施文字；提交和包内文档保留完整实施结果，stash 和独立归档继续保留。恢复校验记录为 `/tmp/devdesk-harness-main-workspace-preservation.json`。原有用户运行数据不升级、不删除，也不通过改库制造完成状态。
+提交中的文档采用完整实施结果。上轮验收结束时，以上两个文件已按表中原始字节恢复为工作区未提交改动，包括原草稿的待实施文字；提交和包内文档保留完整实施结果，stash 和独立归档继续保留。恢复校验记录为 `/tmp/devdesk-harness-main-workspace-preservation.json`。原有用户运行数据不升级、不删除，也不通过改库制造完成状态。
 
 ## 冲突与默认合同
 
@@ -78,6 +78,10 @@ Task documentation/review/candidate_review 及 Feature closure_review/candidate_
 
 ## 最终交付核对
 
-最终包为 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz`，含 SHA-256 sidecar。最终包复验记录 `/tmp/devdesk-harness-merge-package-final.json`，交付文件与 HEAD 内容一致性记录 `/tmp/devdesk-harness-merge-final-delivery.json`。打包使用提交中的完整文档，随后按原始散列恢复用户两处未提交改动；工作区保留这两处文档修改，不将旧草稿提交覆盖当前实现。
+最终包为 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz`，含 SHA-256 sidecar。最终包复验记录 `/tmp/devdesk-harness-merge-package-final.json`，验收打包基线 `2a32988` 的文件一致性记录 `/tmp/devdesk-harness-merge-final-delivery.json`。基线包使用提交中的完整文档，上轮随后按原始散列恢复用户两处未提交改动。本次按用户追加的 commit/push 请求将原文归档提交，主文档继续保留完整验收结果。
 
 运行日志、JSON、协议账本及数据集均在临时目录，本计划目录仅保存 Markdown。当前测试范围为 macOS arm64 与 Docker 实际执行，编排 Harness 为 Codex；历史其他平台结果继续保留在原报告中，不算作本轮补验。
+
+## 原始草稿提交归档
+
+按用户追加的 commit/push 请求，将原始[方案草稿](original-draft/PLAN.md)和[计划索引快照](original-draft/PLAN-INDEX.md)逐字节归档。两份归档的 SHA-256 与上表一致，原路径采用已验收的主文档。归档仅调整 Markdown 文档，上述产品代码验收与真实发布结果继续适用；推送目标为 origin/main。
