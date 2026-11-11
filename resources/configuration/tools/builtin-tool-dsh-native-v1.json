@@ -1,35 +1,22 @@
 {
-  "template_key": "governance.builtin-tool-dsh-native-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-tool-dsh-native-v1",
-    "kind": "tool",
-    "definition_id": "builtin-tool-dsh-native",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "DSH 原生工具组",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "capabilities": [],
-      "harness_provider": "dsh",
-      "implementation": "harness.native",
-      "input_schema": {
-        "description": "DSH native tools; constrained by frozen permissions and work scope",
-        "type": "object"
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "qualified_name": "dsh.native"
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "tool",
+  "identity": "builtin-tool-dsh-native",
+  "revision": 1,
+  "name": "DSH 原生工具组",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "capabilities": [],
+    "harness_provider": "dsh",
+    "implementation": "harness.native",
+    "input_schema": {
+      "description": "DSH native tools; constrained by frozen permissions and work scope",
+      "type": "object"
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "qualified_name": "dsh.native"
+  }
 }

@@ -1,4 +1,7 @@
 mod catalog;
+mod source_store;
+mod source_views;
+pub use source_views::runtime_digest;
 pub mod codex_auth;
 pub mod credentials;
 #[cfg(target_os = "macos")]
@@ -135,29 +138,57 @@ impl SqliteStore {
     }
     fn load(conn: &Connection) -> Result<EngineeringState> {
         let mut s = EngineeringState::default();
-        s.governance = load_table(conn, "governance_records")?;
+        s.governance = source_store::load_records(conn)?;
         s.orchestration_wakeups = load_table(conn, "orchestration_wakeups")?;
         s.orchestration_leases = load_table(conn, "orchestration_leases")?;
-        s.turns = load_table(conn, "turns")?;
+        let turns: Vec<Value> = load_table(conn, "turns")?;
         s.conversation_events = load_table(conn, "conversation_events")?;
         s.interactions = load_table(conn, "interactions")?;
         s.proposals = load_table(conn, "proposals")?;
-        s.executions = load_table(conn, "executions")?;
+        let executions: Vec<Value> = load_table(conn, "executions")?;
         s.repository_operations = load_table(conn, "repository_operations")?;
         s.repository_worktrees = load_table(conn, "repository_worktrees")?;
-        s.harnesses = load_table::<Harness>(conn, "harnesses")?;
-        s.sandboxes = load_table::<Sandbox>(conn, "sandboxes")?;
         s.projects = load_table::<Project>(conn, "projects")?;
         s.features = load_table::<Feature>(conn, "features")?;
         s.tasks = load_table::<Task>(conn, "tasks")?;
         s.documents = load_table::<Document>(conn, "documents")?;
-        s.definitions = load_table::<Definition>(conn, "definitions")?;
-        s.sessions = load_table::<Session>(conn, "sessions")?;
+        s.refresh_configuration_views()?;
+        s.turns = turns
+            .into_iter()
+            .map(|v| {
+                source_views::restore(&s, &v)
+                    .and_then(|v| serde_json::from_value(v).map_err(storage))
+            })
+            .collect::<Result<_>>()?;
+        s.executions = executions
+            .into_iter()
+            .map(|v| {
+                source_views::restore(&s, &v)
+                    .and_then(|v| serde_json::from_value(v).map_err(storage))
+            })
+            .collect::<Result<_>>()?;
+        let sessions: Vec<Value> = load_table(conn, "sessions")?;
+        s.sessions = sessions
+            .into_iter()
+            .map(|v| {
+                source_views::restore(&s, &v)
+                    .and_then(|v| serde_json::from_value(v).map_err(storage))
+            })
+            .collect::<Result<_>>()?;
         s.contexts = load_table::<Context>(conn, "contexts")?;
-        s.snapshots = load_table::<Snapshot>(conn, "snapshots")?;
+        let snapshots: Vec<Value> = load_table(conn, "snapshots")?;
+        s.snapshots = snapshots
+            .into_iter()
+            .map(|v| {
+                source_views::restore(&s, &v)
+                    .and_then(|v| serde_json::from_value(v).map_err(storage))
+            })
+            .collect::<Result<_>>()?;
         s.heads = load_table::<GitHead>(conn, "heads")?;
         s.artifacts = load_table::<Artifact>(conn, "artifacts")?;
         s.events = load_table::<Event>(conn, "events")?;
+        s.refresh_configuration_views()?;
+        source_store::restore_records(&mut s)?;
         Ok(s)
     }
     fn save(conn: &Connection, s: &EngineeringState, before: &EngineeringState) -> Result<()> {
@@ -173,13 +204,21 @@ impl SqliteStore {
             &s.orchestration_leases,
             &before.orchestration_leases,
         )?;
-        save_table(
-            conn,
-            "governance_records",
-            &s.governance,
-            &before.governance,
-        )?;
-        save_table(conn, "turns", &s.turns, &before.turns)?;
+        source_store::save_records(conn, s, before)?;
+        let turns = s
+            .turns
+            .iter()
+            .filter(|v| {
+                before
+                    .turns
+                    .iter()
+                    .find(|old| old.id == v.id)
+                    .is_none_or(|old| json!(old) != json!(v))
+            })
+            .map(|v| source_views::pack(s, &json!(v)))
+            .collect::<Result<Vec<_>>>()?;
+        let old = Vec::<Value>::new();
+        save_table(conn, "turns", &turns, &old)?;
         save_table(
             conn,
             "conversation_events",
@@ -188,7 +227,19 @@ impl SqliteStore {
         )?;
         save_table(conn, "interactions", &s.interactions, &before.interactions)?;
         save_table(conn, "proposals", &s.proposals, &before.proposals)?;
-        save_table(conn, "executions", &s.executions, &before.executions)?;
+        let executions = s
+            .executions
+            .iter()
+            .filter(|v| {
+                before
+                    .executions
+                    .iter()
+                    .find(|old| old.id == v.id)
+                    .is_none_or(|old| json!(old) != json!(v))
+            })
+            .map(|v| source_views::pack(s, &json!(v)))
+            .collect::<Result<Vec<_>>>()?;
+        save_table(conn, "executions", &executions, &[])?;
         save_table(
             conn,
             "repository_operations",
@@ -201,16 +252,32 @@ impl SqliteStore {
             &s.repository_worktrees,
             &before.repository_worktrees,
         )?;
-        save_table(conn, "harnesses", &s.harnesses, &before.harnesses)?;
-        save_table(conn, "sandboxes", &s.sandboxes, &before.sandboxes)?;
         save_table(conn, "projects", &s.projects, &before.projects)?;
         save_table(conn, "features", &s.features, &before.features)?;
         save_table(conn, "tasks", &s.tasks, &before.tasks)?;
         save_table(conn, "documents", &s.documents, &before.documents)?;
-        save_table(conn, "definitions", &s.definitions, &before.definitions)?;
-        save_table(conn, "sessions", &s.sessions, &before.sessions)?;
+        let sessions = s
+            .sessions
+            .iter()
+            .filter(|v| {
+                before
+                    .sessions
+                    .iter()
+                    .find(|old| old.id == v.id)
+                    .is_none_or(|old| json!(old) != json!(v))
+            })
+            .map(|v| source_views::pack(s, &json!(v)))
+            .collect::<Result<Vec<_>>>()?;
+        let old = Vec::<Value>::new();
+        save_table(conn, "sessions", &sessions, &old)?;
         save_table(conn, "contexts", &s.contexts, &before.contexts)?;
-        save_table(conn, "snapshots", &s.snapshots, &before.snapshots)?;
+        let snapshots = s
+            .snapshots
+            .iter()
+            .filter(|v| before.snapshots.iter().all(|old| old.id != v.id))
+            .map(|v| source_views::pack(s, &json!(v)))
+            .collect::<Result<Vec<_>>>()?;
+        save_table(conn, "snapshots", &snapshots, &[])?;
         save_table(conn, "heads", &s.heads, &before.heads)?;
         save_table(conn, "artifacts", &s.artifacts, &before.artifacts)?;
         save_table(conn, "events", &s.events, &before.events)?;
@@ -245,10 +312,10 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
             entries.is_empty(),
             "目录非空且不是 DevDesk 数据集；请选择空目录",
         )?;
-        fs::write(&marker, "devdesk-schema-v1\n").map_err(storage)?;
+        fs::write(&marker, "devdesk-source-v2\n").map_err(storage)?;
     }
     require(
-        fs::read_to_string(&marker).map_err(storage)? == "devdesk-schema-v1\n",
+        fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-v2\n",
         "数据集标记不受支持",
     )?;
     let lock = OpenOptions::new()
@@ -265,16 +332,16 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
 
 fn open_engineering_connection(path: &Path) -> Result<Connection> {
     let connection = Connection::open(path).map_err(storage)?;
-    connection
-        .execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
-        .map_err(storage)?;
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 45,
-        "数据集需要显式离线升级，请运行 scripts/upgrade/harness-v5.py --help",
+        version == 0 || version == 46,
+        "数据集协议不兼容；请使用新的空数据目录",
     )?;
+    connection
+        .execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
+        .map_err(storage)?;
     if version == 0 {
         connection
             .execute_batch(include_str!("../../../sql/project/schema.sql"))
@@ -442,7 +509,10 @@ impl EngineeringStore for SqliteStore {
                 let saved: String = row.get(0).map_err(storage)?;
                 require(saved == fp, "command_id 被不同参数复用")?;
                 let result: String = row.get(1).map_err(storage)?;
-                return serde_json::from_str(&result).map_err(storage);
+                return source_views::restore(
+                    &Self::load(&conn)?,
+                    &serde_json::from_str(&result).map_err(storage)?,
+                );
             }
         }
         let mut state = Self::load(&conn)?;
@@ -473,7 +543,7 @@ impl EngineeringStore for SqliteStore {
         if let Some((id, fp)) = key {
             tx.execute(
                 "INSERT INTO operations(id,fingerprint,result) VALUES(?1,?2,?3)",
-                rusqlite::params![id, fp, result.to_string()],
+                rusqlite::params![id, fp, source_views::pack(&state, &result)?.to_string()],
             )
             .map_err(storage)?;
         }

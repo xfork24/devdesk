@@ -46,10 +46,10 @@ export function ProjectManager({
     [mainline, setMainline] = useState("main"),
     [title, setTitle] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:v4:project:${project?.id || "global"}`,
+    `devdesk:source-v2:project:${project?.id || "global"}`,
     () => ({
       orchestrator_role_ref: "",
-      control_policy: {} as Row,
+      permission_context_ref: "",
       workflow_ref: "",
       standard_ref: "",
       role_agent_bindings: {} as Record<string, string>,
@@ -92,8 +92,8 @@ export function ProjectManager({
           : {
               orchestrator_role_ref:
                 configuration.configuration.data.orchestrator_role_ref || "",
-              control_policy:
-                configuration.configuration.data.control_policy || {},
+              permission_context_ref:
+                configuration.configuration.data.permission_context_ref || "",
               workflow_ref: configuration.configuration.data.workflow_ref,
               standard_ref: configuration.configuration.data.standard_ref || "",
               role_agent_bindings:
@@ -107,7 +107,7 @@ export function ProjectManager({
           ? current
           : {
               orchestrator_role_ref: preset.orchestrator_role_ref,
-              control_policy: preset.control_policy,
+              permission_context_ref: preset.permission_context_ref,
               workflow_ref: preset.workflow_ref,
               standard_ref: "",
               role_agent_bindings: preset.role_agent_bindings,
@@ -169,9 +169,7 @@ export function ProjectManager({
         expected_revision: project.revision,
         payload: {
           orchestrator_role_ref: draft.orchestrator_role_ref || null,
-          control_policy: draft.orchestrator_role_ref
-            ? draft.control_policy
-            : null,
+          permission_context_ref: draft.permission_context_ref,
           workflow_ref: draft.workflow_ref,
           standard_ref: draft.standard_ref || null,
           role_agent_bindings: draft.role_agent_bindings,
@@ -216,7 +214,7 @@ export function ProjectManager({
                   captureFeedback();
                   return setDraft({
                     orchestrator_role_ref: defaults.orchestrator_role_ref,
-                    control_policy: defaults.control_policy,
+                    permission_context_ref: defaults.permission_context_ref,
                     workflow_ref: defaults.workflow_ref,
                     standard_ref: "",
                     role_agent_bindings: defaults.role_agent_bindings,
@@ -404,6 +402,14 @@ export function ProjectManager({
                 新建或编辑 Agent
               </a>
             </p>
+            <RevisionSelect
+              label="执行授权"
+              records={records.filter((r) => r.kind === "permission_context")}
+              value={draft.permission_context_ref}
+              onChange={(permission_context_ref) =>
+                setDraft({ ...draft, permission_context_ref })
+              }
+            />
             <label>
               编排角色
               <select
@@ -413,15 +419,12 @@ export function ProjectManager({
                   setDraft({
                     ...draft,
                     orchestrator_role_ref: e.target.value,
-                    control_policy: Object.keys(draft.control_policy).length
-                      ? draft.control_policy
-                      : defaults?.control_policy || {},
                   })
                 }
               >
                 <option value="">仅手动操作工作流</option>
                 {latest(records.filter((r) => r.kind === "role")).map((r) => (
-                  <option key={r.id} value={r.definition_id}>
+                  <option key={r.id} value={r.id}>
                     {r.name}
                   </option>
                 ))}
@@ -437,7 +440,7 @@ export function ProjectManager({
                       (role) =>
                         role.kind === "role" &&
                         role.id === r.data.role_ref &&
-                        role.definition_id === draft.orchestrator_role_ref,
+                        role.id === draft.orchestrator_role_ref,
                     ),
                 )}
                 value={
@@ -470,7 +473,7 @@ export function ProjectManager({
                           (role) =>
                             role.kind === "role" &&
                             role.id === r.data.role_ref &&
-                            role.definition_id === item.role_id,
+                            role.id === item.role_id,
                         ),
                     );
                     return (

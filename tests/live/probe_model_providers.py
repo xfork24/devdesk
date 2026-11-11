@@ -82,8 +82,8 @@ def main():
             project = c.command('project.create', payload={'title': 'Isolated provider acceptance'})['id']
             c.open(project)
             model = c.command('model.create', payload={'name': 'Host Ollama fixture', 'data': {'provider': 'ollama', 'model': 'host-fixture-model', 'endpoint': f'http://127.0.0.1:{server.server_port}/v1', 'context_window': 32768, 'max_output_tokens': 4096, 'parameters': {'max_tokens': 2048}}})['id']
-            cap = c.command('capability.create', payload={'name': 'Host Ollama capability', 'data': {'model_ref': model, 'harness_ref': 'builtin-harness-dsh-multi-provider-v1', 'tools': ['builtin-tool-dsh-native-v1'], 'skills': []}})['id']
-            agent = c.command('agent.create', payload={'name': 'Host Ollama Agent', 'data': {'role_ref': 'builtin-role-analyst-v1', 'capability_ref': cap, 'permission_selection': {'sandbox_ref': 'builtin-permission-sandbox-docker-v1', 'harness': {'mode': 'follow_target'}, 'sandbox': {'mode': 'follow_target'}}}})['id']
+            cap = c.command('capability.create', payload={'name': 'Host Ollama capability', 'data': {'model_ref': model, 'harness_ref': 'builtin-harness-dsh-multi-provider:1', 'tools': ['builtin-tool-dsh-native:1'], 'skills': []}})['id']
+            agent = c.command('agent.create', payload={'name': 'Host Ollama Agent', 'data': {'role_ref': 'builtin-role-analyst:1', 'capability_ref': cap}})['id']
             checked = c.rpc('agent.connection.check', {'agent_revision_id': agent})
             assert checked['container_verified'] and not checked['inference_verified'], checked
             state = c.rpc('query.session', {'id': checked['session_id']})
@@ -101,7 +101,7 @@ def main():
             assert c.rpc('query.session', {'id': checked['session_id']})['session']['runtime_binding'] == binding
             rows += ['- 完整 Model → Capability → Agent → Session → 固定 DSH 镜像物化与容器目录查询通过。', '- Ollama 无凭据；连接和 profile 摘要冻结，Model 新修订与 Host 重启不改旧 Session。', '- DSH 模拟服务只收到一次 GET /v1/models，没有推理请求。']
             if args.codex_auth_source:
-                result = c.rpc('agent.model.verify', {'agent_revision_id': 'builtin-agent-sol-high-analyst-v3'})
+                result = c.rpc('agent.model.verify', {'agent_revision_id': 'builtin-agent-sol-high-analyst:3'})
                 session, turn, marker = result['session_id'], result['turn_id'], result['marker']
 
                 def completed():

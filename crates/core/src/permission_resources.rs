@@ -12,18 +12,34 @@ pub fn insert_permission_profiles(
     }
     let mut profiles = Vec::new();
     for value in values {
-        let mut p: PermissionProfile = serde_json::from_value(value.clone())
+        let source: SourceDefinition = serde_json::from_value(value.clone())
             .map_err(|e| err("invalid_params", e.to_string()))?;
+        let mut p = source.into_record()?.permission_profile()?;
         p.normalize()?;
         profiles.push(p);
     }
     profiles.sort_by_key(|p| p.version);
     let mut added = Vec::new();
     let mut unchanged = Vec::new();
-    for p in profiles {
-        let data = json!(p);
+    for mut p in profiles {
+        if p.version > 1 {
+            p.supersedes = s
+                .governance
+                .iter()
+                .find(|r| {
+                    r.kind == "permission_profile"
+                        && r.definition_id == p.identity
+                        && r.version + 1 == p.version
+                })
+                .map(|r| r.id.clone());
+        }
+        let data = permission_profile_data(&p);
         if let Some(old) = s.governance.iter().find(|r| r.id == p.id) {
-            if old.kind != "permission_profile" || old.data != data {
+            if old.kind != "permission_profile"
+                || old.data != data
+                || old.name != p.name
+                || old.scope != p.scope
+            {
                 return Err(err(
                     "revision_conflict",
                     format!("权限修订内容冲突: {}", p.id),
@@ -54,7 +70,7 @@ pub fn insert_permission_profiles(
                         && r.version + 1 == p.version
                 })
                 .ok_or_else(|| err("revision_conflict", "权限缺少连续前序修订"))?;
-            if parent.decode::<PermissionProfile>()?.target_kind != p.target_kind {
+            if parent.permission_profile()?.target_kind != p.target_kind {
                 return Err(err(
                     "permission_inapplicable",
                     "修订不能改变 profile 目标类型",
@@ -69,7 +85,7 @@ pub fn insert_permission_profiles(
         let mut r = record(
             "permission_profile",
             p.identity.clone(),
-            Scope::Global,
+            p.scope.clone(),
             p.name.clone(),
             p.version,
             p.supersedes.clone(),
@@ -115,7 +131,7 @@ pub fn permission_profile_export(s: &EngineeringState, id: &str) -> Result<Value
             return Err(err("invalid_params", "需要 v2 权限修订"));
         }
         next = r.supersedes.clone();
-        result.push(r.data.clone());
+        result.push(json!(r.source()));
     }
     result.reverse();
     Ok(json!({"profiles":result}))
@@ -152,13 +168,14 @@ impl Engine {
                     if r.kind != "permission_profile" || c.expected_revision != Some(r.version) {
                         return Err(err("revision_conflict", "权限版本已改变"));
                     }
-                    Some(r.decode::<PermissionProfile>()?)
+                    Some(r.permission_profile()?)
                 } else {
                     None
                 };
-                let profile = PermissionProfile {
+                let mut profile = PermissionProfile {
+                    scope: Scope::Global,
                     schema_version: 2,
-                    id: id(),
+                    id: String::new(),
                     identity: match &old {
                         Some(r) => r.identity.clone(),
                         None => text(p, "identity")?,
@@ -171,8 +188,17 @@ impl Engine {
                     policy: serde_json::from_value(p["policy"].clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?,
                 };
-                insert_permission_profiles(s, &[json!(profile)], "ui")?;
-                s.configuration(&profile.id)?.data.clone()
+                profile.id = source_reference(&profile.identity, profile.version)?;
+                let source = SourceDefinition {
+                    kind: "permission_profile".into(),
+                    identity: profile.identity.clone(),
+                    revision: profile.version,
+                    name: profile.name.clone(),
+                    scope: Scope::Global,
+                    data: permission_profile_data(&profile),
+                };
+                insert_permission_profiles(s, &[json!(source)], "ui")?;
+                json!(s.configuration(&profile.id)?.permission_profile()?)
             }
             "permission.bindings.apply" => {
                 let changes = p["bindings"]
@@ -208,7 +234,7 @@ pub fn apply_permission_bindings(s: &mut EngineeringState, changes: &[Value]) ->
         let profile_id = text(change, "permission_revision_id")?;
         let target_scope = s.configuration(&target.revision_id)?.scope.clone();
         let pr = s.configuration(&profile_id)?;
-        let mut profile: PermissionProfile = pr.decode()?;
+        let mut profile = pr.permission_profile()?;
         profile.normalize()?;
         if pr.kind != "permission_profile" || profile.target_kind != target.kind {
             return Err(err("permission_inapplicable", "profile 不适用于目标"));

@@ -198,7 +198,7 @@ impl Workspace {
             )?;
             return Ok(());
         };
-        let agent: AgentComposition = record.decode()?;
+        let agent = state.resolve_agent(&record.id)?;
         let owner = command.target.as_deref().unwrap_or("");
         let feature = state
             .tasks
@@ -478,6 +478,8 @@ impl Workspace {
                                 n.kind == r.kind
                                     && n.definition_id == r.definition_id
                                     && n.version > r.version
+                                    && (params["include_archived"] == true
+                                        || template_record_current(&directory, n))
                             })
                         {
                             return false;

@@ -490,15 +490,7 @@ impl EngineeringState {
                 .find(|d| d.id == session.agent)
                 .and_then(|d| d.agent_profile.as_ref())
                 .ok_or_else(|| err("blocked", "讨论 Session 必须绑定明确角色修订"))?;
-            let effective_policy = if [WorkType::Discussion].contains(&binding.work_type) {
-                ToolPolicy::ReadOnly
-            } else {
-                agent.tool_policy
-            };
-            require(
-                effective_policy.permits(binding.tool_policy),
-                "角色工作类型或工具权限与冻结绑定不符",
-            )?;
+            let _ = agent; // Permission, rather than Role, owns execution authorization.
             require(
                 session.origin == Origin::External,
                 "真实讨论 Session 来源必须明确为 external",

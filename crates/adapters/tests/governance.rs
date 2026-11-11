@@ -78,9 +78,9 @@ fn setup_agent(e: &Engine, role: &str) -> String {
         harness["id"].as_str().unwrap(),
     )
     .unwrap();
-    command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"permission-harness-full-access-v2-r1","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
+    command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"harness-full-access-v2:1","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
     let cap=command(e,"capability.create",None,json!({"name":"Fixture capability","data":{"model_ref":model["id"],"harness_ref":harness["id"],"tools":[tool["id"]],"skills":[]}})).unwrap();
-    command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"data":{"role_ref":default_role_id(role),"capability_ref":cap["id"],"instructions":"Execute the frozen scope","permission_selection":default_permission_selection()}})).unwrap()["id"].as_str().unwrap().into()
+    command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"data":{"role_ref":default_role_id(role),"capability_ref":cap["id"]}})).unwrap()["id"].as_str().unwrap().into()
 }
 #[test]
 fn agent_instances_pin_composition_and_choose_independent_scope() {
@@ -125,8 +125,8 @@ fn agent_instances_pin_composition_and_choose_independent_scope() {
         .configuration(&agent)
         .unwrap()
         .clone();
-    let mut data = old.data.clone();
-    data["instructions"] = json!("new instructions");
+    let data = old.data.clone();
+
     let revised = command(&e, "agent.revise", Some(&agent), json!({"data":data})).unwrap();
     assert_ne!(revised["id"], agent);
     assert_eq!(
@@ -542,6 +542,6 @@ fn custom_role_create_edit_delete_preserves_history_without_deriving_agents() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|r| r["definition_id"] == role["definition_id"])
+            .any(|r| r["definition_id"] == role["id"])
     );
 }

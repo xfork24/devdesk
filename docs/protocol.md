@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 14 / project 45；Workflow v5、Spec / Standard v3、Proposal v2 和 `agent-task/v5`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，旧数据转换使用离线升级脚本。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 15 / project 46；Workflow v5、Spec / Standard v3、Proposal v2 和 `agent-task/v5`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，不升级或转换旧数据。
 
 ## HTTP 与命令
 
@@ -77,13 +77,13 @@ Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和
 
 新增命令均使用 Command：`permission.profile.create/revise` 的 payload 为 identity（创建时）、name、target_kind、policy；revise 的 target 是原修订 ID，expected_revision 为原版本。`permission.profile.import` 接受 payload.profiles，批次原子；`permission.profile.reload` 只读取当前唯一预设目录，payload.builtin=true 时读取内置目录并在成功后恢复内置来源，失败不切换。`permission.source.select` 接受 payload.path，必须为存在的普通绝对目录；选择替换当前来源并持久化，需显式重新加载。`permission.source.browse({path?})` 返回 path、parent、directories 和 locations，仅列出普通子目录，省略 path 从数据目录开始，供文件夹选择窗口使用。`query.permission_resources` 的 source 返回 path、builtin_path、is_builtin；不再返回多来源列表或支持追加登记。
 
-`permission.profile.export({id})` 返回 `{profiles:[前序修订…,所选修订]}`，可直接重新导入。导入只接受 v2 profile；policy 的 null 和未知字段拒绝。
+`permission.profile.export({id})` 返回 `{profiles:[前序修订…,所选修订]}`，可直接重新导入。导入只接受 `{kind:"permission_profile",identity,revision,name,scope,data:{schema_version:2,target_kind,policy}}` 源定义；policy 的 null 和未知字段拒绝。
 
 `permission.bindings.apply` 的 payload.bindings 为非空数组，每项包含 target={kind,revision_id,content_hash}、permission_revision_id、expected_revision（该目标尚无分配时为 0）。执行合同由 Host 生成，客户端不能决定。一个批次必须属于同一全局或项目配置库作用域；全部校验通过后原子提交。返回各目标的新活动 revision 与 binding_revision_id；command_id 重放优先于版本校验。
 
 `permission.binding.preflight({target,permission_revision_id})` 只检查绑定兼容性，返回 scope_checked=false。完整预览输入 harness_ref、selection={sandbox_ref,harness,sandbox} 和可选 scope={work_type,writable_paths,read_only_paths}；selection 每层为 `{mode:"follow_target"}` 或 `{mode:"pinned",binding_revision_id}`。提供 Scope 时复用实际执行编译器；无 Scope 时不承诺具体工作范围可执行。
 
-AgentComposition 可携带 permission_selection，以命名字段替代旧 permissions 数组的执行权威。RuntimeBinding.permissions.binding_lock 保存两层确切 profile、绑定、目标、摘要和执行合同。当前运行只接纳明确的冻结权限。
+Agent 只保存 role_ref、capability_ref。项目选择独立的 permission_context_ref，授权上下文提供 Sandbox、两层权限选择、步骤范围和控制策略。RuntimeBinding.permissions.binding_lock 为按源引用解析的执行视图，持久化仅保留确切绑定引用和实际执行范围。
 
 `conversation.send` 对追随目标的讨论在接受新输入前检测改绑，无活动工作时持久化切换并创建后继 Session。返回值可增加 effective_session_id、predecessor，UI 跟随有效 Session；原 command_id 和 client_message_id 保持幂等。query.session/session.read 增加 permission_status，包含 frozen、desired、status、reason、pending_command；待恢复时可用 pending_command 原样重试 conversation.send。已有运行、排队输入、工程冻结与技术重试保留原权限，目标默认更新不改写它们。
 
@@ -144,3 +144,5 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `schemas/orchestration.schema.json` 定义类型化 ChangeSet。新增/修改步骤、依赖、输入、角色绑定及整体计划通过预演编译；应用期间根范围禁止新的写入派发，继续收集原运行事实。旧合同和结果保存只读历史。已派发 segment 只推进确切授权节点，遇到人工等待、评审拒绝、异常、预算或计划修改立即停止，不自动完成根实例。
 
 编排封套 `orchestration-task/v1` 携带当前实例摘要、用户指令、策略及待决定项；持久化唤醒、消费游标、lease 和原生调用回执支持重启恢复。业务 `agent-task/v5` 携带计划修订、node_id 和 contract_digest。
+
+源配置、权限归属及无持久化投影的存储规则见[源配置与执行解析](source-configuration.md)。

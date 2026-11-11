@@ -23,15 +23,18 @@ try:
  role=c.command('role.create',payload={'name':'数据研究员','data':{'instructions':'调查明确提供的数字输入，保留可复核的结果。'}})
  skill=c.command('skill.create',payload={'name':'顺序分析法','data':{'body':'将输入的整数按降序排序，然后计算其总和。保留重复值。不猜测缺失数据。'}})
  capability=c.command('capability.create',payload={'name':'实际研究能力','data':{'model_ref':defaults['model_ref'],'harness_ref':defaults['harness_ref'],'skills':[skill['id']],'tools':list(dict.fromkeys(native_tools+[capture]))}})
- agent=c.command('agent.create',payload={'name':'研究 Agent','data':{'role_ref':role['id'],'capability_ref':capability['id'],'execution':{'tool_policy':'read_only'},'permission_selection':{'sandbox_ref':defaults['permission_sandbox_ref'],'harness':{'mode':'follow_target'},'sandbox':{'mode':'follow_target'}}}})
+ agent=c.command('agent.create',payload={'name':'研究 Agent','data':{'role_ref':role['id'],'capability_ref':capability['id']}})
  delivery=c.command('delivery_type.create',payload={'name':'排序分析结果','data':{'body':'输入整数的计算结果','format':'json','content_schema':{'type':'object','required':['ordered','sum'],'properties':{'ordered':{'type':'array','items':{'type':'integer'}},'sum':{'type':'integer'}},'additionalProperties':False}}})
- document={'schema_version':5,'stages':[{'key':'study','name':'独立数据研究','default_role_ref':role['definition_id']}],'steps':[
-  {'key':'investigate','name':'按技能分析','stage':'study','executor':{'type':'agent'},'required_skill_refs':[skill['id']],'access':{'tool_refs':[capture]},'task_instructions':'按本次加载的顺序分析 Skill 处理 numbers 输入。先实际调用 devdesk_materials_capture 工具，参数为计算结果对象 ordered 与 sum；收到成功回执后，再只输出当前 output_contract 要求的单个 JSON 对象，分析结果写入 result 端口。','inputs':{'numbers':{'type':'constant','value':[3,1,2,3]}},'outputs':{'result':{'delivery_ref':delivery['id']}},'budget':{'max_turns':2,'timeout_seconds':300,'retry_limit':1}},
+ document={'schema_version':5,'stages':[{'key':'study','name':'独立数据研究','default_role_ref':role['id']}],'steps':[
+  {'key':'investigate','name':'按技能分析','stage':'study','executor':{'type':'agent'},'required_skill_refs':[skill['id']],'task_instructions':'按本次加载的顺序分析 Skill 处理 numbers 输入。先实际调用 devdesk_materials_capture 工具，参数为计算结果对象 ordered 与 sum；收到成功回执后，再只输出当前 output_contract 要求的单个 JSON 对象，分析结果写入 result 端口。','inputs':{'numbers':{'type':'constant','value':[3,1,2,3]}},'outputs':{'result':{'delivery_ref':delivery['id']}},'budget':{'max_turns':2,'timeout_seconds':300,'retry_limit':1}},
   {'key':'consume','name':'消费确切材料','stage':'study','executor':{'type':'control'},'dependencies':['investigate'],'inputs':{'analysis':{'type':'source','source':{'step':'investigate','port':'result'}}}}
  ]}
  draft=c.command('workflow.create',payload={'name':'自定义数字研究','document':document});workflow=c.command('workflow.publish',draft['id'],draft['revision'])
- p=c.rpc('query.workspace')['active_project'];run=c.command('workflow.start',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{role['definition_id']:agent['id']}})
- manager=c.command('orchestration.open',run['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'policy':defaults['control_policy']})['id']
+ context=next(r for r in defaults['records'] if r['id']==defaults['permission_context_ref'])['data']
+ permission=c.command('permission_context.create',payload={'name':'Native research authorization','data':{**context,'step_grants':[{'workflow_ref':workflow['id'],'step':'investigate','tool_refs':[capture]}]}})
+ p=c.rpc('query.workspace')['active_project'];c.command('project.configuration.update',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{**defaults['role_agent_bindings'],role['id']:agent['id']},'permission_context_ref':permission['id']})
+ p=c.rpc('query.workspace')['active_project'];run=c.command('workflow.start',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{role['id']:agent['id']}})
+ manager=c.command('orchestration.open',run['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'permission_context_ref':permission['id']})['id']
  manager_row=c.rpc('query.orchestration',{'id':manager})['record']
  c.command('orchestration.input',manager,manager_row['revision'],{'input':'按当前调查流程派发、核对、接纳每步并完成。必须使用真实业务 Agent 和工具，不更改或绕过计划。'})
  last=None

@@ -1,91 +1,59 @@
 {
-  "template_key": "governance.builtin-standard-engineering-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-standard-engineering-v1",
-    "kind": "standard",
-    "definition_id": "builtin-standard-engineering",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "默认工程 Standard",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "schema_version": 3,
-      "body": "",
-      "baseline_rules": [
-        {
-          "selector": {
-            "tags": [
-              "requirements"
-            ]
-          },
-          "required_spec_refs": [
-            "builtin-spec-stage-prd-v1"
-          ],
-          "min_matches": 1
-        },
-        {
-          "selector": {
-            "tags": [
-              "design"
-            ]
-          },
-          "required_spec_refs": [
-            "builtin-spec-stage-architecture-v1"
-          ],
-          "min_matches": 1
-        },
-        {
-          "selector": {
-            "tags": [
-              "planning"
-            ]
-          },
-          "required_spec_refs": [
-            "builtin-spec-stage-project-planning-v1"
-          ],
-          "min_matches": 1
-        },
-        {
-          "selector": {
-            "tags": [
-              "implementation"
-            ]
-          },
-          "required_spec_refs": [
-            "builtin-spec-stage-implementation-v1"
-          ],
-          "min_matches": 1
-        }
-      ]
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "standard",
+  "identity": "builtin-standard-engineering",
+  "revision": 1,
+  "name": "默认工程 Standard",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {
-    "/data/body": "standards/engineering.md"
-  },
-  "references": {
-    "/data/baseline_rules/0/required_spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-prd-v1",
-      "target": "revision"
-    },
-    "/data/baseline_rules/1/required_spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-architecture-v1",
-      "target": "revision"
-    },
-    "/data/baseline_rules/2/required_spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-project-planning-v1",
-      "target": "revision"
-    },
-    "/data/baseline_rules/3/required_spec_refs/0": {
-      "template_ref": "governance.builtin-spec-stage-implementation-v1",
-      "target": "revision"
-    }
-  },
-  "initial_only": false
+  "data": {
+    "schema_version": 3,
+    "baseline_rules": [
+      {
+        "selector": {
+          "tags": [
+            "requirements"
+          ]
+        },
+        "required_spec_refs": [
+          "builtin-spec-stage-prd:1"
+        ],
+        "min_matches": 1
+      },
+      {
+        "selector": {
+          "tags": [
+            "design"
+          ]
+        },
+        "required_spec_refs": [
+          "builtin-spec-stage-architecture:1"
+        ],
+        "min_matches": 1
+      },
+      {
+        "selector": {
+          "tags": [
+            "planning"
+          ]
+        },
+        "required_spec_refs": [
+          "builtin-spec-stage-project-planning:1"
+        ],
+        "min_matches": 1
+      },
+      {
+        "selector": {
+          "tags": [
+            "implementation"
+          ]
+        },
+        "required_spec_refs": [
+          "builtin-spec-stage-implementation:1"
+        ],
+        "min_matches": 1
+      }
+    ],
+    "body_file": "engineering.md"
+  }
 }

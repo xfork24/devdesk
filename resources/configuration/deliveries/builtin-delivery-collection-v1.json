@@ -1,29 +1,17 @@
 {
-  "template_key": "governance.builtin-delivery-collection-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-delivery-collection-v1",
-    "kind": "delivery_type",
-    "definition_id": "builtin-delivery-collection",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "集合产物",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "body": "集合产物，按绑定的输入与输出声明提交。",
-      "format": "json",
-      "content_schema": {
-        "type": "array"
-      }
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-collection",
+  "revision": 1,
+  "name": "集合产物",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "body": "集合产物，按绑定的输入与输出声明提交。",
+    "format": "json",
+    "content_schema": {
+      "type": "array"
+    },
+    "spec_refs": []
+  }
 }

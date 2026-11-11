@@ -18,14 +18,6 @@ export function AgentTaskView({ value }: { value: Row }) {
     return <p className="muted">此讨论没有 Workflow 步骤任务。</p>;
   return (
     <section aria-label="Agent 任务与上下文">
-      {content.agent?.data?.instructions ? (
-        <MarkdownField
-          label={`Agent 指令 · ${content.agent.name}`}
-          value={content.agent.data.instructions}
-          onChange={() => {}}
-          readOnly
-        />
-      ) : null}
       {content.role?.role?.data?.instructions ? (
         <MarkdownField
           label={`Role 职责 · ${content.role.name}`}
@@ -58,7 +50,10 @@ export function AgentTaskView({ value }: { value: Row }) {
           readOnly
         />
       ))}
-      {(content.specifications || []).map((spec: Row) => (
+      {[
+        ...(content.specifications || []),
+        ...(content.document_specifications || []),
+      ].map((spec: Row) => (
         <MarkdownField
           key={spec.id}
           label={`Spec · ${spec.name}`}
@@ -125,14 +120,8 @@ export function WorkflowTaskPreview({
     step.executor.role_ref ||
     document.stages.find((stage: Row) => stage.key === step.stage)
       ?.default_role_ref;
-  const identity = (id: string) =>
-    records.find(
-      (row) =>
-        row.kind === "role" && (row.id === id || row.definition_id === id),
-    )?.definition_id || id;
   const agents = records.filter(
-    (row) =>
-      row.kind === "agent" && identity(row.data.role_ref) === identity(role),
+    (row) => row.kind === "agent" && row.data.role_ref === role,
   );
   const selectedAgent = agents.some((row) => row.id === agent) ? agent : "";
   const signature = JSON.stringify({

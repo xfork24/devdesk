@@ -66,9 +66,9 @@ impl ProfilePolicy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionProfile {
+    pub scope: Scope,
     pub schema_version: u32,
     pub id: Id,
     pub identity: String,
@@ -131,7 +131,7 @@ pub enum PermissionSelection {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AgentPermissionSelection {
+pub struct ExecutionPermissionSelection {
     pub sandbox_ref: Id,
     pub harness: PermissionSelection,
     pub sandbox: PermissionSelection,
@@ -239,11 +239,11 @@ pub fn resolve_bound_permission(
             "需要确切 Permission profile 修订",
         ));
     }
-    let mut profile: PermissionProfile = p.decode()?;
+    let mut profile = p.permission_profile()?;
     profile.normalize()?;
     if profile.id != p.id
         || profile.target_kind != target.kind
-        || permission_content_hash(&profile) != p.content_hash
+        || permission_content_hash(&permission_profile_data(&profile)) != p.content_hash
     {
         return Err(err("permission_conflict", "profile 目标或内容摘要不匹配"));
     }
@@ -259,7 +259,7 @@ pub fn resolve_bound_permission(
 pub fn resolve_permission_lock(
     s: &EngineeringState,
     harness: &str,
-    selection: &AgentPermissionSelection,
+    selection: &ExecutionPermissionSelection,
 ) -> Result<VersionedPermissionLock> {
     Ok(VersionedPermissionLock {
         harness: resolve_bound_permission(
@@ -275,12 +275,44 @@ pub fn resolve_permission_lock(
     })
 }
 
-pub fn agent_permission_selection(
-    _s: &EngineeringState,
-    _agent_id: &str,
-    agent: &AgentComposition,
-) -> Option<AgentPermissionSelection> {
-    agent.permission_selection.clone()
+pub fn permission_context(s: &EngineeringState) -> Option<&ConfigurationRecord> {
+    let selected = s
+        .governance
+        .iter()
+        .filter(|r| r.kind == "project_configuration")
+        .max_by_key(|r| r.version)
+        .and_then(|r| r.data["permission_context_ref"].as_str())
+        .or_else(|| {
+            template_catalog_state(s)
+                .and_then(|r| r.data["defaults"]["permission_context_ref"].as_str())
+        });
+    selected.and_then(|id| s.configuration(id).ok())
+}
+
+pub fn permission_selection(s: &EngineeringState) -> Result<ExecutionPermissionSelection> {
+    let r = permission_context(s)
+        .ok_or_else(|| err("permission_unconfigured", "请选择执行授权上下文"))?;
+    permission_selection_from_context(s, &r.id)
+}
+pub fn permission_selection_from_context(
+    s: &EngineeringState,
+    reference: &str,
+) -> Result<ExecutionPermissionSelection> {
+    let r = s.configuration(reference)?;
+    require(
+        r.kind == "permission_context",
+        "需要 Permission Context 源修订",
+    )?;
+    Ok(ExecutionPermissionSelection {
+        sandbox_ref: r.data["sandbox_ref"]
+            .as_str()
+            .ok_or_else(|| err("permission_unconfigured", "缺少 Sandbox"))?
+            .into(),
+        harness: serde_json::from_value(r.data["harness"].clone())
+            .map_err(|e| err("invalid_configuration", e.to_string()))?,
+        sandbox: serde_json::from_value(r.data["sandbox"].clone())
+            .map_err(|e| err("invalid_configuration", e.to_string()))?,
+    })
 }
 
 pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermissions) -> Result<()> {
@@ -306,9 +338,10 @@ pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermission
                 && r.data == serde_json::to_value(&bound.binding).unwrap()
                 && r.content_hash == bound.binding_hash
                 && r.content_hash == permission_content_hash(&bound.binding)
-                && profile.data == serde_json::to_value(&bound.profile).unwrap()
+                && profile.data == permission_profile_data(&bound.profile)
                 && profile.content_hash == bound.profile_hash
-                && profile.content_hash == permission_content_hash(&bound.profile)
+                && profile.content_hash
+                    == permission_content_hash(&permission_profile_data(&bound.profile))
                 && bound.profile.target_kind == kind
                 && bound.binding.target.kind == kind
                 && bound.binding.permission_revision_id == bound.profile.id
@@ -332,4 +365,59 @@ pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermission
             && Some(p.approval) == lock.harness.profile.policy.approval,
         "执行权限与冻结 profile 不一致",
     )
+}
+
+impl ConfigurationRecord {
+    pub fn permission_profile(&self) -> Result<PermissionProfile> {
+        require(self.kind == "permission_profile", "需要权限源修订")?;
+        let mut profile = PermissionProfile {
+            scope: self.scope.clone(),
+            schema_version: self.data["schema_version"]
+                .as_u64()
+                .ok_or_else(|| err("invalid_source", "权限缺少协议版本"))?
+                as u32,
+            id: self.id.clone(),
+            identity: self.definition_id.clone(),
+            name: self.name.clone(),
+            version: self.version,
+            supersedes: self.supersedes.clone(),
+            target_kind: serde_json::from_value(self.data["target_kind"].clone())
+                .map_err(|e| err("invalid_source", e.to_string()))?,
+            policy: serde_json::from_value(self.data["policy"].clone())
+                .map_err(|e| err("invalid_source", e.to_string()))?,
+        };
+        profile.normalize()?;
+        Ok(profile)
+    }
+}
+pub fn permission_profile_data(p: &PermissionProfile) -> Value {
+    serde_json::json!({"schema_version":p.schema_version,"target_kind":p.target_kind,"policy":p.policy})
+}
+
+impl Serialize for PermissionProfile {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        SourceDefinition {
+            kind: "permission_profile".into(),
+            identity: self.identity.clone(),
+            revision: self.version,
+            name: self.name.clone(),
+            scope: self.scope.clone(),
+            data: permission_profile_data(self),
+        }
+        .serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for PermissionProfile {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let source = SourceDefinition::deserialize(deserializer)?;
+        source
+            .into_record()
+            .and_then(|r| r.permission_profile())
+            .map_err(serde::de::Error::custom)
+    }
 }

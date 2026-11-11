@@ -1,73 +1,60 @@
 {
-  "template_key": "governance.builtin-tool-workflow-inspect-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-tool-workflow-inspect-v1",
-    "kind": "tool",
-    "definition_id": "builtin-tool-workflow-inspect",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "查看当前计划与缺口",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "qualified_name": "workflow.inspect",
-      "implementation": "platform",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "instance_id": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "plan_revision_id": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "control_version": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "decision_ref": {
-            "type": "string"
-          },
-          "offset": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "max_bytes": {
-            "type": "integer",
-            "minimum": 1024,
-            "maximum": 65536
-          },
-          "value_digest": {
-            "type": "string"
-          }
-        },
-        "required": [],
-        "additionalProperties": false,
-        "description": "Read a bounded plan/status page. Check page.document_complete and children_page. With decision_ref, read immutable human-request arguments in chunks."
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "capabilities": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "tool",
+  "identity": "builtin-tool-workflow-inspect",
+  "revision": 1,
+  "name": "查看当前计划与缺口",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "qualified_name": "workflow.inspect",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decision_ref": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65536
+        },
+        "value_digest": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "description": "Read a bounded plan/status page. Check page.document_complete and children_page. With decision_ref, read immutable human-request arguments in chunks."
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
 }

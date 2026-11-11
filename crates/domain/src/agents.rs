@@ -32,24 +32,10 @@ impl ToolPolicy {
 pub struct AgentProfile {
     pub role: AgentRole,
     pub skill_revisions: Vec<Id>,
-    pub tool_policy: ToolPolicy,
 }
 
 impl AgentProfile {
     pub fn validate(&self) -> Result<()> {
         require(!self.role.trim().is_empty(), "Agent 必须明确业务 Role 身份")
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentWorkProfile {
-    pub tool_policy: ToolPolicy,
-}
-impl Default for AgentWorkProfile {
-    fn default() -> Self {
-        Self {
-            tool_policy: ToolPolicy::ReadOnly,
-        }
     }
 }

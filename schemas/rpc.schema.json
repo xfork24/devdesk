@@ -298,8 +298,7 @@
       "type": "object",
       "required": [
         "role",
-        "skill_revisions",
-        "tool_policy"
+        "skill_revisions"
       ],
       "properties": {
         "role": {
@@ -311,13 +310,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "tool_policy": {
-          "enum": [
-            "read_only",
-            "workspace_write",
-            "scoped_write"
-          ]
         }
       },
       "additionalProperties": false
@@ -1530,69 +1522,21 @@
     },
     "AgentComposition": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "role": {
-          "type": "string",
-          "minLength": 1
-        },
-        "instructions": {
-          "type": "string",
-          "minLength": 1
-        },
-        "model_ref": {
-          "type": "string"
-        },
-        "harness_ref": {
-          "type": "string"
-        },
-        "skills": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "tools": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1
-        },
         "role_ref": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "pattern": "^.+:[1-9][0-9]*$"
         },
         "capability_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "permission_selection": {
-          "$ref": "permission-binding.schema.json#/$defs/AgentPermissionSelection"
-        },
-        "execution": {
-          "$ref": "#/$defs/AgentWorkProfile"
+          "type": "string",
+          "pattern": "^.+:[1-9][0-9]*$"
         }
       },
       "required": [
-        "role",
-        "instructions",
-        "model_ref",
-        "harness_ref",
-        "tools",
-        "permission_selection",
         "role_ref",
         "capability_ref"
-      ],
-      "additionalProperties": false
+      ]
     },
     "AgentInstance": {
       "type": "object",
@@ -2200,31 +2144,7 @@
       "additionalProperties": false
     },
     "AgentConfigurationInput": {
-      "type": "object",
-      "properties": {
-        "role_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "capability_ref": {
-          "type": "string",
-          "minLength": 1
-        },
-        "instructions": {
-          "type": "string"
-        },
-        "permission_selection": {
-          "$ref": "permission-binding.schema.json#/$defs/AgentPermissionSelection"
-        },
-        "execution": {
-          "$ref": "#/$defs/AgentWorkProfile"
-        }
-      },
-      "required": [
-        "role_ref",
-        "capability_ref"
-      ],
-      "additionalProperties": false
+      "$ref": "#/$defs/AgentComposition"
     },
     "ModelConnection": {
       "type": "object",
@@ -3101,10 +3021,16 @@
               "type": "null"
             }
           ]
+        },
+        "spec_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
         }
       },
       "required": [
-        "body",
         "format"
       ],
       "additionalProperties": false
@@ -3270,22 +3196,6 @@
     "AgentRole": {
       "type": "string",
       "minLength": 1
-    },
-    "AgentWorkProfile": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "tool_policy"
-      ],
-      "properties": {
-        "tool_policy": {
-          "enum": [
-            "read_only",
-            "workspace_write",
-            "scoped_write"
-          ]
-        }
-      }
     },
     "PortSource": {
       "type": "object",
@@ -3737,27 +3647,6 @@
               "type": "null"
             }
           ]
-        },
-        "writable_paths": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "read_only_paths": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "tool_refs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
         }
       },
       "required": [],
@@ -4047,12 +3936,6 @@
           "type": "string",
           "minLength": 1
         },
-        "applicable_to": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/StepSelector"
-          }
-        },
         "checks": {
           "type": "array",
           "items": {
@@ -4121,13 +4004,13 @@
           "type": "string",
           "minLength": 1
         },
-        "permission_selection": {
-          "$ref": "permission-binding.schema.json#/$defs/AgentPermissionSelection"
+        "sandbox_ref": {
+          "type": "string"
         }
       },
       "required": [
         "harness_ref",
-        "permission_selection"
+        "sandbox_ref"
       ],
       "additionalProperties": false
     },
@@ -4267,43 +4150,21 @@
             }
           ]
         },
-        "specification_snapshot": {
-          "type": "array",
-          "items": {
-            "type": "object"
-          }
-        },
-        "baseline_check": {
-          "anyOf": [
-            {
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "orchestrator_role_ref": {
           "type": [
             "string",
             "null"
           ]
         },
-        "control_policy": {
-          "anyOf": [
-            {
-              "$ref": "orchestration.schema.json#/$defs/WorkflowControlPolicy"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "permission_context_ref": {
+          "$ref": "source-reference.schema.json"
         }
       },
       "required": [
         "schema_version",
         "workflow_ref",
-        "role_agent_bindings"
+        "role_agent_bindings",
+        "permission_context_ref"
       ],
       "additionalProperties": false
     },
@@ -4321,6 +4182,10 @@
         },
         "configuration": {
           "$ref": "#/$defs/ProjectConfiguration"
+        },
+        "permission_context_ref": {
+          "type": "string",
+          "pattern": "^.+:[1-9][0-9]*$"
         }
       },
       "required": [
@@ -4511,6 +4376,18 @@
         "specification_snapshot": {
           "type": "array",
           "items": {}
+        },
+        "permission_context_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permission_workflow_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

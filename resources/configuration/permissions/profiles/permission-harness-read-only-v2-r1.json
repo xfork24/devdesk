@@ -1,0 +1,25 @@
+{
+  "kind": "permission_profile",
+  "identity": "harness-read-only-v2",
+  "revision": 1,
+  "name": "Harness 只读",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "policy": {
+      "approval": "never",
+      "filesystem": {
+        "mode": "read_only"
+      },
+      "network": {
+        "mode": "enabled"
+      },
+      "tools": {
+        "mode": "all_available"
+      }
+    },
+    "schema_version": 2,
+    "target_kind": "harness"
+  }
+}

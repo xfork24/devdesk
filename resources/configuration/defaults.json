@@ -1,22 +1,21 @@
 {
-  "workflow_ref": "governance.builtin-workflow-feature-sol-high-v5",
-  "task_workflow_ref": "governance.builtin-workflow-task-sol-high-v5",
-  "model_ref": "governance.builtin-model-gpt-6-1-sol-high-v1",
-  "harness_ref": "governance.builtin-harness-codex-managed-v1",
-  "sandbox_ref": "sandboxes.builtin-sandbox-codex-docker-v1",
-  "capability_ref": "governance.builtin-capability-sol-high-codex-v2",
-  "permission_sandbox_ref": "governance.builtin-permission-sandbox-docker-v1",
+  "workflow_ref": "builtin-workflow-feature-sol-high:4",
+  "task_workflow_ref": "builtin-workflow-task-sol-high:4",
+  "model_ref": "builtin-model-gpt-6-1-sol-high:1",
+  "harness_ref": "builtin-harness-codex-managed:1",
+  "sandbox_ref": "builtin-docker-sandbox:1",
+  "capability_ref": "builtin-capability-sol-high-codex:2",
   "standard_ref": null,
   "role_agent_bindings": {
-    "governance.builtin-role-analyst-v1": "governance.builtin-agent-sol-high-analyst-v3",
-    "governance.builtin-role-architect-v1": "governance.builtin-agent-sol-high-architect-v3",
-    "governance.builtin-role-project-manager-v1": "governance.builtin-agent-sol-high-project-manager-v3",
-    "governance.builtin-role-developer-v1": "governance.builtin-agent-sol-high-developer-v3",
-    "governance.builtin-role-tester-v1": "governance.builtin-agent-sol-high-tester-v3",
-    "governance.builtin-role-reviewer-v1": "governance.builtin-agent-sol-high-reviewer-v3"
+    "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:3",
+    "builtin-role-architect:1": "builtin-agent-sol-high-architect:3",
+    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:3",
+    "builtin-role-developer:1": "builtin-agent-sol-high-developer:3",
+    "builtin-role-tester:1": "builtin-agent-sol-high-tester:3",
+    "builtin-role-reviewer:1": "builtin-agent-sol-high-reviewer:3"
   },
-  "harness_permission_ref": "governance.permission-harness-full-access-v2-r1",
-  "sandbox_permission_ref": "governance.permission-sandbox-full-access-v2-r1",
+  "harness_permission_ref": "harness-full-access-v2:1",
+  "sandbox_permission_ref": "sandbox-full-access-v2:1",
   "authoring": {
     "execution_budget": {
       "max_turns": 8,
@@ -24,39 +23,6 @@
       "retry_limit": 3
     }
   },
-  "orchestrator_role_ref": "governance.builtin-role-project-manager-v1",
-  "control_policy": {
-    "allowed_operations": [
-      "start",
-      "inspect",
-      "dispatch",
-      "accept",
-      "input",
-      "retry",
-      "rework",
-      "stop",
-      "pause",
-      "resume",
-      "cancel",
-      "preview",
-      "apply",
-      "import",
-      "request_decision",
-      "reconcile",
-      "complete",
-      "segment"
-    ],
-    "human_operations": [],
-    "waivable_requirements": [
-      "completion",
-      "confirmation",
-      "tests",
-      "independence",
-      "coverage"
-    ],
-    "allow_task_revision": false,
-    "max_turns_per_wakeup": 8,
-    "max_tool_calls_per_turn": 64,
-    "timeout_seconds": 600
-  }
+  "orchestrator_role_ref": "builtin-role-project-manager:1",
+  "permission_context_ref": "builtin-permission-context-engineering:1"
 }

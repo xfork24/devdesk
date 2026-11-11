@@ -202,12 +202,10 @@ impl Engine {
             let role = crate::configuration::role_record(s, role)?;
             let agent_id = c.payload["agent_ref"]
                 .as_str()
-                .or_else(|| {
-                    config.and_then(|r| r.data["role_agent_bindings"][&role.definition_id].as_str())
-                })
+                .or_else(|| config.and_then(|r| r.data["role_agent_bindings"][&role.id].as_str()))
                 .ok_or_else(|| err("configuration_required", "编排 Role 未绑定 Agent"))?;
             let agent = s.configuration(agent_id)?;
-            let composition: AgentComposition = agent.decode()?;
+            let composition = s.resolve_agent(&agent.id)?;
             require(
                 composition.role == role.definition_id,
                 "编排 Agent 的 Role 不匹配",
@@ -223,15 +221,26 @@ impl Engine {
                     project_id: project.clone(),
                 },
             )?;
-            let policy: WorkflowControlPolicy = serde_json::from_value(
-                c.payload
-                    .get("policy")
-                    .cloned()
-                    .or_else(|| config.map(|r| r.data["control_policy"].clone()))
-                    .filter(|v| !v.is_null())
-                    .ok_or_else(|| err("configuration_required", "项目需要明确编排控制策略"))?,
-            )
-            .map_err(|e| err("invalid_params", e.to_string()))?;
+            require(
+                c.payload.get("policy").is_none(),
+                "编排授权必须通过 Permission Context 源修订选择",
+            )?;
+            let context_ref = c.payload["permission_context_ref"]
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| permission_context(s).map(|r| r.id.clone()))
+                .ok_or_else(|| err("permission_unconfigured", "请选择编排授权"))?;
+            let context = crate::governance::reference(
+                s,
+                &context_ref,
+                "permission_context",
+                &Scope::Project {
+                    project_id: project.clone(),
+                },
+            )?;
+            let policy: WorkflowControlPolicy =
+                serde_json::from_value(context.data["control_policy"].clone())
+                    .map_err(|e| err("invalid_source", e.to_string()))?;
             policy.validate()?;
             let controller = WorkflowController {
                 project_id: project.clone(),
@@ -239,6 +248,7 @@ impl Engine {
                 root_instance_id: root.map(|r| r.id.clone()),
                 agent_revision_id: agent.id.clone(),
                 role_ref: role.id.clone(),
+                permission_context_ref: context_ref,
                 policy_digest: configuration_hash(&policy),
                 policy,
                 session_id: None,
@@ -391,14 +401,11 @@ impl Engine {
                 }),
             "编排会话缺少确切执行意图",
         )?;
-        let agent: AgentComposition = s.configuration(&controller.agent_revision_id)?.decode()?;
+        let agent = s.resolve_agent(&controller.agent_revision_id)?;
         let permissions = resolve_permission_lock(
             &s,
             &agent.harness_ref,
-            agent
-                .permission_selection
-                .as_ref()
-                .ok_or_else(|| err("permission_unconfigured", "编排需要权限选择"))?,
+            &permission_selection_from_context(&s, &controller.permission_context_ref)?,
         )?;
         let mut lock = freeze_integrations(&s, &agent, Some(&controller.project_id))?;
         lock.platform_tools.retain(|r| {

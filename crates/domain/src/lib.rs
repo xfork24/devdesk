@@ -1,3 +1,5 @@
+mod source;
+pub use source::*;
 mod integrations;
 pub use integrations::*;
 mod configuration;
@@ -285,12 +287,15 @@ pub struct EngineeringState {
     pub repository_operations: Vec<RepositoryOperation>,
     #[serde(default)]
     pub repository_worktrees: Vec<RepositoryWorktree>,
+    #[serde(skip)]
     pub harnesses: Vec<Harness>,
+    #[serde(skip)]
     pub sandboxes: Vec<Sandbox>,
     pub projects: Vec<Project>,
     pub features: Vec<Feature>,
     pub tasks: Vec<Task>,
     pub documents: Vec<Document>,
+    #[serde(skip)]
     pub definitions: Vec<Definition>,
     pub sessions: Vec<Session>,
     pub contexts: Vec<Context>,

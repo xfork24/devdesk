@@ -4,7 +4,10 @@ use crate::*;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeliveryTypeDefinition {
+    #[serde(default)]
     pub body: String,
+    #[serde(default)]
+    pub spec_refs: Vec<Id>,
     pub format: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_schema: Option<serde_json::Value>,
@@ -18,7 +21,8 @@ impl DeliveryTypeDefinition {
             )?;
         }
         require(
-            !self.body.trim().is_empty() && self.body.len() <= TASK_TEXT_LIMIT,
+            (!self.body.trim().is_empty() || !self.spec_refs.is_empty())
+                && self.body.len() <= TASK_TEXT_LIMIT,
             "Delivery 需要非空内容说明，最多 32 KiB",
         )?;
         require(

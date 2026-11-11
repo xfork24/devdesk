@@ -1,39 +1,26 @@
 {
-  "template_key": "governance.builtin-harness-dsh-multi-provider-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-harness-dsh-multi-provider-v1",
-    "kind": "harness",
-    "definition_id": "builtin-harness-dsh-multi-provider",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "DeepSeek Harness 多模型服务商",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "capabilities": [
-        "structured-output",
-        "tool-calling",
-        "cancel",
-        "poll"
-      ],
-      "model_providers": [
-        "deepseek",
-        "zai-coding-cn",
-        "minimax-cn",
-        "ollama"
-      ],
-      "provider": "dsh",
-      "recipe_digest": "09644ad904fab5737d26c52a3211db55bba1b142fd60adc7fb86c2b4dade4a79",
-      "runtime_version": "0.2.2-rc.1"
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "harness",
+  "identity": "builtin-harness-dsh-multi-provider",
+  "revision": 1,
+  "name": "DeepSeek Harness 多模型服务商",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling",
+      "cancel",
+      "poll"
+    ],
+    "model_providers": [
+      "deepseek",
+      "zai-coding-cn",
+      "minimax-cn",
+      "ollama"
+    ],
+    "provider": "dsh",
+    "recipe_digest": "09644ad904fab5737d26c52a3211db55bba1b142fd60adc7fb86c2b4dade4a79",
+    "runtime_version": "0.2.2-rc.1"
+  }
 }

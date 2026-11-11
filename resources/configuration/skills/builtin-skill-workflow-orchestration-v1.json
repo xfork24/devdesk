@@ -1,28 +1,13 @@
 {
-  "template_key": "governance.builtin-skill-workflow-orchestration-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-skill-workflow-orchestration-v1",
-    "kind": "skill",
-    "definition_id": "builtin-skill-workflow-orchestration",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "工作流编排",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "body": "",
-      "rules": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "skill",
+  "identity": "builtin-skill-workflow-orchestration",
+  "revision": 1,
+  "name": "工作流编排",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {
-    "/data/body": "skills/workflow-orchestration.md"
-  },
-  "references": {},
-  "initial_only": false
+  "data": {
+    "rules": [],
+    "body_file": "workflow-orchestration.md"
+  }
 }

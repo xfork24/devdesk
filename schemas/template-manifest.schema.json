@@ -11,7 +11,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "bundle_version": {
       "type": "string",
@@ -31,12 +31,9 @@
         "model",
         "harness",
         "sandbox",
-        "mcp",
-        "http",
         "tool",
         "permission_profile",
-        "projections",
-        "initial"
+        "permission_context"
       ],
       "additionalProperties": {
         "type": "array",

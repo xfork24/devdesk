@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Permission Context source",
+  "allOf": [
+    {
+      "$ref": "source-definition.schema.json"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "permission_context"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sandbox_ref",
+            "harness",
+            "sandbox",
+            "control_policy"
+          ],
+          "properties": {
+            "sandbox_ref": {
+              "$ref": "source-reference.schema.json"
+            },
+            "harness": {
+              "$ref": "permission-binding.schema.json#/$defs/PermissionSelection"
+            },
+            "sandbox": {
+              "$ref": "permission-binding.schema.json#/$defs/PermissionSelection"
+            },
+            "step_grants": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "workflow_ref",
+                  "step"
+                ],
+                "properties": {
+                  "workflow_ref": {
+                    "$ref": "source-reference.schema.json"
+                  },
+                  "step": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "writable_paths": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "read_only_paths": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tool_refs": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "control_policy": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

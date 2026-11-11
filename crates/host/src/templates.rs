@@ -144,7 +144,13 @@ mod tests {
                 .governance
                 .iter()
                 .find(|r| r.id == id)
-                .map(|r| r.revision)
+                .map(|r| {
+                    if r.kind == "permission_profile" {
+                        r.version
+                    } else {
+                        r.revision
+                    }
+                })
         });
         w.dispatch(method,json!({"command_id":id(),"target":target,"expected_revision":expected_revision,"expected_catalog_generation":template_catalog_generation(&w.global.snapshot().unwrap()),"project_id":project,"payload":payload}))
     }
@@ -155,35 +161,37 @@ mod tests {
         json!({"command_id":id(),"payload":{"expected_catalog_generation":p["generation"],"catalog_fingerprint":p["catalog_fingerprint"],"bundle_hash":p["bundle_hash"]}})
     }
     #[test]
-    fn main_revised_builtin_harness_keeps_automatic_current_permission_assignment() {
+    fn revising_a_harness_does_not_rebind_defaults_or_grant_permissions() {
         let dir = tempfile::tempdir().unwrap();
-        let global = GlobalStore::open(dir.path()).unwrap();
-        global
-            .transact(None, &mut |s| {
-                seed_configuration(s);
-                s.governance
-                    .retain(|r| !r.kind.starts_with("template_catalog_"));
-                let mut revised = s.configuration(DEFAULT_HARNESS_ID)?.clone();
-                revised.id = "main-revised-harness".into();
-                revised.name = "Main revised Harness".into();
-                revised.version += 1;
-                revised.supersedes = Some(DEFAULT_HARNESS_ID.into());
-                s.governance.push(revised);
-                Ok(json!({"ok":true}))
-            })
-            .unwrap();
-        drop(global);
         let w = workspace(dir.path());
+        let source = w
+            .global
+            .snapshot()
+            .unwrap()
+            .configuration(DEFAULT_HARNESS_ID)
+            .unwrap()
+            .clone();
+        let revised = write(
+            &w,
+            "harness.revise",
+            Some(&source.id),
+            json!({"name":"New source revision","data":source.data}),
+            None,
+        )
+        .unwrap();
         let s = w.global.snapshot().unwrap();
-        let target =
-            permission_target(&s, PermissionTargetKind::Harness, "main-revised-harness").unwrap();
-        assert!(active_permission_binding(&s, &target).is_some());
+        let target = permission_target(
+            &s,
+            PermissionTargetKind::Harness,
+            revised["id"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert!(active_permission_binding(&s, &target).is_none());
         assert_eq!(
             current_template_defaults(&s).unwrap()["harness_ref"],
-            "main-revised-harness"
+            DEFAULT_HARNESS_ID
         );
     }
-
     #[test]
     fn reset_archives_global_and_project_definitions_preserves_bindings_and_replays() {
         let dir = tempfile::tempdir().unwrap();
@@ -263,7 +271,7 @@ mod tests {
             .dispatch("query.project_configuration", json!({"project_id":a}))
             .unwrap();
         assert_eq!(pinned["configuration"], saved);
-        assert_eq!(pinned["uses_archived_templates"], true);
+        assert_eq!(pinned["uses_archived_templates"], false);
         for old in before_project.governance.iter().filter(|r| r.immutable) {
             assert_eq!(
                 engine
@@ -308,7 +316,7 @@ mod tests {
         let new_defaults = w
             .dispatch("query.configuration_defaults", json!({}))
             .unwrap();
-        assert_ne!(new_defaults["workflow_ref"], defaults["workflow_ref"]);
+        assert_eq!(new_defaults["workflow_ref"], defaults["workflow_ref"]);
         let shared = w.global.snapshot().unwrap();
         for key in new_defaults["role_agent_bindings"]
             .as_object()
@@ -316,12 +324,9 @@ mod tests {
             .values()
         {
             let agent_id = key.as_str().unwrap();
-            let agent: AgentComposition = shared.configuration(agent_id).unwrap().decode().unwrap();
-            let selection = agent_permission_selection(&shared, agent_id, &agent).unwrap();
-            assert_eq!(
-                json!(selection.sandbox_ref),
-                new_defaults["permission_sandbox_ref"]
-            );
+            let agent = shared.resolve_agent(agent_id).unwrap();
+            let selection = permission_selection(&shared).ok().unwrap();
+            assert_eq!(json!(selection.sandbox_ref), new_defaults["sandbox_ref"]);
             let lock = resolve_permission_lock(&shared, &agent.harness_ref, &selection).unwrap();
             assert!(template_record_current(
                 &shared,
@@ -389,7 +394,7 @@ mod tests {
             .unwrap();
         let stale=w.dispatch("delivery_type.create",json!({"command_id":id(),"expected_catalog_generation":1,"payload":{"name":"Stale","data":{"format":"markdown","body":"stale"}}})).unwrap_err();
         assert_eq!(stale.code, "catalog_changed");
-        assert!(write(&w,"role.revise",Some(&default_role_id("analyst")),json!({"name":"Stale edit","data":{"instructions":"old body","visibility":{"kind":"global"}}}),None).is_err());
+        assert_eq!(w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"expected_catalog_generation":1,"payload":{"name":"Stale edit","data":{"instructions":"old body","visibility":{"kind":"global"}}}})).unwrap_err().code,"catalog_changed");
     }
 
     #[test]
@@ -438,7 +443,7 @@ mod tests {
         let defaults = w
             .dispatch("query.configuration_defaults", json!({}))
             .unwrap();
-        write(&w,"integration.binding.create",None,json!({"name":"Fixture MCP binding","data":{"integration_ref":source["id"],"harness_ref":defaults["harness_ref"],"sandbox_ref":defaults["permission_sandbox_ref"],"allowed_origins":["https://mcp.example.invalid"],"allowed_tools":[]}}),None).unwrap();
+        write(&w,"integration.binding.create",None,json!({"name":"Fixture MCP binding","data":{"integration_ref":source["id"],"harness_ref":defaults["harness_ref"],"sandbox_ref":defaults["sandbox_ref"],"allowed_origins":["https://mcp.example.invalid"],"allowed_tools":[]}}),None).unwrap();
         let workflow = initial
             .configuration(defaults["workflow_ref"].as_str().unwrap())
             .unwrap();

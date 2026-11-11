@@ -1,28 +1,13 @@
 {
-  "template_key": "governance.builtin-skill-architecture-v2",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-skill-architecture-v2",
-    "kind": "skill",
-    "definition_id": "builtin-skill-architecture",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "Design Doc 架构设计",
-    "version": 2,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "body": "",
-      "rules": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "skill",
+  "identity": "builtin-skill-architecture",
+  "revision": 2,
+  "name": "Design Doc 架构设计",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {
-    "/data/body": "skills/architecture.md"
-  },
-  "references": {},
-  "initial_only": false
+  "data": {
+    "rules": [],
+    "body_file": "architecture.md"
+  }
 }

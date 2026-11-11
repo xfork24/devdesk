@@ -2,7 +2,7 @@
 
 本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 测试和 GitHub PR。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；运行路径只接受当前协议与配置，离线测试使用独立夹具。账号授权在设置中完成，见[真实工程接入](docs/real-engineering.md)。
 
-流程与规范的 Delivery 页定义任意业务交付类型及可选 JSON Schema。Workflow v5 通过显式端口传递材料；Stage 提供背景和默认 Role，Step 声明任务指令、Skill、Spec、访问范围和完成条件。Agent、工具、子流程、控制是四种执行方式，标准动作与执行配方已移除。运行冻结确切修订，补充输入、重试、返工及人工确认都关联实际 StepExecution。项目经理通过独立 Harness 会话和原生工具决定派发、接纳及完成；用户可通过对话或工作台预演、修改和绕过运行计划。core 保留真实事实、权限和 Git 一致性。实现与验证见 [Harness 改造执行记录](docs/plans/harness-workflow-orchestration/EXECUTION.md)。
+流程与规范的 Delivery 页定义任意业务交付类型及可选 JSON Schema。Workflow v5 通过显式端口传递材料；Stage 提供背景和默认 Role，Step 声明任务指令、Skill、Spec、工作上下文和完成条件；执行授权归属 Permission。Agent、工具、子流程、控制是四种执行方式，标准动作与执行配方已移除。运行冻结确切修订，补充输入、重试、返工及人工确认都关联实际 StepExecution。项目经理通过独立 Harness 会话和原生工具决定派发、接纳及完成；用户可通过对话或工作台预演、修改和绕过运行计划。core 保留真实事实、权限和 Git 一致性。实现与验证见 [Harness 改造执行记录](docs/plans/harness-workflow-orchestration/EXECUTION.md)。
 
 ## 运行
 
@@ -73,7 +73,7 @@ npm --prefix web ci
 
 数据库由 `sql/global/schema.sql` 与 `sql/project/schema.sql` 的当前基线直接创建；见 [结构说明](sql/README.md)。
 
-在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。系统只支持当前分库布局，旧 v4 数据使用显式离线转换，保留原始历史、Artifact 和凭据；当前基线为 global 14 / project 45。
+在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。系统只支持新源协议和当前分库布局，不提供旧库升级；当前基线为 global 15 / project 46。
 
 本轮领域补强的计划见 [补强计划](docs/plans/domain-hardening/PLAN.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/plans/domain-hardening/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
 
@@ -84,3 +84,5 @@ npm --prefix web ci
 运行权限只使用 v2 完整 profile 和版本绑定，支持执行前预览。内置 Agent 默认追随 Harness/Sandbox 的容器内全权限绑定；见 [权限说明](permissions/README.md) 和 [实施报告](docs/plans/permission-standardization/EXECUTION.md)。
 
 2026-11-09 两项新能力的 Ubuntu x86_64 实机验证分别见 [Permission 补验](docs/plans/permission-standardization/UBUNTU.md) 和 [Workflow 与工作台补验](docs/plans/workflow-and-workbench/UBUNTU.md)，包含当前源码回归、双 Harness 原生执行、Linux 隔离与发布包证据。
+
+源配置、权限归属及无持久化投影的存储规则见[源配置与执行解析](docs/source-configuration.md)。

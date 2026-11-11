@@ -1,59 +1,46 @@
 {
-  "template_key": "governance.builtin-tool-workflow-resume-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-tool-workflow-resume-v1",
-    "kind": "tool",
-    "definition_id": "builtin-tool-workflow-resume",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "恢复已暂停流程",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "qualified_name": "workflow.resume",
-      "implementation": "platform",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "instance_id": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "plan_revision_id": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "control_version": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "decision_ref": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "plan_revision_id"
-        ],
-        "additionalProperties": false,
-        "description": "Resume a workflow when the user explicitly requests continuation. Preserve accepted executions and independently paused children."
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "capabilities": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "tool",
+  "identity": "builtin-tool-workflow-resume",
+  "revision": 1,
+  "name": "恢复已暂停流程",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "qualified_name": "workflow.resume",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decision_ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_revision_id"
+      ],
+      "additionalProperties": false,
+      "description": "Resume a workflow when the user explicitly requests continuation. Preserve accepted executions and independently paused children."
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
 }

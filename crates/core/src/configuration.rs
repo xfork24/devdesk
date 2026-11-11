@@ -8,7 +8,7 @@ pub(crate) fn role_record<'a>(
 ) -> Result<&'a ConfigurationRecord> {
     s.governance
         .iter()
-        .filter(|r| r.kind == "role" && (r.id == key || r.definition_id == key))
+        .filter(|r| r.kind == "role" && r.id == key)
         .max_by_key(|r| r.version)
         .ok_or_else(|| err("not_found", format!("Role 不存在: {key}")))
 }
@@ -17,7 +17,7 @@ pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&s
         return true;
     }
     if r.kind == "role" {
-        let current = role_record(s, &r.definition_id).unwrap_or(r);
+        let current = r;
         return current.decode::<RoleDefinition>().ok().is_some_and(|role| {
             role.visibility.as_ref().map_or_else(
                 || {
@@ -49,34 +49,10 @@ pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&s
     true
 }
 pub(crate) fn normalize_agent(s: &EngineeringState, data: &mut Value, scope: &Scope) -> Result<()> {
-    let role_ref = text(data, "role_ref")?;
-    let r = reference(s, &role_ref, "role", scope)?;
-    let role: RoleDefinition = r.decode()?;
-    {
-        let capability_ref = text(data, "capability_ref")?;
-        let cap = reference(s, &capability_ref, "capability", scope)?;
-        let capability: CapabilityDefinition = cap.decode()?;
-        for (key, value) in [
-            ("model_ref", json!(capability.model_ref)),
-            ("harness_ref", json!(capability.harness_ref)),
-            ("tools", json!(capability.tools)),
-            ("skills", json!(capability.skills)),
-        ] {
-            require(
-                data.get(key).is_none_or(|v| *v == value),
-                format!("Agent.{key} 必须来自所选 Capability"),
-            )?;
-            data[key] = value;
-        }
-    }
-    require(
-        data.get("permissions").is_none() && data.get("approval").is_none(),
-        "旧权限字段已移除，请使用 permission_selection",
-    )?;
-    data["role"] = json!(r.definition_id);
-    if data.get("instructions").is_none() {
-        data["instructions"] = json!(role.instructions);
-    }
+    let definition: AgentDefinition = serde_json::from_value(data.clone())
+        .map_err(|e| err("invalid_configuration", e.to_string()))?;
+    reference(s, &definition.role_ref, "role", scope)?;
+    reference(s, &definition.capability_ref, "capability", scope)?;
     Ok(())
 }
 pub(crate) fn validate_capability(s: &EngineeringState, data: &Value, scope: &Scope) -> Result<()> {

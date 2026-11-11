@@ -69,7 +69,7 @@ pub fn compile_permission_profiles(
         let mut profile = bound.profile.clone();
         profile.normalize()?;
         if profile != bound.profile
-            || bound.profile_hash != permission_content_hash(&profile)
+            || bound.profile_hash != permission_content_hash(&permission_profile_data(&profile))
             || bound.binding_hash != permission_content_hash(&bound.binding)
             || bound.binding.permission_revision_id != profile.id
             || bound.binding.target.kind != profile.target_kind
@@ -191,7 +191,7 @@ pub fn preflight_profile(
         Ok(BoundPermission {
             binding_revision_id: "preview".into(),
             binding_hash: permission_content_hash(&binding),
-            profile_hash: permission_content_hash(&p),
+            profile_hash: permission_content_hash(&permission_profile_data(&p)),
             binding,
             profile: p,
         })
@@ -232,7 +232,7 @@ pub fn preflight_profile(
             PermissionTargetKind::Sandbox,
             devdesk_core::current_template_defaults(s)
                 .as_ref()
-                .and_then(|d| d["permission_sandbox_ref"].as_str())
+                .and_then(|d| d["sandbox_ref"].as_str())
                 .ok_or_else(|| err("configuration_required", "默认 Sandbox 未配置"))?,
         )?
     };
@@ -244,7 +244,7 @@ pub fn preflight_profile(
                 .and_then(|d| d[key].as_str())
                 .ok_or_else(|| err("configuration_required", format!("默认配置缺少 {key}")))?,
         )?
-        .decode()
+        .permission_profile()
     };
     let lock = VersionedPermissionLock {
         harness: bound(
@@ -306,13 +306,14 @@ pub fn builtin_permission_preset_source() -> Result<PathBuf> {
     if let Ok(exe) = std::env::current_exe()
         && let Some(parent) = exe.parent()
     {
-        let path = parent.join("permissions/presets");
+        let path = parent.join("resources/configuration/permissions/profiles");
         if path.is_dir() {
             return permission_preset_directory(&path);
         }
     }
     permission_preset_directory(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../permissions/presets"),
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../resources/configuration/permissions/profiles"),
     )
 }
 
@@ -446,8 +447,10 @@ impl GlobalStore {
                     .cloned()
                     .unwrap_or_else(|| vec![value.clone()]);
                 for p in &entries {
-                    if let Some(id) = p["id"].as_str() {
-                        origins.push((id.to_owned(),json!({"source_path":path,"file_sha256":format!("{:x}",Sha256::digest(&body))})));
+                    if let (Some(identity), Some(revision)) =
+                        (p["identity"].as_str(), p["revision"].as_u64())
+                    {
+                        origins.push((source_reference(identity, revision)?,json!({"source_path":path,"file_sha256":format!("{:x}",Sha256::digest(&body))})));
                     }
                 }
                 if let Some(batch) = value["profiles"].as_array() {

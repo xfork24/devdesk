@@ -11,8 +11,35 @@ pub(crate) fn record(
     data: Value,
     immutable: bool,
 ) -> ConfigurationRecord {
+    let source_kind = [
+        "model",
+        "tool",
+        "harness",
+        "agent",
+        "workflow",
+        "standard",
+        "skill",
+        "spec",
+        "delivery_type",
+        "role",
+        "capability",
+        "integration",
+        "integration_binding",
+        "sandbox",
+        "permission_profile",
+        "permission_binding",
+        "permission_assignment",
+        "permission_context",
+        "project_configuration",
+        "integration_project_configuration",
+    ]
+    .contains(&kind);
     ConfigurationRecord {
-        id: id(),
+        id: if source_kind {
+            format!("{definition_id}:{version}")
+        } else {
+            id()
+        },
         kind: kind.into(),
         definition_id,
         scope,
@@ -23,7 +50,7 @@ pub(crate) fn record(
         data,
         immutable,
         revision: 1,
-        created_at: now(),
+        created_at: if source_kind { 0 } else { now() },
     }
 }
 pub(crate) fn update_record(r: &mut ConfigurationRecord, data: Value) {
@@ -103,19 +130,6 @@ pub(crate) fn validate_composition(
             "Agent 的业务身份与 Role 修订不一致",
         )?;
     }
-    require(
-        a.permission_selection.is_some(),
-        "Agent 必须明确 Harness/Sandbox Permission",
-    )?;
-    if let Some(selection) = &a.permission_selection {
-        let ht = permission_target(s, PermissionTargetKind::Harness, &a.harness_ref)?;
-        let st = permission_target(s, PermissionTargetKind::Sandbox, &selection.sandbox_ref)?;
-        for (target, choice) in [(ht, &selection.harness), (st, &selection.sandbox)] {
-            if matches!(choice, PermissionSelection::Pinned { .. }) {
-                resolve_bound_permission(s, target, choice)?;
-            }
-        }
-    }
     crate::configuration::validate_capability(
         s,
         &json!(CapabilityDefinition {
@@ -161,7 +175,6 @@ pub(crate) fn install_agent_profile(
         agent_profile: Some(AgentProfile {
             role: a.role.clone(),
             skill_revisions: a.skills.clone(),
-            tool_policy: a.execution.tool_policy,
         }),
     });
 }
@@ -264,8 +277,7 @@ impl Engine {
                     session.agent == instance.agent_revision_id,
                     "Agent 与 AgentRevision 不匹配",
                 )?;
-                let agent: AgentComposition =
-                    s.configuration(&instance.agent_revision_id)?.decode()?;
+                let agent = s.resolve_agent(&instance.agent_revision_id)?;
                 let model: ModelDefinition = s.configuration(&agent.model_ref)?.decode()?;
                 let harness: HarnessDefinition = s.configuration(&agent.harness_ref)?.decode()?;
                 let binding = session
@@ -354,6 +366,7 @@ impl Engine {
             "standard",
             "role",
             "capability",
+            "permission_context",
             "sandbox",
         ]
         .contains(&family)
@@ -432,6 +445,36 @@ impl Engine {
                         visibility.validate()?;
                     }
                 }
+                "permission_context" => {
+                    validate_source_data("permission_context", &data)?;
+                    let context: PermissionContextDefinition = decode(&data)?;
+                    reference(s, &context.sandbox_ref, "sandbox", &scope)?;
+                    for (selection, kind) in [
+                        (&context.harness, PermissionTargetKind::Harness),
+                        (&context.sandbox, PermissionTargetKind::Sandbox),
+                    ] {
+                        if let PermissionSelection::Pinned {
+                            binding_revision_id,
+                        } = selection
+                        {
+                            let binding: VersionedPermissionBinding =
+                                reference(s, binding_revision_id, "permission_binding", &scope)?
+                                    .decode()?;
+                            require(binding.target.kind == kind, "授权绑定层不匹配")?;
+                        }
+                    }
+                    for grant in context.step_grants {
+                        let workflow: WorkflowDefinition =
+                            reference(s, &grant.workflow_ref, "workflow", &scope)?.decode()?;
+                        require(
+                            workflow.steps.iter().any(|step| step.key == grant.step),
+                            "授权引用了不存在的步骤",
+                        )?;
+                        for tool in grant.tool_refs {
+                            reference(s, &tool, "tool", &scope)?;
+                        }
+                    }
+                }
                 "capability" => crate::configuration::validate_capability(s, &data, &scope)?,
                 "model" => {
                     let m: ModelDefinition = decode(&data)?;
@@ -472,7 +515,11 @@ impl Engine {
                         "无效 Tool 契约",
                     )?;
                 }
-                "agent" => validate_composition(s, &decode(&data)?, &scope)?,
+                "agent" => {
+                    let source: AgentDefinition = decode(&data)?;
+                    reference(s, &source.role_ref, "role", &scope)?;
+                    reference(s, &source.capability_ref, "capability", &scope)?;
+                }
                 _ => {}
             }
             let definition_id = old
@@ -501,7 +548,9 @@ impl Engine {
                 true,
             );
             if family == "agent" {
-                install_agent_profile(s, &r, &r.decode()?);
+                let mut view = s.clone();
+                view.governance.push(r.clone());
+                install_agent_profile(s, &r, &view.resolve_agent(&r.id)?);
             }
             if family == "delivery_type" {
                 r.decode::<DeliveryTypeDefinition>()?.validate()?;
@@ -745,6 +794,7 @@ impl Engine {
                             n.kind == r.kind
                                 && n.definition_id == r.definition_id
                                 && n.version > r.version
+                                && (p["include_archived"] == true || template_record_current(&s, n))
                         })
                 })
                 .filter(|r| match method {

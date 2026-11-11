@@ -1,30 +1,15 @@
 {
-  "template_key": "governance.builtin-role-project-manager-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-role-project-manager-v1",
-    "kind": "role",
-    "definition_id": "builtin-role-project-manager",
-    "scope": {
+  "kind": "role",
+  "identity": "builtin-role-project-manager",
+  "revision": 1,
+  "name": "项目经理",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "visibility": {
       "kind": "global"
     },
-    "name": "项目经理",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "instructions": "",
-      "visibility": {
-        "kind": "global"
-      }
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
-  },
-  "text_files": {
-    "/data/instructions": "roles/project-manager.md"
-  },
-  "references": {},
-  "initial_only": false
+    "instructions_file": "project-manager.md"
+  }
 }

@@ -142,11 +142,11 @@ pub struct StepAccess {
     pub workspace_input: Option<String>,
     #[serde(default)]
     pub working_directory: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub writable_paths: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub read_only_paths: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_refs: Vec<Id>,
 }
 
@@ -308,8 +308,6 @@ impl ContentCheckReport {
 pub struct ConfiguredSpecification {
     pub schema_version: u64,
     pub body: String,
-    #[serde(default)]
-    pub applicable_to: Vec<StepSelector>,
     #[serde(default)]
     pub checks: Vec<ContentCheckDefinition>,
 }

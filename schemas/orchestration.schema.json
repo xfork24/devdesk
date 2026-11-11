@@ -504,6 +504,10 @@
         },
         "policy": {
           "$ref": "#/$defs/WorkflowControlPolicy"
+        },
+        "permission_context_ref": {
+          "type": "string",
+          "pattern": "^.+:[1-9][0-9]*$"
         }
       },
       "required": [
@@ -523,7 +527,8 @@
         "epoch",
         "event_cursor",
         "wakeup_turns",
-        "policy"
+        "policy",
+        "permission_context_ref"
       ],
       "additionalProperties": false
     },

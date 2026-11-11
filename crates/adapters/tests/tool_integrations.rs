@@ -114,10 +114,8 @@ fn project_binding_freezes_selected_tools_and_skill_dependencies() {
     .unwrap();
     let pid = project["id"].as_str().unwrap();
     let s = e.store.snapshot().unwrap();
-    let mut a: AgentComposition = s
-        .configuration(&default_configured_agent_id("analyst"))
-        .unwrap()
-        .decode()
+    let mut a = s
+        .resolve_agent(&default_configured_agent_id("analyst"))
         .unwrap();
     a.tools.push(tool["id"].as_str().unwrap().into());
     assert!(freeze_integrations(&s, &a, Some(pid)).is_err());
@@ -769,14 +767,22 @@ fn registered_invocation(root: &std::path::Path) -> (Engine, ToolInvocation) {
     )
     .unwrap();
     let binding=command(&e,"integration.binding.create",None,json!({"name":"Account","data":{"integration_ref":source["id"],"harness_ref":DEFAULT_HARNESS_ID,"sandbox_ref":DEFAULT_PERMISSION_SANDBOX,"allowed_origins":["https://example.test"],"allowed_tools":[tool["id"]]}})).unwrap();
-    let permissions = permission_fixture::compile(
-        HarnessProvider::Codex,
-        ExecutionScope {
+    runtime::bind_default_permissions(&e);
+    let state = e.store.snapshot().unwrap();
+    let lock = resolve_permission_lock(
+        &state,
+        DEFAULT_HARNESS_ID,
+        &permission_selection(&state).unwrap(),
+    )
+    .unwrap();
+    let permissions = devdesk_adapters::permission_profiles::compile_permission_profiles(
+        &state,
+        &lock,
+        Some(ExecutionScope {
             work_type: WorkType::Discussion,
             writable_paths: vec![],
             read_only_paths: vec![],
-        },
-        PermissionPolicy::full_access(),
+        }),
     )
     .unwrap();
     let arguments = json!({"id":"A-1"});
@@ -1102,7 +1108,7 @@ fn dsh_native_group_is_available_and_rejects_cross_harness_composition() {
         json!({"name":"DSH model","data":{"provider":"deepseek","model":"deepseek-chat"}}),
     )
     .unwrap();
-    command(&e,"capability.create",None,json!({"name":"DSH native","data":{"model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider-v1","tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[]}})).unwrap();
+    command(&e,"capability.create",None,json!({"name":"DSH native","data":{"model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[]}})).unwrap();
     assert!(command(&e,"capability.create",None,json!({"name":"Wrong harness","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[]}})).unwrap_err().message.contains("原生工具组不适用"));
 }
 

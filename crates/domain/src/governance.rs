@@ -88,6 +88,7 @@ impl ConfigurationRecord {
             "integration",
             "integration_binding",
             "sandbox",
+            "permission_context",
             "permission_profile",
             "permission_binding",
             "permission_assignment",
@@ -155,15 +156,10 @@ impl ToolDefinition {
 #[serde(deny_unknown_fields)]
 pub struct PlatformToolRuntime {
     pub harness_ref: Id,
-    pub permission_selection: AgentPermissionSelection,
+    pub sandbox_ref: Id,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AgentComposition {
-    #[serde(default)]
-    pub execution: AgentWorkProfile,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permission_selection: Option<AgentPermissionSelection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability_ref: Option<Id>,
     pub role: AgentRole,

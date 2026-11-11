@@ -1,399 +1,384 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "DevDesk Permission profile v2",
-  "type": "object",
-  "properties": {
-    "schema_version": {
-      "const": 2
-    },
-    "id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200
-    },
-    "identity": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200
-    },
-    "name": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 500
-    },
-    "version": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "supersedes": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "target_kind": {
-      "enum": [
-        "harness",
-        "sandbox"
-      ]
-    },
-    "policy": {
-      "type": "object"
-    }
-  },
-  "required": [
-    "schema_version",
-    "id",
-    "identity",
-    "name",
-    "version",
-    "target_kind",
-    "policy"
-  ],
-  "additionalProperties": false,
+  "title": "Permission source revision",
   "allOf": [
     {
-      "if": {
-        "properties": {
-          "target_kind": {
-            "const": "harness"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "policy": {
-            "type": "object",
-            "properties": {
-              "filesystem": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "full_access"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "read_only"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "scoped"
-                      },
-                      "rules": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "path": {
-                              "type": "string",
-                              "minLength": 1,
-                              "pattern": "^/",
-                              "maxLength": 4096
-                            },
-                            "access": {
-                              "enum": [
-                                "deny",
-                                "read",
-                                "read_write"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "access"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "maxItems": 128
-                      }
-                    },
-                    "required": [
-                      "mode",
-                      "rules"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
-              },
-              "network": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "enabled"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "disabled"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "allowlist"
-                      },
-                      "destinations": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 253,
-                          "pattern": "^[A-Za-z0-9.\\-:*]+$"
-                        },
-                        "minItems": 1,
-                        "maxItems": 128
-                      }
-                    },
-                    "required": [
-                      "mode",
-                      "destinations"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
-              },
-              "tools": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "all_available"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "restricted"
-                      },
-                      "allow": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 160,
-                          "pattern": "^[A-Za-z0-9._/\\-]+$"
-                        },
-                        "maxItems": 256
-                      },
-                      "deny": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 160,
-                          "pattern": "^[A-Za-z0-9._/\\-]+$"
-                        },
-                        "maxItems": 256
-                      }
-                    },
-                    "required": [
-                      "mode",
-                      "allow",
-                      "deny"
-                    ],
-                    "additionalProperties": false
-                  }
-                ],
-                "description": "allow 与 deny 合计最多 256 项，由领域校验检查。"
-              },
-              "approval": {
-                "enum": [
-                  "never",
-                  "on_request"
-                ]
-              }
-            },
-            "required": [
-              "filesystem",
-              "network",
-              "tools",
-              "approval"
-            ],
-            "additionalProperties": false
-          }
-        }
-      }
+      "$ref": "source-definition.schema.json"
     },
     {
-      "if": {
-        "properties": {
-          "target_kind": {
-            "const": "sandbox"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "policy": {
-            "type": "object",
-            "properties": {
-              "filesystem": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "full_access"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "read_only"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "scoped"
-                      },
-                      "rules": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "path": {
-                              "type": "string",
-                              "minLength": 1,
-                              "pattern": "^/",
-                              "maxLength": 4096
-                            },
-                            "access": {
-                              "enum": [
-                                "deny",
-                                "read",
-                                "read_write"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "access"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "maxItems": 128
-                      }
-                    },
-                    "required": [
-                      "mode",
-                      "rules"
-                    ],
-                    "additionalProperties": false
+      "properties": {
+        "kind": {
+          "const": "permission_profile"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "const": 2
+            },
+            "target_kind": {
+              "enum": [
+                "harness",
+                "sandbox"
+              ]
+            },
+            "policy": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "schema_version",
+            "target_kind",
+            "policy"
+          ],
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "target_kind": {
+                    "const": "harness"
                   }
-                ]
+                }
               },
-              "network": {
-                "oneOf": [
-                  {
+              "then": {
+                "properties": {
+                  "policy": {
                     "type": "object",
                     "properties": {
-                      "mode": {
-                        "const": "enabled"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "disabled"
-                      }
-                    },
-                    "required": [
-                      "mode"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "mode": {
-                        "const": "allowlist"
+                      "filesystem": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "full_access"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "read_only"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "scoped"
+                              },
+                              "rules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "path": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "pattern": "^/",
+                                      "maxLength": 4096
+                                    },
+                                    "access": {
+                                      "enum": [
+                                        "deny",
+                                        "read",
+                                        "read_write"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "path",
+                                    "access"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 128
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "rules"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
                       },
-                      "destinations": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 253,
-                          "pattern": "^[A-Za-z0-9.\\-:*]+$"
-                        },
-                        "minItems": 1,
-                        "maxItems": 128
+                      "network": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "enabled"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "disabled"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "allowlist"
+                              },
+                              "destinations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 253,
+                                  "pattern": "^[A-Za-z0-9.\\-:*]+$"
+                                },
+                                "minItems": 1,
+                                "maxItems": 128
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "destinations"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "tools": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "all_available"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "restricted"
+                              },
+                              "allow": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9._/\\-]+$"
+                                },
+                                "maxItems": 256
+                              },
+                              "deny": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160,
+                                  "pattern": "^[A-Za-z0-9._/\\-]+$"
+                                },
+                                "maxItems": 256
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "allow",
+                              "deny"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "description": "allow \u4e0e deny \u5408\u8ba1\u6700\u591a 256 \u9879\uff0c\u7531\u9886\u57df\u6821\u9a8c\u68c0\u67e5\u3002"
+                      },
+                      "approval": {
+                        "enum": [
+                          "never",
+                          "on_request"
+                        ]
                       }
                     },
                     "required": [
-                      "mode",
-                      "destinations"
+                      "filesystem",
+                      "network",
+                      "tools",
+                      "approval"
                     ],
                     "additionalProperties": false
                   }
-                ]
+                }
               }
             },
-            "required": [
-              "filesystem",
-              "network"
-            ],
-            "additionalProperties": false
-          }
+            {
+              "if": {
+                "properties": {
+                  "target_kind": {
+                    "const": "sandbox"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "policy": {
+                    "type": "object",
+                    "properties": {
+                      "filesystem": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "full_access"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "read_only"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "scoped"
+                              },
+                              "rules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "path": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "pattern": "^/",
+                                      "maxLength": 4096
+                                    },
+                                    "access": {
+                                      "enum": [
+                                        "deny",
+                                        "read",
+                                        "read_write"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "path",
+                                    "access"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 128
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "rules"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "network": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "enabled"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "disabled"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "const": "allowlist"
+                              },
+                              "destinations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 253,
+                                  "pattern": "^[A-Za-z0-9.\\-:*]+$"
+                                },
+                                "minItems": 1,
+                                "maxItems": 128
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "destinations"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "filesystem",
+                      "network"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          ]
         }
       }
     }

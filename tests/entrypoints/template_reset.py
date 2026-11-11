@@ -65,7 +65,7 @@ def run():
             history = rpc("query.configurations", {"kind": "delivery_type", "include_archived": True, "include_history": True, "limit": 100})
             assert custom in history["records"]
             restored = rpc("query.configuration_defaults")
-            assert restored["model_ref"] != defaults["model_ref"]
+            assert restored["model_ref"] == defaults["model_ref"]
             state = rpc("query.workspace")
             assert state["global_concurrency"] == 3 and state["default_harness"] == "dsh"
         finally:

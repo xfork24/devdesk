@@ -1,70 +1,40 @@
 {
-  "template_key": "governance.builtin-tool-tests-run-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-tool-tests-run-v1",
-    "kind": "tool",
-    "definition_id": "builtin-tool-tests-run",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "执行测试",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "qualified_name": "tests.run",
-      "implementation": "platform",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "workspace": {
-            "type": "object"
-          },
-          "recipe": {
-            "type": "object"
-          },
-          "expect_assertion_failure": {
-            "type": "boolean"
-          }
+  "kind": "tool",
+  "identity": "builtin-tool-tests-run",
+  "revision": 1,
+  "name": "执行测试",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "qualified_name": "tests.run",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "type": "object"
         },
-        "additionalProperties": false,
-        "required": [
-          "workspace",
-          "recipe"
-        ]
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "capabilities": [],
-      "runtime": {
-        "harness_ref": "builtin-harness-codex-managed-v1",
-        "permission_selection": {
-          "harness": {
-            "mode": "follow_target"
-          },
-          "sandbox": {
-            "mode": "follow_target"
-          },
-          "sandbox_ref": "builtin-permission-sandbox-docker-v1"
+        "recipe": {
+          "type": "object"
+        },
+        "expect_assertion_failure": {
+          "type": "boolean"
         }
-      }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspace",
+        "recipe"
+      ]
     },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
-  },
-  "text_files": {},
-  "references": {
-    "/data/runtime/harness_ref": {
-      "template_ref": "harnesses.builtin-harness-codex-managed-v1",
-      "target": "revision"
+    "output_schema": {
+      "type": "object"
     },
-    "/data/runtime/permission_selection/sandbox_ref": {
-      "template_ref": "governance.builtin-permission-sandbox-docker-v1",
-      "target": "revision"
+    "capabilities": [],
+    "runtime": {
+      "harness_ref": "builtin-harness-codex-managed:1",
+      "sandbox_ref": "builtin-docker-sandbox:1"
     }
-  },
-  "initial_only": false
+  }
 }

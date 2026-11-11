@@ -1,0 +1,25 @@
+{
+  "kind": "permission_profile",
+  "identity": "harness-full-access-v2",
+  "revision": 1,
+  "name": "Harness 容器内全权限",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "policy": {
+      "approval": "never",
+      "filesystem": {
+        "mode": "full_access"
+      },
+      "network": {
+        "mode": "enabled"
+      },
+      "tools": {
+        "mode": "all_available"
+      }
+    },
+    "schema_version": 2,
+    "target_kind": "harness"
+  }
+}

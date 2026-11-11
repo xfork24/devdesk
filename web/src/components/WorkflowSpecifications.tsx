@@ -17,7 +17,7 @@ function SelectorFields({
   onChange: (value: Row) => void;
 }) {
   const roles = latest(records.filter((row) => row.kind === "role")).map(
-    (row) => ({ ...row, id: row.definition_id }),
+    (row) => ({ ...row, id: row.id }),
   );
   return (
     <>
@@ -101,42 +101,9 @@ export function WorkflowSpecifications({
         <p>
           内容要求由下面的检查项定义，可由绑定的 Agent 按当前 Skill 和材料评审。
         </p>
-        {(data.applicable_to || []).map((selector: Row, index: number) => (
-          <fieldset key={index}>
-            <legend>适用范围 {index + 1}</legend>
-            <SelectorFields
-              records={records}
-              value={selector}
-              onChange={(selector) =>
-                onChange({
-                  applicable_to: data.applicable_to.map(
-                    (value: Row, i: number) => (i === index ? selector : value),
-                  ),
-                })
-              }
-            />
-            <ActionButton
-              type="button"
-              onClick={() =>
-                onChange({
-                  applicable_to: data.applicable_to.filter(
-                    (_: Row, i: number) => i !== index,
-                  ),
-                })
-              }
-            >
-              移除适用范围
-            </ActionButton>
-          </fieldset>
-        ))}
-        <ActionButton
-          type="button"
-          onClick={() =>
-            onChange({ applicable_to: [...(data.applicable_to || []), {}] })
-          }
-        >
-          添加适用范围
-        </ActionButton>
+        <p className="muted">
+          文档与规范的关联在 Delivery 中选择，场景覆盖要求在 Standard 中选择。
+        </p>
         {(data.checks || []).map((check: Row, index: number) => {
           const patch = (patch: Row) =>
             onChange({

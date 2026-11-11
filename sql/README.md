@@ -1,27 +1,16 @@
 # 当前 SQLite 结构
 
-当前运行只执行新合同；旧 v4 数据通过显式离线转换保留。
-
 | 文件 | 数据库 | user_version |
 |---|---|---:|
-| `global/schema.sql` | `<data>/global.sqlite3`，共享配置、安装与项目索引 | 14 |
-| `project/schema.sql` | `<data>/projects/<project-id>/engineering.sqlite3`，材料、会话与流程运行 | 45 |
+| `global/schema.sql` | `<data>/global.sqlite3`，共享源配置、安装与项目索引 | 15 |
+| `project/schema.sql` | `<data>/projects/<id>/engineering.sqlite3`，项目源选择、材料与执行事实 | 46 |
 
-空库在事务中直接创建当前结构。其他版本会被明确拒绝；旧数据必须显式转换，禁止通过删库升级。不要在运行路径加入隐式迁移或旧动作回退。
+数据集标记为 `devdesk-source-v2`。空库在事务中创建当前结构；其他协议和数据库版本直接拒绝，不执行升级、回退或转换，也不改写旧库。
 
-Workflow 修订、冻结计划、StepExecution、实际输出、确认、历史轮次与工具回执保存于版本化治理记录；材料使用显式 `input_refs`，Feature 使用 `source_materials`。旧 Attempt、Run、Delivery/Review、Merge 等业务调度表及旧配置索引已删除。原生 Session、Turn、RuntimeExecution、仓库操作、Artifact 与幂等记录继续承载实际执行事实。
+`source_definitions` 是源配置的唯一存储，主键为 `(identity, revision)`，`reference` 为 `identity:revision` 的虚拟唯一列。源修订不可更新或删除。正文只属于一个源修订，Permission 正文不重复身份、名称及版本。没有 `definitions`、`harnesses`、`sandboxes` 投影表。
 
-模板目录使用身份、代次及不可变成员索引。重置只切换当前目录，正常运行中的冻结引用保持确切修订。凭据独立保存于数据集凭据目录或系统凭据库，不写入业务配置与运行数据库。
+`governance_records` 承载执行事件、Controller、Plan 采用记录、变更、决定、工具意图及回执。JSON 中的配置内容保存为确切源引用和实际选择；完整 Plan、Agent 执行配置、权限、工具与接入视图在读取时统一重建，不保存展开闭包。
 
-当前结构已删除对象上的空 BindingLock、项目运行时偏好、Definition 的旧 slots/rules，以及旧 execution_task 索引。每个 Step 独立冻结 Session 运行配置。
+Session、Turn、RuntimeExecution、仓库操作及 Artifact 保存不可由配置重建的执行事实。幂等记录同样保存源引用，重放时解析；人工决定、失败报告、输入来源与实际回执不因解析而改写。流程修改在接纳时形成新的 Workflow 源修订，既有执行仍关联原计划和源修订。
 
-`orchestration_wakeups` 保存持久化唤醒及消费状态，`orchestration_leases` 以唯一约束维护根实例单写者及 epoch。计划、决定、材料和 permit 保存为治理记录。
-
-离线升级（先停止 Host，并停止/核对全部外部执行者）：
-
-```bash
-python3 scripts/upgrade/harness-v5.py /absolute/data --binary /absolute/devdesk-host
-python3 scripts/upgrade/harness-v5.py /absolute/data --binary /absolute/devdesk-host --apply --backup-directory /absolute/backup
-```
-
-入口锁定数据集，备份每个 SQLite 文件，保存不可变 upgrade_archive 和确定性 ID 映射。跨库 journal 完成前 Host 拒绝打开；中断后重跑同一命令继续，不覆盖备份。可用 `--max-databases 1` 在数据库提交边界建立检查点。原 Artifact、凭据和仓库不改写。恢复备份前必须停止新的 worker，整组恢复一致备份，不能将计划切换当作 Git 回滚。
+模板目录使用独立的代次选择记录；恢复出厂选择复用同一源引用。运行引用的源修订永久保留。凭据只保存不透明引用，不进入源正文或运行日志。

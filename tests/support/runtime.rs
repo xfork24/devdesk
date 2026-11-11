@@ -56,7 +56,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
             s.sessions.push(Session {
                 id: sid.clone(),
                 owner_id: project.into(),
-                agent: "builtin-agent-sol-high-analyst-v3".into(),
+                agent: "builtin-agent-sol-high-analyst:3".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "fixture-docker".into(),
                 snapshot_id: None,
@@ -141,17 +141,17 @@ pub fn bind_default_permissions(e: &Engine) {
         (
             PermissionTargetKind::Harness,
             DEFAULT_HARNESS_ID,
-            "permission-harness-full-access-v2-r1",
+            "harness-full-access-v2:1",
         ),
         (
             PermissionTargetKind::Harness,
-            "builtin-harness-dsh-multi-provider-v1",
-            "permission-harness-full-access-v2-r1",
+            "builtin-harness-dsh-multi-provider:1",
+            "harness-full-access-v2:1",
         ),
         (
             PermissionTargetKind::Sandbox,
             DEFAULT_PERMISSION_SANDBOX,
-            "permission-sandbox-full-access-v2-r1",
+            "sandbox-full-access-v2:1",
         ),
     ] {
         if s.configuration(id).is_err() {

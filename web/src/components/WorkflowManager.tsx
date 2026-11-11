@@ -169,7 +169,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   }, [rows, choose, draft.selected, draft.view]);
   const document = draft.document;
   const roles = latest(records.filter((row) => row.kind === "role")).map(
-    (row) => ({ ...row, id: row.definition_id }),
+    (row) => ({ ...row, id: row.id }),
   );
   const stage = draft.node.startsWith("stage:")
     ? document.stages.find((stage: Row) => stage.key === draft.node.slice(6))
@@ -282,9 +282,6 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       outputs: {},
       access: {
         workspace_input: null,
-        writable_paths: [],
-        read_only_paths: [],
-        tool_refs: [],
       },
       budget: structuredClone(
         authoring?.execution_budget || {
@@ -1194,49 +1191,10 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           }
                         />
                       </label>
-                      <RevisionSelect
-                        label="本次可用 Tools"
-                        records={records.filter(
-                          (row) =>
-                            row.kind === "tool" &&
-                            row.data.schema_version === 2,
-                        )}
-                        multiple
-                        value={step.access?.tool_refs || []}
-                        onChange={(tool_refs) =>
-                          updateStep({ access: { ...step.access, tool_refs } })
-                        }
-                      />
-                      <label>
-                        可写相对目录
-                        <textarea
-                          value={(step.access?.writable_paths || []).join("\n")}
-                          onChange={(event) =>
-                            updateStep({
-                              access: {
-                                ...step.access,
-                                writable_paths: splitPaths(event.target.value),
-                              },
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        只读相对目录
-                        <textarea
-                          value={(step.access?.read_only_paths || []).join(
-                            "\n",
-                          )}
-                          onChange={(event) =>
-                            updateStep({
-                              access: {
-                                ...step.access,
-                                read_only_paths: splitPaths(event.target.value),
-                              },
-                            })
-                          }
-                        />
-                      </label>
+                      <p className="muted">
+                        工作空间读写范围及工具授权由项目选定的 Permission
+                        配置管理。
+                      </p>
                       <JsonField
                         key={`${step.key}:budget`}
                         label="执行预算"

@@ -49,7 +49,7 @@ impl Workspace {
                         permission: None,
                     },
                     sandbox: Sandbox {
-                        id: runtime.permission_selection.sandbox_ref.clone(),
+                        id: runtime.sandbox_ref.clone(),
                         provider: "docker".into(),
                         version: installation.key.version,
                         platform: "linux".into(),
@@ -123,7 +123,7 @@ impl Workspace {
         b: &IntegrationBinding,
     ) -> Result<(ExecutionPermissions, String)> {
         let state = e.store.snapshot()?;
-        let selection = AgentPermissionSelection {
+        let selection = ExecutionPermissionSelection {
             sandbox_ref: b.sandbox_ref.clone(),
             harness: PermissionSelection::FollowTarget,
             sandbox: PermissionSelection::FollowTarget,

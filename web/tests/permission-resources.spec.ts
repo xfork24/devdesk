@@ -8,6 +8,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
+const ref = (p: any) => `${p.identity}:${p.revision}`;
+
 test("统一权限文件与 UI 修订在运行时绑定确切目标版本", async ({
   page,
 }, testInfo) => {
@@ -63,10 +65,12 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   };
   await page.getByLabel("统一权限 JSON").fill(
     JSON.stringify({
+      kind: "permission_profile",
       identity,
+      revision: 1,
+      scope: { kind: "global" },
       name: "拒绝未知字段",
-      target_kind: "harness",
-      policy,
+      data: { schema_version: 2, target_kind: "harness", policy },
       unexpected: true,
     }),
   );
@@ -81,10 +85,12 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   ).toBe(false);
   await page.getByLabel("统一权限 JSON").fill(
     JSON.stringify({
+      kind: "permission_profile",
       identity,
+      revision: 1,
+      scope: { kind: "global" },
       name: "Web 受限评审",
-      target_kind: "harness",
-      policy,
+      data: { schema_version: 2, target_kind: "harness", policy },
     }),
   );
   await page.getByRole("button", { name: "创建独立权限" }).click();
@@ -94,19 +100,21 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   const first = (await rpc("query.permission_resources")).profiles.find(
     (p: any) => p.identity === identity,
   );
-  await page.getByLabel("目标资源权限", { exact: true }).selectOption(first.id);
+  await page
+    .getByLabel("目标资源权限", { exact: true })
+    .selectOption(ref(first));
   const eligible = await page
     .getByLabel("目标资源权限", { exact: true })
     .locator("option")
     .evaluateAll((nodes) =>
       nodes.map((n) => (n as HTMLOptionElement).value).filter(Boolean),
     );
-  expect(eligible).toContain(first.id);
+  expect(eligible).toContain(ref(first));
   const allProfiles = (await rpc("query.permission_resources")).profiles;
   expect(
     allProfiles
-      .filter((p: any) => eligible.includes(p.id))
-      .every((p: any) => p.target_kind === "harness"),
+      .filter((p: any) => eligible.includes(ref(p)))
+      .every((p: any) => p.data.target_kind === "harness"),
   ).toBe(true);
   await page.getByRole("button", { name: "预检目标绑定" }).click();
   await expect(
@@ -125,7 +133,10 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
     JSON.stringify({
       ...first,
       name: "Web 新修订",
-      policy: { ...policy, network: { mode: "disabled" } },
+      data: {
+        ...first.data,
+        policy: { ...policy, network: { mode: "disabled" } },
+      },
     }),
   );
   await page.getByRole("button", { name: "保存权限新修订" }).click();
@@ -138,13 +149,13 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   const exported = JSON.parse(
     readFileSync((await (await download).path())!, "utf8"),
   );
-  expect(exported.profiles.map((p: any) => p.version)).toEqual([1, 2]);
+  expect(exported.profiles.map((p: any) => p.revision)).toEqual([1, 2]);
   const second = (await rpc("query.permission_resources")).profiles.find(
-    (p: any) => p.identity === identity && p.version === 2,
+    (p: any) => p.identity === identity && p.revision === 2,
   );
   await page
     .getByLabel("目标资源权限", { exact: true })
-    .selectOption(second.id);
+    .selectOption(ref(second));
   await page.getByRole("button", { name: "应用到该目标版本" }).click();
   await expect
     .poll(async () => (await active()).revision)
@@ -156,8 +167,10 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
     .selectOption(target.target.revision_id);
   await page
     .getByLabel("版本化权限修订", { exact: true })
-    .selectOption(first.id);
-  await page.getByLabel("目标资源权限", { exact: true }).selectOption(first.id);
+    .selectOption(ref(first));
+  await page
+    .getByLabel("目标资源权限", { exact: true })
+    .selectOption(ref(first));
   await page.getByRole("button", { name: "应用到该目标版本" }).click();
   await expect
     .poll(async () => (await active()).revision)
@@ -166,7 +179,6 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   const source = mkdtempSync(join(dataDirectory, "团队 预设-"));
   const file = {
     ...first,
-    id: `file-${crypto.randomUUID()}`,
     identity: `file-${crypto.randomUUID()}`,
     name: "运行时新增文件",
   };
@@ -202,14 +214,14 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   );
   expect(
     (await rpc("query.permission_resources")).profiles.some(
-      (p: any) => p.id === file.id,
+      (p: any) => ref(p) === ref(file),
     ),
   ).toBe(false);
   await page.getByRole("button", { name: "重新加载预设", exact: true }).click();
   await expect(page.getByText(/预设重新加载完成/)).toBeVisible();
   expect(
     (await rpc("query.permission_resources")).profiles.some(
-      (p: any) => p.id === file.id,
+      (p: any) => ref(p) === ref(file),
     ),
   ).toBe(true);
   expect((await active()).revision).toBe(bound.revision + 2);
@@ -239,7 +251,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   );
   expect(
     (await rpc("query.permission_resources")).profiles.some(
-      (p: any) => p.id === file.id,
+      (p: any) => ref(p) === ref(file),
     ),
   ).toBe(true);
   expect((await active()).revision).toBe(bound.revision + 2);

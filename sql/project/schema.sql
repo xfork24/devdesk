@@ -1,5 +1,19 @@
 -- Current schema baseline. No legacy upgrade path is executed at startup.
 BEGIN IMMEDIATE;
+CREATE TABLE source_definitions (
+ identity TEXT NOT NULL,
+ revision INTEGER NOT NULL CHECK(revision > 0),
+ kind TEXT NOT NULL,
+ name TEXT NOT NULL,
+ scope JSON NOT NULL CHECK(json_valid(scope)),
+ data JSON NOT NULL CHECK(json_valid(data)),
+ reference TEXT GENERATED ALWAYS AS (identity || ':' || revision) VIRTUAL UNIQUE,
+ PRIMARY KEY(identity,revision)
+);
+CREATE INDEX idx_source_kind ON source_definitions(kind,identity,revision);
+CREATE TRIGGER source_immutable_update BEFORE UPDATE ON source_definitions BEGIN SELECT RAISE(ABORT,'source revision is immutable'); END;
+CREATE TRIGGER source_no_delete BEFORE DELETE ON source_definitions BEGIN SELECT RAISE(ABORT,'source revision cannot be deleted'); END;
+
 
 CREATE TABLE "artifacts" (
  id TEXT PRIMARY KEY, feature_id TEXT REFERENCES features(id) DEFERRABLE INITIALLY DEFERRED,
@@ -32,14 +46,6 @@ CREATE TABLE conversation_events (
  FOREIGN KEY(session_id,turn_id) REFERENCES turns(session_id,id) DEFERRABLE INITIALLY DEFERRED
 );
 
-CREATE TABLE definitions (
- "id" TEXT PRIMARY KEY,
- "family" TEXT NOT NULL,
- "name" TEXT NOT NULL,
- "version" INTEGER NOT NULL,
- "supersedes" TEXT REFERENCES definitions(id) DEFERRABLE INITIALLY DEFERRED,
- "body" TEXT NOT NULL
-, agent_profile JSON CHECK(agent_profile IS NULL OR json_valid(agent_profile)));
 
 CREATE TABLE "documents" (
  "id" TEXT PRIMARY KEY,
@@ -98,7 +104,6 @@ CREATE TABLE governance_records (
  created_at INTEGER NOT NULL
 );
 
-CREATE TABLE harnesses (id TEXT PRIMARY KEY, provider TEXT NOT NULL, version TEXT NOT NULL, capabilities JSON NOT NULL CHECK(json_valid(capabilities)), origin TEXT NOT NULL, permission JSON CHECK(permission IS NULL OR json_valid(permission)));
 
 CREATE TABLE heads (
  "id" TEXT PRIMARY KEY,
@@ -140,11 +145,10 @@ CREATE TABLE repository_operations(id TEXT PRIMARY KEY,project_id TEXT NOT NULL 
 
 CREATE TABLE repository_worktrees(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id) DEFERRABLE INITIALLY DEFERRED,owner_id TEXT NOT NULL,kind TEXT NOT NULL,branch TEXT NOT NULL,path TEXT NOT NULL UNIQUE,base TEXT NOT NULL,operation_id TEXT NOT NULL REFERENCES repository_operations(id) DEFERRABLE INITIALLY DEFERRED,UNIQUE(project_id,owner_id));
 
-CREATE TABLE sandboxes (id TEXT PRIMARY KEY, provider TEXT NOT NULL, version TEXT NOT NULL, platform TEXT NOT NULL, image TEXT, network BOOLEAN NOT NULL, origin TEXT NOT NULL, permission JSON CHECK(permission IS NULL OR json_valid(permission)));
 
 CREATE TABLE "sessions" (
  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL,
- agent TEXT NOT NULL REFERENCES definitions(id) DEFERRABLE INITIALLY DEFERRED,
+ agent TEXT NOT NULL REFERENCES source_definitions(reference) DEFERRABLE INITIALLY DEFERRED,
  harness TEXT NOT NULL, sandbox TEXT NOT NULL,
  snapshot_id TEXT REFERENCES snapshots(id) DEFERRABLE INITIALLY DEFERRED,
  origin TEXT NOT NULL, instance JSON CHECK(instance IS NULL OR json_valid(instance)),
@@ -297,10 +301,10 @@ CREATE TRIGGER sessions_project_insert BEFORE INSERT ON sessions WHEN NEW.projec
 CREATE TRIGGER sessions_project_update BEFORE UPDATE OF project_id,scope ON sessions WHEN NEW.project_id IS NOT NULL AND NEW.scope!='global' AND NOT EXISTS(SELECT 1 FROM projects WHERE id=NEW.project_id) BEGIN SELECT RAISE(ABORT,'Session project does not exist'); END;
 
 CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(kind) WHERE kind='template_catalog_state';
-CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id) WHERE kind='template_catalog_member';
+CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
 
-PRAGMA user_version=45;
+PRAGMA user_version=46;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,

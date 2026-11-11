@@ -90,6 +90,7 @@ pub struct WorkflowController {
     pub root_instance_id: Option<Id>,
     pub agent_revision_id: Id,
     pub role_ref: Id,
+    pub permission_context_ref: Id,
     pub policy: WorkflowControlPolicy,
     pub policy_digest: String,
     pub session_id: Option<Id>,

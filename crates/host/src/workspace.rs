@@ -57,7 +57,7 @@ fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
             && template_record_current(s, r)
             && template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
     }) {
-        let agent: AgentComposition = r.decode()?;
+        let agent = s.resolve_agent(&r.id)?;
         targets.insert(agent.harness_ref);
     }
     for r in s
@@ -85,7 +85,7 @@ fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
         })
         .chain(std::iter::once((
             PermissionTargetKind::Sandbox,
-            defaults["permission_sandbox_ref"]
+            defaults["sandbox_ref"]
                 .as_str()
                 .ok_or_else(|| err("invalid_template", "默认 Sandbox 缺失"))?
                 .to_owned(),
@@ -140,7 +140,6 @@ impl Workspace {
             .iter()
             .find(|d| d.id == agent && d.agent_profile.is_some())
             .ok_or_else(|| err("not_found", "Agent 角色修订不存在"))?;
-        let profile = definition.agent_profile.as_ref().unwrap();
         let work_type: WorkType = command
             .payload
             .get("work_type")
@@ -192,10 +191,6 @@ impl Workspace {
             } else {
                 ToolPolicy::ScopedWrite
             };
-            require(
-                profile.tool_policy.permits(requested),
-                "Agent 执行配置未允许所请求的写入范围",
-            )?;
             requested
         } else {
             ToolPolicy::ReadOnly
@@ -221,15 +216,12 @@ impl Workspace {
             command.payload.get("permission_overrides").is_none(),
             "旧权限覆盖已移除",
         )?;
-        let composition: AgentComposition = state.configuration(agent)?.decode()?;
-        let selection = composition
-            .permission_selection
-            .as_ref()
-            .ok_or_else(|| err("permission_unconfigured", "Agent 必须选择版本化权限"))?;
+        let composition = state.resolve_agent(agent)?;
+        let selection = permission_selection(&state)?;
         let lock = if let Some(configured) = &configured {
             configured.permissions.clone()
         } else {
-            resolve_permission_lock(&state, &composition.harness_ref, selection)?
+            resolve_permission_lock(&state, &composition.harness_ref, &selection)?
         };
         permission_profiles::verify_permission_installation(&state, &lock, &installation)?;
         let resolved_permissions = permission_profiles::compile_permission_profiles(
@@ -325,17 +317,6 @@ impl Workspace {
         root: &Path,
         adapters: ports::ExecutionAdapters,
     ) -> Result<Arc<Self>> {
-        let journal = root.join("harness-v5-upgrade.json");
-        if journal.exists() {
-            let status: Value = serde_json::from_slice(
-                &std::fs::read(journal).map_err(|e| err("upgrade_incomplete", e.to_string()))?,
-            )
-            .map_err(|e| err("upgrade_incomplete", e.to_string()))?;
-            require(
-                status["state"] == "complete",
-                "离线升级尚未完成，请恢复升级后启动",
-            )?;
-        }
         let global = Arc::new(GlobalStore::open(root)?);
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;
@@ -1712,7 +1693,7 @@ mod adapter_injection_tests {
             )
             .unwrap();
         assert!(
-            !roles["records"]
+            roles["records"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -1754,7 +1735,7 @@ mod adapter_injection_tests {
         );
         let agent = create_resource(
             "agent.create",
-            json!({"name":"Permission pair","data":{"role_ref":default_role_id("analyst"),"capability_ref":capability["id"],"permission_selection":default_permission_selection()}}),
+            json!({"name":"Permission pair","data":{"role_ref":default_role_id("analyst"),"capability_ref":capability["id"]}}),
         );
         let e = w.active_engine(Some(&pid)).unwrap();
         w.sync_configuration(&e).unwrap();
@@ -1767,15 +1748,11 @@ mod adapter_injection_tests {
         w.resolve_agent_composition(&e, &mut command).unwrap();
         assert!(command.payload.get("permission_overrides").is_none());
         let state = e.store.snapshot().unwrap();
-        let a: AgentComposition = state
-            .configuration(agent["id"].as_str().unwrap())
-            .unwrap()
-            .decode()
-            .unwrap();
-        assert!(a.permission_selection.is_some());
+        state.resolve_agent(agent["id"].as_str().unwrap()).unwrap();
+        assert!(permission_selection(&state).ok().is_some());
     }
     #[test]
-    fn visibility_narrowing_blocks_new_use_and_preserves_frozen_agent_instances() {
+    fn role_revisions_do_not_change_agents_pinned_to_the_previous_source() {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
         let one = create(&w, "Visible");
@@ -1794,14 +1771,14 @@ mod adapter_injection_tests {
         let frozen = json!(e.store.snapshot().unwrap().frozen_test_plan(fid).unwrap());
         w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"payload":{"name":"Narrow analyst","data":{"instructions":"# Narrow responsibility","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
         w.sync_configuration(&e).unwrap();
-        assert_eq!(e.project_configuration_status().unwrap()["ready"], false);
+        assert_eq!(e.project_configuration_status().unwrap()["ready"], true);
         let mut command = Command {
             command_id: id(),
             target: Some(two.clone()),
             expected_revision: Some(2),
             payload: json!({"agent":default_configured_agent_id("analyst")}),
         };
-        assert!(w.resolve_agent_composition(&e, &mut command).is_err());
+        assert!(w.resolve_agent_composition(&e, &mut command).is_ok());
         let payload = json!({"name":"Continuation instance","scope":{"kind":"project","project_id":two},"agent_revision_id":default_configured_agent_id("analyst")});
         assert!(
             e.execute(
@@ -1813,7 +1790,7 @@ mod adapter_injection_tests {
                     payload: payload.clone()
                 }
             )
-            .is_err()
+            .is_ok()
         );
         let mut payload = payload;
         payload["frozen_feature_id"] = json!(fid);

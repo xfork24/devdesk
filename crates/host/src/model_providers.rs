@@ -44,7 +44,7 @@ mod tests {
         };
         let model=create("model.create",json!({"provider":"ollama","model":"fixture-local","context_window":32768,"max_output_tokens":4096})).unwrap();
         assert!(create("capability.create",json!({"model_ref":model["id"],"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[]})).is_err());
-        create("capability.create",json!({"model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider-v1","tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[]})).unwrap();
+        create("capability.create",json!({"model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[]})).unwrap();
         assert!(
             w.dispatch("query.runtime_installations", json!({}))
                 .unwrap()["installations"]
@@ -104,7 +104,7 @@ impl Workspace {
                     .as_str()
                     .ok_or_else(|| err("invalid_params", "需要完整 Agent 修订"))?;
                 if method == "agent.connection.check" {
-                    let a: AgentComposition = state.configuration(agent)?.decode()?;
+                    let a = state.resolve_agent(agent)?;
                     let h: HarnessDefinition = state.configuration(&a.harness_ref)?.decode()?;
                     require(
                         h.provider == "dsh",

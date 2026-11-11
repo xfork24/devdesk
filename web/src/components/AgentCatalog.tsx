@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import { RoleManager } from "./RoleManager";
+import { JsonField } from "./WorkflowDeliveries";
 import { WorkflowSpecifications } from "./WorkflowSpecifications";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
 import {
@@ -39,6 +40,7 @@ const labels: Record<string, string> = {
   spec: "Spec",
   standard: "Standard",
   delivery_type: "Delivery",
+  permission_context: "执行授权",
 };
 function initial(kind: string): Row {
   switch (kind) {
@@ -46,11 +48,21 @@ function initial(kind: string): Row {
       return {
         role_ref: "",
         capability_ref: "",
-        execution: { tool_policy: "read_only" },
-        permission_selection: {
-          sandbox_ref: "",
-          harness: { mode: "follow_target" },
-          sandbox: { mode: "follow_target" },
+      };
+    case "permission_context":
+      return {
+        sandbox_ref: "",
+        harness: { mode: "follow_target" },
+        sandbox: { mode: "follow_target" },
+        step_grants: [],
+        control_policy: {
+          allowed_operations: [],
+          human_operations: [],
+          waivable_requirements: [],
+          allow_task_revision: false,
+          max_turns_per_wakeup: 8,
+          max_tool_calls_per_turn: 64,
+          timeout_seconds: 600,
         },
       };
     case "capability":
@@ -80,9 +92,9 @@ function initial(kind: string): Row {
     case "standard":
       return { schema_version: 3, body: "", baseline_rules: [] };
     case "delivery_type":
-      return { body: "", format: "markdown", content_schema: null };
+      return { format: "markdown", spec_refs: [], content_schema: null };
     case "spec":
-      return { schema_version: 3, body: "", checks: [], applicable_to: [] };
+      return { schema_version: 3, body: "", checks: [] };
     default:
       return { body: "" };
   }
@@ -187,33 +199,22 @@ export function ResourceEditor({
     installations: [],
   });
   const [records, setRecords] = useState<Row[]>([]),
-    [permissionResources, setPermissionResources] = useState<Row>({
-      targets: [],
-      bindings: [],
-      profiles: [],
-    }),
     [busy, setBusy] = useState(false),
     [integrations, setIntegrations] = useState<Row[]>([]);
   const [draft, setDraft] = useDraft(
-    `devdesk:v4:resource:${project?.id || "global"}:${kind}`,
+    `devdesk:source-v2:resource:${project?.id || "global"}:${kind}`,
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
-    const [
-      records,
-      resources,
-      modelProviders,
-      integrationResources,
-      runtimeOptions,
-    ] = await Promise.all([
-      loadCatalog(request, project),
-      request("query.permission_resources", { project_id: project?.id }),
-      request("query.model_providers"),
-      ["capability", "agent", "skill"].includes(kind)
-        ? loadIntegrationRecords(request, project)
-        : Promise.resolve([]),
-      request("query.runtime_options"),
-    ]);
+    const [records, modelProviders, integrationResources, runtimeOptions] =
+      await Promise.all([
+        loadCatalog(request, project),
+        request("query.model_providers"),
+        ["capability", "agent", "skill"].includes(kind)
+          ? loadIntegrationRecords(request, project)
+          : Promise.resolve([]),
+        request("query.runtime_options"),
+      ]);
     setRecords(records);
     setRuntimeOptions(runtimeOptions);
     setIntegrations(integrationResources);
@@ -224,23 +225,6 @@ export function ResourceEditor({
           ? { selected: "", name: "", scope: "global", data: initial(kind) }
           : current,
       );
-    setPermissionResources(resources);
-    setDraft((current) =>
-      !current.selected &&
-      current.data.permission_selection &&
-      !current.data.permission_selection.sandbox_ref
-        ? {
-            ...current,
-            data: {
-              ...current.data,
-              permission_selection: {
-                ...current.data.permission_selection,
-                sandbox_ref: resources.default_sandbox_ref,
-              },
-            },
-          }
-        : current,
-    );
   }, [request, project?.id, revision]);
   useEffect(() => {
     let active = true;
@@ -307,18 +291,9 @@ export function ResourceEditor({
     setShowAdditionalEditor(false);
     let value = structuredClone(row.data);
     if (kind === "agent") {
-      const role = records.find((r) => r.id === value.role_ref);
       value = {
         role_ref: value.role_ref || "",
         capability_ref: value.capability_ref || "",
-        execution: value.execution || { tool_policy: "read_only" },
-        ...(value.permission_selection
-          ? { permission_selection: value.permission_selection }
-          : {}),
-        instructions:
-          role?.data.instructions === value.instructions
-            ? ""
-            : value.instructions,
       };
     }
     setDraft({
@@ -551,22 +526,15 @@ export function ResourceEditor({
                 {project && <option value="project">当前项目</option>}
               </ActionSelect>
             </label>
+            {kind === "permission_context" && (
+              <JsonField
+                label="执行授权配置"
+                value={data}
+                onChange={(data) => setDraft({ ...draft, data })}
+              />
+            )}
             {kind === "agent" && (
               <>
-                <label>
-                  工作空间写入能力上限
-                  <ActionSelect
-                    value={data.execution?.tool_policy || "read_only"}
-                    onChange={(event) =>
-                      patch({ execution: { tool_policy: event.target.value } })
-                    }
-                  >
-                    <option value="read_only">只读</option>
-                    <option value="scoped_write">仅步骤声明的目录</option>
-                    <option value="workspace_write">步骤声明的工作空间</option>
-                  </ActionSelect>
-                </label>
-
                 {select("Role 精确版本", "role", "role_ref", false, true)}
                 {select(
                   "Capability 精确版本",
@@ -598,120 +566,10 @@ export function ResourceEditor({
                     · Skills {capability.data.skills.length}
                   </div>
                 )}
-                <details className="full-width">
-                  <summary>权限与附加指令</summary>
-                  {data.permission_selection ? (
-                    <>
-                      <label>
-                        Sandbox 目标修订
-                        <ActionSelect
-                          required
-                          value={data.permission_selection.sandbox_ref}
-                          onChange={(e) => {
-                            captureFeedback();
-                            return patch({
-                              permission_selection: {
-                                ...data.permission_selection,
-                                sandbox_ref: e.target.value,
-                              },
-                            });
-                          }}
-                        >
-                          <option value="">选择 Sandbox</option>
-                          {permissionResources.targets
-                            .filter((t: Row) => t.target.kind === "sandbox")
-                            .map((t: Row) => (
-                              <option
-                                key={t.target.revision_id}
-                                value={t.target.revision_id}
-                              >
-                                {t.name} · v{t.version}
-                              </option>
-                            ))}
-                        </ActionSelect>
-                      </label>
-                      {(["harness", "sandbox"] as const).map((layer) => {
-                        const choice = data.permission_selection[layer];
-                        const targetId =
-                          layer === "harness"
-                            ? capability?.data.harness_ref || data.harness_ref
-                            : data.permission_selection.sandbox_ref;
-                        const bindings = permissionResources.bindings.filter(
-                          (b: Row) => b.data.target.revision_id === targetId,
-                        );
-                        const update = (value: Row) =>
-                          patch({
-                            permission_selection: {
-                              ...data.permission_selection,
-                              [layer]: value,
-                            },
-                          });
-                        return (
-                          <div key={layer}>
-                            <label>
-                              {layer} 权限来源
-                              <ActionSelect
-                                value={choice.mode}
-                                onChange={(e) => {
-                                  captureFeedback();
-                                  return update(
-                                    e.target.value === "follow_target"
-                                      ? { mode: "follow_target" }
-                                      : {
-                                          mode: "pinned",
-                                          binding_revision_id:
-                                            bindings[0]?.id || "",
-                                        },
-                                  );
-                                }}
-                              >
-                                <option value="follow_target">
-                                  追随目标活动绑定
-                                </option>
-                                <option value="pinned">固定绑定修订</option>
-                              </ActionSelect>
-                            </label>
-                            {choice.mode === "pinned" ? (
-                              <label>
-                                {layer} 固定绑定
-                                <ActionSelect
-                                  required
-                                  value={choice.binding_revision_id}
-                                  onChange={(e) => {
-                                    captureFeedback();
-                                    return update({
-                                      mode: "pinned",
-                                      binding_revision_id: e.target.value,
-                                    });
-                                  }}
-                                >
-                                  <option value="">选择绑定修订</option>
-                                  {bindings.map((b: Row) => (
-                                    <option key={b.id} value={b.id}>
-                                      {b.name} · v{b.version} · {b.id}
-                                    </option>
-                                  ))}
-                                </ActionSelect>
-                              </label>
-                            ) : (
-                              <p className="muted">
-                                新讨论采用目标活动权限；已有工程配置保持冻结。
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </>
-                  ) : null}
-                  <MarkdownField
-                    label="附加指令（可选）"
-                    value={data.instructions || ""}
-                    onChange={(instructions) => {
-                      captureFeedback();
-                      patch({ instructions });
-                    }}
-                  />
-                </details>
+                <p className="muted full-width">
+                  职责来自 Role，方法与工具来自 Capability；本次执行授权由
+                  Permission 单独管理。
+                </p>
               </>
             )}
             {kind === "agent" && old && (
@@ -1162,21 +1020,30 @@ export function ResourceEditor({
               </>
             )}
             {kind === "delivery_type" && (
-              <label>
-                交付物格式
-                <ActionSelect
-                  value={data.format}
-                  onChange={(event) => patch({ format: event.target.value })}
-                >
-                  <option value="markdown">文档</option>
-                  <option value="diff">Diff</option>
-                  <option value="test_report">Test Report</option>
-                  <option value="json">JSON</option>
-                  <option value="text">文本</option>
-                </ActionSelect>
-              </label>
+              <>
+                <RevisionSelect
+                  label="内容规范"
+                  multiple
+                  records={records.filter((r) => r.kind === "spec")}
+                  value={data.spec_refs || []}
+                  onChange={(spec_refs) => patch({ spec_refs })}
+                />
+                <label>
+                  交付物格式
+                  <ActionSelect
+                    value={data.format}
+                    onChange={(event) => patch({ format: event.target.value })}
+                  >
+                    <option value="markdown">文档</option>
+                    <option value="diff">Diff</option>
+                    <option value="test_report">Test Report</option>
+                    <option value="json">JSON</option>
+                    <option value="text">文本</option>
+                  </ActionSelect>
+                </label>
+              </>
             )}
-            {["skill", "spec", "standard", "delivery_type"].includes(kind) && (
+            {["skill", "spec", "standard"].includes(kind) && (
               <MarkdownField
                 key={draft.selected || "new"}
                 label="正文"
@@ -1203,10 +1070,9 @@ export function ResourceEditor({
               disabled={
                 busy ||
                 !draft.name.trim() ||
-                (["skill", "spec", "standard", "delivery_type"].includes(
-                  kind,
-                ) &&
-                  !data.body?.trim())
+                (["skill", "spec", "standard"].includes(kind) &&
+                  !data.body?.trim()) ||
+                (kind === "delivery_type" && !data.spec_refs?.length)
               }
             >
               {old ? `保存 ${labels[kind]} 新版本` : `创建 ${labels[kind]}`}

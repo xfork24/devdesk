@@ -45,7 +45,7 @@ for (const allowOverride of [false, true])
               },
             },
           ],
-          inputs: { accepted: { delivery_ref: "builtin-delivery-object-v1" } },
+          inputs: { accepted: { delivery_ref: "builtin-delivery-object:1" } },
         },
       },
     });
@@ -155,7 +155,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
       document: {
         schema_version: 5,
         stages: [{ key: "decision", name: "决定" }],
-        inputs: { accepted: { delivery_ref: "builtin-delivery-object-v1" } },
+        inputs: { accepted: { delivery_ref: "builtin-delivery-object:1" } },
         steps: ["first", "second"].map((key) => ({
           key,
           name: key,

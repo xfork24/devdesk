@@ -6,6 +6,10 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfiguredWorkflowPlan {
     pub workflow_revision_id: Id,
+    #[serde(default)]
+    pub permission_context_ref: Option<Id>,
+    #[serde(default)]
+    pub permission_workflow_ref: Option<Id>,
     pub document: WorkflowDefinition,
     pub roles: BTreeMap<Id, Value>,
     pub definitions: BTreeMap<Id, ConfigurationRecord>,
@@ -59,373 +63,13 @@ impl Engine {
         scope: &Scope,
         bindings: Option<&BTreeMap<Id, Id>>,
     ) -> Result<ConfiguredWorkflowPlan> {
-        fn visit(
-            engine: &Engine,
-            state: &EngineeringState,
-            workflow: &ConfigurationRecord,
-            scope: &Scope,
-            bindings: Option<&BTreeMap<Id, Id>>,
-            stack: &mut Vec<Id>,
-            count: &mut usize,
-            plan: &mut ConfiguredWorkflowPlan,
-            path: &str,
-        ) -> Result<()> {
-            require(!stack.contains(&workflow.id), "子流程引用存在环")?;
-            require(stack.len() < WORKFLOW_DEPTH_LIMIT, "子流程深度超过 8")?;
-            stack.push(workflow.id.clone());
-            let mut doc: WorkflowDefinition = workflow.decode()?;
-            doc.assign_node_ids(&workflow.definition_id);
-            doc.validate()?;
-            *count += doc.steps.len();
-            require(*count <= WORKFLOW_STEP_LIMIT, "展开流程超过 1000 个步骤")?;
-            plan.definitions
-                .insert(workflow.id.clone(), workflow.clone());
-            for step in &doc.steps {
-                let location = format!("{path}/{}", step.key);
-                if let Some(role) = doc.role(step) {
-                    let record = crate::configuration::role_record(state, role)?;
-                    require(
-                        crate::configuration::visible(state, record, scope.project())
-                            && !crate::configuration::retired(state, record),
-                        "Role 不适用于当前范围",
-                    )?;
-                    plan.roles.insert(record.definition_id.clone(),json!({"role_ref":record.definition_id,"role_id":record.definition_id,"name":record.name,"role":record}));
-                    plan.definitions.insert(record.id.clone(), record.clone());
-                    if let Some(bindings) = bindings {
-                        let agent = bindings.get(&record.definition_id).ok_or_else(|| {
-                            err(
-                                "configuration_required",
-                                format!("Role {} 未绑定 Agent", record.name),
-                            )
-                        })?;
-                        let agent = reference(state, agent, "agent", scope)?;
-                        let composition: AgentComposition = agent.decode()?;
-                        let selected = crate::configuration::role_record(
-                            state,
-                            composition.role_ref.as_deref().unwrap_or(""),
-                        )?;
-                        require(
-                            selected.definition_id == record.definition_id,
-                            "Agent 必须属于指定 Role 身份",
-                        )?;
-                        crate::governance::validate_composition(state, &composition, scope)?;
-                        let selection =
-                            composition.permission_selection.as_ref().ok_or_else(|| {
-                                err("permission_unconfigured", "Agent 需要明确 Permission")
-                            })?;
-                        plan.permission_locks.insert(
-                            agent.id.clone(),
-                            resolve_permission_lock(state, &composition.harness_ref, selection)?,
-                        );
-                        plan.integration_locks.insert(
-                            agent.id.clone(),
-                            crate::integrations::freeze_integrations(
-                                state,
-                                &composition,
-                                scope.project(),
-                            )?,
-                        );
-                        require(
-                            step.required_skill_refs
-                                .iter()
-                                .all(|id| composition.skills.contains(id)),
-                            format!("{location}: Agent 缺少必需 Skill"),
-                        )?;
-                        require(
-                            step.access
-                                .tool_refs
-                                .iter()
-                                .all(|id| composition.tools.contains(id)),
-                            format!("{location}: Step Tool 不属于 Agent 能力集合"),
-                        )?;
-                        for id in std::iter::once(&agent.id)
-                            .chain(composition.role_ref.iter())
-                            .chain(composition.capability_ref.iter())
-                            .chain(std::iter::once(&composition.model_ref))
-                            .chain(std::iter::once(&composition.harness_ref))
-                            .chain(composition.skills.iter())
-                            .chain(composition.tools.iter())
-                        {
-                            if let Ok(definition) = state.configuration(id) {
-                                plan.definitions.insert(id.clone(), definition.clone());
-                            }
-                        }
-                        for tool in &composition.tools {
-                            let definition = reference(state, tool, "tool", scope)?;
-                            if definition.data["implementation"] != "platform" {
-                                continue;
-                            }
-                            let definition: ToolDefinition = definition.decode()?;
-                            let validator = engine
-                                .tool_executor
-                                .as_ref()
-                                .ok_or_else(|| err("unsupported", "缺少结构校验器"))?;
-                            validator.validate_schema(&definition.input_schema)?;
-                            validator.validate_schema(&definition.output_schema)?;
-                            if let Some(runtime) = definition.runtime {
-                                let harness =
-                                    reference(state, &runtime.harness_ref, "harness", scope)?;
-                                plan.definitions.insert(harness.id.clone(), harness.clone());
-                                plan.permission_locks.insert(
-                                    tool.clone(),
-                                    resolve_permission_lock(
-                                        state,
-                                        &runtime.harness_ref,
-                                        &runtime.permission_selection,
-                                    )?,
-                                );
-                            } else {
-                                require(
-                                    definition.qualified_name != "tests.run",
-                                    "测试工具必须选择冻结运行环境",
-                                )?;
-                            }
-                        }
-                    }
-                }
-                for skill in &step.required_skill_refs {
-                    let definition = reference(state, skill, "skill", scope)?;
-                    plan.definitions
-                        .insert(definition.id.clone(), definition.clone());
-                }
-                for (name, port) in step.outputs.iter().chain(&doc.inputs) {
-                    let output = reference(state, &port.delivery_ref, "delivery_type", scope)?;
-                    let definition: DeliveryTypeDefinition = output.decode()?;
-                    definition.validate()?;
-                    if let Some(schema) = &definition.content_schema {
-                        engine
-                            .tool_executor
-                            .as_ref()
-                            .ok_or_else(|| err("unsupported", "缺少结构校验器"))?
-                            .validate_schema(schema)?;
-                    }
-                    require(!name.is_empty(), "端口名称不能为空")?;
-                    plan.definitions.insert(output.id.clone(), output.clone());
-                }
-                for spec in &step.spec_refs {
-                    let definition = reference(state, spec, "spec", scope)?;
-                    require(
-                        definition.data["body"]
-                            .as_str()
-                            .is_some_and(|s| !s.trim().is_empty()),
-                        "Spec 正文不能为空",
-                    )?;
-                    if definition.data["schema_version"] == 3 {
-                        let spec: ConfiguredSpecification = definition.decode()?;
-                        spec.validate()?;
-                        let deliveries: Vec<_> = step
-                            .outputs
-                            .values()
-                            .map(|p| p.delivery_ref.as_str())
-                            .collect();
-                        require(
-                            spec.applicable_to.is_empty()
-                                || spec.applicable_to.iter().any(|selector| {
-                                    selector.matches(
-                                        doc.role(step)
-                                            .and_then(|id| {
-                                                crate::configuration::role_record(state, id).ok()
-                                            })
-                                            .map(|role| role.definition_id.as_str()),
-                                        &deliveries,
-                                        &step.tags,
-                                    )
-                                }),
-                            format!("{location}: Spec {} 不适用", definition.name),
-                        )?;
-                    }
-                    plan.definitions
-                        .insert(definition.id.clone(), definition.clone());
-                }
-                if step.outputs.values().any(|p| p.content_checks) {
-                    let mut keys = std::collections::BTreeSet::new();
-                    for id in &step.spec_refs {
-                        let spec: ConfiguredSpecification = plan.definitions[id].decode()?;
-                        spec.validate()?;
-                        for check in spec.checks {
-                            require(
-                                keys.insert(check.key),
-                                "同一步骤的检查标识重复，请调整 Spec",
-                            )?;
-                        }
-                    }
-                    require(!keys.is_empty(), "内容判断输出需要 Spec 检查项")?;
-                }
-                plan.specification_snapshot.push(json!({"path":location,"step":step.key,"role_ref":doc.role(step).and_then(|id|crate::configuration::role_record(state,id).ok()).map(|role|&role.definition_id),
-                    "spec_refs":step.spec_refs,"outputs":step.outputs,"completion":step.completion,"tags":step.tags}));
-                match &step.executor {
-                    StepExecutor::Tool { tool_ref, .. } => {
-                        let tool = reference(state, tool_ref, "tool", scope)?;
-                        require(
-                            tool.data["schema_version"] == 2
-                                || tool.data["implementation"] == "platform",
-                            "工具 Step 需要可调用工具，原生工具组不能独立调用",
-                        )?;
-                        plan.definitions.insert(tool.id.clone(), tool.clone());
-                        if tool.data["implementation"] == "platform" {
-                            let definition: ToolDefinition = tool.decode()?;
-                            require(
-                                crate::platform_tools::PLATFORM_HANDLERS
-                                    .contains(&definition.qualified_name.as_str()),
-                                "平台工具处理器不受支持",
-                            )?;
-                            let validator = engine
-                                .tool_executor
-                                .as_ref()
-                                .ok_or_else(|| err("unsupported", "缺少结构校验器"))?;
-                            validator.validate_schema(&definition.input_schema)?;
-                            validator.validate_schema(&definition.output_schema)?;
-                            if let Some(runtime) = definition.runtime {
-                                let harness =
-                                    reference(state, &runtime.harness_ref, "harness", scope)?;
-                                plan.definitions.insert(harness.id.clone(), harness.clone());
-                                let lock = resolve_permission_lock(
-                                    state,
-                                    &runtime.harness_ref,
-                                    &runtime.permission_selection,
-                                )?;
-                                plan.permission_locks.insert(tool.id.clone(), lock);
-                            }
-                            require(
-                                definition.qualified_name != "tests.run"
-                                    || tool.data["runtime"].is_object(),
-                                "测试工具必须选择冻结运行环境",
-                            )?;
-                        }
-                        if tool.data["schema_version"] == 2 {
-                            let definition: ExternalTool = tool.decode()?;
-                            definition.validate()?;
-                            let integration = reference(
-                                state,
-                                &definition.integration_ref,
-                                "integration",
-                                scope,
-                            )?;
-                            plan.definitions
-                                .insert(integration.id.clone(), integration.clone());
-                            if bindings.is_some() {
-                                let project = scope.project().ok_or_else(|| {
-                                    err("project_required", "工具 Step 需要明确项目绑定")
-                                })?;
-                                let configuration = state
-                                    .governance
-                                    .iter()
-                                    .filter(|r| {
-                                        r.kind == "integration_project_configuration"
-                                            && r.definition_id == project
-                                    })
-                                    .max_by_key(|r| r.version)
-                                    .ok_or_else(|| {
-                                        err("integration_binding_required", "请配置项目接入绑定")
-                                    })?;
-                                let binding_id = configuration.data[&integration.id]
-                                    .as_str()
-                                    .ok_or_else(|| {
-                                        err("integration_binding_required", "工具缺少项目接入绑定")
-                                    })?;
-                                let binding =
-                                    reference(state, binding_id, "integration_binding", scope)?;
-                                let bound: IntegrationBinding = binding.decode()?;
-                                require(
-                                    bound.integration_ref == integration.id
-                                        && bound.allowed_tools.contains(&tool.id),
-                                    "接入绑定未授权此工具",
-                                )?;
-                                let selection = AgentPermissionSelection {
-                                    sandbox_ref: bound.sandbox_ref.clone(),
-                                    harness: PermissionSelection::FollowTarget,
-                                    sandbox: PermissionSelection::FollowTarget,
-                                };
-                                plan.permission_locks.insert(
-                                    tool.id.clone(),
-                                    resolve_permission_lock(state, &bound.harness_ref, &selection)?,
-                                );
-                                plan.tool_bindings.insert(
-                                    tool.id.clone(),
-                                    BoundTool {
-                                        revision_id: tool.id.clone(),
-                                        content_hash: tool.content_hash.clone(),
-                                        definition,
-                                        integration: integration.decode()?,
-                                        integration_hash: integration.content_hash.clone(),
-                                        binding_ref: binding.id.clone(),
-                                        binding: bound,
-                                        binding_hash: binding.content_hash.clone(),
-                                    },
-                                );
-                                plan.definitions.insert(binding.id.clone(), binding.clone());
-                            }
-                        }
-                    }
-                    StepExecutor::Workflow {
-                        workflow_ref,
-                        foreach,
-                    } => {
-                        let child = reference(state, workflow_ref, "workflow", scope)?;
-                        let child_doc: WorkflowDefinition = child.decode()?;
-                        for (name, port) in &child_doc.inputs {
-                            if port.required {
-                                require(
-                                    step.inputs.contains_key(name)
-                                        || foreach.as_ref().is_some_and(|c| c.item_input == *name),
-                                    format!("{location}: 子流程缺少输入 {name}"),
-                                )?;
-                            }
-                            if let Some(InputBinding::Source { source }) = step.inputs.get(name) {
-                                let source_port = doc.source(source, &doc.ancestors(step))?;
-                                require(
-                                    source_port.delivery_ref == port.delivery_ref,
-                                    "子流程输入类型修订不匹配",
-                                )?;
-                            }
-                        }
-                        for (name, port) in &step.outputs {
-                            let source = child_doc.outputs.get(name).ok_or_else(|| {
-                                err(
-                                    "invalid_workflow",
-                                    format!("{location}: 子流程未声明输出 {name}"),
-                                )
-                            })?;
-                            let keys = child_doc.steps.iter().map(|s| s.key.as_str()).collect();
-                            let child_type = child_doc.source(source, &keys)?;
-                            require(
-                                foreach.is_some() || child_type.delivery_ref == port.delivery_ref,
-                                "子流程输出类型修订不匹配",
-                            )?;
-                        }
-                        visit(
-                            engine, state, child, scope, bindings, stack, count, plan, &location,
-                        )?;
-                    }
-                    _ => {}
-                }
-            }
-            stack.pop();
-            Ok(())
-        }
-        let document: WorkflowDefinition = workflow.decode()?;
-        let mut plan = ConfiguredWorkflowPlan {
-            workflow_revision_id: workflow.id.clone(),
-            document,
-            roles: BTreeMap::new(),
-            definitions: BTreeMap::new(),
-            permission_locks: BTreeMap::new(),
-            tool_bindings: BTreeMap::new(),
-            integration_locks: BTreeMap::new(),
-            specification_snapshot: vec![],
-        };
-        visit(
-            self,
+        compile_workflow_sources(
+            self.tool_executor.as_deref(),
             state,
             workflow,
             scope,
             bindings,
-            &mut vec![],
-            &mut 0,
-            &mut plan,
-            "",
-        )?;
-        Ok(plan)
+        )
     }
 
     pub(crate) fn configured_workflow_command(
@@ -532,21 +176,43 @@ impl Engine {
                 let bindings: BTreeMap<Id, Id> =
                     serde_json::from_value(p["role_agent_bindings"].clone())
                         .map_err(|e| err("invalid_params", e.to_string()))?;
+                let context_ref = p["permission_context_ref"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .or_else(|| permission_context(state).map(|r| r.id.clone()))
+                    .ok_or_else(|| err("permission_unconfigured", "项目需要独立授权上下文"))?;
+                reference(state, &context_ref, "permission_context", &scope)?;
+                // Validate this selection before committing it; the compiler uses the same context at execution.
+                let mut selected_state = state.clone();
+                selected_state.governance.push(record(
+                    "project_configuration",
+                    project.id.clone(),
+                    scope.clone(),
+                    project.title.clone(),
+                    u64::MAX,
+                    None,
+                    json!({"permission_context_ref":context_ref}),
+                    true,
+                ));
                 if let Some(role_ref) = p["orchestrator_role_ref"].as_str() {
                     let role = crate::configuration::role_record(state, role_ref)?;
                     let agent = bindings
-                        .get(&role.definition_id)
+                        .get(&role.id)
                         .ok_or_else(|| err("configuration_required", "编排 Role 未绑定 Agent"))?;
-                    let composition: AgentComposition =
-                        reference(state, agent, "agent", &scope)?.decode()?;
+                    let composition =
+                        state.resolve_agent(&reference(state, agent, "agent", &scope)?.id)?;
                     require(composition.role == role.definition_id, "编排身份不匹配")?;
                     require(
                         state.configuration(&composition.harness_ref)?.data["provider"] == "codex",
                         "此 Harness 尚不支持编排原生工具桥",
                     )?;
-                    let policy: WorkflowControlPolicy =
-                        serde_json::from_value(p["control_policy"].clone())
-                            .map_err(|e| err("configuration_required", e.to_string()))?;
+                    let policy: WorkflowControlPolicy = serde_json::from_value(
+                        permission_context(&selected_state)
+                            .ok_or_else(|| err("permission_unconfigured", "缺少编排授权"))?
+                            .data["control_policy"]
+                            .clone(),
+                    )
+                    .map_err(|e| err("configuration_required", e.to_string()))?;
                     policy.validate()?;
                     require(
                         composition.tools.iter().any(|id| {
@@ -559,9 +225,13 @@ impl Engine {
                         "编排能力缺少控制工具",
                     )?;
                 }
-                let plan =
-                    self.compile_configured_workflow(state, &workflow, &scope, Some(&bindings))?;
-                let baseline = if let Some(id) = p["standard_ref"].as_str() {
+                let plan = self.compile_configured_workflow(
+                    &selected_state,
+                    &workflow,
+                    &scope,
+                    Some(&bindings),
+                )?;
+                let _baseline = if let Some(id) = p["standard_ref"].as_str() {
                     Some(self.check_configured_baseline(state, &plan, id, &scope)?)
                 } else {
                     None
@@ -580,7 +250,7 @@ impl Engine {
                     old.as_ref().map_or(1, |r| r.version + 1),
                     old.map(|r| r.id),
                     json!({"schema_version":3,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":p["standard_ref"],
-                    "specification_snapshot":plan.specification_snapshot,"baseline_check":baseline,"orchestrator_role_ref":p["orchestrator_role_ref"],"control_policy":p["control_policy"]}),
+                    "orchestrator_role_ref":p["orchestrator_role_ref"],"permission_context_ref":context_ref}),
                     true,
                 );
                 let result = json!(row);
@@ -866,7 +536,7 @@ impl Engine {
                 let mut selected_agent = None;
                 if let Some(agent) = params["preview_agent_ref"].as_str() {
                     let agent = reference(&state, agent, "agent", &scope)?;
-                    let composition: AgentComposition = agent.decode()?;
+                    let composition = state.resolve_agent(&agent.id)?;
                     let role = crate::configuration::role_record(
                         &state,
                         plan.document.role(step).unwrap(),
@@ -976,4 +646,361 @@ impl Engine {
             )
         })())
     }
+}
+
+/// Resolve an immutable source graph; schema checks run at publication, not on restart.
+pub fn compile_workflow_sources(
+    validator: Option<&dyn ports::ToolExecutor>,
+    state: &EngineeringState,
+    workflow: &ConfigurationRecord,
+    scope: &Scope,
+    bindings: Option<&BTreeMap<Id, Id>>,
+) -> Result<ConfiguredWorkflowPlan> {
+    fn visit(
+        validator: Option<&dyn ports::ToolExecutor>,
+        state: &EngineeringState,
+        workflow: &ConfigurationRecord,
+        scope: &Scope,
+        bindings: Option<&BTreeMap<Id, Id>>,
+        stack: &mut Vec<Id>,
+        count: &mut usize,
+        plan: &mut ConfiguredWorkflowPlan,
+        path: &str,
+    ) -> Result<()> {
+        require(!stack.contains(&workflow.id), "子流程引用存在环")?;
+        require(stack.len() < WORKFLOW_DEPTH_LIMIT, "子流程深度超过 8")?;
+        stack.push(workflow.id.clone());
+        let mut doc = state.resolve_workflow_source(workflow)?;
+        doc.assign_node_ids(&workflow.id);
+        doc.validate()?;
+        *count += doc.steps.len();
+        require(*count <= WORKFLOW_STEP_LIMIT, "展开流程超过 1000 个步骤")?;
+        plan.definitions
+            .insert(workflow.id.clone(), workflow.clone());
+        for step in &doc.steps {
+            let location = format!("{path}/{}", step.key);
+            if let Some(role) = doc.role(step) {
+                let record = crate::configuration::role_record(state, role)?;
+                require(
+                    crate::configuration::visible(state, record, scope.project())
+                        && !crate::configuration::retired(state, record),
+                    "Role 不适用于当前范围",
+                )?;
+                plan.roles.insert(record.id.clone(),json!({"role_ref":record.id,"role_id":record.id,"name":record.name,"role":record}));
+                plan.definitions.insert(record.id.clone(), record.clone());
+                if let Some(bindings) = bindings {
+                    let agent = bindings.get(&record.id).ok_or_else(|| {
+                        err(
+                            "configuration_required",
+                            format!("Role {} 未绑定 Agent", record.name),
+                        )
+                    })?;
+                    let agent = reference(state, agent, "agent", scope)?;
+                    let composition = state.resolve_agent(&agent.id)?;
+                    let selected = crate::configuration::role_record(
+                        state,
+                        composition.role_ref.as_deref().unwrap_or(""),
+                    )?;
+                    require(
+                        selected.definition_id == record.definition_id,
+                        "Agent 必须属于指定 Role 身份",
+                    )?;
+                    crate::governance::validate_composition(state, &composition, scope)?;
+                    let selection = permission_selection(state)?;
+                    plan.permission_locks.insert(
+                        agent.id.clone(),
+                        resolve_permission_lock(state, &composition.harness_ref, &selection)?,
+                    );
+                    plan.integration_locks.insert(
+                        agent.id.clone(),
+                        crate::integrations::freeze_integrations(
+                            state,
+                            &composition,
+                            scope.project(),
+                        )?,
+                    );
+                    require(
+                        step.required_skill_refs
+                            .iter()
+                            .all(|id| composition.skills.contains(id)),
+                        format!("{location}: Agent 缺少必需 Skill"),
+                    )?;
+                    require(
+                        step.access
+                            .tool_refs
+                            .iter()
+                            .all(|id| composition.tools.contains(id)),
+                        format!("{location}: Step Tool 不属于 Agent 能力集合"),
+                    )?;
+                    for id in std::iter::once(&agent.id)
+                        .chain(composition.role_ref.iter())
+                        .chain(composition.capability_ref.iter())
+                        .chain(std::iter::once(&composition.model_ref))
+                        .chain(std::iter::once(&composition.harness_ref))
+                        .chain(composition.skills.iter())
+                        .chain(composition.tools.iter())
+                    {
+                        if let Ok(definition) = state.configuration(id) {
+                            plan.definitions.insert(id.clone(), definition.clone());
+                        }
+                    }
+                    for tool in &composition.tools {
+                        let definition = reference(state, tool, "tool", scope)?;
+                        if definition.data["implementation"] != "platform" {
+                            continue;
+                        }
+                        let definition: ToolDefinition = definition.decode()?;
+                        if let Some(validator) = validator {
+                            validator.validate_schema(&definition.input_schema)?;
+                            validator.validate_schema(&definition.output_schema)?;
+                        }
+                        if let Some(runtime) = definition.runtime {
+                            let harness = reference(state, &runtime.harness_ref, "harness", scope)?;
+                            plan.definitions.insert(harness.id.clone(), harness.clone());
+                            plan.permission_locks.insert(
+                                tool.clone(),
+                                resolve_permission_lock(
+                                    state,
+                                    &runtime.harness_ref,
+                                    &ExecutionPermissionSelection {
+                                        sandbox_ref: runtime.sandbox_ref.clone(),
+                                        harness: PermissionSelection::FollowTarget,
+                                        sandbox: PermissionSelection::FollowTarget,
+                                    },
+                                )?,
+                            );
+                        } else {
+                            require(
+                                definition.qualified_name != "tests.run",
+                                "测试工具必须选择冻结运行环境",
+                            )?;
+                        }
+                    }
+                }
+            }
+            for skill in &step.required_skill_refs {
+                let definition = reference(state, skill, "skill", scope)?;
+                plan.definitions
+                    .insert(definition.id.clone(), definition.clone());
+            }
+            for (name, port) in step.outputs.iter().chain(&doc.inputs) {
+                let output = reference(state, &port.delivery_ref, "delivery_type", scope)?;
+                let definition: DeliveryTypeDefinition = output.decode()?;
+                definition.validate()?;
+                if let Some(schema) = &definition.content_schema {
+                    if let Some(validator) = validator {
+                        validator.validate_schema(schema)?;
+                    }
+                }
+                require(!name.is_empty(), "端口名称不能为空")?;
+                plan.definitions.insert(output.id.clone(), output.clone());
+                for spec in &definition.spec_refs {
+                    let spec = reference(state, spec, "spec", scope)?;
+                    plan.definitions.insert(spec.id.clone(), spec.clone());
+                }
+            }
+            for spec in &step.spec_refs {
+                let definition = reference(state, spec, "spec", scope)?;
+                require(
+                    definition.data["body"]
+                        .as_str()
+                        .is_some_and(|s| !s.trim().is_empty()),
+                    "Spec 正文不能为空",
+                )?;
+                if definition.data["schema_version"] == 3 {
+                    let spec: ConfiguredSpecification = definition.decode()?;
+                    spec.validate()?;
+                }
+                plan.definitions
+                    .insert(definition.id.clone(), definition.clone());
+            }
+            if step.outputs.values().any(|p| p.content_checks) {
+                let mut keys = std::collections::BTreeSet::new();
+                for id in &step.spec_refs {
+                    let spec: ConfiguredSpecification = plan.definitions[id].decode()?;
+                    spec.validate()?;
+                    for check in spec.checks {
+                        require(
+                            keys.insert(check.key),
+                            "同一步骤的检查标识重复，请调整 Spec",
+                        )?;
+                    }
+                }
+                require(!keys.is_empty(), "内容判断输出需要 Spec 检查项")?;
+            }
+            plan.specification_snapshot.push(json!({"path":location,"step":step.key,"role_ref":doc.role(step).and_then(|id|crate::configuration::role_record(state,id).ok()).map(|role|&role.definition_id),
+                    "spec_refs":step.spec_refs,"outputs":step.outputs,"completion":step.completion,"tags":step.tags}));
+            match &step.executor {
+                StepExecutor::Tool { tool_ref, .. } => {
+                    let tool = reference(state, tool_ref, "tool", scope)?;
+                    require(
+                        tool.data["schema_version"] == 2
+                            || tool.data["implementation"] == "platform",
+                        "工具 Step 需要可调用工具，原生工具组不能独立调用",
+                    )?;
+                    plan.definitions.insert(tool.id.clone(), tool.clone());
+                    if tool.data["implementation"] == "platform" {
+                        let definition: ToolDefinition = tool.decode()?;
+                        require(
+                            crate::platform_tools::PLATFORM_HANDLERS
+                                .contains(&definition.qualified_name.as_str()),
+                            "平台工具处理器不受支持",
+                        )?;
+                        if let Some(validator) = validator {
+                            validator.validate_schema(&definition.input_schema)?;
+                            validator.validate_schema(&definition.output_schema)?;
+                        }
+                        if let Some(runtime) = definition.runtime {
+                            let harness = reference(state, &runtime.harness_ref, "harness", scope)?;
+                            plan.definitions.insert(harness.id.clone(), harness.clone());
+                            let lock = resolve_permission_lock(
+                                state,
+                                &runtime.harness_ref,
+                                &ExecutionPermissionSelection {
+                                    sandbox_ref: runtime.sandbox_ref.clone(),
+                                    harness: PermissionSelection::FollowTarget,
+                                    sandbox: PermissionSelection::FollowTarget,
+                                },
+                            )?;
+                            plan.permission_locks.insert(tool.id.clone(), lock);
+                        }
+                        require(
+                            definition.qualified_name != "tests.run"
+                                || tool.data["runtime"].is_object(),
+                            "测试工具必须选择冻结运行环境",
+                        )?;
+                    }
+                    if tool.data["schema_version"] == 2 {
+                        let definition: ExternalTool = tool.decode()?;
+                        definition.validate()?;
+                        let integration =
+                            reference(state, &definition.integration_ref, "integration", scope)?;
+                        plan.definitions
+                            .insert(integration.id.clone(), integration.clone());
+                        if bindings.is_some() {
+                            let project = scope.project().ok_or_else(|| {
+                                err("project_required", "工具 Step 需要明确项目绑定")
+                            })?;
+                            let configuration = state
+                                .governance
+                                .iter()
+                                .filter(|r| {
+                                    r.kind == "integration_project_configuration"
+                                        && r.definition_id == project
+                                })
+                                .max_by_key(|r| r.version)
+                                .ok_or_else(|| {
+                                    err("integration_binding_required", "请配置项目接入绑定")
+                                })?;
+                            let binding_id = configuration.data[&integration.id]
+                                .as_str()
+                                .ok_or_else(|| {
+                                    err("integration_binding_required", "工具缺少项目接入绑定")
+                                })?;
+                            let binding =
+                                reference(state, binding_id, "integration_binding", scope)?;
+                            let bound: IntegrationBinding = binding.decode()?;
+                            require(
+                                bound.integration_ref == integration.id
+                                    && bound.allowed_tools.contains(&tool.id),
+                                "接入绑定未授权此工具",
+                            )?;
+                            let selection = ExecutionPermissionSelection {
+                                sandbox_ref: bound.sandbox_ref.clone(),
+                                harness: PermissionSelection::FollowTarget,
+                                sandbox: PermissionSelection::FollowTarget,
+                            };
+                            plan.permission_locks.insert(
+                                tool.id.clone(),
+                                resolve_permission_lock(state, &bound.harness_ref, &selection)?,
+                            );
+                            plan.tool_bindings.insert(
+                                tool.id.clone(),
+                                BoundTool {
+                                    revision_id: tool.id.clone(),
+                                    content_hash: tool.content_hash.clone(),
+                                    definition,
+                                    integration: integration.decode()?,
+                                    integration_hash: integration.content_hash.clone(),
+                                    binding_ref: binding.id.clone(),
+                                    binding: bound,
+                                    binding_hash: binding.content_hash.clone(),
+                                },
+                            );
+                            plan.definitions.insert(binding.id.clone(), binding.clone());
+                        }
+                    }
+                }
+                StepExecutor::Workflow {
+                    workflow_ref,
+                    foreach,
+                } => {
+                    let child = reference(state, workflow_ref, "workflow", scope)?;
+                    let child_doc: WorkflowDefinition = child.decode()?;
+                    for (name, port) in &child_doc.inputs {
+                        if port.required {
+                            require(
+                                step.inputs.contains_key(name)
+                                    || foreach.as_ref().is_some_and(|c| c.item_input == *name),
+                                format!("{location}: 子流程缺少输入 {name}"),
+                            )?;
+                        }
+                        if let Some(InputBinding::Source { source }) = step.inputs.get(name) {
+                            let source_port = doc.source(source, &doc.ancestors(step))?;
+                            require(
+                                source_port.delivery_ref == port.delivery_ref,
+                                "子流程输入类型修订不匹配",
+                            )?;
+                        }
+                    }
+                    for (name, port) in &step.outputs {
+                        let source = child_doc.outputs.get(name).ok_or_else(|| {
+                            err(
+                                "invalid_workflow",
+                                format!("{location}: 子流程未声明输出 {name}"),
+                            )
+                        })?;
+                        let keys = child_doc.steps.iter().map(|s| s.key.as_str()).collect();
+                        let child_type = child_doc.source(source, &keys)?;
+                        require(
+                            foreach.is_some() || child_type.delivery_ref == port.delivery_ref,
+                            "子流程输出类型修订不匹配",
+                        )?;
+                    }
+                    visit(
+                        validator, state, child, scope, bindings, stack, count, plan, &location,
+                    )?;
+                }
+                _ => {}
+            }
+        }
+        stack.pop();
+        Ok(())
+    }
+    let mut document = state.resolve_workflow_source(workflow)?;
+    document.assign_node_ids(&workflow.id);
+    let mut plan = ConfiguredWorkflowPlan {
+        workflow_revision_id: workflow.id.clone(),
+        permission_context_ref: permission_context(state).map(|r| r.id.clone()),
+        permission_workflow_ref: Some(workflow.id.clone()),
+        document,
+        roles: BTreeMap::new(),
+        definitions: BTreeMap::new(),
+        permission_locks: BTreeMap::new(),
+        tool_bindings: BTreeMap::new(),
+        integration_locks: BTreeMap::new(),
+        specification_snapshot: vec![],
+    };
+    visit(
+        validator,
+        state,
+        workflow,
+        scope,
+        bindings,
+        &mut vec![],
+        &mut 0,
+        &mut plan,
+        "",
+    )?;
+    Ok(plan)
 }

@@ -923,7 +923,7 @@ function BindingManager({
     name: "",
     scope: project ? "project" : "global",
     harness_ref: bindingDefaults.current.harness_ref || "",
-    sandbox_ref: bindingDefaults.current.permission_sandbox_ref || "",
+    sandbox_ref: bindingDefaults.current.sandbox_ref || "",
     auth_kind: "none",
     credential_ref: "",
     header: "X-API-Key",
@@ -957,7 +957,7 @@ function BindingManager({
         if (!current) return;
         bindingDefaults.current = defaults;
         setPermissions(resources);
-        setDraft((previous) => previous.selected ? previous : { ...previous, harness_ref: previous.harness_ref || defaults.harness_ref || "", sandbox_ref: previous.sandbox_ref || defaults.permission_sandbox_ref || "" });
+        setDraft((previous) => previous.selected ? previous : { ...previous, harness_ref: previous.harness_ref || defaults.harness_ref || "", sandbox_ref: previous.sandbox_ref || defaults.sandbox_ref || "" });
         setBindingReady(true);
       })
       .catch((e) => setError(String(e)));

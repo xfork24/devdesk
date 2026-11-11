@@ -1,164 +1,42 @@
 {
-  "template_key": "governance.builtin-capability-project-manager-codex-v2",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-capability-project-manager-codex-v2",
-    "kind": "capability",
-    "definition_id": "builtin-capability-project-manager-codex",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "项目经理能力 · Sol High / Codex",
-    "version": 2,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "harness_ref": "builtin-harness-codex-managed-v1",
-      "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
-      "skills": [
-        "builtin-skill-engineering-context-v2",
-        "builtin-skill-project-planning-v2",
-        "builtin-skill-workflow-orchestration-v1"
-      ],
-      "tools": [
-        "builtin-tool-codex-native-v1",
-        "builtin-tool-workflow-start-v1",
-        "builtin-tool-workflow-inspect-v1",
-        "builtin-tool-workflow-events-read-v1",
-        "builtin-tool-workflow-outputs-read-v1",
-        "builtin-tool-workflow-execution-inspect-v1",
-        "builtin-tool-workflow-step-dispatch-v1",
-        "builtin-tool-workflow-step-accept-v1",
-        "builtin-tool-workflow-step-input-v1",
-        "builtin-tool-workflow-step-retry-v1",
-        "builtin-tool-workflow-step-rework-v1",
-        "builtin-tool-workflow-execution-stop-v1",
-        "builtin-tool-workflow-pause-v1",
-        "builtin-tool-workflow-resume-v1",
-        "builtin-tool-workflow-cancel-v1",
-        "builtin-tool-workflow-change-preview-v1",
-        "builtin-tool-workflow-change-apply-v1",
-        "builtin-tool-workflow-materials-import-v1",
-        "builtin-tool-workflow-decision-request-v1",
-        "builtin-tool-workflow-execution-reconcile-v1",
-        "builtin-tool-workflow-complete-v1",
-        "builtin-tool-workflow-segment-dispatch-v1"
-      ]
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "capability",
+  "identity": "builtin-capability-project-manager-codex",
+  "revision": 2,
+  "name": "项目经理能力 · Sol High / Codex",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {
-    "/data/harness_ref": {
-      "template_ref": "governance.builtin-harness-codex-managed-v1",
-      "target": "revision"
-    },
-    "/data/model_ref": {
-      "template_ref": "governance.builtin-model-gpt-6-1-sol-high-v1",
-      "target": "revision"
-    },
-    "/data/skills/0": {
-      "template_ref": "governance.builtin-skill-engineering-context-v2",
-      "target": "revision"
-    },
-    "/data/skills/1": {
-      "template_ref": "governance.builtin-skill-project-planning-v2",
-      "target": "revision"
-    },
-    "/data/tools/0": {
-      "template_ref": "governance.builtin-tool-codex-native-v1",
-      "target": "revision"
-    },
-    "/data/tools/1": {
-      "template_ref": "governance.builtin-tool-workflow-start-v1",
-      "target": "revision"
-    },
-    "/data/tools/2": {
-      "template_ref": "governance.builtin-tool-workflow-inspect-v1",
-      "target": "revision"
-    },
-    "/data/tools/3": {
-      "template_ref": "governance.builtin-tool-workflow-events-read-v1",
-      "target": "revision"
-    },
-    "/data/tools/4": {
-      "template_ref": "governance.builtin-tool-workflow-outputs-read-v1",
-      "target": "revision"
-    },
-    "/data/tools/5": {
-      "template_ref": "governance.builtin-tool-workflow-execution-inspect-v1",
-      "target": "revision"
-    },
-    "/data/tools/6": {
-      "template_ref": "governance.builtin-tool-workflow-step-dispatch-v1",
-      "target": "revision"
-    },
-    "/data/tools/7": {
-      "template_ref": "governance.builtin-tool-workflow-step-accept-v1",
-      "target": "revision"
-    },
-    "/data/tools/8": {
-      "template_ref": "governance.builtin-tool-workflow-step-input-v1",
-      "target": "revision"
-    },
-    "/data/tools/9": {
-      "template_ref": "governance.builtin-tool-workflow-step-retry-v1",
-      "target": "revision"
-    },
-    "/data/tools/10": {
-      "template_ref": "governance.builtin-tool-workflow-step-rework-v1",
-      "target": "revision"
-    },
-    "/data/tools/11": {
-      "template_ref": "governance.builtin-tool-workflow-execution-stop-v1",
-      "target": "revision"
-    },
-    "/data/tools/12": {
-      "template_ref": "governance.builtin-tool-workflow-pause-v1",
-      "target": "revision"
-    },
-    "/data/tools/13": {
-      "template_ref": "governance.builtin-tool-workflow-resume-v1",
-      "target": "revision"
-    },
-    "/data/tools/14": {
-      "template_ref": "governance.builtin-tool-workflow-cancel-v1",
-      "target": "revision"
-    },
-    "/data/tools/15": {
-      "template_ref": "governance.builtin-tool-workflow-change-preview-v1",
-      "target": "revision"
-    },
-    "/data/tools/16": {
-      "template_ref": "governance.builtin-tool-workflow-change-apply-v1",
-      "target": "revision"
-    },
-    "/data/tools/17": {
-      "template_ref": "governance.builtin-tool-workflow-materials-import-v1",
-      "target": "revision"
-    },
-    "/data/tools/18": {
-      "template_ref": "governance.builtin-tool-workflow-decision-request-v1",
-      "target": "revision"
-    },
-    "/data/tools/19": {
-      "template_ref": "governance.builtin-tool-workflow-execution-reconcile-v1",
-      "target": "revision"
-    },
-    "/data/tools/20": {
-      "template_ref": "governance.builtin-tool-workflow-complete-v1",
-      "target": "revision"
-    },
-    "/data/tools/21": {
-      "template_ref": "governance.builtin-tool-workflow-segment-dispatch-v1",
-      "target": "revision"
-    },
-    "/data/skills/2": {
-      "template_ref": "governance.builtin-skill-workflow-orchestration-v1",
-      "target": "revision"
-    }
-  },
-  "initial_only": false
+  "data": {
+    "harness_ref": "builtin-harness-codex-managed:1",
+    "model_ref": "builtin-model-gpt-6-1-sol-high:1",
+    "skills": [
+      "builtin-skill-engineering-context:2",
+      "builtin-skill-project-planning:2",
+      "builtin-skill-workflow-orchestration:1"
+    ],
+    "tools": [
+      "builtin-tool-codex-native:1",
+      "builtin-tool-workflow-start:1",
+      "builtin-tool-workflow-inspect:1",
+      "builtin-tool-workflow-events-read:1",
+      "builtin-tool-workflow-outputs-read:1",
+      "builtin-tool-workflow-execution-inspect:1",
+      "builtin-tool-workflow-step-dispatch:1",
+      "builtin-tool-workflow-step-accept:1",
+      "builtin-tool-workflow-step-input:1",
+      "builtin-tool-workflow-step-retry:1",
+      "builtin-tool-workflow-step-rework:1",
+      "builtin-tool-workflow-execution-stop:1",
+      "builtin-tool-workflow-pause:1",
+      "builtin-tool-workflow-resume:1",
+      "builtin-tool-workflow-cancel:1",
+      "builtin-tool-workflow-change-preview:1",
+      "builtin-tool-workflow-change-apply:1",
+      "builtin-tool-workflow-materials-import:1",
+      "builtin-tool-workflow-decision-request:1",
+      "builtin-tool-workflow-execution-reconcile:1",
+      "builtin-tool-workflow-complete:1",
+      "builtin-tool-workflow-segment-dispatch:1"
+    ]
+  }
 }

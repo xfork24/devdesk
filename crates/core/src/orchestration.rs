@@ -13,6 +13,41 @@ pub(crate) fn freeze_plan(
         .plan
         .document
         .assign_node_ids(&instance.workflow_ref);
+    // A changed plan is a new source revision, never a persisted compiled view.
+    let mut source_document = instance.plan.document.clone();
+    for step in &mut source_document.steps {
+        step.access.writable_paths.clear();
+        step.access.read_only_paths.clear();
+        step.access.tool_refs.clear();
+        step.node_id.clear();
+    }
+    for stage in &mut source_document.stages {
+        stage.node_id.clear();
+    }
+    let mut original = state.resolve_workflow(&instance.plan.workflow_revision_id)?;
+    for step in &mut original.steps {
+        step.access.writable_paths.clear();
+        step.access.read_only_paths.clear();
+        step.access.tool_refs.clear();
+        step.node_id.clear();
+    }
+    for stage in &mut original.stages {
+        stage.node_id.clear();
+    }
+    if serde_json::to_value(&source_document).unwrap() != serde_json::to_value(&original).unwrap() {
+        let source = record(
+            "workflow",
+            format!("execution-workflow.{}", id()),
+            scope.clone(),
+            reason.into(),
+            1,
+            None,
+            json!(source_document),
+            true,
+        );
+        instance.plan.workflow_revision_id = source.id.clone();
+        state.governance.push(source);
+    }
     let plan = record(
         "workflow_plan_revision",
         instance.root_instance_id.clone(),

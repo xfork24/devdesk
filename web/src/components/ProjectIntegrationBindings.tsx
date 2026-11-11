@@ -67,7 +67,8 @@ export function ProjectIntegrationBindings({
   const required = new Set<string>();
   for (const id of agents) {
     const agent = catalog.find((r) => r.id === id);
-    for (const tool of agent?.data.tools || []) {
+    const capability = catalog.find((r) => r.id === agent?.data.capability_ref);
+    for (const tool of capability?.data.tools || []) {
       const row = catalog.find((r) => r.id === tool);
       if (row?.data.schema_version === 2)
         required.add(row.data.integration_ref);

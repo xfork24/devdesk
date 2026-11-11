@@ -61,7 +61,7 @@
         }
       ]
     },
-    "AgentPermissionSelection": {
+    "ExecutionPermissionSelection": {
       "type": "object",
       "properties": {
         "sandbox_ref": {

@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前数据结构基线为 global 14 / project 45。Workflow 使用 v5，Spec / Standard 使用 v3，Agent 任务使用 `agent-task/v5`，普通 Proposal 使用 v2。只支持当前合同；旧 v4 数据通过显式离线转换保留；启动不执行隐式迁移。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
+当前数据结构基线为 global 15 / project 46。Workflow 使用 v5，Spec / Standard 使用 v3，Agent 任务使用 `agent-task/v5`，普通 Proposal 使用 v2。只支持当前合同；只接受源协议 v2 和新数据集；不升级旧数据。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
 
 ## 配置概念
 
@@ -8,7 +8,7 @@
 |---|---|
 | Role | 用户定义的稳定业务身份、职责正文和可见范围；修订不能改变身份。角色名称不决定权限、工作类型或输出。 |
 | Capability | 精确 Model、Harness、Skills 与 Tools 的能力组合。 |
-| Agent | Role、Capability、长期补充指令、命名 Permission 选择和明确的执行能力上限。 |
+| Agent | 仅 Role 与 Capability 的确切源引用。 |
 | AgentID | 某个 Agent 修订的工作身份与经验范围。全局身份可跨项目积累经验，项目身份不能用于全局讨论。 |
 | Skill | 可复用方法、材料及工具依赖。正文和包资源保留确切来源，不自动产生执行权限。 |
 | Delivery 类型 | 任意业务交付物的说明、格式及可选离线 JSON Schema。 |
@@ -20,7 +20,7 @@
 
 Step 的执行方式仅为 Agent、工具、子流程、控制。Agent Step 必须提供非空 `task_instructions`。任务正文属于 Step，方法属于 Skill，职责属于 Role，判断依据属于 Spec；没有业务标准动作目录或执行配方。
 
-配置采用稳定 `definition_id` 与不可变修订 ID。发布、项目采用与执行冻结是独立操作。项目的 Role → Agent 绑定须覆盖整个子流程闭包；缺失或身份不符会拒绝执行，不选择内置角色补齐。
+配置采用 `identity:revision` 组合引用与不可变源修订。发布、项目采用与执行冻结是独立操作。项目的 Role → Agent 绑定须覆盖整个子流程闭包；缺失或身份不符会拒绝执行，不选择内置角色补齐。
 
 ## 归属与实际对象
 
@@ -31,7 +31,7 @@ Step 的执行方式仅为 Agent、工具、子流程、控制。Agent Step 必�
 | Task | Feature 下的实际任务、完整业务元数据和依赖 DAG。由明确的创建命令或平台工具产生。 |
 | RepositoryWorktree | 已登记的实际仓库工作副本、owner、分支、路径、基线与操作来源。 |
 | WorkflowController | 一个根实例的编排 Role、确切 Agent、控制策略、持续 Session、epoch 和预算。 |
-| WorkflowPlanRevision | 不可变编译闭包及输入、角色绑定、父修订和变更原因；实例只切换活动引用。 |
+| WorkflowPlanRevision | 不可变源修订选择及输入、角色绑定、父修订和变更原因；实例只切换活动引用。 |
 | WorkflowChangeSet | 类型化操作、基准计划、影响、预演哈希和 quiesce/apply 状态。 |
 | WorkflowDecision / Waiver | 真实 actor 对确切执行、产物和要求的处置；与原报告分开。 |
 | WorkflowCarryForward | 新计划复用旧合同、输入和产物的明确映射。 |
@@ -85,3 +85,5 @@ core 观察实际事实。queued 节点只在 workflow.step.dispatch 后执行�
 WorkflowPlanRevision 保存不可变闭包；StepExecution 保存当时计划、稳定 node_id、输入和合同摘要。ChangeSet 先 preview，再等待受影响执行者停止并原子 apply。依赖、端口和规则引用共同构成影响图；未受影响的结果以 carry-forward 复用。已完成根实例保持终态。
 
 TypedMaterial 是有来源的封存材料；bypass、waiver、原评审和实际运行事实分别记录。绕过仍供应下游的阶段必须显式替换材料；最终端口缺失时拒绝变更。Git 的业务测试或确认要求可以在授权内豁免，真实候选、作用域和 CAS 不可伪造。
+
+源配置、权限归属及无持久化投影的存储规则见[源配置与执行解析](source-configuration.md)。

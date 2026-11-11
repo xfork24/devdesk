@@ -1,33 +1,20 @@
 {
-  "template_key": "governance.builtin-model-gpt-6-1-sol-high-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-model-gpt-6-1-sol-high-v1",
-    "kind": "model",
-    "definition_id": "builtin-model-gpt-6-1-sol-high",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "GPT-6.1 Sol High",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "capabilities": [
-        "structured-output",
-        "tool-calling"
-      ],
-      "model": "gpt-6.1-sol",
-      "parameters": {
-        "reasoning_effort": "high"
-      },
-      "provider": "openai"
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "model",
+  "identity": "builtin-model-gpt-6-1-sol-high",
+  "revision": 1,
+  "name": "GPT-6.1 Sol High",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling"
+    ],
+    "model": "gpt-6.1-sol",
+    "parameters": {
+      "reasoning_effort": "high"
+    },
+    "provider": "openai"
+  }
 }

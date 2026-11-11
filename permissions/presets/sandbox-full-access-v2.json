@@ -1,1 +1,0 @@
-{"schema_version":2,"id":"permission-sandbox-full-access-v2-r1","identity":"sandbox-full-access-v2","name":"Sandbox 容器内全权限","version":1,"supersedes":null,"target_kind":"sandbox","policy":{"filesystem":{"mode":"full_access"},"network":{"mode":"enabled"}}}

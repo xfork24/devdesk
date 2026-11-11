@@ -1,63 +1,50 @@
 {
-  "template_key": "governance.builtin-tool-workflow-step-retry-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-tool-workflow-step-retry-v1",
-    "kind": "tool",
-    "definition_id": "builtin-tool-workflow-step-retry",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "重试已停止的失败执行",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "qualified_name": "workflow.step.retry",
-      "implementation": "platform",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "instance_id": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "plan_revision_id": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "control_version": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "decision_ref": {
-            "type": "string"
-          },
-          "step": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "plan_revision_id",
-          "step"
-        ],
-        "additionalProperties": false,
-        "description": "Retry failed/cancelled execution after actual writers stop; creates a new execution identity. Never use this to hide a rejected business report."
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "capabilities": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "tool",
+  "identity": "builtin-tool-workflow-step-retry",
+  "revision": 1,
+  "name": "重试已停止的失败执行",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "qualified_name": "workflow.step.retry",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decision_ref": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "step"
+      ],
+      "additionalProperties": false,
+      "description": "Retry failed/cancelled execution after actual writers stop; creates a new execution identity. Never use this to hide a rejected business report."
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
 }

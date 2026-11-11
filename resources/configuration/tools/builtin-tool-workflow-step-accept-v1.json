@@ -1,78 +1,65 @@
 {
-  "template_key": "governance.builtin-tool-workflow-step-accept-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-tool-workflow-step-accept-v1",
-    "kind": "tool",
-    "definition_id": "builtin-tool-workflow-step-accept",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "接纳确切执行产物",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "qualified_name": "workflow.step.accept",
-      "implementation": "platform",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "instance_id": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "plan_revision_id": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "control_version": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "decision_ref": {
-            "type": "string"
-          },
-          "step": {
-            "type": "string"
-          },
-          "execution_id": {
-            "type": "string"
-          },
-          "input_digest": {
-            "type": "string"
-          },
-          "outputs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "plan_revision_id",
-          "step",
-          "execution_id",
-          "input_digest",
-          "outputs"
-        ],
-        "additionalProperties": false,
-        "description": "Accept only the current execution_id, input_digest and exact output IDs. Rules and genuine human gates remain checked. This does not complete the workflow."
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "capabilities": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "tool",
+  "identity": "builtin-tool-workflow-step-accept",
+  "revision": 1,
+  "name": "接纳确切执行产物",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "qualified_name": "workflow.step.accept",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decision_ref": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "execution_id": {
+          "type": "string"
+        },
+        "input_digest": {
+          "type": "string"
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "step",
+        "execution_id",
+        "input_digest",
+        "outputs"
+      ],
+      "additionalProperties": false,
+      "description": "Accept only the current execution_id, input_digest and exact output IDs. Rules and genuine human gates remain checked. This does not complete the workflow."
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
 }

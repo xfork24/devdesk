@@ -25,7 +25,7 @@ async function rpc(page: Page, method: string, params = {}) {
 }
 async function createGlobalAgent(page: Page, name: string) {
   const defaults = await rpc(page, "query.configuration_defaults");
-  const definition = defaults.records.find((r: any) => r.id === defaults.role_agent_bindings["builtin-role-analyst"]);
+  const definition = defaults.records.find((r: any) => r.id === defaults.role_agent_bindings["builtin-role-analyst:1"]);
   const created = await rpc(page, "agent.instance.create", {
     command_id: crypto.randomUUID(), payload: { name, scope: {kind:"global"}, agent_revision_id:definition.id },
   });

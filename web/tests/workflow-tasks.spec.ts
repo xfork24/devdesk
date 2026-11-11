@@ -44,9 +44,9 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
             key: "discuss",
             name: "执行可编辑任务",
             stage: "work",
-            executor: { type: "agent", role_ref: "builtin-role-analyst" },
-            required_skill_refs: ["builtin-skill-prd-v2"],
-            spec_refs: ["builtin-spec-stage-prd-v1"],
+            executor: { type: "agent", role_ref: "builtin-role-analyst:1" },
+            required_skill_refs: ["builtin-skill-prd:2"],
+            spec_refs: ["builtin-spec-stage-prd:1"],
             task_instructions: original,
           },
         ],
@@ -94,7 +94,7 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
   await editor.getByText("预览任务与执行上下文", { exact: true }).click();
   await editor
     .getByLabel("预览 Agent（可选）", { exact: true })
-    .selectOption("builtin-agent-sol-high-analyst-v3");
+    .selectOption("builtin-agent-sol-high-analyst:3");
   await editor
     .getByRole("button", { name: "预览当前任务", exact: true })
     .click();

@@ -9,7 +9,7 @@ cargo build --locked -p devdesk-host
 ./scripts/platform/macos/sign-macos.sh target/debug/devdesk-host
 python3 tests/entrypoints/http_contract.py
 python3 tests/entrypoints/template_reset.py target/debug/devdesk-host
-python3 tests/entrypoints/harness_upgrade.py target/debug/devdesk-host
+python3 tests/entrypoints/dataset_protocol.py target/debug/devdesk-host
 python3 tests/entrypoints/runtime_preparation.py
 (cd web && npx playwright test)
 cargo build --release --locked -p devdesk-host

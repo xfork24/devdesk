@@ -1,0 +1,21 @@
+{
+  "kind": "permission_profile",
+  "identity": "sandbox-full-access-v2",
+  "revision": 1,
+  "name": "Sandbox 容器内全权限",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "policy": {
+      "filesystem": {
+        "mode": "full_access"
+      },
+      "network": {
+        "mode": "enabled"
+      }
+    },
+    "schema_version": 2,
+    "target_kind": "sandbox"
+  }
+}

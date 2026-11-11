@@ -1,28 +1,13 @@
 {
-  "template_key": "governance.builtin-skill-test-design-v2",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-skill-test-design-v2",
-    "kind": "skill",
-    "definition_id": "builtin-skill-test-design",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "独立测试与 TDD",
-    "version": 2,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "body": "",
-      "rules": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "skill",
+  "identity": "builtin-skill-test-design",
+  "revision": 2,
+  "name": "独立测试与 TDD",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {
-    "/data/body": "skills/test-design.md"
-  },
-  "references": {},
-  "initial_only": false
+  "data": {
+    "rules": [],
+    "body_file": "test-design.md"
+  }
 }

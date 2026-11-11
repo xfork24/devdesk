@@ -1,1 +1,0 @@
-{"schema_version":2,"id":"permission-harness-full-access-v2-r1","identity":"harness-full-access-v2","name":"Harness 容器内全权限","version":1,"supersedes":null,"target_kind":"harness","policy":{"filesystem":{"mode":"full_access"},"network":{"mode":"enabled"},"tools":{"mode":"all_available"},"approval":"never"}}

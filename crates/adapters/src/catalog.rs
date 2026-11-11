@@ -36,18 +36,18 @@ impl GlobalStore {
             "旧单库数据集已不再支持，请使用当前分库布局",
         )?;
         let connection = Connection::open(root.join("global.sqlite3")).map_err(storage)?;
+        let version: u32 = connection
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(storage)?;
+        require(
+            version == 0 || version == 15,
+            "数据集协议不兼容；请使用新的空数据目录",
+        )?;
         connection
             .execute_batch(
                 "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;",
             )
             .map_err(storage)?;
-        let version: u32 = connection
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
-            .map_err(storage)?;
-        require(
-            version == 0 || version == 14,
-            "数据集需要显式离线升级，请运行 scripts/upgrade/harness-v5.py --help",
-        )?;
         if version == 0 {
             connection
                 .execute_batch(include_str!("../../../sql/global/schema.sql"))
@@ -337,14 +337,14 @@ impl GlobalStore {
     }
 
     fn configuration(conn: &Connection) -> Result<EngineeringState> {
-        Ok(EngineeringState {
-            governance: load_table(conn, "governance_records")?,
-            definitions: load_table(conn, "definitions")?,
-            harnesses: load_table(conn, "harnesses")?,
-            sandboxes: load_table(conn, "sandboxes")?,
+        let mut state = EngineeringState {
+            governance: source_store::load_records(conn)?,
             events: load_table(conn, "events")?,
             ..Default::default()
-        })
+        };
+        state.refresh_configuration_views()?;
+        source_store::restore_records(&mut state)?;
+        Ok(state)
     }
 
     fn save_configuration(
@@ -352,15 +352,7 @@ impl GlobalStore {
         s: &EngineeringState,
         before: &EngineeringState,
     ) -> Result<()> {
-        save_table(
-            conn,
-            "governance_records",
-            &s.governance,
-            &before.governance,
-        )?;
-        save_table(conn, "definitions", &s.definitions, &before.definitions)?;
-        save_table(conn, "harnesses", &s.harnesses, &before.harnesses)?;
-        save_table(conn, "sandboxes", &s.sandboxes, &before.sandboxes)?;
+        source_store::save_records(conn, s, before)?;
         save_table(conn, "events", &s.events, &before.events)
     }
 }
@@ -390,7 +382,10 @@ impl EngineeringStore for GlobalStore {
                 .map_err(storage)?;
             if let Some((saved, result)) = previous {
                 require(saved == fp, "command_id 被不同参数复用")?;
-                return serde_json::from_str(&result).map_err(storage);
+                return source_views::restore(
+                    &Self::configuration(&conn)?,
+                    &serde_json::from_str(&result).map_err(storage)?,
+                );
             }
             require(
                 !conn
@@ -431,7 +426,7 @@ impl EngineeringStore for GlobalStore {
         if let Some((id, fp)) = key {
             tx.execute(
                 "INSERT INTO operations(id,fingerprint,result) VALUES(?1,?2,?3)",
-                params![id, fp, result.to_string()],
+                params![id, fp, source_views::pack(&state, &result)?.to_string()],
             )
             .map_err(storage)?;
         }

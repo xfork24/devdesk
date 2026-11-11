@@ -1,28 +1,13 @@
 {
-  "template_key": "governance.builtin-skill-prd-v2",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-skill-prd-v2",
-    "kind": "skill",
-    "definition_id": "builtin-skill-prd",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "PRD 需求分析",
-    "version": 2,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "body": "",
-      "rules": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "skill",
+  "identity": "builtin-skill-prd",
+  "revision": 2,
+  "name": "PRD 需求分析",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {
-    "/data/body": "skills/prd.md"
-  },
-  "references": {},
-  "initial_only": false
+  "data": {
+    "rules": [],
+    "body_file": "prd.md"
+  }
 }

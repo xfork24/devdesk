@@ -11,10 +11,12 @@ for name,entry in manifest['assets'].items():
  assert hashlib.sha256(path.read_bytes()).hexdigest()==entry['sha256'],name
 for backend in manifest['backends']:
  for name in backend['assets']:assert name in manifest['assets'],name
-presets=[json.loads(p.read_text()) for p in sorted((root/'permissions/presets').glob('*.json'))]
-assert len({p['id'] for p in presets})==len(presets)
-for p in presets:
- assert p['schema_version']==2 and p['version']>=1
+presets=[json.loads(p.read_text()) for p in sorted((root/'resources/configuration/permissions/profiles').glob('*.json'))]
+assert len({(p['identity'],p['revision']) for p in presets})==len(presets)
+for source in presets:
+ assert source['kind']=='permission_profile' and source['revision']>=1
+ p=source['data']
+ assert p['schema_version']==2
  assert set(p['policy'])==({'filesystem','network','tools','approval'} if p['target_kind']=='harness' else {'filesystem','network'})
  assert p['policy']['filesystem']['mode'] in ['full_access','read_only','scoped']
  assert p['policy']['network']['mode'] in ['enabled','disabled','allowlist']

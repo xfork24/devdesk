@@ -1,53 +1,41 @@
 {
-  "template_key": "governance.builtin-delivery-test-recipe-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-delivery-test-recipe-v1",
-    "kind": "delivery_type",
-    "definition_id": "builtin-delivery-test-recipe",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "测试命令配方",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "body": "测试命令配方，按绑定的输入与输出声明提交。",
-      "format": "json",
-      "content_schema": {
-        "type": "object",
-        "required": [
-          "runner",
-          "files",
-          "timeout_seconds"
-        ],
-        "properties": {
-          "runner": {
-            "enum": [
-              "node_test"
-            ]
-          },
-          "files": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
-          "timeout_seconds": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 300
+  "kind": "delivery_type",
+  "identity": "builtin-delivery-test-recipe",
+  "revision": 1,
+  "name": "测试命令配方",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "body": "测试命令配方，按绑定的输入与输出声明提交。",
+    "format": "json",
+    "content_schema": {
+      "type": "object",
+      "required": [
+        "runner",
+        "files",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "runner": {
+          "enum": [
+            "node_test"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
           }
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
         }
       }
     },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
-  },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+    "spec_refs": []
+  }
 }

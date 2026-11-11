@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix="devdesk-helper-runtime-test-") as direc
         direct.stdin.close()
         direct.wait(timeout=10)
 
-    preset = root / "permissions/presets/review.json"
+    preset = root / "resources/configuration/permissions/profiles/review.json"
     preset.parent.mkdir(parents=True)
     preset.write_text('{"name":"packaged-preset"}\n')
     wrapped = start([sys.executable, str(ROOT / "scripts/dev/run-host.py"), str(binary), str(helper)])
@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix="devdesk-helper-runtime-test-") as direc
     try:
         assert runtime != binary and runtime.is_file()
         assert runtime.parent.stat().st_mode & 0o077 == 0
-        copied_preset = runtime.parent / "permissions/presets/review.json"
+        copied_preset = runtime.parent / "resources/configuration/permissions/profiles/review.json"
         assert copied_preset.read_text() == preset.read_text(), "Packaged permission presets were lost"
         preset.write_text('{"name":"later-build-preset"}\n')
         assert "packaged-preset" in copied_preset.read_text(), "Runtime resources changed with the build"

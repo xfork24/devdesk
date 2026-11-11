@@ -386,7 +386,7 @@ pub(crate) fn material_inputs(
         .collect()
 }
 
-pub(crate) fn task_input(
+pub fn task_input(
     instance: &ConfiguredWorkflowInstance,
     step: &StepDefinition,
     execution: &StepExecution,
@@ -422,6 +422,14 @@ pub(crate) fn task_input(
         let source_output_id=match binding {InputBinding::Source{source} if source.step!="$input"=>instance.steps.iter().find(|step|step.step==source.step).and_then(|step|step.outputs.get(&source.port)),_=>None};
         (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"value_digest":execution.inputs.get(name).map(configuration_hash)}))
     }).collect();
+    let document_specs: BTreeSet<_> = step
+        .outputs
+        .values()
+        .filter_map(|port| definitions.get(&port.delivery_ref))
+        .filter_map(|r| r.decode::<DeliveryTypeDefinition>().ok())
+        .flat_map(|delivery| delivery.spec_refs)
+        .filter(|reference| !step.spec_refs.contains(reference))
+        .collect();
     let input = json!({"renderer_version":"agent-task/v5","source":{"workflow_revision_id":instance.workflow_ref,"execution_id":execution.id,
         "workflow_instance_id":execution.workflow_instance_id,"plan_revision_id":execution.plan_revision_id,"node_id":execution.node_id,"contract_digest":execution.contract_digest,"path":execution.path,"step":step.key,"round":execution.round,"sequence":execution.sequence},
         "owner_id":instance.owner_id,
@@ -429,8 +437,8 @@ pub(crate) fn task_input(
         "role":instance.plan.document.role(step).and_then(|id|instance.plan.roles.get(id).or_else(||instance.plan.roles.values().find(|role|role["role"]["id"]==id))),
         "stage":instance.plan.document.stages.iter().find(|s|s.key == step.stage),
         "task_instructions":step.task_instructions,"required_skills":step.required_skill_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),
-        "specifications":step.spec_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"inputs":execution.inputs,"input_sources":input_sources,
-        "budget":step.budget,"authorization":step.access,"outputs":outputs,"completion":step.completion,"supplemental_input":supplemental,
+        "specifications":step.spec_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"document_specifications":document_specs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"inputs":execution.inputs,"input_sources":input_sources,
+        "budget":step.budget,"authorization":{"workspace_input":step.access.workspace_input,"working_directory":step.access.working_directory,"writable_paths":step.access.writable_paths,"read_only_paths":step.access.read_only_paths,"tool_refs":step.access.tool_refs},"outputs":outputs,"completion":step.completion,"supplemental_input":supplemental,
         "output_contract":{"type":"object","required":["status","summary","outputs"],"additionalProperties":false,
             "description":"When status is completed, include every declared required output port. For needs_input or blocked, outputs may be empty.",
             "allOf":[{"if":{"properties":{"status":{"const":"completed"}}},"then":{"properties":{"outputs":{"required":step.outputs.iter().filter(|(_,port)|port.required).map(|(name,_)|name).collect::<Vec<_>>()}}}}],
@@ -1796,7 +1804,7 @@ impl Engine {
                     )?;
                     let agent = instance
                         .role_agent_bindings
-                        .get(&role.definition_id)
+                        .get(&role.id)
                         .ok_or_else(|| err("configuration_required", "缺少 Agent 绑定"))?;
                     execution.agent_revision_id = Some(agent.clone());
                     execution.status = StepExecutionStatus::Running;
@@ -1838,7 +1846,8 @@ impl Engine {
                         .get(workflow_ref)
                         .ok_or_else(|| err("configuration_required", "子流程不在冻结闭包中"))?
                         .clone();
-                    let child_doc: WorkflowDefinition = child.decode()?;
+                    let mut child_doc = state.resolve_workflow_source(&child)?;
+                    child_doc.assign_node_ids(&child.id);
                     let members = if let Some(collection) = foreach {
                         let values = current_facts
                             .value(&collection.source)
@@ -1928,6 +1937,7 @@ impl Engine {
                             .collect();
                         let mut plan = instance.plan.clone();
                         plan.workflow_revision_id = child.id.clone();
+                        plan.permission_workflow_ref = Some(child.id.clone());
                         plan.document = child_doc.clone();
                         let mut child_instance = ConfiguredWorkflowInstance {
                             active_plan_revision_id: String::new(),

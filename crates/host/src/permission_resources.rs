@@ -8,13 +8,7 @@ impl Workspace {
         agent: &Definition,
         b: &RuntimeBinding,
     ) -> Result<String> {
-        let mut configuration = json!({"installation":b.installation,"adapter":b.adapter_version,"agent":agent,"agent_configuration":b.agent_configuration,
-            "model":b.model,"model_connection":b.model_connection,"model_profile_digest":b.model_profile_digest,"policy":b.tool_policy,"writable_paths":b.writable_paths,"read_only_paths":b.read_only_paths,"work_type":b.work_type,
-            "sandbox":"docker-worker/v1","credential_ref":b.credential_ref,"permissions":b.permissions});
-        if !b.model_parameters.is_empty() {
-            configuration["model_parameters"] = json!(b.model_parameters);
-        }
-        configuration_digest(&configuration)
+        devdesk_adapters::runtime_digest(agent, b)
     }
     pub(super) fn send_permission_conversation(
         &self,
@@ -74,8 +68,9 @@ impl Workspace {
                 .map_err(|e| err("invalid_configuration", e.to_string()))?;
             return e.send_with_permission_binding(c, next).map(Some);
         }
-        let a: AgentComposition = s.configuration(&session.agent)?.decode()?;
-        let selection = agent_permission_selection(&s, &session.agent, &a)
+        let a = s.resolve_agent(&session.agent)?;
+        let selection = permission_selection(&s)
+            .ok()
             .ok_or_else(|| err("invalid_configuration", "缺少命名权限选择"))?;
         let lock = resolve_permission_lock(&s, &a.harness_ref, &selection)?;
         devdesk_adapters::permission_profiles::verify_permission_installation(
@@ -158,10 +153,8 @@ impl Workspace {
         let desired = s
             .configuration(&session.agent)
             .ok()
-            .and_then(|r| r.decode::<AgentComposition>().ok())
-            .and_then(|a| {
-                agent_permission_selection(&s, &session.agent, &a).map(|choice| (a, choice))
-            })
+            .and_then(|r| s.resolve_agent(&r.id).ok())
+            .and_then(|a| permission_selection(&s).ok().map(|choice| (a, choice)))
             .map(|(a, choice)| resolve_permission_lock(&s, &a.harness_ref, &choice));
         let active = s
             .turns
@@ -230,7 +223,7 @@ impl Workspace {
                                 (json!(i.key.version)==r.data["runtime_version"] || (r.data["recipe_digest"].is_string() && i.key.version.starts_with(&format!("{}+docker.",r.data["runtime_version"].as_str().unwrap_or("")))))).collect();
                             let materializations:Vec<_>=s.governance.iter().filter(|m|m.kind=="harness_materialization" && m.definition_id==r.id).map(|m|&m.data).collect();
                             let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.kind=="permission_profile" && template_record_current(&s,p))
-                                .filter_map(|p|p.decode::<PermissionProfile>().ok().filter(|profile|preflight_profile(&s,&target,profile).is_ok()).map(|profile|profile.id)).collect();
+                                .filter_map(|p|p.permission_profile().ok().filter(|profile|preflight_profile(&s,&target,profile).is_ok()).map(|profile|profile.id)).collect();
                             Some(json!({"target":target,"name":r.name,"version":r.version,"provider":r.data["provider"],"runtime_version":r.data["runtime_version"],
                                 "platforms":if r.kind=="sandbox" {r.data["platforms"].clone()}else{json!(["linux/aarch64","linux/x86_64"])},"recipe_digest":r.data["recipe_digest"],"registered_installations":registered,"materializations":materializations,
                                 "supported":contract.is_ok(),"enforcement_contract":contract.as_ref().ok(),"unsupported_reason":contract.as_ref().err().map(|e|&e.message),
@@ -242,17 +235,10 @@ impl Workspace {
                             .filter(|r| r.kind == kind && template_record_current(&s, r))
                             .collect::<Vec<_>>()
                     };
-                    let agents:Vec<_>=records("agent").into_iter().filter(|r|!s.governance.iter().any(|n|n.kind=="agent" && n.definition_id==r.definition_id && n.version>r.version))
-                        .filter_map(|r|r.decode::<AgentComposition>().ok().map(|a| {
-                            let selection=agent_permission_selection(&s,&r.id,&a);
-                            json!({"id":r.id,"name":r.name,"harness_ref":a.harness_ref,"sandbox_ref":selection.as_ref().map(|v|v.sandbox_ref.as_str()),
-                                "harness_mode":selection.as_ref().map(|v|match v.harness {PermissionSelection::FollowTarget=>"follow_target",_=>"pinned"}).unwrap_or("unconfigured"),
-                                "sandbox_mode":selection.as_ref().map(|v|match v.sandbox {PermissionSelection::FollowTarget=>"follow_target",_=>"pinned"}).unwrap_or("unconfigured")})
-                        })).collect();
                     Ok(
-                        json!({"profiles":records("permission_profile").iter().map(|r|&r.data).collect::<Vec<_>>(),
-                        "bindings":records("permission_binding"),"origins":records("permission_origin").into_iter().chain(records("permission_file_origin")).collect::<Vec<_>>(),"targets":targets,"agents":agents,
-                        "source":self.global.permission_preset_source()?,"default_sandbox_ref":current_template_defaults(&s).map(|d| d["permission_sandbox_ref"].clone())}),
+                        json!({"profiles":records("permission_profile").iter().map(|r|r.permission_profile()).collect::<Result<Vec<_>>>()?,
+                        "bindings":records("permission_binding"),"origins":records("permission_origin").into_iter().chain(records("permission_file_origin")).collect::<Vec<_>>(),"targets":targets,
+                        "source":self.global.permission_preset_source()?,"default_sandbox_ref":current_template_defaults(&s).map(|d| d["sandbox_ref"].clone())}),
                     )
                 }
                 "permission.profile.export" => permission_profile_export(
@@ -309,7 +295,7 @@ impl Workspace {
                 }
                 "permission.binding.preflight" => {
                     if params.get("selection").is_some() {
-                        let selection: AgentPermissionSelection =
+                        let selection: ExecutionPermissionSelection =
                             serde_json::from_value(params["selection"].clone())
                                 .map_err(|e| err("invalid_params", e.to_string()))?;
                         let lock = resolve_permission_lock(
@@ -340,7 +326,7 @@ impl Workspace {
                                 .as_str()
                                 .ok_or_else(|| err("invalid_params", "需要权限修订"))?,
                         )?;
-                        preflight_profile(&s, &target, &p.decode()?)
+                        preflight_profile(&s, &target, &p.permission_profile()?)
                     }
                 }
                 "permission.bindings.apply" => {
@@ -384,7 +370,7 @@ impl Workspace {
                                     .as_str()
                                     .ok_or_else(|| err("invalid_params", "需要权限修订"))?,
                             )?
-                            .decode()?;
+                            .permission_profile()?;
                         preflight_profile(&s, &target, &profile)?;
                         let scope = s.configuration(&target.revision_id)?.scope.clone();
                         if binding_scope
@@ -514,7 +500,7 @@ mod tests {
                 json!({"target":permission_target(&s,PermissionTargetKind::Harness,DEFAULT_HARNESS_ID).unwrap(),"permission_revision_id":profile,"expected_revision":expected}),
             ];
             if false {
-                changes.push(json!({"target":permission_target(&s,PermissionTargetKind::Sandbox,DEFAULT_PERMISSION_SANDBOX).unwrap(),"permission_revision_id":"permission-sandbox-full-access-v2-r1","expected_revision":0}));
+                changes.push(json!({"target":permission_target(&s,PermissionTargetKind::Sandbox,DEFAULT_PERMISSION_SANDBOX).unwrap(),"permission_revision_id":"sandbox-full-access-v2:1","expected_revision":0}));
             }
             w.dispatch(
                 "permission.bindings.apply",
@@ -522,13 +508,13 @@ mod tests {
             )
             .unwrap()
         };
-        apply("permission-harness-full-access-v2-r1", 1);
-        let selection = AgentPermissionSelection {
+        apply("harness-full-access-v2:1", 1);
+        let selection = ExecutionPermissionSelection {
             sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
             harness: PermissionSelection::FollowTarget,
             sandbox: PermissionSelection::FollowTarget,
         };
-        let mut data = w
+        let data = w
             .global
             .snapshot()
             .unwrap()
@@ -536,7 +522,6 @@ mod tests {
             .unwrap()
             .data
             .clone();
-        data["permission_selection"] = json!(selection);
         let agent=w.dispatch("agent.create",json!({"command_id":id(),"payload":{"name":"Followed runtime analyst","data":data}})).unwrap()["id"].as_str().unwrap().to_owned();
         let e = w.active_engine(Some(&project)).unwrap();
         w.sync_configuration(&e).unwrap();
@@ -595,7 +580,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        apply("permission-harness-read-only-v2-r1", 2);
+        apply("harness-read-only-v2:1", 2);
         let params = json!({"project_id":project,"command_id":id(),"target":original,"expected_revision":1,"payload":{"input":"Use the new permissions","client_message_id":"one-message"}});
         let sent = w.dispatch("conversation.send", params.clone()).unwrap();
         assert_ne!(sent["effective_session_id"], original);
@@ -671,7 +656,7 @@ mod tests {
             .find(|r| r["target"]["revision_id"] == h["id"])
             .unwrap()["target"]
             .clone();
-        let params = json!({"project_id":project,"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"permission-harness-read-only-v2-r1","expected_revision":0}]}});
+        let params = json!({"project_id":project,"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"harness-read-only-v2:1","expected_revision":0}]}});
         let saved = w
             .dispatch("permission.bindings.apply", params.clone())
             .unwrap();
@@ -709,9 +694,14 @@ mod tests {
             .find(|r| r["provider"] == "codex" && r["supported"] == true)
             .unwrap()["target"]
             .clone();
-        let preflight=w.dispatch("permission.binding.preflight",json!({"target":target,"permission_revision_id":"permission-harness-read-only-v2-r1"})).unwrap();
+        let preflight = w
+            .dispatch(
+                "permission.binding.preflight",
+                json!({"target":target,"permission_revision_id":"harness-read-only-v2:1"}),
+            )
+            .unwrap();
         assert_eq!(preflight["scope_checked"], false);
-        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"permission-harness-read-only-v2-r1","expected_revision":1}]}});
+        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"harness-read-only-v2:1","expected_revision":1}]}});
         let first = w
             .dispatch("permission.bindings.apply", request.clone())
             .unwrap();
@@ -721,13 +711,13 @@ mod tests {
         );
         assert_eq!(w.dispatch("permission.profile.create",json!({"command_id":id(),"payload":{
             "identity":"must-not-be-created","name":"Invalid envelope","target_kind":"harness",
-            "policy":catalog["profiles"][0]["policy"],"unknown":true
+            "policy":catalog["profiles"][0]["data"]["policy"],"unknown":true
         }})).unwrap_err().code,"invalid_params");
         let invalid=w.dispatch("permission.profile.create",json!({"command_id":id(),"payload":{"identity":"unsupported-test","name":"Unsupported","target_kind":"harness","policy":{"filesystem":{"mode":"read_only"},"network":{"mode":"enabled"},"tools":{"mode":"restricted","allow":["bash"],"deny":[]},"approval":"never"}}})).unwrap();
         assert_eq!(
             w.dispatch(
                 "permission.binding.preflight",
-                json!({"target":target,"permission_revision_id":invalid["id"]})
+                json!({"target":target,"permission_revision_id":format!("{}:{}",invalid["identity"].as_str().unwrap(),invalid["revision"].as_u64().unwrap())})
             )
             .unwrap_err()
             .code,

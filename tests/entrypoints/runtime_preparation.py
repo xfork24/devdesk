@@ -149,7 +149,7 @@ sys.exit(3)
         # Harness before reporting missing credentials, without sending any model input.
         pid = rpc('project.create', {'command_id':'preparation-fixture', 'payload':{'title':'Runtime preparation fixture'}})['result']['id']
         revision = rpc('query.workspace')['result']['active_project']['revision']
-        agent = defaults['role_agent_bindings']['builtin-role-analyst']
+        agent = defaults['role_agent_bindings']['builtin-role-analyst:1']
         def open_session(n):
             return rpc('session.open', {'project_id':pid,'command_id':'open-'+str(n),'target':pid,'expected_revision':revision,
                 'payload':{'agent':agent}})

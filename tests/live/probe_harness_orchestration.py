@@ -66,17 +66,19 @@ try:
     role=c.command("role.create",payload={"name":"数据计算员","data":{"instructions":"只计算当前输入的数字，使用真实平台材料捕获工具并按输出合同交付。"}})
     capture=next(r["id"] for r in defaults["records"] if r["kind"]=="tool" and r["data"].get("qualified_name")=="materials.capture")
     capability=c.command("capability.create",payload={"name":"计算能力","data":{"model_ref":defaults["model_ref"],"harness_ref":defaults["harness_ref"],"skills":[],"tools":list(dict.fromkeys(native_tools+[capture]))}})
-    agent=c.command("agent.create",payload={"name":"计算 Agent","data":{"role_ref":role["id"],"capability_ref":capability["id"],"permission_selection":{"sandbox_ref":defaults["permission_sandbox_ref"],"harness":{"mode":"follow_target"},"sandbox":{"mode":"follow_target"}}}})
+    agent=c.command("agent.create",payload={"name":"计算 Agent","data":{"role_ref":role["id"],"capability_ref":capability["id"]}})
     delivery=c.command("delivery_type.create",payload={"name":"计算结果","data":{"body":"降序及求和","format":"json","content_schema":{"type":"object","required":["ordered","sum"],"properties":{"ordered":{"type":"array","items":{"type":"integer"}},"sum":{"type":"integer"}},"additionalProperties":False}}})
     document={"schema_version":5,"stages":[{"key":"study","name":"计算"},{"key":"optional_check","name":"可选核对"},{"key":"handoff","name":"交接"}],"steps":[
-        {"key":"calculate","name":"计算数字","stage":"study","executor":{"type":"agent","role_ref":role["definition_id"]},"task_instructions":"将 inputs.numbers 降序排列并求和。必须实际调用 devdesk_materials_capture，参数直接为 ordered 和 sum。收到成功回执后以 result 端口提交相同对象。","inputs":{"numbers":{"type":"constant","value":[3,1,2,3]}},"access":{"tool_refs":[capture]},"outputs":{"result":{"delivery_ref":delivery["id"]}},"budget":{"max_turns":3,"timeout_seconds":300,"retry_limit":1}},
+        {"key":"calculate","name":"计算数字","stage":"study","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"将 inputs.numbers 降序排列并求和。必须实际调用 devdesk_materials_capture，参数直接为 ordered 和 sum。收到成功回执后以 result 端口提交相同对象。","inputs":{"numbers":{"type":"constant","value":[3,1,2,3]}},"outputs":{"result":{"delivery_ref":delivery["id"]}},"budget":{"max_turns":3,"timeout_seconds":300,"retry_limit":1}},
         {"key":"optional","name":"可选检查","stage":"optional_check","executor":{"type":"control"},"dependencies":["calculate"]},
         {"key":"finish","name":"确认交接","stage":"handoff","executor":{"type":"control"},"dependencies":["optional"],"inputs":{"analysis":{"type":"source","source":{"step":"calculate","port":"result"}}}}
     ],"outputs":{"result":{"step":"calculate","port":"result"}}}
     draft=c.command("workflow.create",payload={"name":"Harness 控制的数字工作流","document":document});workflow=c.command("workflow.publish",draft["id"],draft["revision"])
-    bindings={role["definition_id"]:agent["id"],**defaults["role_agent_bindings"]}
+    context=next(r for r in defaults["records"] if r["id"]==defaults["permission_context_ref"])["data"]
+    permission=c.command("permission_context.create",payload={"name":"Native calculation authorization","data":{**context,"step_grants":[{"workflow_ref":workflow["id"],"step":"calculate","tool_refs":[capture]}]}})
+    bindings={role["id"]:agent["id"],**defaults["role_agent_bindings"]}
     p=c.rpc("query.workspace")["active_project"]
-    config=c.command("project.configuration.update",project,p["revision"],{"workflow_ref":workflow["id"],"role_agent_bindings":bindings,"orchestrator_role_ref":defaults["orchestrator_role_ref"],"control_policy":defaults["control_policy"]})
+    config=c.command("project.configuration.update",project,p["revision"],{"workflow_ref":workflow["id"],"role_agent_bindings":bindings,"orchestrator_role_ref":defaults["orchestrator_role_ref"],"permission_context_ref":permission["id"]})
     p=c.rpc("query.workspace")["active_project"];manager=c.command("orchestration.open",project,p["revision"],{})["id"]
     controller_command(c,"orchestration.input",manager,{"input":"请读取本项目当前配置，通过 workflow.start 建立它的工作流。只建立根实例，保持所有业务步骤 queued；不派发任何步骤，不调整计划，不 complete。建立后结束 Turn 等待我继续。"})
     def started():

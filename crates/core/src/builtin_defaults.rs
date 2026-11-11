@@ -24,7 +24,7 @@ impl Engine {
         {
             let r =
                 crate::governance::reference(&s, agent.as_str().unwrap_or(""), "agent", &scope)?;
-            crate::governance::validate_composition(&s, &r.decode()?, &scope)?;
+            crate::governance::validate_composition(&s, &s.resolve_agent(&r.id)?, &scope)?;
         }
         crate::governance::reference(
             &s,

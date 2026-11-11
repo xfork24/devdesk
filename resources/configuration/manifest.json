@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "bundle_version": "2026.11.11-harness-v5-main-recovery",
+  "schema_version": 2,
+  "bundle_version": "2026.11.11-source-v1",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -113,38 +113,12 @@
       "tools/builtin-tool-workflow-segment-dispatch-v1.json"
     ],
     "permission_profile": [
-      "permission-profiles/permission-harness-full-access-v2-r1.json",
-      "permission-profiles/permission-harness-read-only-v2-r1.json",
-      "permission-profiles/permission-sandbox-full-access-v2-r1.json"
+      "permissions/profiles/permission-harness-full-access-v2-r1.json",
+      "permissions/profiles/permission-harness-read-only-v2-r1.json",
+      "permissions/profiles/permission-sandbox-full-access-v2-r1.json"
     ],
-    "mcp": [],
-    "http": [],
-    "projections": [
-      "projections/definitions/builtin-skill-engineering-context-v2.json",
-      "projections/definitions/builtin-skill-engineering-method-v1.json",
-      "projections/definitions/builtin-skill-prd-v2.json",
-      "projections/definitions/builtin-skill-architecture-v2.json",
-      "projections/definitions/builtin-skill-project-planning-v2.json",
-      "projections/definitions/builtin-skill-test-design-v2.json",
-      "projections/definitions/builtin-skill-tdd-implementation-v2.json",
-      "projections/definitions/builtin-skill-release-verification-v2.json",
-      "projections/definitions/builtin-skill-independent-review-v2.json",
-      "projections/definitions/builtin-agent-sol-high-analyst-v3.json",
-      "projections/definitions/builtin-agent-sol-high-architect-v3.json",
-      "projections/definitions/builtin-agent-sol-high-project-manager-v3.json",
-      "projections/definitions/builtin-agent-sol-high-developer-v3.json",
-      "projections/definitions/builtin-agent-sol-high-tester-v3.json",
-      "projections/definitions/builtin-agent-sol-high-reviewer-v3.json",
-      "projections/harnesses/builtin-harness-codex-managed-v1.json",
-      "projections/sandboxes/builtin-sandbox-codex-docker-v1.json",
-      "projections/definitions/builtin-skill-workflow-orchestration-v1.json"
-    ],
-    "initial": [
-      "initial/agent_instance/builtin-instance-sol-high-analyst-v1.json",
-      "initial/agent_instance/builtin-instance-sol-high-architect-v1.json",
-      "initial/agent_instance/builtin-instance-sol-high-developer-v1.json",
-      "initial/agent_instance/builtin-instance-sol-high-tester-v1.json",
-      "initial/agent_instance/builtin-instance-sol-high-reviewer-v1.json"
+    "permission_context": [
+      "permissions/bindings/engineering.json"
     ]
   },
   "defaults": "defaults.json"

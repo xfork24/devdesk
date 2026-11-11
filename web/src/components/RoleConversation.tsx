@@ -126,6 +126,9 @@ export function RoleConversation({
     (s: Row) => s.key === recommendedExecution?.step,
   );
   const composite = catalog.find((r) => r.id === agent && r.kind === "agent");
+  const capability = catalog.find(
+    (r) => r.id === composite?.data.capability_ref,
+  );
 
   useEffect(() => {
     if (!featureLock || owner === project.id || global || sessionId) return;
@@ -138,11 +141,7 @@ export function RoleConversation({
   }, [featureLock?.id, owner, recommendation, sessionId]);
   useEffect(() => {
     let current = true;
-    if (
-      !agent ||
-      catalog.some((r) => r.id === agent)
-    )
-      return;
+    if (!agent || catalog.some((r) => r.id === agent)) return;
     request("query.agent_revision", { id: agent, project_id: project.id })
       .then((row) => {
         if (current)
@@ -170,7 +169,13 @@ export function RoleConversation({
     ...agents,
     ...catalog
       .filter((r) => r.kind == "agent" && !agents.some((a) => a.id === r.id))
-      .map((r) => ({ ...r, agent_profile: { role: r.data.role } })),
+      .map((r) => ({
+        ...r,
+        agent_profile: {
+          role: catalog.find((role) => role.id === r.data.role_ref)
+            ?.definition_id,
+        },
+      })),
   ];
   const roles = choices.filter(
     (a) =>
@@ -201,7 +206,12 @@ export function RoleConversation({
       candidates.find(
         (r) => !candidates.some((next) => next.supersedes === r.id),
       );
-    if (selected) setAgent((current) => candidates.some((candidate) => candidate.id === current) ? current : selected.id);
+    if (selected)
+      setAgent((current) =>
+        candidates.some((candidate) => candidate.id === current)
+          ? current
+          : selected.id,
+      );
   }, [catalog, owner, recommendation, sessionId, composite?.id]);
   const instances = catalog.filter(
     (r) =>
@@ -587,22 +597,22 @@ export function RoleConversation({
             )}
             <p>
               Model{" "}
-              {catalog.find((r) => r.id === composite.data.model_ref)?.data
-                .model || composite.data.model_ref}{" "}
+              {catalog.find((r) => r.id === capability?.data.model_ref)?.data
+                .model || capability?.data.model_ref}{" "}
               · Harness{" "}
               {
-                catalog.find((r) => r.id === composite.data.harness_ref)?.data
+                catalog.find((r) => r.id === capability?.data.harness_ref)?.data
                   .provider
               }{" "}
               /{" "}
               {
-                catalog.find((r) => r.id === composite.data.harness_ref)?.data
+                catalog.find((r) => r.id === capability?.data.harness_ref)?.data
                   .runtime_version
               }{" "}
               · Agent v{composite.version}
             </p>
             <details>
-              <summary>Skills / Tools / Permission 及定义 Scope</summary>
+              <summary>Role / Capability 及定义 Scope</summary>
               <pre>{JSON.stringify(composite, null, 2)}</pre>
             </details>
           </>

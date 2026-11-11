@@ -1,40 +1,27 @@
 {
-  "template_key": "governance.builtin-tool-workspace-current-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-tool-workspace-current-v1",
-    "kind": "tool",
-    "definition_id": "builtin-tool-workspace-current",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "读取工作空间",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "qualified_name": "workspace.current",
-      "implementation": "platform",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "owner_id": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": []
-      },
-      "output_schema": {
-        "type": "object"
-      },
-      "capabilities": []
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "tool",
+  "identity": "builtin-tool-workspace-current",
+  "revision": 1,
+  "name": "读取工作空间",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {},
-  "references": {},
-  "initial_only": false
+  "data": {
+    "qualified_name": "workspace.current",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "owner_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": []
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
 }

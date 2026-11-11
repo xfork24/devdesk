@@ -485,9 +485,11 @@ impl Engine {
             json!(document),
             true,
         );
-        candidate.id = format!("runtime-workflow-{}", configuration_hash(changes));
+        candidate.definition_id = format!("runtime-workflow.{}", configuration_hash(changes));
+        candidate.version = 1;
+        candidate.id = format!("{}:1", candidate.definition_id);
         candidate.created_at = 0;
-        let plan =
+        let mut plan =
             self.compile_configured_workflow(state, &candidate, &row.scope, Some(&bindings))?;
         if let Some(configuration) = state
             .governance
@@ -609,6 +611,7 @@ impl Engine {
         )?;
         let footprint = json!({"executions":old.steps.iter().filter(|s|affected.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
             "children":state.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
+        plan.permission_workflow_ref = old.plan.permission_workflow_ref.clone();
         let preview_hash = configuration_hash(&(
             changes, &document, &bindings, &inputs, &affected, &footprint,
         ));
@@ -692,6 +695,28 @@ impl Engine {
                     "编排策略未允许修改 Task 范围",
                 )?;
             }
+        }
+        if state
+            .configuration(&preview.plan.workflow_revision_id)
+            .is_err()
+        {
+            let (identity, revision) = parse_source_reference(&preview.plan.workflow_revision_id)?;
+            let mut source_document = preview.document.clone();
+            for step in &mut source_document.steps {
+                step.access.writable_paths.clear();
+                step.access.read_only_paths.clear();
+                step.access.tool_refs.clear();
+            }
+            let source = SourceDefinition {
+                kind: "workflow".into(),
+                identity: identity.into(),
+                revision,
+                name: changes.reason.clone(),
+                scope: row.scope.clone(),
+                data: json!(source_document),
+            }
+            .into_record()?;
+            state.governance.push(source);
         }
         let change = record(
             "workflow_change",

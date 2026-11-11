@@ -44,10 +44,9 @@ try:
             assert hashlib.sha256(body).hexdigest() == entry['sha256']
         for name in ['permission.schema.json', 'permission-profile.schema.json', 'permission-binding.schema.json', 'sandbox.schema.json', 'permission-backend.schema.json', 'rpc.schema.json', 'agent-task.schema.json']:
             assert (package / 'schemas' / name).read_bytes() == (source / 'schemas' / name).read_bytes()
-        presets = list((package / 'permissions/presets').glob('*.json'))
+        presets = list((package / 'resources/configuration/permissions/profiles').glob('*.json'))
         assert len(presets) == 3
-        assert all(json.loads(p.read_text())["schema_version"] == 2 for p in presets)
-        assert (package / 'scripts/upgrade/harness-v5.py').read_bytes() == (source / 'scripts/upgrade/harness-v5.py').read_bytes()
+        assert all(json.loads(p.read_text())["data"]["schema_version"] == 2 for p in presets)
         assert (package / 'schemas/orchestration.schema.json').read_bytes() == (source / 'schemas/orchestration.schema.json').read_bytes()
         report['assets_verified'] = len(manifest['assets'])
         report['presets_verified'] = len(presets)
@@ -77,22 +76,22 @@ try:
         target_row = next(t for t in resources['targets'] if t['provider'] == 'codex' and t['supported'])
         target = target_row['target']
         initial_revision = target_row['active']['revision']
-        preview = rpc('permission.binding.preflight', {'target': target, 'permission_revision_id': 'permission-harness-read-only-v2-r1'})
+        preview = rpc('permission.binding.preflight', {'target': target, 'permission_revision_id': 'harness-read-only-v2:1'})
         assert preview['compatible'] and not preview['scope_checked']
-        applied = command('permission.bindings.apply', {'bindings': [{'target': target, 'permission_revision_id': 'permission-harness-read-only-v2-r1', 'expected_revision': initial_revision}]})
+        applied = command('permission.bindings.apply', {'bindings': [{'target': target, 'permission_revision_id': 'harness-read-only-v2:1', 'expected_revision': initial_revision}]})
         assert applied['bindings'][0]['revision'] == initial_revision + 1
-        exported = rpc('permission.profile.export', {'id': 'permission-harness-read-only-v2-r1'})
+        exported = rpc('permission.profile.export', {'id': 'harness-read-only-v2:1'})
         assert len(exported['profiles']) == 1
         command('permission.profile.import', exported)
         report['v2_profiles_and_version_binding'] = True
-        runtime_preset = {**exported['profiles'][0], 'id': 'package-runtime-v2', 'identity': 'package-runtime-v2', 'name': 'Runtime package preset'}
-        preset_root = dataset / 'permissions/presets'
+        runtime_preset = {**exported['profiles'][0], 'identity': 'package-runtime-v2', 'name': 'Runtime package preset'}
+        preset_root = dataset / 'resources/configuration/permissions/profiles'
         preset_root.mkdir(parents=True)
         (preset_root / 'runtime.json').write_text(json.dumps(runtime_preset))
         command('permission.source.select', {'path': str(preset_root)})
         command('permission.profile.reload', {})
         reloaded = rpc('query.permission_resources')
-        assert any(p['id'] == runtime_preset['id'] for p in reloaded['profiles'])
+        assert any(p['identity'] == runtime_preset['identity'] for p in reloaded['profiles'])
         command('permission.profile.reload', {'builtin': True})
         assert rpc('query.permission_resources')['source']['is_builtin']
         assert next(t for t in reloaded['targets'] if t['target'] == target)['active']['revision'] == initial_revision + 1
@@ -168,7 +167,7 @@ try:
                 {'key': 'ready', 'name': '准备', 'stage': 'audit', 'executor': {'type': 'control'}},
                 {'key': 'capture', 'name': '记录实际输入', 'stage': 'audit', 'dependencies': ['ready'],
                  'executor': {'type': 'tool', 'tool_ref': capture['id'], 'arguments': {'value': {'type': 'constant', 'value': {'version': 5}}}},
-                 'outputs': {'result': {'delivery_ref': 'builtin-delivery-object-v1'}}}
+                 'outputs': {'result': {'delivery_ref': 'builtin-delivery-object:1'}}}
             ]}})
         generic = command('workflow.publish', {}, generic['id'], generic['revision'])
         active = rpc('query.workspace')['active_project']
@@ -210,8 +209,6 @@ try:
         req = urllib.request.Request(url + '/shutdown', data=b'{}', headers={'Content-Type': 'application/json'})
         http.open(req, timeout=10).close()
         assert child.wait(timeout=10) == 0
-        subprocess.run(['python3', str(package / 'scripts/upgrade/harness-v5.py'), str(dataset), '--binary', str(binary)], cwd=root, check=True, capture_output=True)
-        report['standalone_upgrade_entrypoint'] = True
         report.update(passed=True, standalone_api=True, immutable_revisions=True,
                       binding_replay=True, project_schema=expected_schema, automatic_downloads=0)
 except Exception as error:

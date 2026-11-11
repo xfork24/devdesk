@@ -1,1 +1,0 @@
-{"schema_version":2,"id":"permission-harness-read-only-v2-r1","identity":"harness-read-only-v2","name":"Harness 只读","version":1,"supersedes":null,"target_kind":"harness","policy":{"filesystem":{"mode":"read_only"},"network":{"mode":"enabled"},"tools":{"mode":"all_available"},"approval":"never"}}

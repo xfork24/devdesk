@@ -9,10 +9,11 @@ mod orchestration;
 mod platform_tools;
 pub use controllers::CONTROL_TOOLS;
 mod workflow_changes;
+pub use configured_runtime::task_input as render_source_task;
 pub use configured_runtime::{
     ConfiguredAgentRequest, ConfiguredToolRequest, ConfiguredWorkflowInstance,
 };
-pub use configured_workflows::ConfiguredWorkflowPlan;
+pub use configured_workflows::{ConfiguredWorkflowPlan, compile_workflow_sources};
 pub use platform_tools::PlatformToolRequest;
 mod templates;
 pub use configuration::{

@@ -1,13 +1,19 @@
 -- Current schema baseline. No legacy upgrade path is executed at startup.
 BEGIN IMMEDIATE;
-CREATE TABLE definitions (
-    id TEXT PRIMARY KEY,
-    family TEXT NOT NULL,
-    name TEXT NOT NULL,
-    version INTEGER NOT NULL,
-    supersedes TEXT REFERENCES definitions(id) DEFERRABLE INITIALLY DEFERRED,
-    body TEXT NOT NULL
-, agent_profile JSON CHECK(agent_profile IS NULL OR json_valid(agent_profile)));
+CREATE TABLE source_definitions (
+ identity TEXT NOT NULL,
+ revision INTEGER NOT NULL CHECK(revision > 0),
+ kind TEXT NOT NULL,
+ name TEXT NOT NULL,
+ scope JSON NOT NULL CHECK(json_valid(scope)),
+ data JSON NOT NULL CHECK(json_valid(data)),
+ reference TEXT GENERATED ALWAYS AS (identity || ':' || revision) VIRTUAL UNIQUE,
+ PRIMARY KEY(identity,revision)
+);
+CREATE INDEX idx_source_kind ON source_definitions(kind,identity,revision);
+CREATE TRIGGER source_immutable_update BEFORE UPDATE ON source_definitions BEGIN SELECT RAISE(ABORT,'source revision is immutable'); END;
+CREATE TRIGGER source_no_delete BEFORE DELETE ON source_definitions BEGIN SELECT RAISE(ABORT,'source revision cannot be deleted'); END;
+
 
 CREATE TABLE events (id INTEGER PRIMARY KEY, target TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, time INTEGER NOT NULL);
 
@@ -26,7 +32,6 @@ CREATE TABLE governance_records (
  created_at INTEGER NOT NULL
 );
 
-CREATE TABLE harnesses (id TEXT PRIMARY KEY, provider TEXT NOT NULL, version TEXT NOT NULL, capabilities JSON NOT NULL CHECK(json_valid(capabilities)), origin TEXT NOT NULL, permission JSON CHECK(permission IS NULL OR json_valid(permission)));
 
 CREATE TABLE operations (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result JSON NOT NULL CHECK(json_valid(result)));
 
@@ -49,7 +54,6 @@ CREATE TABLE runtime_installations (
     UNIQUE(provider,version,os,arch)
 );
 
-CREATE TABLE sandboxes (id TEXT PRIMARY KEY, provider TEXT NOT NULL, version TEXT NOT NULL, platform TEXT NOT NULL, image TEXT, network BOOLEAN NOT NULL, origin TEXT NOT NULL, permission JSON CHECK(permission IS NULL OR json_valid(permission)));
 
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL CHECK(json_valid(value)));
 
@@ -85,8 +89,8 @@ CREATE TRIGGER governance_no_delete BEFORE DELETE ON governance_records BEGIN SE
 
 -- Catalog metadata uses the existing immutable record ledger and transaction boundary.
 CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(kind) WHERE kind='template_catalog_state';
-CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id) WHERE kind='template_catalog_member';
+CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
 
-PRAGMA user_version=14;
+PRAGMA user_version=15;
 COMMIT;

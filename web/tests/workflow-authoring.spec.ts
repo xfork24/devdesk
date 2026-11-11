@@ -39,7 +39,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex-v2");
+  expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex:2");
   const tools = await rpc(page, "query.configurations", {
     kind: "tool",
     include_history: true,
@@ -49,16 +49,26 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
       (row: any) => row.data.implementation === "harness.native",
     ),
   ).toHaveLength(2);
-  for (const row of defaults.records.filter((row: any) =>
-    ["capability", "agent"].includes(row.kind),
+  for (const row of defaults.records.filter(
+    (row: any) => row.kind === "capability",
   ))
-    expect(row.data.tools).toContain("builtin-tool-codex-native-v1");
+    expect(row.data.tools).toContain("builtin-tool-codex-native:1");
+  for (const agent of defaults.records.filter(
+    (row: any) => row.kind === "agent",
+  )) {
+    expect(Object.keys(agent.data).sort()).toEqual([
+      "capability_ref",
+      "role_ref",
+    ]);
+  }
+  const manager = defaults.records.find(
+    (r: any) =>
+      r.id === defaults.role_agent_bindings[defaults.orchestrator_role_ref],
+  );
   expect(
-    defaults.records.find(
-      (r: any) =>
-        r.id === defaults.role_agent_bindings[defaults.orchestrator_role_ref],
-    ).data.tools,
-  ).toContain("builtin-tool-workflow-inspect-v1");
+    defaults.records.find((r: any) => r.id === manager.data.capability_ref).data
+      .tools,
+  ).toContain("builtin-tool-workflow-inspect:1");
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
   await expect(page.getByText("AgentID 经验检索", { exact: true })).toHaveCount(
@@ -109,7 +119,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
 test("原生工具目录提供独立当前入口且不编辑 Schema", async ({ page }) => {
   await setup(page);
   await page.goto(
-    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native-v1",
+    "/?tab=components&config_tab=native&config_object=builtin-tool-codex-native:1",
   );
   await expect(
     page.getByRole("region", { name: "原生工具目录" }),
@@ -152,13 +162,13 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   );
   await page
     .getByLabel("Model 精确版本", { exact: true })
-    .selectOption("builtin-model-gpt-6-1-sol-high-v1");
+    .selectOption("builtin-model-gpt-6-1-sol-high:1");
   await page
     .getByLabel("Harness 精确版本", { exact: true })
-    .selectOption("builtin-harness-codex-managed-v1");
+    .selectOption("builtin-harness-codex-managed:1");
   await page
     .getByLabel("Tools", { exact: true })
-    .selectOption("builtin-tool-codex-native-v1");
+    .selectOption("builtin-tool-codex-native:1");
   const capName = "Browser capability " + crypto.randomUUID().slice(0, 5);
   await page.getByLabel("名称", { exact: true }).fill(capName);
   await page
@@ -178,7 +188,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   await page.getByLabel("名称", { exact: true }).fill(agentName);
   await page
     .getByLabel("Role 精确版本", { exact: true })
-    .selectOption("builtin-role-analyst-v1");
+    .selectOption("builtin-role-analyst:1");
   await page
     .getByLabel("Capability 精确版本", { exact: true })
     .selectOption(cap.id);
@@ -349,7 +359,7 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
         .click();
       await page
         .getByLabel("规则 1 必需 Spec", { exact: true })
-        .selectOption("builtin-spec-stage-implementation-v1");
+        .selectOption("builtin-spec-stage-implementation:1");
     }
     await page
       .getByRole("button", { name: `创建 ${resourceKind}`, exact: true })
@@ -404,7 +414,7 @@ test("阶段 Role 可继承，任务指令与子流程调用是独立配置", as
   await editor.getByRole("button", { name: "工作", exact: true }).click();
   await editor
     .getByLabel("阶段默认 Role", { exact: true })
-    .selectOption("builtin-role-analyst");
+    .selectOption("builtin-role-analyst:1");
   await editor.getByRole("button", { name: "添加步骤", exact: true }).click();
   await editor.getByLabel("步骤名称", { exact: true }).fill("调查上下文");
   await editor
@@ -445,7 +455,9 @@ test("阶段 Role 可继承，任务指令与子流程调用是独立配置", as
     step: workflow.data.steps[0].key,
   });
   expect(preview.task.task_instructions).toContain("按所加载的 Skill");
-  expect(workflow.data.stages[0].default_role_ref).toBe("builtin-role-analyst");
+  expect(workflow.data.stages[0].default_role_ref).toBe(
+    "builtin-role-analyst:1",
+  );
   expect(workflow.data.steps[1].executor.workflow_ref).toBe(published.id);
   await page.reload();
   await expect(editor.getByLabel("流程名称", { exact: true })).toHaveValue(
@@ -639,10 +651,18 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   await page.getByRole("tab", { name: "Delivery", exact: true }).click();
   const name = "风险材料 " + crypto.randomUUID().slice(0, 6);
   await page.getByLabel("名称", { exact: true }).fill(name);
-  await page.getByRole("button", { name: "正文", exact: true }).click();
+  const specification = await rpc(page, "spec.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: name + " 规范",
+      data: { schema_version: 3, body: "风险材料和真实来源。", checks: [] },
+    },
+  });
+  await page.reload();
+  await page.getByLabel("名称", { exact: true }).fill(name);
   await page
-    .getByRole("textbox", { name: "正文", exact: true })
-    .fill("风险材料和真实来源。");
+    .getByLabel("内容规范", { exact: true })
+    .selectOption([specification.id]);
   await page
     .getByRole("button", { name: "创建 Delivery", exact: true })
     .click();
@@ -652,6 +672,8 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
     limit: 100,
   });
   const delivery = types.records.find((r: any) => r.name === name);
+  expect(delivery.data.spec_refs).toEqual([specification.id]);
+  expect(delivery.data.body).toBeUndefined();
   await page.getByRole("tab", { name: "Workflow", exact: true }).click();
   await page.getByRole("button", { name: "新建流程", exact: true }).click();
   const editor = page.getByRole("region", { name: "工作流程管理" });
@@ -660,7 +682,7 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   await editor.getByLabel("步骤名称", { exact: true }).fill("产生材料");
   await editor
     .getByLabel("执行 Role（留空继承阶段）", { exact: true })
-    .selectOption("builtin-role-analyst");
+    .selectOption("builtin-role-analyst:1");
   await editor
     .getByRole("group", { name: "任务指令", exact: true })
     .getByRole("button", { name: "任务指令", exact: true })

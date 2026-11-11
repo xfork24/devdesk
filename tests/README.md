@@ -64,12 +64,6 @@ macOS 凭据助手专项入口为 `tests/entrypoints/credential_helper_startup.p
 
 日志、JSON/JSONL、截图和临时脚本写入临时目录；计划目录只保留 Markdown 计划、合同和执行报告。
 
-Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和真实原生调用来源（Harness 端口夹具）。`tests/entrypoints/harness_upgrade.py` 验证旧库离线转换、锁、跨库检查点恢复、数据保留及新 Host 继续执行。
+Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和真实原生调用来源（Harness 端口夹具）。`tests/entrypoints/dataset_protocol.py` 验证拒绝旧数据协议且不改写源数据。
 
 `tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_default_engineering_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
-
-若保留了真正的 v4 程序，可补验完整出厂目录曾重置到第二代后的转换。此入口只读源二进制，所有新数据均写入隔离的证据目录：
-
-```bash
-python3 tests/live/probe_harness_upgrade_legacy.py --legacy-binary /旧版/devdesk-host --binary target/release/devdesk-host --report-directory /tmp/devdesk-upgrade-evidence
-```

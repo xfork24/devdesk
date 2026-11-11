@@ -23,22 +23,26 @@ pub fn prepare(
         (
             PermissionTargetKind::Harness,
             harness,
-            "permission-harness-full-access-v2-r1",
+            "harness-full-access-v2:1",
         ),
         (
             PermissionTargetKind::Sandbox,
             DEFAULT_PERMISSION_SANDBOX.into(),
-            "permission-sandbox-full-access-v2-r1",
+            "sandbox-full-access-v2:1",
         ),
     ] {
-        let mut profile: PermissionProfile = s.configuration(profile_id).unwrap().decode().unwrap();
+        let mut profile: PermissionProfile = s
+            .configuration(profile_id)
+            .unwrap()
+            .permission_profile()
+            .unwrap();
         if kind == PermissionTargetKind::Harness {
             profile.policy.filesystem = policy.filesystem.clone();
             profile.policy.network = policy.network.clone();
             profile.policy.tools = Some(policy.tools.clone());
         }
         profile.normalize().unwrap();
-        let data = json!(profile);
+        let data = permission_profile_data(&profile);
         let r = s
             .governance
             .iter_mut()
@@ -56,12 +60,13 @@ pub fn prepare(
             permission_revision_id: profile_id.into(),
         };
         let hash = permission_content_hash(&binding);
-        let id = format!("fixture-binding-{hash}");
+        let identity = format!("fixture-binding-{hash}");
+        let id = format!("{identity}:1");
         let data = json!(binding);
         s.governance.push(ConfigurationRecord {
             id: id.clone(),
             kind: "permission_binding".into(),
-            definition_id: id.clone(),
+            definition_id: identity,
             scope: Scope::Global,
             name: profile.name.clone(),
             version: 1,
@@ -76,7 +81,7 @@ pub fn prepare(
             binding_revision_id: id,
             binding_hash: hash,
             binding,
-            profile_hash: permission_content_hash(&profile),
+            profile_hash: permission_content_hash(&permission_profile_data(&profile)),
             profile,
         });
     }

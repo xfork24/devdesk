@@ -1,27 +1,12 @@
 {
-  "template_key": "governance.builtin-role-reviewer-v1",
-  "storage": "governance",
-  "record": {
-    "id": "builtin-role-reviewer-v1",
-    "kind": "role",
-    "definition_id": "builtin-role-reviewer",
-    "scope": {
-      "kind": "global"
-    },
-    "name": "评审",
-    "version": 1,
-    "supersedes": null,
-    "content_hash": "",
-    "data": {
-      "instructions": ""
-    },
-    "immutable": true,
-    "revision": 1,
-    "created_at": 0
+  "kind": "role",
+  "identity": "builtin-role-reviewer",
+  "revision": 1,
+  "name": "评审",
+  "scope": {
+    "kind": "global"
   },
-  "text_files": {
-    "/data/instructions": "roles/reviewer.md"
-  },
-  "references": {},
-  "initial_only": false
+  "data": {
+    "instructions_file": "reviewer.md"
+  }
 }

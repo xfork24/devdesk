@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevDesk source definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "identity",
+    "revision",
+    "name",
+    "scope",
+    "data"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string"
+    },
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "$ref": "rpc.schema.json#/$defs/Scope"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

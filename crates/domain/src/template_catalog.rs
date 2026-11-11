@@ -30,6 +30,7 @@ pub fn template_definition_kind(kind: &str) -> bool {
             | "tool"
             | "integration"
             | "integration_binding"
+            | "permission_context"
             | "permission_profile"
     )
 }
@@ -44,11 +45,14 @@ pub fn template_catalog_member<'a>(
     s: &'a EngineeringState,
     r: &ConfigurationRecord,
 ) -> Option<&'a ConfigurationRecord> {
-    s.governance.iter().find(|m| {
-        m.kind == "template_catalog_member"
-            && m.definition_id == r.id
-            && m.data["kind"] == template_member_kind(&r.kind)
-    })
+    s.governance
+        .iter()
+        .filter(|m| {
+            m.kind == "template_catalog_member"
+                && m.definition_id == r.id
+                && m.data["kind"] == template_member_kind(&r.kind)
+        })
+        .max_by_key(|m| m.data["generation"].as_u64().unwrap_or(0))
 }
 pub fn template_record_current(s: &EngineeringState, r: &ConfigurationRecord) -> bool {
     if !template_definition_kind(&r.kind) {

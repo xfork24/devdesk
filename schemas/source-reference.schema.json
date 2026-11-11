@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Exact source revision reference",
+  "type": "string",
+  "pattern": "^\\S+:[1-9][0-9]*$"
+}

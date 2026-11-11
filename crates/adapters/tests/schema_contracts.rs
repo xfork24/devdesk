@@ -106,7 +106,7 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
     );
     round_trip::<AgentProfile>(
         "AgentProfile",
-        json!({"role":"analyst","skill_revisions":[],"tool_policy":"read_only"}),
+        json!({"role":"analyst","skill_revisions":[]}),
     );
     round_trip::<RuntimeExecution>(
         "RuntimeExecution",
@@ -267,13 +267,13 @@ fn standalone_permission_contract_matches_rpc_and_preserves_null_rejection() {
     }
     for file in std::fs::read_dir(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../permissions/presets"
+        "/../../resources/configuration/permissions/profiles"
     ))
     .unwrap()
     {
         let value: Value =
             serde_json::from_slice(&std::fs::read(file.unwrap().path()).unwrap()).unwrap();
-        assert_eq!(value["schema_version"], 2);
+        assert_eq!(value["data"]["schema_version"], 2);
         SCHEMAS.assert_valid("permission-profile.schema.json", &value);
         serde_json::from_value::<PermissionProfile>(value)
             .unwrap()
@@ -432,13 +432,13 @@ fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline(
     );
     round_trip::<ConfiguredSpecification>(
         "ConfiguredSpecification",
-        json!({"schema_version":3,"body":"# 内容规范","applicable_to":[],"checks":[]}),
+        json!({"schema_version":3,"body":"# 内容规范","checks":[]}),
     );
     round_trip::<ConfiguredStandard>(
         "ConfiguredStandard",
         json!({"schema_version":3,"body":"# Baseline","baseline_rules":[{"selector":{"tags":["content"]},"required_spec_refs":["spec-v1"],"min_matches":1}]}),
     );
-    let project = json!({"schema_version":3,"workflow_ref":"workflow-v4","standard_ref":null,"role_agent_bindings":{"product":"analyst-v2"},"specification_snapshot":[],"baseline_check":null});
+    let project = json!({"schema_version":3,"workflow_ref":"workflow-v4","standard_ref":null,"role_agent_bindings":{"product":"analyst-v2"},"permission_context_ref":"authorization:1"});
     SCHEMAS.assert_valid("project-configuration.schema.json", &project);
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(
