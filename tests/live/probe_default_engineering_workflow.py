@@ -46,6 +46,7 @@ def verify_evidence(client, rows, output):
   review=next(step for step in view['runtime']['steps'] if step['step']==review_key)
   task=client.rpc('query.execution_task',{'turn_id':review['turn_id']})['task']['task']
   assert task['inputs']['candidate']==candidate
+  assert task['inputs']['candidate_tests']==tests
   assert task['inputs']['changes']==receipt(view,snapshot_key)['changes']
   assert task['inputs']['changes']['revision']==candidate['source_revision']
   assert candidate['parents']==[candidate['target_revision']] and candidate['diff']

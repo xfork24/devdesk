@@ -695,7 +695,12 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
             .iter()
             .find(|step| step.key == "candidate_tests")
             .unwrap();
-        assert!(document.ancestors(tests).contains(review_key));
+        assert!(document.ancestors(tests).contains("candidate"));
+        assert!(document.ancestors(review).contains("candidate_tests"));
+        let InputBinding::Source { source } = &review.inputs["candidate_tests"] else {
+            panic!("scope review needs the exact tested candidate")
+        };
+        assert_eq!(source.step, "candidate_tests");
     }
     for key in ["documentation", "review", "candidate_review"] {
         let consumer = task.steps.iter().find(|step| step.key == key).unwrap();
