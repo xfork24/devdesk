@@ -506,7 +506,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
     }
     for kind in ["feature", "task"] {
         let workflow = state
-            .configuration(&format!("builtin-workflow-{kind}-sol-high:5"))
+            .configuration(&format!("builtin-workflow-{kind}-sol-high:6"))
             .unwrap();
         let plan = e
             .compile_configured_workflow(&state, workflow, &Scope::Global, None)
