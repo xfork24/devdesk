@@ -30,13 +30,23 @@ export function WorkflowController({
     if (ticket === epoch.current) setData(next);
   }, [request, instance.id, projectId]);
   useEffect(() => {
-    void load().catch((e) => setError(String(e)));
-    const timer = setInterval(
-      () => void load().catch((e) => setError(String(e))),
-      2500,
-    );
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    setData(undefined);
+    setError("");
+    async function poll() {
+      try {
+        await load();
+      } catch (e) {
+        if (active) setError(String(e));
+      } finally {
+        if (active) timer = setTimeout(() => void poll(), 2500);
+      }
+    }
+    void poll();
     return () => {
-      clearInterval(timer);
+      active = false;
+      clearTimeout(timer);
       epoch.current++;
     };
   }, [load]);
