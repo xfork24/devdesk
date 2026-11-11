@@ -4,7 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [Standard 不可变规范快照](standard-snapshot/PLAN.md) | [实施与验收](standard-snapshot/EXECUTION.md) | 实施中；独立 worktree，Standard 统一快照、Task 独立采用与历史依据；完整测试统一在合入 main 后执行 |
+| [Standard 不可变规范快照](standard-snapshot/PLAN.md) | [实施与验收](standard-snapshot/EXECUTION.md) | 已完成；独立 worktree 合入 main 后统一验证，真实双 Task / Feature 62 节点闭环、切换历史与独立发布包通过 |
 | [Delivery 分类与内容规范](delivery-content-specs/PLAN.md) | [实施与验收](delivery-content-specs/EXECUTION.md) | 已合并 main；21 种 Delivery 全关联 Spec，真实 Diff 接入交付与评审；214 项 Rust、debug/release 各 44 项浏览器及真实 Docker 验收通过 |
 | [源配置与执行解析](../source-configuration.md) | [实施验收](source-configuration/EXECUTION.md) | 已合入本地 main；源协议 v2、权限独立、文档规范复用、按需视图；207 项 Rust、debug/release 各 43 项浏览器及独立 macOS 包通过；只支持新数据 |
 | [Harness 驱动工作流改造](harness-workflow-orchestration/PLAN.md) | [实施验收](harness-workflow-orchestration/EXECUTION.md)、[main 合并验收](harness-workflow-orchestration/MERGE.md)、[合同](harness-workflow-orchestration/CONTRACT.md) | P0—P8 已完成并合并 main；202 项 Rust、debug/release 各 43 项浏览器、实际 Git/Docker/权限、真实旧库升级及独立 macOS arm64 包通过；追加无人值守 Feature 22/Task 20、两轮 TDD 完整证据与 PR #35/#36 通过，0 人工 approve/旁路/豁免；编排当前支持 Codex |
