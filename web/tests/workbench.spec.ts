@@ -98,6 +98,9 @@ async function githubFixture(page: Page) {
           runtime_installations: [],
         };
         break;
+      case "query.standard_catalog":
+        result = { records: [] };
+        break;
       case "query.configurations":
         result = {
           records: [
