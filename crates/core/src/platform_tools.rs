@@ -473,7 +473,13 @@ impl Engine {
                 .tasks
                 .iter()
                 .any(|t| t.id == owner && t.feature_id == request.owner_id)
-            || owner == request.project_id;
+            || owner == request.project_id
+            // A Task reads its owning Feature's exact revision as the merge target.
+            // This does not authorize snapshot/test/Git operations on the parent.
+            || (request.definition.qualified_name == "workspace.current"
+                && state.tasks.iter().any(|task| {
+                    task.id == request.owner_id && task.feature_id == owner
+                }));
         require(within, "工作空间不属于当前执行范围")?;
         let project = state
             .projects
