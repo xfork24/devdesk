@@ -69,7 +69,7 @@ try:
     agent=c.command("agent.create",payload={"name":"计算 Agent","data":{"role_ref":role["id"],"capability_ref":capability["id"]}})
     spec=c.command("spec.create",payload={"name":"排序分析内容规范","data":{"schema_version":3,"body":"输入整数按降序排列，保留重复值；sum 等于所有输入之和。结果可追溯当前 numbers 输入。","checks":[{"key":"calculation","name":"计算结果","instructions":"逐项核对降序、重复值、总和与实际输入一致。"}]}})
     delivery=c.command("delivery_type.create",payload={"name":"计算结果","data":{"spec_refs":[spec["id"]],"body":"降序及求和","format":"json","content_schema":{"type":"object","required":["ordered","sum"],"properties":{"ordered":{"type":"array","items":{"type":"integer"}},"sum":{"type":"integer"}},"additionalProperties":False}}})
-    document={"schema_version":5,"stages":[{"key":"study","name":"计算"},{"key":"optional_check","name":"可选核对"},{"key":"handoff","name":"交接"}],"steps":[
+    document={"schema_version":6,"stages":[{"key":"study","name":"计算"},{"key":"optional_check","name":"可选核对"},{"key":"handoff","name":"交接"}],"steps":[
         {"key":"calculate","name":"计算数字","stage":"study","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"将 inputs.numbers 降序排列并求和。必须实际调用 devdesk_materials_capture，参数直接为 ordered 和 sum。收到成功回执后以 result 端口提交相同对象。","inputs":{"numbers":{"type":"constant","value":[3,1,2,3]}},"outputs":{"result":{"delivery_ref":delivery["id"]}},"budget":{"max_turns":3,"timeout_seconds":300,"retry_limit":1}},
         {"key":"optional","name":"可选检查","stage":"optional_check","executor":{"type":"control"},"dependencies":["calculate"]},
         {"key":"finish","name":"确认交接","stage":"handoff","executor":{"type":"control"},"dependencies":["optional"],"inputs":{"analysis":{"type":"source","source":{"step":"calculate","port":"result"}}}}

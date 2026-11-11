@@ -259,6 +259,16 @@ impl EngineeringState {
                     )?;
                 }
             }
+            if r.kind == "standard" {
+                require(
+                    !matches!(r.scope, Scope::Feature { .. }),
+                    "Standard 不具有 Feature 归属",
+                )?;
+                r.decode::<ConfiguredStandard>()?.validate()?;
+                if !before.governance.iter().any(|old| old.id == r.id) {
+                    standard_snapshot(self, &r.id, &r.scope)?;
+                }
+            }
             require(
                 r.content_hash == configuration_hash(&r.data),
                 "配置内容摘要不一致",

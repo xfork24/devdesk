@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.11-delivery-v2",
+  "bundle_version": "2026.11.11-standard-v4",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -20,7 +20,7 @@
       "skills/builtin-skill-tdd-implementation-v2.json",
       "skills/builtin-skill-release-verification-v2.json",
       "skills/builtin-skill-independent-review-v2.json",
-      "skills/builtin-skill-workflow-orchestration-v1.json"
+      "skills/builtin-skill-workflow-orchestration-v2.json"
     ],
     "spec": [
       "specs/builtin-spec-stage-prd-v1.json",
@@ -52,11 +52,11 @@
       "specs/builtin-spec-delivery-feature-report-v1.json"
     ],
     "standard": [
-      "standards/builtin-standard-engineering-v2.json"
+      "standards/builtin-standard-engineering-v3.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-sol-high-v6.json",
-      "workflows/builtin-workflow-feature-sol-high-v6.json"
+      "workflows/builtin-workflow-task-sol-high-v7.json",
+      "workflows/builtin-workflow-feature-sol-high-v7.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v2.json",
@@ -85,7 +85,7 @@
       "capabilities/builtin-capability-sol-high-codex-v3.json",
       "capabilities/builtin-capability-analyst-codex-v3.json",
       "capabilities/builtin-capability-architect-codex-v3.json",
-      "capabilities/builtin-capability-project-manager-codex-v3.json",
+      "capabilities/builtin-capability-project-manager-codex-v4.json",
       "capabilities/builtin-capability-developer-codex-v3.json",
       "capabilities/builtin-capability-tester-codex-v3.json",
       "capabilities/builtin-capability-reviewer-codex-v3.json"
@@ -93,7 +93,7 @@
     "agent": [
       "agents/builtin-agent-sol-high-analyst-v4.json",
       "agents/builtin-agent-sol-high-architect-v4.json",
-      "agents/builtin-agent-sol-high-project-manager-v4.json",
+      "agents/builtin-agent-sol-high-project-manager-v5.json",
       "agents/builtin-agent-sol-high-developer-v4.json",
       "agents/builtin-agent-sol-high-tester-v4.json",
       "agents/builtin-agent-sol-high-reviewer-v4.json"
@@ -148,7 +148,7 @@
       "permissions/profiles/permission-sandbox-full-access-v2-r1.json"
     ],
     "permission_context": [
-      "permissions/bindings/engineering-v2.json"
+      "permissions/bindings/engineering-v3.json"
     ]
   },
   "defaults": "defaults.json"

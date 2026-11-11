@@ -25,14 +25,14 @@ parser.add_argument('--report', type=Path, required=True)
 args = parser.parse_args()
 assert 'test' in args.github_repo.lower(), 'use a dedicated test repository'
 client = Client(args.url)
-report = ['# Configured Workflow v5 native verification', '', 'Status: running', '']
+report = ['# Configured Workflow v6 native verification', '', 'Status: running', '']
 try:
     if args.resume_project:
         client.open(args.resume_project)
         feature = args.resume_feature
         assert feature, '--resume-feature is required with --resume-project'
     else:
-        project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': 'main', 'title': 'Workflow v5 verification'})['id']
+        project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': 'main', 'title': 'Workflow v6 verification'})['id']
         client.project = project
         client.wait(lambda: client.rpc('query.workspace'), lambda view: view['repository_ready'], 300)
         defaults = client.rpc('query.configuration_defaults')
@@ -46,7 +46,7 @@ try:
             assert harness['data']['provider'] == args.provider, 'configure matching Agents or pass --bindings'
         current = client.rpc('query.workspace')['active_project']
         client.command('project.configuration.update', project, current['revision'], {'workflow_ref': workflow, 'role_agent_bindings': bindings})
-        feature = client.command('feature.create', payload={'project_id': project, 'title': 'Workflow v5 verification', 'workflow_inputs': json.loads(args.inputs.read_text()) if args.inputs else {}})['id']
+        feature = client.command('feature.create', payload={'project_id': project, 'title': 'Workflow v6 verification', 'workflow_inputs': json.loads(args.inputs.read_text()) if args.inputs else {}})['id']
     defaults=client.rpc('query.configuration_defaults')
     initial=client.rpc('query.workflow_instance',{'owner_id':feature})
     manager=client.command('orchestration.open',initial['record']['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'permission_context_ref':defaults['permission_context_ref']})['id']

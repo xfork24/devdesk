@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 15 / project 46；Workflow v5、Spec / Standard v3、Proposal v2 和 `agent-task/v5`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 16 / project 47；Workflow v6、Spec v3 / Standard v4、Proposal v2 和 `agent-task/v6`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，不升级或转换旧数据。
 
 ## HTTP 与命令
 
@@ -31,13 +31,13 @@ JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.me
 
 `role.create/revise/delete` 只管理自由业务身份，不生成默认 Agent 或 Skill。Capability 和 Agent 明确引用当前资源；不从角色名称推导权限或业务输出。`query.configuration_defaults` 返回当前目录的确切默认引用，不创建项目采用记录，也不安装运行时。
 
-`workflow.create` / `workflow.draft.create` 建立 v5 草稿，`workflow.draft.update` 修改草稿，`workflow.publish` 校验并发布不可变修订。`project.configuration.update` 保存明确 Workflow、完整 Role → Agent 绑定及可选 Standard。`spec.create/revise` 与 `standard.create/revise` 使用 v3 数据；`delivery_type.create/revise` 定义通用交付格式及可选离线 Schema。
+`workflow.create` / `workflow.draft.create` 建立 v6 草稿，`workflow.draft.update` 修改草稿，`workflow.publish` 校验并发布不可变修订。`project.configuration.update` 保存确切 Standard、Workflow、Role → Agent 和执行授权；未选快照时原子生成。`spec.create/revise` 使用 v3 数据，`standard.capture.preview/capture` 生成 v4 不可变快照；`delivery_type.create/revise` 定义通用交付格式及可选离线 Schema。
 
 `query.workflow_requirements`、`query.workflow_validation`、`query.workflow_preview` 和 `query.specification_audit` 检查完整闭包、身份、输入输出、Spec 与基线。预演不会调用模型、Docker、Git 或测试，也不产生真实证据。
 
 `query.workflow_task_preview` 使用 document 或确切修订及步骤位置，返回可解析的 Role / Agent / Skill / Spec、任务、输入、输出合同和缺口；不是实际运行授权。`query.execution_task` 按 `turn_id` 返回持久化任务、渲染版本、摘要和来源。
 
-canonical `agent-task/v5` 包含 Stage 背景、Step 任务、职责、能力、确切输入、绑定来源和值摘要、逐端口输出 Schema、动态检查、授权及预算。文本端口值是字符串；JSON 端口按声明 Schema 校验。封套为 `status`、`summary`、`outputs`，只有 completed 必须提供全部必需输出。
+canonical `agent-task/v6` 包含 Stage 背景、Step 任务、职责、能力、确切输入、绑定来源和值摘要、逐端口输出 Schema、动态检查、授权及预算。文本端口值是字符串；JSON 端口按声明 Schema 校验。封套为 `status`、`summary`、`outputs`，只有 completed 必须提供全部必需输出。
 
 ## 运行与交互
 
@@ -142,6 +142,12 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 `schemas/orchestration.schema.json` 定义类型化 ChangeSet。新增/修改步骤、依赖、输入、角色绑定及整体计划通过预演编译；应用期间根范围禁止新的写入派发，继续收集原运行事实。旧合同和结果保存只读历史。已派发 segment 只推进确切授权节点，遇到人工等待、评审拒绝、异常、预算或计划修改立即停止，不自动完成根实例。
 
-编排封套 `orchestration-task/v1` 携带当前实例摘要、用户指令、策略及待决定项；持久化唤醒、消费游标、lease 和原生调用回执支持重启恢复。业务 `agent-task/v5` 携带计划修订、node_id 和 contract_digest。
+编排封套 `orchestration-task/v2` 携带当前实例摘要、用户指令、策略及待决定项；持久化唤醒、消费游标、lease 和原生调用回执支持重启恢复。业务 `agent-task/v6` 携带计划修订、node_id 和 contract_digest。
 
 源配置、权限归属及无持久化投影的存储规则见[源配置与执行解析](source-configuration.md)。
+
+## Standard 快照接口
+
+`standard.capture.preview` 只读解析确切 `root_workflow_refs`，`standard.capture` 核对候选并发布或复用不可变快照。`standard.archive` 只改变选择列表，不删除历史。`query.standard_catalog/standard/standard_diff/standard_usage` 返回按需视图及真实采用关系。
+
+`work.configuration.update` 为尚未启动的工作选择 `standard_ref`、`workflow_ref`、执行者和权限；启动后使用 `WorkflowChangeOperation::AdoptStandard`，并沿既有 preview/apply、CAS、授权与静止等待路径切换。`query.work_configuration` 返回来源及计划历史，`query.work_standard_diff` 区分自身规范、入口投影及子工作采用。历史计划中的子调用清单以冻结的首次调用依据标记，当前调用树另行展示。

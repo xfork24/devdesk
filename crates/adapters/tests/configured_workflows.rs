@@ -139,7 +139,7 @@ fn custom_role_and_typed_business_step_publish_preview_and_reload() {
     assert!(role["data"].get("execution_role").is_none());
     let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"spec_refs":["fixture-spec:1"],"body":"本次发现的风险与依据","format":"json","content_schema":{
         "type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
-    let document = json!({"schema_version":5,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
+    let document = json!({"schema_version":6,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
         "key":"study","name":"识别风险","stage":"inquiry","executor":{"type":"agent"},"task_instructions":"按调研 Skill 分析并提交风险。",
         "outputs":{"risks":{"delivery_ref":output["id"]}}}]});
     let workflow = publish(&engine, document.clone());
@@ -204,7 +204,7 @@ fn control_workflow_runs_and_confirmation_is_bound_to_exact_content() {
     let engine = engine(dir.path());
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"decision","name":"业务决定"}],"steps":[
+        json!({"schema_version":6,"stages":[{"key":"decision","name":"业务决定"}],"steps":[
         {"key":"check","name":"确认范围","stage":"decision","executor":{"type":"control"},"confirmation":"human"},
         {"key":"finish","name":"结束","stage":"decision","executor":{"type":"control"},"dependencies":["check"]}]}),
     );
@@ -279,10 +279,10 @@ fn child_closure_rejects_wrong_type_and_recursive_calls_before_publish() {
     .unwrap();
     let child = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"inputs":{"source":{"delivery_ref":kind["id"]}},
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"inputs":{"source":{"delivery_ref":kind["id"]}},
         "steps":[{"key":"gate","name":"检查材料","stage":"work","executor":{"type":"control"}}]}),
     );
-    let parent = json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"nested","name":"调用","stage":"work",
+    let parent = json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"nested","name":"调用","stage":"work",
         "executor":{"type":"workflow","workflow_ref":child["id"]}}]});
     let draft = command(
         &engine,
@@ -383,7 +383,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
     let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"spec_refs":["fixture-spec:1"],"body":"风险列表","format":"json","content_schema":{"type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
+        json!({"schema_version":6,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
         "key":"study","name":"识别风险","stage":"inquiry","executor":{"type":"agent"},"task_instructions":"只调查当前材料，提交风险清单。",
         "outputs":{"risks":{"delivery_ref":output["id"]}}}]}),
     );
@@ -519,12 +519,12 @@ fn reusable_children_and_collection_members_have_distinct_execution_paths() {
     let array=command(&engine,"delivery_type.create",None,json!({"name":"条目集合","data":{"spec_refs":["fixture-spec:1"],"body":"输入集合","format":"json","content_schema":{"type":"array","items":{"type":"string"},"minItems":2}}})).unwrap();
     let child = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"处理"}],"inputs":{"entry":{"delivery_ref":text["id"]}},
+        json!({"schema_version":6,"stages":[{"key":"work","name":"处理"}],"inputs":{"entry":{"delivery_ref":text["id"]}},
         "steps":[{"key":"gate","name":"完成条目","stage":"work","executor":{"type":"control"}}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"分发"}],"inputs":{"entries":{"delivery_ref":array["id"]}},"steps":[{
+        json!({"schema_version":6,"stages":[{"key":"work","name":"分发"}],"inputs":{"entries":{"delivery_ref":array["id"]}},"steps":[{
         "key":"members","name":"处理集合","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"],"foreach":{
             "source":{"step":"$input","port":"entries"},"item_input":"entry","max_concurrency":1,"min_items":2}}}]}),
     );
@@ -620,7 +620,7 @@ fn launch(engine: &Engine, role: &Value, agent: &Value, mut step: Value) -> Valu
     }
     let workflow = publish(
         engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"调查"}],"steps":[step]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"调查"}],"steps":[step]}),
     );
     let project = command(engine, "project.create", None, json!({"title":"调查项目"})).unwrap();
     command(engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap()
@@ -1262,11 +1262,11 @@ fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
     let engine = engine(dir.path());
     let child = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"等待确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"等待确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"child","name":"调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"child","name":"调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
     );
     let project = command(
         &engine,
@@ -1339,7 +1339,7 @@ fn persisted_evidence_case(large: bool) {
     ]);
     let workflow = publish(
         &workbench,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"证据交付","default_role_ref":role["id"]}],"steps":[
+        json!({"schema_version":6,"stages":[{"key":"work","name":"证据交付","default_role_ref":role["id"]}],"steps":[
             {"key":"produce","name":"记录执行","stage":"work","executor":{"type":"agent"},"task_instructions":"将真实记录作为 evidence 输出交付。","outputs":{"evidence":{"delivery_ref":"builtin-delivery-execution-evidence:2"},"unrelated":{"delivery_ref":"fixture-delivery-object:1"}}},
             {"key":"inspect","name":"检查证据","stage":"work","dependencies":["produce"],"executor":{"type":"agent"},"task_instructions":"只检查声明的 evidence 输入。","access":{"tool_refs":if large {json!(["builtin-tool-workflow-outputs-read:2"])} else {json!([])}},"inputs":{"evidence":{"type":"source","source":{"step":"produce","port":"evidence"}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}
         ]}),
@@ -1538,7 +1538,7 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
     let engine = engine(dir.path());
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"资料封存"}],"steps":[{"key":"capture","name":"封存输入","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"exact input"}}}},"outputs":{"receipt":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"资料封存"}],"steps":[{"key":"capture","name":"封存输入","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"exact input"}}}},"outputs":{"receipt":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"资料项目"})).unwrap();
     let run = command(
@@ -1587,11 +1587,11 @@ fn invalid_child_dispatch_is_rejected_without_blocking_independent_work() {
     let engine = engine(dir.path());
     let child = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd:2"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd:2"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"分支"}],"steps":[{"key":"bad","name":"无效子流程输入","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]},"inputs":{"material":{"type":"constant","value":123}}},{"key":"good","name":"独立分支","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"分支"}],"steps":[{"key":"bad","name":"无效子流程输入","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]},"inputs":{"material":{"type":"constant","value":123}}},{"key":"good","name":"独立分支","stage":"work","executor":{"type":"control"}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"分支项目"})).unwrap();
     let run = command(
@@ -1622,7 +1622,7 @@ fn stale_start_and_unprepared_agent_session_are_rejected_before_dispatch() {
     let engine = engine(dir.path());
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"版本保护"})).unwrap();
     let error = engine
@@ -1655,11 +1655,11 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
     let engine = engine(dir.path());
     let child = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"gate","name":"确认","stage":"work","executor":{"type":"control"},"confirmation":"human"}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"并行工作"}],"steps":[
+        json!({"schema_version":6,"stages":[{"key":"work","name":"并行工作"}],"steps":[
       {"key":"left","name":"分支一","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}},
       {"key":"right","name":"分支二","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
     );
@@ -1887,7 +1887,7 @@ fn actual_git_candidate(waived_advance: bool) {
         "actual change\n",
     )
     .unwrap();
-    let mut document = json!({"schema_version":5,"stages":[{"key":"work","name":"Git 工具"}],"steps":[
+    let mut document = json!({"schema_version":6,"stages":[{"key":"work","name":"Git 工具"}],"steps":[
         {"key":"current","name":"当前版本","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current:1","arguments":{"owner_id":{"type":"constant","value":task}}},"outputs":{"workspace":{"delivery_ref":"fixture-delivery-object:1"}}},
         {"key":"snapshot","name":"固定实际代码","stage":"work","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot:2","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["addition.txt"]},"include_diff":{"type":"constant","value":true}}},"outputs":{"workspace":{"delivery_ref":"fixture-delivery-object:1"}}},
         {"key":"candidate","name":"实际候选","stage":"work","dependencies":["snapshot"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-candidate:1","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"target_revision":{"type":"constant","value":base}}},"outputs":{"candidate":{"delivery_ref":"fixture-delivery-object:1"}}}
@@ -2079,15 +2079,15 @@ fn ancestor_pause_suspends_nested_dispatch_without_overriding_a_child_pause() {
     let engine = engine(dir.path());
     let leaf = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"末层"}],"steps":[{"key":"capture","name":"封存","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1"}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"末层"}],"steps":[{"key":"capture","name":"封存","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1"}}]}),
     );
     let middle = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"中层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":leaf["id"]}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"中层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":leaf["id"]}}]}),
     );
     let root = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"根层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":middle["id"]}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"根层"}],"steps":[{"key":"child","name":"子流程","stage":"work","executor":{"type":"workflow","workflow_ref":middle["id"]}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"暂停边界"})).unwrap();
     let run = command(
@@ -2208,7 +2208,7 @@ fn task_creation_keeps_business_metadata_and_dependent_worktrees_use_the_latest_
         .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"任务创建"}],"steps":[{"key":"tasks","name":"建立任务","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"第一项","instructions":"初始工作","dependencies":[],"business_metadata":{"category":"investigation"}},{"key":"second","title":"后继项","instructions":"使用前项结果","dependencies":["first"]}]}}},"outputs":{"tasks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"任务创建"}],"steps":[{"key":"tasks","name":"建立任务","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"第一项","instructions":"初始工作","dependencies":[],"business_metadata":{"category":"investigation"}},{"key":"second","title":"后继项","instructions":"使用前项结果","dependencies":["first"]}]}}},"outputs":{"tasks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
     );
     let run = engine
         .execute(
@@ -2305,7 +2305,7 @@ fn canonical_output_contract_describes_text_values_dynamic_checks_and_conditiona
     .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"自定义评估"}],"steps":[{"key":"evaluate","name":"评估","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"输出正文与内容判断。","spec_refs":[spec["id"]],"outputs":{"document":{"delivery_ref":text["id"]},"review":{"delivery_ref":report["id"],"content_checks":true}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"自定义评估"}],"steps":[{"key":"evaluate","name":"评估","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"输出正文与内容判断。","spec_refs":[spec["id"]],"outputs":{"document":{"delivery_ref":text["id"]},"review":{"delivery_ref":report["id"],"content_checks":true}}}]}),
     );
     let preview = engine
         .query(
@@ -2348,11 +2348,11 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
     let (role, agent) = research_agent(&engine);
     let child = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"study","name":"调查","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"处理当前任务","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"子工作"}],"steps":[{"key":"study","name":"调查","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"处理当前任务","outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
     );
     let parent = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"父工作"}],"steps":[{"key":"child","name":"子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"父工作"}],"steps":[{"key":"child","name":"子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
     );
     let project = command(&engine, "project.create", None, json!({"title":"派发恢复"})).unwrap();
     let run=command(&engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":parent["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
@@ -2689,7 +2689,7 @@ fn configured_task_completion_works_without_git_and_releases_declared_dependenci
         .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"research","name":"材料调查"}],"steps":[
+        json!({"schema_version":6,"stages":[{"key":"research","name":"材料调查"}],"steps":[
             {"key":"create","name":"创建明确任务","stage":"research","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-create:1","arguments":{"tasks":{"type":"constant","value":[{"key":"first","title":"整理材料","dependencies":[]},{"key":"second","title":"核对材料","dependencies":["first"]}]}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}},
             {"key":"first","name":"接纳第一项","stage":"research","dependencies":["create"],"executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete:1","arguments":{"task_id":{"type":"source","source":{"step":"create","port":"result","pointer":"/tasks/0/id"}}}}},
             {"key":"second","name":"接纳后继项","stage":"research","dependencies":["first"],"executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete:1","arguments":{"task_id":{"type":"source","source":{"step":"create","port":"result","pointer":"/tasks/1/id"}}}}}
@@ -2771,7 +2771,7 @@ fn task_agent_steps_own_distinct_sessions_even_while_the_same_agent_has_an_activ
         .unwrap();
     let workflow = publish(
         &engine,
-        json!({"schema_version":5,"stages":[{"key":"research","name":"调查","default_role_ref":role["id"]}],"steps":[
+        json!({"schema_version":6,"stages":[{"key":"research","name":"调查","default_role_ref":role["id"]}],"steps":[
             {"key":"first","name":"第一项","stage":"research","executor":{"type":"agent"},"task_instructions":"分析第一项材料"},
             {"key":"gate","name":"继续独立调查","stage":"research","executor":{"type":"control"},"confirmation":"human"},
             {"key":"second","name":"第二项","stage":"research","dependencies":["gate"],"executor":{"type":"agent"},"task_instructions":"分析第二项材料"}

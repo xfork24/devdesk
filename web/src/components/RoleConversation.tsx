@@ -106,7 +106,7 @@ export function RoleConversation({
         : tasks.find((t) => t.id === owner);
   const featureLock = configurations.find(
     (r) =>
-      r.kind === "feature_workflow_configuration" &&
+      r.kind === "work_configuration" &&
       r.definition_id === feature?.id,
   );
   const runtime = configurations.find(

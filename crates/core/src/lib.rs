@@ -7,6 +7,7 @@ mod configured_workflows;
 mod controllers;
 mod orchestration;
 mod platform_tools;
+mod standards;
 pub use controllers::CONTROL_TOOLS;
 mod workflow_changes;
 pub use configured_runtime::task_input as render_source_task;
@@ -471,6 +472,9 @@ impl Engine {
         if let Some(result) = self.configured_runtime_command(method, c, s)? {
             return Ok(result);
         }
+        if let Some(result) = self.standard_command(method, c, s)? {
+            return Ok(result);
+        }
         if let Some(result) = self.configured_workflow_command(method, c, s)? {
             return Ok(result);
         }
@@ -736,6 +740,9 @@ impl Engine {
         if let Some(result) = self.configured_runtime_query(method, p) {
             return result;
         }
+        if let Some(result) = self.standard_query(method, p) {
+            return result;
+        }
         if let Some(result) = self.configured_workflow_query(method, p) {
             return result;
         }
@@ -809,7 +816,7 @@ impl Engine {
                 Ok(
                     json!({"projects":s.projects,"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"total_projects":s.projects.len(),
                     "summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":steps.iter().filter(|r|r["status"]=="running").count(),"waiting_confirmation":steps.iter().filter(|r|r["status"]=="waiting_confirmation").count(),"blocked":steps.iter().filter(|r|["failed","needs_reconciliation","waiting_input"].contains(&r["status"].as_str().unwrap_or(""))).count()},
-                    "configurations":s.governance.iter().filter(|r|["workflow_instance","project_configuration","feature_workflow_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),
+                    "configurations":s.governance.iter().filter(|r|["workflow_instance","project_configuration","work_configuration"].contains(&r.kind.as_str())).collect::<Vec<_>>(),
                     "delivery_types":s.governance.iter().filter(|r|r.kind=="delivery_type"&&template_record_current(&s,r)).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|template_projection_current(&s,d)).collect::<Vec<_>>(),"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live",
                     "repository_ready":s.repository_worktrees.iter().any(|w|w.kind==WorktreeKind::Mainline),"global_concurrency":global_limit}),
                 )

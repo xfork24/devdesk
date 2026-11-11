@@ -239,12 +239,12 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 15),
+        (dir.path().join("global.sqlite3"), 16),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            46,
+            47,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -354,7 +354,7 @@ fn empty_or_cleared_datasets_initialize_despite_hidden_metadata() {
         None,
         Some("devdesk-schema-v1\n"),
         Some("devdesk-schema-v1\\n"),
-        Some("devdesk-source-v2\n"),
+        Some("devdesk-source-v2-standard-v1\n"),
     ] {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join(".DS_Store"), b"Finder metadata").unwrap();
@@ -365,7 +365,7 @@ fn empty_or_cleared_datasets_initialize_despite_hidden_metadata() {
         let store = GlobalStore::open(directory.path()).unwrap();
         assert_eq!(
             std::fs::read_to_string(directory.path().join(".devdesk-dataset")).unwrap(),
-            "devdesk-source-v2\n"
+            "devdesk-source-v2-standard-v1\n"
         );
         assert!(directory.path().join("global.sqlite3").is_file());
         drop(store);

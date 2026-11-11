@@ -56,6 +56,7 @@ import "./style.css";
 import { ConfigurationPage } from "./components/ConfigurationPages";
 import { CallHistory } from "./components/Integrations";
 import { AgentCatalog } from "./components/AgentCatalog";
+import { WorkStandard } from "./components/WorkStandard";
 import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
 import { RepositorySettings } from "./components/RepositorySettings";
 import { RoleConversation } from "./components/RoleConversation";
@@ -1194,6 +1195,17 @@ function App() {
                         <strong>{task.title}</strong>
                         <Badge value={task.status} />
                         <p>{task.dependencies.length} 个依赖</p>
+                        <WorkStandard
+                          request={rpc}
+                          projectId={projectId}
+                          owner={task}
+                          instance={data?.configurations?.find(
+                            (r: RecordData) =>
+                              r.kind === "workflow_instance" &&
+                              r.data.owner_id === task.id,
+                          )}
+                          refresh={load}
+                        />
                       </article>
                     ))}
                   </div>

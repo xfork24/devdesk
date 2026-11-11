@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前数据结构基线为 global 15 / project 46。Workflow 使用 v5，Spec / Standard 使用 v3，Agent 任务使用 `agent-task/v5`，普通 Proposal 使用 v2。只支持当前合同；只接受源协议 v2 和新数据集；不升级旧数据。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
+当前数据结构基线为 global 16 / project 47。Workflow 使用 v6，Spec 使用 v3，Standard 使用 v4，Agent 任务使用 `agent-task/v6`，普通 Proposal 使用 v2。只支持当前合同；只接受源协议 v2 和新数据集；不升级旧数据。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
 
 ## 配置概念
 
@@ -13,7 +13,7 @@
 | Skill | 可复用方法、材料及工具依赖。正文和包资源保留确切来源，不自动产生执行权限。 |
 | Delivery 类型 | 格式、离线 JSON Schema 和 Spec 源引用；规范正文由 Spec 唯一拥有。 |
 | Spec | 唯一规范正文及任意内容检查项。 |
-| Standard | Role / Delivery / 标签适用选择器和 Spec 覆盖基线；核对匹配落点、必需规范及最低数量，不改写 Step。 |
+| Standard | Workflow、Delivery、Spec 及声明关系的不可变快照；不区分 Project、Feature、Task；无独立覆盖规则。 |
 | Workflow | 显式输入输出、Stage、Step、依赖与整体完成条件。 |
 | Stage | 业务分组、背景和可选默认 Role；子流程使用自己的 Stage 配置。 |
 | Step | 本次任务、执行方式、Role 覆盖、必需 Skill、Spec、端口、工作上下文、预算和推进规则。 |
@@ -88,3 +88,11 @@ WorkflowPlanRevision 保存不可变闭包；StepExecution 保存当时计划、
 TypedMaterial 是有来源的封存材料；bypass、waiver、原评审和实际运行事实分别记录。绕过仍供应下游的阶段必须显式替换材料；最终端口缺失时拒绝变更。Git 的业务测试或确认要求可以在授权内豁免，真实候选、作用域和 CAS 不可伪造。
 
 源配置、权限归属及无持久化投影的存储规则见[源配置与执行解析](source-configuration.md)。
+
+## Standard 与规范采用
+
+Standard v4 只保存 `root_workflow_refs`，沿不可变确切源引用恢复 Workflow、Delivery、Spec 及关联。根引用是解析锚点，闭包中的 Workflow 都可作为工作的入口。Standard 没有业务 owner 或工作类型；源封套的可见性是存储访问元数据。
+
+Project 默认、Feature 和 Task 通过通用采用关系引用它。同一 Feature 下的不同 Task 可以使用不同 Standard。Workflow 的显式 `work_binding` 从真实工作引用解析其采用配置，逐成员固定 Standard 和入口；外部端口合同必须与父调用兼容。普通静态子流程不会被项目默认值替换。
+
+运行计划固定当时的 Standard。规范变更通过同一 ChangeSet 预演并原子切换，旧执行、输入、产物、计划及原生任务仍引用原 Standard。快照相同只表示定义相同，实际检查、豁免、测试和 Git 回执继续作为运行事实记录。

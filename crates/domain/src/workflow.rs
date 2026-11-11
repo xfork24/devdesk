@@ -3,7 +3,7 @@ use crate::*;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const WORKFLOW_SCHEMA_VERSION: u64 = 5;
+pub const WORKFLOW_SCHEMA_VERSION: u64 = 6;
 pub const WORKFLOW_STEP_LIMIT: usize = 1000;
 pub const WORKFLOW_DEPTH_LIMIT: usize = 8;
 
@@ -92,8 +92,18 @@ pub enum StepExecutor {
         workflow_ref: Id,
         #[serde(default)]
         foreach: Option<CollectionExecution>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work_binding: Option<WorkBinding>,
     },
     Control,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkBinding {
+    pub input: String,
+    #[serde(default)]
+    pub pointer: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -237,28 +247,6 @@ pub struct ExecutionFact {
     pub outcome: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StepSelector {
-    #[serde(default)]
-    pub role_ref: Option<Id>,
-    #[serde(default)]
-    pub delivery_ref: Option<Id>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-}
-impl StepSelector {
-    pub fn matches(&self, role: Option<&str>, deliveries: &[&str], tags: &[String]) -> bool {
-        self.role_ref
-            .as_deref()
-            .is_none_or(|expected| Some(expected) == role)
-            && self
-                .delivery_ref
-                .as_deref()
-                .is_none_or(|expected| deliveries.contains(&expected))
-            && self.tags.iter().all(|tag| tags.contains(tag))
-    }
-}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContentCheckDefinition {
@@ -327,37 +315,6 @@ impl ConfiguredSpecification {
                     && !check.name.trim().is_empty()
                     && !check.instructions.trim().is_empty(),
                 "检查项需要唯一标识、名称及要求",
-            )?;
-        }
-        Ok(())
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ConfiguredBaselineRule {
-    pub selector: StepSelector,
-    pub required_spec_refs: Vec<Id>,
-    pub min_matches: u64,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ConfiguredStandard {
-    pub schema_version: u64,
-    pub body: String,
-    pub baseline_rules: Vec<ConfiguredBaselineRule>,
-}
-impl ConfiguredStandard {
-    pub fn validate(&self) -> Result<()> {
-        require(
-            self.schema_version == 3
-                && !self.body.trim().is_empty()
-                && !self.baseline_rules.is_empty(),
-            "Standard 需要当前结构、正文和覆盖规则",
-        )?;
-        for rule in &self.baseline_rules {
-            require(
-                rule.min_matches > 0 && !rule.required_spec_refs.is_empty(),
-                "基线需要非零匹配下限和明确 Spec",
             )?;
         }
         Ok(())
@@ -536,7 +493,7 @@ impl WorkflowDefinition {
     pub fn validate(&self) -> Result<Vec<String>> {
         require(
             self.schema_version == WORKFLOW_SCHEMA_VERSION,
-            "Workflow 需要 Schema v5，请显式转换旧定义",
+            "Workflow 需要 Schema v6，请显式转换旧定义",
         )?;
         require(
             !self.steps.is_empty() && self.steps.len() <= WORKFLOW_STEP_LIMIT,
@@ -618,7 +575,21 @@ impl WorkflowDefinition {
                         StepExecutor::Workflow {
                             workflow_ref,
                             foreach,
+                            work_binding,
                         } => {
+                            if let Some(binding) = work_binding {
+                                require(
+                                    step.inputs.contains_key(&binding.input)
+                                        || foreach
+                                            .as_ref()
+                                            .is_some_and(|c| c.item_input == binding.input),
+                                    "工作配置调用必须引用声明输入或集合成员",
+                                )?;
+                                require(
+                                    binding.pointer.is_empty() || binding.pointer.starts_with('/'),
+                                    "工作引用需要合法 JSON Pointer",
+                                )?;
+                            }
                             require(!workflow_ref.is_empty(), "请选择子流程修订")?;
                             if let Some(collection) = foreach {
                                 self.source(&collection.source, &ancestors)?;
@@ -782,7 +753,7 @@ pub struct ConfiguredAgentTask {
 impl ConfiguredAgentTask {
     pub fn validate(&self) -> Result<()> {
         require(
-            self.renderer_version == "agent-task/v5"
+            self.renderer_version == "agent-task/v6"
                 && self.task["renderer_version"] == self.renderer_version
                 && configuration_hash(&self.task) == self.digest,
             "通用任务摘要或渲染合同不匹配",
@@ -803,7 +774,7 @@ mod tests {
     use serde_json::json;
 
     fn workflow() -> WorkflowDefinition {
-        serde_json::from_value(json!({"schema_version":5,"stages":[{"key":"investigate","name":"安全调查","default_role_ref":"custom-researcher"}],
+        serde_json::from_value(json!({"schema_version":6,"stages":[{"key":"investigate","name":"安全调查","default_role_ref":"custom-researcher"}],
             "steps":[{"key":"discover","name":"发现风险","stage":"investigate","executor":{"type":"agent"},
             "task_instructions":"使用当前调研 Skill 分析输入并提交风险。","outputs":{"risks":{"delivery_ref":"custom-risk-json"}}},
             {"key":"inspect","name":"核对风险","stage":"investigate","executor":{"type":"agent","role_ref":"custom-auditor"},
@@ -910,6 +881,7 @@ impl EngineeringState {
         // An immutable source plan is shared by many executions. Parse and hash
         // each contract once per transaction rather than once per execution.
         let mut contracts: BTreeMap<Id, BTreeMap<Id, String>> = BTreeMap::new();
+        let mut normative_workflows: BTreeMap<Id, BTreeSet<Id>> = BTreeMap::new();
         for record in self
             .governance
             .iter()
@@ -940,7 +912,7 @@ impl EngineeringState {
             .filter(|r| r.kind == "workflow_instance")
         {
             require(
-                record.data["schema_version"] == 5,
+                record.data["schema_version"] == 6,
                 "过时 Workflow 运行数据需要显式离线升级",
             )?;
             if let Some(old) = before.governance.iter().find(|r| r.id == record.id) {
@@ -968,6 +940,38 @@ impl EngineeringState {
                     && plan.data["inputs"] == record.data["inputs"]
                     && plan.data["role_agent_bindings"] == record.data["role_agent_bindings"],
                 "实例内容与不可变运行计划不匹配",
+            )?;
+            let standard = plan.data["standard_ref"]
+                .as_str()
+                .ok_or_else(|| err("invalid_standard", "运行计划缺少 Standard"))?;
+            require(
+                plan.data["standard_ref"] == record.data["plan"]["standard_ref"]
+                    && plan.data["owner_id"] == record.data["owner_id"],
+                "运行计划的规范采用与工作不一致",
+            )?;
+            let scope = Scope::Project {
+                project_id: record.data["project_id"].as_str().unwrap_or("").into(),
+            };
+            require(
+                self.configuration(standard)?.scope.visible_from(&scope),
+                "Standard 源不可见",
+            )?;
+            if !normative_workflows.contains_key(standard) {
+                normative_workflows.insert(
+                    standard.into(),
+                    standard_snapshot(self, standard, &scope)?
+                        .nodes
+                        .into_iter()
+                        .filter(|n| n.kind == "workflow")
+                        .map(|n| n.reference)
+                        .collect(),
+                );
+            }
+            require(
+                plan.data["workflow_ref"]
+                    .as_str()
+                    .is_some_and(|r| normative_workflows[standard].contains(r)),
+                "运行 Workflow 不在所采用的 Standard 闭包中",
             )?;
             let steps: Vec<StepExecution> = serde_json::from_value(record.data["steps"].clone())
                 .map_err(|e| err("invalid_workflow", e.to_string()))?;

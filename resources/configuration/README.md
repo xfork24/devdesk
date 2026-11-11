@@ -15,7 +15,7 @@
 | Workflow | 原有 Stage、Step、依赖、任务正文、端口、预算、业务完成条件及确认要求。 |
 | Delivery | 格式、离线 JSON Schema、必填 `spec_refs` 与可选的产出来源约束。所有交付的内容要求由对应 Spec 定义。 |
 | Spec | 唯一规范正文和内容检查项。 |
-| Standard | 可选的规范覆盖基线。 |
+| Standard | Workflow、Delivery、Spec 及声明关系的不可变快照，使用者分别引用。 |
 | Permission Profile | 文件、网络、工具和审批策略。 |
 | Permission Context | Sandbox 及权限绑定选择、Workflow/Step 的授权范围、Controller 操作策略。 |
 

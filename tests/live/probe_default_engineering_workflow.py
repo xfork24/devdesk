@@ -33,7 +33,7 @@ try:
    assert completed['detail']['feature']['status']=='completed' and len(completed['detail']['tasks'])==1 and completed['detail']['tasks'][0]['status']=='completed'
    rows=[r for r in completed['configurations'] if r['kind']=='workflow_instance' and r['data']['root_instance_id']==root_id]
    publications=verify_evidence(c,rows,OUT)
-   (OUT/'report.md').write_text('# Native default engineering Workflow v5\n\nPassed actual Codex, managed Git, Docker Red/Green, independent reviews, the frozen confirmation policy and explicit completion. Both GitHub PRs merged at their exact tested candidate SHA. Completed-instance resume only revalidated saved facts; it did not take over, dispatch or republish. The documented same-dataset failures and resumptions remain preserved.\n\nRoot: '+root_id+'\nFeature: '+feature+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n')
+   (OUT/'report.md').write_text('# Native default engineering Workflow v6\n\nPassed actual Codex, managed Git, Docker Red/Green, independent reviews, the frozen confirmation policy and explicit completion. Both GitHub PRs merged at their exact tested candidate SHA. Completed-instance resume only revalidated saved facts; it did not take over, dispatch or republish. The documented same-dataset failures and resumptions remain preserved.\n\nRoot: '+root_id+'\nFeature: '+feature+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n')
    print('PASS completed native default engineering Workflow evidence; no takeover or redispatch',flush=True)
    sys.exit(0)
   # This continuation is limited to stopped, interrupted Agent executions. No business
@@ -62,7 +62,7 @@ try:
   manager_row=c.rpc('query.orchestration',{'id':manager})['record'];c.command('orchestration.resume',manager,manager_row['revision'],{'epoch':manager_row['data']['epoch']})
   m=c.rpc('query.orchestration',{'id':manager})['record'];print('Resumed preserved root:',root_id,flush=True)
  else:
-  project=c.command('project.open_github',payload={'repository':args.github_repo,'mainline':'main','title':'Workflow v5 engineering acceptance'})['id'];c.project=project
+  project=c.command('project.open_github',payload={'repository':args.github_repo,'mainline':'main','title':'Workflow v6 engineering acceptance'})['id'];c.project=project
   c.wait(lambda:c.rpc('query.workspace'),lambda v:v['repository_ready'],300)
   runtime=c.rpc('runtime.prepare',{'provider':'codex'});image=runtime['artifact']['image_id']
   defaults=c.rpc('query.configuration_defaults');workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v5-{suffix}/greeting.mjs';task_test=f'tests/workflow-v5-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v5-{suffix}-feature/behavior.test.mjs';increment_test=f'test/workflow-v5-{suffix}-increments.test.mjs'
@@ -70,7 +70,7 @@ try:
   assert all(step.get('confirmation','automatic')=='automatic' for step in workflow['steps'])
   published={'id':defaults['workflow_ref']};p=c.rpc('query.workspace')['active_project']
   configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'permission_context_ref':defaults['permission_context_ref']})
-  feature=c.command('feature.create',payload={'project_id':project,'title':'Workflow v5 greeting '+suffix,'configuration_revision_id':configuration['id']})['id']
+  feature=c.command('feature.create',payload={'project_id':project,'title':'Workflow v6 greeting '+suffix,'configuration_revision_id':configuration['id']})['id']
   (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':True,'required_increment_pairs':2,'unattended':args.unattended},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
   initial=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=initial['record']['id']
   manager=c.command('orchestration.open',root_id,initial['record']['revision'],{})['id']
@@ -114,7 +114,7 @@ try:
    assert view['detail']['feature']['status']=='completed';assert len(view['detail']['tasks'])==1 and view['detail']['tasks'][0]['status']=='completed'
    publications=verify_evidence(c,rows,OUT)
    print('PASS native default engineering Workflow',root['id'],flush=True)
-   (OUT/'report.md').write_text('# Native default engineering Workflow v5\n\nPassed through actual Codex, managed Git, Docker Red/Green and candidate tests; both GitHub PRs merged at their exact candidate SHA.\n\nRoot: '+root['id']+'\nFeature: '+feature+'\nNew confirmations in this invocation: '+str(len(confirmed))+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n');break
+   (OUT/'report.md').write_text('# Native default engineering Workflow v6\n\nPassed through actual Codex, managed Git, Docker Red/Green and candidate tests; both GitHub PRs merged at their exact candidate SHA.\n\nRoot: '+root['id']+'\nFeature: '+feature+'\nNew confirmations in this invocation: '+str(len(confirmed))+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n');break
   time.sleep(5)
  else:raise TimeoutError('Default engineering workflow')
 except SystemExit:

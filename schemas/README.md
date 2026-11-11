@@ -6,10 +6,10 @@
 |---|---|
 | `orchestration.schema.json` | ControlPolicy、actor、ChangeSet、typed material 和运行时变更。 |
 | `rpc.schema.json` | JSON-RPC、配置修订、原生执行，以及 Workflow 运行实例和 StepExecution。 |
-| `workflow.schema.json` | Workflow v5：Stage、四种执行器、显式端口、访问范围、预算与有界完成规则。 |
-| `agent-task.schema.json` | `ConfiguredAgentTask`，renderer `agent-task/v5`；保存实际 Turn、Agent、输入正文、来源与摘要。 |
-| `spec.schema.json` / `standard.schema.json` | Spec / Standard v3，动态内容检查项和配置化覆盖基线。 |
-| `project-configuration.schema.json` / `feature-configuration.schema.json` | 项目配置与 Feature 冻结关联 v3。 |
+| `workflow.schema.json` | Workflow v6：Stage、四种执行器、显式端口、访问范围、预算与有界完成规则。 |
+| `agent-task.schema.json` | `ConfiguredAgentTask`，renderer `agent-task/v6`；保存实际 Turn、Agent、输入正文、来源与摘要。 |
+| `spec.schema.json` / `standard.schema.json` | Spec v3 / Standard v4，动态内容检查项和不可变规范快照。 |
+| `project-configuration.schema.json` / `work-configuration.schema.json` | 项目配置 v4 与通用工作采用记录 v1。 |
 | `manifest.schema.json` | 真实材料、会话 Snapshot 与 Artifact，不再描述旧业务 Delivery 清单。 |
 | `role.schema.json` / `capability.schema.json` / `agent-input.schema.json` / `agent-composition.schema.json` | 自由 Role、能力及 Agent 组合；Role 不推导工作类型或写权限。 |
 | `tool.schema.json` / `integration*.schema.json` / `tool-call.schema.json` / `skill-package.schema.json` | 平台工具、HTTP/MCP 接入、授权绑定、实际调用和 Skill 包。 |

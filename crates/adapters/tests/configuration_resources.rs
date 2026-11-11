@@ -387,7 +387,7 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
     )
     .unwrap();
     assert_eq!(saved["data"]["permission_context_ref"], context["id"]);
-    assert!(saved["data"].get("specification_snapshot").is_none());
+    assert!(saved["data"].get("specification_view").is_none());
     let integrations = command(
         &e,
         "integration.project.bind",
@@ -434,7 +434,7 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
         json!({"name":"Shared document norm v2","data":{"schema_version":3,"body":"An explicitly adopted future norm","checks":[]}}),
     )
     .unwrap();
-    let draft = command(&e, "workflow.create", None, json!({"name":"Document flow","document":{"schema_version":5,"stages":[{"key":"work","name":"Work","default_role_ref":"builtin-role-analyst:1"}],"steps":[
+    let draft = command(&e, "workflow.create", None, json!({"name":"Document flow","document":{"schema_version":6,"stages":[{"key":"work","name":"Work","default_role_ref":"builtin-role-analyst:1"}],"steps":[
         {"key":"produce","name":"Produce","stage":"work","executor":{"type":"agent"},"task_instructions":"Write the document","outputs":{"document":{"delivery_ref":delivery["id"]}}},
         {"key":"consume","name":"Consume","stage":"work","executor":{"type":"agent"},"task_instructions":"Read the document","dependencies":["produce"],"inputs":{"document":{"type":"source","source":{"step":"produce","port":"document"}}}}
     ]}})).unwrap();
@@ -540,7 +540,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
         }
     }
     let mut forged = state
-        .configuration("builtin-workflow-task-sol-high:5")
+        .configuration("builtin-workflow-task-sol-high:6")
         .unwrap()
         .data
         .clone();

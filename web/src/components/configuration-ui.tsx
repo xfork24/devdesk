@@ -59,7 +59,11 @@ export async function loadCatalog(
     offset += page.records.length;
     if (offset >= page.total || page.records.length === 0) break;
   }
-  return result;
+  const standards = await request("query.standard_catalog", {
+    project_id: project?.id,
+    include_archived: includeArchived,
+  });
+  return [...result.filter((r) => r.kind !== "standard"), ...standards.records];
 }
 export async function loadIntegrationRecords(request: Request, project?: Row) {
   const result: Row[] = [];

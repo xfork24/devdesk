@@ -7,6 +7,10 @@ use std::collections::BTreeMap;
 pub struct ConfiguredWorkflowPlan {
     pub workflow_revision_id: Id,
     #[serde(default)]
+    pub standard_ref: Option<Id>,
+    #[serde(default)]
+    pub work_configuration_ref: Option<Id>,
+    #[serde(default)]
     pub permission_context_ref: Option<Id>,
     #[serde(default)]
     pub permission_workflow_ref: Option<Id>,
@@ -16,7 +20,7 @@ pub struct ConfiguredWorkflowPlan {
     pub permission_locks: BTreeMap<Id, VersionedPermissionLock>,
     pub tool_bindings: BTreeMap<Id, BoundTool>,
     pub integration_locks: BTreeMap<Id, IntegrationLock>,
-    pub specification_snapshot: Vec<Value>,
+    pub specification_view: Vec<Value>,
 }
 
 impl Engine {
@@ -46,7 +50,7 @@ impl Engine {
                 Some(&bindings),
             )?;
             if let Some(id) = configuration.data["standard_ref"].as_str() {
-                self.check_configured_baseline(&state, &plan, id, &configuration.scope)?;
+                standard_entry(&state, id, &plan.workflow_revision_id, &configuration.scope)?;
             }
             Ok::<_, Error>(())
         })();
@@ -91,7 +95,7 @@ impl Engine {
         .find_map(|id| state.configuration(id).ok())
         .cloned();
         let family = method.split('.').next().unwrap_or("");
-        if ["spec", "standard"].contains(&family)
+        if family == "spec"
             && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
             && p["data"]["schema_version"] == 3
         {
@@ -120,20 +124,9 @@ impl Engine {
                     .map_err(|e| err("invalid_params", e.to_string()))
                 })?;
             self.check_configured_workflow_scope(&scope)?;
-            if family == "spec" {
-                serde_json::from_value::<ConfiguredSpecification>(p["data"].clone())
-                    .map_err(|e| err("invalid_configuration", e.to_string()))?
-                    .validate()?;
-            } else {
-                let definition: ConfiguredStandard = serde_json::from_value(p["data"].clone())
-                    .map_err(|e| err("invalid_configuration", e.to_string()))?;
-                definition.validate()?;
-                for rule in &definition.baseline_rules {
-                    for spec in &rule.required_spec_refs {
-                        reference(state, spec, "spec", &scope)?;
-                    }
-                }
-            }
+            serde_json::from_value::<ConfiguredSpecification>(p["data"].clone())
+                .map_err(|e| err("invalid_configuration", e.to_string()))?
+                .validate()?;
             let row = record(
                 family,
                 old.as_ref()
@@ -150,9 +143,9 @@ impl Engine {
             state.governance.push(row);
             return Ok(Some(result));
         }
-        let is_current = document.is_some_and(|doc| doc["schema_version"] == 5)
+        let is_current = document.is_some_and(|doc| doc["schema_version"] == 6)
             || selected.as_ref().is_some_and(|r| {
-                r.data["schema_version"] == 5 || r.data["document"]["schema_version"] == 5
+                r.data["schema_version"] == 6 || r.data["document"]["schema_version"] == 6
             });
         if !is_current {
             return Ok(None);
@@ -225,16 +218,23 @@ impl Engine {
                         "编排能力缺少控制工具",
                     )?;
                 }
-                let plan = self.compile_configured_workflow(
+                self.compile_configured_workflow(
                     &selected_state,
                     &workflow,
                     &scope,
                     Some(&bindings),
                 )?;
-                let _baseline = if let Some(id) = p["standard_ref"].as_str() {
-                    Some(self.check_configured_baseline(state, &plan, id, &scope)?)
+                let standard_ref = if let Some(id) = p["standard_ref"].as_str() {
+                    standard_entry(state, id, &workflow.id, &scope)?;
+                    id.to_owned()
                 } else {
-                    None
+                    crate::standards::capture_standard(
+                        state,
+                        vec![workflow.id.clone()],
+                        &scope,
+                        "规范快照",
+                    )?
+                    .id
                 };
                 let old = state
                     .governance
@@ -249,7 +249,7 @@ impl Engine {
                     project.title,
                     old.as_ref().map_or(1, |r| r.version + 1),
                     old.map(|r| r.id),
-                    json!({"schema_version":3,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":p["standard_ref"],
+                    json!({"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
                     "orchestrator_role_ref":p["orchestrator_role_ref"],"permission_context_ref":context_ref}),
                     true,
                 );
@@ -282,7 +282,7 @@ impl Engine {
                     .ok_or_else(|| err("invalid_params", "缺少流程正文"))?;
                 let definition: WorkflowDefinition = serde_json::from_value(doc.clone())
                     .map_err(|e| err("invalid_workflow", e.to_string()))?;
-                require(definition.schema_version == 5, "草稿需要 Workflow v5")?;
+                require(definition.schema_version == 6, "草稿需要 Workflow v6")?;
                 let identity = if method == "workflow.draft.create" {
                     selected
                         .as_ref()
@@ -321,7 +321,7 @@ impl Engine {
                 let doc = document.cloned().unwrap_or(old.data["document"].clone());
                 let definition: WorkflowDefinition = serde_json::from_value(doc.clone())
                     .map_err(|e| err("invalid_workflow", e.to_string()))?;
-                require(definition.schema_version == 5, "草稿需要 Workflow v5")?;
+                require(definition.schema_version == 6, "草稿需要 Workflow v6")?;
                 let row = state
                     .governance
                     .iter_mut()
@@ -411,55 +411,6 @@ impl Engine {
         }
     }
 
-    pub(crate) fn check_configured_baseline(
-        &self,
-        state: &EngineeringState,
-        plan: &ConfiguredWorkflowPlan,
-        id: &str,
-        scope: &Scope,
-    ) -> Result<Value> {
-        let record = reference(state, id, "standard", scope)?;
-        let standard: ConfiguredStandard = record.decode()?;
-        standard.validate()?;
-        for rule in &standard.baseline_rules {
-            let matches: Vec<_> = plan
-                .specification_snapshot
-                .iter()
-                .filter(|binding| {
-                    let deliveries: Vec<_> = binding["outputs"]
-                        .as_object()
-                        .into_iter()
-                        .flat_map(|o| o.values())
-                        .filter_map(|v| v["delivery_ref"].as_str())
-                        .collect();
-                    let tags: Vec<String> = binding["tags"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|v| v.as_str().map(str::to_owned))
-                        .collect();
-                    rule.selector
-                        .matches(binding["role_ref"].as_str(), &deliveries, &tags)
-                })
-                .collect();
-            require(
-                matches.len() as u64 >= rule.min_matches,
-                "基线规则没有足够的实际步骤落点",
-            )?;
-            for binding in matches {
-                for spec in &rule.required_spec_refs {
-                    require(
-                        binding["spec_refs"]
-                            .as_array()
-                            .is_some_and(|v| v.contains(&json!(spec))),
-                        format!("{} 缺少规范 {spec}", binding["path"]),
-                    )?;
-                }
-            }
-        }
-        Ok(json!({"standard_ref":id,"valid":true,"errors":[]}))
-    }
-
     pub(crate) fn configured_workflow_query(
         &self,
         method: &str,
@@ -502,7 +453,7 @@ impl Engine {
         if row.kind == "workflow_draft" {
             row.data = row.data["document"].clone();
         }
-        if row.data["schema_version"] != 5 {
+        if row.data["schema_version"] != 6 {
             return None;
         }
         Some((|| {
@@ -612,7 +563,7 @@ impl Engine {
                 let instance = ConfiguredWorkflowInstance {
                     active_plan_revision_id: "preview".into(),
                     control_version: 1,
-                    schema_version: 5,
+                    schema_version: 6,
                     owner_id: "preview".into(),
                     workflow_ref: row.id.clone(),
                     project_id: scope.project().unwrap_or("").into(),
@@ -634,15 +585,12 @@ impl Engine {
                     json!({"configured":true,"task":content,"rendered_input":rendered,"diagnostics":["预览使用与实际派发相同的任务组装器；未执行的输入显示明确来源，运行时替换为确切值。"]}),
                 );
             }
-            let baseline = params["standard_ref"].as_str().map(|id| {
-                self.check_configured_baseline(&state, &plan, id, &scope)
-                    .unwrap_or_else(
-                        |e| json!({"standard_ref":id,"valid":false,"errors":[e.message]}),
-                    )
-            });
+            if let Some(id) = params["standard_ref"].as_str() {
+                standard_entry(&state, id, &row.id, &scope)?;
+            }
             Ok(
-                json!({"valid":baseline.as_ref().is_none_or(|b|b["valid"]==true),"schema_version":5,"roles":plan.roles.values().collect::<Vec<_>>(),"specification_snapshot":plan.specification_snapshot,
-                "baseline_check":baseline,"document":plan.document,"definition_hashes":plan.definitions.iter().map(|(id,r)|(id,&r.content_hash)).collect::<BTreeMap<_,_>>()}),
+                json!({"valid":true,"schema_version":6,"roles":plan.roles.values().collect::<Vec<_>>(),"specification_view":plan.specification_view,
+                "document":plan.document,"definition_hashes":plan.definitions.iter().map(|(id,r)|(id,&r.content_hash)).collect::<BTreeMap<_,_>>()}),
             )
         })())
     }
@@ -858,8 +806,21 @@ pub fn compile_workflow_sources(
                 }
                 require(!keys.is_empty(), "内容判断输出需要 Spec 检查项")?;
             }
-            plan.specification_snapshot.push(json!({"path":location,"step":step.key,"role_ref":doc.role(step).and_then(|id|crate::configuration::role_record(state,id).ok()).map(|role|&role.definition_id),
-                    "spec_refs":step.spec_refs,"outputs":step.outputs,"completion":step.completion,"tags":step.tags}));
+            let delivery_specs: BTreeMap<_, _> = step
+                .outputs
+                .iter()
+                .map(|(name, port)| {
+                    let refs = plan
+                        .definitions
+                        .get(&port.delivery_ref)
+                        .and_then(|r| r.decode::<DeliveryTypeDefinition>().ok())
+                        .map(|d| d.spec_refs)
+                        .unwrap_or_default();
+                    (name.clone(), refs)
+                })
+                .collect();
+            plan.specification_view.push(json!({"path":location,"step":step.key,"role_ref":doc.role(step).and_then(|id|crate::configuration::role_record(state,id).ok()).map(|role|&role.definition_id),
+                    "spec_refs":step.spec_refs,"delivery_spec_refs":delivery_specs,"outputs":step.outputs,"completion":step.completion,"tags":step.tags}));
             match &step.executor {
                 StepExecutor::Tool { tool_ref, .. } => {
                     let tool = reference(state, tool_ref, "tool", scope)?;
@@ -964,6 +925,7 @@ pub fn compile_workflow_sources(
                 StepExecutor::Workflow {
                     workflow_ref,
                     foreach,
+                    ..
                 } => {
                     let child = reference(state, workflow_ref, "workflow", scope)?;
                     let child_doc: WorkflowDefinition = child.decode()?;
@@ -1011,6 +973,8 @@ pub fn compile_workflow_sources(
     document.assign_node_ids(&workflow.id);
     let mut plan = ConfiguredWorkflowPlan {
         workflow_revision_id: workflow.id.clone(),
+        standard_ref: None,
+        work_configuration_ref: None,
         permission_context_ref: permission_context(state).map(|r| r.id.clone()),
         permission_workflow_ref: Some(workflow.id.clone()),
         document,
@@ -1019,7 +983,7 @@ pub fn compile_workflow_sources(
         permission_locks: BTreeMap::new(),
         tool_bindings: BTreeMap::new(),
         integration_locks: BTreeMap::new(),
-        specification_snapshot: vec![],
+        specification_view: vec![],
     };
     visit(
         validator,

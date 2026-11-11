@@ -88,7 +88,7 @@ fn start(e: &Engine, doc: Value) -> String {
         .into()
 }
 fn document() -> Value {
-    json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"one","name":"第一步","stage":"work","executor":{"type":"control"}},{"key":"two","name":"第二步","stage":"work","dependencies":["one"],"executor":{"type":"control"}}]})
+    json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"one","name":"第一步","stage":"work","executor":{"type":"control"}},{"key":"two","name":"第二步","stage":"work","dependencies":["one"],"executor":{"type":"control"}}]})
 }
 fn runtime(e: &Engine, id: &str) -> Value {
     e.query("workflow.inspect", &json!({"id":id}), 4).unwrap()
@@ -349,7 +349,7 @@ fn published_steps_cannot_share_a_stable_node_identity() {
 fn bypass_requires_typed_replacement_and_preserves_the_imported_content() {
     let d = tempfile::tempdir().unwrap();
     let e = engine(d.path());
-    let doc = json!({"schema_version":5,"stages":[{"key":"design","name":"设计"},{"key":"delivery","name":"交付"}],"steps":[
+    let doc = json!({"schema_version":6,"stages":[{"key":"design","name":"设计"},{"key":"delivery","name":"交付"}],"steps":[
         {"key":"design","name":"编写设计","stage":"design","executor":{"type":"agent","role_ref":"builtin-role-architect:1"},"task_instructions":"分析设计","outputs":{"result":{"delivery_ref":"builtin-delivery-design:2"}}},
         {"key":"consume","name":"采用设计","stage":"delivery","executor":{"type":"control"},"dependencies":["design"],"inputs":{"design":{"type":"source","source":{"step":"design","port":"result"}}}}]});
     let id = start(&e, doc);
@@ -408,7 +408,7 @@ fn bypass_requires_typed_replacement_and_preserves_the_imported_content() {
 fn bypass_cannot_supply_a_missing_final_output_or_change_a_different_root() {
     let d = tempfile::tempdir().unwrap();
     let e = engine(d.path());
-    let doc = json!({"schema_version":5,"stages":[{"key":"design","name":"设计"}],"steps":[{"key":"design","name":"编写设计","stage":"design","executor":{"type":"agent","role_ref":"builtin-role-architect:1"},"task_instructions":"设计接口","outputs":{"result":{"delivery_ref":"builtin-delivery-design:2"}}}],"outputs":{"result":{"step":"design","port":"result"}}});
+    let doc = json!({"schema_version":6,"stages":[{"key":"design","name":"设计"}],"steps":[{"key":"design","name":"编写设计","stage":"design","executor":{"type":"agent","role_ref":"builtin-role-architect:1"},"task_instructions":"设计接口","outputs":{"result":{"delivery_ref":"builtin-delivery-design:2"}}}],"outputs":{"result":{"step":"design","port":"result"}}});
     let id = start(&e, doc);
     let view = runtime(&e, &id);
     let changes = json!({"plan_revision_id":view["runtime"]["active_plan_revision_id"],"reason":"绕过","operations":[{"type":"bypass_stage","stage":"design"}]});
@@ -499,7 +499,7 @@ impl ports::Harness for NativeManager {
         assert!(r.turn.code_view.is_none());
         use ports::ConversationObservation as O;
         let input: Value = serde_json::from_str(&r.turn.input).unwrap();
-        assert_eq!(input["renderer_version"], "orchestration-task/v1");
+        assert_eq!(input["renderer_version"], "orchestration-task/v2");
         let instance = &input["instances"][0];
         let root = instance["id"].clone();
         let plan = instance["plan"].clone();
@@ -728,7 +728,7 @@ fn a_controller_does_not_inherit_a_live_owners_code_view() {
             Ok(Value::Null)
         })
         .unwrap();
-    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..50 {
         drive_manager(&e);
         if runtime(&e, &root)["runtime"]["status"] == "completed" {
@@ -759,7 +759,7 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
     let harness = Arc::new(NativeManager::default());
     e.harness = harness.clone();
     let id = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..60 {
         drive_manager(&e);
         if runtime(&e, &id)["runtime"]["status"] == "completed" {
@@ -800,7 +800,7 @@ fn native_control_survives_restart_after_action_and_before_reply_without_replay(
     let mut e = engine(directory.path());
     e.harness = harness.clone();
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -885,7 +885,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
         ..Default::default()
     });
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -954,7 +954,7 @@ fn revising_child_ignores_unused_parent_roles_and_resource_locks() {
     let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
     let root = start(
         &e,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"工作"}],"steps":[
+        json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[
             {"key":"call","name":"调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}},
             {"key":"parent_only","name":"父流程独有职责","stage":"work","task_instructions":"读取父流程需求","executor":{"type":"agent","role_ref":"builtin-role-analyst:1"}}
         ]}),
@@ -1163,7 +1163,7 @@ fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
     let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
     let root = start(
         &e,
-        json!({"schema_version":5,"stages":[{"key":"calls","name":"两次调用"}],"steps":[{"key":"left","name":"左调用","stage":"calls","executor":{"type":"workflow","workflow_ref":child["id"]}},{"key":"right","name":"右调用","stage":"calls","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+        json!({"schema_version":6,"stages":[{"key":"calls","name":"两次调用"}],"steps":[{"key":"left","name":"左调用","stage":"calls","executor":{"type":"workflow","workflow_ref":child["id"]}},{"key":"right","name":"右调用","stage":"calls","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
     );
     for key in ["left", "right"] {
         cmd(
@@ -1322,7 +1322,7 @@ fn a_parent_does_not_spend_execution_budget_while_children_wait_for_controller_c
     let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
     let root = start(
         &e,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"父流程"}],"steps":[{"key":"call","name":"显式子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"父流程"}],"steps":[{"key":"call","name":"显式子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
     );
     cmd(
         &e,
@@ -1370,7 +1370,7 @@ fn extending_an_invocation_timeout_keeps_its_children_and_original_execution_con
     let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
     let root = start(
         &e,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"父流程"}],"steps":[{"key":"call","name":"持续子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]},"budget":{"max_turns":4,"timeout_seconds":60,"retry_limit":1}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"父流程"}],"steps":[{"key":"call","name":"持续子调用","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]},"budget":{"max_turns":4,"timeout_seconds":60,"retry_limit":1}}]}),
     );
     cmd(
         &e,
@@ -1564,7 +1564,7 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
+    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
     for _ in 0..8 {
         drive_manager(&e);
         if e.store
@@ -1614,82 +1614,6 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
 }
 
 #[test]
-fn changing_a_standard_covered_feature_requires_an_explicit_coverage_waiver() {
-    let directory = tempfile::tempdir().unwrap();
-    let e = engine(directory.path());
-    let spec=cmd(&e,"spec.create",None,json!({"name":"必须保留的规范","data":{"schema_version":3,"body":"检查材料来源","checks":[]}})).unwrap();
-    let mut doc = document();
-    doc["steps"][0]["tags"] = json!(["protected"]);
-    doc["steps"][0]["spec_refs"] = json!([spec["id"]]);
-    let draft = cmd(
-        &e,
-        "workflow.create",
-        None,
-        json!({"name":"有基线的流程","document":doc}),
-    )
-    .unwrap();
-    let workflow = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
-    let standard=cmd(&e,"standard.create",None,json!({"name":"覆盖基线","data":{"schema_version":3,"body":"保留 protected 步骤的规范","baseline_rules":[{"selector":{"tags":["protected"]},"required_spec_refs":[spec["id"]],"min_matches":1}]}})).unwrap();
-    let project = cmd(&e, "project.create", None, json!({"title":"基线验收"})).unwrap();
-    cmd(&e,"project.configuration.update",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{},"standard_ref":standard["id"]})).unwrap();
-    let feature = cmd(
-        &e,
-        "feature.create",
-        None,
-        json!({"project_id":project["id"],"title":"不能暗中删除规范"}),
-    )
-    .unwrap();
-    let state = e.store.snapshot().unwrap();
-    let root = state
-        .governance
-        .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == feature["id"])
-        .unwrap()
-        .id
-        .clone();
-    let view = runtime(&e, &root);
-    let mut step = view["runtime"]["plan"]["document"]["steps"][0].clone();
-    step["spec_refs"] = json!([]);
-    let mut changes = json!({"plan_revision_id":view["runtime"]["active_plan_revision_id"],"reason":"改变规范覆盖范围","operations":[{"type":"upsert_step","step":step}]});
-    assert!(
-        e.query(
-            "workflow.change.preview",
-            &json!({"id":root,"changeset":changes}),
-            4
-        )
-        .unwrap_err()
-        .message
-        .contains("coverage")
-    );
-    changes["operations"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({"type":"waive","node_id":"$workflow","requirement":"coverage"}));
-    let preview = e
-        .query(
-            "workflow.change.preview",
-            &json!({"id":root,"changeset":changes}),
-            4,
-        )
-        .unwrap();
-    cmd(
-        &e,
-        "workflow.change.apply",
-        Some(&root),
-        json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
-    )
-    .unwrap();
-    assert!(
-        e.store
-            .snapshot()
-            .unwrap()
-            .governance
-            .iter()
-            .any(|r| r.kind == "workflow_waiver" && r.data["requirement"] == "coverage")
-    );
-}
-
-#[test]
 fn a_large_plan_is_inspected_in_explicit_bounded_pages() {
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
@@ -1727,7 +1651,7 @@ fn changes_before_send_admission_are_coalesced_into_one_pending_wakeup() {
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..3 {
         drive_manager_with_send(&e, false);
     }
@@ -1762,7 +1686,7 @@ fn human_input_follows_the_controller_epoch_across_background_revision_updates()
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let original = e
         .store
@@ -1840,7 +1764,7 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
         json!({"step":"one"}),
     )
     .unwrap();
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:4","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager(&e);
     }
@@ -2056,7 +1980,7 @@ fn an_instance_can_revise_its_plan_after_the_template_directory_is_reset() {
     let e = engine(directory.path());
     let root = start(
         &e,
-        json!({"schema_version":5,"stages":[{"key":"work","name":"原模板阶段"}],"steps":[{"key":"study","name":"原调查任务","stage":"work","executor":{"type":"agent","role_ref":"builtin-role-analyst:1"},"task_instructions":"调查原材料","outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"原模板阶段"}],"steps":[{"key":"study","name":"原调查任务","stage":"work","executor":{"type":"agent","role_ref":"builtin-role-analyst:1"},"task_instructions":"调查原材料","outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
     );
     let before = runtime(&e, &root);
     e.store

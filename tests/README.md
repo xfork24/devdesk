@@ -67,3 +67,5 @@ macOS 凭据助手专项入口为 `tests/entrypoints/credential_helper_startup.p
 Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱动、版本、替代材料、绕过、有界委托和真实原生调用来源（Harness 端口夹具）。`tests/entrypoints/dataset_protocol.py` 验证拒绝旧数据协议且不改写源数据。
 
 `tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_default_engineering_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
+
+Standard 的真实两 Task 工程验收入口为 `tests/live/probe_standard_snapshots.py`，使用独立数据集、真实 Codex、Docker 和专用 GitHub 测试仓库，验证不同快照、运行中切换、重启恢复、真实测试及 Git 回执。完整回归在整合到 main 后统一运行。

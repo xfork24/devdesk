@@ -1,7 +1,7 @@
 {
   "kind": "tool",
   "identity": "builtin-tool-workflow-start",
-  "revision": 1,
+  "revision": 2,
   "name": "建立待派发工作流",
   "scope": {
     "kind": "global"
@@ -26,6 +26,15 @@
         },
         "inputs": {
           "type": "object"
+        },
+        "standard_ref": {
+          "type": "string"
+        },
+        "work_configuration_ref": {
+          "type": "string"
+        },
+        "permission_context_ref": {
+          "type": "string"
         }
       },
       "required": [

@@ -2,7 +2,7 @@
 
 本地软件工程工作台原型。Rust 实现领域规则，React Web 提供完整操作入口；SQLite、文档、报告与历史真实保存。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 测试和 GitHub PR。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；运行路径只接受当前协议与配置，离线测试使用独立夹具。账号授权在设置中完成，见[真实工程接入](docs/real-engineering.md)。
 
-流程与规范的 Delivery 页定义任意业务交付类型及可选 JSON Schema。Workflow v5 通过显式端口传递材料；Stage 提供背景和默认 Role，Step 声明任务指令、Skill、Spec、工作上下文和完成条件；执行授权归属 Permission。Agent、工具、子流程、控制是四种执行方式，标准动作与执行配方已移除。运行冻结确切修订，补充输入、重试、返工及人工确认都关联实际 StepExecution。项目经理通过独立 Harness 会话和原生工具决定派发、接纳及完成；用户可通过对话或工作台预演、修改和绕过运行计划。core 保留真实事实、权限和 Git 一致性。实现与验证见 [Harness 改造执行记录](docs/plans/harness-workflow-orchestration/EXECUTION.md)。
+流程与规范的 Delivery 页定义任意业务交付类型及可选 JSON Schema。Workflow v6 通过显式端口传递材料；Stage 提供背景和默认 Role，Step 声明任务指令、Skill、Spec、工作上下文和完成条件；执行授权归属 Permission。Agent、工具、子流程、控制是四种执行方式，标准动作与执行配方已移除。运行冻结确切修订，补充输入、重试、返工及人工确认都关联实际 StepExecution。项目经理通过独立 Harness 会话和原生工具决定派发、接纳及完成；用户可通过对话或工作台预演、修改和绕过运行计划。core 保留真实事实、权限和 Git 一致性。实现与验证见 [Harness 改造执行记录](docs/plans/harness-workflow-orchestration/EXECUTION.md)。
 
 ## 运行
 
@@ -35,7 +35,7 @@ macOS Apple Silicon 输出 `dist/devdesk-0.2.0-aarch64-apple-darwin.tar.gz` 及 
 
 ## 使用与验证
 
-配置入口分为项目管理、流程与规范、角色与 Agent、基础组件。流程与规范包含 Workflow、Delivery、Spec、Standard；基础组件依次包含 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用记录按归属显示在历史记录的“当前项目”或“Global”范围内。本轮变更、状态与验收见[改进计划](docs/plans/settings-navigation-usability/PLAN.md)及[实施报告](docs/plans/settings-navigation-usability/REPORT.md)。新项目页提供可直接采用的默认流程与六个职责 Agent；各职责引用独立 Capability 和 Markdown Skill/Spec，分别产出 PRD、Design Doc、Task Plan、测试、实现与评审。选择或调整后保存项目配置，再创建 Feature；Standard 为可选覆盖基线。[默认配置目录](resources/configuration/README.md)列出具体内容。
+配置入口分为项目管理、流程与规范、角色与 Agent、基础组件。流程与规范包含 Workflow、Delivery、Spec、Standard；基础组件依次包含 Model、Harness、MCP、Skills、Tools（HTTP API）、Harness原生工具。工具调用记录按归属显示在历史记录的“当前项目”或“Global”范围内。本轮变更、状态与验收见[改进计划](docs/plans/settings-navigation-usability/PLAN.md)及[实施报告](docs/plans/settings-navigation-usability/REPORT.md)。新项目页提供可直接采用的默认流程与六个职责 Agent；各职责引用独立 Capability 和 Markdown Skill/Spec，分别产出 PRD、Design Doc、Task Plan、测试、实现与评审。选择或调整后保存项目配置，再创建 Feature；Standard 为 Workflow、Delivery、Spec 及关联的不可变快照。[默认配置目录](resources/configuration/README.md)列出具体内容。
 
 [真实工程接入](docs/real-engineering.md)说明正常 Web 操作；[历史演示步骤](docs/plans/devdesk-prototype/demo.md)仅记录后端模拟夹具，不再对应当前 Web 入口。默认工程方法由可编辑 Workflow 定义，创建 Task、测试和 Git 接纳使用真实平台工具。
 
@@ -73,7 +73,7 @@ npm --prefix web ci
 
 数据库由 `sql/global/schema.sql` 与 `sql/project/schema.sql` 的当前基线直接创建；见 [结构说明](sql/README.md)。
 
-在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。系统只支持新源协议和当前分库布局，不提供旧库升级；当前基线为 global 15 / project 46。
+在“当前项目”中选择项目会打开对应数据库；重启恢复上次选择。已打开项目的执行继续受全局并发额度约束。系统只支持新源协议和当前分库布局，不提供旧库升级；当前基线为 global 16 / project 47。
 
 本轮领域补强的计划见 [补强计划](docs/plans/domain-hardening/PLAN.md)，验收与后续真实 Harness/GitHub/Docker 接入边界见 [补强验收](docs/plans/domain-hardening/domain-hardening.md) 和 [适配器契约](docs/real-adapter-contract.md)。
 

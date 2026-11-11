@@ -140,7 +140,7 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
         "AgentInstance",
         json!({"agent_revision_id":"agent-1","scope":{"kind":"global"}}),
     );
-    let workflow = json!({"schema_version":5,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"finish","name":"Finish","stage":"work","executor":{"type":"control"}}]});
+    let workflow = json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"finish","name":"Finish","stage":"work","executor":{"type":"control"}}]});
     let doc: WorkflowDefinition = serde_json::from_value(workflow.clone()).unwrap();
     doc.validate().unwrap();
     round_trip::<WorkflowDefinition>("WorkflowDefinition", workflow);
@@ -421,7 +421,7 @@ fn test_recipe_schema_rejects_the_same_unsafe_paths_as_the_domain() {
 }
 
 #[test]
-fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline() {
+fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
     round_trip::<DefinitionVisibility>(
         "DefinitionVisibility",
         json!({"kind":"projects","project_ids":["one","two"]}),
@@ -436,9 +436,9 @@ fn v2_configuration_schemas_cover_stage_intent_capability_and_optional_baseline(
     );
     round_trip::<ConfiguredStandard>(
         "ConfiguredStandard",
-        json!({"schema_version":3,"body":"# Baseline","baseline_rules":[{"selector":{"tags":["content"]},"required_spec_refs":["spec-v1"],"min_matches":1}]}),
+        json!({"schema_version":4,"root_workflow_refs":["workflow:1"]}),
     );
-    let project = json!({"schema_version":3,"workflow_ref":"workflow-v4","standard_ref":null,"role_agent_bindings":{"product":"analyst-v2"},"permission_context_ref":"authorization:1"});
+    let project = json!({"schema_version":4,"workflow_ref":"workflow:1","standard_ref":"standard:1","role_agent_bindings":{"product":"analyst-v2"},"permission_context_ref":"authorization:1"});
     SCHEMAS.assert_valid("project-configuration.schema.json", &project);
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(

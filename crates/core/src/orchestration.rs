@@ -19,34 +19,74 @@ pub(crate) fn freeze_plan(
         step.access.writable_paths.clear();
         step.access.read_only_paths.clear();
         step.access.tool_refs.clear();
-        step.node_id.clear();
     }
-    for stage in &mut source_document.stages {
-        stage.node_id.clear();
-    }
-    let mut original = state.resolve_workflow(&instance.plan.workflow_revision_id)?;
+    let current_source = state
+        .configuration(&instance.plan.workflow_revision_id)?
+        .clone();
+    let mut original: WorkflowDefinition = current_source.decode()?;
+    original.assign_node_ids(&current_source.id);
     for step in &mut original.steps {
         step.access.writable_paths.clear();
         step.access.read_only_paths.clear();
         step.access.tool_refs.clear();
-        step.node_id.clear();
     }
-    for stage in &mut original.stages {
-        stage.node_id.clear();
-    }
-    if serde_json::to_value(&source_document).unwrap() != serde_json::to_value(&original).unwrap() {
+    if current_source.kind != "workflow"
+        || serde_json::to_value(&source_document).unwrap()
+            != serde_json::to_value(&original).unwrap()
+    {
+        let data = json!(source_document);
         let source = record(
             "workflow",
-            format!("execution-workflow.{}", id()),
-            scope.clone(),
+            format!(
+                "execution-workflow.{}",
+                configuration_hash(&canonical_standard_content(&data))
+            ),
+            crate::standards::source_scope(scope),
             reason.into(),
             1,
             None,
-            json!(source_document),
+            data,
             true,
         );
         instance.plan.workflow_revision_id = source.id.clone();
-        state.governance.push(source);
+        instance.workflow_ref = source.id.clone();
+        instance
+            .plan
+            .definitions
+            .insert(source.id.clone(), source.clone());
+        if state.configuration(&source.id).is_err() {
+            state.governance.push(source);
+        }
+    }
+    let existing = instance.plan.standard_ref.clone();
+    let included = existing
+        .as_deref()
+        .and_then(|r| standard_snapshot(state, r, scope).ok())
+        .is_some_and(|s| {
+            s.nodes
+                .iter()
+                .any(|n| n.kind == "workflow" && n.reference == instance.plan.workflow_revision_id)
+        });
+    if !included {
+        let mut roots = existing
+            .as_deref()
+            .and_then(|r| state.configuration(r).ok())
+            .and_then(|r| r.decode::<ConfiguredStandard>().ok())
+            .map(|s| s.root_workflow_refs)
+            .unwrap_or_default();
+        if let Some(old) = instance
+            .plan
+            .permission_workflow_ref
+            .as_deref()
+            .and_then(|old| roots.iter().position(|r| r == old))
+        {
+            roots[old] = instance.plan.workflow_revision_id.clone();
+        } else {
+            roots = vec![instance.plan.workflow_revision_id.clone()];
+        }
+        let source = crate::standards::capture_standard(state, roots, scope, reason)?;
+        instance.plan.standard_ref = Some(source.id.clone());
+        instance.plan.definitions.insert(source.id.clone(), source);
     }
     let plan = record(
         "workflow_plan_revision",
@@ -55,7 +95,7 @@ pub(crate) fn freeze_plan(
         reason.into(),
         1,
         None,
-        json!({"instance_id":instance.steps.first().map(|e|&e.workflow_instance_id),"plan":instance.plan,"inputs":instance.inputs,"role_agent_bindings":instance.role_agent_bindings,
+        json!({"owner_id":instance.owner_id,"standard_ref":instance.plan.standard_ref,"workflow_ref":instance.plan.workflow_revision_id,"work_configuration_ref":instance.plan.work_configuration_ref,"instance_id":instance.steps.first().map(|e|&e.workflow_instance_id),"plan":instance.plan,"inputs":instance.inputs,"role_agent_bindings":instance.role_agent_bindings,
             "parent_revision_id":if instance.active_plan_revision_id.is_empty(){None}else{Some(&instance.active_plan_revision_id)},"reason":reason}),
         true,
     );

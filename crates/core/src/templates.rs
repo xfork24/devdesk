@@ -132,6 +132,9 @@ fn materialize(
             "workflow" => {
                 r.decode::<WorkflowDefinition>()?.validate()?;
             }
+            "standard" => {
+                standard_snapshot(&s, &r.id, &r.scope)?;
+            }
             "delivery_type" => s.validate_delivery_specs(&r.decode()?, &r.scope)?,
             _ => {}
         }

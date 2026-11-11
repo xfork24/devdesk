@@ -1,7 +1,7 @@
 {
   "kind": "tool",
   "identity": "builtin-tool-workflow-change-preview",
-  "revision": 1,
+  "revision": 2,
   "name": "预演运行计划变更",
   "scope": {
     "kind": "global"
@@ -433,6 +433,34 @@
                     "required": [
                       "type",
                       "change_id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "const": "adopt_standard"
+                      },
+                      "standard_ref": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "workflow_ref": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "permission_context_ref": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "standard_ref",
+                      "workflow_ref"
                     ],
                     "additionalProperties": false
                   }

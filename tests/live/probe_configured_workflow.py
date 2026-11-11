@@ -49,11 +49,11 @@ try:
  view=c.rpc('query.workflow_instance',{'id':run['id']});(OUT/'free-workflow.json').write_text(json.dumps(view,ensure_ascii=False,indent=2))
  output=view['outputs'][steps[0]['outputs']['result']]['value'];assert output=={'ordered':[3,3,2,1],'sum':9},output
  assert steps[1]['inputs']['analysis']==output
- task=c.rpc('query.execution_task',{'turn_id':steps[0]['turn_id']});(OUT/'free-task.json').write_text(json.dumps(task,ensure_ascii=False,indent=2));assert task['configured'] and task['task']['renderer_version']=='agent-task/v5'
+ task=c.rpc('query.execution_task',{'turn_id':steps[0]['turn_id']});(OUT/'free-task.json').write_text(json.dumps(task,ensure_ascii=False,indent=2));assert task['configured'] and task['task']['renderer_version']=='agent-task/v6'
  calls=c.rpc('query.tool_calls',{'turn_id':steps[0]['turn_id']})['records'];actual=next(call for call in calls if call['kind']=='platform_call' and call['data']['status']=='succeeded');assert actual['data']['platform_receipt']['inputs']==output
  (OUT/'native-platform-call.json').write_text(json.dumps(actual,ensure_ascii=False,indent=2))
  print('PASS native custom business workflow',run['id'],flush=True)
- (OUT/'report.md').write_text('# Native Workflow v5\n\nFree business workflow: passed through actual Codex, SQLite and Artifact.\n\nWorkflow: '+run['id']+'\n')
+ (OUT/'report.md').write_text('# Native Workflow v6\n\nFree business workflow: passed through actual Codex, SQLite and Artifact.\n\nWorkflow: '+run['id']+'\n')
 except BaseException as error:
  (OUT/'failure.txt').write_text(str(error));raise
 finally:
