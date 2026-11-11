@@ -357,6 +357,26 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
         row(&e, data["steps"][0]["outputs"]["result"].as_str().unwrap()).data["value"]["inputs"]["marker"],
         "B"
     );
+    let comparison = e
+        .query(
+            "query.work_standard_diff",
+            &json!({"before_owner_id":ta,"after_owner_id":tb,"project_id":project}),
+            1,
+        )
+        .unwrap();
+    assert!(
+        comparison["before"]["children"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "sibling invocations are not children of this Task"
+    );
+    assert!(
+        comparison["after"]["children"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     let history = e
         .query(
             "query.work_configuration",

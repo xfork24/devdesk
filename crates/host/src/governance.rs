@@ -426,7 +426,9 @@ impl Workspace {
                 }
                 if method == "query.work_standard_diff" {
                     let find = |key: &str, project_key: &str| -> Result<&EngineeringState> {
-                        let owner = text(params, key)?;
+                        let owner = params[key]
+                            .as_str()
+                            .ok_or_else(|| err("invalid_params", format!("缺少 {key}")))?;
                         states
                             .iter()
                             .find(|(project, state)| {
@@ -446,7 +448,9 @@ impl Workspace {
                 }
                 let resolve =
                     |key: &str, project_key: &str, entry_key: &str| -> Result<StandardSnapshot> {
-                        let reference = text(params, key)?;
+                        let reference = params[key]
+                            .as_str()
+                            .ok_or_else(|| err("invalid_params", format!("缺少 {key}")))?;
                         let (state, scope) = if let Some((project, state)) =
                             states.iter().find(|(project, state)| {
                                 params[project_key].as_str() == Some(project.id.as_str())
