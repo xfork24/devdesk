@@ -35,6 +35,7 @@ export function WorkStandard({
     [permission, setPermission] = useState(""),
     [requirements, setRequirements] = useState<Row>();
   const [historyDiff, setHistoryDiff] = useState<Row>();
+  const [selectionVersion, setSelectionVersion] = useState(0);
   const runtime = instance?.data;
   const activeStandard =
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
@@ -90,6 +91,7 @@ export function WorkStandard({
     owner.id,
     owner.revision,
     instance?.data.active_plan_revision_id,
+    selectionVersion,
   ]);
   useEffect(() => {
     let active = true;
@@ -257,6 +259,7 @@ export function WorkStandard({
                     },
                   });
                   await refresh();
+                  setSelectionVersion((version) => version + 1);
                 }
               })
             }

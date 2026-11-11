@@ -1156,8 +1156,7 @@ impl Engine {
             let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 64) as usize;
             let total = instance.plan.document.steps.len();
             let mut runtime = json!(instance);
-            runtime["plan"] =
-                json!({"document":instance.plan.document,"roles":instance.plan.roles});
+            runtime["plan"] = json!({"workflow_revision_id":instance.plan.workflow_revision_id,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"permission_context_ref":instance.plan.permission_context_ref,"document":instance.plan.document,"roles":instance.plan.roles});
             let selected_keys = instance
                 .plan
                 .document
