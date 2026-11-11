@@ -86,6 +86,8 @@ def verify(directory: Path):
         publications.append({'owner_id': instance['owner_id'], 'candidate': candidate['revision'], 'pull_request': pr})
         if instance['parent_execution_id'] is None:
             continue
+        review = receipt('review')
+        assert review['approve'] and any(check['key'] == 'standard_b_trace' and check['passed'] for check in review['checks']), 'The selected Standard B check must actually pass in review'
         red, green = receipt('red'), receipt('green')
         assert red['status'] == 'succeeded' and red['expected_failure'] and red['assertion_failed'] and red['counts']['failed'] > 0 and red['container_id']
         assert 'ERR_MODULE_NOT_FOUND' not in red['report']
