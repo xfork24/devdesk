@@ -69,6 +69,14 @@ def verify(directory: Path):
         return subprocess.run(['git', '-C', str(repository), 'show', '--no-textconv', revision + ':' + path], check=True, capture_output=True, timeout=15).stdout
     publications = []
     pairs_by_task = {}
+    task_test_files = set()
+    for _, child in instances:
+        if child['parent_execution_id'] is not None:
+            red_step = next(step for step in child['steps'] if step['step'] == 'red')
+            task_test_files.update(by_id[red_step['outputs']['result']][1]['value']['recipe']['files'])
+    assert len(task_test_files) == 2
+    add_test = next(path for path in task_test_files if '-add/behavior.test.mjs' in path)
+    expected_feature_tests = task_test_files | {add_test.replace('-add/behavior.test.mjs', '-feature/behavior.test.mjs')}
     for _, instance in instances:
         def execution(key):
             return next(step for step in instance['steps'] if step['step'] == key)
@@ -85,7 +93,10 @@ def verify(directory: Path):
         assert pr['merged'] and pr['merge_commit'] == pr['head'] == candidate['revision']
         publications.append({'owner_id': instance['owner_id'], 'candidate': candidate['revision'], 'pull_request': pr})
         if instance['parent_execution_id'] is None:
+            assert instance['owner_id'] == context['feature'] and instance['plan']['standard_ref'] == context['sa']['id']
+            assert set(tests['recipe']['files']) == expected_feature_tests, 'Feature candidate must run both independent Task tests and its full test'
             continue
+        assert set(tests['recipe']['files']) == set(receipt('red')['recipe']['files'])
         review = receipt('review')
         assert review['approve'] and any(check['key'] == 'standard_b_trace' and check['passed'] for check in review['checks']), 'The selected Standard B check must actually pass in review'
         red, green = receipt('red'), receipt('green')
