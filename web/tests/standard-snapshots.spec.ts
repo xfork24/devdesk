@@ -256,6 +256,9 @@ test("Standard 只读生成比较与归档保留规范源", async ({ page }, inf
     "root_workflow_refs",
     "schema_version",
   ]);
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  await page.screenshot({path:info.outputPath("standard-readonly-mobile.png"),fullPage:true});
 });
 
 test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行依据", async ({

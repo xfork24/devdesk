@@ -297,7 +297,7 @@ export function StandardManager({
     (r) => r.kind === "standard" && r.data.schema_version === 4,
   );
   return (
-    <section className="panel" aria-label="Standard 规范快照">
+    <section className="panel standard-manager" aria-label="Standard 规范快照">
       <h3>Standard 规范快照</h3>
       <p>
         冻结 Workflow、Delivery、Spec
