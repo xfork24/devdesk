@@ -561,9 +561,12 @@ impl Engine {
                 else {
                     return Err(err("adapter_contract", "工作空间快照回执类型不符"));
                 };
-                Ok(Some(
-                    json!({"workspace_id":p["workspace"]["workspace_id"],"owner_id":context.source.owner,"revision":revision}),
-                ))
+                let mut receipt = json!({"workspace_id":p["workspace"]["workspace_id"],"owner_id":context.source.owner,"revision":revision});
+                if p["include_diff"] == true {
+                    let base = text(&p["workspace"], "revision")?;
+                    receipt["changes"] = json!({"base_revision":base,"revision":revision,"diff":self.git.diff(&context,&base,&revision)?});
+                }
+                Ok(Some(receipt))
             }
             "materials.capture" => Ok(Some(
                 json!({"inputs":p,"captured_at":now(),"operation_id":request.execution_id}),

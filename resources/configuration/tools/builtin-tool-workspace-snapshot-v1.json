@@ -32,6 +32,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "include_diff": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,

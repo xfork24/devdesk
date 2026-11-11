@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "bundle_version": "2026.11.11-auto-evidence-v2",
+  "bundle_version": "2026.11.11-auto-evidence-v3",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",

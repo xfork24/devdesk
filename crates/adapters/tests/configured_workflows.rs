@@ -659,6 +659,44 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         );
     }
     let review=task.steps.iter().find(|step|step.inputs.contains_key("verify")).expect("the shipped implementation Spec requires an actual delivery verification before review");
+    for (document, review_key, snapshot_key) in [
+        (&task, "review", "implementation_snapshot"),
+        (&plan.document, "closure_review", "tests_snapshot"),
+    ] {
+        let review = document
+            .steps
+            .iter()
+            .find(|step| step.key == review_key)
+            .unwrap();
+        let InputBinding::Source { source } = &review.inputs["candidate"] else {
+            panic!("scope review needs actual coordinator candidate evidence")
+        };
+        assert_eq!(source.step, "candidate");
+        assert!(document.ancestors(review).contains("candidate"));
+        let InputBinding::Source { source } = &review.inputs["changes"] else {
+            panic!("review needs the exact before/after snapshot diff")
+        };
+        assert_eq!(source.step, snapshot_key);
+        assert_eq!(source.pointer, "/changes");
+        let snapshot = document
+            .steps
+            .iter()
+            .find(|step| step.key == snapshot_key)
+            .unwrap();
+        let StepExecutor::Tool { arguments, .. } = &snapshot.executor else {
+            panic!("snapshot must use the coordinator")
+        };
+        assert_eq!(
+            arguments["include_diff"],
+            InputBinding::Constant { value: json!(true) }
+        );
+        let tests = document
+            .steps
+            .iter()
+            .find(|step| step.key == "candidate_tests")
+            .unwrap();
+        assert!(document.ancestors(tests).contains(review_key));
+    }
     for key in ["documentation", "review", "candidate_review"] {
         let consumer = task.steps.iter().find(|step| step.key == key).unwrap();
         let InputBinding::Source { source } = &consumer.inputs["evidence"] else {
@@ -1672,9 +1710,9 @@ fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_
         &engine,
         json!({"schema_version":4,"stages":[{"key":"work","name":"Git 工具"}],"steps":[
             {"key":"current","name":"当前版本","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current-v1","arguments":{"owner_id":{"type":"constant","value":task}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object-v1"}}},
-            {"key":"snapshot","name":"固定实际代码","stage":"work","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot-v1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["addition.txt"]}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object-v1"}}},
+            {"key":"snapshot","name":"固定实际代码","stage":"work","dependencies":["current"],"executor":{"type":"tool","tool_ref":"builtin-tool-workspace-snapshot-v1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"allowed_paths":{"type":"constant","value":["addition.txt"]},"include_diff":{"type":"constant","value":true}}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-object-v1"}}},
             {"key":"candidate","name":"实际候选","stage":"work","dependencies":["snapshot"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-candidate-v1","arguments":{"workspace":{"type":"source","source":{"step":"snapshot","port":"workspace"}},"target_revision":{"type":"constant","value":base}}},"outputs":{"candidate":{"delivery_ref":"builtin-delivery-object-v1"}}}
-          ,{"key":"inspect","name":"读取授权的 Task 候选","stage":"work","dependencies":["candidate"],"executor":{"type":"agent","role_ref":role["definition_id"]},"task_instructions":"检查明确提供的代码视图。","inputs":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}}},"access":{"workspace_input":"workspace"},"outputs":{"risks":{"delivery_ref":"builtin-delivery-object-v1"}}}
+          ,{"key":"inspect","name":"读取授权的 Task 候选","stage":"work","dependencies":["candidate"],"executor":{"type":"agent","role_ref":role["definition_id"]},"task_instructions":"检查明确提供的代码视图。","inputs":{"workspace":{"type":"source","source":{"step":"candidate","port":"candidate"}},"changes":{"type":"source","source":{"step":"snapshot","port":"workspace","pointer":"/changes"}}},"access":{"workspace_input":"workspace"},"outputs":{"risks":{"delivery_ref":"builtin-delivery-object-v1"}}}
         ]}),
     );
     let run = engine
@@ -1731,6 +1769,28 @@ fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_
         task
     );
     assert_ne!(calls[0].session.owner_id, task);
+    let snapshot = state
+        .configuration(
+            runtime["steps"][1]["outputs"]["workspace"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+    let changes = &snapshot.data["value"]["changes"];
+    assert_eq!(changes["base_revision"], base);
+    assert_eq!(changes["revision"], snapshot.data["value"]["revision"]);
+    assert_eq!(
+        changes["diff"].as_str().unwrap().trim(),
+        git(
+            &repo,
+            &["diff", &base, changes["revision"].as_str().unwrap()]
+        )
+    );
+    assert!(changes["diff"].as_str().unwrap().contains("+actual change"));
+    assert_eq!(
+        calls[0].configured_task.as_ref().unwrap().task["inputs"]["changes"],
+        *changes
+    );
 }
 
 #[test]

@@ -719,6 +719,10 @@
                 "value": [
                   "tests"
                 ]
+              },
+              "include_diff": {
+                "type": "constant",
+                "value": true
               }
             }
           },
@@ -828,6 +832,14 @@
                 "port": "result",
                 "pointer": ""
               }
+            },
+            "changes": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": "/changes"
+              }
             }
           },
           "outputs": {
@@ -864,121 +876,11 @@
           }
         },
         {
-          "key": "closure_review",
-          "name": "独立核对 · closure",
-          "stage": "work",
-          "dependencies": [
-            "closure"
-          ],
-          "inputs": {
-            "requirements": {
-              "type": "source",
-              "source": {
-                "step": "requirements",
-                "port": "result",
-                "pointer": ""
-              }
-            },
-            "delivery": {
-              "type": "source",
-              "source": {
-                "step": "closure",
-                "port": "result",
-                "pointer": ""
-              }
-            },
-            "verification": {
-              "type": "source",
-              "source": {
-                "step": "verification",
-                "port": "result",
-                "pointer": ""
-              }
-            },
-            "workspace": {
-              "type": "source",
-              "source": {
-                "step": "tests_snapshot",
-                "port": "result",
-                "pointer": ""
-              }
-            },
-            "tasks": {
-              "type": "source",
-              "source": {
-                "step": "implementation",
-                "port": "result",
-                "pointer": ""
-              }
-            },
-            "design": {
-              "type": "source",
-              "source": {
-                "step": "design",
-                "port": "result",
-                "pointer": ""
-              }
-            }
-          },
-          "outputs": {
-            "result": {
-              "delivery_ref": "builtin-delivery-review-v1",
-              "content_checks": true
-            }
-          },
-          "budget": {
-            "max_turns": 30,
-            "timeout_seconds": 1800,
-            "retry_limit": 3
-          },
-          "executor": {
-            "type": "agent",
-            "role_ref": "builtin-role-reviewer"
-          },
-          "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。",
-          "required_skill_refs": [
-            "builtin-skill-independent-review-v2"
-          ],
-          "spec_refs": [
-            "builtin-spec-stage-closure-v1"
-          ],
-          "tags": [
-            "closure_review"
-          ],
-          "completion": {
-            "op": "all",
-            "rules": [
-              {
-                "op": "equals",
-                "source": {
-                  "step": "closure_review",
-                  "port": "result",
-                  "pointer": "/approve"
-                },
-                "value": true
-              },
-              {
-                "op": "independent",
-                "author": "closure",
-                "reviewer": "closure_review"
-              }
-            ]
-          },
-          "access": {
-            "workspace_input": "workspace",
-            "writable_paths": [],
-            "read_only_paths": [
-              "."
-            ],
-            "tool_refs": []
-          }
-        },
-        {
           "key": "mainline",
           "name": "读取工作空间",
           "stage": "work",
           "dependencies": [
-            "closure_review"
+            "closure"
           ],
           "inputs": {},
           "outputs": {
@@ -1044,11 +946,137 @@
           }
         },
         {
+          "key": "closure_review",
+          "name": "独立核对 · closure",
+          "stage": "work",
+          "dependencies": [
+            "candidate"
+          ],
+          "inputs": {
+            "requirements": {
+              "type": "source",
+              "source": {
+                "step": "requirements",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "delivery": {
+              "type": "source",
+              "source": {
+                "step": "closure",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "verification": {
+              "type": "source",
+              "source": {
+                "step": "verification",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "workspace": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "tasks": {
+              "type": "source",
+              "source": {
+                "step": "implementation",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "design": {
+              "type": "source",
+              "source": {
+                "step": "design",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "candidate": {
+              "type": "source",
+              "source": {
+                "step": "candidate",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "changes": {
+              "type": "source",
+              "source": {
+                "step": "tests_snapshot",
+                "port": "result",
+                "pointer": "/changes"
+              }
+            }
+          },
+          "outputs": {
+            "result": {
+              "delivery_ref": "builtin-delivery-review-v1",
+              "content_checks": true
+            }
+          },
+          "budget": {
+            "max_turns": 30,
+            "timeout_seconds": 1800,
+            "retry_limit": 3
+          },
+          "executor": {
+            "type": "agent",
+            "role_ref": "builtin-role-reviewer"
+          },
+          "task_instructions": "依据输入产物和引用的 Spec 完成内容判断。核对确切输入版本，逐项提交检查结论与材料依据。发现问题时 approve=false，不代替作者修改产物。 使用 inputs.candidate 中协调器生成的完整基线 diff 核对变更范围，使用 inputs.changes 中确切快照前后 diff 核对独立测试和既有文件是否改变。核对 base_revision、revision 与真实测试回执及候选 source_revision 的对应关系，不要求 Agent 自行读取 Git 元数据，也不以实现者自述代替这些平台证据。",
+          "required_skill_refs": [
+            "builtin-skill-independent-review-v2"
+          ],
+          "spec_refs": [
+            "builtin-spec-stage-closure-v1"
+          ],
+          "tags": [
+            "closure_review"
+          ],
+          "completion": {
+            "op": "all",
+            "rules": [
+              {
+                "op": "equals",
+                "source": {
+                  "step": "closure_review",
+                  "port": "result",
+                  "pointer": "/approve"
+                },
+                "value": true
+              },
+              {
+                "op": "independent",
+                "author": "closure",
+                "reviewer": "closure_review"
+              }
+            ]
+          },
+          "access": {
+            "workspace_input": "workspace",
+            "writable_paths": [],
+            "read_only_paths": [
+              "."
+            ],
+            "tool_refs": []
+          }
+        },
+        {
           "key": "candidate_tests",
           "name": "验证确切候选",
           "stage": "work",
           "dependencies": [
-            "candidate"
+            "closure_review"
           ],
           "executor": {
             "type": "tool",
@@ -1498,20 +1526,28 @@
       "template_ref": "governance.builtin-spec-stage-closure-v1",
       "target": "revision"
     },
-    "/data/steps/15/outputs/result/delivery_ref": {
+    "/data/steps/17/outputs/result/delivery_ref": {
       "template_ref": "governance.builtin-delivery-review-v1",
       "target": "revision"
     },
-    "/data/steps/15/executor/role_ref": {
+    "/data/steps/17/executor/role_ref": {
       "template_ref": "governance.builtin-role-reviewer-v1",
       "target": "identity"
     },
-    "/data/steps/15/required_skill_refs/0": {
+    "/data/steps/17/required_skill_refs/0": {
       "template_ref": "governance.builtin-skill-independent-review-v2",
       "target": "revision"
     },
-    "/data/steps/15/spec_refs/0": {
+    "/data/steps/17/spec_refs/0": {
       "template_ref": "governance.builtin-spec-stage-closure-v1",
+      "target": "revision"
+    },
+    "/data/steps/15/outputs/result/delivery_ref": {
+      "template_ref": "governance.builtin-delivery-object-v1",
+      "target": "revision"
+    },
+    "/data/steps/15/executor/tool_ref": {
+      "template_ref": "governance.builtin-tool-workspace-current-v1",
       "target": "revision"
     },
     "/data/steps/16/outputs/result/delivery_ref": {
@@ -1519,14 +1555,6 @@
       "target": "revision"
     },
     "/data/steps/16/executor/tool_ref": {
-      "template_ref": "governance.builtin-tool-workspace-current-v1",
-      "target": "revision"
-    },
-    "/data/steps/17/outputs/result/delivery_ref": {
-      "template_ref": "governance.builtin-delivery-object-v1",
-      "target": "revision"
-    },
-    "/data/steps/17/executor/tool_ref": {
       "template_ref": "governance.builtin-tool-git-candidate-v1",
       "target": "revision"
     },

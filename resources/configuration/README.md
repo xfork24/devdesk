@@ -24,6 +24,8 @@ implementation.evidence 是必需的“原始执行证据”输出，直接保�
 
 默认 Feature 把 Node 实现与 node_test 测试合同通过“固定工程执行约束”步骤封存为 delivery，显式提供给设计、规划、对应评审及回归测试编写节点。选择其他运行时应同时配置可执行的工具与环境，不把未配置的解释器视作后续可以假定存在的能力。
 
+范围评审先消费协调器生成的候选及完整基线 diff，再进入确切候选测试。需要核对快照前后变化时，Workflow 显式为 `workspace.snapshot` 设置 `include_diff: true`，通过 `changes` 输入交付实际 base/head/diff；Task 据此核对 Red 至 Green 的独立测试保护，Feature 据此核对整体回归新增范围。评审不读取 Git 元数据，也不依赖脚本在流程外补交差异。
+
 默认六种职责是示例配置，不限制用户定义新 Role。所有引用在 `manifest.json` 中声明，模板重置按身份重建完整引用图，不通过 builtin ID 前缀猜测默认对象。`projections/` 保存当前执行配置的投影；`initial/` 只负责首次初始化 Agent 身份。
 
 平台工具包含 `workspace.current`、`workspace.snapshot`、`materials.capture`、`tasks.create`、`tasks.complete`、`tests.run`、`git.candidate`、`git.advance`、`git.publish`。这些处理器需要代码提供真实能力；业务流程选择哪个工具、参数来自哪里、如何等待确认属于配置。测试工具需要明确的运行环境，不创建占位 Agent 或 Session。

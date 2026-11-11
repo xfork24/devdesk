@@ -41,6 +41,13 @@ def verify_evidence(client, rows, output):
  publications=[]
  for view in [children[0],root]:
   candidate=receipt(view,'candidate');tests=receipt(view,'candidate_tests');published=receipt(view,'publish')
+  review_key='review' if view is child else 'closure_review'
+  snapshot_key='implementation_snapshot' if view is child else 'tests_snapshot'
+  review=next(step for step in view['runtime']['steps'] if step['step']==review_key)
+  task=client.rpc('query.execution_task',{'turn_id':review['turn_id']})['task']['task']
+  assert task['inputs']['candidate']==candidate
+  assert task['inputs']['changes']==receipt(view,snapshot_key)['changes']
+  assert task['inputs']['changes']['revision']==candidate['source_revision']
   assert candidate['parents']==[candidate['target_revision']] and candidate['diff']
   assert tests['candidate']==candidate['revision'] and tests['exit_code']==0 and tests['container_id']
   pr=published['pull_request'];assert pr['merged'] and pr['merge_commit']==candidate['revision'] and pr['head']==candidate['revision']
