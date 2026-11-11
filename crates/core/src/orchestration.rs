@@ -39,7 +39,9 @@ pub(crate) fn freeze_plan(
             "workflow",
             format!(
                 "execution-workflow.{}",
-                configuration_hash(&canonical_standard_content(&data))
+                configuration_hash(
+                    &json!({"scope":crate::standards::source_scope(scope),"content":canonical_standard_content(&data)})
+                )
             ),
             crate::standards::source_scope(scope),
             reason.into(),
