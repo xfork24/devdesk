@@ -185,6 +185,9 @@ const routeTab = routeTabValue(route);
 function App() {
   const catalogGeneration = useCatalogGeneration();
   const requestGeneration = useRef(0);
+  const workspaceLoads = useRef(0);
+  const workspaceRefreshQueued = useRef(false);
+  const refreshWorkspace = useRef<() => void>(() => {});
   const projectGeneration = useRef(0);
   const kernelStopped = useRef(false);
   const [detailPages, setDetailPages] = useState<Record<string, number>>({});
@@ -284,6 +287,7 @@ function App() {
       // SSE refreshes during the mutation are covered by that final read.
       if (kernelStopped.current || (mutationInFlight.current && !afterCommand))
         return;
+      workspaceLoads.current++;
       const generation = ++requestGeneration.current;
       try {
         let response = await fetch("/capabilities", {
@@ -387,6 +391,12 @@ function App() {
           setError(String(e));
           setConnection("连接失败");
         }
+      } finally {
+        workspaceLoads.current--;
+        if (!workspaceLoads.current && workspaceRefreshQueued.current) {
+          workspaceRefreshQueued.current = false;
+          queueMicrotask(() => refreshWorkspace.current());
+        }
       }
     },
     [
@@ -399,6 +409,15 @@ function App() {
       taskFilter,
     ],
   );
+  refreshWorkspace.current = () => {
+    // Coalesce events while a read is in flight. Starting another generation
+    // here would discard every response when workflow events arrive faster.
+    if (workspaceLoads.current) {
+      workspaceRefreshQueued.current = true;
+      return;
+    }
+    void load();
+  };
   useEffect(() => {
     load();
   }, [load]);
@@ -415,7 +434,7 @@ function App() {
       if (!timer)
         timer = setTimeout(() => {
           timer = undefined;
-          load();
+          refreshWorkspace.current();
         }, 180);
     };
     stream.onerror = () => {
