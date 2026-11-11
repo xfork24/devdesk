@@ -4269,6 +4269,55 @@
         },
         "contract_digest": {
           "type": "string"
+        },
+        "rework_workspace": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "previous_workspace": {
+              "type": "object"
+            },
+            "output_id": {
+              "type": "string"
+            },
+            "workspace": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "previous_workspace",
+            "output_id",
+            "workspace"
+          ],
+          "additionalProperties": false
+        },
+        "rework": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "previous_execution_id": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "outputs": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "previous_execution_id",
+            "reason",
+            "outputs"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

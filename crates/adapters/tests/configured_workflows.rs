@@ -300,6 +300,8 @@ struct RecordingAgent {
     responses: Mutex<Vec<Value>>,
     calls: Mutex<Vec<ports::TurnDispatch>>,
     pending: Mutex<HashMap<Id, Vec<ports::ConversationObservation>>>,
+    writes: Mutex<Vec<(std::path::PathBuf, String)>>,
+    view_validator: Mutex<Option<Arc<devdesk_adapters::CliGit>>>,
 }
 impl ports::Harness for RecordingAgent {
     fn identity(&self) -> String {
@@ -311,6 +313,20 @@ impl ports::Harness for RecordingAgent {
             .as_ref()
             .expect("native start requires the actual configured task");
         task.validate()?;
+        if request
+            .session
+            .runtime_binding
+            .as_ref()
+            .unwrap()
+            .tool_policy
+            == ToolPolicy::WorkspaceWrite
+        {
+            if let (Some(git), Some(view)) =
+                (&*self.view_validator.lock().unwrap(), &request.code_view)
+            {
+                git.validate_view(&view.context, &view.revision)?;
+            }
+        }
         assert!(request.documents.is_empty());
         Ok(ports::SessionReceipt {
             external_session: format!("fixture-{}", request.session.id),
@@ -326,6 +342,12 @@ impl ports::Harness for RecordingAgent {
             request.turn.input
         );
         self.calls.lock().unwrap().push(request.clone());
+        let mut writes = self.writes.lock().unwrap();
+        if !writes.is_empty() {
+            let (path, content) = writes.remove(0);
+            std::fs::write(path, content).unwrap();
+        }
+        drop(writes);
         self.pending.lock().unwrap().insert(request.session.id.clone(),vec![
             Event::Admitted{turn:request.turn.id.clone(),message:Some("fixture-message".into()),external_turn:Some(format!("fixture-{}",request.turn.id))},
             Event::Consumed{turn:request.turn.id.clone(),message:Some("fixture-message".into())},
@@ -1734,20 +1756,25 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
 
 #[test]
 fn configured_workspace_snapshot_and_candidate_use_actual_git_and_reject_forged_requests() {
-    actual_git_candidate(false, false);
+    actual_git_candidate(false, false, false);
 }
 
 #[test]
 fn explicit_waivers_allow_actual_git_without_inventing_test_or_human_receipts() {
-    actual_git_candidate(true, false);
+    actual_git_candidate(true, false, false);
 }
 
 #[test]
 fn actual_task_reads_its_feature_merge_target_before_building_git_candidate() {
-    actual_git_candidate(false, true);
+    actual_git_candidate(false, true, false);
 }
 
-fn actual_git_candidate(waived_advance: bool, task_owner: bool) {
+#[test]
+fn actual_git_writer_rework_uses_sealed_checkpoint_and_preserves_history() {
+    actual_git_candidate(false, true, true);
+}
+
+fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: bool) {
     fn git(path: &std::path::Path, args: &[&str]) -> String {
         let output = std::process::Command::new("git")
             .args([
@@ -1886,7 +1913,7 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool) {
             Ok(Value::Null)
         })
         .unwrap();
-    engine.git = adapter;
+    engine.git = adapter.clone();
     std::fs::write(
         std::path::Path::new(&work.path).join("addition.txt"),
         "actual change\n",
@@ -1922,6 +1949,17 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool) {
     if waived_advance {
         document["action_requirements"] = json!({"git.advance":["tests","confirmation"]});
         document["steps"].as_array_mut().unwrap().push(json!({"key":"advance","name":"带明确例外接纳","stage":"work","dependencies":["candidate"],"executor":{"type":"tool","tool_ref":"builtin-tool-git-advance:1","arguments":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}},"candidate":{"type":"source","source":{"step":"candidate","port":"candidate"}}}},"outputs":{"accepted":{"delivery_ref":"fixture-delivery-object:1"}}}));
+    }
+    if rework_writer {
+        std::fs::remove_file(std::path::Path::new(&work.path).join("addition.txt")).unwrap();
+        recorder.writes.lock().unwrap().push((
+            std::path::Path::new(&work.path).join("addition.txt"),
+            "actual change\n".into(),
+        ));
+        *recorder.view_validator.lock().unwrap() = Some(adapter.clone());
+        document["steps"][1]["dependencies"] = json!(["current", "writer"]);
+        document["steps"][3]["confirmation"] = json!("human");
+        document["steps"].as_array_mut().unwrap().push(json!({"key":"writer","name":"写入实现","stage":"work","dependencies":["current"],"executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"按冻结工作区修改 addition.txt。","inputs":{"workspace":{"type":"source","source":{"step":"current","port":"workspace"}}},"access":{"workspace_input":"workspace","writable_paths":["addition.txt"],"tool_refs":[DEFAULT_NATIVE_TOOL_ID]},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}));
     }
     let workflow = publish(&engine, document);
     let run = engine
@@ -1962,15 +2000,164 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool) {
     }
     control_fixture::evaluate(&engine).unwrap();
     let intent = engine.pending_workflow_intents().unwrap().remove(0);
-    let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+    let platform_command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
     let mut forged = engine
-        .configured_platform_request(&command)
+        .configured_platform_request(&platform_command)
         .unwrap()
         .unwrap();
     forged.arguments = json!({"owner_id":"other"});
-    assert!(engine.enqueue_platform_tool(&command, &forged).is_err());
+    assert!(
+        engine
+            .enqueue_platform_tool(&platform_command, &forged)
+            .is_err()
+    );
     drive(&engine, 12);
     let runtime = instance(&engine, &run["id"]);
+    if rework_writer {
+        assert_eq!(
+            runtime["steps"][3]["status"], "waiting_confirmation",
+            "{runtime}"
+        );
+        let before = runtime.clone();
+        let state = engine.store.snapshot().unwrap();
+        let old_snapshot = state
+            .configuration(
+                runtime["steps"][1]["outputs"]["workspace"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap()
+            .clone();
+        let checkpoint_revision = old_snapshot.data["value"]["revision"].clone();
+        let old_writer = runtime["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["step"] == "writer")
+            .unwrap()
+            .clone();
+        let instance_id = run["id"].as_str().unwrap();
+        // A moved code head with no genuine snapshot cannot become a checkpoint.
+        engine
+            .store
+            .transact(None, &mut |s| {
+                s.heads.iter_mut().find(|h| h.id == task).unwrap().revision = "e".repeat(40);
+                Ok(Value::Null)
+            })
+            .unwrap();
+        assert!(
+            command(
+                &engine,
+                "workflow.step.rework",
+                Some(instance_id),
+                json!({"step":"writer"})
+            )
+            .is_err()
+        );
+        engine
+            .store
+            .transact(None, &mut |s| {
+                s.heads.iter_mut().find(|h| h.id == task).unwrap().revision =
+                    checkpoint_revision.as_str().unwrap().into();
+                Ok(Value::Null)
+            })
+            .unwrap();
+        assert_eq!(instance(&engine, &run["id"]), before);
+        command(
+            &engine,
+            "workflow.step.rework",
+            Some(instance_id),
+            json!({"step":"writer","reason":"真实评审退回，保留历史，从已封存实现继续"}),
+        )
+        .unwrap();
+        let queued = instance(&engine, &run["id"]);
+        let writer = queued["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["step"] == "writer")
+            .unwrap();
+        schemas::SCHEMAS.assert_valid("rpc.schema.json#/$defs/StepExecution", writer);
+        assert_eq!(
+            writer["rework_workspace"]["workspace"],
+            old_snapshot.data["value"]
+        );
+        assert_eq!(writer["rework_workspace"]["output_id"], old_snapshot.id);
+        assert_eq!(
+            queued["active_plan_revision_id"],
+            before["active_plan_revision_id"]
+        );
+        recorder.writes.lock().unwrap().push((
+            std::path::Path::new(&work.path).join("addition.txt"),
+            "reworked change\n".into(),
+        ));
+        drop(state);
+        drive(&engine, 32);
+        let after = instance(&engine, &run["id"]);
+        assert_eq!(
+            after["steps"][3]["status"], "waiting_confirmation",
+            "{after}"
+        );
+        let state = engine.store.snapshot().unwrap();
+        assert!(
+            state
+                .governance
+                .iter()
+                .any(|r| r.kind == "workflow_execution_history"
+                    && r.definition_id == old_writer["id"].as_str().unwrap()
+                    && r.data == old_writer)
+        );
+        assert_eq!(
+            state
+                .configuration(before["steps"][1]["outputs"]["workspace"].as_str().unwrap())
+                .unwrap()
+                .data,
+            old_snapshot.data
+        );
+        let new_snapshot = state
+            .configuration(after["steps"][1]["outputs"]["workspace"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            new_snapshot.data["value"]["changes"]["base_revision"],
+            checkpoint_revision
+        );
+        assert!(
+            new_snapshot.data["value"]["changes"]["diff"]
+                .as_str()
+                .unwrap()
+                .contains("+reworked change")
+        );
+        let calls = recorder.calls.lock().unwrap();
+        let writer_calls: Vec<_> = calls
+            .iter()
+            .filter(|c| c.configured_task.as_ref().unwrap().task["source"]["step"] == "writer")
+            .collect();
+        assert_eq!(writer_calls.len(), 2);
+        let input = &writer_calls[1].configured_task.as_ref().unwrap().task;
+        assert_eq!(input["rework"]["outputs"], old_writer["outputs"]);
+        assert_eq!(input["rework"]["previous_execution_id"], old_writer["id"]);
+        assert_eq!(
+            input["inputs"]["workspace"]["revision"],
+            checkpoint_revision
+        );
+        assert_eq!(
+            input["input_sources"]["workspace"]["source_output_id"],
+            old_snapshot.id
+        );
+        assert_eq!(
+            input["input_sources"]["workspace"]["binding"]["source"]["step"],
+            "current"
+        );
+        assert_eq!(
+            input["input_sources"]["workspace"]["rework_checkpoint"]["previous_workspace"]["revision"],
+            base
+        );
+        assert_eq!(
+            writer_calls[1].turn.code_view.as_ref().unwrap().revision,
+            checkpoint_revision.as_str().unwrap()
+        );
+        return;
+    }
     assert_eq!(runtime["status"], "completed", "{runtime}");
     let state = engine.store.snapshot().unwrap();
     let output = state
