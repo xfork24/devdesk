@@ -28,7 +28,7 @@ for (const allowOverride of [false, true])
       payload: {
         name: "确切版本确认",
         document: {
-          schema_version: 5,
+          schema_version: 6,
           stages: [{ key: "decision", name: "决定" }],
           steps: [
             {
@@ -153,7 +153,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
     payload: {
       name: "并行审批",
       document: {
-        schema_version: 5,
+        schema_version: 6,
         stages: [{ key: "decision", name: "决定" }],
         inputs: { accepted: { delivery_ref: "builtin-delivery-object:1" } },
         steps: ["first", "second"].map((key) => ({

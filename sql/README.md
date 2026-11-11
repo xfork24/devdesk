@@ -2,10 +2,10 @@
 
 | 文件 | 数据库 | user_version |
 |---|---|---:|
-| `global/schema.sql` | `<data>/global.sqlite3`，共享源配置、安装与项目索引 | 15 |
-| `project/schema.sql` | `<data>/projects/<id>/engineering.sqlite3`，项目源选择、材料与执行事实 | 46 |
+| `global/schema.sql` | `<data>/global.sqlite3`，共享源配置、安装与项目索引 | 16 |
+| `project/schema.sql` | `<data>/projects/<id>/engineering.sqlite3`，项目源选择、材料与执行事实 | 47 |
 
-数据集标记为 `devdesk-source-v2`。空库在事务中创建当前结构；清空后仅剩标记、锁及 Finder 元数据的目录可重新初始化。其他包含数据的目录若协议或数据库版本不兼容则直接拒绝，不执行升级、回退或转换，也不改写旧库。
+数据集标记为 `devdesk-source-v2-standard-v1`。空库在事务中创建当前结构；清空后仅剩标记、锁及 Finder 元数据的目录可重新初始化。其他包含数据的目录若协议或数据库版本不兼容则直接拒绝，不执行升级、回退或转换，也不改写旧库。
 
 `source_definitions` 是源配置的唯一存储，主键为 `(identity, revision)`，`reference` 为 `identity:revision` 的虚拟唯一列。源修订不可更新或删除。正文只属于一个源修订，Permission 正文不重复身份、名称及版本。没有 `definitions`、`harnesses`、`sandboxes` 投影表。
 

@@ -2,7 +2,7 @@
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const ORCHESTRATION_RENDERER: &str = "orchestration-task/v1";
+pub const ORCHESTRATION_RENDERER: &str = "orchestration-task/v2";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -36,8 +36,8 @@
       "standards/builtin-standard-engineering-v1.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-sol-high-v5.json",
-      "workflows/builtin-workflow-feature-sol-high-v5.json"
+      "workflows/builtin-workflow-task-sol-high-v6.json",
+      "workflows/builtin-workflow-feature-sol-high-v6.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v1.json",

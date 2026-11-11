@@ -321,7 +321,10 @@ impl Workspace {
         method: &str,
         params: &Value,
     ) -> Option<Result<Value>> {
-        let command = method == "configuration.retire"
+        let command = method == "standard.capture"
+            || method == "standard.archive"
+            || method == "work.configuration.update"
+            || method == "configuration.retire"
             || method.starts_with("workflow.")
             || method.starts_with("model.")
             || method.starts_with("tool.")
@@ -331,19 +334,18 @@ impl Workspace {
             || method.starts_with("capability.")
             || method.starts_with("delivery_type.")
             || method.starts_with("agent.instance.")
-            || ([
-                "skill.create",
-                "skill.revise",
-                "spec.create",
-                "spec.revise",
-                "standard.create",
-                "standard.revise",
-            ]
-            .contains(&method)
+            || (["skill.create", "skill.revise", "spec.create", "spec.revise"].contains(&method)
                 && params["payload"].get("data").is_some())
             || (["agent.create", "agent.revise"].contains(&method)
                 && params["payload"].get("data").is_some());
         let query = [
+            "standard.capture.preview",
+            "query.standard",
+            "query.standard_diff",
+            "query.standard_usage",
+            "query.work_standard_diff",
+            "query.work_configuration",
+            "query.standard_catalog",
             "query.workflow_task_preview",
             "query.workflow_requirements",
             "query.specification_audit",
@@ -373,7 +375,11 @@ impl Workspace {
                 .get("scope")
                 .or_else(|| params["payload"].get("scope"));
             let local = !method.starts_with("role.")
-                && ((method == "query.workflow_task_preview" && params["project_id"].is_string())
+                && ((params["project_id"].is_string()
+                    && (method == "query.workflow_task_preview"
+                        || method.starts_with("query.standard")
+                        || method.starts_with("query.work_")
+                        || method == "standard.capture.preview"))
                     || explicit_scope.is_some_and(|s| s["kind"] == "project")
                     || (!target_global && target.is_some())
                     || params["local"] == true);

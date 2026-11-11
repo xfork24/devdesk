@@ -14,6 +14,7 @@ import {
 } from "react";
 import { RoleManager } from "./RoleManager";
 import { JsonField } from "./WorkflowDeliveries";
+import { StandardManager } from "./StandardManager";
 import { WorkflowSpecifications } from "./WorkflowSpecifications";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
 import {
@@ -89,8 +90,6 @@ function initial(kind: string): Row {
         output_schema: { type: "object" },
         capabilities: [],
       };
-    case "standard":
-      return { schema_version: 3, body: "", baseline_rules: [] };
     case "delivery_type":
       return { format: "markdown", spec_refs: [], content_schema: null };
     case "spec":
@@ -154,6 +153,8 @@ export function AgentCatalog({
           project={project}
           onChanged={() => setRevision((v) => v + 1)}
         />
+      ) : kind === "standard" ? (
+        <StandardManager request={request} project={project} />
       ) : (
         <ResourceEditor
           key={`${kind}:${project?.id}`}
@@ -202,7 +203,7 @@ export function ResourceEditor({
     [busy, setBusy] = useState(false),
     [integrations, setIntegrations] = useState<Row[]>([]);
   const [draft, setDraft] = useDraft(
-    `devdesk:source-v2:resource:${project?.id || "global"}:${kind}`,
+    `devdesk:source-v2-standard-v1:resource:${project?.id || "global"}:${kind}`,
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
@@ -423,9 +424,7 @@ export function ResourceEditor({
               ? "给一个 Role 与一个 Capability 的组合命名。"
               : kind === "capability"
                 ? "选择可复用的 Model、Harness、Tools 和 Skills。"
-                : kind === "standard"
-                  ? "可选质量基线检查规范覆盖，不改变 Step 的 Spec。"
-                  : "修订独立保存，修改后由使用方显式采用。"}
+                : "修订独立保存，修改后由使用方显式采用。"}
           </p>
         </div>
       </div>
@@ -980,7 +979,7 @@ export function ResourceEditor({
                 </label>
               </>
             )}
-            {["skill", "spec", "standard"].includes(kind) && (
+            {["skill", "spec"].includes(kind) && (
               <MarkdownField
                 key={draft.selected || "new"}
                 label="正文"
@@ -992,7 +991,7 @@ export function ResourceEditor({
                 }}
               />
             )}
-            {["spec", "standard", "delivery_type"].includes(kind) ? (
+            {["spec", "delivery_type"].includes(kind) ? (
               <WorkflowSpecifications
                 kind={kind}
                 data={data}
@@ -1007,8 +1006,7 @@ export function ResourceEditor({
               disabled={
                 busy ||
                 !draft.name.trim() ||
-                (["skill", "spec", "standard"].includes(kind) &&
-                  !data.body?.trim()) ||
+                (["skill", "spec"].includes(kind) && !data.body?.trim()) ||
                 (kind === "delivery_type" && !data.spec_refs?.length)
               }
             >

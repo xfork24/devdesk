@@ -5,6 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkflowChangeOperation {
+    AdoptStandard {
+        standard_ref: Id,
+        workflow_ref: Id,
+        #[serde(default)]
+        permission_context_ref: Option<Id>,
+    },
     RevertChange {
         change_id: Id,
     },
@@ -72,6 +78,9 @@ impl WorkflowChangeSet {
 
 impl WorkflowDefinition {
     pub fn assign_node_ids(&mut self, definition: &str) {
+        let definition = parse_source_reference(definition)
+            .map(|(identity, _)| identity)
+            .unwrap_or(definition);
         for stage in &mut self.stages {
             if stage.node_id.is_empty() {
                 stage.node_id = workflow_node_id(definition, "stage", &stage.key);

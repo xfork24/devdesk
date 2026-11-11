@@ -110,7 +110,7 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     return command("workflow.publish", {}, draft.id, draft.revision);
   }
   const child = await publish("可复用确认", {
-    schema_version: 5,
+    schema_version: 6,
     stages: [{ key: "inside", name: "内部阶段" }],
     steps: [
       {
@@ -123,7 +123,7 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     ],
   });
   const parent = await publish("布局流程", {
-    schema_version: 5,
+    schema_version: 6,
     stages: [
       { key: "one", name: "业务阶段一" },
       { key: "two", name: "业务阶段二" },
@@ -231,7 +231,7 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   const draft = await command("workflow.create", {
     name: "可调整计划",
     document: {
-      schema_version: 5,
+      schema_version: 6,
       stages: [
         { key: "first", name: "材料处理" },
         { key: "optional", name: "可选复核" },

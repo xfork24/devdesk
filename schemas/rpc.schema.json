@@ -3601,6 +3601,16 @@
                   "type": "null"
                 }
               ]
+            },
+            "work_binding": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/WorkBinding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -3819,7 +3829,7 @@
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": 5
+          "const": 6
         },
         "stages": {
           "type": "array",
@@ -3865,42 +3875,6 @@
         "schema_version",
         "steps"
       ],
-      "additionalProperties": false
-    },
-    "StepSelector": {
-      "type": "object",
-      "properties": {
-        "role_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "delivery_ref": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "tags": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "required": [],
       "additionalProperties": false
     },
     "ContentCheckDefinition": {
@@ -3949,51 +3923,25 @@
       ],
       "additionalProperties": false
     },
-    "ConfiguredBaselineRule": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "$ref": "#/$defs/StepSelector"
-        },
-        "required_spec_refs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "min_matches": {
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "required": [
-        "selector",
-        "required_spec_refs",
-        "min_matches"
-      ],
-      "additionalProperties": false
-    },
     "ConfiguredStandard": {
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": 3
+          "const": 4
         },
-        "body": {
-          "type": "string",
-          "minLength": 1
-        },
-        "baseline_rules": {
+        "root_workflow_refs": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ConfiguredBaselineRule"
-          }
+            "$ref": "source-reference.schema.json"
+          },
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true
         }
       },
       "required": [
         "schema_version",
-        "body"
+        "root_workflow_refs"
       ],
       "additionalProperties": false
     },
@@ -4025,7 +3973,7 @@
       "type": "object",
       "properties": {
         "renderer_version": {
-          "const": "agent-task/v5"
+          "const": "agent-task/v6"
         },
         "turn_id": {
           "type": "string"
@@ -4129,7 +4077,7 @@
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": 3
+          "const": 4
         },
         "workflow_ref": {
           "type": "string"
@@ -4141,14 +4089,7 @@
           }
         },
         "standard_ref": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "source-reference.schema.json"
         },
         "orchestrator_role_ref": {
           "type": [
@@ -4164,35 +4105,8 @@
         "schema_version",
         "workflow_ref",
         "role_agent_bindings",
-        "permission_context_ref"
-      ],
-      "additionalProperties": false
-    },
-    "FeatureWorkflowConfiguration": {
-      "type": "object",
-      "properties": {
-        "schema_version": {
-          "const": 3
-        },
-        "project_configuration_id": {
-          "type": "string"
-        },
-        "workflow_instance_id": {
-          "type": "string"
-        },
-        "configuration": {
-          "$ref": "#/$defs/ProjectConfiguration"
-        },
-        "permission_context_ref": {
-          "type": "string",
-          "pattern": "^.+:[1-9][0-9]*$"
-        }
-      },
-      "required": [
-        "schema_version",
-        "project_configuration_id",
-        "workflow_instance_id",
-        "configuration"
+        "permission_context_ref",
+        "standard_ref"
       ],
       "additionalProperties": false
     },
@@ -4373,7 +4287,7 @@
             "$ref": "#/$defs/IntegrationLock"
           }
         },
-        "specification_snapshot": {
+        "specification_view": {
           "type": "array",
           "items": {}
         },
@@ -4388,6 +4302,26 @@
             "string",
             "null"
           ]
+        },
+        "standard_ref": {
+          "anyOf": [
+            {
+              "$ref": "source-reference.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_configuration_ref": {
+          "anyOf": [
+            {
+              "$ref": "source-reference.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -4398,7 +4332,7 @@
         "permission_locks",
         "tool_bindings",
         "integration_locks",
-        "specification_snapshot"
+        "specification_view"
       ],
       "additionalProperties": false
     },
@@ -4406,7 +4340,7 @@
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": 5
+          "const": 6
         },
         "owner_id": {
           "type": "string"
@@ -4475,6 +4409,123 @@
         "steps",
         "status",
         "paused"
+      ],
+      "additionalProperties": false
+    },
+    "WorkReference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "project"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "feature"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "task"
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WorkBinding": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pointer": {
+          "type": "string",
+          "pattern": "^(/.*)?$"
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "WorkConfiguration": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "work": {
+          "$ref": "#/$defs/WorkReference"
+        },
+        "standard_ref": {
+          "$ref": "source-reference.schema.json"
+        },
+        "workflow_ref": {
+          "$ref": "source-reference.schema.json"
+        },
+        "role_agent_bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "source-reference.schema.json"
+          }
+        },
+        "permission_context_ref": {
+          "$ref": "source-reference.schema.json"
+        },
+        "source_configuration_ref": {
+          "anyOf": [
+            {
+              "$ref": "source-reference.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "work",
+        "standard_ref",
+        "workflow_ref",
+        "role_agent_bindings",
+        "permission_context_ref"
       ],
       "additionalProperties": false
     }

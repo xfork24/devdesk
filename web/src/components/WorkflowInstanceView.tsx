@@ -1,3 +1,4 @@
+import { WorkStandard } from "./WorkStandard";
 import { WorkflowController, WorkflowPlanChanges } from "./WorkflowController";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton, useActionFeedback } from "./ActionFeedback";
@@ -171,6 +172,16 @@ export function WorkflowInstanceView({
           ) : null}
         </div>
       </div>
+      <WorkStandard
+        request={request}
+        projectId={projectId}
+        owner={{ id: runtime.owner_id }}
+        instance={current}
+        refresh={async () => {
+          await load();
+          await refresh();
+        }}
+      />
       {!nested && (
         <WorkflowController
           request={request}

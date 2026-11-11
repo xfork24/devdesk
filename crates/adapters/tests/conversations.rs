@@ -46,7 +46,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
             s.sessions.push(Session {
                 id: sid.clone(),
                 owner_id: pid.clone(),
-                agent: "builtin-agent-sol-high-analyst:3".into(),
+                agent: "builtin-agent-sol-high-analyst:4".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "docker-fixture".into(),
                 snapshot_id: None,
@@ -806,7 +806,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
                 command_id: id(),
                 target: Some(pid),
                 expected_revision: Some(1),
-                payload: json!({"agent":"builtin-agent-sol-high-analyst:3","binding":binding}),
+                payload: json!({"agent":"builtin-agent-sol-high-analyst:4","binding":binding}),
             },
         )
         .unwrap();

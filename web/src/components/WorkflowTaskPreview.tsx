@@ -8,7 +8,7 @@ import { MarkdownField, type Request, type Row } from "./configuration-ui";
 
 export function AgentTaskView({ value }: { value: Row }) {
   const frozen =
-    value.task?.renderer_version === "agent-task/v5" ? value.task : undefined;
+    value.task?.renderer_version === "agent-task/v6" ? value.task : undefined;
   const content =
     frozen?.task || (typeof value.task === "object" ? value.task : value);
   const instructions =

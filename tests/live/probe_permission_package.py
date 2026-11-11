@@ -121,7 +121,7 @@ try:
         preview = rpc('query.workflow_task_preview', {'project_id': project, 'id': published['id'], 'step': step['key'], 'preview_agent_ref': defaults['role_agent_bindings'][step['executor']['role_ref']]})
         assert preview['task']['task_instructions'] == changed_task
         assert preview['task']['agent'] and preview['task']['specifications']
-        assert preview['task']['renderer_version'] == 'agent-task/v5'
+        assert preview['task']['renderer_version'] == 'agent-task/v6'
         report['workflow_v5_embedded_tasks_edit_publish_preview'] = True
         capture = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'materials.capture')
         complete = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'tasks.complete')

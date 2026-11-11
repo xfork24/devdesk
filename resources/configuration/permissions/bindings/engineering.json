@@ -1,7 +1,7 @@
 {
   "kind": "permission_context",
   "identity": "builtin-permission-context-engineering",
-  "revision": 1,
+  "revision": 2,
   "name": "默认工程执行授权",
   "scope": {
     "kind": "global"
@@ -16,7 +16,7 @@
     },
     "step_grants": [
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:4",
+        "workflow_ref": "builtin-workflow-feature-sol-high:5",
         "step": "design",
         "writable_paths": [],
         "read_only_paths": [
@@ -25,7 +25,7 @@
         "tool_refs": []
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:4",
+        "workflow_ref": "builtin-workflow-feature-sol-high:5",
         "step": "release_recipe",
         "writable_paths": [
           "tests"
@@ -36,7 +36,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:4",
+        "workflow_ref": "builtin-workflow-feature-sol-high:5",
         "step": "closure",
         "writable_paths": [],
         "read_only_paths": [
@@ -45,7 +45,7 @@
         "tool_refs": []
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:4",
+        "workflow_ref": "builtin-workflow-feature-sol-high:5",
         "step": "closure_review",
         "writable_paths": [],
         "read_only_paths": [
@@ -54,7 +54,7 @@
         "tool_refs": []
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:4",
+        "workflow_ref": "builtin-workflow-feature-sol-high:5",
         "step": "candidate_review",
         "writable_paths": [],
         "read_only_paths": [],
@@ -63,7 +63,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-task-sol-high:4",
+        "workflow_ref": "builtin-workflow-task-sol-high:5",
         "step": "tests",
         "writable_paths": [
           "tests"
@@ -74,7 +74,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-task-sol-high:4",
+        "workflow_ref": "builtin-workflow-task-sol-high:5",
         "step": "red_baseline",
         "writable_paths": [
           "."
@@ -87,7 +87,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-task-sol-high:4",
+        "workflow_ref": "builtin-workflow-task-sol-high:5",
         "step": "implementation",
         "writable_paths": [
           "."
@@ -100,7 +100,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-task-sol-high:4",
+        "workflow_ref": "builtin-workflow-task-sol-high:5",
         "step": "documentation",
         "writable_paths": [],
         "read_only_paths": [
@@ -109,7 +109,7 @@
         "tool_refs": []
       },
       {
-        "workflow_ref": "builtin-workflow-task-sol-high:4",
+        "workflow_ref": "builtin-workflow-task-sol-high:5",
         "step": "review",
         "writable_paths": [],
         "read_only_paths": [],
@@ -118,7 +118,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-task-sol-high:4",
+        "workflow_ref": "builtin-workflow-task-sol-high:5",
         "step": "candidate_review",
         "writable_paths": [],
         "read_only_paths": [],

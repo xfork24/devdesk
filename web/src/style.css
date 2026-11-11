@@ -1323,3 +1323,9 @@ pre { overflow: auto; max-width: 100%; }
 .directory-picker button svg { vertical-align: middle; flex-shrink: 0; }
 .directory-picker .actions { justify-content: flex-end; margin-top: 20px; }
 .template-reset-dialog .actions { justify-content: flex-end; margin-top: 20px; }
+
+.standard-comparison { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.standard-detail code, .work-standard code { overflow-wrap:anywhere; }
+.standard-detail pre, .standard-comparison pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:32rem; overflow:auto; }
+.work-standard { margin-block:12px; }
+@media(max-width:760px) { .standard-comparison { grid-template-columns:1fr; } }

@@ -38,3 +38,9 @@ Delivery 描述格式和结构合同，`spec_refs` 指向唯一内容规范。PR
 ## 数据边界
 
 只接受源协议 v2、新的数据集标记和当前 SQLite 基线。没有旧协议转换器、数据升级入口或兼容执行分支。不要使用既有数据目录验证本次改动；验证使用独立临时空目录。
+
+## Standard 源与执行选择
+
+Standard 不是持久化的展开投影，它是持有确切 Workflow 根引用的不可变源。规范摘要、源图与差异按需计算；原有逐步清单改名为 `specification_view`，仅作为执行要求视图。Spec 发布新版本不会改变已有 Delivery、Workflow 或 Standard。
+
+实际调用记录 `workflow_invocation` 固定工作身份、父执行、初始计划和 Standard；计划修订固定每次采用。Task 绑定真实业务 owner，不从节点名称或集合下标推断。子工作按自己所选配置独立编译，不复制父 Plan 替换文档。存储 codec 保存这些确切引用，并从历史计划恢复当时的原生任务正文。

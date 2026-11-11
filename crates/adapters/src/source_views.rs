@@ -76,7 +76,7 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
                 }
             }
         }
-        if value["renderer_version"] == "agent-task/v5"
+        if value["renderer_version"] == "agent-task/v6"
             && value["source"]["workflow_instance_id"]
                 .as_str()
                 .is_some_and(|id| {
@@ -145,8 +145,7 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
                 return Ok(json!({"$source":"skill_package","ref":package.id}));
             }
         }
-        if value.get("workflow_revision_id").is_some()
-            && value.get("specification_snapshot").is_some()
+        if value.get("workflow_revision_id").is_some() && value.get("specification_view").is_some()
         {
             let plan: ConfiguredWorkflowPlan =
                 serde_json::from_value(value.clone()).map_err(storage)?;
@@ -167,7 +166,7 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
                 connections.insert(tool.clone(), bound.binding_ref.clone());
             }
             return Ok(
-                json!({"$source":"workflow_plan","workflow_ref":plan.workflow_revision_id,"role_agent_bindings":bindings,
+                json!({"$source":"workflow_plan","workflow_ref":plan.workflow_revision_id,"standard_ref":plan.standard_ref,"work_configuration_ref":plan.work_configuration_ref,"role_agent_bindings":bindings,
                 "permission_context_ref":plan.permission_context_ref,"permission_workflow_ref":plan.permission_workflow_ref,"permission_bindings":permissions,"integration_bindings":connections,
                 "project_id":state.projects.first().map(|p|&p.id)}),
             );
@@ -558,6 +557,12 @@ pub(super) fn restore_with(
             let workflow = context.configuration(value["workflow_ref"].as_str().unwrap_or(""))?;
             let mut plan =
                 compile_workflow_sources(None, &context, workflow, &scope, Some(&bindings))?;
+            plan.standard_ref = value["standard_ref"].as_str().map(str::to_owned);
+            plan.work_configuration_ref =
+                value["work_configuration_ref"].as_str().map(str::to_owned);
+            if let Some(reference) = &plan.standard_ref {
+                standard_snapshot(state, reference, &scope)?;
+            }
             plan.permission_workflow_ref =
                 value["permission_workflow_ref"].as_str().map(str::to_owned);
             for (key, choice) in value["permission_bindings"]

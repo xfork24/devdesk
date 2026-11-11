@@ -1,5 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "DevDesk Workflow v5",
+  "title": "DevDesk Workflow v6",
   "$ref": "rpc.schema.json#/$defs/WorkflowDefinition"
 }

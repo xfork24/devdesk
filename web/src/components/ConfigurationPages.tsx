@@ -1,6 +1,7 @@
 import { ActionButton } from "./ActionFeedback";
 import { ResourceEditor } from "./AgentCatalog";
 import { Integrations } from "./Integrations";
+import { StandardManager } from "./StandardManager";
 import { WorkflowManager } from "./WorkflowManager";
 import { useGroupTab, type Request, type Row } from "./configuration-ui";
 
@@ -71,7 +72,9 @@ export function ConfigurationPage({
           project={props.project}
           refresh={props.refresh}
         />
-      ) : ["model", "harness", "spec", "standard", "delivery_type"].includes(tab) ? (
+      ) : tab === "standard" ? (
+        <StandardManager request={props.request} project={props.project} />
+      ) : ["model", "harness", "spec", "delivery_type"].includes(tab) ? (
         <ResourceEditor
           key={`${tab}:${props.project?.id}`}
           kind={tab}

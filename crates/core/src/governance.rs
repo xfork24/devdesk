@@ -341,7 +341,7 @@ impl Engine {
             )?;
         }
         require(
-            current.data["schema_version"] == 3,
+            current.data["schema_version"] == 4,
             "项目配置已过时，请重新配置",
         )?;
         self.start_configured_feature(s, feature, &current, p)
@@ -703,7 +703,7 @@ impl Engine {
                 result
             }
             "project.configuration.update" => {
-                return Err(err("invalid_configuration", "项目配置需要当前 Workflow v5"));
+                return Err(err("invalid_configuration", "项目配置需要当前 Workflow v6"));
             }
             _ => return Ok(None),
         };

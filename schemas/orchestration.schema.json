@@ -312,6 +312,36 @@
             "change_id"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "adopt_standard"
+            },
+            "standard_ref": {
+              "$ref": "source-reference.schema.json"
+            },
+            "workflow_ref": {
+              "$ref": "source-reference.schema.json"
+            },
+            "permission_context_ref": {
+              "anyOf": [
+                {
+                  "$ref": "source-reference.schema.json"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "standard_ref",
+            "workflow_ref"
+          ],
+          "additionalProperties": false
         }
       ]
     },

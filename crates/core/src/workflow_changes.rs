@@ -19,6 +19,8 @@ struct Preview {
     footprint: Value,
     preview_hash: String,
     #[serde(default)]
+    standard_diff: Value,
+    #[serde(default)]
     restored_executions: Vec<StepExecution>,
     #[serde(default)]
     reverted_change_id: Option<Id>,
@@ -141,6 +143,7 @@ impl Engine {
         let preview_hash = configuration_hash(&(changes, &plan, &restored, &footprint));
         Ok(Preview {
             document: plan.document.clone(),
+            standard_diff: json!({"restored_standard_ref":plan.standard_ref}),
             plan,
             bindings: old.role_agent_bindings.clone(),
             inputs: old.inputs.clone(),
@@ -195,8 +198,30 @@ impl Engine {
             .collect();
         let mut waivers = vec![];
         let mut task_changes = vec![];
+        let mut adopted: Option<(Id, Id)> = None;
+        let mut permission_selection = old.plan.permission_context_ref.clone();
         for op in &changes.operations {
             match op {
+                WorkflowChangeOperation::AdoptStandard {
+                    standard_ref,
+                    workflow_ref,
+                    permission_context_ref,
+                } => {
+                    if let Some(context) = permission_context_ref {
+                        crate::governance::reference(
+                            state,
+                            context,
+                            "permission_context",
+                            &row.scope,
+                        )?;
+                        permission_selection = Some(context.clone());
+                    }
+                    require(adopted.is_none(), "一次变更只能选择一份目标 Standard")?;
+                    standard_entry(state, standard_ref, workflow_ref, &row.scope)?;
+                    document = state.resolve_workflow(workflow_ref)?;
+                    document.assign_node_ids(workflow_ref);
+                    adopted = Some((standard_ref.clone(), workflow_ref.clone()));
+                }
                 WorkflowChangeOperation::RevertChange { .. } => unreachable!(),
                 WorkflowChangeOperation::ReplacePlan { document: d } => document = d.clone(),
                 WorkflowChangeOperation::UpsertStep { step } => {
@@ -269,6 +294,21 @@ impl Engine {
                             || document.steps.iter().any(|s| s.node_id == *node_id),
                         "豁免目标不存在",
                     )?;
+                    if node_id == "$workflow" && requirement == "coverage" {
+                        fn has_covers(rule: &CompletionRule) -> bool {
+                            match rule {
+                                CompletionRule::Covers { .. } => true,
+                                CompletionRule::All { rules } | CompletionRule::Any { rules } => {
+                                    rules.iter().any(has_covers)
+                                }
+                                _ => false,
+                            }
+                        }
+                        require(
+                            has_covers(&document.completion),
+                            "Standard 覆盖规则已移除；仅可豁免明确的 Workflow 完成要求",
+                        )?;
+                    }
                     waivers.push((node_id.clone(), requirement.clone()));
                 }
                 WorkflowChangeOperation::BypassStage {
@@ -489,89 +529,29 @@ impl Engine {
         candidate.version = 1;
         candidate.id = format!("{}:1", candidate.definition_id);
         candidate.created_at = 0;
-        let mut plan =
-            self.compile_configured_workflow(state, &candidate, &row.scope, Some(&bindings))?;
-        if let Some(configuration) = state
-            .governance
-            .iter()
-            .find(|r| r.kind == "feature_workflow_configuration" && r.definition_id == old.owner_id)
-        {
-            if let Some(standard_ref) = configuration.data["configuration"]["standard_ref"].as_str()
-            {
-                let baseline = if old.parent_execution_id.is_none() {
-                    self.check_configured_baseline(state, &plan, standard_ref, &row.scope)
-                        .map(|_| ())
-                } else {
-                    let standard: ConfiguredStandard =
-                        state.configuration(standard_ref)?.decode()?;
-                    (|| -> Result<()> {
-                        for rule in &standard.baseline_rules {
-                            let matches = |binding: &&Value| {
-                                let deliveries = binding["outputs"]
-                                    .as_object()
-                                    .into_iter()
-                                    .flat_map(|m| m.values())
-                                    .filter_map(|p| p["delivery_ref"].as_str())
-                                    .collect::<Vec<_>>();
-                                let tags = binding["tags"]
-                                    .as_array()
-                                    .into_iter()
-                                    .flatten()
-                                    .filter_map(|t| t.as_str().map(str::to_owned))
-                                    .collect::<Vec<_>>();
-                                rule.selector.matches(
-                                    binding["role_ref"].as_str(),
-                                    &deliveries,
-                                    &tags,
-                                )
-                            };
-                            let old_count = old
-                                .plan
-                                .specification_snapshot
-                                .iter()
-                                .filter(matches)
-                                .count();
-                            if old_count == 0 {
-                                continue;
-                            }
-                            let current = plan
-                                .specification_snapshot
-                                .iter()
-                                .filter(matches)
-                                .collect::<Vec<_>>();
-                            require(
-                                current.len() >= old_count.min(rule.min_matches as usize),
-                                "子流程缺少原 Standard 覆盖落点",
-                            )?;
-                            for binding in current {
-                                for spec in &rule.required_spec_refs {
-                                    require(
-                                        binding["spec_refs"]
-                                            .as_array()
-                                            .is_some_and(|refs| refs.contains(&json!(spec))),
-                                        format!("子流程缺少原 Standard 规范 {spec}"),
-                                    )?;
-                                }
-                            }
-                        }
-                        Ok(())
-                    })()
-                };
-                if let Err(error) = baseline {
-                    require(
-                        waivers.contains(&("$workflow".into(), "coverage".into())),
-                        format!(
-                            "原 Standard 要求未满足，需明确 coverage 豁免：{}",
-                            error.message
-                        ),
-                    )?;
-                }
+        if let Some((_, workflow)) = &adopted {
+            let target = state.configuration(workflow)?;
+            let mut comparison = state.resolve_workflow(workflow)?;
+            comparison.assign_node_ids(workflow);
+            if comparison == document {
+                candidate = target.clone();
             }
         }
+        let context = json!({"workflow_ref":candidate.id,"permission_context_ref":permission_selection,"permission_workflow_ref":if adopted.is_some(){Some(candidate.id.clone())}else{old.plan.permission_workflow_ref.clone()}});
+        let selected = crate::standards::selection_state(state, &context);
+        let mut plan =
+            self.compile_configured_workflow(&selected, &candidate, &row.scope, Some(&bindings))?;
+        plan.standard_ref = adopted
+            .as_ref()
+            .map(|(s, _)| s.clone())
+            .or_else(|| old.plan.standard_ref.clone());
+        plan.work_configuration_ref = old.plan.work_configuration_ref.clone();
         let definitions = |p: &ConfiguredWorkflowPlan| {
             p.definitions
                 .iter()
-                .filter(|(_, r)| !["workflow", "runtime_workflow"].contains(&r.kind.as_str()))
+                .filter(|(_, r)| {
+                    !["workflow", "runtime_workflow", "standard"].contains(&r.kind.as_str())
+                })
                 .map(|(k, r)| (k.clone(), r.content_hash.clone()))
                 .collect::<BTreeMap<_, _>>()
         };
@@ -611,9 +591,48 @@ impl Engine {
         )?;
         let footprint = json!({"executions":old.steps.iter().filter(|s|affected.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
             "children":state.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
-        plan.permission_workflow_ref = old.plan.permission_workflow_ref.clone();
+        plan.permission_workflow_ref = if adopted.is_some() {
+            Some(plan.workflow_revision_id.clone())
+        } else {
+            old.plan.permission_workflow_ref.clone()
+        };
+        // Resolve the candidate source and Standard in a disposable state. Preview publishes nothing.
+        let mut candidate_state = state.clone();
+        if candidate_state.configuration(&candidate.id).is_err() {
+            candidate_state.governance.push(candidate.clone());
+        }
+        let mut candidate_instance = old.clone();
+        candidate_instance.plan = plan;
+        candidate_instance.workflow_ref = candidate.id.clone();
+        candidate_instance.inputs = inputs.clone();
+        candidate_instance.role_agent_bindings = bindings.clone();
+        freeze_plan(
+            &mut candidate_state,
+            &mut candidate_instance,
+            &row.scope,
+            &changes.reason,
+        )?;
+        let plan = candidate_instance.plan;
+        let standard_diff =
+            if let (Some(before), Some(after)) = (&old.plan.standard_ref, &plan.standard_ref) {
+                diff_standard_snapshots(
+                    &standard_snapshot(state, before, &row.scope)?,
+                    &standard_snapshot(&candidate_state, after, &row.scope)?,
+                )
+            } else {
+                Value::Null
+            };
+        if old.parent_execution_id.is_some() {
+            crate::standards::check_invocation_contract(&old.plan.document, &plan.document)?;
+        }
         let preview_hash = configuration_hash(&(
-            changes, &document, &bindings, &inputs, &affected, &footprint,
+            changes,
+            &document,
+            &bindings,
+            &inputs,
+            &affected,
+            &footprint,
+            &plan.standard_ref,
         ));
         Ok(Preview {
             document,
@@ -626,6 +645,7 @@ impl Engine {
             waivers,
             footprint,
             preview_hash,
+            standard_diff,
             restored_executions: vec![],
             reverted_change_id: None,
         })
@@ -651,7 +671,7 @@ impl Engine {
             .map(|e| e.id.clone())
             .collect::<Vec<_>>();
         Ok(
-            json!({"preview_hash":preview.preview_hash,"affected":preview.affected,"budget_updates":preview.budget_updates,"bypassed":preview.bypassed,"waivers":preview.waivers,"must_stop":stop,"document":preview.document,"plan_revision_id":instance.active_plan_revision_id,"changeset":changes,"reverted_change_id":preview.reverted_change_id,"restored_execution_ids":preview.restored_executions.iter().map(|e|&e.id).collect::<Vec<_>>()}),
+            json!({"preview_hash":preview.preview_hash,"standard_ref":preview.plan.standard_ref,"standard_diff":preview.standard_diff,"before_standard_ref":instance.plan.standard_ref,"affected":preview.affected,"budget_updates":preview.budget_updates,"bypassed":preview.bypassed,"waivers":preview.waivers,"must_stop":stop,"document":preview.document,"plan_revision_id":instance.active_plan_revision_id,"changeset":changes,"reverted_change_id":preview.reverted_change_id,"restored_execution_ids":preview.restored_executions.iter().map(|e|&e.id).collect::<Vec<_>>()}),
         )
     }
 
@@ -696,27 +716,15 @@ impl Engine {
                 )?;
             }
         }
-        if state
-            .configuration(&preview.plan.workflow_revision_id)
-            .is_err()
+        for source in preview
+            .plan
+            .definitions
+            .values()
+            .filter(|r| ["workflow", "standard"].contains(&r.kind.as_str()))
         {
-            let (identity, revision) = parse_source_reference(&preview.plan.workflow_revision_id)?;
-            let mut source_document = preview.document.clone();
-            for step in &mut source_document.steps {
-                step.access.writable_paths.clear();
-                step.access.read_only_paths.clear();
-                step.access.tool_refs.clear();
+            if state.configuration(&source.id).is_err() {
+                state.governance.push(source.clone());
             }
-            let source = SourceDefinition {
-                kind: "workflow".into(),
-                identity: identity.into(),
-                revision,
-                name: changes.reason.clone(),
-                scope: row.scope.clone(),
-                data: json!(source_document),
-            }
-            .into_record()?;
-            state.governance.push(source);
         }
         let change = record(
             "workflow_change",
@@ -1005,8 +1013,13 @@ impl Engine {
                 }
             })
             .collect();
-        // Publish the exact private definition inside this instance's history, not the template catalog.
-        if let Some(definition) = instance.plan.definitions.get(&instance.workflow_ref) {
+        // Publish only candidate sources; expanded views remain transient.
+        for definition in instance
+            .plan
+            .definitions
+            .values()
+            .filter(|r| ["workflow", "standard"].contains(&r.kind.as_str()))
+        {
             if state.configuration(&definition.id).is_err() {
                 state.governance.push(definition.clone());
             }

@@ -1,13 +1,13 @@
 {
   "kind": "workflow",
   "identity": "builtin-workflow-feature-sol-high",
-  "revision": 4,
+  "revision": 5,
   "name": "默认 Feature 开发流程",
   "scope": {
     "kind": "global"
   },
   "data": {
-    "schema_version": 5,
+    "schema_version": 6,
     "stages": [
       {
         "key": "requirements",
@@ -595,7 +595,7 @@
         },
         "executor": {
           "type": "workflow",
-          "workflow_ref": "builtin-workflow-task-sol-high:4",
+          "workflow_ref": "builtin-workflow-task-sol-high:5",
           "foreach": {
             "source": {
               "step": "tasks",
@@ -605,6 +605,10 @@
             "item_input": "item",
             "max_concurrency": 1,
             "min_items": 1
+          },
+          "work_binding": {
+            "input": "item",
+            "pointer": "/work_ref"
           }
         }
       },

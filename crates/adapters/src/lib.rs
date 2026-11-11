@@ -341,7 +341,7 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
             "目录非空且不是 DevDesk 数据集；请选择空目录",
         )?;
         require(
-            fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-v2\n",
+            fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-v2-standard-v1\n",
             "数据集标记不受支持",
         )
     };
@@ -360,7 +360,7 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
         .map_err(|_| err("dataset_locked", "此 data 已由另一个 host 打开"))?;
     // Recheck after obtaining ownership. Never replace a lock file that another Host can hold.
     if metadata_only()? {
-        fs::write(&marker, "devdesk-source-v2\n").map_err(storage)?;
+        fs::write(&marker, "devdesk-source-v2-standard-v1\n").map_err(storage)?;
     } else {
         validate_marker()?;
     }
@@ -373,7 +373,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 46,
+        version == 0 || version == 47,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection

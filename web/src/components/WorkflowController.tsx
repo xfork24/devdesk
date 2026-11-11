@@ -1,3 +1,4 @@
+import { StandardDiff } from "./StandardManager";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
@@ -513,6 +514,9 @@ export function WorkflowPlanChanges({
       >
         预览影响
       </ActionButton>
+      {preview?.standard_diff ? (
+        <StandardDiff diff={preview.standard_diff} />
+      ) : null}
       {preview && (
         <div role="status">
           <p>

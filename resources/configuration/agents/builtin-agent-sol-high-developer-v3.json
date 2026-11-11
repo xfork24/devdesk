@@ -1,7 +1,7 @@
 {
   "kind": "agent",
   "identity": "builtin-agent-sol-high-developer",
-  "revision": 3,
+  "revision": 4,
   "name": "开发 · Sol High / Codex",
   "scope": {
     "kind": "global"

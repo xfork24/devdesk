@@ -66,7 +66,7 @@ fn instance_summary(state: &EngineeringState, row: &ConfigurationRecord) -> Valu
         let disposition = if confirmation.is_some() { "confirmed" } else if waiver.is_some() { "waived" } else if policy == "human" { "pending" } else { "not_required" };
         json!({"step":execution["step"],"id":execution["id"],"status":execution["status"],"outputs":execution["outputs"],"input_digest":execution["input_digest"],"reason":execution["reason"],"confirmation_policy":policy,"human_satisfied":policy!="human"||confirmation.is_some()||waiver.is_some(),"confirmation_status":disposition,"confirmation_ref":confirmation.map(|record|&record.id),"confirmation_waiver_ref":waiver.map(|record|&record.id)})
     }).collect::<Vec<_>>();
-    json!({"id":row.id,"plan":row.data["active_plan_revision_id"],"status":row.data["status"],"control_version":row.data["control_version"],"paused":row.data["paused"],"steps":steps})
+    json!({"id":row.id,"owner_id":row.data["owner_id"],"standard_ref":row.data["plan"]["standard_ref"],"workflow_ref":row.data["workflow_ref"],"plan":row.data["active_plan_revision_id"],"status":row.data["status"],"control_version":row.data["control_version"],"paused":row.data["paused"],"steps":steps})
 }
 
 fn step_attention(step: &Value) -> u8 {

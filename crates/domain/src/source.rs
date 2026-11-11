@@ -138,6 +138,11 @@ pub fn validate_source_data(kind: &str, data: &Value) -> Result<()> {
                 )?;
             }
         }
+        "standard" => {
+            let standard: ConfiguredStandard =
+                serde_json::from_value(data.clone()).map_err(invalid)?;
+            standard.validate()?;
+        }
         "workflow" => {
             for step in data["steps"].as_array().into_iter().flatten() {
                 require(

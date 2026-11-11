@@ -1,7 +1,7 @@
 {
   "kind": "capability",
   "identity": "builtin-capability-sol-high-codex",
-  "revision": 2,
+  "revision": 3,
   "name": "默认能力 · GPT-6.1 Sol High / Codex",
   "scope": {
     "kind": "global"

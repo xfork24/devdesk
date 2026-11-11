@@ -1,6 +1,6 @@
 # 架构与设计决策
 
-当前基线为 global 15 / project 46（源协议 v2）、Workflow v5。业务配置与执行边界见 [领域规范](domain.md) 和 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。历史实施过程保存在 `docs/plans/`；本页描述当前系统。
+当前基线为 global 16 / project 47（源协议 v2）、Workflow v6。业务配置与执行边界见 [领域规范](domain.md) 和 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。历史实施过程保存在 `docs/plans/`；本页描述当前系统。
 
 ## 模块与事实源
 
@@ -16,7 +16,7 @@
 
 ## 业务变化由配置管理
 
-Role 是自由身份，Skill 定义方法，Step 保存本次任务，Spec 定义检查，Standard 定义可选覆盖基线。阶段、节点 key、内置 ID 或文档标题不选择执行器。编译器只识别 Agent、工具、子流程和控制，冻结完整依赖、权限、输入关系和完成规则。
+Role 是自由身份，Skill 定义方法，Step 保存本次任务，Spec 定义检查，Standard 冻结 Workflow、Delivery、Spec 及关联。阶段、节点 key、内置 ID 或文档标题不选择执行器。编译器只识别 Agent、工具、子流程和控制，冻结完整依赖、权限、输入关系和完成规则。
 
 出厂资源使用现有 `resources/configuration` 目录；空库建立数据库副本，UI 编辑写入数据库，发布形成修订。模板重置切换当前目录代次，不回写已有运行。默认 TDD、评审和人工确认使用同一套配置机制，不是内核专用分支。
 

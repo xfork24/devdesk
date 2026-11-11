@@ -26,7 +26,7 @@ type Props = {
   refresh: () => Promise<unknown>;
 };
 const emptyDocument = () => ({
-  schema_version: 5,
+  schema_version: 6,
   stages: [
     { key: "work", name: "工作", description: "", default_role_ref: null },
   ],
@@ -137,7 +137,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     (row: Row) => {
       const document =
         row.kind === "workflow_draft" ? row.data.document : row.data;
-      if (document.schema_version !== 5) {
+      if (document.schema_version !== 6) {
         setError("此流程使用过时的开发合同，请重建配置。");
         return;
       }
@@ -178,7 +178,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     ? document.steps.find((step: Row) => step.key === draft.node.slice(5))
     : undefined;
   const workflows = rows.filter(
-    (row) => row.kind === "workflow" && row.data.schema_version === 5,
+    (row) => row.kind === "workflow" && row.data.schema_version === 6,
   );
   const update = (patch: Row) => {
     setValidation(undefined);
@@ -328,7 +328,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     (row) =>
       (row.kind === "workflow_draft"
         ? row.data.document?.schema_version
-        : row.data.schema_version) === 5,
+        : row.data.schema_version) === 6,
   );
   return (
     <section
@@ -431,11 +431,11 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     const value = JSON.parse(importText);
                     const imported = value.document || value;
                     if (
-                      imported.schema_version !== 5 ||
+                      imported.schema_version !== 6 ||
                       !Array.isArray(imported.steps) ||
                       !Array.isArray(imported.stages)
                     )
-                      throw new Error("请选择 Workflow v5 的完整定义。");
+                      throw new Error("请选择 Workflow v6 的完整定义。");
                     setDraft((current) => ({
                       ...current,
                       selected: "",
@@ -985,6 +985,66 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         <label>
                           <input
                             type="checkbox"
+                            checked={!!step.executor.work_binding}
+                            onChange={(event) =>
+                              updateStep({
+                                executor: {
+                                  ...step.executor,
+                                  work_binding: event.target.checked
+                                    ? {
+                                        input:
+                                          step.executor.foreach?.item_input ||
+                                          "work",
+                                        pointer: "/work_ref",
+                                      }
+                                    : null,
+                                },
+                              })
+                            }
+                          />
+                          按工作已采用的规范调用
+                        </label>
+                        {step.executor.work_binding ? (
+                          <>
+                            <label>
+                              工作引用输入名
+                              <input
+                                value={step.executor.work_binding.input}
+                                onChange={(event) =>
+                                  updateStep({
+                                    executor: {
+                                      ...step.executor,
+                                      work_binding: {
+                                        ...step.executor.work_binding,
+                                        input: event.target.value,
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              工作引用 JSON Pointer
+                              <input
+                                value={step.executor.work_binding.pointer}
+                                onChange={(event) =>
+                                  updateStep({
+                                    executor: {
+                                      ...step.executor,
+                                      work_binding: {
+                                        ...step.executor.work_binding,
+                                        pointer: event.target.value,
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                          </>
+                        ) : null}
+                        <label>
+                          <input
+                            type="checkbox"
                             checked={!!step.executor.foreach}
                             onChange={(event) =>
                               updateStep({
@@ -1251,7 +1311,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
           {validation ? (
             <p role="status">
               已解析 {validation.roles?.length || 0} 个 Role，
-              {validation.specification_snapshot?.length || 0} 个步骤。
+              {validation.specification_view?.length || 0} 个步骤。
             </p>
           ) : null}
         </>

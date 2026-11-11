@@ -225,19 +225,33 @@ fn factory_workflow_business_contracts_match_the_pre_refactor_baseline() {
     for (source, digest) in [
         (
             include_str!(
-                "../../../resources/configuration/workflows/builtin-workflow-feature-sol-high-v5.json"
+                "../../../resources/configuration/workflows/builtin-workflow-feature-sol-high-v6.json"
             ),
             "ed453ae0e68249f612350dec3e5159c0c889ed7ff27c1b002c6be5d4473b0508",
         ),
         (
             include_str!(
-                "../../../resources/configuration/workflows/builtin-workflow-task-sol-high-v5.json"
+                "../../../resources/configuration/workflows/builtin-workflow-task-sol-high-v6.json"
             ),
             "3124b77dffe25d4484585666625623a33d9a5bef7cf89be25105ac5eaa8cc581",
         ),
     ] {
         let value: Value = serde_json::from_str(source).unwrap();
-        assert_eq!(configuration_hash(&value["data"]), digest);
+        let mut data = value["data"].clone();
+        data["schema_version"] = json!(5);
+        for step in data["steps"].as_array_mut().unwrap() {
+            if let Some(executor) = step.get_mut("executor").and_then(Value::as_object_mut) {
+                executor.remove("work_binding");
+            }
+        }
+        let legacy = data.to_string().replace(
+            "builtin-workflow-task-sol-high:5",
+            "builtin-workflow-task-sol-high:4",
+        );
+        assert_eq!(
+            configuration_hash(&serde_json::from_str::<Value>(&legacy).unwrap()),
+            digest
+        );
     }
     // The 11 explicit grants from the original 42 steps moved without changing any path or tool scope.
     let permission: Value = serde_json::from_str(include_str!(
@@ -245,7 +259,21 @@ fn factory_workflow_business_contracts_match_the_pre_refactor_baseline() {
     ))
     .unwrap();
     assert_eq!(
-        configuration_hash(&permission["data"]["step_grants"]),
+        configuration_hash(
+            &serde_json::from_str::<Value>(
+                &permission["data"]["step_grants"]
+                    .to_string()
+                    .replace(
+                        "builtin-workflow-feature-sol-high:5",
+                        "builtin-workflow-feature-sol-high:4"
+                    )
+                    .replace(
+                        "builtin-workflow-task-sol-high:5",
+                        "builtin-workflow-task-sol-high:4"
+                    )
+            )
+            .unwrap()
+        ),
         "fb1cbd3c102766d4a847f780a8e0521895d1f42ac4cc1ea4ed700a381275138e"
     );
 }
@@ -387,7 +415,7 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
     )
     .unwrap();
     assert_eq!(saved["data"]["permission_context_ref"], context["id"]);
-    assert!(saved["data"].get("specification_snapshot").is_none());
+    assert!(saved["data"].get("specification_view").is_none());
     let integrations = command(
         &e,
         "integration.project.bind",
@@ -434,7 +462,7 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
         json!({"name":"Shared document norm v2","data":{"schema_version":3,"body":"An explicitly adopted future norm","checks":[]}}),
     )
     .unwrap();
-    let draft = command(&e, "workflow.create", None, json!({"name":"Document flow","document":{"schema_version":5,"stages":[{"key":"work","name":"Work","default_role_ref":"builtin-role-analyst:1"}],"steps":[
+    let draft = command(&e, "workflow.create", None, json!({"name":"Document flow","document":{"schema_version":6,"stages":[{"key":"work","name":"Work","default_role_ref":"builtin-role-analyst:1"}],"steps":[
         {"key":"produce","name":"Produce","stage":"work","executor":{"type":"agent"},"task_instructions":"Write the document","outputs":{"document":{"delivery_ref":delivery["id"]}}},
         {"key":"consume","name":"Consume","stage":"work","executor":{"type":"agent"},"task_instructions":"Read the document","dependencies":["produce"],"inputs":{"document":{"type":"source","source":{"step":"produce","port":"document"}}}}
     ]}})).unwrap();

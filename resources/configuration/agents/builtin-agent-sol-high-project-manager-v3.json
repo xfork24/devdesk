@@ -1,7 +1,7 @@
 {
   "kind": "agent",
   "identity": "builtin-agent-sol-high-project-manager",
-  "revision": 3,
+  "revision": 4,
   "name": "项目经理 · Sol High / Codex",
   "scope": {
     "kind": "global"

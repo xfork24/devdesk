@@ -46,7 +46,7 @@ export function ProjectManager({
     [mainline, setMainline] = useState("main"),
     [title, setTitle] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:source-v2:project:${project?.id || "global"}`,
+    `devdesk:source-v2-standard-v1:project:${project?.id || "global"}`,
     () => ({
       orchestrator_role_ref: "",
       permission_context_ref: "",
@@ -85,7 +85,7 @@ export function ProjectManager({
     );
     setDefaults(preset);
     setHealth(workspace);
-    if (configuration.configuration?.data.schema_version === 3)
+    if (configuration.configuration?.data.schema_version === 4)
       setDraft((current) =>
         current.workflow_ref
           ? current
@@ -150,10 +150,10 @@ export function ProjectManager({
     (r) =>
       r.kind === "workflow" &&
       r.data.schema_version >= 2 &&
-      r.data.schema_version === 5,
+      r.data.schema_version === 6,
   );
   const standards = records.filter(
-    (r) => r.kind === "standard" && Array.isArray(r.data.baseline_rules),
+    (r) => r.kind === "standard" && Array.isArray(r.data.root_workflow_refs),
   );
   async function save() {
     captureFeedback();
@@ -195,8 +195,8 @@ export function ProjectManager({
           <div>
             <h2>项目管理</h2>
             <p>
-              先选择流程，再为流程所需 Role 绑定 Agent。规范来自 Workflow
-              Step，Standard 可选。
+              先选择流程，再为流程所需 Role 绑定 Agent。规范来自 Workflow Step
+              和 Delivery，保存时固定 Standard 快照。
             </p>
           </div>
         </div>
@@ -355,27 +355,49 @@ export function ProjectManager({
             <div className="form-grid">
               <RevisionSelect
                 label="项目 Workflow"
-                records={workflows}
+                records={
+                  draft.standard_ref
+                    ? workflows.filter((r) =>
+                        standards
+                          .find((s) => s.id === draft.standard_ref)
+                          ?.workflow_refs?.includes(r.id),
+                      )
+                    : workflows
+                }
                 value={draft.workflow_ref}
                 required
                 onChange={(value) => {
                   captureFeedback();
-                  return setDraft({ ...draft, workflow_ref: value });
+                  return setDraft({
+                    ...draft,
+                    workflow_ref: value,
+                    standard_ref: "",
+                  });
                 }}
               />
               <label>
-                Standard（可选质量基线）
+                Standard 规范快照
                 <ActionSelect
                   value={draft.standard_ref}
                   onChange={(e) => {
                     captureFeedback();
-                    return setDraft({ ...draft, standard_ref: e.target.value });
+                    const standard = standards.find(
+                      (r) => r.id === e.target.value,
+                    );
+                    return setDraft({
+                      ...draft,
+                      standard_ref: e.target.value,
+                      workflow_ref: standard?.data.root_workflow_refs.includes(
+                        draft.workflow_ref,
+                      )
+                        ? draft.workflow_ref
+                        : standard?.data.root_workflow_refs[0] ||
+                          draft.workflow_ref,
+                    });
                   }}
                 >
-                  <option value="">
-                    不选基线 · 仍执行 Step Spec 和工程门禁
-                  </option>
-                  {latest(standards).map((r) => (
+                  <option value="">从所选 Workflow 自动生成快照</option>
+                  {standards.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.name} · v{r.version}
                     </option>
@@ -498,35 +520,17 @@ export function ProjectManager({
                   })}
                 </div>
                 <p className="notice">
-                  已解析 {requirements.specification_snapshot.length}{" "}
+                  已解析 {requirements.specification_view.length}{" "}
                   个规范节点（包含子流程）。
                 </p>
-                {requirements.baseline_check ? (
-                  <div
-                    className={
-                      requirements.baseline_check.valid ? "notice" : "error"
-                    }
-                    role="status"
-                  >
-                    {requirements.baseline_check.valid
-                      ? "基线覆盖检查通过"
-                      : "基线覆盖不完整"}
-                    <ul>
-                      {requirements.baseline_check.errors.map(
-                        (error: string) => (
-                          <li key={error}>{error}</li>
-                        ),
-                      )}
-                    </ul>
-                  </div>
-                ) : (
-                  <p className="muted">
-                    未选 Standard：规范仍按每个 Step 的显式 Spec 执行。
-                  </p>
-                )}
+                <p className="muted">
+                  {draft.standard_ref
+                    ? "已固定所选规范快照；实际验收以执行证据为准。"
+                    : "保存项目配置时自动生成不可变规范快照。"}
+                </p>
                 <details>
                   <summary>查看规范审计快照</summary>
-                  {requirements.specification_snapshot.map((binding: Row) => (
+                  {requirements.specification_view.map((binding: Row) => (
                     <div className="document-row" key={binding.path}>
                       <strong>{binding.path}</strong>
                       <span>
@@ -543,14 +547,7 @@ export function ProjectManager({
                 </details>
               </>
             )}
-            <ActionButton
-              className="primary"
-              disabled={
-                busy ||
-                !requirements ||
-                requirements.baseline_check?.valid === false
-              }
-            >
+            <ActionButton className="primary" disabled={busy || !requirements}>
               保存项目配置
             </ActionButton>
           </ActionForm>

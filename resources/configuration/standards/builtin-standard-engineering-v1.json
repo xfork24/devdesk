@@ -1,59 +1,16 @@
 {
   "kind": "standard",
   "identity": "builtin-standard-engineering",
-  "revision": 1,
+  "revision": 2,
   "name": "默认工程 Standard",
   "scope": {
     "kind": "global"
   },
   "data": {
-    "schema_version": 3,
-    "baseline_rules": [
-      {
-        "selector": {
-          "tags": [
-            "requirements"
-          ]
-        },
-        "required_spec_refs": [
-          "builtin-spec-stage-prd:1"
-        ],
-        "min_matches": 1
-      },
-      {
-        "selector": {
-          "tags": [
-            "design"
-          ]
-        },
-        "required_spec_refs": [
-          "builtin-spec-stage-architecture:1"
-        ],
-        "min_matches": 1
-      },
-      {
-        "selector": {
-          "tags": [
-            "planning"
-          ]
-        },
-        "required_spec_refs": [
-          "builtin-spec-stage-project-planning:1"
-        ],
-        "min_matches": 1
-      },
-      {
-        "selector": {
-          "tags": [
-            "implementation"
-          ]
-        },
-        "required_spec_refs": [
-          "builtin-spec-stage-implementation:1"
-        ],
-        "min_matches": 1
-      }
-    ],
-    "body_file": "engineering.md"
+    "schema_version": 4,
+    "root_workflow_refs": [
+      "builtin-workflow-feature-sol-high:5",
+      "builtin-workflow-task-sol-high:5"
+    ]
   }
 }

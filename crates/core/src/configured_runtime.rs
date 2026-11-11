@@ -444,7 +444,7 @@ pub fn task_input(
         .flat_map(|delivery| delivery.spec_refs)
         .filter(|reference| !step.spec_refs.contains(reference))
         .collect();
-    let input = json!({"renderer_version":"agent-task/v5","source":{"workflow_revision_id":instance.workflow_ref,"execution_id":execution.id,
+    let input = json!({"renderer_version":"agent-task/v6","source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
         "workflow_instance_id":execution.workflow_instance_id,"plan_revision_id":execution.plan_revision_id,"node_id":execution.node_id,"contract_digest":execution.contract_digest,"path":execution.path,"step":step.key,"round":execution.round,"sequence":execution.sequence},
         "owner_id":instance.owner_id,
         "agent":execution.agent_revision_id.as_ref().and_then(|id|definitions.get(id)),
@@ -543,11 +543,30 @@ impl Engine {
         p: &Value,
     ) -> Result<()> {
         let owner = state.feature(feature)?.clone();
-        let result=self.configured_runtime_command("workflow.start",&Command{command_id:format!("feature:{feature}:workflow"),target:Some(feature.into()),expected_revision:Some(owner.revision),
-            payload:json!({"workflow_ref":configuration.data["workflow_ref"],"role_agent_bindings":configuration.data["role_agent_bindings"],"inputs":p.get("workflow_inputs").cloned().unwrap_or(json!({}))})},state)?
-            .ok_or_else(||err("configuration_required","项目未选择当前 Workflow"))?;
-        state.governance.push(record("feature_workflow_configuration",feature.into(),configuration.scope.clone(),owner.title,1,None,
-            json!({"schema_version":3,"project_configuration_id":configuration.id,"workflow_instance_id":result["id"],"configuration":configuration.data}),true));
+        let mut selection = configuration.data.clone();
+        for key in [
+            "standard_ref",
+            "workflow_ref",
+            "role_agent_bindings",
+            "permission_context_ref",
+        ] {
+            if let Some(value) = p.get(key) {
+                selection[key] = value.clone();
+            }
+        }
+        selection["source_configuration_ref"] = json!(configuration.id);
+        selection["inputs"] = p.get("workflow_inputs").cloned().unwrap_or(json!({}));
+        self.configured_runtime_command(
+            "workflow.start",
+            &Command {
+                command_id: format!("work:{feature}:workflow"),
+                target: Some(feature.into()),
+                expected_revision: Some(owner.revision),
+                payload: selection,
+            },
+            state,
+        )?
+        .ok_or_else(|| err("configuration_required", "工作未选择当前 Workflow"))?;
         Ok(())
     }
 
@@ -576,7 +595,7 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 5
+                    && r.data["schema_version"] == 6
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == id))
@@ -688,7 +707,7 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 5
+                    && r.data["schema_version"] == 6
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -775,7 +794,7 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 5
+                    && r.data["schema_version"] == 6
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -827,7 +846,7 @@ impl Engine {
         let input: Value = serde_json::from_str(&turn.input)
             .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
         require(
-            input["renderer_version"] == "agent-task/v5"
+            input["renderer_version"] == "agent-task/v6"
                 && input["source"]["execution_id"] == source.data["execution_id"],
             "步骤输入缺少可信任务来源，请通过工作流步骤提交补充输入",
         )?;
@@ -871,7 +890,7 @@ impl Engine {
             .agent
             .clone();
         let task = ConfiguredAgentTask {
-            renderer_version: "agent-task/v5".into(),
+            renderer_version: "agent-task/v6".into(),
             turn_id: turn_id.into(),
             agent_revision_id: agent,
             source: source.data,
@@ -1037,12 +1056,34 @@ impl Engine {
                         })
                 })
                 .ok_or_else(|| err("not_found", "工作流所属对象不存在"))?;
-            let workflow = reference(state, &text(p, "workflow_ref")?, "workflow", &scope)?.clone();
+            let inherited = p["work_configuration_ref"]
+                .as_str()
+                .and_then(|id| state.configuration(id).ok())
+                .or_else(|| crate::standards::work_configuration(state, target))
+                .cloned();
+            if let Some(config) = &inherited {
+                require(
+                    config.kind == "work_configuration" && config.definition_id == target,
+                    "工作配置不属于此工作",
+                )?;
+            }
+            let configuration =
+                crate::standards::select_work_configuration(state, target, p, inherited.as_ref())?;
+            let workflow = reference(
+                state,
+                &text(&configuration.data, "workflow_ref")?,
+                "workflow",
+                &scope,
+            )?
+            .clone();
             let bindings: BTreeMap<Id, Id> =
-                serde_json::from_value(p["role_agent_bindings"].clone())
+                serde_json::from_value(configuration.data["role_agent_bindings"].clone())
                     .map_err(|e| err("invalid_params", e.to_string()))?;
-            let plan =
-                self.compile_configured_workflow(state, &workflow, &scope, Some(&bindings))?;
+            let selected = crate::standards::selection_state(state, &configuration.data);
+            let mut plan =
+                self.compile_configured_workflow(&selected, &workflow, &scope, Some(&bindings))?;
+            plan.standard_ref = Some(text(&configuration.data, "standard_ref")?);
+            plan.work_configuration_ref = Some(configuration.id.clone());
             require(
                 !state.governance.iter().any(|r| {
                     r.kind == "workflow_instance"
@@ -1116,7 +1157,7 @@ impl Engine {
             let mut instance = ConfiguredWorkflowInstance {
                 active_plan_revision_id: String::new(),
                 control_version: 1,
-                schema_version: 5,
+                schema_version: 6,
                 owner_id: target.into(),
                 workflow_ref: workflow.id.clone(),
                 project_id: scope.project().unwrap().into(),
@@ -1165,7 +1206,7 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.id == target && r.kind == "workflow_instance" && r.data["schema_version"] == 5
+                r.id == target && r.kind == "workflow_instance" && r.data["schema_version"] == 6
             })
             .cloned()
         else {
@@ -1524,7 +1565,7 @@ impl Engine {
             let rows: Vec<_> = state
                 .governance
                 .iter()
-                .filter(|r| r.kind == "workflow_instance" && r.data["schema_version"] == 5)
+                .filter(|r| r.kind == "workflow_instance" && r.data["schema_version"] == 6)
                 .cloned()
                 .collect();
             for row in rows {
@@ -1853,6 +1894,7 @@ impl Engine {
                 StepExecutor::Workflow {
                     workflow_ref,
                     foreach,
+                    work_binding,
                 } => {
                     let child = instance
                         .plan
@@ -1896,6 +1938,92 @@ impl Engine {
                         if let (Some(collection), Some(member)) = (foreach, member) {
                             inputs.insert(collection.item_input.clone(), member);
                         }
+                        let mut child_owner = instance.owner_id.clone();
+                        let mut child_bindings = instance.role_agent_bindings.clone();
+                        let mut child_plan = instance.plan.clone();
+                        let mut effective_child = child.clone();
+                        let mut effective_doc = child_doc.clone();
+                        if let Some(binding) = work_binding {
+                            let value = inputs
+                                .get(&binding.input)
+                                .and_then(|v| v.pointer(&binding.pointer))
+                                .ok_or_else(|| {
+                                    err("work_configuration_required", "调用缺少类型化工作引用")
+                                })?;
+                            let work: WorkReference = serde_json::from_value(value.clone())
+                                .map_err(|e| err("invalid_params", format!("工作引用无效: {e}")))?;
+                            let work_scope = work.scope(state)?;
+                            require(
+                                work_scope.project() == Some(instance.project_id.as_str()),
+                                "子工作跨项目",
+                            )?;
+                            if let WorkReference::Task { id } = &work {
+                                require(
+                                    state.task(id)?.feature_id == instance.owner_id
+                                        || instance.owner_id == *id,
+                                    "Task 不属于当前父工作",
+                                )?;
+                            }
+                            child_owner = work.id().into();
+                            require(
+                                !state.governance.iter().any(|r| {
+                                    r.kind == "workflow_instance"
+                                        && r.data["owner_id"] == child_owner
+                                        && !matches!(
+                                            r.data["status"].as_str(),
+                                            Some("completed" | "cancelled")
+                                        )
+                                }),
+                                "该工作已有活动流程，不能重复或改挂调用",
+                            )?;
+                            let inherited =
+                                crate::standards::work_configuration(state, &child_owner).cloned();
+                            let fallback = json!({"standard_ref":instance.plan.standard_ref,"workflow_ref":child.id,"role_agent_bindings":instance.role_agent_bindings,"permission_context_ref":instance.plan.permission_context_ref});
+                            let selection = if let Some(selection) = inherited {
+                                selection
+                            } else {
+                                crate::standards::select_work_configuration(
+                                    state,
+                                    &child_owner,
+                                    &fallback,
+                                    None,
+                                )?
+                            };
+                            let selected =
+                                crate::standards::selection_state(state, &selection.data);
+                            effective_child = reference(
+                                state,
+                                &text(&selection.data, "workflow_ref")?,
+                                "workflow",
+                                &work_scope,
+                            )?
+                            .clone();
+                            standard_entry(
+                                state,
+                                &text(&selection.data, "standard_ref")?,
+                                &effective_child.id,
+                                &work_scope,
+                            )?;
+                            child_bindings = serde_json::from_value(
+                                selection.data["role_agent_bindings"].clone(),
+                            )
+                            .map_err(|e| err("invalid_configuration", e.to_string()))?;
+                            child_plan = self.compile_configured_workflow(
+                                &selected,
+                                &effective_child,
+                                &work_scope,
+                                Some(&child_bindings),
+                            )?;
+                            child_plan.standard_ref = Some(text(&selection.data, "standard_ref")?);
+                            child_plan.work_configuration_ref = Some(selection.id.clone());
+                            effective_doc = child_plan.document.clone();
+                            crate::standards::check_invocation_contract(
+                                &child_doc,
+                                &effective_doc,
+                            )?;
+                        }
+                        let child_doc = &effective_doc;
+                        let child = &effective_child;
                         for (name, port) in &child_doc.inputs {
                             if port.required {
                                 require(
@@ -1905,8 +2033,7 @@ impl Engine {
                             }
                             if let Some(value) = inputs.get(name) {
                                 self.validate_configured_value(
-                                    &instance
-                                        .plan
+                                    &child_plan
                                         .definitions
                                         .get(&port.delivery_ref)
                                         .ok_or_else(|| {
@@ -1949,19 +2076,19 @@ impl Engine {
                                 reason: String::new(),
                             })
                             .collect();
-                        let mut plan = instance.plan.clone();
+                        let mut plan = child_plan;
                         plan.workflow_revision_id = child.id.clone();
                         plan.permission_workflow_ref = Some(child.id.clone());
-                        plan.document = child_doc.clone();
+                        plan.document = (*child_doc).clone();
                         let mut child_instance = ConfiguredWorkflowInstance {
                             active_plan_revision_id: String::new(),
                             control_version: 1,
-                            schema_version: 5,
-                            owner_id: instance.owner_id.clone(),
+                            schema_version: 6,
+                            owner_id: child_owner.clone(),
                             workflow_ref: child.id.clone(),
                             project_id: instance.project_id.clone(),
                             plan,
-                            role_agent_bindings: instance.role_agent_bindings.clone(),
+                            role_agent_bindings: child_bindings,
                             inputs,
                             steps: child_steps,
                             status: StepExecutionStatus::Queued,
@@ -1978,7 +2105,7 @@ impl Engine {
                         )?;
                         let mut child_row = record(
                             "workflow_instance",
-                            instance.owner_id.clone(),
+                            child_owner,
                             row.scope.clone(),
                             format!("{} · {}", step.name, item + 1),
                             1,
@@ -1987,6 +2114,8 @@ impl Engine {
                             false,
                         );
                         child_row.id = child_id.clone();
+                        state.governance.push(record("workflow_invocation",execution.id.clone(),row.scope.clone(),step.name.clone(),1,None,
+                            json!({"parent_execution_id":execution.id,"parent_plan_revision_id":execution.plan_revision_id,"child_instance_id":child_id,"initial_plan_revision_id":child_instance.active_plan_revision_id,"owner_id":child_instance.owner_id,"member_identity":if work_binding.is_some(){child_instance.owner_id.clone()}else{item.to_string()},"standard_ref":child_instance.plan.standard_ref,"workflow_ref":child_instance.workflow_ref,"work_configuration_ref":child_instance.plan.work_configuration_ref,"input_digest":configuration_hash(&child_instance.inputs)}),true));
                         state.governance.push(child_row);
                         children.push(child_id);
                     }
@@ -2422,7 +2551,7 @@ impl Engine {
         }
         let row = state.governance.iter().find(|r| {
             r.kind == "workflow_instance"
-                && r.data["schema_version"] == 5
+                && r.data["schema_version"] == 6
                 && (p["id"] == r.id || p["owner_id"] == r.definition_id)
         })?;
         if let Some(project) = p["project_id"].as_str() {

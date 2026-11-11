@@ -1035,6 +1035,19 @@ impl Engine {
                                 });
                                 let mut member = item.clone();
                                 member["id"] = json!(tid);
+                                member["work_ref"]=json!({"kind":"task","id":tid});
+                                if let Some(parent)=crate::standards::work_configuration(state,&feature.id).cloned() {
+                                    let parent_instance=state.configuration(&request.instance_id)?;
+                                    let standard=parent_instance.data["plan"]["standard_ref"].as_str().or_else(||parent.data["standard_ref"].as_str());
+                                    if let Some(standard)=standard {
+                                        let definition=standard_snapshot(state,standard,&Scope::Project{project_id:request.project_id.clone()})?;
+                                        let doc:WorkflowDefinition=serde_json::from_value(parent_instance.data["plan"]["document"].clone()).map_err(|e|err("invalid_configuration",e.to_string()))?;
+                                        if let Some(entry)=doc.steps.iter().find_map(|step|match &step.executor {StepExecutor::Workflow{workflow_ref,work_binding:Some(_),..} if definition.nodes.iter().any(|n|n.kind=="workflow" && &n.reference==workflow_ref)=>Some(workflow_ref.clone()),_=>None}) {
+                                            let selection=json!({"standard_ref":standard,"workflow_ref":entry,"role_agent_bindings":parent_instance.data["role_agent_bindings"],"permission_context_ref":parent_instance.data["plan"]["permission_context_ref"]});
+                                            crate::standards::select_work_configuration(state,&tid,&selection,Some(&parent))?;
+                                        }
+                                    }
+                                }
                                 member["feature_id"] = json!(feature.id);
                                 members.push(member);
                             }

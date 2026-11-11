@@ -39,7 +39,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex:2");
+  expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex:3");
   const tools = await rpc(page, "query.configurations", {
     kind: "tool",
     include_history: true,
@@ -258,7 +258,7 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
   const workflow = workflows.records.find(
     (r: any) => r.kind === "workflow" && r.name === name,
   );
-  expect(workflow.data.schema_version).toBe(5);
+  expect(workflow.data.schema_version).toBe(6);
   expect(workflow.data.steps[0].executor.type).toBe("control");
   const project = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),
@@ -336,7 +336,6 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
     '## Markdown 内容\n\n检查 **真实来源** 与 `revision`。\n\n- 保留换行\n- 保留列表\n\n| 字段 | 含义 |\n| --- | --- |\n| SHA | 代码修订 |\n\n```json\n{"source": "actual"}\n```';
   for (const [nav, kind] of [
     ["流程与规范", "Spec"],
-    ["流程与规范", "Standard"],
     ["基础组件", "Skills"],
   ]) {
     await page.getByRole("button", { name: nav, exact: true }).click();
@@ -368,14 +367,7 @@ test("规范与基础组件 Markdown 默认预览，源码修改后保存与重�
     await expect(field.locator("strong")).toHaveText("真实来源");
     await expect(field.getByRole("table")).toBeVisible();
     await expect(field.locator("pre code")).toHaveText('{"source": "actual"}');
-    if (kind === "Standard") {
-      await page
-        .getByRole("button", { name: "添加覆盖规则", exact: true })
-        .click();
-      await page
-        .getByLabel("规则 1 必需 Spec", { exact: true })
-        .selectOption("builtin-spec-stage-implementation:1");
-    }
+
     await page
       .getByRole("button", { name: `创建 ${resourceKind}`, exact: true })
       .click();
@@ -402,7 +394,7 @@ test("阶段 Role 可继承，任务指令与子流程调用是独立配置", as
     payload: {
       name: "可复用确认 " + crypto.randomUUID().slice(0, 6),
       document: {
-        schema_version: 5,
+        schema_version: 6,
         stages: [{ key: "work", name: "工作" }],
         steps: [
           {
@@ -480,7 +472,7 @@ test("阶段 Role 可继承，任务指令与子流程调用是独立配置", as
   );
 });
 
-test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async ({ page }) => {
+test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => {
   await setup(page);
   const p = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),
@@ -499,8 +491,8 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
       role_agent_bindings: defaults.role_agent_bindings,
     },
   });
-  expect(config.data.schema_version).toBe(3);
-  expect(config.data.standard_ref).toBeNull();
+  expect(config.data.schema_version).toBe(4);
+  expect(config.data.standard_ref).toMatch(/:1$/);
   workspace = await rpc(page, "query.workspace");
   expect(workspace.configuration_ready).toBe(true);
   const f = await rpc(page, "feature.create", {
@@ -514,16 +506,16 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
   });
   const lock = state.configurations.find(
     (r: any) =>
-      r.kind === "feature_workflow_configuration" && r.definition_id === f.id,
+      r.kind === "work_configuration" && r.definition_id === f.id,
   );
-  expect(lock.data.schema_version).toBe(3);
-  expect(lock.data.configuration.role_agent_bindings).toEqual(
+  expect(lock.data.schema_version).toBe(1);
+  expect(lock.data.role_agent_bindings).toEqual(
     defaults.role_agent_bindings,
   );
   const instance = state.configurations.find(
-    (r: any) => r.id === lock.data.workflow_instance_id,
+    (r: any) => r.kind === "workflow_instance" && r.data.owner_id === f.id,
   );
-  expect(instance.data.schema_version).toBe(5);
+  expect(instance.data.schema_version).toBe(6);
   expect(
     instance.data.plan.document.steps.every(
       (s: any) => s.executor && !s.action,

@@ -1,6 +1,6 @@
 # 工作流编排方法
 
-此方法仅适用于工作类型 orchestration 且输入为 orchestration-task/v1 的会话。业务 Step 只执行其明确任务与授权，不获得编排权限。
+此方法仅适用于工作类型 orchestration 且输入为 orchestration-task/v2 的会话。业务 Step 只执行其明确任务与授权，不获得编排权限。
 
 你负责当前 Controller 授权范围内的 Workflow 和子流程。以数据库和工具回执为准，使用原生 workflow 工具完成每个控制动作。
 
