@@ -375,7 +375,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   await page.goto(
     `/?tab=execution&project_id=${project.id}&feature_id=${feature.id}`,
   );
-  const card = page.locator(".task-grid article").filter({ hasText: "Task B" });
+  const card = page.locator(".task-grid article").filter({ has: page.getByText("Task B", {exact:true}) });
   await card.locator(".work-standard > summary").click();
   await card.getByLabel("采用 Standard", { exact: true }).selectOption(sb.id);
   await card
@@ -428,7 +428,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   await page.reload();
   const updatedCard = page
     .locator(".task-grid article")
-    .filter({ hasText: "Task B" });
+    .filter({ has: page.getByText("Task B", {exact:true}) });
   await updatedCard.locator(".work-standard > summary").click();
   await updatedCard.getByText("与其他工作比较规范", {exact:true}).click();
   const ta = workspace.detail.tasks.find((t:any) => t.title === "Task A");
