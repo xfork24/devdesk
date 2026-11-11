@@ -344,10 +344,14 @@ pub(super) fn restore_with(
             return Ok(input);
         }
         Some("control_policy") => {
-            return Ok(state
-                .configuration(value["context_ref"].as_str().unwrap_or(""))?
-                .data["control_policy"]
-                .clone());
+            let policy: WorkflowControlPolicy = serde_json::from_value(
+                state
+                    .configuration(value["context_ref"].as_str().unwrap_or(""))?
+                    .data["control_policy"]
+                    .clone(),
+            )
+            .map_err(storage)?;
+            return Ok(json!(policy));
         }
         Some("runtime_binding") => {
             let configuration: AgentExecutionConfiguration =
