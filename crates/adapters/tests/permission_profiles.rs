@@ -1378,3 +1378,46 @@ fn frozen_configured_permission(
         .cloned()
         .ok_or_else(|| err("not_found", "权限未冻结"))
 }
+
+#[test]
+fn profile_revisions_preserve_the_source_owner_scope() {
+    let directory = tempfile::tempdir().unwrap();
+    let (_, engine) = global(directory.path());
+    let mut source = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration("harness-read-only-v2:1")
+        .unwrap()
+        .source();
+    source.identity = "project-owned-policy".into();
+    source.scope = Scope::Project { project_id: id() };
+    engine
+        .execute(
+            "permission.profile.import",
+            Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"profiles":[source]}),
+            },
+        )
+        .unwrap();
+    let revised = engine.execute("permission.profile.revise", Command { command_id:id(), target:Some("project-owned-policy:1".into()), expected_revision:Some(1), payload:json!({"name":"Same owner revised policy","target_kind":source.data["target_kind"],"policy":source.data["policy"]}) }).unwrap();
+    assert_eq!(revised["scope"], json!(source.scope));
+    source.revision = 3;
+    source.scope = Scope::Global;
+    assert!(
+        engine
+            .execute(
+                "permission.profile.import",
+                Command {
+                    command_id: id(),
+                    target: None,
+                    expected_revision: None,
+                    payload: json!({"profiles":[source]})
+                }
+            )
+            .is_err()
+    );
+}

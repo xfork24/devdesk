@@ -70,6 +70,7 @@ pub fn insert_permission_profiles(
                         && r.version + 1 == p.version
                 })
                 .ok_or_else(|| err("revision_conflict", "权限缺少连续前序修订"))?;
+            require(parent.scope == p.scope, "权限修订不能改变所属范围")?;
             if parent.permission_profile()?.target_kind != p.target_kind {
                 return Err(err(
                     "permission_inapplicable",
@@ -173,7 +174,10 @@ impl Engine {
                     None
                 };
                 let mut profile = PermissionProfile {
-                    scope: Scope::Global,
+                    scope: old
+                        .as_ref()
+                        .map(|p| p.scope.clone())
+                        .unwrap_or(Scope::Global),
                     schema_version: 2,
                     id: String::new(),
                     identity: match &old {
@@ -194,7 +198,7 @@ impl Engine {
                     identity: profile.identity.clone(),
                     revision: profile.version,
                     name: profile.name.clone(),
-                    scope: Scope::Global,
+                    scope: profile.scope.clone(),
                     data: permission_profile_data(&profile),
                 };
                 insert_permission_profiles(s, &[json!(source)], "ui")?;

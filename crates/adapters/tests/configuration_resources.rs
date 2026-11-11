@@ -239,6 +239,15 @@ fn factory_workflow_business_contracts_match_the_pre_refactor_baseline() {
         let value: Value = serde_json::from_str(source).unwrap();
         assert_eq!(configuration_hash(&value["data"]), digest);
     }
+    // The 11 explicit grants from the original 42 steps moved without changing any path or tool scope.
+    let permission: Value = serde_json::from_str(include_str!(
+        "../../../resources/configuration/permissions/bindings/engineering.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        configuration_hash(&permission["data"]["step_grants"]),
+        "fb1cbd3c102766d4a847f780a8e0521895d1f42ac4cc1ea4ed700a381275138e"
+    );
 }
 
 #[test]

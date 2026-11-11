@@ -15,6 +15,7 @@ type Request = (
 ) => Promise<any>;
 type Profile = {
   schema_version: number;
+  scope: Record<string, unknown>;
   id: string;
   identity: string;
   name: string;
@@ -24,6 +25,7 @@ type Profile = {
 };
 const profileView = (source: any): Profile => ({
   ...source.data,
+  scope: source.scope,
   identity: source.identity,
   version: source.revision,
   name: source.name,
@@ -34,7 +36,7 @@ const profileSource = (p: Profile) => ({
   identity: p.identity,
   revision: p.version,
   name: p.name,
-  scope: { kind: "global" },
+  scope: p.scope,
   data: { schema_version: 2, target_kind: p.target_kind, policy: p.policy },
 });
 const catalogView = (source: Catalog): Catalog => ({
