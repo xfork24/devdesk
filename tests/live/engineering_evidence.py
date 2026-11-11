@@ -15,6 +15,15 @@ def verify_evidence(client, rows, output):
  if context.get('unattended'):
   with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
    assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='controller_input'").fetchone()[0]==1, 'Unattended run received additional human steering'
+   controller_id,controller=connection.execute("SELECT id,data FROM governance_records WHERE kind='workflow_controller' AND json_extract(data,'$.root_instance_id')=?",(root['record']['id'],)).fetchone()
+   assert json.loads(controller)['epoch']==1,'Unattended controller was taken over or resumed'
+   for data, in connection.execute("SELECT data FROM governance_records WHERE kind='workflow_decision'"):
+    actor=json.loads(data)['actor']
+    if actor['kind']=='segment':
+     authorization=connection.execute("SELECT data FROM governance_records WHERE kind='workflow_segment' AND id=?",(actor['authorization_id'],)).fetchone()
+     assert authorization is not None,'Segment lacks a durable authorization'
+     actor=json.loads(authorization[0])['actor']
+    assert actor['kind']=='controller' and actor['controller_id']==controller_id and actor['epoch']==1,'Workflow was advanced outside the native controller'
  human_confirmations=0
  for view in views.values():
   assert view['runtime']['status']=='completed' and all(s['status']=='completed' for s in view['runtime']['steps'])
