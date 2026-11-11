@@ -40,6 +40,79 @@ pub struct ConfiguredAgentRequest {
     pub permissions: VersionedPermissionLock,
 }
 
+pub(crate) fn checkpoint_workspace(execution: &StepExecution, value: &Value) -> Value {
+    execution
+        .rework_workspace
+        .as_ref()
+        .filter(|checkpoint| {
+            ["workspace_id", "owner_id", "revision"].iter().all(|key| {
+                value.get(key).is_some() && value.get(key) == checkpoint.previous_workspace.get(key)
+            })
+        })
+        .map(|checkpoint| checkpoint.workspace.clone())
+        .unwrap_or_else(|| value.clone())
+}
+
+fn rework_workspace(
+    state: &EngineeringState,
+    instance_id: &str,
+    instance: &ConfiguredWorkflowInstance,
+    execution: &StepExecution,
+    step: &StepDefinition,
+) -> Result<Option<ReworkWorkspaceCheckpoint>> {
+    if step.access.writable_paths.is_empty() {
+        return Ok(None);
+    }
+    let Some(previous) = step
+        .access
+        .workspace_input
+        .as_ref()
+        .and_then(|name| execution.inputs.get(name))
+    else {
+        return Ok(None);
+    };
+    require(
+        previous["owner_id"] == instance.owner_id,
+        "写入返工检查点必须属于当前工作",
+    )?;
+    let head = state
+        .heads
+        .iter()
+        .find(|head| head.project_id == instance.project_id && head.id == instance.owner_id)
+        .ok_or_else(|| err("configuration_required", "返工工作区代码头未登记"))?;
+    if previous["revision"] == head.revision {
+        return Ok(None);
+    }
+    let output = state.governance.iter().rev().find(|output| {
+        output.kind == "workflow_output"
+            && output.scope.project() == Some(instance.project_id.as_str())
+            && output.data["value"]["workspace_id"] == previous["workspace_id"]
+            && output.data["value"]["owner_id"] == instance.owner_id
+            && output.data["value"]["revision"] == head.revision
+            && output.data["provenance"]["kind"] == "platform"
+            && output.data["provenance"]["tool"] == "workspace.snapshot"
+            && output.data["provenance"]["pointer"] == ""
+            && state.governance.iter().any(|call| {
+                call.id == output.data["provenance"]["call_id"].as_str().unwrap_or("")
+                    && call.kind == "platform_call"
+                    && call.data["status"] == "succeeded"
+                    && call.data["request"]["instance_id"] == instance_id
+                    && call.data["receipt"] == output.data["value"]
+            })
+    });
+    let output = output.ok_or_else(|| {
+        err(
+            "needs_reconciliation",
+            "当前代码头缺少本实例的真实平台快照，不能开始写入返工",
+        )
+    })?;
+    Ok(Some(ReworkWorkspaceCheckpoint {
+        previous_workspace: previous.clone(),
+        output_id: output.id.clone(),
+        workspace: output.data["value"].clone(),
+    }))
+}
+
 fn workspace_view(
     state: &EngineeringState,
     instance: &ConfiguredWorkflowInstance,
@@ -418,10 +491,20 @@ pub fn task_input(
         "check_report_contract":if port.content_checks {json!({"required":["approve","summary","checks"],"check_fields":["key","passed","evidence"],"approve":"true exactly when all declared checks pass"})}else{Value::Null},
         "definition":definitions.get(&port.delivery_ref).ok_or_else(||err("configuration_required","交付类型不在配置闭包中"))?}))))
         .collect::<Result<BTreeMap<_,_>>>()?;
-    let input_sources:BTreeMap<_,_>=step.inputs.iter().map(|(name,binding)| {
+    let mut input_sources:BTreeMap<_,_>=step.inputs.iter().map(|(name,binding)| {
         let source_output_id=match binding {InputBinding::Source{source} if source.step!="$input"=>instance.steps.iter().find(|step|step.step==source.step).and_then(|step|step.outputs.get(&source.port)),_=>None};
         (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"value_digest":execution.inputs.get(name).map(configuration_hash)}))
     }).collect();
+    if let Some(checkpoint) = &execution.rework_workspace {
+        if let Some(name) = &step.access.workspace_input {
+            if execution.inputs.get(name) == Some(&checkpoint.workspace) {
+                let source = input_sources.get_mut(name).unwrap();
+                source["original_source_output_id"] = source["source_output_id"].clone();
+                source["source_output_id"] = json!(checkpoint.output_id);
+                source["rework_checkpoint"] = json!(checkpoint);
+            }
+        }
+    }
     let mut rendered_inputs = execution.inputs.clone();
     for (name, value) in &execution.inputs {
         let bytes = serde_json::to_vec(value).map_err(|e| err("serialization", e.to_string()))?;
@@ -431,6 +514,7 @@ pub fn task_input(
                 .and_then(|source| source["source_output_id"].as_str())
             {
                 let pointer = match &step.inputs[name] {
+                    _ if input_sources[name].get("rework_checkpoint").is_some() => "",
                     InputBinding::Source { source } => source.pointer.as_str(),
                     _ => "",
                 };
@@ -469,7 +553,7 @@ pub fn task_input(
         .flat_map(|delivery| delivery.spec_refs)
         .filter(|reference| !step.spec_refs.contains(reference))
         .collect();
-    let input = json!({"renderer_version":"agent-task/v6","source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
+    let mut input = json!({"renderer_version":"agent-task/v6","source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
         "workflow_instance_id":execution.workflow_instance_id,"plan_revision_id":execution.plan_revision_id,"node_id":execution.node_id,"contract_digest":execution.contract_digest,"path":execution.path,"step":step.key,"round":execution.round,"sequence":execution.sequence},
         "owner_id":instance.owner_id,
         "agent":execution.agent_revision_id.as_ref().and_then(|id|definitions.get(id)),
@@ -477,12 +561,15 @@ pub fn task_input(
         "stage":instance.plan.document.stages.iter().find(|s|s.key == step.stage),
         "task_instructions":step.task_instructions,"required_skills":step.required_skill_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),
         "specifications":step.spec_refs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"document_specifications":document_specs.iter().filter_map(|id|definitions.get(id)).collect::<Vec<_>>(),"inputs":rendered_inputs,"input_sources":input_sources,
-        "budget":step.budget,"authorization":{"workspace_input":step.access.workspace_input,"working_directory":step.access.working_directory,"writable_paths":step.access.writable_paths,"read_only_paths":step.access.read_only_paths,"tool_refs":step.access.tool_refs},"outputs":outputs,"completion":step.completion,"supplemental_input":supplemental,
+        "budget":step.budget,"authorization":{"workspace_input":step.access.workspace_input,"working_directory":step.access.working_directory,"writable_paths":step.access.writable_paths,"read_only_paths":step.access.read_only_paths,"tool_refs":step.access.tool_refs},"outputs":outputs,"completion":step.completion,"supplemental_input":supplemental,"rework":execution.rework,
         "output_contract":{"type":"object","required":["status","summary","outputs"],"additionalProperties":false,
             "description":"When status is completed, include every declared required output port. For needs_input or blocked, outputs may be empty.",
             "allOf":[{"if":{"properties":{"status":{"const":"completed"}}},"then":{"properties":{"outputs":{"required":step.outputs.iter().filter(|(_,port)|port.required).map(|(name,_)|name).collect::<Vec<_>>()}}}}],
             "properties":{"status":{"enum":["completed","needs_input","blocked"]},"summary":{"type":"string"},"outputs":{"type":"object","properties":port_schemas,"additionalProperties":false}},
             "instructions":"Use the supplied input values and provenance. Request missing information only when required by this step. Return one JSON object. Output keys must be declared ports. Values must match their declared delivery schemas. Platform receipts are references, never model-generated evidence."}});
+    if execution.rework.is_none() {
+        input.as_object_mut().unwrap().remove("rework");
+    }
     let input = serde_json::to_string(&input).map_err(|e| err("serialization", e.to_string()))?;
     require(
         input.len() <= TASK_PAYLOAD_LIMIT,
@@ -909,6 +996,11 @@ impl Engine {
                         .cloned()
                         .ok_or_else(|| err("input_unavailable", "工具参数来源尚未就绪"))?,
                 };
+                let value = if name == "workspace" {
+                    checkpoint_workspace(execution, &value)
+                } else {
+                    value
+                };
                 Ok((name.clone(), value))
             })
             .collect::<Result<_>>()?;
@@ -1294,6 +1386,8 @@ impl Engine {
                     input_digest: String::new(),
                     budget_wait_started: None,
                     budget_waited_ms: 0,
+                    rework_workspace: None,
+                    rework: None,
                     inputs: BTreeMap::new(),
                     outputs: BTreeMap::new(),
                     agent_revision_id: None,
@@ -1574,6 +1668,11 @@ impl Engine {
                             .filter(|e| e.step == key || (rework && invalidated.contains(&e.step)))
                             .map(|e| e.id.clone())
                             .collect();
+                        let checkpoint = if rework {
+                            rework_workspace(state, &row.id, &instance, &execution, &step)?
+                        } else {
+                            execution.rework_workspace.clone()
+                        };
                         let child_ids = instances_for_executions(state, &affected_ids);
                         for child in state
                             .governance
@@ -1604,6 +1703,7 @@ impl Engine {
                                     !active_execution(state, current),
                                     "后继步骤的执行者或工具操作尚未停止并核对",
                                 )?;
+                                let previous_execution_id = current.id.clone();
                                 state.governance.push(record(
                                     "workflow_execution_history",
                                     current.id.clone(),
@@ -1627,6 +1727,39 @@ impl Engine {
                                 current.node_id = definition.node_id.clone();
                                 current.contract_digest = configuration_hash(definition);
                                 current.inputs.clear();
+                                current.rework_workspace = checkpoint.clone();
+                                if rework {
+                                    let outputs = if current.outputs.is_empty() {
+                                        state
+                                            .governance
+                                            .iter()
+                                            .rev()
+                                            .filter(|r| {
+                                                r.kind == "workflow_execution_history"
+                                                    && r.data["workflow_instance_id"]
+                                                        == current.workflow_instance_id
+                                                    && r.data["step"] == current.step
+                                            })
+                                            .filter_map(|r| r.decode::<StepExecution>().ok())
+                                            .filter(|old| !old.outputs.is_empty())
+                                            .max_by_key(|old| {
+                                                (old.round, old.sequence, old.finished)
+                                            })
+                                            .map(|old| old.outputs)
+                                            .unwrap_or_default()
+                                    } else {
+                                        current.outputs.clone()
+                                    };
+                                    current.rework = Some(StepReworkContext {
+                                        previous_execution_id,
+                                        reason: p["reason"]
+                                            .as_str()
+                                            .unwrap_or("workflow.step.rework")
+                                            .into(),
+                                        outputs,
+                                    });
+                                }
+
                                 current.input_digest.clear();
                                 current.agent_revision_id = None;
                                 current.round += u64::from(rework);
@@ -2000,6 +2133,13 @@ impl Engine {
                 return Ok(());
             }
             execution.inputs = material_inputs(step, &current_facts)?;
+            if let Some(name) = &step.access.workspace_input {
+                if let Some(value) = execution.inputs.get(name).cloned() {
+                    execution
+                        .inputs
+                        .insert(name.clone(), checkpoint_workspace(&execution, &value));
+                }
+            }
             execution.input_digest = configuration_hash(&execution.inputs);
             execution.started = Some(now());
             match &step.executor {
@@ -2249,6 +2389,8 @@ impl Engine {
                                 input_digest: String::new(),
                                 budget_wait_started: None,
                                 budget_waited_ms: 0,
+                                rework_workspace: None,
+                                rework: None,
                                 inputs: BTreeMap::new(),
                                 outputs: BTreeMap::new(),
                                 agent_revision_id: None,

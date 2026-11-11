@@ -393,21 +393,24 @@ impl Engine {
         let arguments: serde_json::Map<String, Value> = arguments
             .iter()
             .map(|(name, binding)| {
-                Ok((
-                    name.clone(),
-                    match binding {
-                        InputBinding::Constant { value } => value.clone(),
-                        InputBinding::Material { material_ref } => facts
-                            .values
-                            .get(&("$material".into(), material_ref.clone()))
-                            .cloned()
-                            .ok_or_else(|| err("missing_material", "工具材料不存在"))?,
-                        InputBinding::Source { source } => facts
-                            .value(source)
-                            .cloned()
-                            .ok_or_else(|| err("input_unavailable", "工具参数来源不存在"))?,
-                    },
-                ))
+                let value = match binding {
+                    InputBinding::Constant { value } => value.clone(),
+                    InputBinding::Material { material_ref } => facts
+                        .values
+                        .get(&("$material".into(), material_ref.clone()))
+                        .cloned()
+                        .ok_or_else(|| err("missing_material", "工具材料不存在"))?,
+                    InputBinding::Source { source } => facts
+                        .value(source)
+                        .cloned()
+                        .ok_or_else(|| err("input_unavailable", "工具参数来源不存在"))?,
+                };
+                let value = if name == "workspace" {
+                    crate::configured_runtime::checkpoint_workspace(execution, &value)
+                } else {
+                    value
+                };
+                Ok((name.clone(), value))
             })
             .collect::<Result<_>>()?;
         self.tool_executor
@@ -619,21 +622,37 @@ impl Engine {
                 require(
                     !ids.is_empty()
                         && ids.iter().all(|id| {
-                            step.inputs.values().any(|binding| match binding {
-                                InputBinding::Source { source } if source.step != "$input" => {
-                                    source.pointer == pointer
-                                        && instance
-                                            .steps
-                                            .iter()
-                                            .find(|e| e.step == source.step)
-                                            .and_then(|e| e.outputs.get(&source.port))
-                                            == Some(id)
-                                }
-                                InputBinding::Material { material_ref } => {
-                                    pointer.is_empty() && material_ref == id
-                                }
-                                _ => false,
-                            })
+                            (pointer.is_empty()
+                                && execution.rework.as_ref().is_some_and(|rework| {
+                                    rework.outputs.values().any(|output| output == id)
+                                }))
+                                || (pointer.is_empty()
+                                    && execution.rework_workspace.as_ref().is_some_and(
+                                        |checkpoint| {
+                                            &checkpoint.output_id == id
+                                                && step.access.workspace_input.as_ref().is_some_and(
+                                                    |name| {
+                                                        execution.inputs.get(name)
+                                                            == Some(&checkpoint.workspace)
+                                                    },
+                                                )
+                                        },
+                                    ))
+                                || step.inputs.values().any(|binding| match binding {
+                                    InputBinding::Source { source } if source.step != "$input" => {
+                                        source.pointer == pointer
+                                            && instance
+                                                .steps
+                                                .iter()
+                                                .find(|e| e.step == source.step)
+                                                .and_then(|e| e.outputs.get(&source.port))
+                                                == Some(id)
+                                    }
+                                    InputBinding::Material { material_ref } => {
+                                        pointer.is_empty() && material_ref == id
+                                    }
+                                    _ => false,
+                                })
                         }),
                     "只能读取当前步骤显式输入的产物及字段",
                 )?;

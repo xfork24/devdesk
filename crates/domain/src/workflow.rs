@@ -708,6 +708,24 @@ pub enum StepExecutionStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct StepReworkContext {
+    pub previous_execution_id: Id,
+    pub reason: String,
+    pub outputs: BTreeMap<String, Id>,
+}
+
+/// A new business round starts from an already sealed, platform-owned workspace.
+/// This changes execution material, never the immutable Workflow or old execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReworkWorkspaceCheckpoint {
+    pub previous_workspace: Value,
+    pub output_id: Id,
+    pub workspace: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StepExecution {
     #[serde(default)]
     pub plan_revision_id: Id,
@@ -728,6 +746,10 @@ pub struct StepExecution {
     pub budget_wait_started: Option<u64>,
     #[serde(default)]
     pub budget_waited_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rework_workspace: Option<ReworkWorkspaceCheckpoint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rework: Option<StepReworkContext>,
     pub inputs: BTreeMap<String, Value>,
     pub outputs: BTreeMap<String, Id>,
     pub agent_revision_id: Option<Id>,
@@ -989,6 +1011,8 @@ impl EngineeringState {
                             .map_err(|e| err("invalid_workflow", e.to_string()))?;
                         for key in [
                             "inputs",
+                            "rework_workspace",
+                            "rework",
                             "input_digest",
                             "plan_revision_id",
                             "node_id",
@@ -1025,6 +1049,46 @@ impl EngineeringState {
                     ids.insert(step.id.clone()) && step.workflow_instance_id == record.id,
                     "步骤身份重复或归属错误",
                 )?;
+                if let Some(rework) = &step.rework {
+                    require(
+                        self.governance.iter().any(|old| {
+                            old.kind == "workflow_execution_history"
+                                && old.definition_id == rework.previous_execution_id
+                                && old.data["workflow_instance_id"] == record.id
+                                && old.data["step"] == step.step
+                        }),
+                        "返工来源执行不属于当前步骤历史",
+                    )?;
+                    for output in rework.outputs.values() {
+                        require(
+                            self.governance.iter().any(|old| {
+                                old.kind == "workflow_execution_history"
+                                    && old.data["workflow_instance_id"] == record.id
+                                    && old.data["step"] == step.step
+                                    && old.data["outputs"].as_object().is_some_and(|outputs| {
+                                        outputs.values().any(|id| id == output)
+                                    })
+                            }),
+                            "返工证据不属于当前步骤历史",
+                        )?;
+                    }
+                }
+                if let Some(checkpoint) = &step.rework_workspace {
+                    let output = self.configuration(&checkpoint.output_id)?;
+                    require(
+                        output.kind == "workflow_output"
+                            && output.data["value"] == checkpoint.workspace
+                            && output.data["provenance"]["kind"] == "platform"
+                            && output.data["provenance"]["tool"] == "workspace.snapshot"
+                            && output.data["provenance"]["pointer"] == ""
+                            && checkpoint.workspace["owner_id"] == record.data["owner_id"]
+                            && checkpoint.previous_workspace["owner_id"]
+                                == checkpoint.workspace["owner_id"]
+                            && checkpoint.previous_workspace["workspace_id"]
+                                == checkpoint.workspace["workspace_id"],
+                        "返工检查点与真实平台快照或工作区归属不匹配",
+                    )?;
+                }
                 for output in step.outputs.values() {
                     let output = self.configuration(output)?;
                     require(

@@ -1001,6 +1001,8 @@ impl Engine {
                         StepExecutionStatus::Queued
                     },
                     input_digest: String::new(),
+                    rework_workspace: None,
+                    rework: None,
                     budget_wait_started: None,
                     budget_waited_ms: 0,
                     inputs: BTreeMap::new(),
