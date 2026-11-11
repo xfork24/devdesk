@@ -5,7 +5,8 @@
 | 位置 | 验证内容 |
 |---|---|
 | `crates/*/src/` | 领域规则、协议解析、权限落实、进程/凭据边界、Host 装配及项目隔离。 |
-| `crates/adapters/tests/configured_workflows.rs` | 自由 Role、Workflow v5 发布和重载、确切任务派发、动态 Spec、结构化产物、人工确认、补充输入、重试、返工、子流程集合、取消、祖先暂停、平台调用防伪及真实 Git 工作空间/候选。 |
+| `crates/adapters/tests/configured_workflows.rs` | 自由 Role、Workflow v6 发布和重载、确切任务派发、动态 Spec、结构化产物、人工确认、补充输入、重试、返工、子流程集合、取消、祖先暂停、平台调用防伪及真实 Git 工作空间/候选。 |
+| `crates/adapters/tests/standard_snapshots.rs` | 不可变规范闭包与关联、通用工作采用、同一 Feature 的不同 Task 实际执行不同 Standard、运行切换与旧依据恢复。 |
 | `crates/adapters/tests/conversations.rs` | 原生轮次、消费及停止证明、不可变绑定、未知结果不重发、通用材料提案与输入引用。 |
 | `crates/adapters/tests/schema_contracts.rs` | 离线编译全部 Schema / `$defs`，检查当前配置、Serde、实际冻结计划及 StepExecution。 |
 | 其他 `crates/adapters/tests/` | SQLite、Artifact、配置修订、Git、运行安装、Tool/Skill、权限及 Docker 资源边界。 |
@@ -68,4 +69,4 @@ Harness 编排回归：`crates/adapters/tests/orchestration.rs` 验证显式驱�
 
 `tests/live/probe_harness_orchestration.py` 使用实际 Codex 项目经理和业务 Agent，验证运行时绕过、实际平台调用及暂停重启后的后继 Session。`probe_default_engineering_workflow.py` 使用独立数据集、专用 GitHub 仓库与真实 Codex、Docker、Git 执行默认 Feature/Task；人工确认精确绑定当前材料，不覆盖拒绝。二者必须显式提供二进制与认证源；临时复制凭据在退出时清理。
 
-Standard 的真实两 Task 工程验收入口为 `tests/live/probe_standard_snapshots.py`，使用独立数据集、真实 Codex、Docker 和专用 GitHub 测试仓库，验证不同快照、运行中切换、重启恢复、真实测试及 Git 回执。完整回归在整合到 main 后统一运行。
+Standard 的真实两 Task 工程验收入口为 `tests/live/probe_standard_snapshots.py`，使用独立数据集、真实 Codex、Docker 和专用 GitHub 测试仓库，验证不同快照、运行中切换、重启恢复、真实测试及 Git 回执。完整回归在整合到 main 后统一运行。通过同一 `--report-directory` 和 `--resume` 可以保留原实例、接管项目经理，并只恢复已核对的中断执行、修复后的只读目标查询，或对并行任务推进后过期的候选从 target 返工。父调用由子步骤恢复，不重新创建 Task。完成后运行 `python3 tests/live/verify_standard_history.py /临时证据目录`，离线核对 62 个步骤、唯一的规范切换、旧输入输出、零豁免、每项 Task 的两轮原生命令 Red/Green 与三个精确测试后发布版本。

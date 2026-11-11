@@ -1,6 +1,6 @@
 # Standard 不可变规范快照实施与验收记录
 
-日期：2026-11-11。状态：代码实施完成，真实双 Task 工程验收进行中。
+日期：2026-11-11。状态：代码与统一回归完成；真实双 Task 已完整完成，Feature 最终评审与发布进行中。
 
 实施工作区 `/Users/hengliu/.codex/worktrees/standard-snapshot/devdesk`，分支 `codex/standard-snapshot`，起点 `b70cd10`。与 main 上的 Delivery 改造 `269150b` 整合后，首次合入 main 为 `79d7d96`；后续验收修复继续从该 worktree 提交并合回 main。用户要求的统一测试在 main 执行，原 main 中未跟踪的 `review/` 保留。
 
@@ -47,8 +47,14 @@ Rust 与浏览器的 Harness 夹具明确属于离线回归，不计为真实模
 - Add：`0077fb77-0cc3-4a78-ba9f-b4593cef459b`，实际入口 `builtin-workflow-task-sol-high:6`，原 Standard 为 `standard.d7015ba25912e198bbf3061f21393b77b981ad8166663b95c819a36a8a8f493e:1`。
 - Twice：`257367ea-4e82-4df8-b02a-5a0450bc6296`，实际入口 `builtin-workflow-task-sol-high:7`，Standard 为 `standard.88c600e58aac3445ec427f66fbc1eccdd993e5e48e3d000532472b086167431e:1`，包含额外的 `standard_b_trace` 检查。
 
-两个子实例已按各自配置创建，尚待本次真实运行完成独立测试快照、Add 的规范切换、历史依据重启核验以及完整 TDD、评审、候选测试和 Git 发布。此处没有把仅配置成功或离线端口断言记为真实闭环通过。
+两个子实例已按各自配置执行原生独立测试并固定快照，随后 Add 显式切换为 Standard B。旧计划、输入、输出及原生任务文本经签名 release 重启核验，仍指向原 Standard A；Twice 的初始执行依据为 B。两项实现分别保留两轮真实 Red/Green 和一次回归运行，每条交付运行记录已与原生命令观察对应。两项 Task 的 20 个节点及各自子流程均已完整完成并真实发布；Feature 全量及最终候选各运行 64 项测试，均为 64 通过、0 失败、0 跳过，三份指定测试均包含在配方中，两份 Task 独立测试内容保持冻结版本。当前仍待 Feature 两轮独立评审与最终发布，不将阶段成功记为完整闭环通过。
 
-该运行在 main 的已合入版本启动；计划中的历史恢复重启将使用最终签名 release。`context.json` 保留最初与重启二进制 SHA256。排队管理轮次自然完成，未执行额外取消或改写业务记录。
+该运行在 main 的已合入版本启动；计划中的历史恢复重启已使用当时最终签名 release。`context.json` 保留最初与重启二进制 SHA256。排队管理轮次自然完成，未执行额外取消或改写业务记录。
 
 此前隔离运行 a 定位到控制策略重建问题，b 定位到 debug JSON 源视图栈溢出，均已修复并保留失败证据；它们不作为通过证据。真实验收完成后在本记录补充确切计划、执行与测试 / Git 回执数量。
+
+真实执行进一步定位并修复了实际 Task 读取所属 Feature 合入目标的边界遗漏：只允许 `workspace.current` 读取其所属 Feature 的确切版本，不扩展快照、测试和 Git 写操作授权。main 新增真实 Git 回归通过，相关 `configured_workflows` 36 项、`standard_snapshots` 5 项全部通过；日志 `/tmp/devdesk-standard-main-scope-regression-20261111.log`。同一数据集在修复后的签名 release 恢复，只重试失败的只读目标查询，父调用自动恢复，保留原 Task 实例。恢复脚本首次严格检查遇到父调用传播的失败后退出，随后改为只恢复实际失败子步骤；该脚本修正没有重建子调用或改写业务结果。
+
+Twice 的 20 个节点及子流程先行全部完成并真实发布。Add 的旧候选随后因同一 Feature 目标已被 Twice 推进而被 CAS 拒绝（`目标已变化`）；这是并发保护，不将旧候选强行视为已接纳。探针原先在任何失败时停止，现允许真实控制者处理该明确冲突，并通过公开 `workflow.step.rework(target)` 在同一实例重新读取目标、构建、测试和评审候选。上游实现、两轮 TDD、旧候选及失败回执保持原记录；没有重建 Task、放宽检查或新增 Standard 变更。Add 已完成新目标读取、候选重建、测试、两轮独立评审、Git 接纳及发布，并以原 Task 实例完整结束。最终 Feature 闭环仍待评审与发布。
+
+最新独立包由 main 构建并验证通过，报告 `/tmp/devdesk-standard-package-current-20261111.json`、日志 `/tmp/devdesk-standard-package-probe-current-20261111.log`。包内运行程序 SHA256 为 `b81410fa76a49bb297e4525b00f355939581e1e9fdb84cfaf7ab65c7be14669c`；脱离源码启动、权限资产、不可变修订、纯 Standard 源、归档和重启历史恢复均通过，无模型调用。真实工程当前使用私有签名程序 SHA256 `322e143b34b20acf0d2dfa6cc4c49255128499bec498f13c4f0eadc63c0678da`；两次构建之间运行代码无改动，包另做独立验证，不将不同二进制 SHA 混为同一次测试。
