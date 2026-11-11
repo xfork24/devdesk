@@ -414,7 +414,9 @@ impl Engine {
                         ]
                         .contains(&r.kind.as_str())
                             && r.data["standard_ref"] == id
-                            && r.scope.visible_from(&scope)
+                            && scope
+                                .project()
+                                .is_none_or(|project| r.scope.project() == Some(project))
                     })
                     .collect();
                 return Ok(
