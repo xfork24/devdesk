@@ -196,7 +196,7 @@ async function captureStep(
   return { view, execution };
 }
 
-test("Standard 只读生成比较与归档保留规范源", async ({ page }) => {
+test("Standard 只读生成比较与归档保留规范源", async ({ page }, info) => {
   await setup(page);
   const { material } = await fixtures(page);
   const a = await child(page, "规范 A", material),
@@ -250,6 +250,7 @@ test("Standard 只读生成比较与归档保留规范源", async ({ page }) => 
   await expect(
     page.getByRole("button", { name: "恢复快照选择", exact: true }),
   ).toBeVisible();
+  await page.screenshot({path:info.outputPath("standard-readonly-archived.png"),fullPage:true});
   const catalog = await rpc(page, "query.standard", { id: ids[1] });
   expect(Object.keys(catalog.record.data).sort()).toEqual([
     "root_workflow_refs",
