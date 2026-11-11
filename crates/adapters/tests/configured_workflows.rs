@@ -2156,6 +2156,76 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
             writer_calls[1].turn.code_view.as_ref().unwrap().revision,
             checkpoint_revision.as_str().unwrap()
         );
+        drop(calls);
+        // A later round's inputs already contain an effective checkpoint. Its
+        // replacement must still match the original Workflow source binding.
+        let second_checkpoint = new_snapshot.data["value"].clone();
+        command(
+            &engine,
+            "workflow.step.rework",
+            Some(instance_id),
+            json!({"step":"writer","reason":"再次返工，保留原绑定与已封存实现"}),
+        )
+        .unwrap();
+        // Rework again before dispatch: the queued round has no frozen inputs.
+        command(
+            &engine,
+            "workflow.step.rework",
+            Some(instance_id),
+            json!({"step":"writer","reason":"派发前再次组织返工，不丢失检查点"}),
+        )
+        .unwrap();
+        let queued = instance(&engine, &run["id"]);
+        let writer = queued["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["step"] == "writer")
+            .unwrap();
+        assert_eq!(
+            writer["rework_workspace"]["previous_workspace"]["revision"],
+            base
+        );
+        assert_eq!(writer["rework_workspace"]["workspace"], second_checkpoint);
+        recorder.writes.lock().unwrap().push((
+            std::path::Path::new(&work.path).join("addition.txt"),
+            "second reworked change\n".into(),
+        ));
+        drive(&engine, 32);
+        let final_round = instance(&engine, &run["id"]);
+        assert_eq!(final_round["steps"][3]["status"], "waiting_confirmation");
+        let final_state = engine.store.snapshot().unwrap();
+        let final_snapshot = final_state
+            .configuration(
+                final_round["steps"][1]["outputs"]["workspace"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            final_snapshot.data["value"]["changes"]["base_revision"],
+            second_checkpoint["revision"]
+        );
+        assert_eq!(
+            final_snapshot.data["value"]["scope_changes"]["base_revision"],
+            base
+        );
+        let calls = recorder.calls.lock().unwrap();
+        let writer_calls: Vec<_> = calls
+            .iter()
+            .filter(|call| {
+                call.configured_task.as_ref().unwrap().task["source"]["step"] == "writer"
+            })
+            .collect();
+        assert_eq!(writer_calls.len(), 3);
+        assert_eq!(
+            writer_calls[2].turn.code_view.as_ref().unwrap().revision,
+            second_checkpoint["revision"].as_str().unwrap()
+        );
+        assert_eq!(
+            final_round["active_plan_revision_id"],
+            before["active_plan_revision_id"]
+        );
         return;
     }
     assert_eq!(runtime["status"], "completed", "{runtime}");

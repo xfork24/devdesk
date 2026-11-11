@@ -63,11 +63,20 @@ fn rework_workspace(
     if step.access.writable_paths.is_empty() {
         return Ok(None);
     }
-    let Some(previous) = step
-        .access
-        .workspace_input
+    // Resolve against the Workflow binding, not the preceding round's effective
+    // workspace: queued rounds have no inputs yet, and completed rounds may
+    // already consume a checkpoint. Losing that original binding restores the
+    // old Red snapshot on the next dispatch.
+    let Some(previous) = execution
+        .rework_workspace
         .as_ref()
-        .and_then(|name| execution.inputs.get(name))
+        .map(|checkpoint| &checkpoint.previous_workspace)
+        .or_else(|| {
+            step.access
+                .workspace_input
+                .as_ref()
+                .and_then(|name| execution.inputs.get(name))
+        })
     else {
         return Ok(None);
     };
