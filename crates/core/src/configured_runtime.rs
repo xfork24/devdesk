@@ -2739,11 +2739,16 @@ impl Engine {
                 json!({"configured":true,"archived":row.kind=="archived_configured_execution_task","task":row.data,"turn_id":row.definition_id}),
             ));
         }
-        let row = state.governance.iter().find(|r| {
-            r.kind == "workflow_instance"
-                && r.data["schema_version"] == 6
-                && (p["id"] == r.id || p["owner_id"] == r.definition_id)
-        })?;
+        let row = if let Some(reference) = p["id"].as_str() {
+            state
+                .governance
+                .iter()
+                .find(|r| r.kind == "workflow_instance" && r.id == reference)
+        } else {
+            p["owner_id"]
+                .as_str()
+                .and_then(|owner| crate::standards::current_work_instance(&state, owner))
+        }?;
         if let Some(project) = p["project_id"].as_str() {
             if row.scope.project() != Some(project) {
                 return Some(Err(err("scope_violation", "工作流不属于当前项目")));

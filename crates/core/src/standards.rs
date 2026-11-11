@@ -371,7 +371,7 @@ impl Engine {
                     "工作跨项目",
                 )?;
                 return Ok(
-                    json!({"configuration":work_configuration(&state,&owner),"history":state.governance.iter().filter(|r|r.kind=="workflow_plan_revision" && r.data["owner_id"]==owner).collect::<Vec<_>>() }),
+                    json!({"configuration":work_configuration(&state,&owner),"history":state.governance.iter().filter(|r|is_work_plan(&state,r,&owner)).collect::<Vec<_>>() }),
                 );
             }
             if method == "standard.capture.preview" {
@@ -468,7 +468,17 @@ pub(crate) fn check_invocation_contract(
     Ok(())
 }
 
-fn selected_work_record<'a>(
+pub(crate) fn is_work_root(state: &EngineeringState, row: &ConfigurationRecord) -> bool {
+    row.kind == "workflow_instance"
+        && (row.data["parent_execution_id"].is_null()
+            || state.governance.iter().any(|invocation| {
+                invocation.kind == "workflow_invocation"
+                    && invocation.data["child_instance_id"] == row.id
+                    && invocation.data["member_identity"] == row.data["owner_id"]
+            }))
+}
+
+pub(crate) fn current_work_instance<'a>(
     state: &'a EngineeringState,
     owner: &str,
 ) -> Option<&'a ConfigurationRecord> {
@@ -476,7 +486,23 @@ fn selected_work_record<'a>(
         .governance
         .iter()
         .rev()
-        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == owner)
+        .find(|row| row.data["owner_id"] == owner && is_work_root(state, row))
+}
+
+fn is_work_plan(state: &EngineeringState, row: &ConfigurationRecord, owner: &str) -> bool {
+    row.kind == "workflow_plan_revision"
+        && row.data["owner_id"] == owner
+        && row.data["instance_id"]
+            .as_str()
+            .and_then(|id| state.configuration(id).ok())
+            .is_some_and(|instance| is_work_root(state, instance))
+}
+
+fn selected_work_record<'a>(
+    state: &'a EngineeringState,
+    owner: &str,
+) -> Option<&'a ConfigurationRecord> {
+    current_work_instance(state, owner)
         .and_then(|r| {
             state
                 .configuration(r.data["active_plan_revision_id"].as_str()?)
@@ -539,7 +565,7 @@ pub fn work_standard_selection(
     } else {
         vec![]
     };
-    let history=state.governance.iter().filter(|r|r.kind=="workflow_plan_revision" && r.data["owner_id"]==owner)
+    let history=state.governance.iter().filter(|r|is_work_plan(&state,r,&owner))
         .map(|r|json!({"plan_revision_id":r.id,"standard_ref":r.data["standard_ref"],"workflow_ref":r.data["workflow_ref"],"reason":r.data["reason"]})).collect::<Vec<_>>();
     let exceptions = state
         .governance

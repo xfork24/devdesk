@@ -1199,11 +1199,11 @@ function App() {
                           request={rpc}
                           projectId={projectId}
                           owner={task}
-                          instance={data?.configurations?.find(
+                          instance={data?.configurations?.filter(
                             (r: RecordData) =>
-                              r.kind === "workflow_instance" &&
+                              r.kind === "workflow_instance" && r.work_root !== false &&
                               r.data.owner_id === task.id,
-                          )}
+                          ).at(-1)}
                           refresh={load}
                         />
                       </article>

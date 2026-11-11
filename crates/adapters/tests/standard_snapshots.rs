@@ -487,9 +487,13 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
 fn project_execution_selections_rebuild_in_their_own_access_context() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
+    let leaf = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"内部调用"}],"steps":[{"key":"one","name":"内部执行","stage":"work","executor":{"type":"control"}}]}),
+    );
     let workflow = publish(
         &e,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"处理"}],"steps":[{"key":"one","name":"独立执行","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"处理"}],"steps":[{"key":"one","name":"独立执行","stage":"work","executor":{"type":"workflow","workflow_ref":leaf}}]}),
     );
     let mut roots = Vec::new();
     let mut standards = Vec::new();
@@ -502,6 +506,28 @@ fn project_execution_selections_rebuild_in_their_own_access_context() {
             json!({"workflow_ref":workflow}),
         )
         .unwrap();
+        dispatch(&e, root["id"].as_str().unwrap(), "one");
+        e.evaluate_workflows().unwrap();
+        let selection = e
+            .query(
+                "query.work_standard_diff",
+                &json!({"before_owner_id":project["id"],"after_owner_id":project["id"]}),
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            selection["before"]["workflow_ref"], workflow,
+            "an internal static call does not replace the consumer's selected entry"
+        );
+        assert_eq!(
+            e.query(
+                "query.workflow_instance",
+                &json!({"owner_id":project["id"]}),
+                1
+            )
+            .unwrap()["record"]["id"],
+            root["id"]
+        );
         let view = e
             .query("workflow.inspect", &json!({"id":root["id"]}), 1)
             .unwrap();

@@ -104,17 +104,17 @@ export function RoleConversation({
       : owner === feature?.id
         ? feature
         : tasks.find((t) => t.id === owner);
-  const featureLock = configurations.find(
+  const workLock = configurations.find(
     (r) =>
       r.kind === "work_configuration" &&
-      r.definition_id === feature?.id,
+      r.definition_id === owner,
   );
-  const runtime = configurations.find(
+  const runtime = configurations.filter(
     (r) =>
       r.kind === "workflow_instance" &&
       r.data.owner_id === owner &&
-      r.data.parent_execution_id == null,
-  );
+      r.work_root !== false,
+  ).at(-1);
   const plan = runtime?.data.plan.document;
   const recommendedExecution = runtime?.data.steps.find(
     (s: Row) =>
@@ -131,14 +131,14 @@ export function RoleConversation({
   );
 
   useEffect(() => {
-    if (!featureLock || owner === project.id || global || sessionId) return;
+    if (!workLock || owner === project.id || global || sessionId) return;
     if (
-      !Object.values(runtime?.data.role_agent_bindings || {}).includes(agent)
+      !Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}).includes(agent)
     ) {
       setAgent(recommendation || "");
       setInstanceId("");
     }
-  }, [featureLock?.id, owner, recommendation, sessionId]);
+  }, [workLock?.id, owner, recommendation, sessionId]);
   useEffect(() => {
     let current = true;
     if (!agent || catalog.some((r) => r.id === agent)) return;
@@ -183,8 +183,8 @@ export function RoleConversation({
       (catalog.some((r) => r.id === a.id && r.kind === "agent") ||
         detail?.session.agent === a.id) &&
       (detail?.session.agent === a.id ||
-        (featureLock && owner !== project.id && !global
-          ? Object.values(runtime?.data.role_agent_bindings || {}).includes(
+        (workLock && owner !== project.id && !global
+          ? Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}).includes(
               a.id,
             )
           : !choices.some((d) => d.supersedes === a.id))),
@@ -194,10 +194,10 @@ export function RoleConversation({
     const candidates = catalog.filter(
       (r) =>
         r.kind == "agent" &&
-        (!featureLock ||
+        (!workLock ||
           owner === project.id ||
           global ||
-          Object.values(runtime?.data.role_agent_bindings || {}).includes(
+          Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}).includes(
             r.id,
           )),
     );
@@ -560,7 +560,7 @@ export function RoleConversation({
                         owner !== project.id &&
                         runtime?.data.role_agent_bindings &&
                         Object.values(
-                          runtime?.data.role_agent_bindings || {},
+                          runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {},
                         ).includes(composite.id)
                           ? { frozen_feature_id: feature?.id }
                           : {}),
