@@ -9,6 +9,7 @@ mod orchestration;
 mod platform_tools;
 mod standards;
 pub use controllers::CONTROL_TOOLS;
+pub use standards::{compare_work_standards, work_standard_choices, work_standard_selection};
 mod workflow_changes;
 pub use configured_runtime::task_input as render_source_task;
 pub use configured_runtime::{

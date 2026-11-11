@@ -398,84 +398,7 @@ impl Engine {
                 return Ok(diff_standard_snapshots(&left, &right));
             }
             if method == "query.work_standard_diff" {
-                let selection = |owner: &str, plan: Option<&str>| -> Result<Value> {
-                    let historical_requested = plan.is_some();
-                    let work = work_reference(&state, owner)?;
-                    let target = work.scope(&state)?;
-                    require(
-                        scope.project().is_none_or(|p| target.project() == Some(p)),
-                        "工作跨项目",
-                    )?;
-                    let plan = if let Some(id) = plan {
-                        state.configuration(id)?
-                    } else {
-                        let instance = state
-                            .governance
-                            .iter()
-                            .rev()
-                            .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == owner)
-                            .ok_or_else(|| err("not_found", "工作尚无运行计划"))?;
-                        state.configuration(
-                            instance.data["active_plan_revision_id"]
-                                .as_str()
-                                .unwrap_or(""),
-                        )?
-                    };
-                    require(
-                        plan.kind == "workflow_plan_revision" && plan.data["owner_id"] == owner,
-                        "历史计划不属于该工作",
-                    )?;
-                    let std = plan.data["standard_ref"]
-                        .as_str()
-                        .ok_or_else(|| err("invalid_standard", "计划缺少 Standard"))?;
-                    standard_snapshot(&state, std, &scope)?;
-                    let children=state.governance.iter().filter(|r|r.kind=="workflow_instance" && r.data["root_instance_id"]==plan.definition_id).filter_map(|r|state.configuration(r.data["active_plan_revision_id"].as_str()?).ok()).map(|r|json!({"owner_id":r.data["owner_id"],"standard_ref":r.data["standard_ref"],"workflow_ref":r.data["workflow_ref"],"plan_revision_id":r.id})).collect::<Vec<_>>();
-                    let historical = if plan.data["instance_id"].is_string() {
-                        state
-                            .governance
-                            .iter()
-                            .filter(|r| {
-                                r.kind == "workflow_invocation"
-                                    && r.data["parent_plan_revision_id"] == plan.id
-                            })
-                            .map(|r| r.data.clone())
-                            .collect::<Vec<_>>()
-                    } else {
-                        vec![]
-                    };
-                    Ok(
-                        json!({"work":work,"plan_revision_id":plan.id,"standard_ref":std,"workflow_ref":plan.data["workflow_ref"],"children":if historical_requested{historical}else{children},"children_basis":if historical_requested{"invocation_initial"}else{"current"}}),
-                    )
-                };
-                let left = selection(
-                    &text(p, "before_owner_id")?,
-                    p["before_plan_revision_id"].as_str(),
-                )?;
-                let right = selection(
-                    &text(p, "after_owner_id")?,
-                    p["after_plan_revision_id"].as_str(),
-                )?;
-                let diff = diff_standard_snapshots(
-                    &standard_snapshot(&state, left["standard_ref"].as_str().unwrap(), &scope)?,
-                    &standard_snapshot(&state, right["standard_ref"].as_str().unwrap(), &scope)?,
-                );
-                let entry_diff = diff_standard_snapshots(
-                    &standard_entry_snapshot(
-                        &standard_snapshot(&state, left["standard_ref"].as_str().unwrap(), &scope)?,
-                        left["workflow_ref"].as_str().unwrap(),
-                    )?,
-                    &standard_entry_snapshot(
-                        &standard_snapshot(
-                            &state,
-                            right["standard_ref"].as_str().unwrap(),
-                            &scope,
-                        )?,
-                        right["workflow_ref"].as_str().unwrap(),
-                    )?,
-                );
-                return Ok(
-                    json!({"before":left,"after":right,"diff":diff,"entry_diff":entry_diff,"same_entry":left["workflow_ref"]==right["workflow_ref"]}),
-                );
+                return compare_work_standards(&state, &state, p);
             }
             let id = text(p, "id")?;
             let snapshot = standard_snapshot(&state, &id, &scope)?;
@@ -543,4 +466,132 @@ pub(crate) fn check_invocation_contract(
         ));
     }
     Ok(())
+}
+
+fn selected_work_record<'a>(
+    state: &'a EngineeringState,
+    owner: &str,
+) -> Option<&'a ConfigurationRecord> {
+    state
+        .governance
+        .iter()
+        .rev()
+        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == owner)
+        .and_then(|r| {
+            state
+                .configuration(r.data["active_plan_revision_id"].as_str()?)
+                .ok()
+        })
+        .or_else(|| work_configuration(state, owner))
+        .or_else(|| {
+            state
+                .governance
+                .iter()
+                .filter(|r| r.kind == "project_configuration" && r.definition_id == owner)
+                .max_by_key(|r| r.version)
+        })
+}
+
+/// A read-only view of an actual consumer, independently of its project's current defaults.
+pub fn work_standard_selection(
+    state: &EngineeringState,
+    owner: &str,
+    historical: Option<&str>,
+) -> Result<Value> {
+    let work = work_reference(state, owner)?;
+    let scope = work.scope(state)?;
+    let source = if let Some(reference) = historical {
+        let record = state.configuration(reference)?;
+        require(
+            record.kind == "workflow_plan_revision" && record.data["owner_id"] == owner,
+            "历史计划不属于该工作",
+        )?;
+        record
+    } else {
+        selected_work_record(state, owner)
+            .ok_or_else(|| err("work_configuration_required", "工作尚未采用规范"))?
+    };
+    let standard = text(&source.data, "standard_ref")?;
+    let workflow = text(&source.data, "workflow_ref")?;
+    standard_entry(state, &standard, &workflow, &scope)?;
+    let is_plan = source.kind == "workflow_plan_revision";
+    let children = if historical.is_some() {
+        state
+            .governance
+            .iter()
+            .filter(|r| {
+                r.kind == "workflow_invocation" && r.data["parent_plan_revision_id"] == source.id
+            })
+            .map(|r| r.data.clone())
+            .collect::<Vec<_>>()
+    } else if is_plan {
+        let parent = source.data["instance_id"]
+            .as_str()
+            .and_then(|id| state.configuration(id).ok());
+        let executions = parent
+            .and_then(|r| r.data["steps"].as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e["id"].as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        state.governance.iter().filter(|r|r.kind=="workflow_instance" && r.data["parent_execution_id"].as_str().is_some_and(|id|executions.contains(id)))
+            .map(|r|json!({"instance_id":r.id,"owner_id":r.data["owner_id"],"standard_ref":r.data["plan"]["standard_ref"],"workflow_ref":r.data["workflow_ref"],"plan_revision_id":r.data["active_plan_revision_id"]})).collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
+    let history=state.governance.iter().filter(|r|r.kind=="workflow_plan_revision" && r.data["owner_id"]==owner)
+        .map(|r|json!({"plan_revision_id":r.id,"standard_ref":r.data["standard_ref"],"workflow_ref":r.data["workflow_ref"],"reason":r.data["reason"]})).collect::<Vec<_>>();
+    let exceptions = state
+        .governance
+        .iter()
+        .filter(|r| r.kind == "workflow_waiver" && r.data["plan_revision_id"] == source.id)
+        .map(|r| json!({"id":r.id,"data":r.data}))
+        .collect::<Vec<_>>();
+    Ok(
+        json!({"work":work,"project_id":scope.project(),"selection_ref":source.id,"basis":if is_plan{"execution"}else{"configured"},"plan_revision_id":if is_plan{Some(&source.id)}else{None},"standard_ref":standard,"workflow_ref":workflow,"children":children,"children_basis":if historical.is_some(){"invocation_initial"}else{"current"},"history":history,"exceptions":exceptions}),
+    )
+}
+
+pub fn compare_work_standards(
+    before: &EngineeringState,
+    after: &EngineeringState,
+    params: &Value,
+) -> Result<Value> {
+    let left = work_standard_selection(
+        before,
+        &text(params, "before_owner_id")?,
+        params["before_plan_revision_id"].as_str(),
+    )?;
+    let right = work_standard_selection(
+        after,
+        &text(params, "after_owner_id")?,
+        params["after_plan_revision_id"].as_str(),
+    )?;
+    let resolve = |state: &EngineeringState, selection: &Value| -> Result<StandardSnapshot> {
+        let scope = Scope::Project {
+            project_id: text(selection, "project_id")?,
+        };
+        standard_snapshot(state, &text(selection, "standard_ref")?, &scope)
+    };
+    let a = resolve(before, &left)?;
+    let b = resolve(after, &right)?;
+    let entry_diff = diff_standard_snapshots(
+        &standard_entry_snapshot(&a, &text(&left, "workflow_ref")?)?,
+        &standard_entry_snapshot(&b, &text(&right, "workflow_ref")?)?,
+    );
+    Ok(
+        json!({"before":left,"after":right,"diff":diff_standard_snapshots(&a,&b),"entry_diff":entry_diff,"same_entry":left["workflow_ref"]==right["workflow_ref"]}),
+    )
+}
+
+pub fn work_standard_choices(state: &EngineeringState) -> Vec<Value> {
+    state.projects.iter().map(|p|(p.id.as_str(),p.title.as_str()))
+        .chain(state.features.iter().map(|f|(f.id.as_str(),f.title.as_str())))
+        .chain(state.tasks.iter().map(|t|(t.id.as_str(),t.title.as_str())))
+        .filter_map(|(owner,title)|{
+            let record=selected_work_record(state,owner)?;
+            let work=work_reference(state,owner).ok()?;
+            let scope=work.scope(state).ok()?;
+            Some(json!({"id":owner,"title":title,"work":work,"project_id":scope.project(),"standard_ref":record.data["standard_ref"],"workflow_ref":record.data["workflow_ref"]}))
+        }).collect()
 }
