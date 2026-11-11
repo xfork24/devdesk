@@ -83,6 +83,9 @@ try:
   if status!=last:print(status,flush=True);last=status
   manager_view=c.rpc('query.orchestration',{'id':manager});(OUT/'latest-manager.json').write_text(json.dumps(manager_view,ensure_ascii=False,indent=2))
   if manager_view['record']['data']['status'] in ['failed','needs_reconciliation','budget_exhausted']:raise RuntimeError(manager_view['record']['data'])
+  if args.unattended:
+   assert manager_view['record']['data']['status'] in ['active','closed'], 'Unattended controller paused for intervention'
+   assert not any(r['kind']=='workflow_pending_decision' and r['data']['status']=='pending' for r in manager_view['decisions']), 'Unattended workflow requested a Human decision'
   (OUT/'latest.json').write_text(json.dumps(view,ensure_ascii=False,indent=2))
   for row in rows:
    for step in row['data']['steps']:
@@ -112,7 +115,7 @@ try:
    publications=verify_evidence(c,rows,OUT)
    print('PASS native default engineering Workflow',root['id'],flush=True)
    (OUT/'report.md').write_text('# Native default engineering Workflow v5\n\nPassed through actual Codex, managed Git, Docker Red/Green and candidate tests; both GitHub PRs merged at their exact candidate SHA.\n\nRoot: '+root['id']+'\nFeature: '+feature+'\nNew confirmations in this invocation: '+str(len(confirmed))+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n');break
-  time.sleep(1)
+  time.sleep(5)
  else:raise TimeoutError('Default engineering workflow')
 except SystemExit:
  raise
