@@ -52,9 +52,10 @@ export function StandardDiff({ diff }: { diff: Row }) {
 }
 
 export function StandardDetail({ snapshot }: { snapshot: Row }) {
-  const sourceName = (reference: string) =>
-    snapshot.nodes.find((node: Row) => node.reference === reference)?.name ||
-    reference;
+  const sourceName = (reference: string) => {
+    const node = snapshot.nodes.find((node: Row) => node.reference === reference);
+    return node ? `${node.name} · v${reference.split(":").at(-1)}` : reference;
+  };
   const ports = (values: Row = {}) => (
     <ul>
       {Object.entries(values).map(([name, value]) => (
@@ -78,9 +79,7 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
       <ul>
         {snapshot.root_workflow_refs.map((reference: string) => (
           <li key={reference}>
-            {snapshot.nodes.find((n: Row) => n.reference === reference)?.name ||
-              reference}{" "}
-            · <code>{reference}</code>
+            {sourceName(reference)}
           </li>
         ))}
       </ul>
@@ -92,8 +91,9 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
               : node.kind === "workflow"
                 ? "Workflow"
                 : "Spec"}{" "}
-            · {node.name} · {node.reference}
+            · {sourceName(node.reference)}
           </summary>
+          <p className="muted"><code>{node.reference}</code></p>
           {node.kind === "spec" ? (
             <>
               <MarkdownPreview text={node.content.body} />
