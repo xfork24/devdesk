@@ -473,6 +473,8 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
     .unwrap();
     assert_eq!(row(&e, &root).data["plan"]["standard_ref"], standard);
     assert_eq!(row(&e, &root).data["workflow_ref"], workflow);
+    command(&e,"agent.instance.create",None,json!({"name":"按当前工作冻结依据讨论","agent_revision_id":replacement["id"],"frozen_work_id":project["id"],"scope":{"kind":"project","project_id":project["id"]}})).unwrap();
+
     assert_eq!(
         row(
             &e,
