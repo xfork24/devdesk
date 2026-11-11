@@ -11,12 +11,13 @@
 | Agent | 仅 Role 与 Capability 的确切源引用。 |
 | AgentID | 某个 Agent 修订的工作身份与经验范围。全局身份可跨项目积累经验，项目身份不能用于全局讨论。 |
 | Skill | 可复用方法、材料及工具依赖。正文和包资源保留确切来源，不自动产生执行权限。 |
-| Delivery 类型 | 任意业务交付物的说明、格式及可选离线 JSON Schema。 |
-| Spec | 正文、任意内容检查项及 Role / Delivery / 标签适用选择器。 |
-| Standard | 可选的 Spec 覆盖基线；核对实际匹配落点、必需规范及最低数量，不改写 Step。 |
+| Delivery 类型 | 格式、离线 JSON Schema 和 Spec 源引用；规范正文由 Spec 唯一拥有。 |
+| Spec | 唯一规范正文及任意内容检查项。 |
+| Standard | Role / Delivery / 标签适用选择器和 Spec 覆盖基线；核对匹配落点、必需规范及最低数量，不改写 Step。 |
 | Workflow | 显式输入输出、Stage、Step、依赖与整体完成条件。 |
 | Stage | 业务分组、背景和可选默认 Role；子流程使用自己的 Stage 配置。 |
-| Step | 本次任务、执行方式、Role 覆盖、必需 Skill、Spec、端口、访问范围、预算和推进规则。 |
+| Step | 本次任务、执行方式、Role 覆盖、必需 Skill、Spec、端口、工作上下文、预算和推进规则。 |
+| Permission | Profile 策略、Context 授权范围与绑定选择；Agent 和 Capability 不保存权限。 |
 
 Step 的执行方式仅为 Agent、工具、子流程、控制。Agent Step 必须提供非空 `task_instructions`。任务正文属于 Step，方法属于 Skill，职责属于 Role，判断依据属于 Spec；没有业务标准动作目录或执行配方。
 

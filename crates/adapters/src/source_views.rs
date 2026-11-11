@@ -59,6 +59,9 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
         return Ok(value.clone());
     }
     if value.is_object() {
+        if value.get("$source").is_some() {
+            return Ok(json!({"$source":"literal","value":value}));
+        }
         if value.get("identity").is_some()
             && value.get("revision").is_some()
             && value.get("kind").is_some()
@@ -263,6 +266,7 @@ pub(super) fn restore_with(
         }
     }
     match value["$source"].as_str() {
+        Some("literal") => return Ok(value["value"].clone()),
         Some("source_definition") => {
             return Ok(json!(
                 state
@@ -644,6 +648,17 @@ mod tests {
             restore(&state, &pack(&state, &actual).unwrap()).unwrap(),
             actual
         );
+    }
+    #[test]
+    fn user_objects_cannot_be_confused_with_storage_references() {
+        let state = EngineeringState::default();
+        for original in [
+            json!({"$source":"source","ref":"user-data:1"}),
+            json!({"metadata":{"$source":"custom-format","value":[1,2]}}),
+        ] {
+            let packed = pack(&state, &original).unwrap();
+            assert_eq!(restore(&state, &packed).unwrap(), original);
+        }
     }
     #[test]
     fn literal_reserved_text_is_escaped_without_changing_user_input() {
