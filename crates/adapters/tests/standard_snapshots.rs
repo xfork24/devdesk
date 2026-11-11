@@ -385,6 +385,22 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
         )
         .unwrap();
     assert_eq!(history["history"].as_array().unwrap().len(), 2);
+    let usage = e
+        .query(
+            "query.standard_usage",
+            &json!({"id":sa,"project_id":project}),
+            1,
+        )
+        .unwrap();
+    assert!(
+        usage["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|record| record["id"] == old_plan),
+        "project usage includes the historical adoption of its actual Task"
+    );
+
     drop(e);
     let e = engine(dir.path());
     assert_eq!(row(&e, &old_plan).data, old_basis.data);
