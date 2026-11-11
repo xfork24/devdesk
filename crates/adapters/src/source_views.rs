@@ -543,7 +543,7 @@ pub(super) fn restore_with(
                     .ok_or_else(|| err("storage", "源选择缺失"))?;
                 row.id = "selected-integrations".into();
                 row.kind = "integration_project_configuration".into();
-                row.definition_id = project.into();
+                row.definition_id = format!("project-integrations.{project}");
                 row.version = u64::MAX;
                 row.data = Value::Object(mapping);
                 context.governance.push(row);

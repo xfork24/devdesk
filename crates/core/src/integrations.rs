@@ -35,7 +35,13 @@ pub fn freeze_integrations(
         })
         .unwrap_or(Scope::Global);
     let mapping = project
-        .and_then(|p| latest(s, "integration_project_configuration", p))
+        .and_then(|p| {
+            latest(
+                s,
+                "integration_project_configuration",
+                &format!("project-integrations.{p}"),
+            )
+        })
         .map(|r| r.data.clone())
         .unwrap_or(json!({}));
     let mut lock = IntegrationLock::default();
@@ -763,7 +769,12 @@ impl Engine {
                 require(&b.integration_ref == source, "接入绑定来源不符")?;
                 live(s, r)?;
             }
-            let old = latest(s, "integration_project_configuration", &project).cloned();
+            let old = latest(
+                s,
+                "integration_project_configuration",
+                &format!("project-integrations.{project}"),
+            )
+            .cloned();
             if let Some(expected) = p.get("source_configuration_id") {
                 require(
                     expected.as_str() == old.as_ref().map(|r| r.id.as_str()),
@@ -772,7 +783,7 @@ impl Engine {
             }
             let r = record(
                 "integration_project_configuration",
-                project,
+                format!("project-integrations.{project}"),
                 scope,
                 "项目接入绑定".into(),
                 old.as_ref().map_or(1, |r| r.version + 1),

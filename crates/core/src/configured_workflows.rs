@@ -886,7 +886,7 @@ pub fn compile_workflow_sources(
                                 .iter()
                                 .filter(|r| {
                                     r.kind == "integration_project_configuration"
-                                        && r.definition_id == project
+                                        && r.scope.project() == Some(project)
                                 })
                                 .max_by_key(|r| r.version)
                                 .ok_or_else(|| {

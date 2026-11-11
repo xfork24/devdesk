@@ -379,6 +379,17 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
     .unwrap();
     assert_eq!(saved["data"]["permission_context_ref"], context["id"]);
     assert!(saved["data"].get("specification_snapshot").is_none());
+    let integrations = command(
+        &e,
+        "integration.project.bind",
+        None,
+        json!({"project_id":project_id,"bindings":{}}),
+    )
+    .unwrap();
+    assert_ne!(integrations["id"], saved["id"]);
+    assert_eq!(integrations["version"], 1);
+    assert_eq!(saved["version"], 1);
+
     let after = e.store.snapshot().unwrap();
     for agent in before.governance.iter().filter(|r| r.kind == "agent") {
         assert_eq!(after.configuration(&agent.id).unwrap(), agent);

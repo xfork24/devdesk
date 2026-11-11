@@ -54,7 +54,8 @@ export function ProjectIntegrationBindings({
       result.filter(
         (r) =>
           r.kind === "integration_project_configuration" &&
-          r.definition_id === project.id,
+          r.scope.kind === "project" &&
+          r.scope.project_id === project.id,
       ),
     )[0];
     setRows(result);

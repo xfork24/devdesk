@@ -282,6 +282,7 @@ impl Engine {
                         n.kind == r.kind
                             && n.definition_id == r.definition_id
                             && n.version > r.version
+                            && (p["include_archived"] == true || template_record_current(&s, n))
                     })
                 })
                 .collect();
