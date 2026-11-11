@@ -18,7 +18,12 @@ pub(crate) fn standard_archived(state: &EngineeringState, reference: &str) -> bo
         .iter()
         .rev()
         .find(|r| r.kind == "standard_archive" && r.definition_id == reference)
-        .is_some_and(|r| r.data["archived"] == true)
+        .map(|r| r.data["archived"] == true)
+        .unwrap_or_else(|| {
+            state
+                .configuration(reference)
+                .is_ok_and(|r| !template_record_current(state, r))
+        })
 }
 
 pub(crate) fn capture_standard(
@@ -43,7 +48,10 @@ pub(crate) fn capture_standard(
     }) {
         return Ok(existing.clone());
     }
-    let identity = format!("standard.{}", configuration_hash(&json!(definition)));
+    let identity = format!(
+        "standard.{}",
+        configuration_hash(&json!({"scope":scope,"definition":definition}))
+    );
     let version = state
         .governance
         .iter()

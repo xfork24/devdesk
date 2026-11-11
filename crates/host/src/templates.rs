@@ -271,7 +271,7 @@ mod tests {
             .dispatch("query.project_configuration", json!({"project_id":a}))
             .unwrap();
         assert_eq!(pinned["configuration"], saved);
-        assert_eq!(pinned["uses_archived_templates"], false);
+        assert_eq!(pinned["uses_archived_templates"], true);
         for old in before_project.governance.iter().filter(|r| r.immutable) {
             assert_eq!(
                 engine
@@ -424,14 +424,18 @@ mod tests {
                 .filter(|r| r.kind == kind && template_record_current(&initial, r))
                 .max_by_key(|r| r.version)
                 .unwrap();
-            write(
-                &w,
-                &format!("{kind}.revise"),
-                Some(&source.id),
-                json!({"name":format!("Customized {kind}"),"data":source.data}),
-                None,
-            )
-            .unwrap();
+            let (method, payload) = if kind == "standard" {
+                (
+                    "standard.capture".to_owned(),
+                    json!({"name":"Customized standard", "root_workflow_refs":source.data["root_workflow_refs"]}),
+                )
+            } else {
+                (
+                    format!("{kind}.revise"),
+                    json!({"name":format!("Customized {kind}"),"data":source.data}),
+                )
+            };
+            write(&w, &method, Some(&source.id), payload, None).unwrap();
         }
         let profile = initial
             .governance

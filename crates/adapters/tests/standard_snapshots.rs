@@ -462,3 +462,56 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
         "before"
     );
 }
+
+#[test]
+fn project_execution_selections_rebuild_in_their_own_access_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"处理"}],"steps":[{"key":"one","name":"独立执行","stage":"work","executor":{"type":"control"}}]}),
+    );
+    let mut roots = Vec::new();
+    let mut standards = Vec::new();
+    for title in ["Project A", "Project B"] {
+        let project = command(&e, "project.create", None, json!({"title":title})).unwrap();
+        let root = command(
+            &e,
+            "workflow.start",
+            project["id"].as_str(),
+            json!({"workflow_ref":workflow}),
+        )
+        .unwrap();
+        let view = e
+            .query("workflow.inspect", &json!({"id":root["id"]}), 1)
+            .unwrap();
+        let standard = view["runtime"]["plan"]["standard_ref"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(row(&e, &standard).scope.project(), project["id"].as_str());
+        roots.push(root["id"].as_str().unwrap().to_owned());
+        standards.push(standard);
+    }
+    assert_ne!(
+        standards[0], standards[1],
+        "access envelopes in separate catalogs need distinct source identities"
+    );
+    let state = e.store.snapshot().unwrap();
+    let snapshots = standards
+        .iter()
+        .map(|id| standard_snapshot(&state, id, &row(&e, id).scope).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        snapshots[0].snapshot_digest, snapshots[1].snapshot_digest,
+        "storage access does not add normative semantics"
+    );
+    drop(e);
+    let e = engine(dir.path());
+    for (root, standard) in roots.iter().zip(&standards) {
+        assert_eq!(
+            e.query("workflow.inspect", &json!({"id":root}), 1).unwrap()["runtime"]["plan"]["standard_ref"],
+            *standard
+        );
+    }
+}

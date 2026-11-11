@@ -165,10 +165,31 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
             for (tool, bound) in &plan.tool_bindings {
                 connections.insert(tool.clone(), bound.binding_ref.clone());
             }
+            // The consumer owns this execution selection. A store may contain multiple
+            // projects; the first catalog entry is unrelated to this particular plan.
+            let project_id = plan
+                .work_configuration_ref
+                .as_deref()
+                .and_then(|id| state.configuration(id).ok())
+                .and_then(|r| r.scope.project())
+                .or_else(|| {
+                    state
+                        .governance
+                        .iter()
+                        .find(|r| r.kind == "workflow_plan_revision" && r.data["plan"] == *value)
+                        .and_then(|r| r.scope.project())
+                })
+                .or_else(|| {
+                    state
+                        .configuration(&plan.workflow_revision_id)
+                        .ok()
+                        .and_then(|r| r.scope.project())
+                })
+                .or_else(|| (state.projects.len() == 1).then(|| state.projects[0].id.as_str()));
             return Ok(
                 json!({"$source":"workflow_plan","workflow_ref":plan.workflow_revision_id,"standard_ref":plan.standard_ref,"work_configuration_ref":plan.work_configuration_ref,"role_agent_bindings":bindings,
                 "permission_context_ref":plan.permission_context_ref,"permission_workflow_ref":plan.permission_workflow_ref,"permission_bindings":permissions,"integration_bindings":connections,
-                "project_id":state.projects.first().map(|p|&p.id)}),
+                "project_id":project_id}),
             );
         }
         // Copies embedded in receipts/tasks are regenerated from their owning source.
