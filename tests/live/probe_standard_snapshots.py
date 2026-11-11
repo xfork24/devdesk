@@ -132,9 +132,14 @@ try:
                         control(c, 'workflow.step.retry', row['id'], payload)
                         recovery.append({'instance': row['id'], 'execution': step['id'], 'step': step['step'], 'previous_status': step['status'], 'action': 'stop/reconcile/retry'})
                     elif step['status'] == 'failed':
+                        definition = next(s for s in row['data']['plan']['document']['steps'] if s['key'] == step['step'])
+                        if definition['executor']['type'] == 'workflow' and step['reason'] == '子流程执行失败':
+                            # Retrying the actual failed child restores its parent automatically.
+                            # Retrying the invocation itself would replace preserved children.
+                            continue
                         # This query has no external mutation to reconcile. Business/test
                         # failures are never converted to success or silently bypassed.
-                        assert step['step'] == 'target' and step['reason'] == '工作空间不属于当前执行范围', step
+                        assert step['step'] == 'target' and step['reason'] == '工作空间不属于当前执行范围', (row['id'], step['step'], step['reason'])
                         control(c, 'workflow.step.retry', row['id'], {'step': step['step'], 'reason': '已修复真实 Task 读取所属 Feature 目标的权限边界，保留失败事实并重试只读查询'})
                         recovery.append({'instance': row['id'], 'execution': step['id'], 'step': step['step'], 'previous_status': 'failed', 'action': 'retry read-only query after code fix'})
             (out / f'recovery-{time.time_ns()}.json').write_text(json.dumps(recovery, ensure_ascii=False, indent=2))
