@@ -151,3 +151,5 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `standard.capture.preview` 只读解析确切 `root_workflow_refs`，`standard.capture` 核对候选并发布或复用不可变快照。`standard.archive` 只改变选择列表，不删除历史。`query.standard_catalog/standard/standard_diff/standard_usage` 返回按需视图及真实采用关系。
 
 `work.configuration.update` 为尚未启动的工作选择 `standard_ref`、`workflow_ref`、执行者和权限；启动后使用 `WorkflowChangeOperation::AdoptStandard`，并沿既有 preview/apply、CAS、授权与静止等待路径切换。`query.work_configuration` 返回来源及计划历史，`query.work_standard_diff` 区分自身规范、入口投影及子工作采用。历史计划中的子调用清单以冻结的首次调用依据标记，当前调用树另行展示。
+`query.work_standard_choices` 分页返回可访问工作及其采用依据；工作比较可跨项目，不切换活动项目。未运行工作以已选配置为依据，已运行工作以冻结计划为依据。Standard 对比同样可跨可访问目录，解析双方各自的源修订。
+

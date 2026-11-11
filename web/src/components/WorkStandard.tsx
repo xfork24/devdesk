@@ -35,6 +35,10 @@ export function WorkStandard({
     [permission, setPermission] = useState(""),
     [requirements, setRequirements] = useState<Row>();
   const [historyDiff, setHistoryDiff] = useState<Row>();
+  const [compareChoices, setCompareChoices] = useState<Row[]>([]);
+  const [choiceTotal, setChoiceTotal] = useState(0);
+  const [compareOwner, setCompareOwner] = useState("");
+  const [workComparison, setWorkComparison] = useState<Row>();
   const [selectionVersion, setSelectionVersion] = useState(0);
   const runtime = instance?.data;
   const activeStandard =
@@ -300,6 +304,42 @@ export function WorkStandard({
           ) : null}
         </>
       ) : null}
+      <details onToggle={(event) => {
+        if (event.currentTarget.open && !compareChoices.length)
+          void run(async () => {
+            const value = await request("query.work_standard_choices", {project_id: projectId, limit: 100});
+            setCompareChoices(value.records);
+            setChoiceTotal(value.total);
+          });
+      }}>
+        <summary>与其他工作比较规范</summary>
+        <label>比较工作
+          <select value={compareOwner} onChange={(event) => {setCompareOwner(event.target.value);setWorkComparison(undefined);}}>
+            <option value="">请选择工作</option>
+            {compareChoices.filter((row) => row.id !== owner.id).map((row) => <option key={row.id} value={row.id}>{row.project_title} / {row.work.kind === "project" ? "Project" : row.work.kind === "feature" ? "Feature" : "Task"} · {row.title}</option>)}
+          </select>
+        </label>
+        {compareChoices.length < choiceTotal ? <ActionButton disabled={busy} onClick={() => void run(async () => {
+          const value = await request("query.work_standard_choices", {project_id:projectId,offset:compareChoices.length,limit:100});
+          setCompareChoices((rows) => [...rows,...value.records]);
+          setChoiceTotal(value.total);
+        })}>加载更多工作</ActionButton> : null}
+        <ActionButton disabled={busy || !compareOwner} onClick={() => void run(async () => {
+          setWorkComparison(await request("query.work_standard_diff",{project_id:projectId,before_owner_id:owner.id,after_owner_id:compareOwner}));
+        })}>比较工作规范</ActionButton>
+        {workComparison ? <>
+          <p>双方实际入口的规范差异</p>
+          <StandardDiff diff={workComparison.entry_diff} />
+          <details><summary>完整快照差异与采用依据</summary>
+            <StandardDiff diff={workComparison.diff} />
+            {[workComparison.before,workComparison.after].map((selection:Row,index:number) => <section key={index}>
+              <p>{index === 0 ? "当前工作" : "比较工作"} · {selection.standard_ref} · {selection.basis === "execution" ? "实际运行计划" : "尚未执行的配置"}</p>
+              <p>子工作：{selection.children.length} · 运行例外：{selection.exceptions.length}</p>
+              <ul>{selection.children.map((child:Row,index:number) => <li key={index}>{child.owner_id} · {child.standard_ref}</li>)}</ul>
+            </section>)}
+          </details>
+        </> : null}
+      </details>
       <details>
         <summary>规范采用历史（{history.length}）</summary>
         <ul>

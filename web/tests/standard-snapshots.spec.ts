@@ -430,6 +430,11 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
     .locator(".task-grid article")
     .filter({ hasText: "Task B" });
   await updatedCard.locator(".work-standard > summary").click();
+  await updatedCard.getByText("与其他工作比较规范", {exact:true}).click();
+  const ta = workspace.detail.tasks.find((t:any) => t.title === "Task A");
+  await updatedCard.getByLabel("比较工作", {exact:true}).selectOption(ta.id);
+  await updatedCard.getByRole("button",{name:"比较工作规范",exact:true}).click();
+  await expect(updatedCard.locator(".standard-diff").first()).toContainText("规范变化");
   await updatedCard
     .getByLabel("采用 Standard", { exact: true })
     .selectOption(sa.id);

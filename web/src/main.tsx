@@ -221,7 +221,7 @@ function App() {
   const routeApplied = useRef(false);
   useEffect(() => {
     const params = new URLSearchParams();
-    for (const key of ["config_tab", "config_object", "workflow_id"]) {
+    for (const key of ["config_tab", "config_object", "workflow_id", "standard_id"]) {
       const value = new URLSearchParams(location.search).get(key);
       if (value) params.set(key, value);
     }

@@ -357,6 +357,7 @@ impl Workspace {
             "query.standard_diff",
             "query.standard_usage",
             "query.work_standard_diff",
+            "query.work_standard_choices",
             "query.work_configuration",
             "query.standard_catalog",
             "query.workflow_task_preview",
@@ -384,6 +385,108 @@ impl Workspace {
             let global = self.global.snapshot()?;
             let target_global =
                 target.is_some_and(|id| global.governance.iter().any(|r| r.id == id));
+            if [
+                "query.work_standard_diff",
+                "query.work_standard_choices",
+                "query.standard_diff",
+            ]
+            .contains(&method)
+            {
+                let mut states = Vec::new();
+                let mut offset = 0;
+                loop {
+                    let (projects, total) = self.global.projects(offset, 100)?;
+                    for project in &projects {
+                        let state = SqliteStore::read_project_snapshot(
+                            Path::new(&self.global.root()),
+                            &project.id,
+                        )?;
+                        states.push((project.clone(), state));
+                    }
+                    offset += projects.len();
+                    if offset >= total || projects.is_empty() {
+                        break;
+                    }
+                }
+                if method == "query.work_standard_choices" {
+                    let records = states
+                        .iter()
+                        .flat_map(|(project, state)| {
+                            work_standard_choices(state).into_iter().map(|mut value| {
+                                value["project_title"] = json!(project.title);
+                                value
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    let offset = params["offset"].as_u64().unwrap_or(0) as usize;
+                    let limit = params["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
+                    return Ok(
+                        json!({"total":records.len(),"offset":offset,"records":records.into_iter().skip(offset).take(limit).collect::<Vec<_>>()}),
+                    );
+                }
+                if method == "query.work_standard_diff" {
+                    let find = |key: &str, project_key: &str| -> Result<&EngineeringState> {
+                        let owner = text(params, key)?;
+                        states
+                            .iter()
+                            .find(|(project, state)| {
+                                params[project_key]
+                                    .as_str()
+                                    .is_none_or(|id| project.id == id)
+                                    && work_reference(state, &owner).is_ok()
+                            })
+                            .map(|(_, state)| state)
+                            .ok_or_else(|| err("not_found", "工作不在可访问的项目中"))
+                    };
+                    return compare_work_standards(
+                        find("before_owner_id", "before_project_id")?,
+                        find("after_owner_id", "after_project_id")?,
+                        params,
+                    );
+                }
+                let resolve =
+                    |key: &str, project_key: &str, entry_key: &str| -> Result<StandardSnapshot> {
+                        let reference = text(params, key)?;
+                        let (state, scope) = if let Some((project, state)) =
+                            states.iter().find(|(project, state)| {
+                                params[project_key].as_str() == Some(project.id.as_str())
+                                    && state.configuration(&reference).is_ok()
+                            }) {
+                            (
+                                state,
+                                Scope::Project {
+                                    project_id: project.id.clone(),
+                                },
+                            )
+                        } else if params[project_key].is_string() {
+                            return Err(err("not_found", "规范不在指定项目中"));
+                        } else if global.configuration(&reference).is_ok() {
+                            (&global, Scope::Global)
+                        } else {
+                            let (project, state) = states
+                                .iter()
+                                .find(|(_, state)| state.configuration(&reference).is_ok())
+                                .ok_or_else(|| err("not_found", "规范不在可访问的项目中"))?;
+                            (
+                                state,
+                                Scope::Project {
+                                    project_id: project.id.clone(),
+                                },
+                            )
+                        };
+                        let snapshot = standard_snapshot(state, &reference, &scope)?;
+                        if let Some(entry) = params[entry_key].as_str() {
+                            standard_entry_snapshot(&snapshot, entry)
+                        } else {
+                            Ok(snapshot)
+                        }
+                    };
+                return Ok(diff_standard_snapshots(
+                    &resolve("before_ref", "before_project_id", "before_workflow_ref")?,
+                    &resolve("after_ref", "after_project_id", "after_workflow_ref")?,
+                ));
+            }
+
             if method == "query.standard_usage" && params["project_id"].is_null() && target_global {
                 let reference = target.unwrap();
                 standard_snapshot(&global, reference, &Scope::Global)?;
@@ -562,5 +665,62 @@ impl Workspace {
                 engine.execute(method, c)
             }
         })())
+    }
+}
+
+#[cfg(test)]
+mod standard_comparison_tests {
+    use super::*;
+    use crate::workspace::tests::{create, select};
+    #[test]
+    fn comparisons_read_each_project_and_work_without_switching_the_active_project() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let draft=w.dispatch("workflow.create",json!({"command_id":id(),"payload":{"name":"Shared contract","document":{"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"one","name":"Same normative step","stage":"work","executor":{"type":"control"}}]}}})).unwrap();
+        let workflow=w.dispatch("workflow.publish",json!({"command_id":id(),"target":draft["id"],"expected_revision":draft["revision"],"payload":{}})).unwrap();
+        let mut projects = Vec::new();
+        let mut features = Vec::new();
+        let mut standards = Vec::new();
+        for title in ["Compare A", "Compare B"] {
+            let project = create(&w, title);
+            let current = w.global.project(&project).unwrap().unwrap();
+            let configuration=w.dispatch("project.configuration.update",json!({"command_id":id(),"project_id":project,"target":project,"expected_revision":current.revision,"payload":{"workflow_ref":workflow["id"],"role_agent_bindings":{}}})).unwrap();
+            let feature=w.dispatch("feature.create",json!({"command_id":id(),"project_id":project,"payload":{"project_id":project,"title":"Shared work"}})).unwrap();
+            projects.push(project);
+            features.push(feature["id"].as_str().unwrap().to_owned());
+            standards.push(configuration["data"]["standard_ref"].clone());
+        }
+        select(&w, &projects[1]);
+        assert_ne!(standards[0], standards[1]);
+        let snapshots = w
+            .dispatch(
+                "query.standard_diff",
+                json!({"before_ref":standards[0],"after_ref":standards[1]}),
+            )
+            .unwrap();
+        assert_eq!(snapshots["equal"], true);
+        let configured = w
+            .dispatch(
+                "query.work_standard_diff",
+                json!({"before_owner_id":projects[0],"after_owner_id":projects[1]}),
+            )
+            .unwrap();
+        assert_eq!(configured["before"]["basis"], "configured");
+        assert_eq!(configured["diff"]["equal"], true);
+        let executed = w
+            .dispatch(
+                "query.work_standard_diff",
+                json!({"before_owner_id":features[0],"after_owner_id":features[1]}),
+            )
+            .unwrap();
+        assert_eq!(executed["before"]["basis"], "execution");
+        assert_eq!(executed["entry_diff"]["equal"], true);
+        assert_eq!(w.active_id(), Some(projects[1].clone()));
+        let choices = w
+            .dispatch("query.work_standard_choices", json!({"limit":100}))
+            .unwrap();
+        assert_eq!(choices["total"], 4);
+        assert!(w.dispatch("query.work_standard_diff",json!({"before_owner_id":features[0],"after_owner_id":features[1],"before_plan_revision_id":executed["after"]["plan_revision_id"]})).is_err());
     }
 }
