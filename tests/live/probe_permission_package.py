@@ -2,7 +2,7 @@
 """Verify Permission assets and APIs in an unpacked binary release, without models."""
 import argparse
 import hashlib
-import http.cookiejar
+from http.cookiejar import CookieJar
 import json
 import re
 from pathlib import Path
@@ -57,7 +57,7 @@ try:
         url = child.stdout.readline().strip()
         assert url.startswith('http://127.0.0.1:')
         http = urllib.request.build_opener(urllib.request.ProxyHandler({}),
-                                          urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+                                          urllib.request.HTTPCookieProcessor(CookieJar()))
         http.open(url + '/', timeout=10).close()
         def request(method, params=None):
             body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params or {}}).encode()
@@ -101,7 +101,7 @@ try:
         project = command('project.create', {'title': 'Standalone Permission schema'})['id']
         defaults = rpc('query.configuration_defaults')
         workflow = rpc('query.workflow', {'id': defaults['workflow_ref']})
-        assert workflow['data']['schema_version'] == 5
+        assert workflow['data']['schema_version'] == 6
         feature_tests = next(step for step in workflow['data']['steps'] if 'release_recipe' in step.get('tags', []))
         authorization = next(row['data'] for row in defaults['records'] if row['id'] == defaults['permission_context_ref'])
         grant = next(g for g in authorization['step_grants'] if g['workflow_ref'] == workflow['id'] and g['step'] == feature_tests['key'])
@@ -122,7 +122,7 @@ try:
         assert preview['task']['task_instructions'] == changed_task
         assert preview['task']['agent'] and preview['task']['specifications']
         assert preview['task']['renderer_version'] == 'agent-task/v6'
-        report['workflow_v5_embedded_tasks_edit_publish_preview'] = True
+        report['workflow_v6_embedded_tasks_edit_publish_preview'] = True
         capture = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'materials.capture')
         complete = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'tasks.complete')
         task_workflow = rpc('query.workflow', {'id': defaults['task_workflow_ref']})
@@ -168,7 +168,7 @@ try:
         spec = command('spec.create', {'name': '包验收记录规范', 'data': {'schema_version': 3, 'body': '记录当前包验收明确提供的 version 输入与真实封存操作。', 'checks': [{'key': 'version', 'name': '输入版本', 'instructions': '核对 version 为本次提供的值且回执来自当前封存操作。'}]}})
         delivery = command('delivery_type.create', {'name': '包验收记录', 'data': {'format': 'json', 'spec_refs': [spec['id']], 'content_schema': {'type': 'object', 'required': ['inputs', 'captured_at', 'operation_id']}}})
         generic = command('workflow.create', {'name': 'Standalone configured capture', 'document': {
-            'schema_version': 5, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [
+            'schema_version': 6, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [
                 {'key': 'ready', 'name': '准备', 'stage': 'audit', 'executor': {'type': 'control'}},
                 {'key': 'capture', 'name': '记录实际输入', 'stage': 'audit', 'dependencies': ['ready'],
                  'executor': {'type': 'tool', 'tool_ref': capture['id'], 'arguments': {'value': {'type': 'constant', 'value': {'version': 5}}}},
@@ -203,6 +203,15 @@ try:
         captured = execution['runtime']['steps'][1]
         assert captured['session_id'] is None and captured['turn_id'] is None
         assert execution['outputs'][captured['outputs']['result']]['value']['inputs']['value'] == {'version': 5}
+        standard = execution['runtime']['plan']['standard_ref']
+        snapshot = rpc('query.standard', {'id': standard})
+        assert set(snapshot['record']['data']) == {'schema_version', 'root_workflow_refs'}
+        assert snapshot['record']['data']['schema_version'] == 4
+        assert set(node['kind'] for node in snapshot['nodes']) == {'workflow', 'delivery_type', 'spec'}
+        assert rpc('query.work_standard_diff', {'before_owner_id': project, 'after_owner_id': project})['diff']['equal']
+        command('standard.archive', {'archived': True}, standard, snapshot['record']['revision'])
+        assert rpc('query.standard', {'id': standard})['snapshot_digest'] == snapshot['snapshot_digest']
+        report['immutable_standard_source_and_execution_basis'] = True
         report['standalone_generic_workflow_execution'] = True
         report['explicit_task_completion_embedded'] = True
         report['delivery_verification_before_review_embedded'] = True
@@ -214,6 +223,17 @@ try:
         req = urllib.request.Request(url + '/shutdown', data=b'{}', headers={'Content-Type': 'application/json'})
         http.open(req, timeout=10).close()
         assert child.wait(timeout=10) == 0
+        # Reopen the source-free package and reconstruct the archived execution basis.
+        child = subprocess.Popen([str(binary), '--data', str(dataset), '--port', '0'], cwd=root,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        child.stdout.readline()
+        url = child.stdout.readline().strip()
+        assert url.startswith('http://127.0.0.1:')
+        http = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(CookieJar()))
+        http.open(url + '/', timeout=10).close()
+        assert rpc('query.standard', {'id': standard})['snapshot_digest'] == snapshot['snapshot_digest']
+        assert rpc('query.workflow_instance', {'id': run['id']})['runtime']['plan']['standard_ref'] == standard
+        report['standard_history_survives_package_restart'] = True
         report.update(passed=True, standalone_api=True, immutable_revisions=True,
                       binding_replay=True, project_schema=expected_schema, automatic_downloads=0)
 except Exception as error:
