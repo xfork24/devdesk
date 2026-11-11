@@ -100,10 +100,40 @@ def verify_evidence(client, rows, output):
    if run['phase']=='green':assert run['exit_code']==0 and run['termination']=={'status':'exited','signal':None,'error':None,'timed_out':False,'cancelled':False}
   for f in run['files']:
    assert hashlib.sha256(f['content'].encode()).hexdigest()==f['sha256'],f['path'];normalized(f['path'],run['cwd'])
- pairs=0;pending=False
+ # Corroborate the delivered records against actual native command observations,
+ # rather than trusting a model's final delivery as evidence of execution.
+ command_observations=[];observed_ids=set()
+ journals=output/'data/projects'/root['runtime']['project_id']/'execution/sessions'/implementation['session_id']/'coordinator'
+ def records(value):
+  if isinstance(value,dict):
+   yield value
+   for child_value in value.values():yield from records(child_value)
+  elif isinstance(value,list):
+   for child_value in value:yield from records(child_value)
+ for journal in journals.glob('*.jsonl'):
+  for line in journal.open():
+   frame=json.loads(line)['frame'];item=frame.get('params',{}).get('item',{})
+   if frame.get('method')!='item/completed' or item.get('type')!='commandExecution' or item.get('status')!='completed':continue
+   body=item.get('aggregatedOutput') or ''
+   for fragment in [body,*body.splitlines()]:
+    try:observed=json.loads(fragment)
+    except (ValueError,TypeError):continue
+    for value in records(observed):
+     if value in runs and (item['id'],value['sequence']) not in observed_ids:
+      observed_ids.add((item['id'],value['sequence']))
+      command_observations.append({'sequence':value['sequence'],'journal':journal.name,'item_id':item['id'],'command':item['command'],'tool_exit_code':item['exitCode'],'run':value})
+ for run in runs:assert any(o['run']==run for o in command_observations),f"TDD run {run['sequence']} absent from actual native command output"
+ (output/'native-tdd-observations.json').write_text(json.dumps(command_observations,ensure_ascii=False,indent=2))
+ pairs=0;pending=None
  for run in runs:
-  if run['phase']=='red':pending=True
-  elif run['phase']=='green' and run['exit_code']==0 and pending:pairs+=1;pending=False
+  if run['phase']=='red':
+   pending=run
+   assert 'ERR_MODULE_NOT_FOUND' not in run['stdout']+run['stderr'], 'A loading failure cannot count as incremental Red'
+  elif run['phase']=='green' and run['exit_code']==0 and pending is not None:
+   assert run['command']==pending['command'] and run['cwd']==pending['cwd'], 'Incremental Red/Green must execute the same tests'
+   tests=lambda r:{normalized(f['path'],r['cwd']):f['content'] for f in r['files'] if normalized(f['path'],r['cwd']).startswith(('test/','tests/'))}
+   assert tests(run) and tests(run)==tests(pending), 'Incremental tests changed between Red and Green'
+   pairs+=1;pending=None
  assert pairs>=context.get('required_increment_pairs',1),'Missing separately recorded incremental Red/Green pairs'
  # Older frozen contracts explicitly copied the platform Red. Incremental
  # contracts additionally preserve local intermediate states, which need not
