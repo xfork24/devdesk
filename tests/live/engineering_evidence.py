@@ -30,12 +30,16 @@ def verify_evidence(client, rows, output):
     assert original is not None,'Original frozen plan must remain available'
     frozen=json.loads(original[0]);assert frozen['instance_id']==view['record']['id']
     source=frozen['plan']['document'];revision=frozen.get('parent_revision_id')
+  if context.get('unattended'):
+   assert view['runtime']['role_agent_bindings']==frozen['role_agent_bindings'], 'Unattended run replaced the default role bindings'
   for action,requirements in source.get('action_requirements',{}).items():
    assert set(requirements)<=set(view['plan']['action_requirements'].get(action,[]))
   current={s['key']:s for s in view['plan']['steps']}
   for original in source['steps']:
    assert original['key'] in current,'A mandatory source node was removed'
    actual=current[original['key']]
+   if context.get('unattended') and original['key'].endswith('review'):
+    assert actual['task_instructions']==original.get('task_instructions'), 'Unattended run rewrote an independent review prompt'
    assert set(original.get('dependencies',[]))<=set(actual['dependencies'])
    assert original.get('completion',{'op':'always'})==actual['completion']
    assert original.get('confirmation','automatic')==actual['confirmation']
