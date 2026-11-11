@@ -1164,7 +1164,7 @@
             "type": "agent",
             "role_ref": "builtin-role-reviewer"
           },
-          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。",
+          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 必须读取 tasks 中每个 Task 交接的原始 evidence：逐增量 Red/Green/回归命令、输出、退出码、文件快照、environment 和 termination；与确切候选和候选测试交叉核对，缺少事实时拒绝，不能用上游评审摘要代替。",
           "required_skill_refs": [
             "builtin-skill-independent-review-v2"
           ],
@@ -1224,6 +1224,14 @@
               "type": "source",
               "source": {
                 "step": "verification",
+                "port": "result",
+                "pointer": ""
+              }
+            },
+            "tasks": {
+              "type": "source",
+              "source": {
+                "step": "implementation",
                 "port": "result",
                 "pointer": ""
               }

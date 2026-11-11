@@ -20,7 +20,7 @@ Agent 运行保存 canonical `agent-task/v5`、Session、Turn 和真实 worker�
 
 默认 Task 使用显式快照衔接写入者：`tests_snapshot` 封存独立测试，Red 基线 Agent 使用该确切版本；`red_snapshot` 再固定 Red 源码。实现后也先封存再测试，不允许后一个写入者在来源未经核对的脏工作树上启动。
 
-Git 候选以预期目标为父提交。默认接纳要求确切候选的真实通过测试与人工确认；当前计划和编排策略可明确豁免业务要求，并独立记录理由与未验证范围。core 核验当前 ActionPermit、实际 CAS/preflight 及来源，远端发布使用精确 lease，PR 接纳结果须与同一候选匹配。豁免不产生成功测试或人的签名。
+Git 候选以预期目标为父提交。默认接纳要求确切候选的真实通过测试、独立评审以及 Harness 项目经理的显式接纳；默认确认策略为 automatic，无需 Human 签署。配置为 human 的门禁仍要求确切执行、输入和输出对应的签署。当前计划和编排策略可明确豁免业务要求，并独立记录理由与未验证范围。core 核验当前 ActionPermit、实际 CAS/preflight 及来源，远端发布使用精确 lease，PR 接纳结果须与同一候选匹配。豁免不产生成功测试或人的签名。
 
 所有外部调用先持久化意图，再在事务外执行，最后接纳回执。取消必须停止实际 worker 或测试容器；未知调用不直接重放。重启后保留待核对状态，副作用按原操作 ID 恢复。切换项目和关闭浏览器不取消后台工作，Host 退出停止自己拥有的执行者。
 
@@ -29,3 +29,5 @@ Git 候选以预期目标为父提交。默认接纳要求确切候选的真实�
 `./scripts/check/check.sh` 验证 Rust、HTTP、安全、SQLite、模板重置及 debug/release Chromium。真实 Docker 验证可使用 `scripts/check/check-live.sh --groups git,docker,permissions`，不调用模型。真实模型与 GitHub 发布须使用专用数据集和测试仓库；历史版本的验收报告不代表新执行器已完成相同实机验收。
 
 当前结构为 global 14 / project 45。旧数据必须停机并核对活动执行者后，使用 scripts/upgrade/harness-v5.py 显式备份转换；保留外部仓库、Artifact 和凭据。跨库 journal 未完成时拒绝启动，重跑升级入口继续，禁止删库恢复。
+
+合并后的完整 Feature 验收还核对 Task documentation/review/candidate_review 和 Feature closure_review/candidate_review 的实际渲染任务封套：原始逐增量 TDD evidence 必须完整到达，输入来源必须指向相应的密封输出。默认 automatic 数据集中出现 Human 确认、人工批准、旁路或豁免即判失败；不允许通过手动 approve 完成探针。运行计划原始合同通过不可变修订祖先核对，不能将修订后的图当作自身验收基线。

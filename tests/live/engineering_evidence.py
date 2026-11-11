@@ -12,10 +12,42 @@ def verify_evidence(client, rows, output):
  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
   assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='workflow_waiver'").fetchone()[0]==0
   confirmations={key:json.loads(data) for key,data in connection.execute("SELECT definition_id,data FROM governance_records WHERE kind='workflow_confirmation'")}
+ if context.get('unattended'):
+  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
+   assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='controller_input'").fetchone()[0]==1, 'Unattended run received additional human steering'
  human_confirmations=0
  for view in views.values():
   assert view['runtime']['status']=='completed' and all(s['status']=='completed' for s in view['runtime']['steps'])
   assert not any(item['data'].get('bypassed') for item in view['history'] if item['kind']=='workflow_change')
+  # Runtime workflow refs change; follow immutable revision ancestry rather than
+  # trusting the mutable catalog or treating the revised graph as its own baseline.
+  revision=view['runtime']['active_plan_revision_id'];seen=set()
+  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
+   while revision:
+    assert revision not in seen,'Plan revision ancestry cycle'
+    seen.add(revision)
+    original=connection.execute("SELECT data FROM governance_records WHERE kind='workflow_plan_revision' AND id=?",(revision,)).fetchone()
+    assert original is not None,'Original frozen plan must remain available'
+    frozen=json.loads(original[0]);assert frozen['instance_id']==view['record']['id']
+    source=frozen['plan']['document'];revision=frozen.get('parent_revision_id')
+  for action,requirements in source.get('action_requirements',{}).items():
+   assert set(requirements)<=set(view['plan']['action_requirements'].get(action,[]))
+  current={s['key']:s for s in view['plan']['steps']}
+  for original in source['steps']:
+   assert original['key'] in current,'A mandatory source node was removed'
+   actual=current[original['key']]
+   assert set(original.get('dependencies',[]))<=set(actual['dependencies'])
+   assert original.get('completion',{'op':'always'})==actual['completion']
+   assert original.get('confirmation','automatic')==actual['confirmation']
+   assert not actual.get('allow_completion_override',False)
+   assert set(original.get('spec_refs',[]))<=set(actual['spec_refs'])
+   assert set(original.get('required_skill_refs',[]))<=set(actual['required_skill_refs'])
+   for key in ['type','tool_ref','role_ref','workflow_ref']:
+    if key in original['executor']:assert original['executor'][key]==actual['executor'][key]
+   for name,port in original.get('outputs',{}).items():
+    assert name in actual['outputs'] and actual['outputs'][name]['delivery_ref']==port['delivery_ref']
+    assert actual['outputs'][name]['required']==port.get('required',True)
+    assert actual['outputs'][name]['content_checks']==port.get('content_checks',False)
   for definition in view['plan']['steps']:
    if definition['confirmation']!='human':continue
    human_confirmations+=1
@@ -23,6 +55,8 @@ def verify_evidence(client, rows, output):
    assert decision['input_digest']==step['input_digest'] and decision['outputs']==step['outputs'] and not decision.get('override_completion')
  if context.get('default_automatic_confirmations'):
   assert human_confirmations==0 and not confirmations, 'Default automatic policy must not create Human approvals'
+  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
+   assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='workflow_human_decision' AND json_extract(data,'$.approved')=1").fetchone()[0]==0, 'No manual decision approval may advance the default workflow'
  def step(view,key):return next(s for s in view['runtime']['steps'] if s['step']==key)
  def receipt(view,key):
   current=step(view,key);assert current['status']=='completed'
@@ -83,6 +117,19 @@ def verify_evidence(client, rows, output):
   current=step(child,key);rendered=task(child,key)
   assert current['inputs']['evidence']==rendered['inputs']['evidence']==evidence
   assert rendered['input_sources']['evidence']['source_output_id']==evidence_id
+ assert receipt(child,'handoff')['inputs']['evidence']==evidence
+ handed_off=receipt(root,'implementation')
+ def contains_evidence(value):
+  if value==evidence:return True
+  if isinstance(value,dict):return any(contains_evidence(v) for v in value.values())
+  if isinstance(value,list):return any(contains_evidence(v) for v in value)
+  return False
+ assert contains_evidence(handed_off),'Task handoff dropped raw TDD evidence'
+ for key in ['closure_review','candidate_review']:
+  current=step(root,key);rendered=task(root,key)
+  assert current['inputs']['tasks']==rendered['inputs']['tasks']==handed_off
+  assert rendered['input_sources']['tasks']['source_output_id']==step(root,'implementation')['outputs']['result']
+  assert contains_evidence(rendered['inputs']['tasks']),'Feature reviewer did not actually receive complete TDD evidence'
  diagnostic_red=red
  if any(s['step']=='red_diagnostics' for s in child['runtime']['steps']):
   diagnostic_red=receipt(child,'red_diagnostics')

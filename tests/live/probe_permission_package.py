@@ -125,6 +125,28 @@ try:
         complete = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'tasks.complete')
         task_workflow = rpc('query.workflow', {'id': defaults['task_workflow_ref']})
         task_steps = {step['key']: step for step in task_workflow['data']['steps']}
+        feature_steps = {step['key']: step for step in workflow['data']['steps']}
+        assert len(feature_steps) == 22 and len(task_steps) == 20
+        assert 'engineering_constraints' in feature_steps
+        for graph in [workflow['data'], task_workflow['data']]:
+            assert all(step.get('confirmation', 'automatic') == 'automatic' for step in graph['steps'])
+            assert graph['action_requirements']['git.advance'] == ['tests']
+        for steps, review_key, snapshot_key in [(feature_steps, 'closure_review', 'tests_snapshot'), (task_steps, 'review', 'implementation_snapshot')]:
+            assert steps[review_key]['dependencies'] == ['candidate_tests']
+            assert steps[review_key]['inputs']['candidate']['source']['step'] == 'candidate'
+            assert steps[review_key]['inputs']['candidate_tests']['source']['step'] == 'candidate_tests'
+            assert steps[review_key]['inputs']['changes']['source'] == {'step': snapshot_key, 'port': 'result', 'pointer': '/changes'}
+            assert steps[snapshot_key]['executor']['arguments']['include_diff']['value'] is True
+        evidence_type = next(row for row in defaults['records'] if row['id'] == task_steps['implementation']['outputs']['evidence']['delivery_ref'])
+        assert {'environment', 'termination'} <= set(evidence_type['data']['content_schema']['properties']['runs']['items']['required'])
+        report['merged_main_evidence_and_automatic_policy'] = True
+        for key in ['closure_review', 'candidate_review']:
+            assert feature_steps[key]['inputs']['tasks']['source'] == {'step': 'implementation', 'port': 'result', 'pointer': ''}
+        for method in ['workflow.change.preview', 'workflow.change.apply']:
+            tool = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == method)
+            operations = tool['data']['input_schema']['properties']['changeset']['properties']['operations']['items']['oneOf']
+            assert any(operation['properties']['type'].get('const') == 'revert_change' for operation in operations)
+        report['complete_feature_review_evidence_and_bounded_change_recovery'] = True
         assert task_steps['red_baseline']['inputs']['workspace']['source']['step'] == 'tests_snapshot'
         assert task_steps['red_snapshot']['executor']['arguments']['workspace']['source']['step'] == 'tests_snapshot'
         assert task_steps['tests_snapshot']['dependencies'] == ['tests']
@@ -132,7 +154,14 @@ try:
         assert task_workflow['data']['steps'][-1]['executor']['tool_ref'] == complete['id']
         implementation_review = next(step for step in task_workflow['data']['steps'] if 'verify' in step.get('inputs', {}))
         verify_step = next(step for step in task_workflow['data']['steps'] if step['key'] == implementation_review['inputs']['verify']['source']['step'])
-        assert verify_step['executor']['type'] == 'tool' and verify_step['key'] in implementation_review['dependencies']
+        ancestors = set()
+        def dependencies(key):
+            for parent in task_steps[key].get('dependencies', []):
+                if parent not in ancestors:
+                    ancestors.add(parent)
+                    dependencies(parent)
+        dependencies(implementation_review['key'])
+        assert verify_step['executor']['type'] == 'tool' and verify_step['key'] in ancestors
         # Exercise the actual standalone scheduler and platform handler without a model or fake Session.
         generic = command('workflow.create', {'name': 'Standalone configured capture', 'document': {
             'schema_version': 5, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [

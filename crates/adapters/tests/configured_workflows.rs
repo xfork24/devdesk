@@ -729,6 +729,16 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         );
         assert!(task.ancestors(consumer).contains(producer.key.as_str()));
     }
+    for key in ["closure_review", "candidate_review"] {
+        let consumer = plan.document.steps.iter().find(|s| s.key == key).unwrap();
+        let InputBinding::Source { source } = &consumer.inputs["tasks"] else {
+            panic!("Feature reviewers need complete Task handoffs, including raw TDD evidence")
+        };
+        assert_eq!(source.step, "implementation");
+        assert_eq!(source.port, "result");
+        assert!(source.pointer.is_empty());
+        assert!(plan.document.ancestors(consumer).contains("implementation"));
+    }
     let baseline = task
         .steps
         .iter()

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "bundle_version": "2026.11.11-harness-v5-main-merge",
+  "bundle_version": "2026.11.11-harness-v5-main-recovery",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
