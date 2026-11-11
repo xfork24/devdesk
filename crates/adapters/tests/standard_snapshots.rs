@@ -408,3 +408,57 @@ fn invalid_standard_shapes_and_wrong_entry_are_rejected() {
         .is_err()
     );
 }
+
+#[test]
+fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"inputs":{"data":{"delivery_ref":"fixture-delivery-object:1"}},"stages":[{"key":"work","name":"处理"}],"steps":[{"key":"inspect","name":"核对材料","stage":"work","executor":{"type":"agent","role_ref":"builtin-role-analyst:1"},"task_instructions":"核对明确输入的材料。","inputs":{"data":{"type":"source","source":{"step":"$input","port":"data"}}},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"同一规范下的执行选择"}),
+    )
+    .unwrap();
+    let root=command(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow,"role_agent_bindings":{"builtin-role-analyst:1":"builtin-agent-sol-high-analyst:4"},"inputs":{"data":{"value":"before"}}})).unwrap()["id"].as_str().unwrap().to_owned();
+    let initial = row(&e, &root);
+    let standard = initial.data["plan"]["standard_ref"].clone();
+    let replacement = command(
+        &e,
+        "agent.create",
+        None,
+        json!({"name":"同职责的另一执行者","data":row(&e,"builtin-agent-sol-high-analyst:4").data}),
+    )
+    .unwrap();
+    let changes = json!({"plan_revision_id":initial.data["active_plan_revision_id"],"reason":"仅调整运行输入和执行者","operations":[{"type":"set_inputs","inputs":{"data":{"value":"after"}}},{"type":"set_bindings","bindings":{"builtin-role-analyst:1":replacement["id"]}}]});
+    let preview = e
+        .query(
+            "workflow.change.preview",
+            &json!({"id":root,"changeset":changes}),
+            1,
+        )
+        .unwrap();
+    assert_eq!(preview["standard_ref"], standard);
+    assert_eq!(preview["standard_diff"]["equal"], true);
+    command(
+        &e,
+        "workflow.change.apply",
+        Some(&root),
+        json!({"changeset":changes,"preview_hash":preview["preview_hash"]}),
+    )
+    .unwrap();
+    assert_eq!(row(&e, &root).data["plan"]["standard_ref"], standard);
+    assert_eq!(row(&e, &root).data["workflow_ref"], workflow);
+    assert_eq!(
+        row(
+            &e,
+            initial.data["active_plan_revision_id"].as_str().unwrap()
+        )
+        .data["inputs"]["data"]["value"],
+        "before"
+    );
+}

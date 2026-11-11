@@ -515,6 +515,8 @@ impl Engine {
                 }
             }
         }
+        let base_source = state.configuration(&old.plan.workflow_revision_id)?;
+        document.assign_node_ids(&base_source.definition_id);
         let mut candidate = record(
             "runtime_workflow",
             format!("runtime:{}", row.id),
@@ -529,6 +531,9 @@ impl Engine {
         candidate.version = 1;
         candidate.id = format!("{}:1", candidate.definition_id);
         candidate.created_at = 0;
+        if adopted.is_none() && document == old.plan.document {
+            candidate = base_source.clone();
+        }
         if let Some((_, workflow)) = &adopted {
             let target = state.configuration(workflow)?;
             let mut comparison = state.resolve_workflow(workflow)?;
@@ -537,7 +542,7 @@ impl Engine {
                 candidate = target.clone();
             }
         }
-        let context = json!({"workflow_ref":candidate.id,"permission_context_ref":permission_selection,"permission_workflow_ref":if adopted.is_some(){Some(candidate.id.clone())}else{old.plan.permission_workflow_ref.clone()}});
+        let context = json!({"workflow_ref":candidate.id,"permission_context_ref":permission_selection,"permission_workflow_ref":if adopted.is_some() && candidate.id!=old.plan.workflow_revision_id {Some(candidate.id.clone())}else{old.plan.permission_workflow_ref.clone()}});
         let selected = crate::standards::selection_state(state, &context);
         let mut plan =
             self.compile_configured_workflow(&selected, &candidate, &row.scope, Some(&bindings))?;
@@ -591,11 +596,12 @@ impl Engine {
         )?;
         let footprint = json!({"executions":old.steps.iter().filter(|s|affected.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
             "children":state.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
-        plan.permission_workflow_ref = if adopted.is_some() {
-            Some(plan.workflow_revision_id.clone())
-        } else {
-            old.plan.permission_workflow_ref.clone()
-        };
+        plan.permission_workflow_ref =
+            if adopted.is_some() && plan.workflow_revision_id != old.plan.workflow_revision_id {
+                Some(plan.workflow_revision_id.clone())
+            } else {
+                old.plan.permission_workflow_ref.clone()
+            };
         // Resolve the candidate source and Standard in a disposable state. Preview publishes nothing.
         let mut candidate_state = state.clone();
         if candidate_state.configuration(&candidate.id).is_err() {
