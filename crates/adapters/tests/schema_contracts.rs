@@ -140,7 +140,7 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
         "AgentInstance",
         json!({"agent_revision_id":"agent-1","scope":{"kind":"global"}}),
     );
-    let workflow = json!({"schema_version":4,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"finish","name":"Finish","stage":"work","executor":{"type":"control"}}]});
+    let workflow = json!({"schema_version":5,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"finish","name":"Finish","stage":"work","executor":{"type":"control"}}]});
     let doc: WorkflowDefinition = serde_json::from_value(workflow.clone()).unwrap();
     doc.validate().unwrap();
     round_trip::<WorkflowDefinition>("WorkflowDefinition", workflow);

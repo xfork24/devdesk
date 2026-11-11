@@ -1,8 +1,8 @@
 {
-  "template_key": "governance.builtin-workflow-task-sol-high-v4",
+  "template_key": "governance.builtin-workflow-task-sol-high-v5",
   "storage": "governance",
   "record": {
-    "id": "builtin-workflow-task-sol-high-v4",
+    "id": "builtin-workflow-task-sol-high-v5",
     "kind": "workflow",
     "definition_id": "builtin-workflow-task-sol-high",
     "scope": {
@@ -13,12 +13,42 @@
     "supersedes": null,
     "content_hash": "",
     "data": {
-      "schema_version": 4,
+      "schema_version": 5,
       "stages": [
         {
-          "key": "work",
-          "name": "Task 交付",
-          "description": "显式 TDD、独立检查、确切代码候选及满足完成条件后的自动接纳。"
+          "key": "tests",
+          "name": "独立测试",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "red",
+          "name": "Red 基线",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "implementation",
+          "name": "实施",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "documentation",
+          "name": "文档复验",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "review",
+          "name": "独立评审",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "integration",
+          "name": "接纳发布",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
+        },
+        {
+          "key": "handoff",
+          "name": "交接",
+          "description": "由编排 Agent 通过明确工具操作本阶段。"
         }
       ],
       "inputs": {
@@ -33,7 +63,7 @@
         {
           "key": "workspace",
           "name": "读取工作空间",
-          "stage": "work",
+          "stage": "tests",
           "dependencies": [],
           "inputs": {},
           "outputs": {
@@ -64,7 +94,7 @@
         {
           "key": "tests",
           "name": "编写独立行为测试",
-          "stage": "work",
+          "stage": "tests",
           "dependencies": [
             "workspace"
           ],
@@ -132,7 +162,7 @@
         {
           "key": "tests_snapshot",
           "name": "固定代码版本",
-          "stage": "work",
+          "stage": "red",
           "dependencies": [
             "tests"
           ],
@@ -171,7 +201,7 @@
         {
           "key": "red_baseline",
           "name": "准备可执行的 Red 基线",
-          "stage": "work",
+          "stage": "red",
           "dependencies": [
             "tests_snapshot"
           ],
@@ -249,7 +279,7 @@
         {
           "key": "red_snapshot",
           "name": "固定 Red 基线版本",
-          "stage": "work",
+          "stage": "red",
           "dependencies": [
             "red_baseline"
           ],
@@ -294,7 +324,7 @@
         {
           "key": "red",
           "name": "执行测试",
-          "stage": "work",
+          "stage": "red",
           "dependencies": [
             "red_snapshot"
           ],
@@ -371,7 +401,7 @@
         {
           "key": "implementation",
           "name": "实现 Task",
-          "stage": "work",
+          "stage": "implementation",
           "dependencies": [
             "red"
           ],
@@ -435,7 +465,7 @@
             "type": "agent",
             "role_ref": "builtin-role-developer"
           },
-          "task_instructions": "按 TDD Skill 实现当前 Task。使用独立测试及真实 Red 回执；保留 tests 目录中的断言，只修改其余授权文件。提交实现摘要与范围说明。 必须同时提交 evidence 端口：将本节点实际执行的逐次业务 Red/Green/回归日志及当时测试、源码内容快照直接填入结构化 delivery；平台会密封持久化并传给明确引用此端口的后续步骤。不得只留下临时路径或摘要，也不得把“请协调方保存”视为已交付。保留原始输出与实际退出码，不虚构记录；记录未能取得时返回 blocked。 开始写实现前，逐项提取当前 Task 与设计已经规定的 TDD 增量，按增量顺序执行并留存每个增量自己的 Red 与 Green。不得将多轮要求降格为建议，也不得用一次性完整实现加全量 Red/Green 代替已约定的多轮过程。tests 是独立的只读全量套件；需要分增量开发时，可以在其余已授权路径创建和维护本节点拥有的增量测试，而不能改写 tests。中间增量只需让对应目标用例转绿，全量独立套件留到所有增量完成后通过。evidence 必须包含每个约定增量的真实命令、原始输出、退出码及当时的测试和源码内容快照；任一增量记录缺失时返回 blocked，不得在 README 或交付摘要中宣称该要求已满足。 每条 run 同时采集实际 environment={runtime,version,platform,arch} 与 termination={status,signal,error,timed_out,cancelled}。从实际运行时和进程结果取得字段；正常退出也显式 signal=null、error=null、timed_out=false、cancelled=false。不得事后补造历史字段，也不收集无关环境变量或凭据。",
+          "task_instructions": "按 TDD Skill 实现当前 Task。使用独立测试及真实 Red 回执；保留 tests 目录中的断言，只修改其余授权文件。提交实现摘要与范围说明。 必须同时提交 evidence 端口：将本节点实际执行的逐次业务 Red/Green/回归日志及当时测试、源码内容快照直接填入结构化 delivery；平台会密封持久化并传给明确引用此端口的后续步骤。不得只留下临时路径或摘要，也不得把“请协调方保存”视为已交付。保留原始输出与实际退出码，不虚构记录；记录未能取得时返回 blocked。 开始写实现前，逐项提取当前 Task 与设计已经规定的 TDD 增量，按增量顺序执行并留存每个增量自己的 Red 与 Green。不得将多轮要求降格为建议，也不得用一次性完整实现加全量 Red/Green 代替已约定的多轮过程。tests 是独立的只读全量套件；需要分增量开发时，可以在其余已授权路径创建和维护本节点拥有的增量测试，而不能改写 tests。中间增量只需让对应目标用例转绿，全量独立套件留到所有增量完成后通过。evidence 必须包含每个约定增量的真实命令、原始输出、退出码及当时的测试和源码内容快照；任一增量记录缺失时返回 blocked，不得在 README 或交付摘要中宣称该要求已满足。 每条 run 同时采集实际 environment={runtime,version,platform,arch} 与 termination={status,signal,error,timed_out,cancelled}。从实际运行时和进程结果取得字段；正常退出也显式 signal=null、error=null、timed_out=false、cancelled=false。不得事后补造历史字段，也不收集无关环境变量或凭据。\n\n平台基线 Red 的原始 execution 可用作独立全量测试记录；约定增量仍需逐次真实 Red/Green，不能用该全量记录代替。实现后的本地 Green 由本节点记录；固定镜像 Green、verify 和最终候选测试由后续平台节点执行，按后续真实回执接纳，不要求当前节点提前拥有未来回执。",
           "required_skill_refs": [
             "builtin-skill-tdd-implementation-v2"
           ],
@@ -461,7 +491,7 @@
         {
           "key": "implementation_snapshot",
           "name": "固定代码版本",
-          "stage": "work",
+          "stage": "implementation",
           "dependencies": [
             "implementation"
           ],
@@ -510,7 +540,7 @@
         {
           "key": "green",
           "name": "执行测试",
-          "stage": "work",
+          "stage": "implementation",
           "dependencies": [
             "implementation_snapshot"
           ],
@@ -564,7 +594,7 @@
         {
           "key": "documentation",
           "name": "补充交付说明",
-          "stage": "work",
+          "stage": "documentation",
           "dependencies": [
             "green"
           ],
@@ -654,7 +684,7 @@
         {
           "key": "verify",
           "name": "复验交付",
-          "stage": "work",
+          "stage": "documentation",
           "dependencies": [
             "documentation"
           ],
@@ -708,7 +738,7 @@
         {
           "key": "target",
           "name": "读取工作空间",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "verify"
           ],
@@ -741,7 +771,7 @@
         {
           "key": "candidate",
           "name": "准备代码候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "target"
           ],
@@ -782,7 +812,7 @@
         {
           "key": "candidate_tests",
           "name": "验证确切候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "candidate"
           ],
@@ -826,7 +856,7 @@
         {
           "key": "review",
           "name": "独立核对 · implementation",
-          "stage": "work",
+          "stage": "review",
           "dependencies": [
             "candidate_tests"
           ],
@@ -976,7 +1006,7 @@
         {
           "key": "candidate_review",
           "name": "独立核对并确认候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "review"
           ],
@@ -984,7 +1014,7 @@
             "type": "agent",
             "role_ref": "builtin-role-reviewer"
           },
-          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由 Workflow 引擎自动接纳确切输入及候选；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。 逐条核对 environment 与 termination 的必填字段，以及退出码、信号、执行错误、超时和取消状态的一致性；未知或中断记录不能作为 Green。",
+          "task_instructions": "按独立评审 Skill 与当前 Spec 核对确切候选、真实候选测试回执和交付报告。提交逐项内容判断；发现问题时拒绝通过。仅当当前完成条件和独立检查全部通过时，由编排项目经理通过 Harness 显式接纳确切输入及候选，无需人工确认；证据缺失、评审拒绝或测试失败必须阻塞，不请求人工放行，不修改原结论。 使用 inputs.evidence 中已持久化的原始执行记录核对测试与源码快照、同一测试的业务 Red→Green 顺序及最终候选内容；不访问其他步骤的临时目录，不把当前 Green 代替历史 Red。 逐条核对 environment 与 termination 的必填字段，以及退出码、信号、执行错误、超时和取消状态的一致性；未知或中断记录不能作为 Green。",
           "required_skill_refs": [
             "builtin-skill-independent-review-v2"
           ],
@@ -1100,7 +1130,7 @@
         {
           "key": "advance",
           "name": "接纳确切候选",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "candidate_review"
           ],
@@ -1149,7 +1179,7 @@
         {
           "key": "publish",
           "name": "同步并核对 GitHub",
-          "stage": "work",
+          "stage": "integration",
           "dependencies": [
             "advance"
           ],
@@ -1197,7 +1227,7 @@
         {
           "key": "handoff",
           "name": "封存 Task 交付证据",
-          "stage": "work",
+          "stage": "handoff",
           "executor": {
             "type": "tool",
             "tool_ref": "builtin-tool-materials-capture-v1",
@@ -1312,7 +1342,7 @@
         {
           "key": "complete",
           "name": "完成任务",
-          "stage": "work",
+          "stage": "handoff",
           "executor": {
             "type": "tool",
             "tool_ref": "builtin-tool-tasks-complete-v1",
@@ -1375,6 +1405,11 @@
               "pointer": "/revision"
             }
           }
+        ]
+      },
+      "action_requirements": {
+        "git.advance": [
+          "tests"
         ]
       }
     },

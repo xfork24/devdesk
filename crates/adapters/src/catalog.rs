@@ -45,8 +45,8 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 13,
-            "数据集不是当前全局结构，请删除过时开发数据后重新建立",
+            version == 0 || version == 14,
+            "数据集需要显式离线升级，请运行 scripts/upgrade/harness-v5.py --help",
         )?;
         if version == 0 {
             connection

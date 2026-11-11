@@ -432,6 +432,40 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|i| args.get(i + 1))
             .cloned()
     };
+    if let Some(path) = option("--factory-export") {
+        let mut state = devdesk_domain::EngineeringState::default();
+        devdesk_core::seed_configuration(&mut state);
+        std::fs::write(path, serde_json::to_vec(&state)?)?;
+        return Ok(());
+    }
+    if let Some(path) = option("--normalize-plan") {
+        let value: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+        let mut document = value
+            .get("document")
+            .cloned()
+            .unwrap_or_else(|| value["plan"]["document"].clone());
+        document["schema_version"] = json!(5);
+        let mut document: devdesk_domain::WorkflowDefinition = serde_json::from_value(document)?;
+        document.assign_node_ids(value["definition_id"].as_str().unwrap_or("legacy"));
+        let digests = document
+            .steps
+            .iter()
+            .map(|s| (s.key.clone(), json!(devdesk_domain::configuration_hash(s))))
+            .collect::<serde_json::Map<String, Value>>();
+        let mut result = json!({"document":document,"contract_digests":digests});
+        if let Some(plan) = value.get("plan") {
+            let mut normalized = plan.clone();
+            normalized["document"] = result["document"].clone();
+            let normalized: devdesk_core::ConfiguredWorkflowPlan =
+                serde_json::from_value(normalized)?;
+            result["plan"] = json!(normalized);
+        }
+        std::fs::write(
+            option("--output").ok_or("--normalize-plan requires --output")?,
+            serde_json::to_vec(&result)?,
+        )?;
+        return Ok(());
+    }
     if args.iter().any(|a| a == "--update-credential-helper") {
         devdesk_adapters::credentials::CredentialVault::update_bundled_helper()?;
         println!(

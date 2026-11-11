@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfiguredWorkflowInstance {
+    pub active_plan_revision_id: Id,
+    pub control_version: u64,
     pub schema_version: u64,
     pub owner_id: Id,
     pub workflow_ref: Id,
@@ -130,7 +132,16 @@ fn instances_for_executions(
     }
     ids
 }
-fn active_execution(state: &EngineeringState, execution: &StepExecution) -> bool {
+pub(crate) fn active_execution(state: &EngineeringState, execution: &StepExecution) -> bool {
+    if state
+        .governance
+        .iter()
+        .filter(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"] == execution.id)
+        .filter_map(|r| r.decode::<ConfiguredWorkflowInstance>().ok())
+        .any(|child| child.steps.iter().any(|e| active_execution(state, e)))
+    {
+        return true;
+    }
     if state.governance.iter().any(|r| {
         r.kind == "platform_call"
             && r.definition_id == execution.id
@@ -159,7 +170,7 @@ fn active_execution(state: &EngineeringState, execution: &StepExecution) -> bool
             })
 }
 
-fn descendant_instances(state: &EngineeringState, parent: &str) -> BTreeSet<String> {
+pub(crate) fn descendant_instances(state: &EngineeringState, parent: &str) -> BTreeSet<String> {
     let mut ids = BTreeSet::from([parent.to_owned()]);
     loop {
         let executions: BTreeSet<_> = state
@@ -194,8 +205,11 @@ fn update_budget_wait(state: &EngineeringState, execution: &mut StepExecution) {
     let child_ids = instances_for_executions(state, &BTreeSet::from([execution.id.clone()]));
     let waiting = matches!(
         execution.status,
-        StepExecutionStatus::WaitingInput | StepExecutionStatus::WaitingConfirmation
+        StepExecutionStatus::WaitingInput
+            | StepExecutionStatus::WaitingConfirmation
+            | StepExecutionStatus::AwaitingAcceptance
     ) || state.workflow_instance_suspended(&execution.workflow_instance_id)
+        || (!child_ids.is_empty() && !active_execution(state, execution))
         || execution.turn_id.as_ref().is_some_and(|id| {
             state
                 .turns
@@ -211,7 +225,7 @@ fn update_budget_wait(state: &EngineeringState, execution: &mut StepExecution) {
                     steps.iter().any(|step| {
                         matches!(
                             step["status"].as_str(),
-                            Some("waiting_input" | "waiting_confirmation")
+                            Some("waiting_input" | "waiting_confirmation" | "awaiting_acceptance")
                         ) || step["turn_id"].as_str().is_some_and(|id| {
                             state
                                 .turns
@@ -268,6 +282,20 @@ fn execution_result(state: &EngineeringState, execution: &StepExecution) -> Resu
     }
 }
 
+pub(crate) fn matching_confirmation<'a>(
+    state: &'a EngineeringState,
+    execution_id: &str,
+    input_digest: &str,
+    outputs: &Value,
+) -> Option<&'a ConfigurationRecord> {
+    state.governance.iter().find(|r| {
+        r.kind == "workflow_confirmation"
+            && r.definition_id == execution_id
+            && r.data["input_digest"] == input_digest
+            && r.data["outputs"] == *outputs
+    })
+}
+
 pub(crate) fn facts(
     state: &EngineeringState,
     instance: &ConfiguredWorkflowInstance,
@@ -292,6 +320,7 @@ pub(crate) fn facts(
         }
         if execution.status == StepExecutionStatus::Completed
             || execution.status == StepExecutionStatus::WaitingConfirmation
+            || execution.status == StepExecutionStatus::AwaitingAcceptance
         {
             facts.executions.insert(
                 execution.step.clone(),
@@ -309,19 +338,31 @@ pub(crate) fn facts(
                 },
             );
         }
-        if state.governance.iter().any(|r| {
-            r.kind == "workflow_confirmation"
-                && r.definition_id == execution.id
-                && r.data["input_digest"] == execution.input_digest
-                && r.data["outputs"] == json!(execution.outputs)
-        }) {
+        if matching_confirmation(
+            state,
+            &execution.id,
+            &execution.input_digest,
+            &json!(execution.outputs),
+        )
+        .is_some()
+        {
             facts.approvals.insert(execution.step.clone());
         }
+    }
+    for material in state.governance.iter().filter(|r| {
+        r.kind == "typed_material"
+            && r.data["project_id"] == instance.project_id
+            && r.data["root_instance_id"] == instance.root_instance_id
+    }) {
+        facts.values.insert(
+            ("$material".into(), material.id.clone()),
+            material.data["value"].clone(),
+        );
     }
     Ok(facts)
 }
 
-fn material_inputs(
+pub(crate) fn material_inputs(
     step: &StepDefinition,
     facts: &WorkflowFacts,
 ) -> Result<BTreeMap<String, Value>> {
@@ -330,6 +371,11 @@ fn material_inputs(
         .map(|(name, binding)| {
             let value = match binding {
                 InputBinding::Constant { value } => value.clone(),
+                InputBinding::Material { material_ref } => facts
+                    .values
+                    .get(&("$material".into(), material_ref.clone()))
+                    .cloned()
+                    .ok_or_else(|| err("missing_material", "材料不存在"))?,
                 InputBinding::Source { source } => facts
                     .value(source)
                     .cloned()
@@ -374,10 +420,10 @@ pub(crate) fn task_input(
         .collect::<Result<BTreeMap<_,_>>>()?;
     let input_sources:BTreeMap<_,_>=step.inputs.iter().map(|(name,binding)| {
         let source_output_id=match binding {InputBinding::Source{source} if source.step!="$input"=>instance.steps.iter().find(|step|step.step==source.step).and_then(|step|step.outputs.get(&source.port)),_=>None};
-        (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"})},"source_output_id":source_output_id,"value_digest":execution.inputs.get(name).map(configuration_hash)}))
+        (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"value_digest":execution.inputs.get(name).map(configuration_hash)}))
     }).collect();
-    let input = json!({"renderer_version":"agent-task/v4","source":{"workflow_revision_id":instance.workflow_ref,"execution_id":execution.id,
-        "workflow_instance_id":execution.workflow_instance_id,"path":execution.path,"step":step.key,"round":execution.round,"sequence":execution.sequence},
+    let input = json!({"renderer_version":"agent-task/v5","source":{"workflow_revision_id":instance.workflow_ref,"execution_id":execution.id,
+        "workflow_instance_id":execution.workflow_instance_id,"plan_revision_id":execution.plan_revision_id,"node_id":execution.node_id,"contract_digest":execution.contract_digest,"path":execution.path,"step":step.key,"round":execution.round,"sequence":execution.sequence},
         "owner_id":instance.owner_id,
         "agent":execution.agent_revision_id.as_ref().and_then(|id|definitions.get(id)),
         "role":instance.plan.document.role(step).and_then(|id|instance.plan.roles.get(id).or_else(||instance.plan.roles.values().find(|role|role["role"]["id"]==id))),
@@ -487,6 +533,9 @@ impl Engine {
         &self,
         command: &Command,
     ) -> Result<Option<ConfiguredAgentRequest>> {
+        if command.payload["controller_id"].is_string() {
+            return self.controller_agent_request(command);
+        }
         let Some(id) = command.payload["configured_execution_id"].as_str() else {
             return Ok(None);
         };
@@ -505,7 +554,7 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 4
+                    && r.data["schema_version"] == 5
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == id))
@@ -617,7 +666,7 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 4
+                    && r.data["schema_version"] == 5
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -658,6 +707,11 @@ impl Engine {
             .map(|(name, value)| {
                 let value = match value {
                     InputBinding::Constant { value } => value.clone(),
+                    InputBinding::Material { material_ref } => facts
+                        .values
+                        .get(&("$material".into(), material_ref.clone()))
+                        .cloned()
+                        .ok_or_else(|| err("missing_material", "材料不存在"))?,
                     InputBinding::Source { source } => facts
                         .value(source)
                         .cloned()
@@ -699,7 +753,7 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 4
+                    && r.data["schema_version"] == 5
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -751,7 +805,7 @@ impl Engine {
         let input: Value = serde_json::from_str(&turn.input)
             .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
         require(
-            input["renderer_version"] == "agent-task/v4"
+            input["renderer_version"] == "agent-task/v5"
                 && input["source"]["execution_id"] == source.data["execution_id"],
             "步骤输入缺少可信任务来源，请通过工作流步骤提交补充输入",
         )?;
@@ -795,7 +849,7 @@ impl Engine {
             .agent
             .clone();
         let task = ConfiguredAgentTask {
-            renderer_version: "agent-task/v4".into(),
+            renderer_version: "agent-task/v5".into(),
             turn_id: turn_id.into(),
             agent_revision_id: agent,
             source: source.data,
@@ -861,6 +915,13 @@ impl Engine {
         let row = state.configuration(&instance_id)?.clone();
         let mut instance: ConfiguredWorkflowInstance = row.decode()?;
         require(
+            !matches!(
+                instance.status,
+                StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+            ),
+            "流程终态不可重新控制，请建立后继实例",
+        )?;
+        require(
             !state.workflow_instance_suspended(&row.id) && !instance.cancel_requested,
             "工作流已暂停或正在取消",
         )?;
@@ -909,6 +970,17 @@ impl Engine {
         let target = command.target.as_deref().unwrap_or("");
         let p = &command.payload;
         if method == "workflow.start" {
+            require(
+                !state
+                    .features
+                    .iter()
+                    .any(|f| f.id == target && f.status == Status::Completed)
+                    && !state
+                        .tasks
+                        .iter()
+                        .any(|t| t.id == target && t.status == Status::Completed),
+                "已完成工作保持终态，请建立后继工作范围",
+            )?;
             let actual =
                 revision(state, target).ok_or_else(|| err("not_found", "工作流所属对象不存在"))?;
             if command.expected_revision != Some(actual) {
@@ -994,6 +1066,9 @@ impl Engine {
                 .steps
                 .iter()
                 .map(|step| StepExecution {
+                    plan_revision_id: String::new(),
+                    node_id: step.node_id.clone(),
+                    contract_digest: configuration_hash(&step),
                     id: id(),
                     workflow_instance_id: instance_id.clone(),
                     workflow_revision_id: workflow.id.clone(),
@@ -1016,8 +1091,10 @@ impl Engine {
                     reason: String::new(),
                 })
                 .collect();
-            let instance = ConfiguredWorkflowInstance {
-                schema_version: 4,
+            let mut instance = ConfiguredWorkflowInstance {
+                active_plan_revision_id: String::new(),
+                control_version: 1,
+                schema_version: 5,
                 owner_id: target.into(),
                 workflow_ref: workflow.id.clone(),
                 project_id: scope.project().unwrap().into(),
@@ -1031,6 +1108,7 @@ impl Engine {
                 root_instance_id: instance_id.clone(),
                 cancel_requested: false,
             };
+            crate::orchestration::freeze_plan(state, &mut instance, &scope, "initial")?;
             let mut row = record(
                 "workflow_instance",
                 target.into(),
@@ -1065,21 +1143,46 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.id == target && r.kind == "workflow_instance" && r.data["schema_version"] == 4
+                r.id == target && r.kind == "workflow_instance" && r.data["schema_version"] == 5
             })
             .cloned()
         else {
             return Ok(None);
         };
+        let mut instance: ConfiguredWorkflowInstance = row.decode()?;
+        if let Some(plan) = p["plan_revision_id"].as_str() {
+            require(plan == instance.active_plan_revision_id, "活动计划已变化")?;
+        }
         require(
             command.expected_revision == Some(row.revision)
+                || (command
+                    .expected_revision
+                    .is_some_and(|v| v > 0 && v <= row.revision)
+                    && p["control_version"].as_u64() == Some(instance.control_version)
+                    && p["plan_revision_id"] == instance.active_plan_revision_id)
                 || (method == "workflow.step.approve"
                     && command
                         .expected_revision
                         .is_some_and(|revision| revision > 0 && revision <= row.revision)),
             "工作流状态已变化，请刷新",
         )?;
-        let mut instance: ConfiguredWorkflowInstance = row.decode()?;
+        require(
+            !matches!(
+                instance.status,
+                StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+            ),
+            "流程终态不可重新控制，请建立后继实例",
+        )?;
+        if crate::workflow_changes::change_pending(state, &row.id)
+            && ![
+                "workflow.pause",
+                "workflow.cancel",
+                "workflow.step.reconcile",
+            ]
+            .contains(&method)
+        {
+            return Err(err("change_pending", "运行计划正在变更"));
+        }
         match method {
             "workflow.pause" => {
                 instance.paused = true;
@@ -1139,7 +1242,11 @@ impl Engine {
                     "workflow.step.confirm" | "workflow.step.approve" => {
                         let manual = method == "workflow.step.approve";
                         require(
-                            execution.status == StepExecutionStatus::WaitingConfirmation,
+                            matches!(
+                                execution.status,
+                                StepExecutionStatus::WaitingConfirmation
+                                    | StepExecutionStatus::AwaitingAcceptance
+                            ),
                             "步骤不在等待确认",
                         )?;
                         require(!instance.cancel_requested, "流程已请求停止，不能批准结果")?;
@@ -1163,7 +1270,7 @@ impl Engine {
                             text(p, "reason")?;
                         }
                         state.governance.push(record("workflow_confirmation",execution.id.clone(),row.scope.clone(),"人工确认".into(),1,None,
-                            json!({"execution_id":execution.id,"input_digest":execution.input_digest,"outputs":execution.outputs,"reason":p["reason"],"override_completion":!valid,"manual_approval":manual}),true));
+                            json!({"execution_id":execution.id,"actor":{"kind":"human"},"input_digest":execution.input_digest,"outputs":execution.outputs,"reason":p["reason"],"override_completion":!valid,"manual_approval":manual}),true));
                     }
                     "workflow.step.reconcile" => {
                         require(
@@ -1243,17 +1350,10 @@ impl Engine {
                             rework || execution.sequence <= step.budget.retry_limit,
                             "已达到重试上限",
                         )?;
-                        let invalidated: BTreeSet<String> = instance
+                        let invalidated = instance
                             .plan
                             .document
-                            .steps
-                            .iter()
-                            .filter(|s| {
-                                s.key == key
-                                    || instance.plan.document.ancestors(s).contains(key.as_str())
-                            })
-                            .map(|s| s.key.clone())
-                            .collect();
+                            .impacted_nodes(&BTreeSet::from([key.clone()]));
                         let affected_ids = instance
                             .steps
                             .iter()
@@ -1301,6 +1401,20 @@ impl Engine {
                                     true,
                                 ));
                                 current.id = id();
+                                let definition = instance
+                                    .plan
+                                    .document
+                                    .steps
+                                    .iter()
+                                    .find(|s| s.key == current.step)
+                                    .unwrap();
+                                current.plan_revision_id = instance.active_plan_revision_id.clone();
+                                current.workflow_revision_id = instance.workflow_ref.clone();
+                                current.node_id = definition.node_id.clone();
+                                current.contract_digest = configuration_hash(definition);
+                                current.inputs.clear();
+                                current.input_digest.clear();
+                                current.agent_revision_id = None;
                                 current.round += u64::from(rework);
                                 current.sequence = if rework { 1 } else { current.sequence + 1 };
                                 current.status = StepExecutionStatus::Queued;
@@ -1320,6 +1434,7 @@ impl Engine {
                 }
             }
         }
+        instance.control_version += 1;
         update_record(
             state
                 .governance
@@ -1387,21 +1502,27 @@ impl Engine {
             let rows: Vec<_> = state
                 .governance
                 .iter()
-                .filter(|r| r.kind == "workflow_instance" && r.data["schema_version"] == 4)
+                .filter(|r| r.kind == "workflow_instance" && r.data["schema_version"] == 5)
                 .cloned()
                 .collect();
             for row in rows {
                 let mut instance: ConfiguredWorkflowInstance = row.decode()?;
-                if (!instance.cancel_requested && state.workflow_instance_suspended(&row.id))
-                    || matches!(
-                        instance.status,
-                        StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
-                    )
-                {
+                if matches!(
+                    instance.status,
+                    StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
+                ) {
                     continue;
                 }
                 if instance.cancel_requested {
                     for execution in &mut instance.steps {
+                        if matches!(
+                            execution.status,
+                            StepExecutionStatus::Completed
+                                | StepExecutionStatus::Skipped
+                                | StepExecutionStatus::Cancelled
+                        ) {
+                            continue;
+                        }
                         if let Some(session) = &execution.session_id {
                             for turn in state
                                 .turns
@@ -1450,11 +1571,14 @@ impl Engine {
                             execution.finished = Some(now());
                         }
                     }
-                    if instance
-                        .steps
-                        .iter()
-                        .all(|e| e.status == StepExecutionStatus::Cancelled)
-                    {
+                    if instance.steps.iter().all(|e| {
+                        matches!(
+                            e.status,
+                            StepExecutionStatus::Cancelled
+                                | StepExecutionStatus::Completed
+                                | StepExecutionStatus::Skipped
+                        )
+                    }) {
                         instance.status = StepExecutionStatus::Cancelled;
                     }
                     update_record(
@@ -1473,7 +1597,7 @@ impl Engine {
                         .iter()
                         .find(|r| r.kind == "workflow_children" && r.definition_id == *parent)
                         .ok_or_else(|| err("invalid_workflow", "子流程集合来源缺失"))?;
-                    let parent_row = state
+                    let _parent_row = state
                         .governance
                         .iter()
                         .find(|r| {
@@ -1483,9 +1607,6 @@ impl Engine {
                                     .is_some_and(|steps| steps.iter().any(|s| s["id"] == *parent))
                         })
                         .ok_or_else(|| err("invalid_workflow", "子流程父节点不存在"))?;
-                    if parent_row.data["paused"] == true {
-                        continue;
-                    }
                     if instance.status == StepExecutionStatus::Queued {
                         let active = group.data["children"]
                             .as_array()
@@ -1527,6 +1648,11 @@ impl Engine {
                             StepExecutionStatus::Completed | StepExecutionStatus::Skipped
                         )
                     }) && instance.plan.document.completion.evaluate(&current_facts)
+                        && state.governance.iter().any(|r| {
+                            r.kind == "workflow_completion"
+                                && r.definition_id == row.id
+                                && r.data["plan_revision_id"] == instance.active_plan_revision_id
+                        })
                     {
                         StepExecutionStatus::Completed
                     } else if instance
@@ -1586,7 +1712,7 @@ impl Engine {
         Ok(())
     }
 
-    fn advance_configured_step(
+    pub(crate) fn advance_configured_step(
         &self,
         state: &mut EngineeringState,
         row: &ConfigurationRecord,
@@ -1599,6 +1725,20 @@ impl Engine {
             .position(|e| e.step == step.key)
             .unwrap();
         let mut execution = instance.steps[index].clone();
+        if state
+            .governance
+            .iter()
+            .any(|r| r.kind == "workflow_stop" && r.definition_id == execution.id)
+        {
+            if !active_execution(state, &execution)
+                && execution.status != StepExecutionStatus::NeedsReconciliation
+            {
+                execution.status = StepExecutionStatus::Cancelled;
+                execution.finished = Some(now());
+                instance.steps[index] = execution;
+            }
+            return Ok(());
+        }
         update_budget_wait(state, &mut execution);
         instance.steps[index] = execution.clone();
         if matches!(
@@ -1613,23 +1753,22 @@ impl Engine {
             return Ok(());
         }
         let current_facts = facts(state, &instance)?;
-        if execution.status == StepExecutionStatus::WaitingConfirmation {
-            let overridden = state.governance.iter().any(|r| {
-                r.kind == "workflow_confirmation"
-                    && r.definition_id == execution.id
-                    && r.data["override_completion"] == true
-                    && r.data["input_digest"] == execution.input_digest
-                    && r.data["outputs"] == json!(execution.outputs)
-            });
-            if current_facts.approvals.contains(&execution.step)
-                && (step.completion.evaluate(&current_facts) || overridden)
-            {
-                execution.status = StepExecutionStatus::Completed;
-            }
-            instance.steps[index] = execution;
+        if matches!(
+            execution.status,
+            StepExecutionStatus::WaitingConfirmation | StepExecutionStatus::AwaitingAcceptance
+        ) {
             return Ok(());
         }
         if execution.status == StepExecutionStatus::Queued {
+            if state.workflow_instance_suspended(&row.id)
+                || !state.governance.iter().any(|r| {
+                    r.kind == "workflow_dispatch"
+                        && r.definition_id == execution.id
+                        && r.data["plan_revision_id"] == instance.active_plan_revision_id
+                })
+            {
+                return Ok(());
+            }
             if !step.dependencies.iter().all(|key| {
                 instance.steps.iter().any(|e| {
                     &e.step == key
@@ -1672,7 +1811,11 @@ impl Engine {
                 }
                 StepExecutor::Control => {
                     execution.finished = Some(now());
-                    execution.status = StepExecutionStatus::WaitingConfirmation;
+                    execution.status = if step.confirmation == ConfirmationPolicy::Human {
+                        StepExecutionStatus::WaitingConfirmation
+                    } else {
+                        StepExecutionStatus::AwaitingAcceptance
+                    };
                 }
                 StepExecutor::Tool { .. } => {
                     execution.status = StepExecutionStatus::Running;
@@ -1758,6 +1901,9 @@ impl Engine {
                             .steps
                             .iter()
                             .map(|step| StepExecution {
+                                plan_revision_id: String::new(),
+                                node_id: step.node_id.clone(),
+                                contract_digest: configuration_hash(&step),
                                 id: id(),
                                 workflow_instance_id: child_id.clone(),
                                 workflow_revision_id: child.id.clone(),
@@ -1783,8 +1929,10 @@ impl Engine {
                         let mut plan = instance.plan.clone();
                         plan.workflow_revision_id = child.id.clone();
                         plan.document = child_doc.clone();
-                        let child_instance = ConfiguredWorkflowInstance {
-                            schema_version: 4,
+                        let mut child_instance = ConfiguredWorkflowInstance {
+                            active_plan_revision_id: String::new(),
+                            control_version: 1,
+                            schema_version: 5,
                             owner_id: instance.owner_id.clone(),
                             workflow_ref: child.id.clone(),
                             project_id: instance.project_id.clone(),
@@ -1798,6 +1946,12 @@ impl Engine {
                             root_instance_id: instance.root_instance_id.clone(),
                             cancel_requested: false,
                         };
+                        crate::orchestration::freeze_plan(
+                            state,
+                            &mut child_instance,
+                            &row.scope,
+                            "child",
+                        )?;
                         let mut child_row = record(
                             "workflow_instance",
                             instance.owner_id.clone(),
@@ -1920,12 +2074,6 @@ impl Engine {
                                 .into();
                         }
                         instance.steps[index] = execution;
-                        if instance.steps[index].status == StepExecutionStatus::WaitingConfirmation
-                            && step.confirmation == ConfirmationPolicy::Automatic
-                            && step.completion.evaluate(&facts(state, &instance)?)
-                        {
-                            instance.steps[index].status = StepExecutionStatus::Completed;
-                        }
                         return Ok(());
                     }
 
@@ -2048,14 +2196,24 @@ impl Engine {
                         .any(|t| t.id == *id && t.status == TurnStatus::NeedsReconciliation)
                 }) {
                     execution.status = StepExecutionStatus::NeedsReconciliation;
-                    execution.reason =
-                        "原生执行结果需要核对，请先停止原执行者并处理会话恢复".into();
+                    execution.reason = state
+                        .conversation_events
+                        .iter()
+                        .rev()
+                        .find(|event| {
+                            Some(&event.turn_id) == execution.turn_id.as_ref()
+                                && event.kind == ConversationEventKind::Status
+                                && event.content.starts_with("needs_reconciliation:")
+                        })
+                        .map(|event| event.content.clone())
+                        .unwrap_or_else(|| {
+                            "原生执行结果需要核对，请先停止原执行者并处理会话恢复".into()
+                        });
                 }
             }
         }
         update_budget_wait(state, &mut execution);
         instance.steps[index] = execution;
-        let current_facts = facts(state, &instance)?;
         if instance.steps[index].status == StepExecutionStatus::Running
             && instance.steps[index].started.is_some_and(|started| {
                 now()
@@ -2105,12 +2263,6 @@ impl Engine {
             instance.steps[index].status = StepExecutionStatus::Failed;
             instance.steps[index].reason =
                 "超过配置的执行时限，已请求停止；重试前须核对原执行者".into();
-        }
-        if instance.steps[index].status == StepExecutionStatus::WaitingConfirmation
-            && step.confirmation == ConfirmationPolicy::Automatic
-            && step.completion.evaluate(&current_facts)
-        {
-            instance.steps[index].status = StepExecutionStatus::Completed;
         }
         Ok(())
     }
@@ -2210,7 +2362,11 @@ impl Engine {
             state.governance.push(output);
         }
         execution.finished = Some(now());
-        execution.status = StepExecutionStatus::WaitingConfirmation;
+        execution.status = if step.confirmation == ConfirmationPolicy::Human {
+            StepExecutionStatus::WaitingConfirmation
+        } else {
+            StepExecutionStatus::AwaitingAcceptance
+        };
         execution.reason = result["summary"].as_str().unwrap().into();
         Ok(())
     }
@@ -2229,15 +2385,20 @@ impl Engine {
         };
         if method == "query.execution_task" {
             let row = state.governance.iter().find(|r| {
-                r.kind == "configured_execution_task" && p["turn_id"] == r.definition_id
+                [
+                    "configured_execution_task",
+                    "archived_configured_execution_task",
+                ]
+                .contains(&r.kind.as_str())
+                    && p["turn_id"] == r.definition_id
             })?;
             return Some(Ok(
-                json!({"configured":true,"task":row.data,"turn_id":row.definition_id}),
+                json!({"configured":true,"archived":row.kind=="archived_configured_execution_task","task":row.data,"turn_id":row.definition_id}),
             ));
         }
         let row = state.governance.iter().find(|r| {
             r.kind == "workflow_instance"
-                && r.data["schema_version"] == 4
+                && r.data["schema_version"] == 5
                 && (p["id"] == r.id || p["owner_id"] == r.definition_id)
         })?;
         if let Some(project) = p["project_id"].as_str() {
@@ -2296,8 +2457,13 @@ impl Engine {
             });
             (&execution.id, json!({"satisfied":step.completion.evaluate(&current_facts),"confirmation":confirmation.map(|r| &r.data)}))
         }).collect::<BTreeMap<_, _>>();
+        let history=state.governance.iter().filter(|r|(r.kind=="workflow_plan_revision"&&(r.data["instance_id"]==row.id||r.id==instance.active_plan_revision_id||instance.steps.iter().any(|e|e.plan_revision_id==r.id)))||(r.kind=="workflow_execution_history"&&r.data["workflow_instance_id"]==row.id)||(r.kind=="workflow_change"&&r.definition_id==row.id)).map(|r| {
+            let data=if r.kind=="workflow_plan_revision" {json!({"parent_revision_id":r.data["parent_revision_id"],"reason":r.data["reason"]})} else if r.kind=="workflow_change" {json!({"status":r.data["status"],"new_plan_revision_id":r.data["new_plan_revision_id"],"affected":r.data["preview"]["affected"],"bypassed":r.data["preview"]["bypassed"]})} else {r.data.clone()};
+            let frozen_step=if r.kind=="workflow_execution_history" {state.configuration(r.data["plan_revision_id"].as_str().unwrap_or("")).ok().and_then(|p|p.data["plan"]["document"]["steps"].as_array()).and_then(|steps|steps.iter().find(|s|s["node_id"]==r.data["node_id"]))} else {None};
+            json!({"id":r.id,"kind":r.kind,"name":r.name,"data":data,"frozen_step":frozen_step})
+        }).collect::<Vec<_>>();
         Some(Ok(
-            json!({"record":row,"runtime":row.data,"plan":row.data["plan"]["document"],"outputs":outputs,"children":children,"completion_status":completion_status}),
+            json!({"record":row,"runtime":row.data,"plan":row.data["plan"]["document"],"outputs":outputs,"children":children,"completion_status":completion_status,"history":history}),
         ))
     }
 }

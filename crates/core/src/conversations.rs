@@ -90,7 +90,8 @@ impl Engine {
                 )?;
                 let binding: RuntimeBinding = serde_json::from_value(p["binding"].clone())
                     .map_err(|_| err("invalid_params", "缺少完整运行时绑定"))?;
-                let step_open = p["configured_execution_id"].is_string();
+                let step_open =
+                    p["configured_execution_id"].is_string() || p["controller_id"].is_string();
                 let mut snapshot = opt(p, "snapshot_id");
                 if let Some(id) = &snapshot {
                     let snap = s
@@ -277,7 +278,12 @@ impl Engine {
                 let owner = session_owner(&session)?;
                 require(
                     session.runtime_binding.as_ref().is_some_and(|b| {
-                        [WorkType::Discussion, WorkType::Workflow].contains(&b.work_type)
+                        [
+                            WorkType::Discussion,
+                            WorkType::Workflow,
+                            WorkType::Orchestration,
+                        ]
+                        .contains(&b.work_type)
                     }),
                     "Session 缺少有效的工作类型",
                 )?;
@@ -293,6 +299,12 @@ impl Engine {
                     "原会话已关闭或需创建带快照的后继 Session",
                 )?;
                 let input = text(p, "input")?;
+                if crate::controllers::binding(s, &session.id).is_some() {
+                    require(
+                        crate::controllers::authorized_send(s, command),
+                        "请通过当前项目经理入口发送编排指令",
+                    )?;
+                }
                 let input = self
                     .configured_conversation_input(s, &session, command, &input)?
                     .unwrap_or(input);
@@ -303,7 +315,12 @@ impl Engine {
                     .any(|r| r.kind == "configured_session" && r.definition_id == session.id);
                 require(
                     input.len()
-                        <= if configured_step {
+                        <= if configured_step
+                            || session
+                                .runtime_binding
+                                .as_ref()
+                                .is_some_and(|b| b.work_type == WorkType::Orchestration)
+                        {
                             TASK_PAYLOAD_LIMIT
                         } else {
                             65536
@@ -321,7 +338,9 @@ impl Engine {
                         json!({"id":previous.id,"operation_id":previous.id,"replayed":true}),
                     ));
                 }
-                check_revision(command.expected_revision, session.revision)?;
+                if !crate::controllers::authorized_send(s, command) {
+                    check_revision(command.expected_revision, session.revision)?;
+                }
                 require(
                     !s.turns
                         .iter()
@@ -707,7 +726,8 @@ impl Engine {
                 .collect();
             let next = events.last().map_or(cursor, |e| e.sequence);
             let turns: Vec<_> = s.turns.iter().filter(|t| t.session_id == sid).collect();
-            let formal_execution = crate::agent_tasks::formal_session(&s, sid);
+            let formal_execution = crate::agent_tasks::formal_session(&s, sid)
+                || crate::controllers::binding(&s, sid).is_some();
             let output_contract: Option<Value> = None;
             Ok(
                 json!({"session":session,"current_runtime_binding":session.runtime_binding,"workflow_context":crate::agent_tasks::session_workflow_context(&s, sid),"formal_execution":formal_execution,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),

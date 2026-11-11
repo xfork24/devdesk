@@ -1,0 +1,80 @@
+{
+  "template_key": "governance.builtin-tool-workflow-execution-inspect-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-execution-inspect-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-execution-inspect",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "检查原始执行合同",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.execution.inspect",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "part": {
+            "enum": [
+              "inputs",
+              "contract"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65536
+          },
+          "value_digest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id"
+        ],
+        "additionalProperties": false,
+        "description": "Read one exact execution. part=contract or inputs returns stable JSON chunks; repeat with next offset and the returned value_digest."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

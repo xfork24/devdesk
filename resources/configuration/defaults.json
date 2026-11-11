@@ -1,6 +1,6 @@
 {
-  "workflow_ref": "governance.builtin-workflow-feature-sol-high-v4",
-  "task_workflow_ref": "governance.builtin-workflow-task-sol-high-v4",
+  "workflow_ref": "governance.builtin-workflow-feature-sol-high-v5",
+  "task_workflow_ref": "governance.builtin-workflow-task-sol-high-v5",
   "model_ref": "governance.builtin-model-gpt-6-1-sol-high-v1",
   "harness_ref": "governance.builtin-harness-codex-managed-v1",
   "sandbox_ref": "sandboxes.builtin-sandbox-codex-docker-v1",
@@ -23,5 +23,40 @@
       "timeout_seconds": 300,
       "retry_limit": 3
     }
+  },
+  "orchestrator_role_ref": "governance.builtin-role-project-manager-v1",
+  "control_policy": {
+    "allowed_operations": [
+      "start",
+      "inspect",
+      "dispatch",
+      "accept",
+      "input",
+      "retry",
+      "rework",
+      "stop",
+      "pause",
+      "resume",
+      "cancel",
+      "preview",
+      "apply",
+      "import",
+      "request_decision",
+      "reconcile",
+      "complete",
+      "segment"
+    ],
+    "human_operations": [],
+    "waivable_requirements": [
+      "completion",
+      "confirmation",
+      "tests",
+      "independence",
+      "coverage"
+    ],
+    "allow_task_revision": false,
+    "max_turns_per_wakeup": 8,
+    "max_tool_calls_per_turn": 64,
+    "timeout_seconds": 600
   }
 }

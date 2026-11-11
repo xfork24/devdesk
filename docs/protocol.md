@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 13 / project 44；Workflow v4、Spec / Standard v3、Proposal v2 和 `agent-task/v4`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不保留旧动作、执行配方或转换接口。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 14 / project 45；Workflow v5、Spec / Standard v3、Proposal v2 和 `agent-task/v5`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，旧数据转换使用离线升级脚本。
 
 ## HTTP 与命令
 
@@ -31,13 +31,13 @@ JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.me
 
 `role.create/revise/delete` 只管理自由业务身份，不生成默认 Agent 或 Skill。Capability 和 Agent 明确引用当前资源；不从角色名称推导权限或业务输出。`query.configuration_defaults` 返回当前目录的确切默认引用，不创建项目采用记录，也不安装运行时。
 
-`workflow.create` / `workflow.draft.create` 建立 v4 草稿，`workflow.draft.update` 修改草稿，`workflow.publish` 校验并发布不可变修订。`project.configuration.update` 保存明确 Workflow、完整 Role → Agent 绑定及可选 Standard。`spec.create/revise` 与 `standard.create/revise` 使用 v3 数据；`delivery_type.create/revise` 定义通用交付格式及可选离线 Schema。
+`workflow.create` / `workflow.draft.create` 建立 v5 草稿，`workflow.draft.update` 修改草稿，`workflow.publish` 校验并发布不可变修订。`project.configuration.update` 保存明确 Workflow、完整 Role → Agent 绑定及可选 Standard。`spec.create/revise` 与 `standard.create/revise` 使用 v3 数据；`delivery_type.create/revise` 定义通用交付格式及可选离线 Schema。
 
 `query.workflow_requirements`、`query.workflow_validation`、`query.workflow_preview` 和 `query.specification_audit` 检查完整闭包、身份、输入输出、Spec 与基线。预演不会调用模型、Docker、Git 或测试，也不产生真实证据。
 
 `query.workflow_task_preview` 使用 document 或确切修订及步骤位置，返回可解析的 Role / Agent / Skill / Spec、任务、输入、输出合同和缺口；不是实际运行授权。`query.execution_task` 按 `turn_id` 返回持久化任务、渲染版本、摘要和来源。
 
-canonical `agent-task/v4` 包含 Stage 背景、Step 任务、职责、能力、确切输入、绑定来源和值摘要、逐端口输出 Schema、动态检查、授权及预算。文本端口值是字符串；JSON 端口按声明 Schema 校验。封套为 `status`、`summary`、`outputs`，只有 completed 必须提供全部必需输出。
+canonical `agent-task/v5` 包含 Stage 背景、Step 任务、职责、能力、确切输入、绑定来源和值摘要、逐端口输出 Schema、动态检查、授权及预算。文本端口值是字符串；JSON 端口按声明 Schema 校验。封套为 `status`、`summary`、`outputs`，只有 completed 必须提供全部必需输出。
 
 ## 运行与交互
 
@@ -134,3 +134,13 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `query.workflow_instance` 附带当前 TaskGroup 的 `children` 摘要（实例 ID/修订、任务名称、父步骤），子流程详细计划按实例单独读取。执行与交付以阶段为整行展示，编译展开的子流程保持在其调用阶段内；Task 子流程在所属阶段中按需展开，折叠状态按项目和工作流实例保存在本机。
 
 `query.sessions` 可按 `agent_instance_id` 在分页前筛选。列表和会话详情返回该身份的关联元数据。独立讨论完成后保存 `conversation_completed` 快照，AgentID 历史包含本轮消息与真实终态证据；切换身份不继续沿用原会话。
+
+## 编排与运行计划
+
+`orchestration.open/input/takeover/resume` 管理项目经理及后继会话；`query.orchestration` 返回对话、实际控制调用和待人类决定请求。输入是用户自然语言，只有冻结 Capability/Permission 允许的原生工具调用才产生控制效果。
+
+控制工具：`workflow.inspect/events.read/outputs.read/execution.inspect`，`step.dispatch/accept/input/retry/rework`，`execution.stop/reconcile`，`pause/resume/cancel/complete`，`change.preview/apply`，`materials.import`，`decision.request` 和 `segment.dispatch`（均带 workflow 前缀）。人类通过 `workflow.decision.resolve` 签署确切请求。写入绑定活动 plan_revision_id；接纳还绑定 execution_id、input_digest 及输出 ID，变更绑定预演哈希。
+
+`schemas/orchestration.schema.json` 定义类型化 ChangeSet。新增/修改步骤、依赖、输入、角色绑定及整体计划通过预演编译；应用期间根范围禁止新的写入派发，继续收集原运行事实。旧合同和结果保存只读历史。已派发 segment 只推进确切授权节点，遇到人工等待、评审拒绝、异常、预算或计划修改立即停止，不自动完成根实例。
+
+编排封套 `orchestration-task/v1` 携带当前实例摘要、用户指令、策略及待决定项；持久化唤醒、消费游标、lease 和原生调用回执支持重启恢复。业务 `agent-task/v5` 携带计划修订、node_id 和 contract_digest。

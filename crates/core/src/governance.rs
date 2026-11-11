@@ -602,7 +602,15 @@ impl Engine {
                     agent.kind == "agent" && agent.immutable,
                     "实例需要确切 Agent 修订",
                 )?;
-                if let Some(feature) = p["frozen_feature_id"].as_str() {
+                if let Some(controller) = p["frozen_controller_id"].as_str() {
+                    let row = s.configuration(controller)?;
+                    require(
+                        row.kind == "workflow_controller"
+                            && row.scope.project() == scope.project()
+                            && row.data["agent_revision_id"] == key,
+                        "Agent 不属于指定编排控制器",
+                    )?;
+                } else if let Some(feature) = p["frozen_feature_id"].as_str() {
                     require(
                         s.governance.iter().any(|r| {
                             r.kind == "workflow_instance"
@@ -635,7 +643,7 @@ impl Engine {
                 result
             }
             "project.configuration.update" => {
-                return Err(err("invalid_configuration", "项目配置需要当前 Workflow v4"));
+                return Err(err("invalid_configuration", "项目配置需要当前 Workflow v5"));
             }
             _ => return Ok(None),
         };

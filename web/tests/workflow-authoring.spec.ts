@@ -52,7 +52,13 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   for (const row of defaults.records.filter((row: any) =>
     ["capability", "agent"].includes(row.kind),
   ))
-    expect(row.data.tools).toEqual(["builtin-tool-codex-native-v1"]);
+    expect(row.data.tools).toContain("builtin-tool-codex-native-v1");
+  expect(
+    defaults.records.find(
+      (r: any) =>
+        r.id === defaults.role_agent_bindings[defaults.orchestrator_role_ref],
+    ).data.tools,
+  ).toContain("builtin-tool-workflow-inspect-v1");
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
   await expect(page.getByText("AgentID 经验检索", { exact: true })).toHaveCount(
@@ -227,7 +233,7 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
   const workflow = workflows.records.find(
     (r: any) => r.kind === "workflow" && r.name === name,
   );
-  expect(workflow.data.schema_version).toBe(4);
+  expect(workflow.data.schema_version).toBe(5);
   expect(workflow.data.steps[0].executor.type).toBe("control");
   const project = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),
@@ -246,6 +252,10 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
   await expect(
     page.getByRole("button", { name: /确认范围 · 本地草稿/ }).first(),
   ).toBeVisible();
+  await page
+    .getByRole("region", { name: "当前工作流", exact: true })
+    .getByRole("button", { name: "执行步骤", exact: true })
+    .click();
   await expect
     .poll(async () => {
       const result = await rpc(page, "query.workspace", {
@@ -268,6 +278,17 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
       outputs: {},
     },
   });
+  await page.reload();
+  const execution = page.getByRole("region", {
+    name: "当前工作流",
+    exact: true,
+  });
+  await execution
+    .getByRole("button", { name: "接纳结果", exact: true })
+    .click();
+  await execution
+    .getByRole("button", { name: "完成流程", exact: true })
+    .click();
   await expect
     .poll(
       async () =>
@@ -356,7 +377,7 @@ test("阶段 Role 可继承，任务指令与子流程调用是独立配置", as
     payload: {
       name: "可复用确认 " + crypto.randomUUID().slice(0, 6),
       document: {
-        schema_version: 4,
+        schema_version: 5,
         stages: [{ key: "work", name: "工作" }],
         steps: [
           {
@@ -475,7 +496,7 @@ test("项目默认 Role Agent 绑定显式保存且 Standard 可留空", async (
   const instance = state.configurations.find(
     (r: any) => r.id === lock.data.workflow_instance_id,
   );
-  expect(instance.data.schema_version).toBe(4);
+  expect(instance.data.schema_version).toBe(5);
   expect(
     instance.data.plan.document.steps.every(
       (s: any) => s.executor && !s.action,
@@ -604,7 +625,8 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
     "global",
   );
   await expect(
-    page.getByRole("region", { name: "历史记录", exact: true })
+    page
+      .getByRole("region", { name: "历史记录", exact: true })
       .getByRole("heading", { name: "历史记录", exact: true }),
   ).toBeVisible();
 });

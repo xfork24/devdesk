@@ -37,7 +37,7 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
     payload: {
       name,
       document: {
-        schema_version: 4,
+        schema_version: 5,
         stages: [{ key: "work", name: "任务阶段" }],
         steps: [
           {

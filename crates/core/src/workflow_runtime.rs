@@ -25,6 +25,13 @@ impl Engine {
                     .filter_map(|step| step["id"].as_str().map(str::to_owned))
             })
             .collect();
+        let mut active = active;
+        active.extend(
+            s.governance
+                .iter()
+                .filter(|r| r.kind == "workflow_controller" && r.data["status"] == "active")
+                .map(|r| r.id.clone()),
+        );
         Ok(s.governance
             .iter()
             .filter(|r| {

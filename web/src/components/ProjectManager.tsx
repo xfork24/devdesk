@@ -48,6 +48,8 @@ export function ProjectManager({
   const [draft, setDraft] = useDraft(
     `devdesk:v4:project:${project?.id || "global"}`,
     () => ({
+      orchestrator_role_ref: "",
+      control_policy: {} as Row,
       workflow_ref: "",
       standard_ref: "",
       role_agent_bindings: {} as Record<string, string>,
@@ -88,6 +90,10 @@ export function ProjectManager({
         current.workflow_ref
           ? current
           : {
+              orchestrator_role_ref:
+                configuration.configuration.data.orchestrator_role_ref || "",
+              control_policy:
+                configuration.configuration.data.control_policy || {},
               workflow_ref: configuration.configuration.data.workflow_ref,
               standard_ref: configuration.configuration.data.standard_ref || "",
               role_agent_bindings:
@@ -100,6 +106,8 @@ export function ProjectManager({
         current.workflow_ref
           ? current
           : {
+              orchestrator_role_ref: preset.orchestrator_role_ref,
+              control_policy: preset.control_policy,
               workflow_ref: preset.workflow_ref,
               standard_ref: "",
               role_agent_bindings: preset.role_agent_bindings,
@@ -142,7 +150,7 @@ export function ProjectManager({
     (r) =>
       r.kind === "workflow" &&
       r.data.schema_version >= 2 &&
-      r.data.schema_version === 4,
+      r.data.schema_version === 5,
   );
   const standards = records.filter(
     (r) => r.kind === "standard" && Array.isArray(r.data.baseline_rules),
@@ -160,6 +168,10 @@ export function ProjectManager({
         target: project.id,
         expected_revision: project.revision,
         payload: {
+          orchestrator_role_ref: draft.orchestrator_role_ref || null,
+          control_policy: draft.orchestrator_role_ref
+            ? draft.control_policy
+            : null,
           workflow_ref: draft.workflow_ref,
           standard_ref: draft.standard_ref || null,
           role_agent_bindings: draft.role_agent_bindings,
@@ -203,6 +215,8 @@ export function ProjectManager({
                 onClick={() => {
                   captureFeedback();
                   return setDraft({
+                    orchestrator_role_ref: defaults.orchestrator_role_ref,
+                    control_policy: defaults.control_policy,
                     workflow_ref: defaults.workflow_ref,
                     standard_ref: "",
                     role_agent_bindings: defaults.role_agent_bindings,
@@ -390,6 +404,56 @@ export function ProjectManager({
                 新建或编辑 Agent
               </a>
             </p>
+            <label>
+              编排角色
+              <select
+                aria-label="编排角色"
+                value={draft.orchestrator_role_ref}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    orchestrator_role_ref: e.target.value,
+                    control_policy: Object.keys(draft.control_policy).length
+                      ? draft.control_policy
+                      : defaults?.control_policy || {},
+                  })
+                }
+              >
+                <option value="">仅手动操作工作流</option>
+                {latest(records.filter((r) => r.kind === "role")).map((r) => (
+                  <option key={r.id} value={r.definition_id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {draft.orchestrator_role_ref && (
+              <RevisionSelect
+                label="编排 Agent"
+                records={records.filter(
+                  (r) =>
+                    r.kind === "agent" &&
+                    records.some(
+                      (role) =>
+                        role.kind === "role" &&
+                        role.id === r.data.role_ref &&
+                        role.definition_id === draft.orchestrator_role_ref,
+                    ),
+                )}
+                value={
+                  draft.role_agent_bindings[draft.orchestrator_role_ref] || ""
+                }
+                onChange={(value) =>
+                  setDraft({
+                    ...draft,
+                    role_agent_bindings: {
+                      ...draft.role_agent_bindings,
+                      [draft.orchestrator_role_ref]: value,
+                    },
+                  })
+                }
+              />
+            )}
             {requirements && (
               <>
                 <h3>流程所需 Role → Agent</h3>

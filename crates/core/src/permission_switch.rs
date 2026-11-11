@@ -48,7 +48,12 @@ impl Engine {
                 let mut expected = b.clone();
                 expected.permissions = new_binding.permissions.clone();
                 expected.configuration_digest = new_binding.configuration_digest.clone();
-                [WorkType::Discussion, WorkType::Workflow].contains(&b.work_type)
+                [
+                    WorkType::Discussion,
+                    WorkType::Workflow,
+                    WorkType::Orchestration,
+                ]
+                .contains(&b.work_type)
                     && expected == new_binding
             }) {
                 return Err(err(

@@ -17,10 +17,32 @@
       "model_ref": "builtin-model-gpt-6-1-sol-high-v1",
       "skills": [
         "builtin-skill-engineering-context-v2",
-        "builtin-skill-project-planning-v2"
+        "builtin-skill-project-planning-v2",
+        "builtin-skill-workflow-orchestration-v1"
       ],
       "tools": [
-        "builtin-tool-codex-native-v1"
+        "builtin-tool-codex-native-v1",
+        "builtin-tool-workflow-start-v1",
+        "builtin-tool-workflow-inspect-v1",
+        "builtin-tool-workflow-events-read-v1",
+        "builtin-tool-workflow-outputs-read-v1",
+        "builtin-tool-workflow-execution-inspect-v1",
+        "builtin-tool-workflow-step-dispatch-v1",
+        "builtin-tool-workflow-step-accept-v1",
+        "builtin-tool-workflow-step-input-v1",
+        "builtin-tool-workflow-step-retry-v1",
+        "builtin-tool-workflow-step-rework-v1",
+        "builtin-tool-workflow-execution-stop-v1",
+        "builtin-tool-workflow-pause-v1",
+        "builtin-tool-workflow-resume-v1",
+        "builtin-tool-workflow-cancel-v1",
+        "builtin-tool-workflow-change-preview-v1",
+        "builtin-tool-workflow-change-apply-v1",
+        "builtin-tool-workflow-materials-import-v1",
+        "builtin-tool-workflow-decision-request-v1",
+        "builtin-tool-workflow-execution-reconcile-v1",
+        "builtin-tool-workflow-complete-v1",
+        "builtin-tool-workflow-segment-dispatch-v1"
       ]
     },
     "immutable": true,
@@ -47,6 +69,94 @@
     },
     "/data/tools/0": {
       "template_ref": "governance.builtin-tool-codex-native-v1",
+      "target": "revision"
+    },
+    "/data/tools/1": {
+      "template_ref": "governance.builtin-tool-workflow-start-v1",
+      "target": "revision"
+    },
+    "/data/tools/2": {
+      "template_ref": "governance.builtin-tool-workflow-inspect-v1",
+      "target": "revision"
+    },
+    "/data/tools/3": {
+      "template_ref": "governance.builtin-tool-workflow-events-read-v1",
+      "target": "revision"
+    },
+    "/data/tools/4": {
+      "template_ref": "governance.builtin-tool-workflow-outputs-read-v1",
+      "target": "revision"
+    },
+    "/data/tools/5": {
+      "template_ref": "governance.builtin-tool-workflow-execution-inspect-v1",
+      "target": "revision"
+    },
+    "/data/tools/6": {
+      "template_ref": "governance.builtin-tool-workflow-step-dispatch-v1",
+      "target": "revision"
+    },
+    "/data/tools/7": {
+      "template_ref": "governance.builtin-tool-workflow-step-accept-v1",
+      "target": "revision"
+    },
+    "/data/tools/8": {
+      "template_ref": "governance.builtin-tool-workflow-step-input-v1",
+      "target": "revision"
+    },
+    "/data/tools/9": {
+      "template_ref": "governance.builtin-tool-workflow-step-retry-v1",
+      "target": "revision"
+    },
+    "/data/tools/10": {
+      "template_ref": "governance.builtin-tool-workflow-step-rework-v1",
+      "target": "revision"
+    },
+    "/data/tools/11": {
+      "template_ref": "governance.builtin-tool-workflow-execution-stop-v1",
+      "target": "revision"
+    },
+    "/data/tools/12": {
+      "template_ref": "governance.builtin-tool-workflow-pause-v1",
+      "target": "revision"
+    },
+    "/data/tools/13": {
+      "template_ref": "governance.builtin-tool-workflow-resume-v1",
+      "target": "revision"
+    },
+    "/data/tools/14": {
+      "template_ref": "governance.builtin-tool-workflow-cancel-v1",
+      "target": "revision"
+    },
+    "/data/tools/15": {
+      "template_ref": "governance.builtin-tool-workflow-change-preview-v1",
+      "target": "revision"
+    },
+    "/data/tools/16": {
+      "template_ref": "governance.builtin-tool-workflow-change-apply-v1",
+      "target": "revision"
+    },
+    "/data/tools/17": {
+      "template_ref": "governance.builtin-tool-workflow-materials-import-v1",
+      "target": "revision"
+    },
+    "/data/tools/18": {
+      "template_ref": "governance.builtin-tool-workflow-decision-request-v1",
+      "target": "revision"
+    },
+    "/data/tools/19": {
+      "template_ref": "governance.builtin-tool-workflow-execution-reconcile-v1",
+      "target": "revision"
+    },
+    "/data/tools/20": {
+      "template_ref": "governance.builtin-tool-workflow-complete-v1",
+      "target": "revision"
+    },
+    "/data/tools/21": {
+      "template_ref": "governance.builtin-tool-workflow-segment-dispatch-v1",
+      "target": "revision"
+    },
+    "/data/skills/2": {
+      "template_ref": "governance.builtin-skill-workflow-orchestration-v1",
       "target": "revision"
     }
   },

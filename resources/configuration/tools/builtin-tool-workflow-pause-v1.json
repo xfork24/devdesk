@@ -1,0 +1,59 @@
+{
+  "template_key": "governance.builtin-tool-workflow-pause-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-pause-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-pause",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "暂停流程派发",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.pause",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_revision_id"
+        ],
+        "additionalProperties": false,
+        "description": "Pause workflow progress while receipts continue to be observed. The controller can still discuss plan changes."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

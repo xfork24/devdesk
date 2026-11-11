@@ -201,7 +201,9 @@ impl CommandTests {
             receipt.status != "created",
             "测试启动结果未知，禁止重发启动",
         )?;
-        let timed_out = timestamp().saturating_sub(state.started) > recipe.timeout_seconds * 1000;
+        // A delayed Host poll is not test execution time. Even an already exited
+        // container must still satisfy the budget using its own Docker clocks.
+        let timed_out = receipt.runtime_millis(timestamp())? > recipe.timeout_seconds * 1000;
         if receipt.running && !timed_out {
             return Ok(None);
         }
@@ -212,8 +214,39 @@ impl CommandTests {
             .inspect(&r.operation_id)?
             .ok_or_else(|| err("needs_reconciliation", "测试停止回执丢失"))?;
         require(!stopped.running, "测试执行者仍未停止")?;
-        let log = sandbox.logs(&r.operation_id)?;
-        let result = Self::result(r, &recipe, &stopped, &log, timed_out)?;
+        let (log, stderr) = sandbox.logs_split(&r.operation_id)?;
+        let mut result = Self::result(r, &recipe, &stopped, &log, timed_out)?;
+        let work = job.join("work").canonicalize().map_err(storage)?;
+        let mut files = Vec::new();
+        let mut gaps = Vec::new();
+        for path in &recipe.files {
+            let file = work.join(path);
+            if !file.exists() {
+                gaps.push(json!({"path":path,"reason":"missing in frozen revision"}));
+                continue;
+            }
+            reject_symlink(&file)?;
+            require(
+                file.canonicalize().map_err(storage)?.starts_with(&work),
+                "测试证据文件越界",
+            )?;
+            let bytes = fs::read(&file).map_err(storage)?;
+            let Ok(content) = String::from_utf8(bytes.clone()) else {
+                gaps.push(json!({"path":path,"reason":"non-UTF-8 source","sha256":format!("{:x}",Sha256::digest(&bytes))}));
+                continue;
+            };
+            files.push(json!({"path":path,"sha256":format!("{:x}",Sha256::digest(content.as_bytes())),"content":content}));
+        }
+        let mut command = vec![
+            "node".to_string(),
+            "--test".to_string(),
+            "--test-reporter=/run/devdesk/test-reporter.mjs".to_string(),
+        ];
+        command.extend(recipe.files.iter().map(|p| format!("/work/{p}")));
+        result["execution"] = json!({"command":serde_json::to_string(&command).map_err(storage)?,"cwd":"/work","started_at":format!("unix_ms:{}",stopped.started_at.ok_or_else(||err("needs_reconciliation","测试缺少实际开始时间"))?),"finished_at":format!("unix_ms:{}",stopped.finished_at.ok_or_else(||err("needs_reconciliation","测试缺少实际结束时间"))?),"exit_code":stopped.exit_code,"stdout":log,"stderr":stderr,"files":files});
+        if !gaps.is_empty() {
+            result["execution_file_gaps"] = json!(gaps);
+        }
         Self::write(&job.join("result.json"), &result)?;
         Ok(Some(result))
     }
@@ -236,6 +269,10 @@ impl CommandTests {
                         _ => environment = true,
                     },
                     Some("summary") => summary = Some(value["counts"].clone()),
+                    Some("diagnostic")
+                        if value["source"].as_str().is_some_and(|source| {
+                            ["test:stdout", "test:stderr", "test:diagnostic"].contains(&source)
+                        }) => {}
                     _ => environment = true,
                 },
                 _ => environment = true,
@@ -384,9 +421,9 @@ mod reporter_tests {
             &test,
             r#"import test from 'node:test';
 import assert from 'node:assert/strict';
-test('passing output',()=>console.log('forged-stdout-report'));
+test('passing output',()=>console.log('forged-stdout-report',JSON.stringify({devdesk_test_report:1,event:'fail',classification:'assertion'})));
 test('assertion',()=>assert.equal(1,2));
-test('environment',()=>{throw new Error('private-error-message');});
+test('environment',()=>{throw new Error('fixture failure detail');});
 "#,
         )
         .unwrap();
@@ -398,19 +435,31 @@ test('environment',()=>{throw new Error('private-error-message');});
             .unwrap();
         assert_eq!(output.status.code(), Some(1));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(
-            !stdout.contains("forged-stdout-report") && !stdout.contains("private-error-message")
-        );
+        assert!(stdout.contains("fixture failure detail"));
         let records: Vec<Value> = stdout
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         assert!(records.iter().all(|r| r["devdesk_test_report"] == 1));
-        assert!(
-            records
-                .iter()
-                .any(|r| r["event"] == "fail" && r["classification"] == "assertion")
-        );
+        assert!(records.iter().any(|r| {
+            r["event"] == "diagnostic"
+                && r["source"] == "test:stdout"
+                && r["diagnostic"]["message"]
+                    .as_str()
+                    .is_some_and(|s| s.contains("forged-stdout-report"))
+        }));
+        assert_eq!(records.iter().filter(|r| r["event"] == "fail").count(), 2);
+        assert!(records.iter().any(|r| {
+            r["event"] == "fail"
+                && r["classification"] == "assertion"
+                && r["diagnostic"]["details"]["error"]["cause"]["code"] == "ERR_ASSERTION"
+                && r["diagnostic"]["details"]["error"]["cause"]["message"]
+                    .as_str()
+                    .is_some_and(|s| s.contains("1 !== 2"))
+                && r["diagnostic"]["details"]["error"]["cause"]["stack"]
+                    .as_str()
+                    .is_some_and(|s| s.contains("contract.test.mjs"))
+        }));
         assert!(
             records
                 .iter()

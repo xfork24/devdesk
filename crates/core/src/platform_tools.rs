@@ -3,6 +3,27 @@ use crate::governance::{record, update_record};
 use crate::*;
 
 pub(crate) const PLATFORM_HANDLERS: &[&str] = &[
+    "workflow.start",
+    "workflow.inspect",
+    "workflow.events.read",
+    "workflow.outputs.read",
+    "workflow.execution.inspect",
+    "workflow.step.dispatch",
+    "workflow.step.accept",
+    "workflow.step.input",
+    "workflow.step.retry",
+    "workflow.step.rework",
+    "workflow.execution.stop",
+    "workflow.pause",
+    "workflow.resume",
+    "workflow.cancel",
+    "workflow.change.preview",
+    "workflow.change.apply",
+    "workflow.materials.import",
+    "workflow.decision.request",
+    "workflow.execution.reconcile",
+    "workflow.complete",
+    "workflow.segment.dispatch",
     "workspace.current",
     "workspace.snapshot",
     "tasks.create",
@@ -65,6 +86,56 @@ impl Engine {
         observation: &ports::ConversationObservation,
         definition: ConfigurationRecord,
     ) -> Result<()> {
+        if crate::controllers::binding(state, &session.id).is_some() {
+            let checkpoint = state.clone();
+            let result =
+                self.project_controller_tool(state, session, tid, observation, definition.clone());
+            if let Err(error) = result {
+                *state = checkpoint;
+                let ports::ConversationObservation::ToolCall {
+                    request,
+                    call,
+                    arguments,
+                    ..
+                } = observation
+                else {
+                    return Err(error);
+                };
+                let bound = crate::controllers::binding(state, &session.id)
+                    .unwrap()
+                    .clone();
+                let worker = state
+                    .executions
+                    .iter()
+                    .find(|e| e.session_id == session.id && !e.writer_revoked)
+                    .ok_or_else(|| err("tool_not_authorized", "编排执行者已停止"))?;
+                let identity = format!(
+                    "controller-call-{}",
+                    configuration_hash(&(
+                        session.id.as_str(),
+                        tid,
+                        worker.operation_id.as_str(),
+                        call.as_str()
+                    ))
+                );
+                if state.configuration(&identity).is_ok() {
+                    return Err(error);
+                }
+                let mut row = record(
+                    "controller_tool_call",
+                    text(&bound.data, "controller_id")?,
+                    bound.scope,
+                    "编排调用拒绝".into(),
+                    1,
+                    None,
+                    json!({"status":"failed","method":definition.data["qualified_name"],"arguments":arguments,"session_id":session.id,"turn_id":tid,"worker_operation_id":worker.operation_id,"request_id":request,"call_id":call,"tool_ref":definition.id,"epoch":bound.data["epoch"],"error":error}),
+                    false,
+                );
+                row.id = identity;
+                state.governance.push(row);
+            }
+            return Ok(());
+        }
         let ports::ConversationObservation::ToolCall {
             request,
             call,
@@ -321,6 +392,11 @@ impl Engine {
                     name.clone(),
                     match binding {
                         InputBinding::Constant { value } => value.clone(),
+                        InputBinding::Material { material_ref } => facts
+                            .values
+                            .get(&("$material".into(), material_ref.clone()))
+                            .cloned()
+                            .ok_or_else(|| err("missing_material", "工具材料不存在"))?,
                         InputBinding::Source { source } => facts
                             .value(source)
                             .cloned()
@@ -367,6 +443,10 @@ impl Engine {
         )?;
         self.store.transact(Some((&command.command_id,&fingerprint)),&mut |state|{
             require(state.configuration(&request.instance_id)?.data["steps"].as_array().is_some_and(|s|s.iter().any(|e|e["id"]==request.step_execution_id()&&e["status"]=="running")),"执行已失效")?;
+            if request.definition.qualified_name=="git.advance" {
+                let permit=self.workflow_action_permit(state,request)?;
+                state.governance.push(record("workflow_action_permit",request.execution_id.clone(),Scope::Project{project_id:request.project_id.clone()},"候选接纳许可".into(),1,None,json!(permit),true));
+            }
             let mut row=record("platform_call",request.execution_id.clone(),Scope::Project{project_id:request.project_id.clone()},request.definition.qualified_name.clone(),1,None,
                 json!({"status":"prepared","request":request,"operations":{"base":id(),"candidate":id(),"remote":id()}}),false);row.id=request.execution_id.clone();let result=json!({"id":row.id});state.governance.push(row);Ok(result)
         })
@@ -689,37 +769,14 @@ impl Engine {
                     }),
                     "候选缺少真实平台回执",
                 )?;
-                let instance: ConfiguredWorkflowInstance =
-                    state.configuration(&request.instance_id)?.decode()?;
+                let permit = self.workflow_action_permit(state, request)?;
                 require(
-                    instance.steps.iter().any(|s| {
-                        (s.outputs.values().any(|id| {
-                            state
-                                .configuration(id)
-                                .is_ok_and(|r| r.data["value"] == *candidate)
-                        }) || s.inputs.values().any(|v| v == candidate))
-                            && state.governance.iter().any(|r| {
-                                r.kind == "workflow_confirmation"
-                                    && r.definition_id == s.id
-                                    && r.data["outputs"] == json!(s.outputs)
-                                    && r.data["input_digest"] == s.input_digest
-                            })
+                    state.governance.iter().any(|r| {
+                        r.kind == "workflow_action_permit"
+                            && r.definition_id == request.execution_id
+                            && r.data == json!(permit)
                     }),
-                    "推进目标需要针对确切候选的人工确认",
-                )?;
-                let test = &p["test_receipt"];
-                require(
-                    test["candidate"] == revision
-                        && test["status"] == "succeeded"
-                        && test["expected_failure"] == false
-                        && state.governance.iter().any(|r| {
-                            r.kind == "platform_call"
-                                && r.data["request"]["instance_id"] == request.instance_id
-                                && r.data["status"] == "succeeded"
-                                && r.data["request"]["definition"]["qualified_name"] == "tests.run"
-                                && r.data["receipt"] == *test
-                        }),
-                    "接纳候选需要对应确切候选的真实通过测试",
+                    "操作缺少当前计划的确切许可",
                 )?;
                 let actual = self.git.workspace_revision(&GitContext {
                     source: context.target.clone(),
@@ -907,7 +964,11 @@ impl Engine {
             let request: PlatformToolRequest = serde_json::from_value(row.data["request"].clone())
                 .map_err(|e| err("storage", e.to_string()))?;
             let instance = snapshot.configuration(&request.instance_id)?;
-            if snapshot.workflow_instance_suspended(&request.instance_id) {
+            if snapshot.workflow_instance_suspended(&request.instance_id)
+                && row.data["status"] == "prepared"
+                && row.data["cancel_requested"] != true
+                && instance.data["cancel_requested"] != true
+            {
                 continue;
             }
             let cancelled = !request.caller_active(&snapshot)

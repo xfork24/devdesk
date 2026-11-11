@@ -325,6 +325,17 @@ impl Workspace {
         root: &Path,
         adapters: ports::ExecutionAdapters,
     ) -> Result<Arc<Self>> {
+        let journal = root.join("harness-v5-upgrade.json");
+        if journal.exists() {
+            let status: Value = serde_json::from_slice(
+                &std::fs::read(journal).map_err(|e| err("upgrade_incomplete", e.to_string()))?,
+            )
+            .map_err(|e| err("upgrade_incomplete", e.to_string()))?;
+            require(
+                status["state"] == "complete",
+                "离线升级尚未完成，请恢复升级后启动",
+            )?;
+        }
         let global = Arc::new(GlobalStore::open(root)?);
         let configuration = engine(global.clone(), &adapters);
         configuration.bootstrap()?;

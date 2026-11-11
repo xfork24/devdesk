@@ -1,0 +1,75 @@
+{
+  "template_key": "governance.builtin-tool-workflow-outputs-read-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-outputs-read-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-outputs-read",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "分块读取原始产物",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.outputs.read",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          },
+          "ids": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            }
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65536
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "additionalProperties": false,
+        "description": "Read exact output/material IDs in this root. Large immutable values return value_chunk and next_offset."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

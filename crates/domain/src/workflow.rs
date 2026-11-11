@@ -3,7 +3,7 @@ use crate::*;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const WORKFLOW_SCHEMA_VERSION: u64 = 4;
+pub const WORKFLOW_SCHEMA_VERSION: u64 = 5;
 pub const WORKFLOW_STEP_LIMIT: usize = 1000;
 pub const WORKFLOW_DEPTH_LIMIT: usize = 8;
 
@@ -11,6 +11,8 @@ pub const WORKFLOW_DEPTH_LIMIT: usize = 8;
 #[serde(deny_unknown_fields)]
 pub struct WorkflowDefinition {
     pub schema_version: u64,
+    #[serde(default)]
+    pub action_requirements: BTreeMap<String, BTreeSet<String>>,
     #[serde(default)]
     pub stages: Vec<StageDefinition>,
     pub steps: Vec<StepDefinition>,
@@ -25,6 +27,8 @@ pub struct WorkflowDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StageDefinition {
+    #[serde(default)]
+    pub node_id: Id,
     pub key: String,
     pub name: String,
     #[serde(default)]
@@ -36,6 +40,8 @@ pub struct StageDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepDefinition {
+    #[serde(default)]
+    pub node_id: Id,
     pub key: String,
     pub name: String,
     pub stage: String,
@@ -126,6 +132,7 @@ pub struct PortSource {
 pub enum InputBinding {
     Source { source: PortSource },
     Constant { value: Value },
+    Material { material_ref: Id },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -531,7 +538,7 @@ impl WorkflowDefinition {
     pub fn validate(&self) -> Result<Vec<String>> {
         require(
             self.schema_version == WORKFLOW_SCHEMA_VERSION,
-            "Workflow 需要 Schema v4，请重建过时开发数据",
+            "Workflow 需要 Schema v5，请显式转换旧定义",
         )?;
         require(
             !self.steps.is_empty() && self.steps.len() <= WORKFLOW_STEP_LIMIT,
@@ -543,6 +550,16 @@ impl WorkflowDefinition {
             stages.len() == self.stages.len() && keys.len() == self.steps.len(),
             "流程标识重复",
         )?;
+        let mut nodes = BTreeSet::new();
+        for node in self
+            .stages
+            .iter()
+            .map(|s| &s.node_id)
+            .chain(self.steps.iter().map(|s| &s.node_id))
+            .filter(|id| !id.is_empty())
+        {
+            require(nodes.insert(node), "流程节点 ID 重复")?;
+        }
         for stage in &self.stages {
             valid_key(&stage.key)?;
             require(!stage.name.trim().is_empty(), "阶段名称不能为空")?;
@@ -621,7 +638,7 @@ impl WorkflowDefinition {
             }
             require(
                 (1..=100).contains(&step.budget.max_turns)
-                    && (1..=1800).contains(&step.budget.timeout_seconds)
+                    && (1..=86400).contains(&step.budget.timeout_seconds)
                     && step.budget.retry_limit <= 10,
                 "执行预算超出平台限制",
             )?;
@@ -712,6 +729,7 @@ pub enum StepExecutionStatus {
     Running,
     WaitingInput,
     WaitingConfirmation,
+    AwaitingAcceptance,
     Completed,
     Failed,
     Cancelled,
@@ -722,6 +740,12 @@ pub enum StepExecutionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepExecution {
+    #[serde(default)]
+    pub plan_revision_id: Id,
+    #[serde(default)]
+    pub node_id: Id,
+    #[serde(default)]
+    pub contract_digest: String,
     pub id: Id,
     pub workflow_instance_id: Id,
     pub workflow_revision_id: Id,
@@ -760,7 +784,7 @@ pub struct ConfiguredAgentTask {
 impl ConfiguredAgentTask {
     pub fn validate(&self) -> Result<()> {
         require(
-            self.renderer_version == "agent-task/v4"
+            self.renderer_version == "agent-task/v5"
                 && self.task["renderer_version"] == self.renderer_version
                 && configuration_hash(&self.task) == self.digest,
             "通用任务摘要或渲染合同不匹配",
@@ -781,7 +805,7 @@ mod tests {
     use serde_json::json;
 
     fn workflow() -> WorkflowDefinition {
-        serde_json::from_value(json!({"schema_version":4,"stages":[{"key":"investigate","name":"安全调查","default_role_ref":"custom-researcher"}],
+        serde_json::from_value(json!({"schema_version":5,"stages":[{"key":"investigate","name":"安全调查","default_role_ref":"custom-researcher"}],
             "steps":[{"key":"discover","name":"发现风险","stage":"investigate","executor":{"type":"agent"},
             "task_instructions":"使用当前调研 Skill 分析输入并提交风险。","outputs":{"risks":{"delivery_ref":"custom-risk-json"}}},
             {"key":"inspect","name":"核对风险","stage":"investigate","executor":{"type":"agent","role_ref":"custom-auditor"},
@@ -885,6 +909,9 @@ mod tests {
 
 impl EngineeringState {
     pub fn validate_configured_tasks(&self, before: &Self) -> Result<()> {
+        // An immutable source plan is shared by many executions. Parse and hash
+        // each contract once per transaction rather than once per execution.
+        let mut contracts: BTreeMap<Id, BTreeMap<Id, String>> = BTreeMap::new();
         for record in self
             .governance
             .iter()
@@ -915,17 +942,13 @@ impl EngineeringState {
             .filter(|r| r.kind == "workflow_instance")
         {
             require(
-                record.data["schema_version"] == 4,
-                "过时 Workflow 运行数据需要删除重建",
+                record.data["schema_version"] == 5,
+                "过时 Workflow 运行数据需要显式离线升级",
             )?;
             if let Some(old) = before.governance.iter().find(|r| r.id == record.id) {
                 for key in [
-                    "plan",
-                    "inputs",
-                    "workflow_ref",
                     "owner_id",
                     "project_id",
-                    "role_agent_bindings",
                     "parent_execution_id",
                     "root_instance_id",
                 ] {
@@ -935,10 +958,67 @@ impl EngineeringState {
                     )?;
                 }
             }
+            let plan = self.configuration(
+                record.data["active_plan_revision_id"]
+                    .as_str()
+                    .unwrap_or(""),
+            )?;
+            require(
+                plan.kind == "workflow_plan_revision"
+                    && plan.immutable
+                    && plan.data["plan"] == record.data["plan"]
+                    && plan.data["inputs"] == record.data["inputs"]
+                    && plan.data["role_agent_bindings"] == record.data["role_agent_bindings"],
+                "实例内容与不可变运行计划不匹配",
+            )?;
             let steps: Vec<StepExecution> = serde_json::from_value(record.data["steps"].clone())
                 .map_err(|e| err("invalid_workflow", e.to_string()))?;
             let mut ids = BTreeSet::new();
             for step in steps {
+                if let Some(previous) = before
+                    .governance
+                    .iter()
+                    .find(|r| r.id == record.id)
+                    .and_then(|r| r.data["steps"].as_array())
+                    .and_then(|a| a.iter().find(|e| e["id"] == step.id))
+                {
+                    if !previous["started"].is_null() {
+                        let current = serde_json::to_value(&step)
+                            .map_err(|e| err("invalid_workflow", e.to_string()))?;
+                        for key in [
+                            "inputs",
+                            "input_digest",
+                            "plan_revision_id",
+                            "node_id",
+                            "contract_digest",
+                            "path",
+                            "workflow_revision_id",
+                        ] {
+                            require(
+                                current[key] == previous[key],
+                                format!("已派发执行的 {key} 不可修改"),
+                            )?;
+                        }
+                    }
+                }
+                let source_plan = self.configuration(&step.plan_revision_id)?;
+                if !contracts.contains_key(&source_plan.id) {
+                    let source: WorkflowDefinition =
+                        serde_json::from_value(source_plan.data["plan"]["document"].clone())
+                            .map_err(|e| err("invalid_workflow", e.to_string()))?;
+                    contracts.insert(
+                        source_plan.id.clone(),
+                        source
+                            .steps
+                            .iter()
+                            .map(|s| (s.node_id.clone(), configuration_hash(s)))
+                            .collect(),
+                    );
+                }
+                require(
+                    contracts[&source_plan.id].get(&step.node_id) == Some(&step.contract_digest),
+                    "执行的冻结合同与计划不匹配",
+                )?;
                 require(
                     ids.insert(step.id.clone()) && step.workflow_instance_id == record.id,
                     "步骤身份重复或归属错误",
@@ -952,6 +1032,85 @@ impl EngineeringState {
                         "步骤产物版本不匹配",
                     )?;
                 }
+            }
+        }
+        for row in self
+            .governance
+            .iter()
+            .filter(|r| r.kind == "workflow_controller")
+        {
+            let controller: WorkflowController = row.decode()?;
+            controller.policy.validate()?;
+            require(
+                controller.policy_digest == configuration_hash(&controller.policy),
+                "编排策略摘要不一致",
+            )?;
+            if let Some(previous) = before.governance.iter().find(|r| r.id == row.id) {
+                for key in [
+                    "project_id",
+                    "owner_id",
+                    "agent_revision_id",
+                    "role_ref",
+                    "policy",
+                    "policy_digest",
+                ] {
+                    require(
+                        row.data[key] == previous.data[key],
+                        "编排授权身份不可原地扩大",
+                    )?;
+                }
+                if previous.data["root_instance_id"].is_string() {
+                    require(
+                        row.data["root_instance_id"] == previous.data["root_instance_id"],
+                        "编排根实例不可改绑",
+                    )?;
+                }
+                require(
+                    row.data["epoch"].as_u64() >= previous.data["epoch"].as_u64(),
+                    "编排代次不能回退",
+                )?;
+            }
+        }
+        for previous in &before.governance {
+            let fields: &[&str] = match previous.kind.as_str() {
+                "controller_tool_call" => &[
+                    "method",
+                    "arguments",
+                    "session_id",
+                    "turn_id",
+                    "worker_operation_id",
+                    "request_id",
+                    "call_id",
+                    "tool_ref",
+                    "epoch",
+                ],
+                "workflow_segment" => &["plan_revision_id", "steps", "actor", "max_operations"],
+                "workflow_change" => &["changeset", "preview", "actor"],
+                "workflow_pending_decision" => &["plan_revision_id", "request", "actor"],
+                "controller_input" => &["input"],
+                _ => continue,
+            };
+            let current = self.configuration(&previous.id)?;
+            require(
+                current.kind == previous.kind && current.definition_id == previous.definition_id,
+                "编排来源记录不能删除或改绑",
+            )?;
+            for field in fields {
+                require(
+                    current.data[field] == previous.data[field],
+                    "编排请求与授权来源不可改写",
+                )?;
+            }
+            if previous.kind == "controller_tool_call"
+                && ["succeeded", "failed"].contains(&previous.data["status"].as_str().unwrap_or(""))
+            {
+                require(current.data == previous.data, "编排调用终态不可改写")?;
+            }
+            if previous.kind == "workflow_segment" {
+                require(
+                    current.data["operations"].as_u64() >= previous.data["operations"].as_u64(),
+                    "委托预算不能回退",
+                )?;
             }
         }
         for record in self.governance.iter().filter(|r| r.kind == "platform_call") {

@@ -1,0 +1,69 @@
+{
+  "template_key": "governance.builtin-tool-workflow-materials-import-v1",
+  "storage": "governance",
+  "record": {
+    "id": "builtin-tool-workflow-materials-import-v1",
+    "kind": "tool",
+    "definition_id": "builtin-tool-workflow-materials-import",
+    "scope": {
+      "kind": "global"
+    },
+    "name": "封存用户提供的材料",
+    "version": 1,
+    "supersedes": null,
+    "content_hash": "",
+    "data": {
+      "qualified_name": "workflow.materials.import",
+      "implementation": "platform",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "plan_revision_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "control_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decision_ref": {
+            "type": "string"
+          },
+          "delivery_ref": {
+            "type": "string"
+          },
+          "value": {},
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_revision_id",
+          "delivery_ref",
+          "value",
+          "source"
+        ],
+        "additionalProperties": false,
+        "description": "Validate and seal a typed material with an explicit source. It is not an Agent/tool execution or a successful test receipt."
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "capabilities": []
+    },
+    "immutable": true,
+    "revision": 1,
+    "created_at": 0
+  },
+  "text_files": {},
+  "references": {},
+  "initial_only": false
+}

@@ -1,6 +1,6 @@
 # DevDesk 验收记录
 
-当前 Workflow v4 与通用步骤改造的验收、证据和平台限制见 [执行报告](plans/workflow-business-configuration/EXECUTION.md)，提交前复查见 [业务硬编码审查](plans/workflow-business-configuration/AUDIT.md)。当前运行合同与旧版本不同，下列内容保留此前版本的历史执行事实，不作为当前支持范围。
+当前 Harness 驱动 Workflow v5 的验收与限制见 [执行报告](plans/harness-workflow-orchestration/EXECUTION.md)。以下保留此前版本的历史执行事实，不作为当前支持范围。
 
 ## 历史：2026-11-10 权限改造与当时开发数据集清理
 

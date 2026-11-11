@@ -47,6 +47,8 @@ try:
         presets = list((package / 'permissions/presets').glob('*.json'))
         assert len(presets) == 3
         assert all(json.loads(p.read_text())["schema_version"] == 2 for p in presets)
+        assert (package / 'scripts/upgrade/harness-v5.py').read_bytes() == (source / 'scripts/upgrade/harness-v5.py').read_bytes()
+        assert (package / 'schemas/orchestration.schema.json').read_bytes() == (source / 'schemas/orchestration.schema.json').read_bytes()
         report['assets_verified'] = len(manifest['assets'])
         report['presets_verified'] = len(presets)
         dataset = root / 'isolated data'
@@ -100,7 +102,7 @@ try:
         project = command('project.create', {'title': 'Standalone Permission schema'})['id']
         defaults = rpc('query.configuration_defaults')
         workflow = rpc('query.workflow', {'id': defaults['workflow_ref']})
-        assert workflow['data']['schema_version'] == 4
+        assert workflow['data']['schema_version'] == 5
         feature_tests = next(step for step in workflow['data']['steps'] if 'release_recipe' in step.get('tags', []))
         assert feature_tests['access']['writable_paths'], 'Feature test author must have actual test-directory access'
         report['feature_test_author_has_explicit_write_scope'] = True
@@ -117,37 +119,57 @@ try:
         preview = rpc('query.workflow_task_preview', {'project_id': project, 'id': published['id'], 'step': step['key'], 'preview_agent_ref': defaults['role_agent_bindings'][step['executor']['role_ref']]})
         assert preview['task']['task_instructions'] == changed_task
         assert preview['task']['agent'] and preview['task']['specifications']
-        assert preview['task']['renderer_version'] == 'agent-task/v4'
-        report['workflow_v4_embedded_tasks_edit_publish_preview'] = True
+        assert preview['task']['renderer_version'] == 'agent-task/v5'
+        report['workflow_v5_embedded_tasks_edit_publish_preview'] = True
         capture = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'materials.capture')
         complete = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'tasks.complete')
         task_workflow = rpc('query.workflow', {'id': defaults['task_workflow_ref']})
+        task_steps = {step['key']: step for step in task_workflow['data']['steps']}
+        assert task_steps['red_baseline']['inputs']['workspace']['source']['step'] == 'tests_snapshot'
+        assert task_steps['red_snapshot']['executor']['arguments']['workspace']['source']['step'] == 'tests_snapshot'
+        assert task_steps['tests_snapshot']['dependencies'] == ['tests']
+        report['explicit_snapshot_between_writers'] = True
         assert task_workflow['data']['steps'][-1]['executor']['tool_ref'] == complete['id']
         implementation_review = next(step for step in task_workflow['data']['steps'] if 'verify' in step.get('inputs', {}))
         verify_step = next(step for step in task_workflow['data']['steps'] if step['key'] == implementation_review['inputs']['verify']['source']['step'])
         assert verify_step['executor']['type'] == 'tool' and verify_step['key'] in implementation_review['dependencies']
         # Exercise the actual standalone scheduler and platform handler without a model or fake Session.
         generic = command('workflow.create', {'name': 'Standalone configured capture', 'document': {
-            'schema_version': 4, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [
+            'schema_version': 5, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [
                 {'key': 'ready', 'name': '准备', 'stage': 'audit', 'executor': {'type': 'control'}},
                 {'key': 'capture', 'name': '记录实际输入', 'stage': 'audit', 'dependencies': ['ready'],
-                 'executor': {'type': 'tool', 'tool_ref': capture['id'], 'arguments': {'value': {'type': 'constant', 'value': {'version': 4}}}},
+                 'executor': {'type': 'tool', 'tool_ref': capture['id'], 'arguments': {'value': {'type': 'constant', 'value': {'version': 5}}}},
                  'outputs': {'result': {'delivery_ref': 'builtin-delivery-object-v1'}}}
             ]}})
         generic = command('workflow.publish', {}, generic['id'], generic['revision'])
         active = rpc('query.workspace')['active_project']
         run = command('workflow.start', {'workflow_ref': generic['id'], 'role_agent_bindings': {}}, project, active['revision'])
+        time.sleep(.2)
+        assert all(s['status'] == 'queued' for s in rpc('query.workflow_instance', {'id': run['id']})['runtime']['steps'])
         for _ in range(150):
             execution = rpc('query.workflow_instance', {'id': run['id']})
             if execution['runtime']['status'] == 'completed':
                 break
             assert execution['runtime']['status'] not in ['failed', 'needs_reconciliation'], execution
+            runtime = execution['runtime']
+            base = {'plan_revision_id': runtime['active_plan_revision_id'], 'control_version': runtime['control_version']}
+            if all(s['status'] in ('completed', 'skipped') for s in runtime['steps']):
+                command('workflow.complete', {**base, 'reason': '独立包实际交付核对完成'}, run['id'], execution['record']['revision'])
+                continue
+            for step in runtime['steps']:
+                if step['status'] == 'awaiting_acceptance':
+                    command('workflow.step.accept', {**base, 'step': step['step'], 'execution_id': step['id'], 'input_digest': step['input_digest'], 'outputs': step['outputs'], 'reason': '核对独立包真实工具结果'}, run['id'], execution['record']['revision'])
+                    break
+                definition = next(s for s in execution['plan']['steps'] if s['key'] == step['step'])
+                if step['status'] == 'queued' and all(any(s['step'] == key and s['status'] == 'completed' for s in runtime['steps']) for key in definition.get('dependencies', [])):
+                    command('workflow.step.dispatch', {**base, 'step': step['step']}, run['id'], execution['record']['revision'])
+                    break
             time.sleep(.1)
         else:
             raise TimeoutError('standalone configured workflow')
         captured = execution['runtime']['steps'][1]
         assert captured['session_id'] is None and captured['turn_id'] is None
-        assert execution['outputs'][captured['outputs']['result']]['value']['inputs']['value'] == {'version': 4}
+        assert execution['outputs'][captured['outputs']['result']]['value']['inputs']['value'] == {'version': 5}
         report['standalone_generic_workflow_execution'] = True
         report['explicit_task_completion_embedded'] = True
         report['delivery_verification_before_review_embedded'] = True
@@ -159,6 +181,8 @@ try:
         req = urllib.request.Request(url + '/shutdown', data=b'{}', headers={'Content-Type': 'application/json'})
         http.open(req, timeout=10).close()
         assert child.wait(timeout=10) == 0
+        subprocess.run(['python3', str(package / 'scripts/upgrade/harness-v5.py'), str(dataset), '--binary', str(binary)], cwd=root, check=True, capture_output=True)
+        report['standalone_upgrade_entrypoint'] = True
         report.update(passed=True, standalone_api=True, immutable_revisions=True,
                       binding_replay=True, project_schema=expected_schema, automatic_downloads=0)
 except Exception as error:

@@ -5,6 +5,16 @@ impl Engine {
         s: &EngineeringState,
         session: &Session,
     ) -> Result<Option<FrozenCode>> {
+        // Controllers operate through scoped tools, not the owner's code worktree.
+        // Inheriting a discussion view would also register them as workspace writers.
+        if session
+            .runtime_binding
+            .as_ref()
+            .is_some_and(|binding| binding.work_type == WorkType::Orchestration)
+            || crate::controllers::binding(s, &session.id).is_some()
+        {
+            return Ok(None);
+        }
         if let Some(view) = self.configured_session_code_view(s, session)? {
             return Ok(view);
         }
@@ -52,6 +62,15 @@ impl Engine {
         Ok(Some(FrozenCode { context, revision }))
     }
     pub fn stop_owned_runtime(&self) -> Result<()> {
+        let state = self.store.snapshot()?;
+        if !state
+            .turns
+            .iter()
+            .any(|t| t.status.active() && t.status != TurnStatus::Queued)
+            && !state.executions.iter().any(|e| !e.writer_revoked)
+        {
+            return Ok(());
+        }
         self.store.transact(None, &mut |s| {
             for t in s
                 .turns

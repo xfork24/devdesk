@@ -8,7 +8,7 @@
 |---|---|
 | Role | 任意业务身份及职责说明，不决定执行权限。 |
 | Capability / Agent | 精确 Model、Harness、Skills、Tools、Permission 选择，以及明确的执行能力上限。 |
-| Workflow v4 / Stage | 输入输出、步骤依赖、业务分组、背景、阶段默认 Role。 |
+| Workflow v5 / Stage | 输入输出、步骤依赖、业务分组、背景、阶段默认 Role。 |
 | Step | Agent 任务指令、必需 Skills、Spec、材料引用、输出合同、访问范围、预算及完成要求。 |
 | Delivery | 内容说明、格式及可选离线 JSON Schema；不是一组固定业务文档。 |
 | Spec v3 | 正文、Role/交付类型/标签选择器、任意内容检查项。 |
@@ -18,7 +18,7 @@
 
 ## 默认工程流程
 
-默认 Feature 流程配置需求、独立检查、设计、规划、创建 Task、逐项调用 Task 子流程、整体测试、文档和候选接纳。默认 Task 流程配置测试编写、最小可执行 Red 基线、工作空间快照、实际 Red、实现、实际 Green、文档、交付复验、独立评审与候选检查及自动接纳。三个原确认节点均为 `confirmation: automatic`，由引擎在原完成条件满足后推进，不依赖脚本调用 confirm 或 Approve。评审拒绝、证据缺失及测试失败仍阻塞，原报告保留。需要人工确认的自定义流程仍可显式选择 human。基线准备不改写独立断言、不实现新增业务，避免把入口缺失包装成业务 Red。TDD 顺序、测试目录、职责和确认策略均在 JSON 或所引用的 Skill/Spec 中，可以发布自己的流程替代。
+默认 Feature 流程配置需求、独立检查、设计、规划、创建 Task、逐项调用 Task 子流程、整体测试、文档和候选接纳。默认 Task 流程配置测试编写、最小可执行 Red 基线、工作空间快照、实际 Red、实现、实际 Green、文档、交付复验、独立评审与候选检查及自动接纳。三个原确认节点均为 `confirmation: automatic`，由 Harness 项目经理在原完成条件满足后显式接纳和推进，不依赖脚本调用 confirm 或 Approve。评审拒绝、证据缺失及测试失败仍阻塞，原报告保留。需要人工确认的自定义流程仍可显式选择 human。基线准备不改写独立断言、不实现新增业务，避免把入口缺失包装成业务 Red。TDD 顺序、测试目录、职责和确认策略均在 JSON 或所引用的 Skill/Spec 中，可以发布自己的流程替代。
 
 implementation.evidence 是必需的“原始执行证据”输出，直接保存逐次日志、实际运行时版本、退出/信号/错误/超时/取消状态，以及对应测试、源码内容快照；临时路径或摘要不能替代交付。结构不完整的记录在生产节点就被拒绝。documentation、review、candidate_review 和 handoff 分别显式引用此端口，独立核对执行事实、快照及候选关联。输入只带入声明的 delivery，不共享任意历史目录；输入来源 ID 和内容摘要由任务渲染器记录，产物由 Artifact 存储密封。规划节点收到的证据字段合同与 Delivery Schema 保持一致，不能要求作者交付 Schema 无法表达的必填字段。
 

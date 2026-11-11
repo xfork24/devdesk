@@ -26,6 +26,15 @@
 
 同一数据集只能有一个可写程序。退出可在 Web 设置页操作，或在终端按 Ctrl+C。重新执行相同命令可读取已有数据；未确认完成的执行会标记中断，可显式重试。更换数据目录需退出后重新启动，不会隐式迁移文件。
 
+当前运行合同为 Workflow v5（global 14 / project 45）。旧 v4 数据集需先停止原 Host 并核对活动执行，再使用包内离线入口；第一次运行只预演：
+
+```bash
+python3 scripts/upgrade/harness-v5.py "/完整路径/DevDesk 数据" --binary ./devdesk-host
+python3 scripts/upgrade/harness-v5.py "/完整路径/DevDesk 数据" --binary ./devdesk-host --apply --backup-directory "/数据集外的空备份目录"
+```
+
+转换保留原记录、产物、凭据和采用的业务图；模板目录曾重置时也保留其代次及逻辑身份。新版默认七阶段模板可单独采用，转换不会隐式替换旧实例的业务步骤。转换中断后重跑同一 `--apply` 命令续接 journal；未完成时 Host 会阻止启动。当前 Codex 支持项目经理原生编排，DSH 在补齐工具桥前不能承担编排会话。
+
 包名中的目标架构应与机器匹配。macOS Apple Silicon 为 `aarch64-apple-darwin`；本轮 macOS 验证版本为 26.7.2。当前提供本地命令行程序；没有制作签名、公证的 `.app` 安装器。
 
 Web 统一使用 GitHub 项目：点击“打开 GitHub 项目”填写仓库与分支，自动检查并克隆；账号 OAuth/API key 在设置中配置。DevDesk 根据讨论或任务实际选中的 Harness 自动下载、校验并准备共享运行时，配方已嵌入程序，无需手动构建镜像或登记安装。宿主需安装并启动 Docker Engine/Desktop、Git、GitHub CLI，并完成 GitHub 登录。已有模拟历史保留在后端，不进入 Web 项目列表。流程与配置见 `docs/real-engineering.md`。

@@ -15,6 +15,7 @@ jsonschema = { version = "0.61", default-features = false }
 serde_yaml = "0.9"
 zip = { version = "7", default-features = false, features = ["deflate"] }
 base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 [dev-dependencies]
 tempfile = "3"
 jsonschema = { version = "0.61", default-features = false }

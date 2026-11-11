@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前数据结构基线为 global 13 / project 44。Workflow 使用 v4，Spec / Standard 使用 v3，Agent 任务使用 `agent-task/v4`，普通 Proposal 使用 v2。只支持当前合同；过时开发数据需要删除重建，不执行迁移。完整字段见 [Schema](../schemas/README.md)，改造约束见 [通用执行合同](plans/workflow-business-configuration/CONTRACT.md)。
+当前数据结构基线为 global 14 / project 45。Workflow 使用 v5，Spec / Standard 使用 v3，Agent 任务使用 `agent-task/v5`，普通 Proposal 使用 v2。只支持当前合同；旧 v4 数据通过显式离线转换保留；启动不执行隐式迁移。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
 
 ## 配置概念
 
@@ -30,6 +30,14 @@ Step 的执行方式仅为 Agent、工具、子流程、控制。Agent Step 必�
 | Feature | 项目内的工作范围，固定所采用的配置与来源材料；业务阶段从 Workflow 投影。 |
 | Task | Feature 下的实际任务、完整业务元数据和依赖 DAG。由明确的创建命令或平台工具产生。 |
 | RepositoryWorktree | 已登记的实际仓库工作副本、owner、分支、路径、基线与操作来源。 |
+| WorkflowController | 一个根实例的编排 Role、确切 Agent、控制策略、持续 Session、epoch 和预算。 |
+| WorkflowPlanRevision | 不可变编译闭包及输入、角色绑定、父修订和变更原因；实例只切换活动引用。 |
+| WorkflowChangeSet | 类型化操作、基准计划、影响、预演哈希和 quiesce/apply 状态。 |
+| WorkflowDecision / Waiver | 真实 actor 对确切执行、产物和要求的处置；与原报告分开。 |
+| WorkflowCarryForward | 新计划复用旧合同、输入和产物的明确映射。 |
+| TypedMaterial | 有来源、交付类型和摘要的用户材料，按根范围封存。 |
+| WorkflowActionPermit | 当前计划和确切候选/目标上的业务条件满足或豁免凭据。 |
+| OrchestrationWakeup / Lease | 持久投递及消费游标、根单写者和 fencing epoch。 |
 | WorkflowInstance | 冻结计划、Role 绑定、输入、调用来源、根实例、步骤执行及暂停/取消状态。 |
 | StepExecution | 一次步骤执行的路径、轮次、序号、输入摘要、实际 Agent / Session / Turn / ToolCall、产物及状态。 |
 | Session / Turn | 原生会话与轮次，记录准入、输入消费、真实终态和 worker 停止证明。 |
@@ -58,7 +66,7 @@ Permission 使用完整 v2 profile、确切目标绑定和 `follow_target` / `pi
 
 代码输入绑定受管理工作副本、owner、修订、路径和分支。Feature 会话只有在当前冻结任务明确授权时，才可使用其 Task 工作副本。同项目不代表可以任意跨归属读取。目录授权支持安全相对路径，不内置 `tests/` 前缀。
 
-测试事实来自固定代码和实际 Docker 执行。候选事实来自实际 Git，包括父提交与确切 diff；接纳核对对应候选测试、确切确认、本地 CAS、远端 lease 和 PR merged。普通 JSON 或模型自述不能伪造这些事实。
+测试事实来自固定代码和实际 Docker 执行。候选事实来自实际 Git，包括父提交与确切 diff；业务接纳依据当前计划的测试/确认要求或确切 waiver 生成 ActionPermit；Git 始终核对本地 CAS、远端 lease 和 PR merged。普通 JSON 或模型自述不能伪造这些事实。
 
 ## 存储与经验
 
@@ -67,3 +75,13 @@ Permission 使用完整 v2 profile、确切目标绑定和 `follow_target` / `pi
 全局讨论单独保存于 `conversations/global/engineering.sqlite3`，不创建占位 Project。经验是带来源的只读历史材料，跨项目读取不切换活动工程、不启动源 worker，也不覆盖当前代码、配置或产物。
 
 Project、Feature、Task 不保存空的执行绑定；执行来源由 Workflow 冻结计划、StepExecution 和 Session 的 RuntimeBinding 表达。材料 Snapshot 保留真实 runtime_bindings、执行与会话来源，不再保存旧 BindingLock。Definition 不保留旧 slots/rules，业务判断由当前 Spec 和 Workflow 明确声明。
+
+## Harness 编排
+
+独立 WorkflowController 通过项目配置的 orchestrator_role_ref、Role→Agent 绑定及 WorkflowControlPolicy 建立真实编排 Session。编排会话不属于业务 Step；ControllerSessionBinding、原生 Turn/worker 和 fencing epoch 共同决定控制权限。DSH 尚未提供原生编排工具桥，配置时明确拒绝。
+
+core 观察实际事实。queued 节点只在 workflow.step.dispatch 后执行，产物变为 awaiting_acceptance 后由 workflow.step.accept 接纳；子实例及根实例分别通过 workflow.complete 完成。人类确认和业务接纳分开，模型不能伪造人的决定。用户可人工接管、停止并核对旧执行，然后恢复带 Snapshot 的后继会话。
+
+WorkflowPlanRevision 保存不可变闭包；StepExecution 保存当时计划、稳定 node_id、输入和合同摘要。ChangeSet 先 preview，再等待受影响执行者停止并原子 apply。依赖、端口和规则引用共同构成影响图；未受影响的结果以 carry-forward 复用。已完成根实例保持终态。
+
+TypedMaterial 是有来源的封存材料；bypass、waiver、原评审和实际运行事实分别记录。绕过仍供应下游的阶段必须显式替换材料；最终端口缺失时拒绝变更。Git 的业务测试或确认要求可以在授权内豁免，真实候选、作用域和 CAS 不可伪造。

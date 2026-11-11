@@ -3358,6 +3358,23 @@
             "value"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "material"
+            },
+            "material_ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "material_ref"
+          ],
+          "additionalProperties": false
         }
       ]
     },
@@ -3757,7 +3774,7 @@
         "timeout_seconds": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 1800
+          "maximum": 86400
         },
         "retry_limit": {
           "type": "integer",
@@ -3861,6 +3878,9 @@
         },
         "allow_completion_override": {
           "type": "boolean"
+        },
+        "node_id": {
+          "type": "string"
         }
       },
       "required": [
@@ -3895,6 +3915,9 @@
               "type": "null"
             }
           ]
+        },
+        "node_id": {
+          "type": "string"
         }
       },
       "required": [
@@ -3907,7 +3930,7 @@
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": 4
+          "const": 5
         },
         "stages": {
           "type": "array",
@@ -3937,6 +3960,16 @@
         },
         "completion": {
           "$ref": "#/$defs/CompletionRule"
+        },
+        "action_requirements": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "required": [
@@ -4101,14 +4134,15 @@
     "WorkType": {
       "enum": [
         "workflow",
-        "discussion"
+        "discussion",
+        "orchestration"
       ]
     },
     "ConfiguredAgentTask": {
       "type": "object",
       "properties": {
         "renderer_version": {
-          "const": "agent-task/v4"
+          "const": "agent-task/v5"
         },
         "turn_id": {
           "type": "string"
@@ -4248,6 +4282,22 @@
               "type": "null"
             }
           ]
+        },
+        "orchestrator_role_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "control_policy": {
+          "anyOf": [
+            {
+              "$ref": "orchestration.schema.json#/$defs/WorkflowControlPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -4291,7 +4341,8 @@
         "failed",
         "cancelled",
         "skipped",
-        "needs_reconciliation"
+        "needs_reconciliation",
+        "awaiting_acceptance"
       ]
     },
     "StepExecution": {
@@ -4387,6 +4438,15 @@
         "budget_waited_ms": {
           "type": "integer",
           "minimum": 0
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "contract_digest": {
+          "type": "string"
         }
       },
       "required": [
@@ -4469,7 +4529,7 @@
       "type": "object",
       "properties": {
         "schema_version": {
-          "const": 4
+          "const": 5
         },
         "owner_id": {
           "type": "string"
@@ -4517,6 +4577,13 @@
         },
         "cancel_requested": {
           "type": "boolean"
+        },
+        "active_plan_revision_id": {
+          "type": "string"
+        },
+        "control_version": {
+          "type": "integer",
+          "minimum": 1
         }
       },
       "required": [

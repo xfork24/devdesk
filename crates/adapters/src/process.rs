@@ -10,6 +10,7 @@ use std::{
 pub(crate) struct Output {
     pub code: i32,
     pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
     pub truncated: bool,
 }
 
@@ -33,6 +34,11 @@ pub(crate) fn capture(program: &str, args: &[String], timeout: Duration) -> Resu
     command.args(args);
     capture_command(command, timeout, None)
 }
+pub(crate) fn capture_split(program: &str, args: &[String], timeout: Duration) -> Result<Output> {
+    let mut command = Command::new(program);
+    command.args(args);
+    capture_command_streams(command, timeout, None, 1024 * 1024, true)
+}
 pub(crate) fn capture_command(
     command: Command,
     timeout: Duration,
@@ -41,10 +47,19 @@ pub(crate) fn capture_command(
     capture_command_limited(command, timeout, input, 1024 * 1024)
 }
 pub(crate) fn capture_command_limited(
+    command: Command,
+    timeout: Duration,
+    input: Option<Vec<u8>>,
+    limit: usize,
+) -> Result<Output> {
+    capture_command_streams(command, timeout, input, limit, false)
+}
+fn capture_command_streams(
     mut command: Command,
     timeout: Duration,
     input: Option<Vec<u8>>,
     limit: usize,
+    stderr: bool,
 ) -> Result<Output> {
     #[cfg(unix)]
     {
@@ -58,7 +73,11 @@ pub(crate) fn capture_command_limited(
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(if stderr {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         // Docker and GitHub CLI use their own credential stores. Ambient model keys are not forwarded.
         .env_remove("OPENAI_API_KEY")
         .env_remove("DEEPSEEK_API_KEY")
@@ -83,6 +102,10 @@ pub(crate) fn capture_command_limited(
     };
     let output = child.stdout.take().unwrap();
     let reader = thread::spawn(move || drain(output, limit));
+    let stderr_reader = child
+        .stderr
+        .take()
+        .map(|stream| thread::spawn(move || drain(stream, limit)));
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
@@ -102,6 +125,13 @@ pub(crate) fn capture_command_limited(
     let (stdout, truncated) = reader
         .join()
         .map_err(|_| err("provider_io", "进程输出读取失败"))?;
+    let (stderr, stderr_truncated) = stderr_reader
+        .map(|r| {
+            r.join()
+                .map_err(|_| err("provider_io", "进程错误输出读取失败"))
+        })
+        .transpose()?
+        .unwrap_or_default();
     let status = status.ok_or_else(|| {
         err(
             "needs_reconciliation",
@@ -111,7 +141,8 @@ pub(crate) fn capture_command_limited(
     Ok(Output {
         code: status.code().unwrap_or(-1),
         stdout,
-        truncated,
+        stderr,
+        truncated: truncated || stderr_truncated,
     })
 }
 
@@ -126,6 +157,23 @@ pub(crate) fn kill_group(child: &mut std::process::Child) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(unix)]
+    fn ordinary_commands_discard_stderr_and_evidence_capture_is_explicit_and_bounded() {
+        let args = vec!["-c".into(), "printf stdout; printf stderr >&2".into()];
+        let ordinary = capture("/bin/sh", &args, Duration::from_secs(2)).unwrap();
+        assert_eq!(ordinary.stdout, b"stdout");
+        assert!(ordinary.stderr.is_empty());
+        let evidence = capture_split("/bin/sh", &args, Duration::from_secs(2)).unwrap();
+        assert_eq!(evidence.stderr, b"stderr");
+        let mut command = Command::new("/bin/sh");
+        command.args(&args);
+        let bounded =
+            capture_command_streams(command, Duration::from_secs(2), None, 3, true).unwrap();
+        assert_eq!(bounded.stdout, b"std");
+        assert_eq!(bounded.stderr, b"std");
+        assert!(bounded.truncated);
+    }
     #[test]
     #[cfg(unix)]
     fn timeout_reaps_owned_descendants_instead_of_blocking_on_stdout() {
