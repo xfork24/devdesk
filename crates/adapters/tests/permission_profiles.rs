@@ -94,7 +94,7 @@ fn bind_pair(e: &Engine, harness: &str, profile: &str) {
                 e,
                 PermissionTargetKind::Sandbox,
                 DEFAULT_PERMISSION_SANDBOX,
-                "sandbox-full-access-v2:1",
+                "builtin-permission-sandbox-full-access:1",
                 0,
             ),
         ],
@@ -145,7 +145,7 @@ fn strict_profiles_share_canonical_hashes_and_reject_v1() {
         )
         .is_err()
     );
-    let p = profile(&e, "harness-read-only-v2:1");
+    let p = profile(&e, "builtin-permission-harness-read-only:1");
     let r = store
         .snapshot()
         .unwrap()
@@ -177,7 +177,7 @@ fn strict_profiles_share_canonical_hashes_and_reject_v1() {
 fn import_is_atomic_and_revision_export_round_trips_in_a_fresh_store() {
     let dir = tempfile::tempdir().unwrap();
     let (_, e) = global(dir.path());
-    let payload = json!({"identity":"custom-review","name":"Custom review","target_kind":"harness","policy":profile(&e,"harness-read-only-v2:1").policy});
+    let payload = json!({"identity":"custom-review","name":"Custom review","target_kind":"harness","policy":profile(&e,"builtin-permission-harness-read-only:1").policy});
     let first = execute(
         &e,
         command("permission.profile.create", payload, None, None),
@@ -260,7 +260,7 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
         .path()
         .join("resources/configuration/permissions/profiles");
     std::fs::create_dir_all(&root).unwrap();
-    let mut p = profile(&e, "harness-read-only-v2:1");
+    let mut p = profile(&e, "builtin-permission-harness-read-only:1");
     p.id = "runtime-added:1".into();
     p.identity = "runtime-added".into();
     std::fs::write(root.join("new.json"), serde_json::to_vec(&p).unwrap()).unwrap();
@@ -321,7 +321,7 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
     let second = dir.path().join("个人预设");
     for (path, name) in [(&first, "team"), (&second, "personal")] {
         std::fs::create_dir(path).unwrap();
-        let mut p = profile(&e, "harness-read-only-v2:1");
+        let mut p = profile(&e, "builtin-permission-harness-read-only:1");
         p.id = format!("{name}:1");
         p.identity = name.into();
         std::fs::write(path.join("profile.json"), serde_json::to_vec(&p).unwrap()).unwrap();
@@ -427,7 +427,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
         .unwrap()
         .id
         .clone();
-    bind_pair(&e, &h, "harness-full-access-v2:1");
+    bind_pair(&e, &h, "builtin-permission-harness-full-access:1");
     let first = lock(&e, &h);
     let old = compile_permission_profiles(
         &e.store.snapshot().unwrap(),
@@ -441,7 +441,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
     .unwrap();
     let c = command(
         "permission.bindings.apply",
-        json!({"bindings":[change(&e,PermissionTargetKind::Harness,&h,"harness-read-only-v2:1",1)]}),
+        json!({"bindings":[change(&e,PermissionTargetKind::Harness,&h,"builtin-permission-harness-read-only:1",1)]}),
         None,
         None,
     );
@@ -454,7 +454,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
                 &e,
                 PermissionTargetKind::Harness,
                 &h,
-                "harness-full-access-v2:1",
+                "builtin-permission-harness-full-access:1",
                 1
             )]
         )
@@ -485,14 +485,14 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
                 &e,
                 PermissionTargetKind::Harness,
                 &h,
-                "harness-full-access-v2:1",
+                "builtin-permission-harness-full-access:1",
                 2,
             ),
             change(
                 &e,
                 PermissionTargetKind::Sandbox,
                 DEFAULT_PERMISSION_SANDBOX,
-                "sandbox-full-access-v2:1",
+                "builtin-permission-sandbox-full-access:1",
                 999,
             ),
         ],
@@ -504,7 +504,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
         &json!(next.harness.binding),
     );
     schemas::SCHEMAS.assert_valid("rpc.schema.json#/$defs/ExecutionPermissions", &json!(old));
-    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","data":{"provider":"codex","runtime_version":devdesk_domain::DEFAULT_CODEX_VERSION,"capabilities":[],"model_providers":["openai"]}}),None,None)).unwrap();
+    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"capabilities":[],"model_providers":["builtin-model-provider-openai:1"]}}),None,None)).unwrap();
     assert!(
         resolve_bound_permission(
             &e.store.snapshot().unwrap(),
@@ -533,7 +533,7 @@ fn compiler_rejects_unenforceable_rules_and_checks_the_real_scope() {
         .find(|r| r.kind == "harness" && r.data["provider"] == "codex")
         .unwrap();
     let target = permission_target(&s, PermissionTargetKind::Harness, &h.id).unwrap();
-    let mut p = profile(&e, "harness-read-only-v2:1");
+    let mut p = profile(&e, "builtin-permission-harness-read-only:1");
     p.policy.tools = Some(ToolPermission::Restricted {
         allow: vec!["bash".into()],
         deny: vec![],
@@ -556,7 +556,7 @@ fn compiler_rejects_unenforceable_rules_and_checks_the_real_scope() {
         preflight_profile(&s, &target, &p).unwrap_err().code,
         "permission_unsupported"
     );
-    bind_pair(&e, &h.id, "harness-read-only-v2:1");
+    bind_pair(&e, &h.id, "builtin-permission-harness-read-only:1");
     assert!(
         compile_permission_profiles(
             &e.store.snapshot().unwrap(),
@@ -801,7 +801,7 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
         .as_str()
         .unwrap()
         .to_owned();
-    bind_pair(&e, DEFAULT_HARNESS_ID, "harness-full-access-v2:1");
+    bind_pair(&e, DEFAULT_HARNESS_ID, "builtin-permission-harness-full-access:1");
     let defaults = e.configuration_defaults(Some(&project)).unwrap();
     let mut agents = defaults["role_agent_bindings"].clone();
     let role_key = e
@@ -868,7 +868,7 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
             &e,
             PermissionTargetKind::Harness,
             DEFAULT_HARNESS_ID,
-            "harness-read-only-v2:1",
+            "builtin-permission-harness-read-only:1",
             1,
         )],
     )
@@ -984,7 +984,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
     for provider in ["codex", "dsh"] {
         let root = tempfile::tempdir().unwrap();
         let (_, e) = global(root.path());
-        let harness=execute(&e,command("harness.create",json!({"name":provider,"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_domain::DEFAULT_CODEX_VERSION}else{devdesk_domain::DEFAULT_DSH_VERSION},"model_providers":[],"capabilities":[]}}),None,None)).unwrap();
+        let harness=execute(&e,command("harness.create",json!({"name":provider,"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::CODEX_VERSION}else{devdesk_adapters::runtime_preparation::DSH_VERSION},"model_providers":[],"capabilities":[]}}),None,None)).unwrap();
         let h = harness["id"].as_str().unwrap();
         let p=execute(&e,command("permission.profile.create",json!({"identity":format!("native-{provider}"),"name":"Native v2 restrictions","target_kind":"harness","policy":{
             "filesystem":{"mode":"scoped","rules":[{"path":"/","access":"read"},{"path":"/work","access":"read_write"},{"path":"/work/tests","access":"read"}]},
@@ -1387,7 +1387,7 @@ fn profile_revisions_preserve_the_source_owner_scope() {
         .store
         .snapshot()
         .unwrap()
-        .configuration("harness-read-only-v2:1")
+        .configuration("builtin-permission-harness-read-only:1")
         .unwrap()
         .source();
     source.identity = "project-owned-policy".into();

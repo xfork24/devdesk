@@ -76,10 +76,10 @@ def main():
                                 'expected_revision': expected}]
                     if expected == 0:
                         changes.append({'target': sandbox, 'permission_revision_id':
-                                        'sandbox-full-access-v2:1', 'expected_revision': 0})
+                                        'builtin-permission-sandbox-full-access:1', 'expected_revision': 0})
                     return c.command('permission.bindings.apply', payload={'bindings': changes})
 
-                bind('harness-full-access-v2:1', 1)
+                bind('builtin-permission-harness-full-access:1', 1)
                 model = c.command('model.create', payload={'name': 'Controlled permission probe model', 'data': {
                     'provider': 'openai', 'model': args.model,
                     'parameters': {'reasoning_effort': 'low'}, 'capabilities': []}})['id']

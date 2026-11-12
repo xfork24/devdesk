@@ -530,7 +530,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let state = e.store.snapshot().unwrap();
-    // Recommended context windows come from dsh-model-catalog.json.
+    // Recommended context windows come from the harness model catalog sources.
     for (id, provider, wire, ctx, out) in [
         (
             "builtin-model-minimax-m3-1-flash:1",

@@ -86,9 +86,7 @@ fn load_bundle() -> Result<Bundle> {
     }
     let defaults: Value = serde_json::from_str(resource(&manifest.defaults)?)
         .map_err(|e| err("invalid_template", e.to_string()))?;
-    let hash = configuration_hash(
-        &json!({"sources":hashed,"defaults":defaults,"codex_recipe":default_codex_recipe_digest(),"dsh_recipe":default_dsh_recipe_digest()}),
-    );
+    let hash = configuration_hash(&json!({"sources": hashed, "defaults": defaults}));
     Ok(Bundle {
         manifest,
         entries,
@@ -125,7 +123,15 @@ fn materialize(
     s.validate_governance(&EngineeringState::default())?;
     for r in &s.governance {
         match r.kind.as_str() {
-            "model" => validate_model_definition(&r.decode()?)?,
+            "model" => {
+                let model: ModelDefinition = r.decode()?;
+                validate_model_definition(&model, &s.provider_facts_any(&model.provider)?)?;
+            }
+            "model_provider" => {
+                configuration::validate_model_provider(&s, &r.data, Some(&r.definition_id))?
+            }
+            "model_catalog" => configuration::validate_model_catalog(&s, &r.data, &r.scope)?,
+            "harness" => configuration::validate_harness(&s, &r.data, &r.scope)?,
             "capability" => configuration::validate_capability(&s, &r.data, &r.scope)?,
             "agent" => governance::validate_composition(&s, &s.resolve_agent(&r.id)?, &r.scope)?,
             "workflow" => {

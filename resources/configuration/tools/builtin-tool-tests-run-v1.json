@@ -34,7 +34,7 @@
     "capabilities": [],
     "runtime": {
       "harness_ref": "builtin-harness-codex-managed:1",
-      "sandbox_ref": "builtin-docker-sandbox:1"
+      "sandbox_ref": "builtin-sandbox-docker:1"
     }
   }
 }

@@ -4,7 +4,7 @@ use super::*;
 #[derive(Debug, Clone, Serialize)]
 pub struct CredentialStatus {
     pub provider: HarnessProvider,
-    pub model_provider: DshModelProvider,
+    pub model_provider: String,
     pub auth_kind: &'static str,
     pub configured: bool,
     pub reference: String,
@@ -136,7 +136,7 @@ impl CredentialVault {
     ) -> CredentialStatus {
         CredentialStatus {
             provider,
-            model_provider: DshModelProvider::Deepseek,
+            model_provider: "deepseek".into(),
             auth_kind: "api_key",
             configured,
             reference: format!("{}:{account}", self.service),
@@ -168,28 +168,18 @@ impl CredentialVault {
             },
         }
     }
-    pub fn configure(&self, provider: HarnessProvider, secret: &str) -> Result<CredentialStatus> {
+    pub fn configure(&self, provider: HarnessProvider, deepseek: &ProviderFacts, secret: &str) -> Result<CredentialStatus> {
         Self::provider(provider)?;
-        self.configure_model(DshModelProvider::Deepseek, secret)
+        self.configure_model(deepseek, secret)
     }
-    pub fn configure_model(
-        &self,
-        model_provider: DshModelProvider,
-        secret: &str,
-    ) -> Result<CredentialStatus> {
-        require(
-            model_provider.requires_key(),
-            "Ollama 本地服务无需保存 API key",
-        )?;
+    /// Account namespaces come from the provider's published facts, never a code roster.
+    pub fn configure_model(&self, facts: &ProviderFacts, secret: &str) -> Result<CredentialStatus> {
+        require(facts.requires_key, "本地服务无需保存 API key")?;
         require(
             (8..=4096).contains(&secret.len()) && secret.bytes().all(|b| b.is_ascii_graphic()),
             "API key 格式无效",
         )?;
-        let account = if model_provider == DshModelProvider::Deepseek {
-            format!("deepseek-api-key-{}", id())
-        } else {
-            format!("dsh-{}-api-key-{}", model_provider.as_str(), id())
-        };
+        let account = format!("{}{}", facts.credential_account, id());
         #[cfg(target_os = "macos")]
         crate::credentials_macos::call("store", &self.service, &account, Some(secret))?;
         #[cfg(target_os = "linux")]
@@ -225,39 +215,37 @@ impl CredentialVault {
             "当前系统没有受支持的凭据库",
         ));
         #[allow(unreachable_code)]
-        Ok(self.model_status_value(model_provider, &account, true))
+        Ok(self.model_status_value(facts, &account, true))
     }
-    pub fn status(&self, provider: HarnessProvider) -> Result<CredentialStatus> {
-        self.status_reference(provider, None)
+    pub fn status(&self, provider: HarnessProvider, deepseek: &ProviderFacts) -> Result<CredentialStatus> {
+        self.status_reference(provider, deepseek, None)
     }
     fn reference_account(&self, reference: &str) -> Result<String> {
         let prefix = format!("{}:", self.service);
         let account = reference
             .strip_prefix(&prefix)
             .ok_or_else(|| err("credential_store", "凭据引用不属于当前数据集"))?;
-        require(
-            Self::account_provider(account).is_some(),
-            "凭据引用格式无效",
-        )?;
+        require(Self::account_shape(account).is_some(), "凭据引用格式无效")?;
         Ok(account.into())
     }
     pub fn status_reference(
         &self,
         provider: HarnessProvider,
+        deepseek: &ProviderFacts,
         reference: Option<&str>,
     ) -> Result<CredentialStatus> {
         Self::provider(provider)?;
-        self.status_model_reference(DshModelProvider::Deepseek, reference)
+        self.status_model_reference(deepseek, reference)
     }
     pub fn status_model_reference(
         &self,
-        model_provider: DshModelProvider,
+        facts: &ProviderFacts,
         reference: Option<&str>,
     ) -> Result<CredentialStatus> {
-        if model_provider == DshModelProvider::Ollama {
+        if !facts.requires_key {
             return Ok(CredentialStatus {
                 provider: HarnessProvider::Dsh,
-                model_provider,
+                model_provider: facts.id.clone(),
                 auth_kind: "none",
                 configured: true,
                 reference: String::new(),
@@ -266,9 +254,9 @@ impl CredentialVault {
             });
         }
         let Some(reference) = reference else {
-            return Ok(self.model_status_value(model_provider, "", false));
+            return Ok(self.model_status_value(facts, "", false));
         };
-        let account = self.model_account(model_provider, reference)?;
+        let account = self.model_account(facts, reference)?;
 
         #[cfg(target_os = "macos")]
         let configured = if crate::credentials_macos::helper_path().is_ok() {
@@ -284,61 +272,68 @@ impl CredentialVault {
         let configured = true;
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let configured = false;
-        Ok(self.model_status_value(model_provider, &account, configured))
+        Ok(self.model_status_value(facts, &account, configured))
     }
     fn model_status_value(
         &self,
-        p: DshModelProvider,
+        p: &ProviderFacts,
         account: &str,
         configured: bool,
     ) -> CredentialStatus {
         let mut status = self.status_value(HarnessProvider::Dsh, account, configured);
-        status.model_provider = p;
+        status.model_provider = p.id.clone();
         if account.is_empty() {
             status.reference.clear();
         }
         status
     }
-    fn account_provider(account: &str) -> Option<DshModelProvider> {
-        for p in DshModelProvider::ALL
-            .into_iter()
-            .filter(|p| p.requires_key())
-        {
-            let prefix = if p == DshModelProvider::Deepseek {
-                "deepseek-api-key-".to_owned()
-            } else {
-                format!("dsh-{}-api-key-", p.as_str())
-            };
-            if account
-                .strip_prefix(&prefix)
-                .is_some_and(|id| id.len() == 36 && uuid::Uuid::parse_str(id).is_ok())
-            {
-                return Some(p);
-            }
+    /// Shape check: the account must be `<credential prefix><uuid>`.
+    fn account_shape(account: &str) -> Option<(&str, &str)> {
+        if account.len() < 37 {
+            return None;
         }
-        None
+        let split = account.len() - 36;
+        let (prefix, uuid) = account.split_at(split);
+        uuid::Uuid::parse_str(uuid).is_ok().then_some((prefix, uuid))
     }
-    fn model_account(&self, p: DshModelProvider, reference: &str) -> Result<String> {
+    fn account_for_prefix(&self, prefix: &str, reference: &str) -> Result<String> {
         let account = self.reference_account(reference)?;
         require(
-            Self::account_provider(&account) == Some(p),
+            Self::account_shape(&account).is_some_and(|(found, _)| found == prefix),
             "凭据引用不属于所选模型服务商",
         )?;
         Ok(account)
     }
-    pub fn validate_model_reference(&self, p: DshModelProvider, reference: &str) -> Result<()> {
-        self.model_account(p, reference).map(|_| ())
+    fn model_account(&self, facts: &ProviderFacts, reference: &str) -> Result<String> {
+        self.account_for_prefix(&facts.credential_account, reference)
+    }
+    pub fn validate_model_reference(&self, facts: &ProviderFacts, reference: &str) -> Result<()> {
+        self.model_account(facts, reference).map(|_| ())
     }
     pub(crate) fn read_model_reference(
         &self,
-        p: DshModelProvider,
+        facts: &ProviderFacts,
         reference: &str,
     ) -> Result<Vec<u8>> {
-        self.model_account(p, reference)?;
+        self.model_account(facts, reference)?;
         self.read_reference(reference)
     }
-    pub fn verify_model_reference(&self, p: DshModelProvider, reference: &str) -> Result<()> {
-        let mut key = self.read_model_reference(p, reference)?;
+    /// Reads the key for a frozen model connection; the snapshot carries the
+    /// provider's credential convention so no provider roster is needed here.
+    pub fn read_connection_reference(
+        &self,
+        connection: &ModelConnection,
+        reference: &str,
+    ) -> Result<Vec<u8>> {
+        require(
+            !connection.credential_account.is_empty(),
+            "此模型连接不使用凭据",
+        )?;
+        self.account_for_prefix(&connection.credential_account, reference)?;
+        self.read_reference(reference)
+    }
+    pub fn verify_model_reference(&self, facts: &ProviderFacts, reference: &str) -> Result<()> {
+        let mut key = self.read_model_reference(facts, reference)?;
         key.fill(0);
         Ok(())
     }
@@ -416,15 +411,29 @@ impl CredentialVault {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn facts(id: &str, account: &str, requires_key: bool) -> ProviderFacts {
+        serde_json::from_value(json!({
+            "id": id, "label": id,
+            "kind": if requires_key { "cloud_subscription" } else { "local_server" },
+            "harness": "dsh", "endpoint": "https://provider.invalid",
+            "route": id, "protocol": "openai-completions",
+            "requires_key": requires_key, "credential_account": account
+        }))
+        .unwrap()
+    }
+    const KEYED: &[(&str, &str)] = &[
+        ("deepseek", "deepseek-api-key-"),
+        ("zai-coding-cn", "dsh-zai-coding-cn-api-key-"),
+        ("minimax-cn", "dsh-minimax-cn-api-key-"),
+    ];
     #[test]
     fn opaque_vault_references_are_dataset_scoped_and_never_accept_a_path() {
         let a = tempfile::tempdir().unwrap();
         let b = tempfile::tempdir().unwrap();
         let first = CredentialVault::new(a.path()).unwrap();
         let second = CredentialVault::new(b.path()).unwrap();
-        let unset = first
-            .status_model_reference(DshModelProvider::Deepseek, None)
-            .unwrap();
+        let deepseek = facts("deepseek", "deepseek-api-key-", true);
+        let unset = first.status_model_reference(&deepseek, None).unwrap();
         assert!(!unset.configured && unset.reference.is_empty());
         let reference = first
             .status_value(
@@ -448,34 +457,26 @@ mod tests {
         let b = tempfile::tempdir().unwrap();
         let first = CredentialVault::new(a.path()).unwrap();
         let second = CredentialVault::new(b.path()).unwrap();
-        for p in DshModelProvider::ALL
-            .into_iter()
-            .filter(|p| p.requires_key())
-        {
-            let account = if p == DshModelProvider::Deepseek {
-                format!("deepseek-api-key-{}", id())
-            } else {
-                format!("dsh-{}-api-key-{}", p.as_str(), id())
-            };
+        for (provider, account) in KEYED {
+            let p = facts(provider, account, true);
+            let account = format!("{account}{}", id());
             let reference = format!("{}:{account}", first.service);
-            assert!(first.validate_model_reference(p, &reference).is_ok());
-            assert!(second.validate_model_reference(p, &reference).is_err());
-            for other in DshModelProvider::ALL
-                .into_iter()
-                .filter(|other| *other != p)
-            {
-                assert!(first.validate_model_reference(other, &reference).is_err());
+            assert!(first.validate_model_reference(&p, &reference).is_ok());
+            assert!(second.validate_model_reference(&p, &reference).is_err());
+            for (other, other_account) in KEYED {
+                if other != provider {
+                    assert!(
+                        first
+                            .validate_model_reference(&facts(other, other_account, true), &reference)
+                            .is_err()
+                    );
+                }
             }
         }
-        let status = first
-            .status_model_reference(DshModelProvider::Ollama, None)
-            .unwrap();
+        let ollama = facts("ollama", "", false);
+        let status = first.status_model_reference(&ollama, None).unwrap();
         assert!(status.available && status.configured && status.reference.is_empty());
         assert_eq!(status.auth_kind, "none");
-        assert!(
-            first
-                .configure_model(DshModelProvider::Ollama, "FAKE_TEST_VALUE")
-                .is_err()
-        );
+        assert!(first.configure_model(&ollama, "FAKE_TEST_VALUE").is_err());
     }
 }

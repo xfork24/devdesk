@@ -108,26 +108,25 @@ impl Workspace {
                 .ok_or_else(|| err("storage", "物化回执缺少安装"))?;
             return self.ensure_runtime(provider, Some(installation));
         }
+        // Acceptance is content-only: the binary materializes exactly the recipes it
+        // embeds. Runtime version strings stay as recorded metadata, never a gate.
         require(
-            match provider {
-                HarnessProvider::Codex => {
-                    harness.runtime_version == DEFAULT_CODEX_VERSION
-                        && *digest == default_codex_recipe_digest()
-                }
-                HarnessProvider::Dsh => {
-                    harness.runtime_version == DEFAULT_DSH_VERSION
-                        && *digest == default_dsh_recipe_digest()
-                }
-            },
+            *digest
+                == match provider {
+                    HarnessProvider::Codex => {
+                        devdesk_adapters::runtime_preparation::default_codex_recipe_digest()
+                    }
+                    HarnessProvider::Dsh => {
+                        devdesk_adapters::runtime_preparation::default_dsh_recipe_digest()
+                    }
+                },
             "当前程序无法构建此冻结配方；不能静默换版",
         )?;
         let installation = self.ensure_runtime(provider, None)?;
         require(
-            installation
-                .key
-                .version
-                .starts_with(&format!("{}+docker.", harness.runtime_version)),
-            "实际安装与冻结 Harness 版本不符",
+            devdesk_adapters::permissions::installation_recipe(&installation)
+                .starts_with(&digest[..16]),
+            "实际安装与冻结 Harness 配方不符",
         )?;
         let data = json!({"harness_revision_id":record.id,"recipe_digest":digest,"installation_id":installation.id,"key":installation.key,"artifact":installation.artifact});
         store.transact(None, &mut |s| {

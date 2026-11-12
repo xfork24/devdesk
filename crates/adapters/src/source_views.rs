@@ -422,7 +422,7 @@ fn restore_reference(
             let harness: HarnessDefinition = state
                 .configuration(&configuration.harness_revision_id)?
                 .decode()?;
-            let connection = resolve_model_connection(&model, &harness)?;
+            let connection = state.resolve_model_connection(&model, &harness)?;
             let profile_digest = connection
                 .as_ref()
                 .map(|connection| {

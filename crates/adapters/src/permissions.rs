@@ -6,10 +6,14 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
     PermissionCapabilities {
         backend: provider.as_str().into(),
         version: match provider {
-            HarnessProvider::Codex => DEFAULT_CODEX_VERSION,
-            HarnessProvider::Dsh => DEFAULT_DSH_VERSION,
+            HarnessProvider::Codex => runtime_preparation::CODEX_VERSION,
+            HarnessProvider::Dsh => runtime_preparation::DSH_VERSION,
         }
         .into(),
+        recipe_digest: match provider {
+            HarnessProvider::Codex => runtime_preparation::default_codex_recipe_digest(),
+            HarnessProvider::Dsh => runtime_preparation::default_dsh_recipe_digest(),
+        },
         filesystem: vec![
             "full_access".into(),
             "read_only".into(),
@@ -401,16 +405,34 @@ pub fn dsh_profile(p: &ExecutionPermissions, instructions: &str, cwd: &str) -> R
 }
 
 pub fn validate_runtime_version(installation: &RuntimeInstallation) -> Result<()> {
-    let actual = installation.key.version.split('+').next().unwrap_or("");
-    let expected = capabilities(installation.key.provider).version;
+    // Acceptance is content-anchored: the installation must originate from the exact
+    // build recipe whose permission contract this binary verified. The recipe identity
+    // is embedded in the installation key at registration time.
+    let expected = capabilities(installation.key.provider).recipe_digest;
+    let actual = installation_recipe(installation);
     if actual != expected {
         return Err(err(
             "permission_unsupported",
             format!(
-                "权限后端只验证了 {} {expected}，当前为 {actual}",
-                installation.key.provider.as_str()
+                "权限后端只验证了配方 {}，当前安装为 {}",
+                &expected[..16],
+                if actual.is_empty() {
+                    "未登记配方".into()
+                } else {
+                    actual
+                }
             ),
         ));
     }
     Ok(())
+}
+
+/// Recipe identity embedded in a runtime key (`...+recipe.<16 hex>`), if any.
+pub fn installation_recipe(installation: &RuntimeInstallation) -> String {
+    installation
+        .key
+        .version
+        .split_once("+recipe.")
+        .map(|(_, recipe)| recipe.to_owned())
+        .unwrap_or_default()
 }

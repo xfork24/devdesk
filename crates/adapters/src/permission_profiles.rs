@@ -20,10 +20,12 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
             let h: HarnessDefinition = r.decode()?;
             let provider: HarnessProvider = serde_json::from_value(json!(h.provider))
                 .map_err(|_| err("permission_unsupported", "未知 Harness"))?;
-            if h.runtime_version != permissions::capabilities(provider).version {
+            if h.recipe_digest.as_deref()
+                != Some(permissions::capabilities(provider).recipe_digest.as_str())
+            {
                 return Err(err(
                     "permission_unsupported",
-                    "该 Harness 版本尚未验证权限执行合同",
+                    "该 Harness 构建配方尚未验证权限执行合同",
                 ));
             }
             // Execution build identity remains frozen separately in RuntimeBinding.
@@ -282,14 +284,19 @@ pub fn verify_permission_installation(
         .configuration(&lock.sandbox.binding.target.revision_id)?
         .decode()?;
     let platform = format!("{}/{}", installation.key.os, installation.key.arch);
+    // The installation must originate from the exact recipe the permission target pinned.
+    let recipe_match = h
+        .recipe_digest
+        .as_deref()
+        .is_some_and(|recipe| permissions::installation_recipe(installation).starts_with(&recipe[..16]));
     if installation.key.provider.as_str() != h.provider
-        || installation.key.version.split('+').next() != Some(h.runtime_version.as_str())
+        || !recipe_match
         || !b.platforms.contains(&platform)
         || !matches!(installation.artifact, RuntimeArtifact::DockerImage { .. })
     {
         return Err(err(
             "permission_unsupported",
-            "实际运行时版本、平台或镜像类型不满足权限目标",
+            "实际运行时构建配方、平台或镜像类型不满足权限目标",
         ));
     }
     Ok(())

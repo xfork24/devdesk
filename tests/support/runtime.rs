@@ -152,17 +152,17 @@ pub fn bind_default_permissions(e: &Engine) {
         (
             PermissionTargetKind::Harness,
             DEFAULT_HARNESS_ID,
-            "harness-full-access-v2:1",
+            "builtin-permission-harness-full-access:1",
         ),
         (
             PermissionTargetKind::Harness,
             "builtin-harness-dsh-multi-provider:1",
-            "harness-full-access-v2:1",
+            "builtin-permission-harness-full-access:1",
         ),
         (
             PermissionTargetKind::Sandbox,
             DEFAULT_PERMISSION_SANDBOX,
-            "sandbox-full-access-v2:1",
+            "builtin-permission-sandbox-full-access:1",
         ),
     ] {
         if s.configuration(id).is_err() {

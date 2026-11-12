@@ -1,0 +1,72 @@
+{
+  "kind": "model_catalog",
+  "identity": "builtin-model-catalog-dsh",
+  "revision": 1,
+  "name": "DSH 已验证模型目录",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "recipe_digest": "09644ad904fab5737d26c52a3211db55bba1b142fd60adc7fb86c2b4dade4a79",
+    "providers": [
+      {
+        "provider_ref": "builtin-model-provider-deepseek:1",
+        "models": []
+      },
+      {
+        "provider_ref": "builtin-model-provider-zai-coding-cn:1",
+        "models": [
+          {
+            "id": "glm-4.6v",
+            "context_window": 128000,
+            "max_output_tokens": 32768
+          },
+          {
+            "id": "glm-5.3",
+            "context_window": 1000000,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "glm-5.3-flash",
+            "context_window": 1000000,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "glm-5.3-highspeed",
+            "context_window": 1000000,
+            "max_output_tokens": 131072
+          }
+        ]
+      },
+      {
+        "provider_ref": "builtin-model-provider-minimax-cn:1",
+        "models": [
+          {
+            "id": "MiniMax-M2.7",
+            "context_window": 204800,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "MiniMax-M2.7-highspeed",
+            "context_window": 204800,
+            "max_output_tokens": 131072
+          },
+          {
+            "id": "MiniMax-M3",
+            "context_window": 1000000,
+            "max_output_tokens": 524288
+          },
+          {
+            "id": "MiniMax-M3.1-Flash",
+            "context_window": 1000000,
+            "max_output_tokens": 524288
+          }
+        ]
+      },
+      {
+        "provider_ref": "builtin-model-provider-ollama:1",
+        "models": []
+      }
+    ]
+  }
+}

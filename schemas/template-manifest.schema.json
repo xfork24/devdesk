@@ -29,6 +29,8 @@
         "capability",
         "agent",
         "model",
+        "model_provider",
+        "model_catalog",
         "harness",
         "sandbox",
         "tool",

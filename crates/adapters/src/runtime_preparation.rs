@@ -3,7 +3,10 @@
 use super::*;
 use std::{process::Command, time::Duration};
 
-pub const CODEX_VERSION: &str = DEFAULT_CODEX_VERSION;
+/// Pinned runtime builds. Display/pin metadata only: acceptance of installed runtimes
+/// always compares content digests, never these version strings.
+pub const CODEX_VERSION: &str = "0.167.0";
+pub const DSH_VERSION: &str = "0.2.2-rc.1";
 const CODEX_FILES: &[(&str, &str)] = &[(
     "Dockerfile",
     include_str!("../../../containers/codex/Dockerfile"),
@@ -36,8 +39,18 @@ fn recipe(
 ) {
     match provider {
         HarnessProvider::Codex => (CODEX_VERSION, "Apache-2.0", CODEX_FILES),
-        HarnessProvider::Dsh => (DEFAULT_DSH_VERSION, "MIT", DSH_FILES),
+        HarnessProvider::Dsh => (DSH_VERSION, "MIT", DSH_FILES),
     }
+}
+
+/// Content digest of the embedded Codex build recipe this binary can materialize.
+pub fn default_codex_recipe_digest() -> String {
+    configuration_digest(&json!(CODEX_FILES)).expect("embedded recipe digest")
+}
+
+/// Content digest of the embedded DSH build recipe this binary can materialize.
+pub fn default_dsh_recipe_digest() -> String {
+    configuration_digest(&json!(DSH_FILES)).expect("embedded recipe digest")
 }
 
 impl GlobalStore {
@@ -106,7 +119,7 @@ impl GlobalStore {
             result?;
         }
         progress("正在核验运行时镜像内容与平台");
-        self.register_docker_runtime(provider, &tag, version, license)
+        self.register_docker_runtime(provider, &tag, version, &digest, license)
     }
 
     fn runtime_directory(&self) -> Result<PathBuf> {

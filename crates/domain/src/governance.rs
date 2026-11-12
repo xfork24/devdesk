@@ -75,6 +75,8 @@ impl ConfigurationRecord {
     pub fn is_definition(&self) -> bool {
         [
             "model",
+            "model_provider",
+            "model_catalog",
             "tool",
             "harness",
             "agent",
@@ -125,8 +127,12 @@ pub struct HarnessDefinition {
     pub recipe_digest: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Model provider references (`identity:revision`); empty keeps the Harness open.
     #[serde(default)]
     pub model_providers: Vec<String>,
+    /// Verified model capacities pinned to one managed build of this Harness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_catalog_ref: Option<Id>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -222,6 +228,7 @@ impl EngineeringState {
         })
     }
     pub fn configuration(&self, id: &str) -> Result<&ConfigurationRecord> {
+
         self.governance
             .iter()
             .find(|r| r.id == id)

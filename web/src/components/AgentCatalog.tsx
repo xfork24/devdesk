@@ -81,7 +81,7 @@ function initial(kind: string): Row {
         provider: "codex",
         runtime_version: "",
         capabilities: [],
-        model_providers: ["openai"],
+        model_providers: [],
       };
     case "tool":
       return {
@@ -621,7 +621,11 @@ export function ResourceEditor({
                 {model && harness && (
                   <p className="notice">
                     {harness.data.model_providers?.length &&
-                    !harness.data.model_providers.includes(model.data.provider)
+                    !harness.data.model_providers.some(
+                      (ref: string) =>
+                        providers.find((p) => p.reference === ref)?.id ===
+                        model.data.provider,
+                    )
                       ? "此 Harness 不支持选定模型后端，保存时会拒绝。"
                       : `${model.name} / ${harness.name}`}
                   </p>
@@ -721,13 +725,11 @@ export function ResourceEditor({
                         recipe_digest: runtimeOptions.recipes.find(
                           (r: Row) => r.provider === e.target.value,
                         )?.recipe_digest,
-                        model_providers: [
-                          ...(e.target.value === "codex"
-                            ? ["openai"]
-                            : providers
-                                .filter((p) => p.harness === "dsh")
-                                .map((p) => p.id)),
-                        ],
+                        model_providers: providers
+                          .filter(
+                            (p) => p.harness === e.target.value,
+                          )
+                          .map((p) => p.reference),
                       });
                     }}
                   >
@@ -778,14 +780,16 @@ export function ResourceEditor({
                       <label key={p.id} className="model-provider-choice">
                         <input
                           type="checkbox"
-                          checked={(data.model_providers || []).includes(p.id)}
+                          checked={(data.model_providers || []).includes(
+                            p.reference,
+                          )}
                           onChange={(event) => {
                             captureFeedback();
                             return patch({
                               model_providers: event.target.checked
-                                ? [...(data.model_providers || []), p.id]
+                                ? [...(data.model_providers || []), p.reference]
                                 : (data.model_providers || []).filter(
-                                    (id: string) => id !== p.id,
+                                    (ref: string) => ref !== p.reference,
                                   ),
                             });
                           }}

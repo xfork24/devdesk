@@ -14,13 +14,14 @@
       "poll"
     ],
     "model_providers": [
-      "deepseek",
-      "zai-coding-cn",
-      "minimax-cn",
-      "ollama"
+      "builtin-model-provider-deepseek:1",
+      "builtin-model-provider-zai-coding-cn:1",
+      "builtin-model-provider-minimax-cn:1",
+      "builtin-model-provider-ollama:1"
     ],
     "provider": "dsh",
     "recipe_digest": "09644ad904fab5737d26c52a3211db55bba1b142fd60adc7fb86c2b4dade4a79",
-    "runtime_version": "0.2.2-rc.1"
+    "runtime_version": "0.2.2-rc.1",
+    "model_catalog_ref": "builtin-model-catalog-dsh:1"
   }
 }

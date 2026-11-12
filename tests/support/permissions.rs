@@ -23,12 +23,12 @@ pub fn prepare(
         (
             PermissionTargetKind::Harness,
             harness,
-            "harness-full-access-v2:1",
+            "builtin-permission-harness-full-access:1",
         ),
         (
             PermissionTargetKind::Sandbox,
             DEFAULT_PERMISSION_SANDBOX.into(),
-            "sandbox-full-access-v2:1",
+            "builtin-permission-sandbox-full-access:1",
         ),
     ] {
         let mut profile: PermissionProfile = s

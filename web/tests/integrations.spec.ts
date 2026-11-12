@@ -302,15 +302,15 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
     .filter((r: any) =>
       [
         "builtin-harness-codex-managed:1",
-        "builtin-docker-sandbox:1",
+        "builtin-sandbox-docker:1",
       ].includes(r.target.revision_id),
     )
     .map((r: any) => ({
       target: r.target,
       permission_revision_id:
         r.target.kind === "harness"
-          ? "harness-full-access-v2:1"
-          : "sandbox-full-access-v2:1",
+          ? "builtin-permission-harness-full-access:1"
+          : "builtin-permission-sandbox-full-access:1",
       expected_revision: r.active?.revision || 0,
     }));
   await rpc(page, "permission.bindings.apply", {

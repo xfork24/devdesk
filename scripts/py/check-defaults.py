@@ -60,8 +60,6 @@ def main() -> None:
     root_meta = {
         "manifest.json",
         "defaults.json",
-        "dsh-model-catalog.json",
-        "model-provider-defaults.json",
         "README.md",
     }
     listed = {

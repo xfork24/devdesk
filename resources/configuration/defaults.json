@@ -3,7 +3,7 @@
   "task_workflow_ref": "builtin-workflow-task-sol-high:6",
   "model_ref": "builtin-model-gpt-6-1-sol-high:1",
   "harness_ref": "builtin-harness-codex-managed:1",
-  "sandbox_ref": "builtin-docker-sandbox:1",
+  "sandbox_ref": "builtin-sandbox-docker:1",
   "capability_ref": "builtin-capability-sol-high-codex:3",
   "standard_ref": "builtin-standard-engineering:3",
   "role_agent_bindings": {
@@ -14,8 +14,8 @@
     "builtin-role-tester:1": "builtin-agent-sol-high-tester:4",
     "builtin-role-reviewer:1": "builtin-agent-sol-high-reviewer:4"
   },
-  "harness_permission_ref": "harness-full-access-v2:1",
-  "sandbox_permission_ref": "sandbox-full-access-v2:1",
+  "harness_permission_ref": "builtin-permission-harness-full-access:1",
+  "sandbox_permission_ref": "builtin-permission-sandbox-full-access:1",
   "authoring": {
     "execution_budget": {
       "max_turns": 8,

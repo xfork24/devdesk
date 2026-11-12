@@ -1,0 +1,25 @@
+{
+  "kind": "model_provider",
+  "identity": "builtin-model-provider-deepseek",
+  "revision": 1,
+  "name": "DeepSeek 官方 API",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "id": "deepseek",
+    "label": "DeepSeek 官方 API",
+    "kind": "cloud_subscription",
+    "harness": "dsh",
+    "endpoint": "https://api.deepseek.com",
+    "route": "deepseek-official",
+    "protocol": "deepseek-native",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "requires_key": true,
+    "native": true,
+    "capacity_required": false,
+    "min_output_request": 1024,
+    "max_output_request": 131072,
+    "credential_account": "deepseek-api-key-"
+  }
+}

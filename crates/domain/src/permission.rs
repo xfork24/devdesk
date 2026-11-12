@@ -104,7 +104,10 @@ impl Default for ResourceLimits {
 #[serde(deny_unknown_fields)]
 pub struct PermissionCapabilities {
     pub backend: String,
+    /// Pinned runtime version; display metadata only, never compared for acceptance.
     pub version: String,
+    /// Content anchor: the build recipe whose permission contract this binary verified.
+    pub recipe_digest: String,
     pub filesystem: Vec<String>,
     pub network: Vec<String>,
     pub tools: Vec<String>,

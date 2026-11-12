@@ -22,7 +22,7 @@
 
 ## 4. 外部运行时锚（关于外部世界的事实）
 
-`crates/domain/src/defaults.rs` 与冻结配方：`DEFAULT_CODEX_VERSION = 0.167.0`、`DEFAULT_DSH_VERSION = 0.2.2-rc.1`、recipe digest、容器 Dockerfile、`dsh-model-catalog.json`。换版必须显式推进（`runtime_setup.rs` 拒绝静默换版），冻结会话按设计失效。
+运行时构建知识全部位于 `crates/adapters/src/runtime_preparation.rs`：固定版本 `CODEX_VERSION` / `DSH_VERSION`（仅作构建 pin 与展示元数据）与配方内容摘要（`default_*_recipe_digest`，覆盖容器 Dockerfile 与权限后端资产）。模型服务商与模型容量是 `resources/configuration` 中受 manifest 管理的源定义（`model_provider` / `model_catalog`），目录通过 `recipe_digest` 与 Harness 构建配方内容关联。接受性判定一律为内容摘要比对（配方摘要、镜像 sha256、冻结 profile 摘要），版本字符串从不作为门槛；换版必须显式推进（`runtime_setup.rs` 拒绝构建未冻结的配方），冻结会话按设计失效。
 
 ## 5. 出厂配置自洽
 

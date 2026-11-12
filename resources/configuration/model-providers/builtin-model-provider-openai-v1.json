@@ -1,0 +1,23 @@
+{
+  "kind": "model_provider",
+  "identity": "builtin-model-provider-openai",
+  "revision": 1,
+  "name": "OpenAI / ChatGPT",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "id": "openai",
+    "label": "OpenAI / ChatGPT",
+    "kind": "oauth_managed",
+    "harness": "codex",
+    "endpoint": "",
+    "route": "",
+    "protocol": "",
+    "api_key_env": "",
+    "requires_key": false,
+    "native": true,
+    "capacity_required": false,
+    "credential_account": ""
+  }
+}

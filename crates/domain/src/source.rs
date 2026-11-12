@@ -124,6 +124,30 @@ pub fn validate_source_data(kind: &str, data: &Value) -> Result<()> {
                 "权限正文不能重复身份或修订元数据",
             )?;
         }
+        "model_provider" => {
+            let p: ProviderFacts = serde_json::from_value(data.clone()).map_err(invalid)?;
+            require(
+                data["models"].as_array().is_none_or(|m| m.is_empty()),
+                "模型容量属于 Harness 目录，不在服务商源中声明",
+            )?;
+            p.validate()?;
+        }
+        "model_catalog" => {
+            let catalog: ModelCatalogDefinition =
+                serde_json::from_value(data.clone()).map_err(invalid)?;
+            catalog.validate()?;
+        }
+        "harness" => {
+            let h: HarnessDefinition = serde_json::from_value(data.clone()).map_err(invalid)?;
+            let mut refs = std::collections::BTreeSet::new();
+            for reference in &h.model_providers {
+                parse_source_reference(reference)?;
+                require(refs.insert(reference.clone()), "Harness 服务商引用重复")?;
+            }
+            if let Some(catalog_ref) = &h.model_catalog_ref {
+                parse_source_reference(catalog_ref)?;
+            }
+        }
         "permission_context" => {
             let context: PermissionContextDefinition =
                 serde_json::from_value(data.clone()).map_err(invalid)?;

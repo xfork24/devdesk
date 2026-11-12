@@ -13,6 +13,8 @@ pub(crate) fn record(
 ) -> ConfigurationRecord {
     let source_kind = [
         "model",
+        "model_provider",
+        "model_catalog",
         "tool",
         "harness",
         "agent",
@@ -289,7 +291,7 @@ impl Engine {
                         && binding.installation.key.provider.as_str() == harness.provider,
                     "执行绑定改变了 Agent 的 Model/Harness",
                 )?;
-                let resolved = resolve_model_connection(&model, &harness)?;
+                let resolved = s.resolve_model_connection(&model, &harness)?;
                 require(
                     binding.model_connection == resolved,
                     "执行绑定改变了 Model 连接或容量",
@@ -355,6 +357,8 @@ impl Engine {
         let config_create = [
             "delivery_type",
             "model",
+            "model_provider",
+            "model_catalog",
             "tool",
             "harness",
             "skill",
@@ -485,23 +489,15 @@ impl Engine {
                 "capability" => crate::configuration::validate_capability(s, &data, &scope)?,
                 "model" => {
                     let m: ModelDefinition = decode(&data)?;
-                    validate_model_definition(&m)?;
+                    validate_model_definition(&m, &s.provider_facts_any(&m.provider)?)?;
                 }
-                "harness" => {
-                    let h: HarnessDefinition = decode(&data)?;
-                    require(
-                        h.recipe_digest.as_ref().is_none_or(|digest| {
-                            known_harness_provider(&h.provider)
-                                && digest.len() == 64
-                                && digest.bytes().all(|b| b.is_ascii_hexdigit())
-                        }),
-                        "无效的固定 Harness 配方",
-                    )?;
-                    require(
-                        known_harness_provider(&h.provider) && !h.runtime_version.is_empty(),
-                        "无效 Harness 或运行版本",
-                    )?;
-                }
+                "model_provider" => crate::configuration::validate_model_provider(
+                    s,
+                    &data,
+                    old.as_ref().map(|r| r.definition_id.as_str()),
+                )?,
+                "model_catalog" => crate::configuration::validate_model_catalog(s, &data, &scope)?,
+                "harness" => crate::configuration::validate_harness(s, &data, &scope)?,
                 "tool" => {
                     let t: ToolDefinition = decode(&data)?;
                     require(

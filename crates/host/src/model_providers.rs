@@ -1,10 +1,44 @@
+//! Model provider RPC surface: assembled from published provider sources, never a
+//! compiled-in roster. Discovery I/O delegates to adapters.
 use super::*;
 
-fn selected_provider(params: &Value) -> Result<DshModelProvider> {
-    match params.get("model_provider") {
-        None => Ok(DshModelProvider::Deepseek),
-        Some(Value::String(p)) => DshModelProvider::parse(p),
-        _ => Err(err("invalid_params", "model_provider 必须为服务商标识")),
+impl Workspace {
+    /// All published model providers as `(source reference, facts)` pairs, with
+    /// catalog capacities attached when a harness covers them.
+    pub(super) fn model_provider_facts(&self) -> Result<Vec<(Id, ProviderFacts)>> {
+        let state = self.configuration.store.snapshot()?;
+        let mut facts = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for r in state.governance.iter().filter(|r| r.kind == "model_provider") {
+            let mut p: ProviderFacts = r.decode()?;
+            if seen.insert(p.id.clone()) && p.models.is_empty() {
+                for h in state.governance.iter().filter(|h| h.kind == "harness") {
+                    if let Ok(harness) = h.decode::<HarnessDefinition>() {
+                        if let Ok(covered) = state.provider_facts(&harness, &p.id) {
+                            if !covered.models.is_empty() {
+                                p.models = covered.models;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            facts.push((r.id.clone(), p));
+        }
+        Ok(facts)
+    }
+
+    fn selected_provider(&self, params: &Value) -> Result<ProviderFacts> {
+        let id = match params.get("model_provider") {
+            None => "deepseek",
+            Some(Value::String(p)) => p,
+            _ => return Err(err("invalid_params", "model_provider 必须为服务商标识")),
+        };
+        self.model_provider_facts()?
+            .into_iter()
+            .find(|(_, p)| p.id == id)
+            .map(|(_, p)| p)
+            .ok_or_else(|| err("unsupported_model_provider", "未知模型服务商"))
     }
 }
 
@@ -52,12 +86,14 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        assert!(
-            w.global
-                .model_credential_reference(DshModelProvider::Ollama)
-                .unwrap()
-                .is_none()
-        );
+        let ollama = w
+            .model_provider_facts()
+            .unwrap()
+            .into_iter()
+            .find(|(_, p)| p.id == "ollama")
+            .map(|(_, p)| p)
+            .unwrap();
+        assert!(w.global.model_credential_reference(&ollama).unwrap().is_none());
     }
     #[test]
     fn removed_agent_diagnostics_have_no_dispatch_or_runtime_side_effects() {
@@ -118,14 +154,28 @@ impl Workspace {
                 "模型服务商请求包含未知字段",
             )?;
             if method == "query.model_providers" {
-                return Ok(model_provider_catalog());
+                let providers: Vec<_> = self
+                    .model_provider_facts()?
+                    .into_iter()
+                    .map(|(reference, p)| {
+                        json!({
+                            "id": p.id, "reference": reference, "label": p.label,
+                            "kind": p.kind, "harness": p.harness, "route": p.route,
+                            "protocol": p.protocol, "endpoint": p.endpoint,
+                            "auth_kind": if p.kind == ProviderKind::OAuthManaged { "oauth" }
+                                else if p.requires_key { "api_key" } else { "none" },
+                            "models": p.models,
+                        })
+                    })
+                    .collect();
+                return Ok(json!({"providers": providers}));
             }
-            let p = selected_provider(params)?;
+            let p = self.selected_provider(params)?;
             if method == "models.list" {
-                return if p == DshModelProvider::Ollama {
+                return if p.kind == ProviderKind::LocalServer {
                     devdesk_adapters::model_providers::discover_ollama_models(
                         match params.get("endpoint") {
-                            None => p.endpoint(),
+                            None => p.endpoint.as_str(),
                             Some(Value::String(s)) => s,
                             _ => {
                                 return Err(err("invalid_params", "endpoint 必须为服务地址字符串"));
@@ -137,22 +187,24 @@ impl Workspace {
                         params.get("endpoint").is_none(),
                         "云服务商目录不接受自定义端点",
                     )?;
-                    if p == DshModelProvider::Deepseek {
-                        let reference = self.global.model_credential_reference(p)?;
+                    if p.kind == ProviderKind::CloudSubscription && p.native && p.requires_key {
+                        // The harness account's own provider exposes an account model directory.
+                        let reference = self.global.model_credential_reference(&p)?;
                         let vault =
                             credentials::CredentialVault::new(Path::new(&self.global.root()))?;
-                        let status = vault.status_model_reference(p, reference.as_deref())?;
+                        let status = vault.status_model_reference(&p, reference.as_deref())?;
                         require(
                             status.configured,
                             "请先配置 DeepSeek API key，再读取账号模型目录",
                         )?;
                         return devdesk_adapters::model_providers::discover_deepseek_models(
                             Path::new(&self.global.root()),
+                            &p,
                             &status.reference,
                         );
                     }
                     Ok(
-                        json!({"provider":p,"source":"pinned_catalog","inference_verified":false,"models":dsh_model_catalog(p)}),
+                        json!({"provider":p.id,"source":"pinned_catalog","inference_verified":false,"models":p.models}),
                     )
                 };
             }
@@ -166,28 +218,28 @@ impl Workspace {
                 let secret = params["api_key"]
                     .as_str()
                     .ok_or_else(|| err("invalid_params", "需要 API key"))?;
-                let status = vault.configure_model(p, secret)?;
+                let status = vault.configure_model(&p, secret)?;
                 self.global
-                    .set_model_credential_reference(p, &status.reference)?;
+                    .set_model_credential_reference(&p, &status.reference)?;
                 return Ok(json!(status));
             }
             let status = vault
-                .status_model_reference(p, self.global.model_credential_reference(p)?.as_deref())?;
+                .status_model_reference(&p, self.global.model_credential_reference(&p)?.as_deref())?;
             if method == "credentials.status" {
                 return Ok(json!(status));
             }
             require(
-                p.requires_key(),
+                p.requires_key,
                 "Ollama 免密连接请检查模型服务，无需授权凭据",
             )?;
             require(status.configured, "请先保存所选服务商凭据")?;
-            vault.validate_model_reference(p, &status.reference)?;
+            vault.validate_model_reference(&p, &status.reference)?;
             if method == "credentials.authorize" {
                 vault.authorize_interactively(&status.reference)?;
             }
-            vault.verify_model_reference(p, &status.reference)?;
+            vault.verify_model_reference(&p, &status.reference)?;
             Ok(
-                json!({"authorized":true,"model_provider":p,"storage":status.storage,"inference_verified":false}),
+                json!({"authorized":true,"model_provider":p.id,"storage":status.storage,"inference_verified":false}),
             )
         })())
     }

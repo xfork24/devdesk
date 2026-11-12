@@ -266,7 +266,7 @@ impl Workspace {
         } else {
             e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen && !command.payload["controller_id"].is_string(){Some(feature)}else{None},"frozen_controller_id":command.payload["controller_id"]})})?["id"].as_str().unwrap().into()
         };
-        resolve_model_connection(&model, &harness)?;
+        state.resolve_model_connection(&model, &harness)?;
         require(
             !["managed", "latest", "default"].contains(&harness.runtime_version.as_str()),
             "Harness 必须选择精确运行版本",

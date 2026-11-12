@@ -4,7 +4,7 @@ Permission 是不可变修订的文件、网络和工具访问策略，分别绑
 
 ## 版本化 profile 与运行时绑定
 
-设置中的“Permission 定义与版本绑定”使用 v2 JSON。Harness profile 必须声明 filesystem、network、tools、approval；Sandbox profile 只接受 filesystem、network。示例见 `../resources/configuration/permissions/profiles/permission-harness-read-only-v2-r1.json`；Schema 为 `schemas/permission-profile.schema.json`。文件和 UI 使用同一规范化与校验入口。
+设置中的“Permission 定义与版本绑定”使用 v2 JSON。Harness profile 必须声明 filesystem、network、tools、approval；Sandbox profile 只接受 filesystem、network。示例见 `../resources/configuration/permissions/profiles/builtin-permission-harness-read-only-v1.json`；Schema 为 `schemas/permission-profile.schema.json`。文件和 UI 使用同一规范化与校验入口。
 
 UI 保存追加权限修订，原绑定保持不变。“应用到该目标版本”将确切 Harness/Sandbox 资源修订绑定到所选 profile。绑定也保存不可变修订和执行合同，并以 CAS 更新活动分配；可再次选择旧 profile 实现回退。新目标没有自动全权限绑定，需要显式配置。目标的配置修订、供应商版本、镜像身份和平台分别核验。
 
@@ -16,7 +16,7 @@ UI 保存追加权限修订，原绑定保持不变。“应用到该目标版�
 
 ## 当前默认与授权范围
 
-系统只接受 v2 完整 profile。内置 Harness 与 Docker Sandbox 的活动默认绑定分别使用 `permission-harness-full-access-v2-r1` 与 `permission-sandbox-full-access-v2-r1`；默认 Permission Context 显式追随目标绑定。用户新建的目标必须显式应用 profile 后才能执行。
+系统只接受 v2 完整 profile。内置 Harness 与 Docker Sandbox 的活动默认绑定分别使用 `builtin-permission-harness-full-access:1` 与 `builtin-permission-sandbox-full-access:1`；默认 Permission Context 显式追随目标绑定。用户新建的目标必须显式应用 profile 后才能执行。
 
 全权限允许供应商原生工具在容器内运行，无需审批。Docker 提供普通用户、非特权、独立命名空间和授权挂载；宿主 HOME、Docker socket 与未授权目录不挂载。工程阶段的工作树、测试目录与只读 Review 视图由冻结 ExecutionScope 限制。
 

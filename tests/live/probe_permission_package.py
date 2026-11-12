@@ -77,11 +77,11 @@ try:
         target_row = next(t for t in resources['targets'] if t['provider'] == 'codex' and t['supported'])
         target = target_row['target']
         initial_revision = target_row['active']['revision']
-        preview = rpc('permission.binding.preflight', {'target': target, 'permission_revision_id': 'harness-read-only-v2:1'})
+        preview = rpc('permission.binding.preflight', {'target': target, 'permission_revision_id': 'builtin-permission-harness-read-only:1'})
         assert preview['compatible'] and not preview['scope_checked']
-        applied = command('permission.bindings.apply', {'bindings': [{'target': target, 'permission_revision_id': 'harness-read-only-v2:1', 'expected_revision': initial_revision}]})
+        applied = command('permission.bindings.apply', {'bindings': [{'target': target, 'permission_revision_id': 'builtin-permission-harness-read-only:1', 'expected_revision': initial_revision}]})
         assert applied['bindings'][0]['revision'] == initial_revision + 1
-        exported = rpc('permission.profile.export', {'id': 'harness-read-only-v2:1'})
+        exported = rpc('permission.profile.export', {'id': 'builtin-permission-harness-read-only:1'})
         assert len(exported['profiles']) == 1
         command('permission.profile.import', exported)
         report['v2_profiles_and_version_binding'] = True

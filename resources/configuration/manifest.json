@@ -25,7 +25,6 @@
     "spec": [
       "specs/builtin-spec-stage-prd-v1.json",
       "specs/builtin-spec-stage-architecture-v1.json",
-      "specs/builtin-spec-stage-solution-v1.json",
       "specs/builtin-spec-stage-implementation-v1.json",
       "specs/builtin-spec-stage-closure-v1.json",
       "specs/builtin-spec-stage-release-v1.json",
@@ -53,8 +52,8 @@
       "standards/builtin-standard-engineering-v3.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-sol-high-v7.json",
-      "workflows/builtin-workflow-feature-sol-high-v7.json"
+      "workflows/builtin-workflow-task-sol-high-v6.json",
+      "workflows/builtin-workflow-feature-sol-high-v6.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v2.json",
@@ -132,7 +131,7 @@
       "harnesses/builtin-harness-codex-managed-v1.json"
     ],
     "sandbox": [
-      "sandboxes/builtin-permission-sandbox-docker-v1.json"
+      "sandboxes/builtin-sandbox-docker-v1.json"
     ],
     "tool": [
       "tools/builtin-tool-codex-native-v1.json",
@@ -146,7 +145,7 @@
       "tools/builtin-tool-git-advance-v1.json",
       "tools/builtin-tool-git-publish-v1.json",
       "tools/builtin-tool-tasks-complete-v1.json",
-      "tools/builtin-tool-workflow-start-v1.json",
+      "tools/builtin-tool-workflow-start-v2.json",
       "tools/builtin-tool-workflow-inspect-v1.json",
       "tools/builtin-tool-workflow-events-read-v1.json",
       "tools/builtin-tool-workflow-outputs-read-v2.json",
@@ -160,8 +159,8 @@
       "tools/builtin-tool-workflow-pause-v1.json",
       "tools/builtin-tool-workflow-resume-v1.json",
       "tools/builtin-tool-workflow-cancel-v1.json",
-      "tools/builtin-tool-workflow-change-preview-v1.json",
-      "tools/builtin-tool-workflow-change-apply-v1.json",
+      "tools/builtin-tool-workflow-change-preview-v2.json",
+      "tools/builtin-tool-workflow-change-apply-v2.json",
       "tools/builtin-tool-workflow-materials-import-v1.json",
       "tools/builtin-tool-workflow-decision-request-v1.json",
       "tools/builtin-tool-workflow-execution-reconcile-v1.json",
@@ -169,12 +168,22 @@
       "tools/builtin-tool-workflow-segment-dispatch-v1.json"
     ],
     "permission_profile": [
-      "permissions/profiles/permission-harness-full-access-v2-r1.json",
-      "permissions/profiles/permission-harness-read-only-v2-r1.json",
-      "permissions/profiles/permission-sandbox-full-access-v2-r1.json"
+      "permissions/profiles/builtin-permission-harness-full-access-v1.json",
+      "permissions/profiles/builtin-permission-harness-read-only-v1.json",
+      "permissions/profiles/builtin-permission-sandbox-full-access-v1.json"
     ],
     "permission_context": [
-      "permissions/bindings/engineering-v3.json"
+      "permissions/bindings/builtin-permission-context-engineering-v3.json"
+    ],
+    "model_provider": [
+      "model-providers/builtin-model-provider-openai-v1.json",
+      "model-providers/builtin-model-provider-deepseek-v1.json",
+      "model-providers/builtin-model-provider-zai-coding-cn-v1.json",
+      "model-providers/builtin-model-provider-minimax-cn-v1.json",
+      "model-providers/builtin-model-provider-ollama-v1.json"
+    ],
+    "model_catalog": [
+      "harnesses/builtin-model-catalog-dsh-v1.json"
     ]
   },
   "defaults": "defaults.json"

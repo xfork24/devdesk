@@ -1,6 +1,6 @@
 {
   "kind": "permission_profile",
-  "identity": "sandbox-full-access-v2",
+  "identity": "builtin-permission-sandbox-full-access",
   "revision": 1,
   "name": "Sandbox 容器内全权限",
   "scope": {

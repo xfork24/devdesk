@@ -69,7 +69,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
 }
 fn setup_agent(e: &Engine, role: &str) -> String {
     let model=command(e,"model.create",None,json!({"name":"Model A","data":{"provider":"openai","model":"model-a","parameters":{},"capabilities":[]}})).unwrap();
-    let harness=command(e,"harness.create",None,json!({"name":"Harness","data":{"provider":"codex","runtime_version":devdesk_domain::DEFAULT_CODEX_VERSION,"capabilities":[],"model_providers":["openai"]}})).unwrap();
+    let harness=command(e,"harness.create",None,json!({"name":"Harness","data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[],"model_providers":["builtin-model-provider-openai:1"]}})).unwrap();
     let tool=command(e,"tool.create",None,json!({"name":"原生工具","data":{"qualified_name":"fixture.native","implementation":"harness.native","input_schema":{},"output_schema":{},"capabilities":[]}})).unwrap();
     let state = e.store.snapshot().unwrap();
     let target = permission_target(
@@ -78,7 +78,7 @@ fn setup_agent(e: &Engine, role: &str) -> String {
         harness["id"].as_str().unwrap(),
     )
     .unwrap();
-    command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"harness-full-access-v2:1","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
+    command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-full-access:1","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
     let cap=command(e,"capability.create",None,json!({"name":"Fixture capability","data":{"model_ref":model["id"],"harness_ref":harness["id"],"tools":[tool["id"]],"skills":[]}})).unwrap();
     command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"data":{"role_ref":default_role_id(role),"capability_ref":cap["id"]}})).unwrap()["id"].as_str().unwrap().into()
 }

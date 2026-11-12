@@ -103,7 +103,7 @@ v2 修订要点：按最新要求，计划重心从"漂移校验"扩展为**补�
 | real-engineering.md | :3 | "完整合同见 plans/harness-workflow-orchestration/CONTRACT.md"（把历史合同当现行合同引用） | 改指新增 `docs/workflow-orchestration.md`；CONTRACT.md 降为历史参照 |
 | real-adapter-contract.md | :21 | "canonical `agent-task/v5`" | `agent-task/v6` |
 | run-binary.md | :31 | "global 15 / project 46" | global 16 / project 47 |
-| system-credentials.md | :7 | "默认 `container-full-access` 将整个 Harness 容器视为信任范围…"（v1 旧预设名，已于 2026-11-10 v2 权限改造删除） | 默认为 v2 profile `harness-full-access-v2` / `sandbox-full-access-v2`（容器即信任范围的语义保留，名称与版本更正；链接 permissions.md） |
+| system-credentials.md | :7 | "默认 `container-full-access` 将整个 Harness 容器视为信任范围…"（v1 旧预设名，已于 2026-11-10 v2 权限改造删除） | 默认为 v2 profile `builtin-permission-harness-full-access` / `builtin-permission-sandbox-full-access`（容器即信任范围的语义保留，名称与版本更正；链接 permissions.md） |
 | tool-skill-integrations.md | :3 | "左侧「工具与技能接入」…基础组件只管理 Model/Harness"（旧导航结构） | 当前导航：**基础组件** tab 含 Model/Harness/MCP/Skills/HTTP 工具/原生工具；调用记录位于**历史记录** |
 | 根 README.md | 文档段 | 复核（多数为现行；若有版本断言错误一并修） | 过锚点校验 |
 | AGENT.md | — | 复核结构段（当前准确） | 同上 |

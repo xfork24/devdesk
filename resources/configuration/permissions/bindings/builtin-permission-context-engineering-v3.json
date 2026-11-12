@@ -7,7 +7,7 @@
     "kind": "global"
   },
   "data": {
-    "sandbox_ref": "builtin-docker-sandbox:1",
+    "sandbox_ref": "builtin-sandbox-docker:1",
     "harness": {
       "mode": "follow_target"
     },

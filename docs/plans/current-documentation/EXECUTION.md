@@ -19,7 +19,7 @@
 - real-engineering.md：Workflow v5→v6、agent-task/v5→v6、global 15/46→16/47；现行合同引用改指 workflow-orchestration.md（历史合同降为存档链接）。
 - real-adapter-contract.md：agent-task/v5→v6。
 - run-binary.md：global 15/46→16/47。
-- system-credentials.md：v1 旧预设名 `container-full-access` → v2 档案 `harness-full-access-v2`/`sandbox-full-access-v2` 并链接 permissions.md。
+- system-credentials.md：v1 旧预设名 `container-full-access` → v2 档案 `builtin-permission-harness-full-access`/`builtin-permission-sandbox-full-access` 并链接 permissions.md。
 - tool-skill-integrations.md：导航描述更新为现行结构（基础组件六类 + 历史记录调用记录）。
 
 ### 索引

@@ -41,7 +41,7 @@ Profile schema v2 强制：Harness profile 必须含 filesystem / network / tool
 
 ## 默认绑定与收紧方向
 
-默认配置绑定 `harness-full-access-v2` 与 `sandbox-full-access-v2`，把整个容器视为信任范围（宿主凭据库、其他项目、未挂载路径仍在容器外；Agent 拿不到 Docker socket）。最小权限的精细化由 step_grants 表达；需要收紧 Harness 层时可发布 read_only 或 scoped profile 并经 preflight 预检后应用绑定（`permission.bindings.apply`，同作用域原子批次、CAS 更新、可回退）。
+默认配置绑定 `builtin-permission-harness-full-access` 与 `builtin-permission-sandbox-full-access`，把整个容器视为信任范围（宿主凭据库、其他项目、未挂载路径仍在容器外；Agent 拿不到 Docker socket）。最小权限的精细化由 step_grants 表达；需要收紧 Harness 层时可发布 read_only 或 scoped profile 并经 preflight 预检后应用绑定（`permission.bindings.apply`，同作用域原子批次、CAS 更新、可回退）。
 
 ## Controller 操作策略
 

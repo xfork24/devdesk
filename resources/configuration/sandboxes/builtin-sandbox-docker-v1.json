@@ -1,6 +1,6 @@
 {
   "kind": "sandbox",
-  "identity": "builtin-docker-sandbox",
+  "identity": "builtin-sandbox-docker",
   "revision": 1,
   "name": "Docker Sandbox",
   "scope": {

@@ -273,7 +273,11 @@ fn standalone_permission_contract_matches_rpc_and_preserves_null_rejection() {
     {
         let value: Value =
             serde_json::from_slice(&std::fs::read(file.unwrap().path()).unwrap()).unwrap();
-        assert_eq!(value["data"]["schema_version"], 2);
+        // Shipped profiles must declare a document shape this parser understands.
+        // The set is a capability declaration, not a pinned version gate.
+        assert!(value["data"]["schema_version"]
+            .as_u64()
+            .is_some_and(|v| (1..=2).contains(&v)));
         SCHEMAS.assert_valid("permission-profile.schema.json", &value);
         serde_json::from_value::<PermissionProfile>(value)
             .unwrap()

@@ -1,0 +1,24 @@
+{
+  "kind": "model_provider",
+  "identity": "builtin-model-provider-zai-coding-cn",
+  "revision": 1,
+  "name": "智谱 AI 编程订阅 国内",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "id": "zai-coding-cn",
+    "label": "智谱 AI 编程订阅 国内",
+    "kind": "cloud_subscription",
+    "harness": "dsh",
+    "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4",
+    "route": "zai-coding-cn",
+    "protocol": "openai-completions",
+    "api_key_env": "ZAI_CODING_CN_API_KEY",
+    "requires_key": true,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1,
+    "credential_account": "dsh-zai-coding-cn-api-key-"
+  }
+}

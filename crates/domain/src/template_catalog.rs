@@ -25,6 +25,8 @@ pub fn template_definition_kind(kind: &str) -> bool {
             | "capability"
             | "agent"
             | "model"
+            | "model_provider"
+            | "model_catalog"
             | "harness"
             | "sandbox"
             | "tool"

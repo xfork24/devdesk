@@ -420,9 +420,15 @@ impl EngineeringState {
                     "完整 Agent 必须使用其冻结 Model 的参数",
                 )?;
                 if binding.installation.key.provider == HarnessProvider::Codex {
-                    let model: ModelDefinition = serde_json::from_value(serde_json::json!({"provider":"openai","model":binding.model,"parameters":binding.model_parameters}))
-                        .map_err(|e| err("invalid_configuration", e.to_string()))?;
-                    validate_model_definition(&model)?;
+                    for (key, value) in &binding.model_parameters {
+                        require(
+                            key == "reasoning_effort"
+                                && value
+                                    .as_str()
+                                    .is_some_and(|v| validate_reasoning_effort(v).is_ok()),
+                            "Codex 模型参数无效",
+                        )?;
+                    }
                 } else {
                     binding
                         .model_connection

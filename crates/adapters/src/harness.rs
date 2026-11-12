@@ -18,9 +18,6 @@ pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     hash.update(include_bytes!("../../core/src/agent_tasks.rs"));
     hash.update(include_bytes!("model_providers.rs"));
     hash.update(include_bytes!("../../domain/src/model_provider.rs"));
-    hash.update(include_bytes!(
-        "../../../resources/configuration/dsh-model-catalog.json"
-    ));
     hash.update(include_bytes!("permissions.rs"));
     hash.update(include_bytes!("permission_profiles.rs"));
     hash.update(include_bytes!("../../domain/src/permission_profile.rs"));
@@ -437,13 +434,13 @@ impl RuntimeWorkers {
                 let connection = model_connection
                     .as_ref()
                     .ok_or_else(|| err("invalid_configuration", "缺少 DSH 模型连接"))?;
-                let p = connection.provider;
-                let mut key = if p.requires_key() {
+                let requires_key = !connection.credential_account.is_empty();
+                let mut key = if requires_key {
                     let reference = binding
                         .credential_ref
                         .as_deref()
                         .ok_or_else(|| err("credentials_required", "DSH 缺少所选服务商凭据引用"))?;
-                    CredentialVault::new(&self.root)?.read_model_reference(p, reference)?
+                    CredentialVault::new(&self.root)?.read_connection_reference(connection, reference)?
                 } else {
                     require(
                         binding.credential_ref.is_none(),
@@ -455,14 +452,14 @@ impl RuntimeWorkers {
                     !key.contains(&b'\n') && !key.contains(&b'\r'),
                     "凭据包含无效换行",
                 )?;
-                if p.requires_key() {
+                if requires_key {
                     secrets.push(
                         String::from_utf8(key.clone())
                             .map_err(|_| err("credentials_required", "凭据编码无效"))?,
                     );
                 }
                 let path = meta.join("provider.env");
-                let mut bytes = format!("{}=", p.api_key_env()).into_bytes();
+                let mut bytes = format!("{}=", connection.api_key_env).into_bytes();
                 bytes.extend_from_slice(&key);
                 bytes.push(b'\n');
                 write_private(&path, &bytes)?;
@@ -1523,7 +1520,7 @@ mod protocol_tests {
             (None, Some(json!({})), None),
         ] {
             let mut binding = json!({
-                "installation":{"id":"fixture","key":{"provider":"codex","version":devdesk_domain::DEFAULT_CODEX_VERSION,"os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
+                "installation":{"id":"fixture","key":{"provider":"codex","version":runtime_preparation::CODEX_VERSION,"os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
                 "adapter_version":"fixture/v1","model":"catalog-model","model_parameters":effort.map(|effort| json!({"reasoning_effort":effort})).unwrap_or(json!({})),
                 "tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)
             });

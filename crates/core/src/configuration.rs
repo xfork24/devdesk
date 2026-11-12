@@ -84,12 +84,8 @@ pub(crate) fn validate_capability(s: &EngineeringState, data: &Value, scope: &Sc
         !model.model.trim().is_empty() && !model.provider.trim().is_empty(),
         "Model 后端与标识不能为空",
     )?;
-    require(
-        harness.model_providers.is_empty() || harness.model_providers.contains(&model.provider),
-        "Harness 不支持该 Model 后端",
-    )?;
 
-    resolve_model_connection(&model, &harness)?;
+    s.resolve_model_connection(&model, &harness)?;
 
     for tool in &a.tools {
         let record = reference(s, tool, "tool", scope)?;
@@ -344,4 +340,79 @@ pub fn retired(s: &EngineeringState, r: &ConfigurationRecord) -> bool {
                     source.kind == r.kind && source.definition_id == r.definition_id
                 }))
     })
+}
+
+/// Model provider sources are pure facts; only the public id must be unique.
+pub(crate) fn validate_model_provider(
+    s: &EngineeringState,
+    data: &Value,
+    exclude: Option<&str>,
+) -> Result<()> {
+    validate_source_data("model_provider", data)?;
+    let provider: ProviderFacts = serde_json::from_value(data.clone())
+        .map_err(|e| err("invalid_configuration", e.to_string()))?;
+    require(
+        !s.governance
+            .iter()
+            .any(|r| r.kind == "model_provider"
+                && Some(r.definition_id.as_str()) != exclude
+                && r.data["id"] == json!(provider.id)),
+        "服务商标识已被其他源使用",
+    )?;
+    Ok(())
+}
+
+/// Catalog sources must only reference published model providers.
+pub(crate) fn validate_model_catalog(
+    s: &EngineeringState,
+    data: &Value,
+    scope: &Scope,
+) -> Result<()> {
+    validate_source_data("model_catalog", data)?;
+    let catalog: ModelCatalogDefinition = serde_json::from_value(data.clone())
+        .map_err(|e| err("invalid_configuration", e.to_string()))?;
+    for provider in &catalog.providers {
+        reference(s, &provider.provider_ref, "model_provider", scope)?;
+    }
+    Ok(())
+}
+
+/// Harness sources declare their model providers and the catalog verified for their build.
+pub(crate) fn validate_harness(s: &EngineeringState, data: &Value, scope: &Scope) -> Result<()> {
+    let h: HarnessDefinition = serde_json::from_value(data.clone())
+        .map_err(|e| err("invalid_configuration", e.to_string()))?;
+    require(
+        h.recipe_digest.as_ref().is_none_or(|digest| {
+            known_harness_provider(&h.provider)
+                && digest.len() == 64
+                && digest.bytes().all(|b| b.is_ascii_hexdigit())
+        }),
+        "无效的固定 Harness 配方",
+    )?;
+    require(
+        known_harness_provider(&h.provider) && !h.runtime_version.is_empty(),
+        "无效 Harness 或运行版本",
+    )?;
+    validate_source_data("harness", data)?;
+    let mut provider_ids = std::collections::BTreeSet::new();
+    for provider_ref in &h.model_providers {
+        let provider: ProviderFacts = reference(s, provider_ref, "model_provider", scope)?.decode()?;
+        require(
+            provider.harness == h.provider,
+            "Harness 引用了不属于它的 Model 服务商",
+        )?;
+        require(
+            provider_ids.insert(provider.id.clone()),
+            "Harness 服务商引用重复",
+        )?;
+    }
+    if let Some(catalog_ref) = &h.model_catalog_ref {
+        let catalog: ModelCatalogDefinition =
+            reference(s, catalog_ref, "model_catalog", scope)?.decode()?;
+        require(
+            h.recipe_digest.as_deref() == Some(catalog.recipe_digest.as_str()),
+            "模型目录与 Harness 的构建配方不一致",
+        )?;
+    }
+    Ok(())
 }

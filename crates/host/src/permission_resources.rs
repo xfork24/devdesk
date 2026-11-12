@@ -500,7 +500,7 @@ mod tests {
                 json!({"target":permission_target(&s,PermissionTargetKind::Harness,DEFAULT_HARNESS_ID).unwrap(),"permission_revision_id":profile,"expected_revision":expected}),
             ];
             if false {
-                changes.push(json!({"target":permission_target(&s,PermissionTargetKind::Sandbox,DEFAULT_PERMISSION_SANDBOX).unwrap(),"permission_revision_id":"sandbox-full-access-v2:1","expected_revision":0}));
+                changes.push(json!({"target":permission_target(&s,PermissionTargetKind::Sandbox,DEFAULT_PERMISSION_SANDBOX).unwrap(),"permission_revision_id":"builtin-permission-sandbox-full-access:1","expected_revision":0}));
             }
             w.dispatch(
                 "permission.bindings.apply",
@@ -508,7 +508,7 @@ mod tests {
             )
             .unwrap()
         };
-        apply("harness-full-access-v2:1", 1);
+        apply("builtin-permission-harness-full-access:1", 1);
         let selection = ExecutionPermissionSelection {
             sandbox_ref: DEFAULT_PERMISSION_SANDBOX.into(),
             harness: PermissionSelection::FollowTarget,
@@ -559,7 +559,12 @@ mod tests {
                 id: "explicit-port-fixture".into(),
                 key: RuntimeKey {
                     provider: HarnessProvider::Codex,
-                    version: devdesk_domain::DEFAULT_CODEX_VERSION.into(),
+                    version: format!(
+                        "{}+recipe.{}",
+                        devdesk_adapters::runtime_preparation::CODEX_VERSION,
+                        &devdesk_adapters::runtime_preparation::default_codex_recipe_digest()
+                            [..16]
+                    ),
                     os: "linux".into(),
                     arch: "aarch64".into(),
                 },
@@ -592,7 +597,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        apply("harness-read-only-v2:1", 2);
+        apply("builtin-permission-harness-read-only:1", 2);
         let params = json!({"project_id":project,"command_id":id(),"target":original,"expected_revision":1,"payload":{"input":"Use the new permissions","client_message_id":"one-message"}});
         let sent = w.dispatch("conversation.send", params.clone()).unwrap();
         assert_ne!(sent["effective_session_id"], original);
@@ -657,7 +662,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":{"kind":"project","project_id":project},"data":{"provider":"codex","runtime_version":devdesk_domain::DEFAULT_CODEX_VERSION,"model_providers":["openai"],"capabilities":[]}}})).unwrap();
+        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":{"kind":"project","project_id":project},"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"model_providers":["builtin-model-provider-openai:1"],"capabilities":[]}}})).unwrap();
         let catalog = w
             .dispatch("query.permission_resources", json!({"project_id":project}))
             .unwrap();
@@ -668,7 +673,7 @@ mod tests {
             .find(|r| r["target"]["revision_id"] == h["id"])
             .unwrap()["target"]
             .clone();
-        let params = json!({"project_id":project,"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"harness-read-only-v2:1","expected_revision":0}]}});
+        let params = json!({"project_id":project,"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1","expected_revision":0}]}});
         let saved = w
             .dispatch("permission.bindings.apply", params.clone())
             .unwrap();
@@ -709,11 +714,11 @@ mod tests {
         let preflight = w
             .dispatch(
                 "permission.binding.preflight",
-                json!({"target":target,"permission_revision_id":"harness-read-only-v2:1"}),
+                json!({"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1"}),
             )
             .unwrap();
         assert_eq!(preflight["scope_checked"], false);
-        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"harness-read-only-v2:1","expected_revision":1}]}});
+        let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1","expected_revision":1}]}});
         let first = w
             .dispatch("permission.bindings.apply", request.clone())
             .unwrap();

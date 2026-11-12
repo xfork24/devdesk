@@ -1,8 +1,8 @@
 {
   "kind": "permission_profile",
-  "identity": "harness-full-access-v2",
+  "identity": "builtin-permission-harness-read-only",
   "revision": 1,
-  "name": "Harness 容器内全权限",
+  "name": "Harness 只读",
   "scope": {
     "kind": "global"
   },
@@ -10,7 +10,7 @@
     "policy": {
       "approval": "never",
       "filesystem": {
-        "mode": "full_access"
+        "mode": "read_only"
       },
       "network": {
         "mode": "enabled"

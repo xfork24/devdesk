@@ -9,6 +9,8 @@ import type { Request } from "./configuration-ui";
 
 export type ModelProvider = {
   id: string;
+  /** Source reference (`identity:revision`) used by Harness provider lists. */
+  reference: string;
   label: string;
   harness: string;
   endpoint?: string;

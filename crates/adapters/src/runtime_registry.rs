@@ -147,17 +147,22 @@ impl GlobalStore {
         provider: HarnessProvider,
     ) -> Result<RuntimeInstallation> {
         let (version, license) = match provider {
-            HarnessProvider::Codex => (DEFAULT_CODEX_VERSION, "Apache-2.0"),
-            HarnessProvider::Dsh => (DEFAULT_DSH_VERSION, "MIT"),
+            HarnessProvider::Codex => (runtime_preparation::CODEX_VERSION, "Apache-2.0"),
+            HarnessProvider::Dsh => (runtime_preparation::DSH_VERSION, "MIT"),
         };
         let tag = format!("devdesk/{}:{version}", provider.as_str());
-        self.register_docker_runtime(provider, &tag, version, license)
+        let recipe = match provider {
+            HarnessProvider::Codex => runtime_preparation::default_codex_recipe_digest(),
+            HarnessProvider::Dsh => runtime_preparation::default_dsh_recipe_digest(),
+        };
+        self.register_docker_runtime(provider, &tag, version, &recipe, license)
     }
     pub(crate) fn register_docker_runtime(
         &self,
         provider: HarnessProvider,
         tag: &str,
         version: &str,
+        recipe_digest: &str,
         license: &str,
     ) -> Result<RuntimeInstallation> {
         let value = docker_image_info(tag)?;
@@ -176,7 +181,9 @@ impl GlobalStore {
         self.register_runtime(RuntimeRegistration {
             key: RuntimeKey {
                 provider,
-                version: format!("{version}+docker.{}", &image[7..19]),
+                // The recipe identity is the content anchor; permission acceptance and
+                // harness materialization compare it, never the base version string.
+                version: format!("{version}+recipe.{}", &recipe_digest[..16]),
                 os: value["os"].as_str().unwrap_or("").into(),
                 arch: arch.into(),
             },

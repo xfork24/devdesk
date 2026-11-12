@@ -158,17 +158,14 @@ impl Workspace {
         if let Some(agent) = command.payload["agent_configuration"]["harness_revision_id"].as_str()
         {
             let h: HarnessDefinition = state.configuration(agent)?.decode()?;
-            require(
-                if h.recipe_digest.is_some() {
-                    installation
-                        .key
-                        .version
-                        .starts_with(&format!("{}+docker.", h.runtime_version))
-                } else {
-                    installation.key.version == h.runtime_version
-                },
-                "安装版本与 Agent 锁定的 Harness 版本不匹配",
-            )?;
+            if let Some(recipe) = &h.recipe_digest {
+                // Content match: the selected installation must originate from the exact
+                // recipe the Agent's Harness revision pinned.
+                require(
+                    permissions::installation_recipe(&installation).starts_with(&recipe[..16]),
+                    "安装配方与 Agent 锁定的 Harness 配方不匹配",
+                )?;
+            }
         }
         permissions::validate_runtime_version(&installation)?;
         require(
@@ -249,7 +246,7 @@ impl Workspace {
             let m: ModelDefinition = state.configuration(&a.model_revision_id)?.decode()?;
             let h: HarnessDefinition = state.configuration(&a.harness_revision_id)?.decode()?;
             require(m.model == model, "Model 修订与执行模型不一致")?;
-            let connection = resolve_model_connection(&m, &h)?;
+            let connection = state.resolve_model_connection(&m, &h)?;
             require(
                 resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled,
                 "Sandbox 禁网，无法连接模型服务",
@@ -261,22 +258,22 @@ impl Workspace {
         let credential_ref = match provider {
             HarnessProvider::Codex => Some(self.codex_auth.credential_reference()?),
             HarnessProvider::Dsh => {
-                let p = model_connection
+                let connection = model_connection
                     .as_ref()
-                    .ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?
-                    .provider;
-                if p.requires_key() {
+                    .ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?;
+                let facts = state.provider_facts_any(&connection.provider)?;
+                if facts.requires_key {
                     let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
                     let status = vault.status_model_reference(
-                        p,
-                        self.global.model_credential_reference(p)?.as_deref(),
+                        &facts,
+                        self.global.model_credential_reference(&facts)?.as_deref(),
                     )?;
                     require(
                         status.available,
                         "系统凭据库不可用，请检查共享凭据助手或 Secret Service",
                     )?;
-                    require(status.configured, format!("请先配置 {} 凭据", p.label()))?;
-                    vault.verify_model_reference(p, &status.reference)?;
+                    require(status.configured, format!("请先配置 {} 凭据", facts.label))?;
+                    vault.verify_model_reference(&facts, &status.reference)?;
                     Some(status.reference)
                 } else {
                     None
@@ -840,16 +837,16 @@ impl Workspace {
                 })
                 .collect();
             let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
-            let providers:Vec<_>=DshModelProvider::ALL.into_iter().map(|provider|{
-                let reference=self.global.model_credential_reference(provider).ok().flatten();
-                let status=vault.status_model_reference(provider,reference.as_deref()).ok();
-                json!({"id":provider.as_str(),"label":provider.label(),"configured":status.as_ref().is_some_and(|s|s.configured),"available":status.as_ref().is_some_and(|s|s.available),"auth_kind":if provider.requires_key(){"api_key"}else{"none"}})
+            let providers:Vec<_>=self.model_provider_facts()?.into_iter().map(|(_,p)|{
+                let reference=self.global.model_credential_reference(&p).ok().flatten();
+                let status=vault.status_model_reference(&p,reference.as_deref()).ok();
+                json!({"id":p.id,"label":p.label,"configured":status.as_ref().is_some_and(|s|s.configured),"available":status.as_ref().is_some_and(|s|s.available),"auth_kind":if p.requires_key{"api_key"}else{"none"}})
             }).collect();
             return Ok(
                 json!({"default_harness":self.global.default_harness()?,"host_os":std::env::consts::OS,"host_arch":std::env::consts::ARCH,
                 "installations":installations,"model_providers":providers,"recipes":[
-                    {"provider":"codex","version":DEFAULT_CODEX_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":default_codex_recipe_digest()},
-                    {"provider":"dsh","version":DEFAULT_DSH_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":default_dsh_recipe_digest()}
+                    {"provider":"codex","version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest()},
+                    {"provider":"dsh","version":devdesk_adapters::runtime_preparation::DSH_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":devdesk_adapters::runtime_preparation::default_dsh_recipe_digest()}
                 ]}),
             );
         }
@@ -1727,7 +1724,7 @@ mod adapter_injection_tests {
         };
         let harness = create_resource(
             "harness.create",
-            json!({"name":"Explicit pinned Harness","data":{"provider":"codex","runtime_version":devdesk_domain::DEFAULT_CODEX_VERSION,"model_providers":["openai"],"capabilities":[]}}),
+            json!({"name":"Explicit pinned Harness","data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"model_providers":["builtin-model-provider-openai:1"],"capabilities":[]}}),
         );
         let capability = create_resource(
             "capability.create",

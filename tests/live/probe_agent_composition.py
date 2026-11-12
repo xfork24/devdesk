@@ -10,7 +10,7 @@ try:
  harness=c.command('harness.create',payload={'name':'Native '+a.provider+' typed Harness','data':{'provider':a.provider,'runtime_version':runtime['key']['version'],'capabilities':[],'model_providers':[provider]}})['id']
  tool=c.command('tool.create',payload={'name':'Native tools','data':{'qualified_name':'harness.native','implementation':'harness.native','input_schema':{},'output_schema':{},'capabilities':[]}})['id']
  resources=c.rpc('query.permission_resources');target=next(t['target'] for t in resources['targets'] if t['target']['revision_id']==harness)
- c.command('permission.bindings.apply',payload={'bindings':[{'target':target,'permission_revision_id':'harness-full-access-v2:1','expected_revision':0}]})
+ c.command('permission.bindings.apply',payload={'bindings':[{'target':target,'permission_revision_id':'builtin-permission-harness-full-access:1','expected_revision':0}]})
  cap=c.command('capability.create',payload={'name':'Native typed capability','data':{'model_ref':model,'harness_ref':harness,'skills':[],'tools':[tool]}})['id']
  role=c.command('role.create',payload={'name':'Native acceptance role','data':{'instructions':'Answer the supplied acceptance prompt concisely without changing files.'}})['id']
  agent=c.command('agent.create',payload={'name':'Native typed analyst','data':{'role_ref':role,'capability_ref':cap}})['id']

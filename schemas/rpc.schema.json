@@ -1501,6 +1501,13 @@
             "null"
           ],
           "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "model_catalog_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\S+:[1-9][0-9]*$"
         }
       },
       "required": [

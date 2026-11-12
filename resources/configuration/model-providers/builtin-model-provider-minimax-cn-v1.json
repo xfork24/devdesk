@@ -1,0 +1,24 @@
+{
+  "kind": "model_provider",
+  "identity": "builtin-model-provider-minimax-cn",
+  "revision": 1,
+  "name": "MiniMax 订阅 国内",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "id": "minimax-cn",
+    "label": "MiniMax 订阅 国内",
+    "kind": "cloud_subscription",
+    "harness": "dsh",
+    "endpoint": "https://api.minimax.cn/anthropic",
+    "route": "minimax-cn",
+    "protocol": "anthropic-messages",
+    "api_key_env": "MINIMAX_CN_API_KEY",
+    "requires_key": true,
+    "native": false,
+    "capacity_required": true,
+    "min_output_request": 1,
+    "credential_account": "dsh-minimax-cn-api-key-"
+  }
+}

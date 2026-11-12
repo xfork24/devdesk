@@ -1,4 +1,6 @@
 //! Deterministic DSH route configuration. Profiles contain references, never key values.
+//! Routing authority was frozen at bind time against the Harness catalog; here the
+//! frozen snapshot only re-validates itself (content, never runtime version strings).
 use super::*;
 
 pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnection> {
@@ -7,62 +9,39 @@ pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnect
         "需要 DSH 绑定",
     )?;
     let parameters = binding.effective_model_parameters();
-    if let Some(connection) = &binding.model_connection {
-        connection.validate(&binding.model, &parameters)?;
-        require(
-            binding.model_profile_digest.as_deref()
-                == Some(
-                    configuration_digest(&json!(dsh_model_patch(connection, &binding.model)?))?
-                        .as_str(),
-                ),
-            "冻结模型 profile 摘要不一致",
-        )?;
-        require(
-            binding
-                .agent_configuration
-                .as_ref()
-                .is_none_or(|a| a.model_provider == connection.provider.as_str()),
-            "Agent 服务商与模型连接不一致",
-        )?;
-        if connection.provider != DshModelProvider::Deepseek {
-            require(
-                binding.installation.key.version.split('+').next() == Some(DEFAULT_DSH_VERSION),
-                "DSH 安装尚未验证此路由",
-            )?;
-        }
-        return Ok(connection.clone());
-    }
+    let Some(connection) = &binding.model_connection else {
+        return Err(err(
+            "invalid_configuration",
+            "DSH 绑定缺少冻结模型连接；请通过 Agent 配置重新解析",
+        ));
+    };
+    connection.validate(&binding.model, &parameters)?;
+    require(
+        binding.model_profile_digest.as_deref()
+            == Some(
+                configuration_digest(&json!(dsh_model_patch(connection, &binding.model)?))?
+                    .as_str(),
+            ),
+        "冻结模型 profile 摘要不一致",
+    )?;
     require(
         binding
             .agent_configuration
             .as_ref()
-            .is_none_or(|a| a.model_provider == "deepseek"),
-        "新服务商缺少冻结模型连接，不能回退 DeepSeek",
+            .is_none_or(|a| a.model_provider == connection.provider),
+        "Agent 服务商与模型连接不一致",
     )?;
-    require(
-        binding.model_profile_digest.is_none(),
-        "缺少连接快照却包含新 profile 摘要",
-    )?;
-    let m: ModelDefinition = serde_json::from_value(
-        json!({"provider":"deepseek","model":binding.model,"parameters":parameters}),
-    )
-    .map_err(storage)?;
-    let h: HarnessDefinition = serde_json::from_value(
-        json!({"provider":"dsh","runtime_version":binding.installation.key.version}),
-    )
-    .map_err(storage)?;
-    resolve_model_connection(&m, &h)?
-        .ok_or_else(|| err("invalid_configuration", "缺少 DSH 模型连接"))
+    Ok(connection.clone())
 }
 
 pub fn dsh_model_patch(connection: &ModelConnection, model: &str) -> Result<String> {
     connection.validate(model, &Default::default())?;
-    if connection.provider == DshModelProvider::Deepseek {
+    if connection.native {
         return Ok("\n- id: llm-pi-ai\n  disabled: true\n".into());
     }
-    let mut route = json!({"apiKeyEnv":connection.provider.api_key_env(),"api":connection.protocol,"baseURL":connection.worker_endpoint,
+    let mut route = json!({"apiKeyEnv":connection.api_key_env,"api":connection.protocol,"baseURL":connection.worker_endpoint,
         "models":[{"id":model,"contextWindow":connection.context_window,"maxTokens":connection.max_output_tokens}]});
-    if connection.provider == DshModelProvider::Ollama {
+    if connection.kind == ProviderKind::LocalServer {
         route["compat"] = json!({"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","supportsStrictMode":false});
         route["models"][0]["reasoningEfforts"] = json!(false);
     }
@@ -118,9 +97,9 @@ pub fn discover_ollama_models(endpoint: &str) -> Result<Value> {
 
 /// Read the account's published model directory, never invoking inference.
 /// Authentication goes over curl's stdin, not process arguments or a file.
-pub fn discover_deepseek_models(dataset: &Path, reference: &str) -> Result<Value> {
+pub fn discover_deepseek_models(dataset: &Path, facts: &ProviderFacts, reference: &str) -> Result<Value> {
     let mut key = crate::credentials::CredentialVault::new(dataset)?
-        .read_model_reference(DshModelProvider::Deepseek, reference)?;
+        .read_model_reference(facts, reference)?;
     require(
         key.is_ascii() && !key.iter().any(|b| b.is_ascii_control()),
         "模型凭据包含无效字符",
@@ -167,6 +146,6 @@ pub fn discover_deepseek_models(dataset: &Path, reference: &str) -> Result<Value
         Some(json!({"id":id,"name":row["name"],"context_window":row["context_window"],"max_output_tokens":row["max_output_tokens"]}))
     }).collect();
     Ok(
-        json!({"provider":"deepseek","source":"provider_endpoint","inference_verified":false,"models":models}),
+        json!({"provider":facts.id,"source":"provider_endpoint","inference_verified":false,"models":models}),
     )
 }
