@@ -1,6 +1,6 @@
 # 工具与技能接入
 
-左侧「工具与技能接入」包含 HTTP API、MCP、Skills、原生工具和调用记录。基础组件只管理 Model/Harness；Capability 继续明确选择确切 Tool/Skill 修订，项目为 Role 选择 Agent。
+「基础组件」导航包含 Model、Harness、MCP、Skills、HTTP 工具和 Harness 原生工具；工具调用记录在「历史记录」按当前项目或 Global 查看。Capability 明确选择确切 Tool/Skill 修订，项目为 Role 选择 Agent。
 
 ## 配置步骤
 

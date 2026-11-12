@@ -18,7 +18,7 @@
 
 执行前持久化确切意图；事务外调用实际实现；core 核对身份、归属、摘要和终态后接纳。适配器不得直接设置业务完成。StepExecution 关联完整路径、轮次、输入及实际 Session / Turn / ToolCall，平台工具可以没有模型会话。
 
-Harness 接收 canonical `agent-task/v5`，包括任务、职责、Skill、Spec、输入来源、逐端口输出 Schema、预算及授权。Codex 和 DSH 使用同一任务正文，协议编码由各适配器负责。原生准入、消费、终态和 writer 停止证明缺一不可；不确定输入不自动重发。
+Harness 接收 canonical `agent-task/v6`，包括任务、职责、Skill、Spec、输入来源、逐端口输出 Schema、预算及授权。Codex 和 DSH 使用同一任务正文，协议编码由各适配器负责。原生准入、消费、终态和 writer 停止证明缺一不可；不确定输入不自动重发。
 
 Codex 的平台工具桥核对当前原生 worker、Session、Turn、请求和调用 ID，以及冻结 Capability / Step / Permission 的交集。它与独立 Tool Step 共用平台处理器；请求、实际回执与回复交付分开记录。DSH 不支持该动态桥，配置时拒绝；普通讨论不提供需要 Workflow 归属的平台工具。
 

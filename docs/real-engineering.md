@@ -1,6 +1,6 @@
 # 工程接入与通用流程
 
-DevDesk 使用 Workflow v5 驱动工作。Role 是业务身份，Agent 加载自己的 Skill 和能力，Step 的 `task_instructions` 指定本次任务。完整合同见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)，出厂配置见 [默认目录](../resources/configuration/README.md)。
+DevDesk 使用 Workflow v6 驱动工作。Role 是业务身份，Agent 加载自己的 Skill 和能力，Step 的 `task_instructions` 指定本次任务。运行语义见 [工作流与编排](workflow-orchestration.md)，出厂配置见 [默认目录](../resources/configuration/README.md)；历史改造合同存档于 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
 
 ## 操作流程
 
@@ -14,7 +14,7 @@ DevDesk 使用 Workflow v5 驱动工作。Role 是业务身份，Agent 加载自
 
 ## 实际执行边界
 
-Agent 运行保存 canonical `agent-task/v5`、Session、Turn 和真实 worker。任务正文、职责、Skill、Spec、输入、输出合同与授权分别保留来源。权限由 Agent 能力上限、Step 访问声明、完整 Permission 与执行后端共同落实，业务 Role 不能扩大权限。写入必须使用受管理工作空间及明确路径。
+Agent 运行保存 canonical `agent-task/v6`、Session、Turn 和真实 worker。任务正文、职责、Skill、Spec、输入、输出合同与授权分别保留来源。权限由 Agent 能力上限、Step 访问声明、完整 Permission 与执行后端共同落实，业务 Role 不能扩大权限。写入必须使用受管理工作空间及明确路径。
 
 平台工具执行真实工作空间查询、快照、Task 创建、测试、候选与发布；工具运行不借用占位 Agent。测试使用固定代码 SHA、明确 Node TestRecipe、固定镜像、无网络容器和结构化失败报告，断言失败与环境故障分开。新增语言或 runner 需要实现新的适配契约。
 
@@ -28,6 +28,6 @@ Git 候选以预期目标为父提交。默认接纳要求确切候选的真实�
 
 `./scripts/check/check.sh` 验证 Rust、HTTP、安全、SQLite、模板重置及 debug/release Chromium。真实 Docker 验证可使用 `scripts/check/check-live.sh --groups git,docker,permissions`，不调用模型。真实模型与 GitHub 发布须使用专用数据集和测试仓库；历史版本的验收报告不代表新执行器已完成相同实机验收。
 
-当前配置使用源协议 v2，数据库基线为 global 15 / project 46。仅支持新数据集，不提供旧协议转换或升级；验证使用独立空目录。既有目录会被明确拒绝且不改写。
+当前配置使用源协议 v2，数据库基线为 global 16 / project 47。仅支持新数据集，不提供旧协议转换或升级；验证使用独立空目录。既有目录会被明确拒绝且不改写。
 
 合并后的完整 Feature 验收还核对 Task documentation/review/candidate_review 和 Feature closure_review/candidate_review 的实际渲染任务封套：原始逐增量 TDD evidence 必须完整到达，输入来源必须指向相应的密封输出。默认 automatic 数据集中出现 Human 确认、人工批准、旁路或豁免即判失败；不允许通过手动 approve 完成探针。运行计划原始合同通过不可变修订祖先核对，不能将修订后的图当作自身验收基线。

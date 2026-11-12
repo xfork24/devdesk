@@ -4,7 +4,7 @@ macOS 与 Linux 使用相同 Web/Rust 工程接口；没有依赖 macOS 原生�
 
 ## Permission 与凭据信任范围
 
-默认 `container-full-access` 将整个 Harness 容器视为信任范围，同容器工具可以访问该执行的模型凭据和运行状态。宿主系统凭据库、其他项目和未挂载路径仍在容器外。Permission 审批与操作系统凭据授权分开：选择 `never` 不会授予 Keychain 或 Secret Service 权限。受限后端的状态隔离必须由实际执行器落实，能力和假凭据验证见 [权限后端](../permissions/README.md) 与 [执行报告](plans/permission-standardization/EXECUTION.md)。
+默认绑定使用 v2 权限档案 `harness-full-access-v2` 与 `sandbox-full-access-v2`（见 [运行时权限](permissions.md)），将整个 Harness 容器视为信任范围，同容器工具可以访问该执行的模型凭据和运行状态。宿主系统凭据库、其他项目和未挂载路径仍在容器外。Permission 审批与操作系统凭据授权分开：选择 `never` 不会授予 Keychain 或 Secret Service 权限。受限后端的状态隔离必须由实际执行器落实，能力和假凭据验证见 [权限后端](../permissions/README.md) 与 [执行报告](plans/permission-standardization/EXECUTION.md)。
 
 ## macOS：固定凭据助手
 

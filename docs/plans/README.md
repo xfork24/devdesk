@@ -4,6 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [现行系统文档补全](current-documentation/PLAN.md) | [实施与验收](current-documentation/EXECUTION.md) | 已完成；5 篇新文档（工作流与编排/运行时权限/存储/讨论与经验/Web 工作台）、8 处漂移修复与 --normalize-plan v6 化；host 32 项测试通过；版本锚点机制按用户决定撤回 |
 | [Standard 不可变规范快照](standard-snapshot/PLAN.md) | [实施与验收](standard-snapshot/EXECUTION.md) | 已完成；独立 worktree 合入 main 后统一验证，真实双 Task / Feature 62 节点闭环、切换历史与独立发布包通过 |
 | [Delivery 分类与内容规范](delivery-content-specs/PLAN.md) | [实施与验收](delivery-content-specs/EXECUTION.md) | 已合并 main；21 种 Delivery 全关联 Spec，真实 Diff 接入交付与评审；214 项 Rust、debug/release 各 44 项浏览器及真实 Docker 验收通过 |
 | [源配置与执行解析](../source-configuration.md) | [实施验收](source-configuration/EXECUTION.md) | 已合入本地 main；源协议 v2、权限独立、文档规范复用、按需视图；207 项 Rust、debug/release 各 43 项浏览器及独立 macOS 包通过；只支持新数据 |
