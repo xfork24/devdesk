@@ -1727,7 +1727,7 @@ mod adapter_injection_tests {
         };
         let harness = create_resource(
             "harness.create",
-            json!({"name":"Explicit pinned Harness","data":{"provider":"codex","runtime_version":"0.167.0","model_providers":["openai"],"capabilities":[]}}),
+            json!({"name":"Explicit pinned Harness","data":{"provider":"codex","runtime_version":devdesk_domain::DEFAULT_CODEX_VERSION,"model_providers":["openai"],"capabilities":[]}}),
         );
         let capability = create_resource(
             "capability.create",

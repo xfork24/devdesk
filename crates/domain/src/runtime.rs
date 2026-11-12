@@ -8,6 +8,13 @@ pub enum HarnessProvider {
     Dsh,
 }
 
+/// The complete harness provider registry; provider gates read this, never literals.
+pub const HARNESS_PROVIDERS: &[HarnessProvider] = &[HarnessProvider::Codex, HarnessProvider::Dsh];
+
+pub fn known_harness_provider(name: &str) -> bool {
+    HARNESS_PROVIDERS.iter().any(|p| p.as_str() == name)
+}
+
 impl HarnessProvider {
     pub fn as_str(self) -> &'static str {
         match self {

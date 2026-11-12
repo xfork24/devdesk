@@ -26,7 +26,7 @@ pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnect
         )?;
         if connection.provider != DshModelProvider::Deepseek {
             require(
-                binding.installation.key.version.split('+').next() == Some("0.2.2-rc.1"),
+                binding.installation.key.version.split('+').next() == Some(DEFAULT_DSH_VERSION),
                 "DSH 安装尚未验证此路由",
             )?;
         }

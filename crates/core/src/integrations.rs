@@ -138,7 +138,7 @@ pub fn integration_deletion_targets(
 ) -> Result<Vec<ConfigurationRecord>> {
     require(
         ["integration", "integration_binding", "tool"].contains(&source.kind.as_str())
-            && (source.kind != "tool" || source.data["schema_version"] == 2),
+            && (source.kind != "tool" || source.data["integration_ref"].is_string()),
         "只能删除接入源、绑定或已发布的外部工具",
     )?;
     let source_ids: Vec<_> = s
@@ -721,7 +721,7 @@ impl Engine {
                     .iter()
                     .filter(|r| {
                         r.kind == "tool"
-                            && r.data["schema_version"] == 2
+                            && r.data["integration_ref"].is_string()
                             && r.data["qualified_name"] == tool["qualified_name"]
                     })
                     .filter(|r| {

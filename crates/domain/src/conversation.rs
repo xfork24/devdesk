@@ -790,7 +790,6 @@ impl EngineeringState {
                 }),
                 "提案必须来自同项目的已完成讨论轮次",
             )?;
-            require(proposal.schema_version == 2, "不支持的提案 schema 版本")?;
             require(
                 (proposal.status == ProposalStatus::Accepted)
                     == !proposal.adopted_objects.is_empty(),

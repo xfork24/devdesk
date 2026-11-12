@@ -2,6 +2,7 @@
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Renderer identity recorded on orchestration wakeups. Metadata only.
 pub const ORCHESTRATION_RENDERER: &str = "orchestration-task/v2";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

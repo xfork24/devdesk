@@ -559,7 +559,7 @@ mod tests {
                 id: "explicit-port-fixture".into(),
                 key: RuntimeKey {
                     provider: HarnessProvider::Codex,
-                    version: "0.167.0".into(),
+                    version: devdesk_domain::DEFAULT_CODEX_VERSION.into(),
                     os: "linux".into(),
                     arch: "aarch64".into(),
                 },
@@ -657,7 +657,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":{"kind":"project","project_id":project},"data":{"provider":"codex","runtime_version":"0.167.0","model_providers":["openai"],"capabilities":[]}}})).unwrap();
+        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":{"kind":"project","project_id":project},"data":{"provider":"codex","runtime_version":devdesk_domain::DEFAULT_CODEX_VERSION,"model_providers":["openai"],"capabilities":[]}}})).unwrap();
         let catalog = w
             .dispatch("query.permission_resources", json!({"project_id":project}))
             .unwrap();

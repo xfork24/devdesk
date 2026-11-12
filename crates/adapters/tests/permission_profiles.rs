@@ -504,7 +504,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
         &json!(next.harness.binding),
     );
     schemas::SCHEMAS.assert_valid("rpc.schema.json#/$defs/ExecutionPermissions", &json!(old));
-    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","data":{"provider":"codex","runtime_version":"0.167.0","capabilities":[],"model_providers":["openai"]}}),None,None)).unwrap();
+    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","data":{"provider":"codex","runtime_version":devdesk_domain::DEFAULT_CODEX_VERSION,"capabilities":[],"model_providers":["openai"]}}),None,None)).unwrap();
     assert!(
         resolve_bound_permission(
             &e.store.snapshot().unwrap(),
@@ -984,7 +984,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
     for provider in ["codex", "dsh"] {
         let root = tempfile::tempdir().unwrap();
         let (_, e) = global(root.path());
-        let harness=execute(&e,command("harness.create",json!({"name":provider,"data":{"provider":provider,"runtime_version":if provider=="codex" {"0.167.0"}else{"0.2.2-rc.1"},"model_providers":[],"capabilities":[]}}),None,None)).unwrap();
+        let harness=execute(&e,command("harness.create",json!({"name":provider,"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_domain::DEFAULT_CODEX_VERSION}else{devdesk_domain::DEFAULT_DSH_VERSION},"model_providers":[],"capabilities":[]}}),None,None)).unwrap();
         let h = harness["id"].as_str().unwrap();
         let p=execute(&e,command("permission.profile.create",json!({"identity":format!("native-{provider}"),"name":"Native v2 restrictions","target_kind":"harness","policy":{
             "filesystem":{"mode":"scoped","rules":[{"path":"/","access":"read"},{"path":"/work","access":"read_write"},{"path":"/work/tests","access":"read"}]},

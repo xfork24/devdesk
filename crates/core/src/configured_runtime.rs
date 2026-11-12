@@ -479,7 +479,7 @@ pub fn task_input(
         .spec_refs
         .iter()
         .filter_map(|id| definitions.get(id))
-        .filter(|r| r.data["schema_version"] == 3)
+        .filter(|r| r.decode::<ConfiguredSpecification>().is_ok())
         .map(|r| r.decode::<ConfiguredSpecification>().map(|s| s.checks))
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -536,7 +536,7 @@ pub fn task_input(
                     reader.is_some(),
                     "大产物需要当前步骤授权的 workflow.outputs.read 完整读取能力",
                 )?;
-                rendered_inputs.insert(name.clone(), json!({"complete":false,"source_output_id":id,"pointer":pointer,"value_digest":configuration_hash(value),"total_bytes":bytes.len(),"read_tool":"devdesk_workflow_outputs_read","arguments":{"ids":[id],"pointer":pointer,"offset":0,"max_bytes":32768},"instructions":"Read every chunk through next_offset before judging this input. The reference is not the content."}));
+                rendered_inputs.insert(name.clone(), json!({"complete":false,"source_output_id":id,"pointer":pointer,"value_digest":configuration_hash(value),"total_bytes":bytes.len(),"read_tool":OUTPUT_READ_CALL_NAME,"arguments":{"ids":[id],"pointer":pointer,"offset":0,"max_bytes":OUTPUT_READ_PAGE_BYTES},"instructions":"Read every chunk through next_offset before judging this input. The reference is not the content."}));
             }
         }
     }
@@ -562,7 +562,7 @@ pub fn task_input(
         .flat_map(|delivery| delivery.spec_refs)
         .filter(|reference| !step.spec_refs.contains(reference))
         .collect();
-    let mut input = json!({"renderer_version":"agent-task/v6","source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
+    let mut input = json!({"renderer_version":AGENT_TASK_RENDERER,"source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
         "workflow_instance_id":execution.workflow_instance_id,"plan_revision_id":execution.plan_revision_id,"node_id":execution.node_id,"contract_digest":execution.contract_digest,"path":execution.path,"step":step.key,"round":execution.round,"sequence":execution.sequence},
         "owner_id":instance.owner_id,
         "agent":execution.agent_revision_id.as_ref().and_then(|id|definitions.get(id)),
@@ -842,7 +842,6 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 6
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == id))
@@ -954,7 +953,6 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 6
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -1046,7 +1044,6 @@ impl Engine {
             .iter()
             .find(|r| {
                 r.kind == "workflow_instance"
-                    && r.data["schema_version"] == 6
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -1098,7 +1095,7 @@ impl Engine {
         let input: Value = serde_json::from_str(&turn.input)
             .map_err(|e| err("task_contract_mismatch", e.to_string()))?;
         require(
-            input["renderer_version"] == "agent-task/v6"
+            input["renderer_version"].is_string()
                 && input["source"]["execution_id"] == source.data["execution_id"],
             "步骤输入缺少可信任务来源，请通过工作流步骤提交补充输入",
         )?;
@@ -1142,7 +1139,7 @@ impl Engine {
             .agent
             .clone();
         let task = ConfiguredAgentTask {
-            renderer_version: "agent-task/v6".into(),
+            renderer_version: AGENT_TASK_RENDERER.into(),
             turn_id: turn_id.into(),
             agent_revision_id: agent,
             source: source.data,
@@ -1411,7 +1408,7 @@ impl Engine {
             let mut instance = ConfiguredWorkflowInstance {
                 active_plan_revision_id: String::new(),
                 control_version: 1,
-                schema_version: 6,
+                schema_version: WORKFLOW_INSTANCE_SCHEMA,
                 owner_id: target.into(),
                 workflow_ref: workflow.id.clone(),
                 project_id: scope.project().unwrap().into(),
@@ -1460,7 +1457,7 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.id == target && r.kind == "workflow_instance" && r.data["schema_version"] == 6
+                r.id == target && r.kind == "workflow_instance" && r.data["steps"].is_array()
             })
             .cloned()
         else {
@@ -1858,7 +1855,7 @@ impl Engine {
             let rows: Vec<_> = state
                 .governance
                 .iter()
-                .filter(|r| r.kind == "workflow_instance" && r.data["schema_version"] == 6)
+                .filter(|r| r.kind == "workflow_instance" && r.data["steps"].is_array())
                 .cloned()
                 .collect();
             for row in rows {
@@ -2418,7 +2415,7 @@ impl Engine {
                         let mut child_instance = ConfiguredWorkflowInstance {
                             active_plan_revision_id: String::new(),
                             control_version: 1,
-                            schema_version: 6,
+                            schema_version: WORKFLOW_INSTANCE_SCHEMA,
                             owner_id: child_owner.clone(),
                             workflow_ref: child.id.clone(),
                             project_id: instance.project_id.clone(),

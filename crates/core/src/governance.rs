@@ -340,10 +340,6 @@ impl Engine {
                 "Project 默认配置已变化，请刷新创建表单",
             )?;
         }
-        require(
-            current.data["schema_version"] == 4,
-            "项目配置已过时，请重新配置",
-        )?;
         self.start_configured_feature(s, feature, &current, p)
     }
 
@@ -495,15 +491,14 @@ impl Engine {
                     let h: HarnessDefinition = decode(&data)?;
                     require(
                         h.recipe_digest.as_ref().is_none_or(|digest| {
-                            ["codex", "dsh"].contains(&h.provider.as_str())
+                            known_harness_provider(&h.provider)
                                 && digest.len() == 64
                                 && digest.bytes().all(|b| b.is_ascii_hexdigit())
                         }),
                         "无效的固定 Harness 配方",
                     )?;
                     require(
-                        ["codex", "dsh"].contains(&h.provider.as_str())
-                            && !h.runtime_version.is_empty(),
+                        known_harness_provider(&h.provider) && !h.runtime_version.is_empty(),
                         "无效 Harness 或运行版本",
                     )?;
                 }
@@ -512,7 +507,7 @@ impl Engine {
                     require(
                         t.harness_provider
                             .as_deref()
-                            .is_none_or(|p| ["codex", "dsh"].contains(&p)),
+                            .is_none_or(known_harness_provider),
                         "无效原生工具组 Harness",
                     )?;
                     require(

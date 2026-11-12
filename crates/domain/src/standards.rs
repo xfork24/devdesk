@@ -13,7 +13,6 @@ pub struct ConfiguredStandard {
 }
 impl ConfiguredStandard {
     pub fn validate(&self) -> Result<()> {
-        require(self.schema_version == 4, "Standard 需要 Schema v4 规范快照")?;
         require(
             !self.root_workflow_refs.is_empty() && self.root_workflow_refs.len() <= 100,
             "Standard 需要 1—100 个 Workflow 入口",

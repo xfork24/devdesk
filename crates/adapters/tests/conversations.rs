@@ -952,7 +952,7 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
             id: "global-fixture".into(),
             key: RuntimeKey {
                 provider: HarnessProvider::Codex,
-                version: "0.167.0".into(),
+                version: devdesk_domain::DEFAULT_CODEX_VERSION.into(),
                 os: "linux".into(),
                 arch: "aarch64".into(),
             },

@@ -44,7 +44,6 @@ fn resource(path: &str) -> Result<&'static str> {
 fn load_bundle() -> Result<Bundle> {
     let manifest: Manifest = serde_json::from_str(resource("manifest.json")?)
         .map_err(|e| err("invalid_template", e.to_string()))?;
-    require(manifest.schema_version == 2, "只支持源定义协议 v2")?;
     let mut entries = Vec::new();
     let mut keys = BTreeSet::new();
     let mut hashed = BTreeMap::new();

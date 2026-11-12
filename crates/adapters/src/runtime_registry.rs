@@ -146,11 +146,12 @@ impl GlobalStore {
         &self,
         provider: HarnessProvider,
     ) -> Result<RuntimeInstallation> {
-        let (tag, version, license) = match provider {
-            HarnessProvider::Codex => ("devdesk/codex:0.167.0", "0.167.0", "Apache-2.0"),
-            HarnessProvider::Dsh => ("devdesk/dsh:0.2.2-rc.1", "0.2.2-rc.1", "MIT"),
+        let (version, license) = match provider {
+            HarnessProvider::Codex => (DEFAULT_CODEX_VERSION, "Apache-2.0"),
+            HarnessProvider::Dsh => (DEFAULT_DSH_VERSION, "MIT"),
         };
-        self.register_docker_runtime(provider, tag, version, license)
+        let tag = format!("devdesk/{}:{version}", provider.as_str());
+        self.register_docker_runtime(provider, &tag, version, license)
     }
     pub(crate) fn register_docker_runtime(
         &self,

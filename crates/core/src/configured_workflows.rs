@@ -95,9 +95,7 @@ impl Engine {
         .find_map(|id| state.configuration(id).ok())
         .cloned();
         let family = method.split('.').next().unwrap_or("");
-        if family == "spec"
-            && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
-            && p["data"]["schema_version"] == 3
+        if family == "spec" && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
         {
             let old = if method.ends_with("revise") {
                 Some(
@@ -143,10 +141,13 @@ impl Engine {
             state.governance.push(row);
             return Ok(Some(result));
         }
-        let is_current = document.is_some_and(|doc| doc["schema_version"] == 6)
-            || selected.as_ref().is_some_and(|r| {
-                r.data["schema_version"] == 6 || r.data["document"]["schema_version"] == 6
-            });
+        // A draft or workflow counts as current when its document parses as the
+        // workflow domain object — shape decides, never a version number.
+        let parses = |value: &Value| serde_json::from_value::<WorkflowDefinition>(value.clone()).is_ok();
+        let is_current = document.as_ref().is_some_and(|doc| parses(doc))
+            || selected
+                .as_ref()
+                .is_some_and(|r| parses(&r.data) || parses(&r.data["document"]));
         if !is_current {
             return Ok(None);
         }
@@ -280,9 +281,10 @@ impl Engine {
                     .cloned()
                     .or_else(|| selected.as_ref().map(|r| r.data.clone()))
                     .ok_or_else(|| err("invalid_params", "缺少流程正文"))?;
-                let definition: WorkflowDefinition = serde_json::from_value(doc.clone())
+                // Decoding into the domain object is the acceptance gate; business
+                // rules validate inside publish below.
+                serde_json::from_value::<WorkflowDefinition>(doc.clone())
                     .map_err(|e| err("invalid_workflow", e.to_string()))?;
-                require(definition.schema_version == 6, "草稿需要 Workflow v6")?;
                 let identity = if method == "workflow.draft.create" {
                     selected
                         .as_ref()
@@ -319,9 +321,8 @@ impl Engine {
                     "草稿修订冲突",
                 )?;
                 let doc = document.cloned().unwrap_or(old.data["document"].clone());
-                let definition: WorkflowDefinition = serde_json::from_value(doc.clone())
+                serde_json::from_value::<WorkflowDefinition>(doc.clone())
                     .map_err(|e| err("invalid_workflow", e.to_string()))?;
-                require(definition.schema_version == 6, "草稿需要 Workflow v6")?;
                 let row = state
                     .governance
                     .iter_mut()
@@ -453,7 +454,7 @@ impl Engine {
         if row.kind == "workflow_draft" {
             row.data = row.data["document"].clone();
         }
-        if row.data["schema_version"] != 6 {
+        if serde_json::from_value::<WorkflowDefinition>(row.data.clone()).is_err() {
             return None;
         }
         Some((|| {
@@ -787,7 +788,7 @@ pub fn compile_workflow_sources(
                         .is_some_and(|s| !s.trim().is_empty()),
                     "Spec 正文不能为空",
                 )?;
-                if definition.data["schema_version"] == 3 {
+                if definition.decode::<ConfiguredSpecification>().is_ok() {
                     let spec: ConfiguredSpecification = definition.decode()?;
                     spec.validate()?;
                 }
@@ -827,7 +828,7 @@ pub fn compile_workflow_sources(
                 StepExecutor::Tool { tool_ref, .. } => {
                     let tool = reference(state, tool_ref, "tool", scope)?;
                     require(
-                        tool.data["schema_version"] == 2
+                        tool.data["integration_ref"].is_string()
                             || tool.data["implementation"] == "platform",
                         "工具 Step 需要可调用工具，原生工具组不能独立调用",
                     )?;
@@ -863,7 +864,7 @@ pub fn compile_workflow_sources(
                             "测试工具必须选择冻结运行环境",
                         )?;
                     }
-                    if tool.data["schema_version"] == 2 {
+                    if tool.data["integration_ref"].is_string() {
                         let definition: ExternalTool = tool.decode()?;
                         definition.validate()?;
                         let integration =

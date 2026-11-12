@@ -340,7 +340,6 @@ pub struct ToolReceipt {
 }
 impl ExternalTool {
     pub fn validate(&self) -> Result<()> {
-        require(self.schema_version == 2, "工具需要 schema_version=2")?;
         require(
             !self.qualified_name.is_empty()
                 && self.qualified_name.len() <= 64

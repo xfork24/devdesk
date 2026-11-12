@@ -1,0 +1,13 @@
+{
+  "kind": "agent",
+  "identity": "builtin-agent-minimax-architect",
+  "revision": 1,
+  "name": "架构师 · MiniMax M3.1 Flash / DSH",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "role_ref": "builtin-role-architect:1",
+    "capability_ref": "builtin-capability-architect-minimax-dsh:1"
+  }
+}

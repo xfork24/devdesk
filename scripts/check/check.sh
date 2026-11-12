@@ -3,6 +3,7 @@ set -euo pipefail
 if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOME/.cargo/env"; fi
 cd "$(dirname "$0")/../.."
 ./scripts/check/check-permissions.sh
+./scripts/check/check-defaults.sh
 npm --prefix web run build
 cargo test --workspace --locked
 cargo build --locked -p devdesk-host

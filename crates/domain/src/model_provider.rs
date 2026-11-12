@@ -271,7 +271,7 @@ pub fn resolve_model_connection(
     let p = DshModelProvider::parse(&m.provider)?;
     if p != DshModelProvider::Deepseek {
         require(
-            h.runtime_version.split('+').next() == Some("0.2.2-rc.1"),
+            h.runtime_version.split('+').next() == Some(DEFAULT_DSH_VERSION),
             "该 DSH 版本尚未验证此模型路由",
         )?;
     }
@@ -318,7 +318,7 @@ impl ModelConnection {
         };
         let h = HarnessDefinition {
             provider: "dsh".into(),
-            runtime_version: "0.2.2-rc.1".into(),
+            runtime_version: DEFAULT_DSH_VERSION.into(),
             recipe_digest: None,
             capabilities: vec![],
             model_providers: vec![m.provider.clone()],

@@ -1,0 +1,20 @@
+{
+  "kind": "model",
+  "identity": "builtin-model-minimax-m3-1-flash",
+  "revision": 1,
+  "name": "MiniMax M3.1 Flash",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "capabilities": [
+      "structured-output",
+      "tool-calling"
+    ],
+    "context_window": 1000000,
+    "max_output_tokens": 524288,
+    "model": "MiniMax-M3.1-Flash",
+    "parameters": {},
+    "provider": "minimax-cn"
+  }
+}

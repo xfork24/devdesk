@@ -4,6 +4,9 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [合同版本去硬编码](contract-version-decoupling/PLAN.md) | [实施与验收](contract-version-decoupling/EXECUTION.md) | 部分实施（2026-11-12）；W01-W05+W08+W09 完成：合同注册表、结构识别、白名单枚举化、读取机制外置、normalize-plan 删除、check-defaults 脚本；W06 大文件重构与 W07 展示过滤待后续批次 |
+| [出厂配置精简与 dsh/minimax/glm 栈补全](configuration-slimming-dsh-stack/PLAN.md) | [实施与验收](configuration-slimming-dsh-stack/EXECUTION.md) | 已完成（2026-11-12，W4 门禁能力化当晚按用户决定回滚）；61 个历史修订删除、dsh 双栈补全（PM 为普通 agent 形态）；出厂 codex 修订链维持 main 原版本；测试全绿 |
+| [DSH 工具执行桥](dsh-tool-bridge/PLAN.md) | 提案·挂起（源自 review/plans p14） | 用户决定暂维持仅 codex 调度；SDK 协议扩展或容器内插件旁路方案已论证，等上游发版意愿恢复时重启 |
 | [现行系统文档补全](current-documentation/PLAN.md) | [实施与验收](current-documentation/EXECUTION.md) | 已完成；5 篇新文档（工作流与编排/运行时权限/存储/讨论与经验/Web 工作台）、8 处漂移修复与 --normalize-plan v6 化；host 32 项测试通过；版本锚点机制按用户决定撤回 |
 | [Standard 不可变规范快照](standard-snapshot/PLAN.md) | [实施与验收](standard-snapshot/EXECUTION.md) | 已完成；独立 worktree 合入 main 后统一验证，真实双 Task / Feature 62 节点闭环、切换历史与独立发布包通过 |
 | [Delivery 分类与内容规范](delivery-content-specs/PLAN.md) | [实施与验收](delivery-content-specs/EXECUTION.md) | 已合并 main；21 种 Delivery 全关联 Spec，真实 Diff 接入交付与评审；214 项 Rust、debug/release 各 44 项浏览器及真实 Docker 验收通过 |

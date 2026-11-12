@@ -1,0 +1,13 @@
+{
+  "kind": "agent",
+  "identity": "builtin-agent-minimax-developer",
+  "revision": 1,
+  "name": "开发 · MiniMax M3.1 Flash / DSH",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "role_ref": "builtin-role-developer:1",
+    "capability_ref": "builtin-capability-developer-minimax-dsh:1"
+  }
+}

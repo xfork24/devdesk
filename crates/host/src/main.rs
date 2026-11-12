@@ -16,7 +16,7 @@ use axum::{
     },
     routing::{get, post},
 };
-use devdesk_domain::{Error, err};
+use devdesk_domain::{Error, err, HARNESS_PROVIDERS};
 use futures_util::stream;
 use serde_json::{Value, json};
 use std::{
@@ -321,8 +321,9 @@ async fn integration_oauth_callback(
 }
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     let workspace = app.workspace.read().unwrap().clone();
+    let providers: Vec<&str> = HARNESS_PROVIDERS.iter().map(|p| p.as_str()).collect();
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":["codex","dsh"],"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":["codex","dsh"],"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -422,7 +423,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|a| a == "--help") {
         println!(
-            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT]\n       devdesk-host --normalize-plan INPUT.json --output OUTPUT.json (offline plan upgrade to current workflow schema)\n       devdesk-host --update-credential-helper (macOS bundle, explicit upgrade)\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
+            "DevDesk 0.2\nUsage: devdesk-host [--data PATH] [--host IP] [--port 4317] [--public-url http(s)://HOST:PORT]\n       devdesk-host --update-credential-helper (macOS bundle, explicit upgrade)\nDefault host: 127.0.0.1. Remote listening requires DEVDESK_ACCESS_TOKEN (32+ characters).\nWithout --data, choose a dataset in the Web setup page. Web UI opens GitHub projects with native Codex/DSH execution."
         );
         return Ok(());
     }
@@ -436,15 +437,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut state = devdesk_domain::EngineeringState::default();
         devdesk_core::seed_configuration(&mut state);
         std::fs::write(path, serde_json::to_vec(&state)?)?;
-        return Ok(());
-    }
-    if let Some(path) = option("--normalize-plan") {
-        let value: Value = serde_json::from_slice(&std::fs::read(path)?)?;
-        let result = normalize_plan_document(value)?;
-        std::fs::write(
-            option("--output").ok_or("--normalize-plan requires --output")?,
-            serde_json::to_vec(&result)?,
-        )?;
         return Ok(());
     }
     if args.iter().any(|a| a == "--update-credential-helper") {
@@ -566,101 +558,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tokio::task::spawn_blocking(move || workspace.stop_owned_runtime()).await??;
     }
     Ok(())
-}
-
-/// 将历史计划文档规范化到当前 Workflow schema：输入 schema 不得超过当前版本；
-/// 升级后重新分配 node_id、重算 contract digest 并整体校验，输出可被当前代码接受。
-fn normalize_plan_document(value: Value) -> Result<Value, Box<dyn std::error::Error>> {
-    let mut document = value
-        .get("document")
-        .cloned()
-        .unwrap_or_else(|| value["plan"]["document"].clone());
-    let input_schema = document
-        .get("schema_version")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let current = devdesk_domain::WORKFLOW_SCHEMA_VERSION;
-    if input_schema > current {
-        return Err(devdesk_domain::err(
-            "invalid_params",
-            format!("计划 schema v{input_schema} 超过当前支持的 v{current}"),
-        )
-        .into());
-    }
-    document["schema_version"] = json!(current);
-    let mut document: devdesk_domain::WorkflowDefinition = serde_json::from_value(document)?;
-    document.assign_node_ids(value["definition_id"].as_str().unwrap_or("legacy"));
-    document.validate()?;
-    let digests = document
-        .steps
-        .iter()
-        .map(|s| (s.key.clone(), json!(devdesk_domain::configuration_hash(s))))
-        .collect::<serde_json::Map<String, Value>>();
-    let mut result = json!({"document":document,"contract_digests":digests});
-    if let Some(plan) = value.get("plan") {
-        let mut normalized = plan.clone();
-        normalized["document"] = result["document"].clone();
-        let normalized: devdesk_core::ConfiguredWorkflowPlan = serde_json::from_value(normalized)?;
-        result["plan"] = json!(normalized);
-    }
-    Ok(result)
-}
-
-#[cfg(test)]
-mod normalize_plan_tests {
-    use super::*;
-
-    fn legacy_document(schema: u64) -> Value {
-        json!({
-            "definition_id": "legacy",
-            "document": {
-                "schema_version": schema,
-                "stages": [{"key": "main", "name": "主阶段"}],
-                "steps": [{
-                    "key": "s1",
-                    "name": "确认",
-                    "stage": "main",
-                    "executor": {"type": "control"}
-                }]
-            }
-        })
-    }
-
-    #[test]
-    fn upgrades_legacy_schema_to_current() {
-        let result = normalize_plan_document(legacy_document(5)).unwrap();
-        assert_eq!(
-            result["document"]["schema_version"].as_u64().unwrap(),
-            devdesk_domain::WORKFLOW_SCHEMA_VERSION
-        );
-        assert!(
-            result["document"]["steps"][0]["node_id"]
-                .as_str()
-                .is_some_and(|id| !id.is_empty())
-        );
-        assert!(result["contract_digests"]["s1"].is_string());
-    }
-
-    #[test]
-    fn current_schema_is_normalized_in_place() {
-        let result =
-            normalize_plan_document(legacy_document(devdesk_domain::WORKFLOW_SCHEMA_VERSION))
-                .unwrap();
-        assert_eq!(
-            result["document"]["schema_version"].as_u64().unwrap(),
-            devdesk_domain::WORKFLOW_SCHEMA_VERSION
-        );
-        assert!(result["contract_digests"]["s1"].is_string());
-    }
-
-    #[test]
-    fn newer_schema_is_rejected() {
-        let error =
-            normalize_plan_document(legacy_document(devdesk_domain::WORKFLOW_SCHEMA_VERSION + 1))
-                .unwrap_err()
-                .to_string();
-        assert!(error.contains("超过当前支持"), "unexpected error: {error}");
-    }
 }
 
 #[cfg(test)]

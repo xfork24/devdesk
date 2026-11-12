@@ -428,28 +428,32 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                 />
               </label>
               <ActionButton
+                disabled={busy}
                 onClick={() => {
                   try {
                     const value = JSON.parse(importText);
                     const imported = value.document || value;
-                    if (
-                      imported.schema_version !== 6 ||
-                      !Array.isArray(imported.steps) ||
-                      !Array.isArray(imported.stages)
-                    )
-                      throw new Error("请选择 Workflow v6 的完整定义。");
-                    setDraft((current) => ({
-                      ...current,
-                      selected: "",
-                      revision: 1,
-                      name: value.name || "导入流程",
-                      editing: true,
-                      view: "editor",
-                      node: "workflow",
-                      document: imported,
-                      expandedStages: [],
-                    }));
-                    setImportText("");
+                    if (!Array.isArray(imported.steps) || !Array.isArray(imported.stages))
+                      throw new Error("请选择完整流程定义（需要 stages 与 steps）。");
+                    run(async () => {
+                      // Structural validation stays backend-side; the frontend only parses JSON.
+                      await request("query.workflow_requirements", {
+                        document: imported,
+                        project_id: project?.id,
+                      });
+                      setDraft((current) => ({
+                        ...current,
+                        selected: "",
+                        revision: 1,
+                        name: value.name || "导入流程",
+                        editing: true,
+                        view: "editor",
+                        node: "workflow",
+                        document: imported,
+                        expandedStages: [],
+                      }));
+                      setImportText("");
+                    });
                   } catch (error) {
                     setError(String(error));
                   }

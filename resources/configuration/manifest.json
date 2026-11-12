@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.11-standard-v4",
+  "bundle_version": "2026.11.12-standard-v5",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -25,8 +25,6 @@
     "spec": [
       "specs/builtin-spec-stage-prd-v1.json",
       "specs/builtin-spec-stage-architecture-v1.json",
-      "specs/builtin-spec-stage-project-planning-v1.json",
-      "specs/builtin-spec-stage-test-design-v1.json",
       "specs/builtin-spec-stage-solution-v1.json",
       "specs/builtin-spec-stage-implementation-v1.json",
       "specs/builtin-spec-stage-closure-v1.json",
@@ -88,7 +86,21 @@
       "capabilities/builtin-capability-project-manager-codex-v4.json",
       "capabilities/builtin-capability-developer-codex-v3.json",
       "capabilities/builtin-capability-tester-codex-v3.json",
-      "capabilities/builtin-capability-reviewer-codex-v3.json"
+      "capabilities/builtin-capability-reviewer-codex-v3.json",
+      "capabilities/builtin-capability-minimax-dsh-v1.json",
+      "capabilities/builtin-capability-glm-dsh-v1.json",
+      "capabilities/builtin-capability-analyst-minimax-dsh-v1.json",
+      "capabilities/builtin-capability-architect-minimax-dsh-v1.json",
+      "capabilities/builtin-capability-project-manager-minimax-dsh-v1.json",
+      "capabilities/builtin-capability-developer-minimax-dsh-v1.json",
+      "capabilities/builtin-capability-tester-minimax-dsh-v1.json",
+      "capabilities/builtin-capability-reviewer-minimax-dsh-v1.json",
+      "capabilities/builtin-capability-analyst-glm-dsh-v1.json",
+      "capabilities/builtin-capability-architect-glm-dsh-v1.json",
+      "capabilities/builtin-capability-project-manager-glm-dsh-v1.json",
+      "capabilities/builtin-capability-developer-glm-dsh-v1.json",
+      "capabilities/builtin-capability-tester-glm-dsh-v1.json",
+      "capabilities/builtin-capability-reviewer-glm-dsh-v1.json"
     ],
     "agent": [
       "agents/builtin-agent-sol-high-analyst-v4.json",
@@ -96,10 +108,24 @@
       "agents/builtin-agent-sol-high-project-manager-v5.json",
       "agents/builtin-agent-sol-high-developer-v4.json",
       "agents/builtin-agent-sol-high-tester-v4.json",
-      "agents/builtin-agent-sol-high-reviewer-v4.json"
+      "agents/builtin-agent-sol-high-reviewer-v4.json",
+      "agents/builtin-agent-minimax-analyst-v1.json",
+      "agents/builtin-agent-minimax-architect-v1.json",
+      "agents/builtin-agent-minimax-project-manager-v1.json",
+      "agents/builtin-agent-minimax-developer-v1.json",
+      "agents/builtin-agent-minimax-tester-v1.json",
+      "agents/builtin-agent-minimax-reviewer-v1.json",
+      "agents/builtin-agent-glm-analyst-v1.json",
+      "agents/builtin-agent-glm-architect-v1.json",
+      "agents/builtin-agent-glm-project-manager-v1.json",
+      "agents/builtin-agent-glm-developer-v1.json",
+      "agents/builtin-agent-glm-tester-v1.json",
+      "agents/builtin-agent-glm-reviewer-v1.json"
     ],
     "model": [
-      "models/builtin-model-gpt-6-1-sol-high-v1.json"
+      "models/builtin-model-gpt-6-1-sol-high-v1.json",
+      "models/builtin-model-minimax-m3-1-flash-v1.json",
+      "models/builtin-model-glm-5-3-flash-v1.json"
     ],
     "harness": [
       "harnesses/builtin-harness-dsh-multi-provider-v1.json",

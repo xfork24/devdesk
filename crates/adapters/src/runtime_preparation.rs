@@ -36,7 +36,7 @@ fn recipe(
 ) {
     match provider {
         HarnessProvider::Codex => (CODEX_VERSION, "Apache-2.0", CODEX_FILES),
-        HarnessProvider::Dsh => ("0.2.2-rc.1", "MIT", DSH_FILES),
+        HarnessProvider::Dsh => (DEFAULT_DSH_VERSION, "MIT", DSH_FILES),
     }
 }
 

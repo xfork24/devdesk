@@ -3,9 +3,11 @@ use crate::*;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const WORKFLOW_SCHEMA_VERSION: u64 = 6;
 pub const WORKFLOW_STEP_LIMIT: usize = 1000;
 pub const WORKFLOW_DEPTH_LIMIT: usize = 8;
+/// Metadata recorded on persisted run instances; acceptance of stored instances is
+/// structural (a steps array), never a version comparison.
+pub const WORKFLOW_INSTANCE_SCHEMA: u64 = 6;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -302,10 +304,8 @@ pub struct ConfiguredSpecification {
 impl ConfiguredSpecification {
     pub fn validate(&self) -> Result<()> {
         require(
-            self.schema_version == 3
-                && !self.body.trim().is_empty()
-                && self.body.len() <= TASK_TEXT_LIMIT,
-            "Spec 需要当前结构和非空正文",
+            !self.body.trim().is_empty() && self.body.len() <= TASK_TEXT_LIMIT,
+            "Spec 需要非空正文",
         )?;
         let mut keys = BTreeSet::new();
         for check in &self.checks {
@@ -491,10 +491,6 @@ impl WorkflowDefinition {
     }
 
     pub fn validate(&self) -> Result<Vec<String>> {
-        require(
-            self.schema_version == WORKFLOW_SCHEMA_VERSION,
-            "Workflow 需要 Schema v6，请显式转换旧定义",
-        )?;
         require(
             !self.steps.is_empty() && self.steps.len() <= WORKFLOW_STEP_LIMIT,
             "流程需要 1—1000 个步骤",
@@ -775,7 +771,7 @@ pub struct ConfiguredAgentTask {
 impl ConfiguredAgentTask {
     pub fn validate(&self) -> Result<()> {
         require(
-            self.renderer_version == "agent-task/v6"
+            !self.renderer_version.is_empty()
                 && self.task["renderer_version"] == self.renderer_version
                 && configuration_hash(&self.task) == self.digest,
             "通用任务摘要或渲染合同不匹配",
@@ -934,7 +930,7 @@ impl EngineeringState {
             .filter(|r| r.kind == "workflow_instance")
         {
             require(
-                record.data["schema_version"] == 6,
+                record.data["steps"].is_array(),
                 "过时 Workflow 运行数据需要显式离线升级",
             )?;
             if let Some(old) = before.governance.iter().find(|r| r.id == record.id) {

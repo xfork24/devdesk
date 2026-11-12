@@ -1,0 +1,21 @@
+{
+  "kind": "capability",
+  "identity": "builtin-capability-project-manager-glm-dsh",
+  "revision": 1,
+  "name": "项目经理能力 · GLM 5.3 Flash / DSH",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "harness_ref": "builtin-harness-dsh-multi-provider:1",
+    "model_ref": "builtin-model-glm-5-3-flash:1",
+    "skills": [
+      "builtin-skill-engineering-context:2",
+      "builtin-skill-project-planning:2",
+      "builtin-skill-workflow-orchestration:2"
+    ],
+    "tools": [
+      "builtin-tool-dsh-native:1"
+    ]
+  }
+}

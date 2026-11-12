@@ -41,4 +41,4 @@ Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` �
 
 新协议只支持新数据集，不升级旧库。构建校验源形状；发布和执行检查引用类型、修订、作用域、能力需求、工具合同、依赖 DAG、权限及输出来源。
 
-默认 Feature 仍有 22 个步骤，Task 仍有 20 个步骤。配置回归保留 main 082c081 的规范化业务合同摘要，允许变化仅限引用格式与权限归属。
+默认 Feature 仍有 22 个步骤，Task 仍有 20 个步骤。目录自洽（manifest ↔ 文件 ↔ defaults 引用 ↔ 正文归属）由 `scripts/check/check-defaults.py` 把关；结构校验在构建期，交叉引用与能力组合校验在测试期 materialize 完成。

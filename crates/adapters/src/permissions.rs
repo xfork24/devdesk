@@ -6,8 +6,8 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
     PermissionCapabilities {
         backend: provider.as_str().into(),
         version: match provider {
-            HarnessProvider::Codex => "0.167.0",
-            HarnessProvider::Dsh => "0.2.2-rc.1",
+            HarnessProvider::Codex => DEFAULT_CODEX_VERSION,
+            HarnessProvider::Dsh => DEFAULT_DSH_VERSION,
         }
         .into(),
         filesystem: vec![

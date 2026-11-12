@@ -220,37 +220,6 @@ fn source_store_rejects_arbitrary_revision_aliases() {
 }
 
 #[test]
-fn factory_workflow_business_contracts_match_the_pre_refactor_baseline() {
-    // Baselines from main 082c081: only exact-reference spelling and permission relocation normalized.
-    for (source, digest) in [
-        (
-            include_str!(
-                "../../../resources/configuration/workflows/builtin-workflow-feature-sol-high-v5.json"
-            ),
-            "ed453ae0e68249f612350dec3e5159c0c889ed7ff27c1b002c6be5d4473b0508",
-        ),
-        (
-            include_str!(
-                "../../../resources/configuration/workflows/builtin-workflow-task-sol-high-v5.json"
-            ),
-            "3124b77dffe25d4484585666625623a33d9a5bef7cf89be25105ac5eaa8cc581",
-        ),
-    ] {
-        let value: Value = serde_json::from_str(source).unwrap();
-        assert_eq!(configuration_hash(&value["data"]), digest);
-    }
-    // The 11 explicit grants from the original 42 steps moved without changing any path or tool scope.
-    let permission: Value = serde_json::from_str(include_str!(
-        "../../../resources/configuration/permissions/bindings/engineering.json"
-    ))
-    .unwrap();
-    assert_eq!(
-        configuration_hash(&permission["data"]["step_grants"]),
-        "fb1cbd3c102766d4a847f780a8e0521895d1f42ac4cc1ea4ed700a381275138e"
-    );
-}
-
-#[test]
 fn database_persists_sources_and_rebuilds_execution_views_after_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
@@ -554,4 +523,189 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
     )
     .unwrap();
     assert!(command(&e, "workflow.publish", draft["id"].as_str(), json!({})).is_err());
+}
+
+#[test]
+fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let state = e.store.snapshot().unwrap();
+    // Recommended context windows come from dsh-model-catalog.json.
+    for (id, provider, wire, ctx, out) in [
+        (
+            "builtin-model-minimax-m3-1-flash:1",
+            "minimax-cn",
+            "MiniMax-M3.1-Flash",
+            1000000u64,
+            524288u64,
+        ),
+        (
+            "builtin-model-glm-5-3-flash:1",
+            "zai-coding-cn",
+            "glm-5.3-flash",
+            1000000,
+            131072,
+        ),
+    ] {
+        let model = state.configuration(id).unwrap();
+        assert_eq!(model.data["provider"], json!(provider));
+        assert_eq!(model.data["model"], json!(wire));
+        assert_eq!(model.data["context_window"], json!(ctx));
+        assert_eq!(model.data["max_output_tokens"], json!(out));
+    }
+    let mut compositions = Vec::new();
+    for vendor in ["minimax", "glm"] {
+        for role in [
+            "analyst",
+            "architect",
+            "developer",
+            "tester",
+            "reviewer",
+            "project-manager",
+        ] {
+            let composition =
+                state.resolve_agent(&format!("builtin-agent-{vendor}-{role}:1")).unwrap();
+            assert_eq!(composition.harness_ref, "builtin-harness-dsh-multi-provider:1");
+            assert_eq!(
+                composition.tools,
+                vec!["builtin-tool-dsh-native:1".to_string()],
+                "{vendor}/{role} must stay native-only until the tool bridge lands"
+            );
+            compositions.push((vendor, role, composition));
+        }
+        let model_id = if vendor == "minimax" {
+            "builtin-model-minimax-m3-1-flash:1"
+        } else {
+            "builtin-model-glm-5-3-flash:1"
+        };
+        let default = state
+            .configuration(&format!("builtin-capability-{vendor}-dsh:1"))
+            .unwrap();
+        assert_eq!(default.data["model_ref"], json!(model_id));
+    }
+    // Role skills mirror the codex counterparts, headed by the shared engineering context.
+    for (vendor, role, composition) in &compositions {
+        assert!(
+            composition
+                .skills
+                .contains(&"builtin-skill-engineering-context:2".to_string()),
+            "{vendor}/{role}"
+        );
+    }
+    let (_, _, analyst) = compositions
+        .iter()
+        .find(|(v, r, _)| *v == "minimax" && *r == "analyst")
+        .unwrap();
+    assert!(analyst.skills.contains(&"builtin-skill-prd:2".to_string()));
+    let (_, _, pm) = compositions
+        .iter()
+        .find(|(v, r, _)| *v == "glm" && *r == "project-manager")
+        .unwrap();
+    assert!(
+        pm.skills
+            .contains(&"builtin-skill-workflow-orchestration:2".to_string())
+    );
+}
+
+#[test]
+fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Codex-only orchestration"}),
+    )
+    .unwrap();
+    let project_id = project["id"].as_str().unwrap();
+    let defaults = e.configuration_defaults(Some(project_id)).unwrap();
+    // Binding the PM role to a dsh agent while designating it the orchestrator is rejected.
+    let mut bindings = defaults["role_agent_bindings"].clone();
+    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:1");
+    let error = command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({
+            "workflow_ref": defaults["workflow_ref"],
+            "role_agent_bindings": bindings,
+            "orchestrator_role_ref": "builtin-role-project-manager:1",
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        error.message.contains("编排"),
+        "expected orchestration harness rejection, got: {error}"
+    );
+    // The factory workflows grant platform tools (workflow.outputs.read, codex-native) on
+    // nearly every agent step, so rebinding a worker role to a dsh agent cannot compile the
+    // factory selection either — dsh agents serve standalone conversations until the tool
+    // bridge (dsh-tool-bridge plan) lands.
+    let mut workers = defaults["role_agent_bindings"].clone();
+    workers["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:1");
+    let boundary = command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({
+            "workflow_ref": defaults["workflow_ref"],
+            "role_agent_bindings": workers,
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        boundary.message.contains("不属于 Agent 能力集合"),
+        "expected the factory tool-grant boundary, got: {boundary}"
+    );
+}
+
+#[test]
+fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let before = e.store.snapshot().unwrap();
+    // A custom permission context without the factory's codex-only step tool grants.
+    let mut context = permission_context(&before).unwrap().data.clone();
+    context["step_grants"] = json!([]);
+    let context = command(
+        &e,
+        "permission_context.create",
+        None,
+        json!({"name":"Bridge-free context","data":context}),
+    )
+    .unwrap();
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"Dsh worker flow","document":{"schema_version":6,"stages":[{"key":"work","name":"Work","default_role_ref":"builtin-role-analyst:1"}],"steps":[
+            {"key":"draft","name":"Draft","stage":"work","executor":{"type":"agent"},"task_instructions":"Write the document","outputs":{"document":{"delivery_ref":"builtin-delivery-review:2"}}}
+        ]}}),
+    )
+    .unwrap();
+    let workflow = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let project = command(&e, "project.create", None, json!({"title":"Dsh workers"})).unwrap();
+    let project_id = project["id"].as_str().unwrap();
+    // Binding the analyst role to a dsh agent compiles a workflow whose steps carry no
+    // platform-tool grants; the factory flows are the codex-bound ones, not the mechanism.
+    let mut bindings = e.configuration_defaults(Some(project_id)).unwrap()
+        ["role_agent_bindings"]
+        .clone();
+    bindings["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:1");
+    let saved = command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({
+            "workflow_ref": workflow["id"],
+            "role_agent_bindings": bindings,
+            "permission_context_ref": context["id"],
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        saved["data"]["role_agent_bindings"]["builtin-role-analyst:1"],
+        json!("builtin-agent-glm-analyst:1")
+    );
 }

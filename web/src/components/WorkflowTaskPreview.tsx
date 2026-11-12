@@ -7,10 +7,9 @@ import {
 import { MarkdownField, type Request, type Row } from "./configuration-ui";
 
 export function AgentTaskView({ value }: { value: Row }) {
-  const frozen =
-    value.task?.renderer_version === "agent-task/v6" ? value.task : undefined;
+  // The backend only returns validated task contracts; no renderer-version filtering here.
   const content =
-    frozen?.task || (typeof value.task === "object" ? value.task : value);
+    typeof value.task === "object" ? value.task : value;
   const instructions =
     content.task_instructions ||
     (typeof value.task === "string" ? value.task : "");
@@ -85,10 +84,10 @@ export function AgentTaskView({ value }: { value: Row }) {
           )}
         </pre>
       </details>
-      {frozen ? (
+      {typeof value.task === "object" && value.task?.rendered_input ? (
         <details>
           <summary>实际发送的新输入</summary>
-          <pre>{frozen.rendered_input}</pre>
+          <pre>{value.task.rendered_input}</pre>
         </details>
       ) : null}
     </section>

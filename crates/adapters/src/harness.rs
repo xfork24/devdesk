@@ -1523,7 +1523,7 @@ mod protocol_tests {
             (None, Some(json!({})), None),
         ] {
             let mut binding = json!({
-                "installation":{"id":"fixture","key":{"provider":"codex","version":"0.167.0","os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
+                "installation":{"id":"fixture","key":{"provider":"codex","version":devdesk_domain::DEFAULT_CODEX_VERSION,"os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
                 "adapter_version":"fixture/v1","model":"catalog-model","model_parameters":effort.map(|effort| json!({"reasoning_effort":effort})).unwrap_or(json!({})),
                 "tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)
             });

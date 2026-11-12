@@ -80,8 +80,7 @@ pub struct PermissionProfile {
 }
 impl PermissionProfile {
     pub fn normalize(&mut self) -> Result<()> {
-        if self.schema_version != 2
-            || self.version == 0
+        if self.version == 0
             || self.id.is_empty()
             || self.id.len() > 200
             || self.identity.is_empty()

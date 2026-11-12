@@ -68,7 +68,7 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
                 key.clone(),
                 if factual_field(key) {
                     item.clone()
-                } else if key == "policy" && value["renderer_version"] == ORCHESTRATION_RENDERER {
+                } else if key == "policy" && value["controller_id"].is_string() {
                     let context = value["controller_id"]
                         .as_str()
                         .and_then(|id| state.configuration(id).ok())
@@ -126,7 +126,13 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
             }
         }
     }
-    if value["renderer_version"] == "agent-task/v6"
+    // Task shape is recognized structurally — a task-source fingerprint plus a live
+    // workflow instance — never by a renderer string. Restore-equality remains the
+    // correctness proof, so a forged shape simply fails to compress.
+    if value["source"]["workflow_instance_id"].is_string()
+        && value["inputs"].is_object()
+        && value["input_sources"].is_object()
+        && value["agent"]["id"].is_string()
         && value["source"]["workflow_instance_id"]
             .as_str()
             .is_some_and(|id| {

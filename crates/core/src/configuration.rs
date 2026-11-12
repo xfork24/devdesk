@@ -93,7 +93,7 @@ pub(crate) fn validate_capability(s: &EngineeringState, data: &Value, scope: &Sc
 
     for tool in &a.tools {
         let record = reference(s, tool, "tool", scope)?;
-        if record.data["schema_version"] == 2 {
+        if record.data["integration_ref"].is_string() {
             let t: ExternalTool = record.decode()?;
             t.validate()?;
             reference(s, &t.integration_ref, "integration", scope)?;

@@ -1,0 +1,13 @@
+{
+  "kind": "agent",
+  "identity": "builtin-agent-glm-architect",
+  "revision": 1,
+  "name": "架构师 · GLM 5.3 Flash / DSH",
+  "scope": {
+    "kind": "global"
+  },
+  "data": {
+    "role_ref": "builtin-role-architect:1",
+    "capability_ref": "builtin-capability-architect-glm-dsh:1"
+  }
+}
