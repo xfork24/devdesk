@@ -61,6 +61,9 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
   });
   await page.goto(`/?tab=workflows&workflow_id=${published.id}`);
   const editor = page.getByRole("region", { name: "工作流程管理" });
+  await editor
+    .getByRole("button", { name: "展开阶段：任务阶段", exact: true })
+    .click();
   await editor.getByRole("button", { name: /执行可编辑任务/ }).click();
   await expect(
     editor.getByRole("heading", { name: "原任务", exact: true }),
@@ -69,6 +72,9 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
   await expect(
     editor.getByRole("button", { name: "保存草稿", exact: true }),
   ).toBeEnabled();
+  await editor
+    .getByRole("button", { name: "展开阶段：任务阶段", exact: true })
+    .click();
   await editor.getByRole("button", { name: /执行可编辑任务/ }).click();
   await editor.getByRole("button", { name: "任务指令", exact: true }).click();
   await editor

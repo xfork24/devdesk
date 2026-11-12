@@ -108,6 +108,8 @@ for (const allowOverride of [false, true])
       name: "当前工作流",
       exact: true,
     });
+    await runtime.locator(".workflow-stage-toggle").first().click();
+    await runtime.locator(".workflow-step-toggle").first().click();
     await runtime
       .getByRole("button", { name: "执行步骤", exact: true })
       .click();
@@ -227,14 +229,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
   });
   await page.goto(`/?tab=execution&project_id=${project.id}`);
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
-  await runtime
-    .getByRole("button", { name: "执行步骤", exact: true })
-    .first()
-    .click();
-  await runtime
-    .getByRole("article", { name: "步骤 · second", exact: true })
-    .getByRole("button", { name: "执行步骤", exact: true })
-    .click();
+  await runtime.locator(".workflow-stage-toggle").first().click();
   const first = page.getByRole("article", {
     name: "步骤 · first",
     exact: true,
@@ -243,6 +238,10 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
     name: "步骤 · second",
     exact: true,
   });
+  await first.locator(".workflow-step-toggle").click();
+  await first.getByRole("button", { name: "执行步骤", exact: true }).click();
+  await second.locator(".workflow-step-toggle").click();
+  await second.getByRole("button", { name: "执行步骤", exact: true }).click();
   await first.getByLabel("手动批准理由（必填）").fill("第一步的人工决定");
   await second.getByLabel("手动批准理由（必填）").focus();
   await expect(second.getByLabel("手动批准理由（必填）")).toHaveValue("");

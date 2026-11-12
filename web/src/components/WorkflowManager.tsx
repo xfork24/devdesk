@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import {
   ActionButton,
   ActionSelect,
@@ -85,7 +86,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   const [authoring, setAuthoring] = useState<Row>();
   const [importText, setImportText] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:v5:workflow:${project?.id || "global"}`,
+    `devdesk:v6:workflow:${project?.id || "global"}`,
     () => ({
       selected: "",
       revision: 1,
@@ -95,7 +96,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       editing: true,
       node: "workflow",
       document: emptyDocument() as Row,
-      collapsedStages: [] as string[],
+      expandedStages: [] as string[],
     }),
   );
   const editorRef = useRef<HTMLElement>(null);
@@ -151,6 +152,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
         editing: row.kind === "workflow_draft",
         node: "workflow",
         document: structuredClone(document),
+        expandedStages: [],
       });
       setValidation(undefined);
       const params = new URLSearchParams(location.search);
@@ -298,9 +300,9 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     setDraft((current) => ({
       ...current,
       node: `step:${key}`,
-      collapsedStages: current.collapsedStages.filter(
-        (stage: string) => stage !== item.stage,
-      ),
+      expandedStages: current.expandedStages.includes(item.stage)
+        ? current.expandedStages
+        : [...current.expandedStages, item.stage],
     }));
   }
   function renameOutput(previous: string, next: string) {
@@ -354,7 +356,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               editing: true,
               node: "workflow",
               document: emptyDocument(),
-              collapsedStages: [],
+              expandedStages: [],
             });
             setValidation(undefined);
           }}
@@ -445,6 +447,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       view: "editor",
                       node: "workflow",
                       document: imported,
+                      expandedStages: [],
                     }));
                     setImportText("");
                   } catch (error) {
@@ -545,47 +548,55 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               >
                 {draft.name || "流程配置"}
               </ActionButton>
-              {document.stages.map((item: Row) => (
-                <div key={item.key}>
-                  <div className="actions">
-                    <ActionButton
-                      type="button"
-                      onClick={() => {
-                        capture();
-                        setDraft((current) => ({
-                          ...current,
-                          node: `stage:${item.key}`,
-                        }));
-                      }}
-                    >
-                      {item.name}
-                    </ActionButton>
-                    <ActionButton
-                      type="button"
-                      aria-label={`${draft.collapsedStages.includes(item.key) ? "展开" : "折叠"}阶段：${item.name}`}
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          node: `stage:${item.key}`,
-                          collapsedStages: current.collapsedStages.includes(
-                            item.key,
-                          )
-                            ? current.collapsedStages.filter(
-                                (key: string) => key !== item.key,
-                              )
-                            : [...current.collapsedStages, item.key],
-                        }))
-                      }
-                    >
-                      {draft.collapsedStages.includes(item.key)
-                        ? "展开"
-                        : "折叠"}
-                    </ActionButton>
-                  </div>
-                  {!draft.collapsedStages.includes(item.key)
-                    ? document.steps
-                        .filter((step: Row) => step.stage === item.key)
-                        .map((step: Row) => (
+              {document.stages.map((item: Row) => {
+                const expanded = draft.expandedStages.includes(item.key);
+                const steps = document.steps.filter(
+                  (step: Row) => step.stage === item.key,
+                );
+                return (
+                  <div className="workflow-stage-node" key={item.key}>
+                    <div className="workflow-stage-head">
+                      <ActionButton
+                        type="button"
+                        className="tree-toggle"
+                        aria-label={`${expanded ? "折叠" : "展开"}阶段：${item.name}`}
+                        aria-expanded={expanded}
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            expandedStages: expanded
+                              ? current.expandedStages.filter(
+                                  (key: string) => key !== item.key,
+                                )
+                              : [...current.expandedStages, item.key],
+                          }))
+                        }
+                      >
+                        <ChevronRight aria-hidden="true" />
+                      </ActionButton>
+                      <ActionButton
+                        type="button"
+                        className="workflow-stage-name"
+                        onClick={() => {
+                          capture();
+                          setDraft((current) => ({
+                            ...current,
+                            node: `stage:${item.key}`,
+                            expandedStages: current.expandedStages.includes(
+                              item.key,
+                            )
+                              ? current.expandedStages
+                              : [...current.expandedStages, item.key],
+                          }));
+                        }}
+                      >
+                        {item.name}
+                      </ActionButton>
+                      <small>{steps.length} 个步骤</small>
+                    </div>
+                    {expanded ? (
+                      <div className="workflow-stage-children">
+                        {steps.map((step: Row) => (
                           <ActionButton
                             key={step.key}
                             className={
@@ -605,10 +616,13 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                             {step.name}
                             <small>{executorNames[step.executor.type]}</small>
                           </ActionButton>
-                        ))
-                    : null}
-                </div>
-              ))}
+                        ))}
+                        {!steps.length ? <small>暂无步骤</small> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
               {draft.editing ? (
                 <div className="actions">
                   <ActionButton
@@ -629,6 +643,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                       setDraft((current) => ({
                         ...current,
                         node: `stage:${key}`,
+                        expandedStages: [...current.expandedStages, key],
                       }));
                     }}
                   >

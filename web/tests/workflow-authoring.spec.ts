@@ -298,11 +298,16 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
     payload: { workflow_ref: workflow.id, role_agent_bindings: {} },
   });
   await page.goto(`/?tab=execution&project_id=${project.id}`);
+  const executionView = page.getByRole("region", {
+    name: "当前工作流",
+    exact: true,
+  });
+  await executionView.locator(".workflow-stage-toggle").first().click();
+  await executionView.locator(".workflow-step-toggle").first().click();
   await expect(
     page.getByRole("button", { name: /确认范围 · 本地草稿/ }).first(),
   ).toBeVisible();
-  await page
-    .getByRole("region", { name: "当前工作流", exact: true })
+  await executionView
     .getByRole("button", { name: "执行步骤", exact: true })
     .click();
   await expect
@@ -766,6 +771,9 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   });
   expect(consumer.dependencies).toContain(producer.key);
   await page.reload();
+  await editor
+    .getByRole("button", { name: "展开阶段：工作", exact: true })
+    .click();
   await editor.getByRole("button", { name: /^确认材料/ }).click();
   await expect(
     editor.getByLabel("材料来源 · input_1", { exact: true }),

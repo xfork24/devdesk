@@ -169,39 +169,43 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
   });
   await page.goto(`/?tab=execution&project_id=${project.id}`);
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
-  await expect(
-    runtime.getByRole("heading", { name: "业务阶段一" }),
-  ).toBeVisible();
-  await expect(
-    runtime.getByRole("heading", { name: "业务阶段二" }),
-  ).toBeVisible();
+  // 阶段与子流程默认折叠，仅分层头部可见。
+  const stageOne = runtime.getByRole("button", { name: /业务阶段一/ });
+  const stageTwo = runtime.getByRole("button", { name: /业务阶段二/ });
+  await expect(stageOne).toBeVisible();
+  await expect(stageTwo).toBeVisible();
+  await expect(stageOne).toHaveAttribute("aria-expanded", "false");
   const stages = await runtime
     .locator(":scope > .workflow-stage-row")
     .first()
     .boundingBox();
   expect(stages).toBeTruthy();
-  await expect(
-    runtime.getByRole("button", { name: /子流程 ·.*展开/ }),
-  ).toBeVisible();
-  await runtime.getByRole("button", { name: /子流程 ·.*展开/ }).click();
-  await expect(
-    page.getByRole("region", { name: "子流程进度", exact: true }),
-  ).toBeVisible();
+  await stageOne.click();
+  const nested = runtime.getByRole("article", {
+    name: "步骤 · 处理子流程",
+    exact: true,
+  });
+  await nested.locator(".workflow-step-toggle").click();
+  const childToggle = runtime.getByRole("button", { name: /子流程 ·.*展开/ });
+  await expect(childToggle).toBeVisible();
+  await childToggle.click();
+  const childRegion = page.getByRole("region", {
+    name: "子流程进度",
+    exact: true,
+  });
+  await expect(childRegion).toBeVisible();
+  // 子流程实例内的阶段同样默认折叠。
+  await childRegion.locator(".workflow-stage-toggle").first().click();
   await expect(
     page.getByRole("button", { name: /检查原始材料/ }),
   ).toBeVisible();
-  await runtime
-    .getByRole("button", { name: "折叠阶段", exact: true })
-    .first()
-    .click();
+  await stageOne.click();
   await expect(page.getByRole("button", { name: /检查原始材料/ })).toHaveCount(
     0,
   );
   await page.reload();
-  await expect(
-    runtime.getByRole("button", { name: "展开阶段", exact: true }),
-  ).toBeVisible();
-  await runtime.getByRole("button", { name: "展开阶段", exact: true }).click();
+  await expect(stageOne).toHaveAttribute("aria-expanded", "false");
+  await stageOne.click();
   await expect(
     page.getByRole("button", { name: /检查原始材料/ }),
   ).toBeVisible();
@@ -275,10 +279,12 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   await expect(
     runtime.getByRole("region", { name: "项目经理协作" }),
   ).toBeVisible();
+  await runtime.getByRole("button", { name: /材料处理/ }).click();
   const collect = runtime.getByRole("article", {
     name: "步骤 · 整理材料",
     exact: true,
   });
+  await collect.locator(".workflow-step-toggle").click();
   await collect.getByRole("button", { name: "执行步骤", exact: true }).click();
   await collect.getByRole("button", { name: "接纳结果", exact: true }).click();
   await expect
@@ -310,8 +316,9 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   await editor
     .getByRole("button", { name: "应用此计划调整", exact: true })
     .click();
+  await runtime.getByRole("button", { name: /可选复核/ }).click();
   await expect(
-    runtime.getByRole("button", { name: /可选检查 · 已跳过/ }),
+    runtime.getByRole("button", { name: /可选检查/ }),
   ).toBeVisible();
   await editor.getByLabel("计划调整方式").selectOption("add");
   await editor.getByLabel("计划调整对象").selectOption("collect");
@@ -325,6 +332,7 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     name: "步骤 · 补充交接",
     exact: true,
   });
+  await added.locator(".workflow-step-toggle").click();
   await added.getByRole("button", { name: "执行步骤", exact: true }).click();
   await added.getByRole("button", { name: "接纳结果", exact: true }).click();
   await runtime.getByRole("button", { name: "完成流程", exact: true }).click();
