@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 
 SECRET_FIELDS = {'credential_ref', 'credential_reference', 'access_token', 'refresh_token', 'api_key', 'password', 'authorization', 'secret'}
@@ -47,10 +48,17 @@ def export(data, project, output, binary=None):
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     manifest = {'project_id': project, 'captured_at': datetime.now(timezone.utc).isoformat(), 'consistent_project_snapshot': True,
                 'excluded': ['global credentials/settings', 'authentication files', 'worker state', 'environment variables'], 'files': [], 'errors': []}
-    with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as original:
-        with sqlite3.connect(output / 'project.sqlite3') as snapshot:
+    with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as original:
+        with closing(sqlite3.connect(output / 'project.sqlite3')) as snapshot:
             original.backup(snapshot)
-    with sqlite3.connect(output / 'project.sqlite3') as snapshot:
+            # The source uses WAL. Make the exported snapshot a closed, single
+            # database before hashing: Connection.__exit__ only commits and does
+            # not close it, so temporary WAL/SHM files could enter the manifest
+            # and disappear when the exporter process exits.
+            mode = snapshot.execute('PRAGMA journal_mode=DELETE').fetchone()[0]
+            if mode != 'delete':
+                raise RuntimeError('evidence snapshot must be a standalone database')
+    with closing(sqlite3.connect((output / 'project.sqlite3').resolve().as_uri() + '?mode=ro', uri=True)) as snapshot:
         snapshot.row_factory = sqlite3.Row
         tables = [row[0] for row in snapshot.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
         records = {}
@@ -73,15 +81,16 @@ def export(data, project, output, binary=None):
         if source.is_symlink() or not source.is_file() or artifact_root not in source.resolve().parents:
             manifest['errors'].append({'artifact_id': artifact['id'], 'error': 'missing_or_unsafe_artifact'})
             continue
-        actual = digest(source)
+        content = source.read_bytes()
+        actual = hashlib.sha256(content).hexdigest()
         destination = output / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(source.read_bytes())
+        destination.write_bytes(content)
         if actual != artifact['sha256']:
             manifest['errors'].append({'artifact_id': artifact['id'], 'error': 'content_drift', 'expected': artifact['sha256'], 'actual': actual})
     global_database = data.resolve() / 'global.sqlite3'
     if global_database.is_file():
-        with sqlite3.connect(global_database.as_uri() + '?mode=ro', uri=True) as global_db:
+        with closing(sqlite3.connect(global_database.as_uri() + '?mode=ro', uri=True)) as global_db:
             global_db.row_factory = sqlite3.Row
             global_db.execute('BEGIN')
             facts = {'installations': [sanitize(dict(row)) for row in global_db.execute('SELECT * FROM runtime_installations')],

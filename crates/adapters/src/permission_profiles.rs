@@ -297,21 +297,6 @@ pub struct PermissionPresetSource {
     pub is_builtin: bool,
 }
 
-pub fn builtin_permission_preset_source() -> Result<PathBuf> {
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(parent) = exe.parent()
-    {
-        let path = parent.join("resources/configuration/permissions/profiles");
-        if path.is_dir() {
-            return permission_preset_directory(&path);
-        }
-    }
-    permission_preset_directory(
-        &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../resources/configuration/permissions/profiles"),
-    )
-}
-
 fn permission_preset_directory(path: &Path) -> Result<PathBuf> {
     if !path.is_absolute() {
         return Err(err("invalid_params", "预设来源必须是绝对目录"));
@@ -369,10 +354,57 @@ fn select_preset_source(s: &mut EngineeringState, path: Option<&Path>) {
 }
 
 impl GlobalStore {
+    fn builtin_permission_preset_source(&self) -> Result<PathBuf> {
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(parent) = exe.parent()
+        {
+            let path = parent.join("resources/configuration/permissions/profiles");
+            if path.is_dir() {
+                return permission_preset_directory(&path);
+            }
+        }
+        // A copied/read-only executable must not depend on its build checkout.
+        // Materialize only packaged preset data, separately from user-selected
+        // editable directories. Keep old content-addressed generations intact.
+        let files = factory_bundle::packaged_permission_presets()?;
+        let generation = configuration_hash(&json!(files));
+        let _writer = self.writer.lock().map_err(storage)?;
+        let mut root = PathBuf::from(self.root());
+        for part in ["packaged-permission-presets", &generation] {
+            root.push(part);
+            reject_symlink(&root)?;
+            fs::create_dir_all(&root).map_err(storage)?;
+        }
+        for (name, body) in files {
+            let path = root.join(name);
+            reject_symlink(&path)?;
+            if fs::read(&path).is_ok_and(|bytes| bytes == body.as_bytes()) {
+                continue;
+            }
+            let temporary = root.join(format!(".{}.tmp", id()));
+            let write = (|| {
+                use std::io::Write;
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&temporary)
+                    .map_err(storage)?;
+                file.write_all(body.as_bytes()).map_err(storage)?;
+                drop(file);
+                fs::rename(&temporary, &path).map_err(storage)
+            })();
+            if write.is_err() {
+                let _ = fs::remove_file(&temporary);
+            }
+            write?;
+        }
+        permission_preset_directory(&root)
+    }
+
     pub fn permission_preset_source(&self) -> Result<PermissionPresetSource> {
         Ok(preset_source(
             &self.snapshot()?,
-            builtin_permission_preset_source()?,
+            self.builtin_permission_preset_source()?,
         ))
     }
 
@@ -389,7 +421,7 @@ impl GlobalStore {
                 .as_str()
                 .ok_or_else(|| err("invalid_params", "需要预设目录"))?,
         ))?;
-        let builtin = builtin_permission_preset_source()?;
+        let builtin = self.builtin_permission_preset_source()?;
         self.transact(Some((&c.command_id, &fp)), &mut |s| {
             select_preset_source(s, if path == builtin { None } else { Some(&path) });
             Ok(json!(preset_source(s, builtin.clone())))
@@ -410,7 +442,7 @@ impl GlobalStore {
         };
         let before = self.snapshot()?;
         let source_revision = preset_source_selection(&before).map(|r| r.id.clone());
-        let builtin_path = builtin_permission_preset_source()?;
+        let builtin_path = self.builtin_permission_preset_source()?;
         let source = preset_source(&before, builtin_path.clone());
         let root = permission_preset_directory(if builtin { &builtin_path } else { &source.path })?;
         let mut profiles = Vec::new();

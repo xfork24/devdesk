@@ -12,9 +12,16 @@ OUT=args.report_directory or Path(tempfile.mkdtemp(prefix='devdesk-engineering-v
 assert args.resume == (OUT/'context.json').exists(), 'select --resume for an existing acceptance dataset'
 if (OUT/'failure.txt').exists():(OUT/'failure.txt').rename(OUT/('failure-before-launch-'+str(time.time_ns())+'.txt'))
 private_binary=OUT/'devdesk-host';shutil.copy2(args.binary.resolve(),private_binary)
+binary_digest=hashlib.sha256(private_binary.read_bytes()).hexdigest()
+binary_archive=OUT/'binaries'/binary_digest/'devdesk-host'
+if binary_archive.exists():
+ assert hashlib.sha256(binary_archive.read_bytes()).hexdigest()==binary_digest, 'Preserved acceptance binary changed'
+else:
+ binary_archive.parent.mkdir(parents=True)
+ shutil.copy2(private_binary,binary_archive)
 attempt=OUT/'attempts'/str(time.time_ns());attempt.mkdir(parents=True)
 for name in [Path(__file__).name,'client.py','engineering_evidence.py','export_evidence.py']:shutil.copy2(Path(__file__).parent/name,attempt/name)
-(attempt/'ATTEMPT.json').write_text(json.dumps({'resume':args.resume,'unattended':args.unattended,'timeout_seconds':args.timeout_seconds,'binary_sha256':hashlib.sha256(private_binary.read_bytes()).hexdigest(),'guidance':args.guidance},ensure_ascii=False,indent=2))
+(attempt/'ATTEMPT.json').write_text(json.dumps({'resume':args.resume,'unattended':args.unattended,'timeout_seconds':args.timeout_seconds,'binary_sha256':binary_digest,'binary_archive':str(binary_archive.relative_to(OUT)),'guidance':args.guidance},ensure_ascii=False,indent=2))
 if (OUT/'host.log').exists():(OUT/'host.log').rename(OUT/('host-before-launch-'+str(time.time_ns())+'.log'))
 child=subprocess.Popen([str(private_binary),'--data',str(OUT/'data'),'--port','0'],stdout=(OUT/'host.log').open('w'),stderr=subprocess.STDOUT)
 try:
@@ -70,7 +77,7 @@ try:
   if args.manager_context_source:
    source=json.loads(args.manager_context_source.read_text());assert source['type']=='permission_context'
    selected_context=source['identity']+':'+str(source['revision'])
-   catalog=c.rpc('query.configurations',{'kind':'permission_context','include_history':True,'limit':100})['records'];existing=next((r for r in catalog if r['id']==selected_context),None)
+   catalog=c.rpc('query.configurations',{'local':True,'kind':'permission_context','include_history':True,'limit':100})['records'];existing=next((r for r in catalog if r['id']==selected_context),None)
    if existing:
     assert existing['data']==source['data'] and existing['scope']==source['scope'],'Existing context differs from the explicit source'
    else:

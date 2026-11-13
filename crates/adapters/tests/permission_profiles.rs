@@ -301,6 +301,34 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
 }
 
 #[test]
+fn packaged_presets_are_dataset_local_and_recover_from_the_embedded_bundle() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = global(dir.path());
+    let source = store.permission_preset_source().unwrap();
+    assert!(source.is_builtin);
+    assert!(source.path.starts_with(dir.path().canonicalize().unwrap()));
+    let files = std::fs::read_dir(&source.path)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert!(!files.is_empty());
+    for path in &files {
+        let source: SourceDefinition =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(source.r#type, "permission_profile");
+    }
+    let original = std::fs::read(&files[0]).unwrap();
+    std::fs::write(&files[0], "damaged generated cache").unwrap();
+    store
+        .reload_permission_presets(&command("reload", json!({"builtin":true}), None, None).1)
+        .unwrap();
+    assert_eq!(std::fs::read(&files[0]).unwrap(), original);
+    std::fs::remove_dir_all(&source.path).unwrap();
+    assert_eq!(store.permission_preset_source().unwrap().path, source.path);
+    assert_eq!(std::fs::read(&files[0]).unwrap(), original);
+}
+
+#[test]
 fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
     let dir = tempfile::tempdir().unwrap();
     let (store, e) = global(dir.path());

@@ -104,3 +104,20 @@ pub(crate) fn packaged_runtime(provider: HarnessProvider) -> Result<SourceDefini
     }
     Err(err("configuration_required", "默认运行资源不存在"))
 }
+
+pub(crate) fn packaged_permission_presets() -> Result<Vec<(String, &'static str)>> {
+    let manifest: Value = serde_json::from_str(resource("manifest.json")?).map_err(storage)?;
+    let mut files = Vec::new();
+    for path in manifest["types"]["permission_profile"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let path = path
+            .as_str()
+            .ok_or_else(|| err("invalid_template", "权限预设路径无效"))?;
+        files.push((format!("{:x}.json", Sha256::digest(path)), resource(path)?));
+    }
+    require(!files.is_empty(), "出厂包缺少权限预设")?;
+    Ok(files)
+}

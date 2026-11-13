@@ -19,22 +19,31 @@ with tempfile.TemporaryDirectory(prefix='devdesk-evidence-') as temp:
     (project / 'worker-state').mkdir()
     (project / 'worker-state/auth.json').write_text('must never be copied')
     sha = hashlib.sha256(content).hexdigest()
-    with sqlite3.connect(project / 'engineering.sqlite3') as db:
+    db = sqlite3.connect(project / 'engineering.sqlite3')
+    assert db.execute('PRAGMA journal_mode=WAL').fetchone() == ('wal',)
+    with db:
         db.execute('CREATE TABLE artifacts(id TEXT,relative_path TEXT,sha256 TEXT)')
         db.execute('INSERT INTO artifacts VALUES(?,?,?)', ('artifact', 'artifacts/project-project-fixture/outputs/result.json', sha))
     output = root / 'evidence'
     subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / 'live/export_evidence.py'), '--data', str(root/'data'), '--project', 'project-fixture', '--output', str(output)], check=True)
-    with sqlite3.connect(project / 'engineering.sqlite3') as db:
+    with db:
         db.execute('INSERT INTO artifacts VALUES(?,?,?)', ('unsafe', 'worker-state/auth.json', 'unknown'))
+    artifact.write_bytes(b'changed after sealed registration')
     unsafe = root / 'unsafe-evidence'
     rejected = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / 'live/export_evidence.py'), '--data', str(root/'data'), '--project', 'project-fixture', '--output', str(unsafe)], capture_output=True)
     assert rejected.returncode == 1
-    assert not json.loads((unsafe/'MANIFEST.json').read_text())['artifacts_verified']
+    rejected_manifest = json.loads((unsafe/'MANIFEST.json').read_text())
+    assert not rejected_manifest['artifacts_verified']
+    assert any(error['artifact_id'] == 'artifact' and error['error'] == 'content_drift' for error in rejected_manifest['errors'])
+    assert any(error['artifact_id'] == 'unsafe' and error['error'] == 'missing_or_unsafe_artifact' for error in rejected_manifest['errors'])
     assert not list(unsafe.rglob('auth.json'))
+    db.close()
     shutil.rmtree(root/'data')
     manifest = json.loads((output/'MANIFEST.json').read_text())
     assert manifest['artifacts_verified']
     assert not list(output.rglob('auth.json'))
+    assert not list(output.glob('project.sqlite3-*')), 'Archive must not depend on transient SQLite sidecars'
+    assert not any(entry['path'].startswith('project.sqlite3-') for entry in manifest['files'])
     for entry in manifest['files']:
         assert hashlib.sha256((output/entry['path']).read_bytes()).hexdigest() == entry['sha256']
     with sqlite3.connect(output/'project.sqlite3') as db:

@@ -14,6 +14,12 @@ PermissionContext（源修订：sandbox_ref + 双端选择 + step_grants + Contr
 
 核心原则：**Agent 与 Capability 不含任何权限字段**。技术能力（Capability 声明具备某工具）与本次调用授权（Permission 授予）分别表达；Role 名称、任务指令或提示词都不能扩大权限。
 
+## 权限预设来源
+
+默认预设优先使用运行包旁的 `resources/configuration/permissions/profiles`；没有附带该目录时，从包内资源按内容摘要生成到当前数据集的 `packaged-permission-presets/`，不读取编译时的源码目录。生成缓存可恢复，旧内容代际保留；修改预设应选择自己的目录，避免把生成缓存当作编辑源。
+
+用户选择的预设目录持久化保存，重新加载只读取该目录；“重新加载内置预设”恢复运行包提供的来源。加载产生不可变 Profile 修订，不自动改绑 Harness 或 Sandbox，也不改变历史执行的冻结权限。
+
 ## Profile 职责矩阵
 
 Profile schema v2 强制：Harness profile 必须含 filesystem / network / tools / approval 四键；Sandbox profile 不得含 tools 与 approval（审批语义只属于 Harness 层）。可移植词汇为：

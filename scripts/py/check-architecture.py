@@ -24,6 +24,8 @@ if core_build.exists():
     errors.append('core has a product build script')
 for path in (ROOT / 'crates/adapters/src').glob('*.rs'):
     source = path.read_text().split('#[cfg(test)]')[0]
+    if re.search(r'\bPath(?:Buf)?::(?:new|from)\(\s*env!\(\s*"CARGO_MANIFEST_DIR"', source):
+        errors.append(f'{path.relative_to(ROOT)} looks up runtime assets in the build checkout')
     if re.search(r'\b(?:compile_workflow_sources|render_source_task)\s*\(', source):
         errors.append(f'{path.relative_to(ROOT)} compiles/renders application state')
 for path in (ROOT / 'crates/host/src').glob('*.rs'):
