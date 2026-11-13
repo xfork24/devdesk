@@ -1,5 +1,6 @@
 //! Test-only native port doubles. They never run Git, Docker, a model or a network request.
 #![allow(dead_code)]
+use devdesk_core::id;
 #[path = "defaults.rs"]
 mod defaults;
 use defaults::*;
@@ -74,6 +75,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
                     model_parameters: Default::default(),
                     permissions: None,
                     installation: RuntimeInstallation {
+                        recipe_digest: Some("a".repeat(64)),
                         id: "fixture-runtime".into(),
                         key: RuntimeKey {
                             provider: HarnessProvider::Codex,
@@ -193,5 +195,88 @@ pub fn bind_default_permissions(e: &Engine) {
             },
         )
         .unwrap();
+    }
+}
+
+/// Explicit session-resource port fixture. It never discovers Docker or credentials.
+pub struct ResourceFixture<'a> {
+    pub store: &'a dyn ports::EngineeringStore,
+}
+impl ports::SessionResources for ResourceFixture<'_> {
+    fn shared_store(&self) -> &dyn ports::EngineeringStore {
+        self.store
+    }
+    fn architecture(&self) -> String {
+        "aarch64".into()
+    }
+    fn prepare_harness(
+        &self,
+        _: &ConfigurationRecord,
+        resource: &ConfigurationRecord,
+    ) -> Result<RuntimeInstallation> {
+        let r: RuntimeResourceDefinition = resource.decode()?;
+        Ok(RuntimeInstallation {
+            id: format!("fixture-{}", r.recipe_digest()),
+            key: RuntimeKey {
+                provider: r.provider,
+                version: r.version.clone(),
+                os: "linux".into(),
+                arch: "aarch64".into(),
+            },
+            artifact: RuntimeArtifact::DockerImage {
+                image_id: format!("sha256:{}", "a".repeat(64)),
+            },
+            source: "explicit resource port fixture".into(),
+            license: "test".into(),
+            recipe_digest: Some(r.recipe_digest()),
+        })
+    }
+    fn installations(&self) -> Result<Vec<RuntimeInstallation>> {
+        Ok(vec![])
+    }
+    fn ensure_runtime(&self, _: HarnessProvider, _: Option<&str>) -> Result<RuntimeInstallation> {
+        Err(err("fixture", "fixture expects first materialization"))
+    }
+    fn runtime_verified(&self, _: &str) -> Result<bool> {
+        Ok(true)
+    }
+    fn installation_recipe(&self, i: &RuntimeInstallation) -> String {
+        i.recipe_digest.clone().unwrap_or_default()
+    }
+    fn validate_installation(&self, i: &RuntimeInstallation) -> Result<()> {
+        devdesk_adapters::permissions::validate_runtime_version(i)
+    }
+    fn verify_permissions(
+        &self,
+        s: &EngineeringState,
+        l: &VersionedPermissionLock,
+        i: &RuntimeInstallation,
+    ) -> Result<()> {
+        devdesk_adapters::permission_profiles::verify_permission_installation(s, l, i)
+    }
+    fn compile_permissions(
+        &self,
+        s: &EngineeringState,
+        l: &VersionedPermissionLock,
+        scope: Option<ExecutionScope>,
+    ) -> Result<ExecutionPermissions> {
+        devdesk_adapters::permission_profiles::compile_permission_profiles(s, l, scope)
+    }
+    fn adapter_identity(&self, _: HarnessProvider) -> String {
+        "explicit-resource-fixture/v1".into()
+    }
+    fn credential_reference(
+        &self,
+        _: HarnessProvider,
+        _: Option<&ModelConnection>,
+        _: &EngineeringState,
+    ) -> Result<Option<String>> {
+        Ok(None)
+    }
+    fn model_profile_digest(&self, _: &ModelConnection, _: &str) -> Result<String> {
+        Ok("a".repeat(64))
+    }
+    fn runtime_digest(&self, a: &Definition, b: &RuntimeBinding) -> Result<String> {
+        devdesk_adapters::runtime_digest(a, b)
     }
 }

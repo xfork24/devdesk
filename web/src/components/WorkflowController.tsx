@@ -1,13 +1,20 @@
 import { StandardDiff } from "./StandardManager";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActionButton } from "./ActionFeedback";
-import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
+import { ActionButton, ActionSelect } from "./ActionFeedback";
+import {
+  MarkdownPreview,
+  loadCatalog,
+  RevisionSelect,
+  type Request,
+  type Row,
+} from "./configuration-ui";
 
 type Props = {
   request: Request;
   instance: Row;
   projectId: string;
   refresh: () => Promise<void>;
+  workspaceOnly?: boolean;
 };
 
 export function WorkflowController({
@@ -15,20 +22,45 @@ export function WorkflowController({
   instance,
   projectId,
   refresh,
+  workspaceOnly = false,
 }: Props) {
   const [data, setData] = useState<Row>();
+  const [managerAgent, setManagerAgent] = useState("");
+  const [managerPermission, setManagerPermission] = useState("");
+  const [mode, setMode] = useState("manual");
+  const [policy, setPolicy] = useState("");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const epoch = useRef(0);
   const load = useCallback(async () => {
     const ticket = ++epoch.current;
-    const next = await request("query.orchestration", {
-      root_instance_id: instance.id,
-      project_id: projectId,
-    });
-    if (ticket === epoch.current) setData(next);
-  }, [request, instance.id, projectId]);
+    const [next, driver, catalog] = await Promise.all([
+      request("query.orchestration", {
+        ...(workspaceOnly
+          ? { owner_id: projectId, workspace_only: true }
+          : { root_instance_id: instance.id }),
+        project_id: projectId,
+      }),
+      workspaceOnly
+        ? Promise.resolve({ driver: null })
+        : request("query.workflow_driver", {
+            id: instance.id,
+            project_id: projectId,
+          }),
+      loadCatalog(request, { id: projectId }),
+    ]);
+    if (ticket === epoch.current)
+      setData({
+        ...next,
+        driver: driver.driver,
+        agents: catalog.filter((r: Row) => r.type === "agent"),
+        permissions: catalog.filter(
+          (r: Row) => r.type === "permission_context",
+        ),
+        policies: catalog.filter((r: Row) => r.type === "orchestration_policy"),
+      });
+  }, [request, instance.id, projectId, workspaceOnly]);
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -56,12 +88,15 @@ export function WorkflowController({
     try {
       let record = data?.record;
       if (!record) {
-        const opened = await request("orchestration.open", {
-          project_id: projectId,
-          command_id: crypto.randomUUID(),
-          target: instance.id,
-          payload: {},
-        });
+        const opened = await request(
+          workspaceOnly ? "manager.open" : "orchestration.open",
+          {
+            project_id: projectId,
+            command_id: crypto.randomUUID(),
+            target: instance.id,
+            payload: {},
+          },
+        );
         const loaded = await request("query.orchestration", {
           id: opened.id,
           project_id: projectId,
@@ -79,6 +114,50 @@ export function WorkflowController({
         },
       });
       if (method === "orchestration.input") setInput("");
+      await Promise.all([load(), refresh()]);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function adoptManager() {
+    setBusy(true);
+    setError("");
+    try {
+      await request("manager.open", {
+        project_id: projectId,
+        command_id: crypto.randomUUID(),
+        target: projectId,
+        payload: {
+          ...(managerAgent ? { agent_ref: managerAgent } : {}),
+          ...(managerPermission
+            ? { permission_context_ref: managerPermission }
+            : {}),
+        },
+      });
+      await load();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function selectDriver() {
+    setBusy(true);
+    setError("");
+    try {
+      const current = await request("workflow.inspect", {
+        id: instance.id,
+        project_id: projectId,
+      });
+      await request("workflow.driver.select", {
+        project_id: projectId,
+        command_id: crypto.randomUUID(),
+        target: instance.id,
+        expected_revision: current.record.revision,
+        payload: { mode, policy_ref: mode === "rust" ? policy : null },
+      });
       await Promise.all([load(), refresh()]);
     } catch (e) {
       setError(String(e));
@@ -126,8 +205,77 @@ export function WorkflowController({
     closed: "已结束",
   };
   return (
-    <section aria-label="项目经理协作" className="panel">
-      <h3>项目经理协作</h3>
+    <section
+      aria-label={workspaceOnly ? "项目经理工作台" : "项目经理协作"}
+      className="panel"
+    >
+      <h3>{workspaceOnly ? "项目经理工作台" : "项目经理协作"}</h3>
+      {workspaceOnly && (
+        <>
+          <RevisionSelect
+            label="工作台 Agent 精确修订"
+            records={data?.agents || []}
+            value={managerAgent}
+            onChange={setManagerAgent}
+          />
+          <RevisionSelect
+            label="工作台授权上下文"
+            records={data?.permissions || []}
+            value={managerPermission}
+            onChange={setManagerPermission}
+          />
+          <ActionButton
+            disabled={busy || (!managerAgent && !managerPermission)}
+            onClick={() => void adoptManager()}
+          >
+            采用工作台配置
+          </ActionButton>
+          <p className="muted">
+            更换组合前先暂停当前经理会话；后继会话使用所选配置。
+          </p>
+        </>
+      )}
+      {!workspaceOnly && (
+        <>
+          <p>
+            当前调度：{data?.driver?.data.mode || "manual"} · 代次{" "}
+            {data?.driver?.data.epoch || 0}
+          </p>
+          {data?.driver?.data.reason && (
+            <p role="status">
+              {typeof data.driver.data.reason === "string"
+                ? data.driver.data.reason
+                : data.driver.data.reason.message}
+            </p>
+          )}
+          <label>
+            切换调度模式
+            <ActionSelect
+              aria-label="切换调度模式"
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+            >
+              <option value="manual">人工控制</option>
+              <option value="rust">Rust 自动调度</option>
+              <option value="agent">Agent 调度</option>
+            </ActionSelect>
+          </label>
+          {mode === "rust" && (
+            <RevisionSelect
+              label="根实例调度策略"
+              records={data?.policies || []}
+              value={policy}
+              onChange={setPolicy}
+            />
+          )}
+          <ActionButton
+            disabled={busy || (mode === "rust" && !policy)}
+            onClick={() => void selectDriver()}
+          >
+            采用调度模式
+          </ActionButton>
+        </>
+      )}
       <p>
         {controller
           ? statuses[controller.status] || controller.status
@@ -158,7 +306,7 @@ export function WorkflowController({
               ["completed", "cancelled"].includes(instance.data.status)
             }
           >
-            发送并推进
+            {workspaceOnly ? "发送" : "发送并推进"}
           </ActionButton>
           {controller && (
             <ActionButton

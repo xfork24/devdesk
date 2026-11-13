@@ -1000,7 +1000,7 @@ impl Engine {
                 "skill",
                 old.as_ref()
                     .map(|r| r.definition_id.clone())
-                    .unwrap_or_else(id),
+                    .unwrap_or_else(|| format!("skill.{}", c.command_id)),
                 scope.clone(),
                 text(p, "name")?,
                 old.as_ref().map_or(1, |r| r.version + 1),
@@ -1018,7 +1018,7 @@ impl Engine {
 
                 agent_profile: None,
             });
-            let bundle = record(
+            let mut bundle = record(
                 "skill_package",
                 r.id.clone(),
                 scope,
@@ -1028,6 +1028,7 @@ impl Engine {
                 json!(package),
                 true,
             );
+            bundle.id = format!("skill-package:{}", r.id);
             s.governance.push(bundle);
             let value = json!(r);
             s.governance.push(r);

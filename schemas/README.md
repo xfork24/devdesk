@@ -30,3 +30,5 @@ cargo test -p devdesk-adapters --test schema_contracts --test configured_workflo
 回归离线编译每个文件和 `$defs`，验证当前资源、Serde 默认值、实际冻结计划和运行实例、权限预设及非法输入。JSON Schema 的字符限制不能替代 Rust 对 UTF-8 字节数的精确限制。
 
 源配置、权限归属及无持久化投影的存储规则见[源配置与执行解析](../docs/source-configuration.md)。
+
+Spec 的 `assertion` 与 `evidence_required`、ContentCheckReport 的 `locations` 为可执行结构和定位证据。原有 schema_version 继续仅作元数据；未知检查原语、无效位置或资源复杂度超限被拒绝。Schema 本身只描述形状，证据源/摘要与机器结果由冻结输入检查器核对。

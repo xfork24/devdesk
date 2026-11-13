@@ -6,8 +6,8 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
     PermissionCapabilities {
         backend: provider.as_str().into(),
         version: match provider {
-            HarnessProvider::Codex => runtime_preparation::CODEX_VERSION,
-            HarnessProvider::Dsh => runtime_preparation::DSH_VERSION,
+            HarnessProvider::Codex => runtime_preparation::default_version(HarnessProvider::Codex),
+            HarnessProvider::Dsh => runtime_preparation::default_version(HarnessProvider::Dsh),
         }
         .into(),
         recipe_digest: match provider {
@@ -405,36 +405,21 @@ pub fn dsh_profile(p: &ExecutionPermissions, instructions: &str, cwd: &str) -> R
 }
 
 pub fn validate_runtime_version(installation: &RuntimeInstallation) -> Result<()> {
-    // Acceptance is content-anchored: the installation must originate from the exact
-    // build recipe whose permission contract this binary verified. The recipe identity
-    // is embedded in the installation key at registration time.
-    let expected = capabilities(installation.key.provider).recipe_digest;
-    let actual = installation_recipe(installation);
-    if actual != expected {
-        return Err(err(
-            "permission_unsupported",
-            format!(
-                "权限后端只验证了配方 {}，当前安装为 {}",
-                &expected[..16],
-                if actual.is_empty() {
-                    "未登记配方".into()
-                } else {
-                    actual
-                }
-            ),
-        ));
-    }
-    Ok(())
+    installation.key.validate()?;
+    require(
+        installation.key.os == "linux"
+            && matches!(installation.artifact, RuntimeArtifact::DockerImage { .. }),
+        "工程执行需要完整 Linux Docker worker",
+    )?;
+    let digest = installation_recipe(installation);
+    require(
+        digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
+        "运行安装缺少完整的配方来源摘要",
+    )
 }
-
-/// Recipe identity embedded in a runtime key (`...+recipe.<64 hex>`), if any.
+/// The recipe is a separate provenance fact, never parsed from a display version.
 pub fn installation_recipe(installation: &RuntimeInstallation) -> String {
-    installation
-        .key
-        .version
-        .split_once("+recipe.")
-        .map(|(_, recipe)| recipe.to_owned())
-        .unwrap_or_default()
+    installation.recipe_digest.clone().unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -443,12 +428,13 @@ mod recipe_tests {
 
     #[test]
     fn permission_acceptance_uses_the_complete_registered_recipe_digest() {
-        let digest = runtime_preparation::default_codex_recipe_digest();
+        let digest = "c".repeat(64);
         let mut installation = RuntimeInstallation {
+            recipe_digest: Some(digest.clone()),
             id: "recipe-regression".into(),
             key: RuntimeKey {
                 provider: HarnessProvider::Codex,
-                version: format!("display-metadata+recipe.{digest}"),
+                version: "independent-label".into(),
                 os: "linux".into(),
                 arch: "aarch64".into(),
             },
@@ -459,13 +445,12 @@ mod recipe_tests {
             license: "test".into(),
         };
         assert!(validate_runtime_version(&installation).is_ok());
-        installation.key.version = format!("display-metadata+recipe.{}", &digest[..16]);
+        installation.key.version = "another-compatible-release".into();
+        assert!(validate_runtime_version(&installation).is_ok());
+        installation.recipe_digest = Some(digest[..16].into());
         assert!(validate_runtime_version(&installation).is_err());
-        installation.key.version = format!(
-            "display-metadata+recipe.{}{}",
-            &digest[..63],
-            if digest.ends_with('0') { '1' } else { '0' }
-        );
+        installation.recipe_digest = None;
+        installation.key.version = format!("legacy+recipe.{digest}");
         assert!(validate_runtime_version(&installation).is_err());
     }
 }

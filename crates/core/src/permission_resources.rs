@@ -48,6 +48,10 @@ pub fn insert_permission_profiles(
             unchanged.push(p.id);
             continue;
         }
+        crate::configuration_transfers::configuration_transfer_guard(
+            s,
+            "permission.profile.import",
+        )?;
         if s.governance.iter().any(|r| {
             r.r#type == "permission_profile"
                 && r.definition_id == p.identity
@@ -220,6 +224,12 @@ impl Engine {
 
 /// Apply prevalidated target contracts in the caller's transaction.
 pub fn apply_permission_bindings(s: &mut EngineeringState, changes: &[Value]) -> Result<Value> {
+    if !changes.is_empty() {
+        crate::configuration_transfers::configuration_transfer_guard(
+            s,
+            "permission.bindings.apply",
+        )?;
+    }
     let mut seen = std::collections::BTreeSet::new();
     let mut result = Vec::new();
     for change in changes {

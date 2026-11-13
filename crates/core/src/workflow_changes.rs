@@ -1231,6 +1231,6 @@ impl Engine {
 
 mod id {
     pub fn new_id() -> String {
-        devdesk_domain::id()
+        crate::id()
     }
 }

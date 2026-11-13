@@ -313,7 +313,7 @@ fn standalone_permission_contract_matches_rpc_and_preserves_null_rejection() {
 #[test]
 fn compiled_native_permissions_match_the_published_execution_contract() {
     let mut state = EngineeringState::default();
-    devdesk_core::seed_configuration(&mut state);
+    devdesk_adapters::seed_factory_configuration(&mut state);
     for provider in [HarnessProvider::Codex, HarnessProvider::Dsh] {
         {
             let permissions = permission_fixture::compile(
@@ -552,4 +552,21 @@ fn business_metadata_versions_do_not_gate_structurally_valid_definitions() {
         manifest["schema_version"] = json!(999);
         manifest
     });
+}
+
+#[test]
+fn configuration_change_contracts_cover_sources_operations_and_precise_edges() {
+    round_trip::<devdesk_core::ConfigurationChangeSet>(
+        "ConfigurationChangeSet",
+        json!({"operations":[{"type":"create","source":{"type":"spec","identity":"contract-test","revision":1,"name":"Contract","scope":"global","data":{"schema_version":123,"body":"Contract"}}}]}),
+    );
+    round_trip::<ConfigurationEdge>(
+        "ConfigurationEdge",
+        json!({"from":"flow:1","path":"/data/steps/0/spec_refs/0","relation":"reference","expected_type":"spec","to":"contract-test:1"}),
+    );
+    assert!(
+        !SCHEMAS
+            .validator("rpc.schema.json#/$defs/ConfigurationChangeSet")
+            .is_valid(&json!({"operations":[]}))
+    );
 }

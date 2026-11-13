@@ -1,6 +1,6 @@
 //! Storage codecs contain references and actual choices, never expanded source definitions.
 use super::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 const SOURCE_TEXT: &str = "\u{1e}devdesk-source-text:";
 
 fn factual_field(key: &str) -> bool {
@@ -15,34 +15,6 @@ fn factual_field(key: &str) -> bool {
         "input_sources",
     ]
     .contains(&key)
-}
-
-fn source_closure(state: &EngineeringState, value: &Value, ids: &mut BTreeSet<String>) {
-    match value {
-        Value::String(id)
-            if state
-                .configuration(id)
-                .is_ok_and(|r| source_store::is_source(r)) =>
-        {
-            if ids.insert(id.clone()) {
-                let record = state.configuration(id).unwrap();
-                source_closure(state, &record.data, ids);
-                source_closure(state, &json!(record.refs), ids);
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                source_closure(state, item, ids)
-            }
-        }
-        Value::Object(items) => {
-            for (key, item) in items {
-                source_closure(state, &json!(key), ids);
-                source_closure(state, item, ids)
-            }
-        }
-        _ => {}
-    }
 }
 
 pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
@@ -357,53 +329,10 @@ fn restore_reference(
         }
         Some("task") => {
             let source = &value["source"];
-            let instance_ref = source["workflow_instance_id"].as_str().unwrap_or("");
             let plan_record =
                 state.configuration(source["plan_revision_id"].as_str().unwrap_or(""))?;
             let plan = restore_with(state, &plan_record.data["plan"], memo)?;
-            let mut instance = state.configuration(instance_ref)?.data.clone();
-            instance["plan"] = plan;
-            instance["workflow_ref"] = source["workflow_revision_id"].clone();
-            instance["active_plan_revision_id"] = source["plan_revision_id"].clone();
-            instance["role_agent_bindings"] = plan_record.data["role_agent_bindings"].clone();
-            let instance: ConfiguredWorkflowInstance =
-                serde_json::from_value(instance).map_err(storage)?;
-            let execution_ref = source["execution_id"].as_str().unwrap_or("");
-            let mut execution = instance
-                .steps
-                .iter()
-                .find(|e| e.id == execution_ref)
-                .cloned()
-                .or_else(|| {
-                    state
-                        .governance
-                        .iter()
-                        .find(|r| {
-                            r.r#type == "workflow_execution_history"
-                                && r.data["id"] == execution_ref
-                        })
-                        .and_then(|r| serde_json::from_value(r.data.clone()).ok())
-                })
-                .ok_or_else(|| err("storage", "任务执行来源缺失"))?;
-            execution.inputs = serde_json::from_value(value["inputs"].clone()).map_err(storage)?;
-            execution.agent_revision_id = value["agent_ref"].as_str().map(str::to_owned);
-            let step = instance
-                .plan
-                .document
-                .steps
-                .iter()
-                .find(|s| s.key == source["step"])
-                .ok_or_else(|| err("storage", "任务源步骤缺失"))?;
-            let input = render_source_task(
-                &instance,
-                step,
-                &execution,
-                value["supplemental_input"].as_str(),
-            )?;
-            let mut input: Value = serde_json::from_str(&input).map_err(storage)?;
-            input["source"] = source.clone();
-            input["input_sources"] = value["input_sources"].clone();
-            return Ok(input);
+            return devdesk_core::frozen_views::restore_task(state, value, plan);
         }
         Some("control_policy") => {
             let policy: WorkflowControlPolicy = serde_json::from_value(
@@ -551,122 +480,7 @@ fn restore_reference(
             }));
         }
         Some("workflow_plan") => {
-            let cache_key = value.to_string();
-            if let Some(plan) = memo.get(&cache_key) {
-                return Ok(plan.clone());
-            }
-            let mut ids = BTreeSet::new();
-            source_closure(state, value, &mut ids);
-            let mut context = EngineeringState {
-                governance: state
-                    .governance
-                    .iter()
-                    .filter(|r| ids.contains(&r.id))
-                    .cloned()
-                    .collect(),
-                projects: state.projects.clone(),
-                ..Default::default()
-            };
-            context.governance.extend(
-                state
-                    .governance
-                    .iter()
-                    .filter(|r| r.r#type == "skill_package" && ids.contains(&r.definition_id))
-                    .cloned(),
-            );
-            let scope = value["project_id"]
-                .as_str()
-                .map(|id| Scope::project(id))
-                .unwrap_or(Scope::global());
-            let mut policy = ConfigurationRecord {
-                id: "resolver-context".into(),
-                r#type: "project_configuration".into(),
-                definition_id: "resolver".into(),
-                scope: scope.clone(),
-                name: "execution source choices".into(),
-                version: u64::MAX,
-                supersedes: None,
-                content_hash: String::new(),
-                refs: References::new(),
-                data: json!({"permission_context_ref":value["permission_context_ref"],"permission_workflow_ref":value["permission_workflow_ref"],"workflow_ref":value["workflow_ref"]}),
-                immutable: true,
-                revision: 1,
-                created_at: 0,
-            };
-            policy.content_hash = content_digest(&policy.refs, &policy.data);
-            context.governance.push(policy);
-            for choice in value["permission_bindings"]
-                .as_object()
-                .into_iter()
-                .flat_map(|v| v.values())
-            {
-                for layer in ["harness", "sandbox"] {
-                    let id = choice[layer]
-                        .as_str()
-                        .ok_or_else(|| err("storage", "权限选择缺失"))?;
-                    let binding = state.configuration(id)?;
-                    let data: VersionedPermissionBinding = binding.decode()?;
-                    let mut row = binding.clone();
-                    row.r#type = "permission_assignment".into();
-                    row.id = format!("selected:{id}");
-                    row.version = u64::MAX;
-                    row.data = json!({"target":data.target,"binding_revision_id":id});
-                    row.content_hash = content_digest(&row.refs, &row.data);
-                    context.governance.push(row);
-                }
-            }
-            let mut mapping = serde_json::Map::new();
-            for (tool, binding) in value["integration_bindings"]
-                .as_object()
-                .into_iter()
-                .flatten()
-            {
-                let definition: ExternalTool = state.configuration(tool)?.decode()?;
-                mapping.insert(definition.integration_ref, json!(binding));
-            }
-            if let Some(project) = scope.project_id() {
-                let mut row = context
-                    .governance
-                    .last()
-                    .cloned()
-                    .ok_or_else(|| err("storage", "源选择缺失"))?;
-                row.id = "selected-integrations".into();
-                row.r#type = "integration_project_configuration".into();
-                row.definition_id = format!("project-integrations.{project}");
-                row.version = u64::MAX;
-                row.data = Value::Object(mapping);
-                context.governance.push(row);
-            }
-            context.refresh_configuration_views()?;
-            let bindings: BTreeMap<Id, Id> =
-                serde_json::from_value(value["role_agent_bindings"].clone()).map_err(storage)?;
-            let workflow = context.configuration(value["workflow_ref"].as_str().unwrap_or(""))?;
-            let mut plan =
-                compile_workflow_sources(None, &context, workflow, &scope, Some(&bindings))?;
-            plan.standard_ref = value["standard_ref"].as_str().map(str::to_owned);
-            plan.work_configuration_ref =
-                value["work_configuration_ref"].as_str().map(str::to_owned);
-            if let Some(reference) = &plan.standard_ref {
-                standard_snapshot(state, reference, &scope)?;
-            }
-            plan.permission_workflow_ref =
-                value["permission_workflow_ref"].as_str().map(str::to_owned);
-            for (key, choice) in value["permission_bindings"]
-                .as_object()
-                .into_iter()
-                .flatten()
-            {
-                plan.permission_locks.insert(
-                    key.clone(),
-                    VersionedPermissionLock {
-                        harness: bound_permission(state, choice["harness"].as_str().unwrap_or(""))?,
-                        sandbox: bound_permission(state, choice["sandbox"].as_str().unwrap_or(""))?,
-                    },
-                );
-            }
-            let plan = json!(plan);
-            memo.insert(cache_key, plan.clone());
-            return Ok(plan);
+            return devdesk_core::frozen_views::restore_plan(state, value, memo);
         }
         Some(_) => return Err(err("storage", "未知源视图类型")),
         None => return Err(err("storage", "源视图标记缺失")),
@@ -689,7 +503,7 @@ mod tests {
     #[test]
     fn source_records_are_references_but_forged_and_factual_values_are_preserved() {
         let mut state = EngineeringState::default();
-        seed_configuration(&mut state);
+        seed_factory_configuration(&mut state);
         let record = state
             .governance
             .iter()

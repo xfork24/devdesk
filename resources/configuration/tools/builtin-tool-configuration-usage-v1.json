@@ -1,0 +1,27 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-configuration-usage",
+  "revision": 1,
+  "name": "配置依赖与使用方",
+  "scope": "global",
+  "data": {
+    "qualified_name": "configuration.usage",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

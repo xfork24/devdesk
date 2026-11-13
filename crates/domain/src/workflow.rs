@@ -252,6 +252,10 @@ pub struct ExecutionFact {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContentCheckDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assertion: Option<MachineAssertion>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub evidence_required: bool,
     pub key: String,
     pub name: String,
     pub instructions: String,
@@ -259,6 +263,8 @@ pub struct ContentCheckDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContentCheckResult {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locations: Vec<EvidenceLocation>,
     pub key: String,
     pub passed: bool,
     pub evidence: String,
@@ -287,10 +293,63 @@ impl ContentCheckReport {
             self.checks.iter().all(|c| !c.evidence.trim().is_empty()),
             "检查项需要明确判断依据",
         )?;
+        for check in expected {
+            let result = self.checks.iter().find(|r| r.key == check.key).unwrap();
+            require(
+                result.locations.len() <= 16 && result.evidence.len() <= 32768,
+                "证据超出数量或文本边界",
+            )?;
+            require(
+                !(check.evidence_required || check.assertion.is_some())
+                    || !result.locations.is_empty(),
+                "该检查项需要可定位的冻结输入证据",
+            )?;
+        }
         require(
             self.approve == self.checks.iter().all(|c| c.passed),
             "模型决定与检查项结论不一致",
         )
+    }
+    pub fn validate_evidence(
+        &self,
+        expected: &[ContentCheckDefinition],
+        authorized: &[EvidenceTarget],
+    ) -> Result<()> {
+        self.validate(expected)?;
+        require(
+            self.checks.iter().map(|c| c.locations.len()).sum::<usize>() <= 32,
+            "证据位置总数超过 32",
+        )?;
+        let bytes = authorized.iter().try_fold(0usize, |sum, target| {
+            serde_json::to_vec(&target.value)
+                .map(|bytes| sum.saturating_add(bytes.len()))
+                .map_err(|e| err("invalid_evidence", e.to_string()))
+        })?;
+        require(
+            authorized.len() <= 128 && bytes <= SPEC_VALUE_LIMIT,
+            "证据输入超过检查边界",
+        )?;
+        for check in expected {
+            let result = self.checks.iter().find(|r| r.key == check.key).unwrap();
+            let targets = result
+                .locations
+                .iter()
+                .map(|location| location.verify(authorized))
+                .collect::<Result<Vec<_>>>()?;
+            if let Some(assertion) = &check.assertion {
+                let observed = targets
+                    .iter()
+                    .map(|target| assertion.evaluate(&target.value))
+                    .collect::<Result<Vec<_>>>()?
+                    .into_iter()
+                    .all(|passed| passed);
+                require(
+                    observed == result.passed,
+                    "模型报告与机器检查的实际结论不一致",
+                )?;
+            }
+        }
+        Ok(())
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,8 +366,19 @@ impl ConfiguredSpecification {
             !self.body.trim().is_empty() && self.body.len() <= TASK_TEXT_LIMIT,
             "Spec 需要非空正文",
         )?;
+        require(
+            self.checks.len() <= 128
+                && serde_json::to_vec(&self.checks)
+                    .map_err(|e| err("invalid_spec", e.to_string()))?
+                    .len()
+                    <= TASK_TEXT_LIMIT,
+            "Spec 检查项超过数量或文本上限",
+        )?;
         let mut keys = BTreeSet::new();
         for check in &self.checks {
+            if let Some(assertion) = &check.assertion {
+                assertion.validate()?;
+            }
             valid_key(&check.key)?;
             require(
                 keys.insert(&check.key)
@@ -843,7 +913,7 @@ mod tests {
         rule.validate(&doc, &doc.steps.iter().map(|s| s.key.as_str()).collect(), 0)
             .unwrap();
         let fact = |identity: &str, started, finished| ExecutionFact {
-            operation_id: id(),
+            operation_id: "test-operation".into(),
             input_digest: "digest".into(),
             identity_root: Some(identity.into()),
             started,

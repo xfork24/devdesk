@@ -493,18 +493,18 @@ pub fn task_input(
         if ["markdown","text","diff"].contains(&definition.format.as_str()) {constraints.push(json!({"type":"string","description":"Text content encoded as a JSON string; do not wrap it in a title/body object."}));}
         if let Some(schema)=definition.content_schema {constraints.push(schema);}
         if port.content_checks {
-            constraints.push(json!({"type":"object","required":["approve","summary","checks"],"properties":{"approve":{"type":"boolean"},"summary":{"type":"string"},"checks":{"type":"array","minItems":checks.len(),"maxItems":checks.len(),"items":{"type":"object","required":["key","passed","evidence"],"properties":{"key":{"enum":checks.iter().map(|check|&check.key).collect::<Vec<_>>()},"passed":{"type":"boolean"},"evidence":{"type":"string","minLength":1}},"additionalProperties":false}}},"additionalProperties":false}));
+            constraints.push(json!({"type":"object","required":["approve","summary","checks"],"properties":{"approve":{"type":"boolean"},"summary":{"type":"string"},"checks":{"type":"array","minItems":checks.len(),"maxItems":checks.len(),"items":{"type":"object","required":["key","passed","evidence"],"properties":{"key":{"enum":checks.iter().map(|check|&check.key).collect::<Vec<_>>()},"passed":{"type":"boolean"},"evidence":{"type":"string","minLength":1},"locations":{"type":"array","maxItems":16,"items":EvidenceLocation::json_schema()}},"additionalProperties":false}}},"additionalProperties":false}));
         }
         Ok((name.clone(),match constraints.len(){0=>json!({}),1=>constraints.remove(0),_=>json!({"allOf":constraints})}))
     }).collect::<Result<_>>()?;
     let outputs = step.outputs.iter().map(|(name,port)|Ok((name.clone(),json!({"required":port.required,"schema":port_schemas[name],"content_checks":port.content_checks,
         "required_checks":if port.content_checks {json!(checks)}else{Value::Null},
-        "check_report_contract":if port.content_checks {json!({"required":["approve","summary","checks"],"check_fields":["key","passed","evidence"],"approve":"true exactly when all declared checks pass"})}else{Value::Null},
+        "check_report_contract":if port.content_checks {json!({"required":["approve","summary","checks"],"check_fields":["key","passed","evidence","locations"],"locations":{"requirement":"Required for evidence_required or machine assertions; optional for other semantic checks.","source_ref":"Copy the exact input_sources.<input>.evidence_source_ref value into this source_ref field.","value_digest":"Copy input_sources.<input>.value_digest.","locator":"Use the typed locator in the supplied schema: lines are 1-based inclusive, characters are 0-based with exclusive end; json_pointer addresses the frozen input value.","quote":"Optional exact selected text; omit when unnecessary."},"approve":"true exactly when all declared checks pass"})}else{Value::Null},
         "definition":definitions.get(&port.delivery_ref).ok_or_else(||err("configuration_required","交付类型不在配置闭包中"))?}))))
         .collect::<Result<BTreeMap<_,_>>>()?;
     let mut input_sources:BTreeMap<_,_>=step.inputs.iter().map(|(name,binding)| {
         let source_output_id=match binding {InputBinding::Source{source} if source.step!="$input"=>instance.steps.iter().find(|step|step.step==source.step).and_then(|step|step.outputs.get(&source.port)),_=>None};
-        (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"value_digest":execution.inputs.get(name).map(configuration_hash)}))
+        (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"evidence_source_ref":format!("execution-input:{}:{}",execution.id,name),"value_digest":execution.inputs.get(name).map(configuration_hash)}))
     }).collect();
     if let Some(checkpoint) = &execution.rework_workspace {
         if let Some(name) = &step.access.workspace_input {
@@ -798,6 +798,7 @@ impl Engine {
             "workflow_ref",
             "role_agent_bindings",
             "permission_context_ref",
+            "orchestration",
         ] {
             if let Some(value) = p.get(key) {
                 selection[key] = value.clone();
@@ -1344,12 +1345,11 @@ impl Engine {
                     require(inputs.contains_key(name), format!("缺少流程输入 {name}"))?;
                 }
                 if let Some(value) = inputs.get(name) {
-                    self.validate_configured_value(
-                        &plan
-                            .definitions
+                    self.enforce_delivery_value(
+                        state,
+                        plan.definitions
                             .get(&port.delivery_ref)
-                            .ok_or_else(|| err("configuration_required", "输入类型不在闭包中"))?
-                            .decode()?,
+                            .ok_or_else(|| err("configuration_required", "输入类型不在闭包中"))?,
                         value,
                     )?;
                 }
@@ -1429,7 +1429,8 @@ impl Engine {
             );
             row.id = instance_id;
             let result = json!(row);
-            state.governance.push(row);
+            state.governance.push(row.clone());
+            self.initialize_workflow_driver(state, &row, &configuration.data["orchestration"])?;
             return Ok(Some(result));
         }
         if ![
@@ -2141,6 +2142,7 @@ impl Engine {
                 }
             }
             execution.input_digest = configuration_hash(&execution.inputs);
+            self.freeze_input_evidence(state, row, instance, step, &execution)?;
             execution.started = Some(now());
             match &step.executor {
                 StepExecutor::Agent { .. } => {
@@ -2356,17 +2358,16 @@ impl Engine {
                                 )?;
                             }
                             if let Some(value) = inputs.get(name) {
-                                self.validate_configured_value(
-                                    &child_plan
-                                        .definitions
-                                        .get(&port.delivery_ref)
-                                        .ok_or_else(|| {
+                                self.enforce_delivery_value(
+                                    state,
+                                    child_plan.definitions.get(&port.delivery_ref).ok_or_else(
+                                        || {
                                             err(
                                                 "configuration_required",
                                                 "子流程输入类型不在闭包中",
                                             )
-                                        })?
-                                        .decode()?,
+                                        },
+                                    )?,
                                     value,
                                 )?;
                             }
@@ -2792,8 +2793,7 @@ impl Engine {
                     .definitions
                     .get(&port.delivery_ref)
                     .ok_or_else(|| err("configuration_required", "输出类型不在闭包中"))?;
-                let definition: DeliveryTypeDefinition = delivery.decode()?;
-                self.validate_configured_value(&definition, value)?;
+                self.enforce_delivery_value(state, delivery, value)?;
                 output_provenance(state, row, step, execution, name, delivery, value)?;
                 if port.content_checks {
                     let expected = step
@@ -2810,7 +2810,10 @@ impl Engine {
                         .collect::<Vec<_>>();
                     serde_json::from_value::<ContentCheckReport>(value.clone())
                         .map_err(|e| err("output_invalid", e.to_string()))?
-                        .validate(&expected)?;
+                        .validate_evidence(
+                            &expected,
+                            &self.input_evidence_targets(state, execution)?,
+                        )?;
                 }
             }
         }
@@ -2825,6 +2828,7 @@ impl Engine {
             let instance: ConfiguredWorkflowInstance = row.decode()?;
             let delivery = &instance.plan.definitions[&step.outputs[name].delivery_ref];
             let provenance = output_provenance(state, row, step, execution, name, delivery, value)?;
+            let spec_validation = self.enforce_delivery_value(state, delivery, value)?;
             let body =
                 serde_json::to_string(value).map_err(|e| err("serialization", e.to_string()))?;
             let artifact = self
@@ -2837,7 +2841,7 @@ impl Engine {
                 name.clone(),
                 1,
                 None,
-                json!({"execution_id":execution.id,"port":name,"delivery_ref":step.outputs[name].delivery_ref,"value":value,"artifact_id":artifact.id,"input_digest":execution.input_digest,"provenance":provenance}),
+                json!({"execution_id":execution.id,"port":name,"delivery_ref":step.outputs[name].delivery_ref,"value":value,"artifact_id":artifact.id,"input_digest":execution.input_digest,"provenance":provenance,"spec_validation":spec_validation,"input_manifest_ref":format!("workflow-inputs:{}",execution.id)}),
                 true,
             );
             execution.outputs.insert(name.clone(), output.id.clone());

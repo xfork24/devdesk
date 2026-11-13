@@ -5,6 +5,8 @@ pending unless --confirm is supplied; rejected completion conditions are never o
 """
 import argparse
 import json
+import sys
+from export_evidence import export as export_evidence
 from pathlib import Path
 import time
 from client import Client
@@ -14,6 +16,11 @@ parser.add_argument('--url', required=True)
 parser.add_argument('--github-repo', required=True)
 parser.add_argument('--provider', choices=['codex', 'dsh'], default='codex')
 parser.add_argument('--workflow-ref')
+parser.add_argument('--driver', choices=['agent', 'rust'], default='agent')
+parser.add_argument('--policy-ref', help='Exact scheduling policy for the Rust driver')
+parser.add_argument('--dedicated-repository', action='store_true', help='The caller explicitly designates this repository for destructive test changes regardless of its name')
+parser.add_argument('--data-root', type=Path, help='Dataset root for local evidence export')
+parser.add_argument('--evidence-dir', type=Path, help='New local archive directory; authentication state is excluded')
 parser.add_argument('--bindings', type=Path, help='JSON Role identity -> exact Agent revision')
 parser.add_argument('--inputs', type=Path, help='JSON Workflow input values')
 parser.add_argument('--supplement', help='Explicit text for a step requesting supplemental input')
@@ -23,7 +30,11 @@ parser.add_argument('--resume-feature')
 parser.add_argument('--timeout', type=int, default=2400)
 parser.add_argument('--report', type=Path, required=True)
 args = parser.parse_args()
-assert 'test' in args.github_repo.lower(), 'use a dedicated test repository'
+assert args.dedicated_repository or 'test' in args.github_repo.lower(), 'designate a dedicated test repository with --dedicated-repository'
+if args.driver == 'rust' and not args.policy_ref:
+    parser.error('--driver rust requires --policy-ref')
+if bool(args.data_root) != bool(args.evidence_dir):
+    parser.error('--data-root and --evidence-dir must be supplied together')
 client = Client(args.url)
 report = ['# Configured Workflow v6 native verification', '', 'Status: running', '']
 try:
@@ -34,6 +45,7 @@ try:
     else:
         project = client.command('project.open_github', payload={'repository': args.github_repo, 'mainline': 'main', 'title': 'Workflow v6 verification'})['id']
         client.project = project
+        report.extend(['Project: ' + project, 'Driver: ' + args.driver, ''])
         client.wait(lambda: client.rpc('query.workspace'), lambda view: view['repository_ready'], 300)
         defaults = client.rpc('query.configuration_defaults')
         workflow = args.workflow_ref or defaults['workflow_ref']
@@ -45,14 +57,21 @@ try:
             harness = next(r for r in client.rpc('query.configurations', {'kind': 'harness', 'include_history': True, 'limit': 100})['records'] if r['id'] == capability['harness_ref'])
             assert harness['data']['provider'] == args.provider, 'configure matching Agents or pass --bindings'
         current = client.rpc('query.workspace')['active_project']
-        client.command('project.configuration.update', project, current['revision'], {'workflow_ref': workflow, 'role_agent_bindings': bindings})
+        client.command('project.configuration.update', project, current['revision'], {'workflow_ref': workflow, 'role_agent_bindings': bindings, 'orchestrator_role_ref':defaults['orchestrator_role_ref'], 'permission_context_ref':defaults['permission_context_ref'], 'orchestration':{'mode':args.driver, **({'policy_ref':args.policy_ref} if args.driver=='rust' else {})}})
         feature = client.command('feature.create', payload={'project_id': project, 'title': 'Workflow v6 verification', 'workflow_inputs': json.loads(args.inputs.read_text()) if args.inputs else {}})['id']
     defaults=client.rpc('query.configuration_defaults')
     initial=client.rpc('query.workflow_instance',{'owner_id':feature})
-    manager=client.command('orchestration.open',initial['record']['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'permission_context_ref':defaults['permission_context_ref']})['id']
-    manager_row=client.rpc('query.orchestration',{'id':manager})['record']
-    client.command('orchestration.input',manager,manager_row['revision'],{'input':'按当前冻结流程组织派发、接纳及根/子实例完成。保留所有测试、独立性及人工门禁，不得绕过或伪造成功。'+(args.supplement or '')})
+    driver=client.rpc('query.workflow_driver',{'id':initial['record']['id']})
+    if initial['record']['data']['status'] not in ['completed','cancelled'] and (driver['driver'] or {}).get('data',{}).get('mode')!=args.driver:
+        latest=client.rpc('workflow.inspect',{'id':initial['record']['id']})['record']
+        client.command('workflow.driver.select',latest['id'],latest['revision'],{'mode':args.driver,**({'policy_ref':args.policy_ref} if args.driver=='rust' else {})})
+    if args.driver == 'agent':
+        manager=client.command('orchestration.open',initial['record']['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'permission_context_ref':defaults['permission_context_ref']})['id']
+        manager_row=client.rpc('query.orchestration',{'id':manager})['record']
+        client.command('orchestration.input',manager,manager_row['revision'],{'input':'按当前冻结流程组织派发、接纳及根/子实例完成。保留所有测试、独立性及人工门禁，不得绕过或伪造成功。'+(args.supplement or '')})
     report.extend(['Project: ' + client.project, 'Feature: ' + feature, ''])
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text('\n'.join(report) + '\n')
     deadline = time.monotonic() + args.timeout
     supplied = set()
     while time.monotonic() < deadline:
@@ -89,5 +108,19 @@ except BaseException as error:
     report.extend(['', 'Status: incomplete', str(error)])
     raise
 finally:
+    prior_error=sys.exc_info()[0] is not None
+    archive_failure=None
+    if args.evidence_dir and client.project:
+        try:
+            manifest=export_evidence(args.data_root,client.project,args.evidence_dir)
+            report.extend(['','Local evidence: '+str(args.evidence_dir.resolve()),'Artifact integrity verified: '+str(manifest['artifacts_verified'])])
+            if not manifest['artifacts_verified']:
+                archive_failure=RuntimeError('Archived artifacts failed integrity verification')
+        except Exception as archive_error:
+            archive_failure=archive_error
+            report.extend(['','Evidence export failed: '+str(archive_error)])
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text('\n'.join(report) + '\n')
+
+    if archive_failure and not prior_error:
+        raise RuntimeError("Evidence export failed; see acceptance report") from archive_failure

@@ -166,18 +166,16 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       choose(row);
   }, [rows, choose, draft.selected, draft.view]);
   const document = draft.document;
-  const roles = latest(records.filter((row) => row.type === "role")).map(
-    (row) => ({ ...row, id: row.id }),
-  );
+  const roles = records
+    .filter((row) => row.type === "role")
+    .map((row) => ({ ...row, id: row.id }));
   const stage = draft.node.startsWith("stage:")
     ? document.stages.find((stage: Row) => stage.key === draft.node.slice(6))
     : undefined;
   const step = draft.node.startsWith("step:")
     ? document.steps.find((step: Row) => step.key === draft.node.slice(5))
     : undefined;
-  const workflows = rows.filter(
-    (row) => row.type === "workflow",
-  );
+  const workflows = rows.filter((row) => row.type === "workflow");
   const update = (patch: Row) => {
     setValidation(undefined);
     setDraft((current) => ({
@@ -238,9 +236,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       : await mutate("workflow.create", undefined, {
           name: draft.name,
           scope:
-            draft.scope === "project"
-              ? `project:${project!.id}`
-              : "global",
+            draft.scope === "project" ? `project:${project!.id}` : "global",
           document,
         });
     setDraft((current) => ({
@@ -424,8 +420,13 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                   try {
                     const value = JSON.parse(importText);
                     const imported = value.document || value;
-                    if (!Array.isArray(imported.steps) || !Array.isArray(imported.stages))
-                      throw new Error("请选择完整流程定义（需要 stages 与 steps）。");
+                    if (
+                      !Array.isArray(imported.steps) ||
+                      !Array.isArray(imported.stages)
+                    )
+                      throw new Error(
+                        "请选择完整流程定义（需要 stages 与 steps）。",
+                      );
                     run(async () => {
                       // Structural validation stays backend-side; the frontend only parses JSON.
                       await request("query.workflow_requirements", {

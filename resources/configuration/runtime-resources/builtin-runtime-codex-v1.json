@@ -1,0 +1,40 @@
+{
+  "type": "runtime_resource",
+  "identity": "builtin-runtime-codex",
+  "revision": 1,
+  "name": "CODEX runtime inputs",
+  "scope": "global",
+  "data": {
+    "provider": "codex",
+    "version": "0.167.0",
+    "license": "Apache-2.0",
+    "files": [
+      {
+        "path": "Dockerfile",
+        "content": "# Shared provider/version layer; role instructions and session state are mounted at runtime.\nFROM node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f\nARG CODEX_VERSION=0.167.0\nRUN apt-get update && apt-get install --yes --no-install-recommends ca-certificates \\\n    && rm -rf /var/lib/apt/lists/*\nRUN npm install --global --omit=dev --ignore-scripts @openai/codex@${CODEX_VERSION} \\\n    && codex --version \\\n    && npm cache clean --force\nENV CODEX_HOME=/state/codex\nUSER 1000:1000\nWORKDIR /work\nENTRYPOINT [\"codex\", \"app-server\"]\n"
+      }
+    ],
+    "native_releases": {
+      "macos/aarch64": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.167.0/codex-aarch64-apple-darwin.tar.gz",
+        "sha256": "4b22a2a971be2791c3e31f912f3e77a88ebd64a65812a7289ccba65dd6425fe9",
+        "member": "codex-aarch64-apple-darwin"
+      },
+      "macos/x86_64": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.167.0/codex-x86_64-apple-darwin.tar.gz",
+        "sha256": "d8eb4a865a0b17319cde10347523e5bab0978d01725b39f4a639f40905e01221",
+        "member": "codex-x86_64-apple-darwin"
+      },
+      "linux/aarch64": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.167.0/codex-aarch64-unknown-linux-musl.tar.gz",
+        "sha256": "843489acb4d4b1079745c36b03c5963b887b83155af208fd53584e33ee8eb281",
+        "member": "codex-aarch64-unknown-linux-musl"
+      },
+      "linux/x86_64": {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.167.0/codex-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "9d64836106d5b374e90ee4454c7ebcde7ca7106558bd7e41a34b9f26ebda251a",
+        "member": "codex-x86_64-unknown-linux-musl"
+      }
+    }
+  }
+}

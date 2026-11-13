@@ -1,7 +1,7 @@
 {
   "type": "permission_context",
   "identity": "builtin-permission-context-engineering",
-  "revision": 3,
+  "revision": 4,
   "name": "默认工程执行授权",
   "scope": "global",
   "sandbox_ref": "builtin-sandbox-docker:1",
@@ -204,7 +204,11 @@
         "request_decision",
         "reconcile",
         "complete",
-        "segment"
+        "segment",
+        "project.read",
+        "configuration.read",
+        "configuration.preview",
+        "configuration.apply"
       ],
       "human_operations": [],
       "waivable_requirements": [

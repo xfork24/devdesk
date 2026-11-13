@@ -20,14 +20,7 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
             let h: HarnessDefinition = r.decode()?;
             let provider: HarnessProvider = serde_json::from_value(json!(h.provider))
                 .map_err(|_| err("permission_unsupported", "未知 Harness"))?;
-            if h.recipe_digest.as_deref()
-                != Some(permissions::capabilities(provider).recipe_digest.as_str())
-            {
-                return Err(err(
-                    "permission_unsupported",
-                    "该 Harness 构建配方尚未验证权限执行合同",
-                ));
-            }
+            harness_runtime_resource(s, r)?;
             // Execution build identity remains frozen separately in RuntimeBinding.
             // A model-catalog/UI/schema change does not change permission semantics.
             Ok(format!(
@@ -38,10 +31,7 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
         }
         PermissionTargetKind::Sandbox => {
             let b: SandboxDefinition = r.decode()?;
-            if b.provider != "docker"
-                || b.runtime_version != "1"
-                || b.enforcement != "docker-worker/v1"
-            {
+            if b.provider != "docker" || b.runtime_version.is_empty() || b.enforcement.is_empty() {
                 return Err(err("permission_unsupported", "未知 Sandbox 执行合同"));
             }
             Ok(format!(
@@ -53,12 +43,11 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
 }
 
 fn permission_semantics_digest(provider: HarnessProvider) -> String {
-    // Bump this contract revision for any change to compiler/executor semantics.
-    // Actual policy files are content-addressed and verified against the manifest.
+    let mut supported = json!(permissions::capabilities(provider));
+    supported.as_object_mut().unwrap().remove("version");
+    supported.as_object_mut().unwrap().remove("recipe_digest");
     permission_content_hash(
-        &json!({"revision":"portable-permissions/2", "provider":provider,
-        "capabilities":permissions::capabilities(provider), "assets":permissions::asset_digests(),
-        "manifest":include_str!("../../../permissions/backends/manifest.json")}),
+        &json!({"revision":"portable-permissions/2","provider":provider,"capabilities":supported,"assets":permissions::asset_digests(),"manifest":include_str!("../../../permissions/backends/manifest.json")}),
     )
 }
 
@@ -278,18 +267,16 @@ pub fn verify_permission_installation(
     lock: &VersionedPermissionLock,
     installation: &RuntimeInstallation,
 ) -> Result<()> {
-    let h: HarnessDefinition = s
-        .configuration(&lock.harness.binding.target.revision_id)?
-        .decode()?;
+    let harness_record = s.configuration(&lock.harness.binding.target.revision_id)?;
+    let h: HarnessDefinition = harness_record.decode()?;
     let b: SandboxDefinition = s
         .configuration(&lock.sandbox.binding.target.revision_id)?
         .decode()?;
     let platform = format!("{}/{}", installation.key.os, installation.key.arch);
     // The installation must originate from the exact recipe the permission target pinned.
-    let recipe_match = h
-        .recipe_digest
-        .as_deref()
-        .is_some_and(|recipe| permissions::installation_recipe(installation) == recipe);
+    let selected: RuntimeResourceDefinition =
+        harness_runtime_resource(s, harness_record)?.decode()?;
+    let recipe_match = permissions::installation_recipe(installation) == selected.recipe_digest();
     if installation.key.provider.as_str() != h.provider
         || !recipe_match
         || !b.platforms.contains(&platform)

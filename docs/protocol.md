@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 17 / project 48；Workflow v6、Spec v3 / Standard v4、Proposal v2 和 `agent-task/v6`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 18 / project 48；Workflow v6、Spec v3 / Standard v4、Proposal v2 和 `agent-task/v6`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，不升级或转换旧数据。
 
 ## HTTP 与命令
 
@@ -153,3 +153,18 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `work.configuration.update` 为尚未启动的工作选择 `standard_ref`、`workflow_ref`、执行者和权限；启动后使用 `WorkflowChangeOperation::AdoptStandard`，并沿既有 preview/apply、CAS、授权与静止等待路径切换。`query.work_configuration` 返回来源及计划历史，`query.work_standard_diff` 区分自身规范、入口投影及子工作采用。历史计划中的子调用清单以冻结的首次调用依据标记，当前调用树另行展示。
 `query.work_standard_choices` 分页返回可访问工作及其采用依据；工作比较可跨项目，不切换活动项目。未运行工作以已选配置为依据，已运行工作以冻结计划为依据。Standard 对比同样可跨可访问目录，解析双方各自的源修订。
 
+
+## 配置创作与跨库采用
+
+| 方法 | 参数与结果 |
+|---|---|
+| configuration.change.preview | `{changeset:{operations:[...]}}`；返回 preview_hash、基准指纹、published_refs、影响与选择。运行资源状态明确为尚未探测。 |
+| configuration.change.apply | Command.payload `{changeset,preview_hash}`；单库原子应用。project_id 指定项目库，缺省使用共享库。 |
+| query.configuration_graph | `{id,project_id?}`；返回精确对象、类型化依赖、使用方及带字段路径的诊断。 |
+| configuration.transfer.stage | Command.payload `{global_changeset,project_changeset}`，并指定 project_id；返回持久化暂存操作 ID。共享阶段只发布源修订，不混入共享停用/删除。 |
+| configuration.transfer.apply | Command.target 为暂存 ID，project_id 固定目标；可重试/恢复，项目回执与最终源发布分别核对。 |
+| configuration.transfer.cancel | Command.target 为仍处于 prepared 的操作；不删除历史，也不取消已经采用的内容。 |
+
+操作结构见 rpc.schema.json 的 ConfigurationChangeSet/ConfigurationOperation。同一变更集允许先写消费者再写依赖；修订和停用均要求预期 revision。停用多对象时整体检查候选，不把正文中的引用样例作为依赖。目录暂存期间限制冲突配置写入，不能通过修改候选授权自己。
+
+`query.spec_lint` 是只读结构预览；原生 `spec.lint` 受工作台的配置预演权限约束。新增 MachineAssertion/EvidenceLocation 契约见 RPC `$defs`；位置证明针对本次冻结输入，`workflow_output.spec_validation` 是内核生成的检查事实，模型不能通过输出同名字段替代它。

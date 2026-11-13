@@ -139,7 +139,7 @@ fn checked_artifact(artifact: RuntimeArtifact, key: &RuntimeKey) -> Result<Runti
 fn read_installation(row: &rusqlite::Row<'_>) -> rusqlite::Result<String> {
     row.get(0)
 }
-const SELECT: &str = "SELECT json_object('id',id,'key',json_object('provider',provider,'version',version,'os',os,'arch',arch),'artifact',json(artifact),'source',source,'license',license) FROM runtime_installations";
+const SELECT: &str = "SELECT json_object('id',id,'key',json_object('provider',provider,'version',version,'os',os,'arch',arch),'artifact',json(artifact),'source',source,'license',license,'recipe_digest',recipe_digest) FROM runtime_installations";
 
 impl GlobalStore {
     pub fn discover_docker_runtime(
@@ -147,15 +147,21 @@ impl GlobalStore {
         provider: HarnessProvider,
     ) -> Result<RuntimeInstallation> {
         let (version, license) = match provider {
-            HarnessProvider::Codex => (runtime_preparation::CODEX_VERSION, "Apache-2.0"),
-            HarnessProvider::Dsh => (runtime_preparation::DSH_VERSION, "MIT"),
+            HarnessProvider::Codex => (
+                runtime_preparation::default_version(HarnessProvider::Codex),
+                "Apache-2.0",
+            ),
+            HarnessProvider::Dsh => (
+                runtime_preparation::default_version(HarnessProvider::Dsh),
+                "MIT",
+            ),
         };
         let tag = format!("devdesk/{}:{version}", provider.as_str());
         let recipe = match provider {
             HarnessProvider::Codex => runtime_preparation::default_codex_recipe_digest(),
             HarnessProvider::Dsh => runtime_preparation::default_dsh_recipe_digest(),
         };
-        self.register_docker_runtime(provider, &tag, version, &recipe, license)
+        self.register_docker_runtime(provider, &tag, &version, &recipe, license)
     }
     pub(crate) fn register_docker_runtime(
         &self,
@@ -178,21 +184,24 @@ impl GlobalStore {
             "Docker 镜像内容身份无效",
         )?;
         let arch = normalized_arch(value["arch"].as_str().unwrap_or(""));
-        self.register_runtime(RuntimeRegistration {
-            key: RuntimeKey {
-                provider,
-                // The recipe identity is the content anchor; permission acceptance and
-                // harness materialization compare it, never the base version string.
-                version: format!("{version}+recipe.{recipe_digest}"),
-                os: value["os"].as_str().unwrap_or("").into(),
-                arch: arch.into(),
+        self.register_configured_runtime(
+            RuntimeRegistration {
+                key: RuntimeKey {
+                    provider,
+                    // The recipe identity is the content anchor; permission acceptance and
+                    // harness materialization compare it, never the base version string.
+                    version: version.into(),
+                    os: value["os"].as_str().unwrap_or("").into(),
+                    arch: arch.into(),
+                },
+                artifact: RuntimeArtifact::DockerImage {
+                    image_id: image.into(),
+                },
+                source: format!("local Docker build: {tag}"),
+                license: license.into(),
             },
-            artifact: RuntimeArtifact::DockerImage {
-                image_id: image.into(),
-            },
-            source: format!("local Docker build: {tag}"),
-            license: license.into(),
-        })
+            Some(recipe_digest.into()),
+        )
     }
     pub fn discover_codex(&self) -> Result<RuntimeInstallation> {
         let path = std::env::var_os("PATH")
@@ -255,6 +264,19 @@ impl GlobalStore {
         &self,
         registration: RuntimeRegistration,
     ) -> Result<RuntimeInstallation> {
+        self.register_configured_runtime(registration, None)
+    }
+    pub(crate) fn register_configured_runtime(
+        &self,
+        registration: RuntimeRegistration,
+        recipe_digest: Option<String>,
+    ) -> Result<RuntimeInstallation> {
+        if let Some(digest) = &recipe_digest {
+            require(
+                digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
+                "配方摘要格式无效",
+            )?;
+        }
         registration.key.validate()?;
         require(
             !registration.source.trim().is_empty() && !registration.license.trim().is_empty(),
@@ -266,8 +288,8 @@ impl GlobalStore {
         let key = &registration.key;
         let prior: Option<String> = conn
             .query_row(
-                &format!("{SELECT} WHERE provider=?1 AND version=?2 AND os=?3 AND arch=?4"),
-                params![key.provider.as_str(), key.version, key.os, key.arch],
+                &format!("{SELECT} WHERE provider=?1 AND version=?2 AND os=?3 AND arch=?4 AND recipe_digest IS ?5"),
+                params![key.provider.as_str(), key.version, key.os, key.arch,recipe_digest],
                 read_installation,
             )
             .optional()
@@ -288,13 +310,14 @@ impl GlobalStore {
             return Ok(prior);
         }
         let installation = RuntimeInstallation {
+            recipe_digest,
             id: id(),
             key: registration.key,
             artifact,
             source: registration.source,
             license: registration.license,
         };
-        conn.execute("INSERT INTO runtime_installations(id,provider,version,os,arch,artifact,source,license) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![installation.id,installation.key.provider.as_str(),installation.key.version,installation.key.os,installation.key.arch,serde_json::to_string(&installation.artifact).map_err(storage)?,installation.source,installation.license]).map_err(storage)?;
+        conn.execute("INSERT INTO runtime_installations(id,provider,version,os,arch,artifact,source,license,recipe_digest) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![installation.id,installation.key.provider.as_str(),installation.key.version,installation.key.os,installation.key.arch,serde_json::to_string(&installation.artifact).map_err(storage)?,installation.source,installation.license,installation.recipe_digest]).map_err(storage)?;
         Ok(installation)
     }
 

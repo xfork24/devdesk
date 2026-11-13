@@ -96,18 +96,123 @@ fn validate_schema_tree(v: &Value, depth: usize) -> Result<()> {
     }
     Ok(())
 }
+fn schema_budget<'a>(
+    root: &'a Value,
+    node: &'a Value,
+    depth: usize,
+    remaining: &mut usize,
+    stack: &mut Vec<*const Value>,
+) -> Result<()> {
+    require(depth < 48 && *remaining > 0, "Schema 展开复杂度超过边界")?;
+    *remaining -= 1;
+    let pointer = node as *const Value;
+    require(
+        !stack.contains(&pointer),
+        "Schema 递归引用不属于当前有界校验原语",
+    )?;
+    stack.push(pointer);
+    if let Some(map) = node.as_object() {
+        for key in ["$ref", "$dynamicRef"] {
+            if let Some(reference) = map.get(key).and_then(Value::as_str) {
+                let target = root
+                    .pointer(
+                        reference
+                            .strip_prefix('#')
+                            .ok_or_else(|| err("schema_invalid", "仅允许本地引用"))?,
+                    )
+                    .ok_or_else(|| err("schema_invalid", "Schema 引用不存在"))?;
+                schema_budget(root, target, depth + 1, remaining, stack)?;
+            }
+        }
+        for key in [
+            "properties",
+            "patternProperties",
+            "$defs",
+            "definitions",
+            "dependentSchemas",
+        ] {
+            if let Some(children) = map.get(key).and_then(Value::as_object) {
+                for child in children.values() {
+                    schema_budget(root, child, depth + 1, remaining, stack)?;
+                }
+            }
+        }
+        for key in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+            if let Some(children) = map.get(key).and_then(Value::as_array) {
+                for child in children {
+                    schema_budget(root, child, depth + 1, remaining, stack)?;
+                }
+            }
+        }
+        for key in [
+            "items",
+            "additionalItems",
+            "additionalProperties",
+            "unevaluatedProperties",
+            "unevaluatedItems",
+            "propertyNames",
+            "contains",
+            "not",
+            "if",
+            "then",
+            "else",
+            "contentSchema",
+        ] {
+            if let Some(child) = map.get(key) {
+                if let Some(children) = child.as_array() {
+                    for child in children {
+                        schema_budget(root, child, depth + 1, remaining, stack)?;
+                    }
+                } else {
+                    schema_budget(root, child, depth + 1, remaining, stack)?;
+                }
+            }
+        }
+    }
+    stack.pop();
+    Ok(())
+}
+fn data_budget(value: &Value, depth: usize, remaining: &mut usize) -> Result<()> {
+    require(
+        depth <= 64 && *remaining > 0,
+        "校验内容嵌套或节点数量超过边界",
+    )?;
+    *remaining -= 1;
+    match value {
+        Value::Object(map) => {
+            for child in map.values() {
+                data_budget(child, depth + 1, remaining)?
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                data_budget(child, depth + 1, remaining)?
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
 fn validator(schema: &Value) -> Result<jsonschema::Validator> {
     require(
         serde_json::to_vec(schema).map_err(storage)?.len() <= 131072,
         "Schema 太大",
     )?;
     validate_schema_tree(schema, 0)?;
-    jsonschema::validator_for(schema).map_err(|e| {
-        err(
-            "schema_invalid",
-            format!("Schema 不合法: {}", e.instance_path()),
+    schema_budget(schema, schema, 0, &mut 4096, &mut vec![])?;
+    jsonschema::options()
+        .with_pattern_options(
+            jsonschema::PatternOptions::regex()
+                .size_limit(1024 * 1024)
+                .dfa_size_limit(2 * 1024 * 1024),
         )
-    })
+        .build(schema)
+        .map_err(|e| {
+            err(
+                "schema_invalid",
+                format!("Schema 不合法: {}", e.instance_path()),
+            )
+        })
 }
 impl NativeTools {
     pub fn new(root: impl AsRef<Path>) -> Result<Self> {
@@ -426,6 +531,11 @@ impl ports::ToolExecutor for NativeTools {
         validator(schema).map(|_| ())
     }
     fn validate_arguments(&self, schema: &Value, value: &Value) -> Result<()> {
+        require(
+            serde_json::to_vec(value).map_err(storage)?.len() <= SPEC_VALUE_LIMIT,
+            "校验内容超过 8 MiB",
+        )?;
+        data_budget(value, 0, &mut 100000)?;
         validator(schema)?.validate(value).map_err(|e| {
             err(
                 "schema_validation",

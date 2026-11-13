@@ -199,7 +199,13 @@ export function RevisionSelect({
   required?: boolean;
 }) {
   const ids = Array.isArray(value) ? value : [value];
-  const options = latest(records);
+  const options = [
+    ...new Map(records.map((row) => [row.id, row])).values(),
+  ].sort(
+    (a, b) =>
+      String(a.definition_id).localeCompare(String(b.definition_id)) ||
+      b.version - a.version,
+  );
   for (const id of ids) {
     const old = records.find((r) => r.id === id);
     if (old && !options.some((r) => r.id === id)) options.push(old);
@@ -420,20 +426,28 @@ const sourceReferenceFields: Record<string, string[]> = {
   capability: ["harness_ref", "model_ref", "skills", "tools"],
   agent: ["role_ref", "capability_ref"],
   delivery_type: ["spec_refs"],
-  harness: ["model_providers", "model_catalog_ref"],
+  harness: ["model_providers", "model_catalog_ref", "runtime_resource_ref"],
   permission_context: ["sandbox_ref"],
   standard: ["root_workflow_refs"],
 };
 export function sourceContent(record: Row): Row {
-  return structuredClone({ ...record.data, ...Object.fromEntries(
-    (sourceReferenceFields[record.type] || []).filter((key) => key in record).map((key) => [key, record[key]]),
-  ) });
+  return structuredClone({
+    ...record.data,
+    ...Object.fromEntries(
+      (sourceReferenceFields[record.type] || [])
+        .filter((key) => key in record)
+        .map((key) => [key, record[key]]),
+    ),
+  });
 }
 export function sourcePayload(type: string, content: Row): Row {
   const data = { ...content };
   const refs: Row = {};
   for (const key of sourceReferenceFields[type] || []) {
-    if (key in data) { refs[key] = data[key]; delete data[key]; }
+    if (key in data) {
+      refs[key] = data[key];
+      delete data[key];
+    }
   }
   return { ...refs, data };
 }

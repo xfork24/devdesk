@@ -1,4 +1,4 @@
-#[path = "../../tests/support/schemas.rs"]
+#[path = "../../scripts/rust/schema_validation.rs"]
 mod schemas;
 use std::{
     env, fs,

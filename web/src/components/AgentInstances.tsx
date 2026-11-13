@@ -6,7 +6,6 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import {
-  latest,
   loadCatalog,
   RevisionSelect,
   type Request,
@@ -41,11 +40,8 @@ export function AgentInstances({
       current = false;
     };
   }, [request, project?.id, revision]);
-  const definitions = latest(
-    records.filter(
-      (r) =>
-        r.type === "agent" && (scope !== "global" || r.scope === "global"),
-    ),
+  const definitions = records.filter(
+    (r) => r.type === "agent" && (scope !== "global" || r.scope === "global"),
   );
   return (
     <section className="panel">
@@ -68,10 +64,7 @@ export function AgentInstances({
               payload: {
                 name: name.trim(),
                 agent_revision_id: agent,
-                scope:
-                  scope === "global"
-                    ? "global"
-                    : `project:${project!.id}`,
+                scope: scope === "global" ? "global" : `project:${project!.id}`,
               },
             });
             setName("");

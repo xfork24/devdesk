@@ -1160,3 +1160,24 @@ fn deleting_an_old_source_protects_pinned_users_and_preserves_tools_moved_to_ano
         state.configuration(b["id"].as_str().unwrap()).unwrap()
     ));
 }
+#[test]
+fn schema_validation_rejects_recursive_expansion_and_backtracking_patterns() {
+    use devdesk_core::ports::ToolExecutor;
+    let dir = tempfile::tempdir().unwrap();
+    let tools = devdesk_adapters::integrations::NativeTools::new(dir.path()).unwrap();
+    assert!(tools.validate_schema(&json!({"$ref":"#"})).is_err());
+    assert!(
+        tools
+            .validate_schema(&json!({"type":"string","pattern":"(a)\\1"}))
+            .is_err()
+    );
+    let bounded = json!({"$defs":{"item":{"type":"string","pattern":"^[a-z]+$"}},"type":"object","properties":{"name":{"$ref":"#/$defs/item"}}});
+    tools
+        .validate_arguments(&bounded, &json!({"name":"valid"}))
+        .unwrap();
+    assert!(
+        tools
+            .validate_arguments(&bounded, &json!({"name":"INVALID"}))
+            .is_err()
+    );
+}

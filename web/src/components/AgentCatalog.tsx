@@ -15,6 +15,7 @@ import {
 import { RoleManager } from "./RoleManager";
 import { JsonField } from "./WorkflowDeliveries";
 import { StandardManager } from "./StandardManager";
+import { SpecLint } from "./SpecLint";
 import { WorkflowSpecifications } from "./WorkflowSpecifications";
 import { DeliverySpecPreview } from "./DeliveryContent";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
@@ -39,6 +40,8 @@ const labels: Record<string, string> = {
   agent: "Agent",
   model: "Model",
   harness: "Harness",
+  runtime_resource: "运行资源",
+  orchestration_policy: "调度策略",
   tool: "Tool",
   skill: "Skill",
   spec: "Spec",
@@ -77,6 +80,22 @@ function initial(kind: string): Row {
         model: "",
         parameters: {},
         capabilities: [],
+      };
+    case "orchestration_policy":
+      return {
+        max_concurrency: 4,
+        max_actions_per_tick: 16,
+        lease_seconds: 60,
+        max_retries: 0,
+        retry_error_codes: [],
+      };
+    case "runtime_resource":
+      return {
+        provider: "codex",
+        version: "",
+        license: "",
+        files: [{ path: "Dockerfile", content: "" }],
+        native_releases: {},
       };
     case "harness":
       return {
@@ -347,9 +366,14 @@ export function ResourceEditor({
         delete payload.instructions;
       if (
         kind === "harness" &&
-        !runtimeVersions.some((r) => r.version === payload.runtime_version)
+        !runtimeVersions.some(
+          (r) =>
+            r.reference === payload.runtime_resource_ref ||
+            (!payload.runtime_resource_ref &&
+              r.recipe_digest === payload.recipe_digest),
+        )
       )
-        throw new Error("请选择已支持的固定运行版本");
+        throw new Error("请选择精确的运行资源修订");
       if (kind === "harness" && !payload.recipe_digest)
         delete payload.recipe_digest;
       if (kind === "tool") {
@@ -484,8 +508,7 @@ export function ResourceEditor({
             >
               <strong>{row.name}</strong>
               <span>
-                v{row.version} ·{" "}
-                {row.scope === "global" ? "Global" : "项目"}
+                v{row.version} · {row.scope === "global" ? "Global" : "项目"}
               </span>
             </ActionButton>
           ))}
@@ -528,9 +551,19 @@ export function ResourceEditor({
                 {project && <option value="project">当前项目</option>}
               </ActionSelect>
             </label>
-            {kind === "permission_context" && (
+            {[
+              "permission_context",
+              "runtime_resource",
+              "orchestration_policy",
+            ].includes(kind) && (
               <JsonField
-                label="执行授权配置"
+                label={
+                  kind === "runtime_resource"
+                    ? "运行资源定义（JSON）"
+                    : kind === "orchestration_policy"
+                      ? "调度策略（JSON）"
+                      : "执行授权配置"
+                }
                 value={data}
                 onChange={(data) => setDraft({ ...draft, data })}
               />
@@ -554,8 +587,8 @@ export function ResourceEditor({
                 {capability && (
                   <div className="notice">
                     Model：
-                    {records.find((r) => r.id === capability.model_ref)
-                      ?.name || "固定修订"}{" "}
+                    {records.find((r) => r.id === capability.model_ref)?.name ||
+                      "固定修订"}{" "}
                     · Harness：
                     {records.find((r) => r.id === capability.harness_ref)
                       ?.name || "固定修订"}{" "}
@@ -611,7 +644,8 @@ export function ResourceEditor({
                 })}
                 {(data.tools || []).filter(
                   (id: string) =>
-                    typeof records.find((r) => r.id === id)?.data.integration_ref === "string",
+                    typeof records.find((r) => r.id === id)?.data
+                      .integration_ref === "string",
                 ).length > 0 && (
                   <p>
                     外部工具还需要项目选择接入绑定；保存 Capability
@@ -720,6 +754,10 @@ export function ResourceEditor({
                       captureFeedback();
                       return patch({
                         provider: e.target.value,
+                        runtime_resource_ref:
+                          runtimeOptions.recipes.find(
+                            (r: Row) => r.provider === e.target.value,
+                          )?.reference || "",
                         runtime_version:
                           runtimeOptions.recipes.find(
                             (r: Row) => r.provider === e.target.value,
@@ -728,9 +766,7 @@ export function ResourceEditor({
                           (r: Row) => r.provider === e.target.value,
                         )?.recipe_digest,
                         model_providers: providers
-                          .filter(
-                            (p) => p.harness === e.target.value,
-                          )
+                          .filter((p) => p.harness === e.target.value)
                           .map((p) => p.reference),
                       });
                     }}
@@ -740,36 +776,34 @@ export function ResourceEditor({
                   </ActionSelect>
                 </label>
                 <label>
-                  固定运行版本
+                  运行资源精确修订
                   <ActionSelect
-                    aria-label="固定运行版本"
+                    aria-label="运行资源精确修订"
                     required
-                    value={data.runtime_version || ""}
+                    value={
+                      data.runtime_resource_ref ||
+                      runtimeVersions.find(
+                        (r) => r.recipe_digest === data.recipe_digest,
+                      )?.reference ||
+                      ""
+                    }
                     onChange={(e) => {
                       const selected = runtimeVersions.find(
-                        (r) => r.version === e.target.value,
+                        (r) => r.reference === e.target.value,
                       );
                       patch({
-                        runtime_version: e.target.value,
+                        runtime_resource_ref: e.target.value,
+                        runtime_version: selected?.version,
                         recipe_digest: selected?.recipe_digest,
                       });
                     }}
                   >
                     <option value="" disabled>
-                      请选择支持的运行版本
+                      请选择运行资源
                     </option>
-                    {data.runtime_version &&
-                      !runtimeVersions.some(
-                        (r) => r.version === data.runtime_version,
-                      ) && (
-                        <option value={data.runtime_version} disabled>
-                          {data.runtime_version}（历史版本，当前不支持新建）
-                        </option>
-                      )}
                     {runtimeVersions.map((r) => (
-                      <option key={r.version} value={r.version}>
-                        {r.version} ·{" "}
-                        {r.installed ? "已安装的固定构建" : "受支持构建配方"}
+                      <option key={r.reference} value={r.reference}>
+                        {r.name} · {r.version} · {r.reference}
                       </option>
                     ))}
                   </ActionSelect>
@@ -1021,6 +1055,15 @@ export function ResourceEditor({
                 onChange={patch}
               />
             ) : null}
+            {["spec", "delivery_type"].includes(kind) && (
+              <SpecLint
+                request={request}
+                project={project}
+                kind={kind}
+                data={data}
+                record={old}
+              />
+            )}
           </div>
           <div className="actions">
             <ActionButton

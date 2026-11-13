@@ -86,18 +86,18 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
       ).toHaveText(`新建 ${tab}`);
       if (tab === "Harness") {
         const version = page.getByRole("combobox", {
-          name: "固定运行版本",
+          name: "运行资源精确修订",
           exact: true,
         });
         await expect(version).toBeVisible();
         await expect(version.locator("option")).toContainText([
-          "请选择支持的运行版本",
+          "请选择运行资源",
           "0.167.0",
         ]);
         await page
           .getByLabel("运行时后端", { exact: true })
           .selectOption("dsh");
-        await expect(version).toHaveValue("0.2.2-rc.1");
+        await expect(version).toHaveValue("builtin-runtime-dsh:1");
       }
     }
   }

@@ -1,0 +1,19 @@
+{
+  "type": "spec",
+  "identity": "builtin-spec-located-review",
+  "revision": 1,
+  "name": "可定位的内容评审",
+  "scope": "global",
+  "data": {
+    "schema_version": 3,
+    "body": "评审必须引用本次冻结输入的 source_ref、value_digest 和有效定位范围。语义理由与结构/工具事实分别记录。",
+    "checks": [
+      {
+        "key": "grounding",
+        "name": "定位与判断依据",
+        "instructions": "从冻结输入引用实际材料位置，并说明判断理由。",
+        "evidence_required": true
+      }
+    ]
+  }
+}

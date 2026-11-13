@@ -6,7 +6,4 @@ edition.workspace = true
 devdesk-domain = { path = "../domain" }
 serde_json.workspace = true
 serde.workspace = true
-[build-dependencies]
-serde_json.workspace = true
-devdesk-domain = { path = "../domain" }
-jsonschema = { version = "0.61", default-features = false }
+uuid.workspace = true

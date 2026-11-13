@@ -53,7 +53,8 @@ CREATE TABLE runtime_installations (
     artifact JSON NOT NULL CHECK(json_valid(artifact)),
     source TEXT NOT NULL,
     license TEXT NOT NULL,
-    UNIQUE(provider,version,os,arch)
+    recipe_digest TEXT,
+    UNIQUE(provider,version,os,arch,recipe_digest)
 );
 
 
@@ -94,5 +95,5 @@ CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(type) W
 CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 
-PRAGMA user_version=17;
+PRAGMA user_version=18;
 COMMIT;

@@ -7,10 +7,14 @@
 | 模块 | 职责 |
 |---|---|
 | domain | 类型、不可变修订、DAG、作用域、权限与有界规则；不执行 I/O。 |
-| core | 命令、查询、编译、调度及回执接纳；定义持久化与原生执行接口。 |
-| adapters | SQLite、Artifact、Codex / DSH、Docker、Git 和 GitHub 的实际实现。 |
-| host | HTTP / SSE、会话、凭据、项目 Engine 装配、运行时准备及嵌入 Web。 |
+| core | 命令、查询、编译、冻结选择重建、会话组合、调度及回执接纳；定义持久化与原生执行接口。 |
+| adapters | SQLite/文件编码、出厂资源载入及构建校验、SessionResources 环境端口、Codex / DSH、Docker、Git 和 GitHub 的实现。 |
+| host | HTTP / SSE、可信入口和项目路由、Engine/环境端口装配、生命周期及嵌入 Web。 |
 | web | 配置编辑、预览、执行与历史视图；不直接设置业务状态。 |
+
+core 不再包含出厂资源 build.rs，外层 loader 注入 `ConfigurationBundle`；单独构建 domain/core 不需要 resources、schemas、tests 或 adapters。领域不生成随机身份；应用的 ID/时间来源可通过 `ApplicationEnvironment` 在当前调用范围注入。`InvocationContext` 不能由 RPC 反序列化，命令来源记录与实际参数指纹一同持久化；Controller 仍通过真实轮次/worker/epoch 核验。
+
+会话组合、默认权限选择、经验导入、共享配置同步及 Harness 物化回执由 core 用例处理。`SessionResources` 的实际安装、凭据和权限编译在 adapters；Host 只装配并调用。存储 codec 仍在 adapters，Workflow/任务的冻结选择重建在 core/frozen_views；重建不执行外部发现、实际工具或环境操作。
 
 规范化关系表保存身份、外键和索引，类型明确的配置与结果使用 JSON 列。内核加载类型化状态，在短事务内提交变化；不把整个项目作为一个可写 JSON 文档。Artifact 先封存、fsync 和 rename，再提交引用；读取时校验摘要。
 

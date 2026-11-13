@@ -3208,3 +3208,211 @@ fn changing_a_running_task_waits_for_stop_and_never_reuses_the_old_contract() {
         "late old messages stay associated with the retired worker"
     );
 }
+#[test]
+fn rust_driver_runs_agent_tool_control_and_child_without_manager_turns() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(RecordingAgent::default());
+    harness
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"completed","summary":"bounded fixture","outputs":{}}));
+    e.harness = harness.clone();
+    let (role, agent) = research_agent(&e);
+    let child = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"child"}],"steps":[{"key":"inner","name":"inner","stage":"work","executor":{"type":"control"}}]}),
+    );
+    let workflow = publish(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"primitive graph"}],"steps":[
+            {"key":"agent","name":"agent","stage":"work","executor":{"type":"agent","role_ref":role["id"]},"task_instructions":"Produce the declared empty output contract."},
+            {"key":"capture","name":"capture","stage":"work","dependencies":["agent"],"executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"source":"real tool receipt"}}}},"outputs":{"receipt":{"delivery_ref":"fixture-delivery-object:1"}}},
+            {"key":"control","name":"control","stage":"work","dependencies":["capture"],"executor":{"type":"control"}},
+            {"key":"child","name":"child","stage":"work","dependencies":["control"],"executor":{"type":"workflow","workflow_ref":child["id"]}}
+        ]}),
+    );
+    let policy=command(&e,"orchestration_policy.create",None,json!({"name":"test policy","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60}})).unwrap();
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"primitive driver acceptance"}),
+    )
+    .unwrap();
+    let run=command(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]},"orchestration":{"mode":"rust","policy_ref":policy["id"]}})).unwrap();
+    for _ in 0..30 {
+        e.evaluate_workflows().unwrap();
+        e.drive_rust_workflows().unwrap();
+        for row in e.pending_workflow_intents().unwrap() {
+            let method = row.data["method"].as_str().unwrap();
+            let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
+            let result = if method == "workflow.tool.execute" {
+                let r = e.configured_platform_request(&c).unwrap().unwrap();
+                e.enqueue_platform_tool(&c, &r)
+            } else {
+                if method == "session.open" {
+                    c.payload["binding"] = json!(fixture_binding());
+                }
+                e.execute(method, c)
+            };
+            e.observe_workflow_intent(&row.id, &result).unwrap();
+            result.unwrap();
+        }
+        e.drive_platform_tools().unwrap();
+        e.tick_conversations(4).unwrap();
+        if instance(&e, &run["id"])["status"] == "completed" {
+            break;
+        }
+    }
+    assert_eq!(instance(&e, &run["id"])["status"], "completed");
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(harness.calls.lock().unwrap().len(), 1);
+    assert!(
+        !s.governance
+            .iter()
+            .any(|r| r.r#type == "workflow_controller")
+    );
+    assert!(
+        s.governance
+            .iter()
+            .any(|r| r.r#type == "platform_call" && r.data["status"] == "succeeded")
+    );
+}
+#[test]
+fn spec_lint_and_output_admission_share_machine_checks_and_frozen_receipts() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(RecordingAgent::default());
+    e.harness = harness.clone();
+    let spec=command(&e,"spec.create",None,json!({"name":"Executable text","data":{"schema_version":987,"body":"Config-owned titles","checks":[{"key":"length","name":"Length","instructions":"Minimum content","assertion":{"type":"text_length","min":12,"max":10000}},{"key":"sections","name":"Sections","instructions":"Exact headings","assertion":{"type":"required_sections","headings":["Conclusion","Evidence"]}}]}})).unwrap();
+    let delivery = command(
+        &e,
+        "delivery_type.create",
+        None,
+        json!({"name":"Checked content","spec_refs":[spec["id"]],"data":{"format":"markdown"}}),
+    )
+    .unwrap();
+    let invalid = json!("I claim everything passed");
+    let lint = e
+        .specification_lint(&json!({"delivery_ref":delivery["id"],"value":invalid}))
+        .unwrap();
+    assert_eq!(lint["structure_valid"], false);
+    let (role, agent) = research_agent(&e);
+    harness.responses.lock().unwrap().push(json!({"status":"completed","summary":"Untrusted success claim","outputs":{"document":invalid}}));
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"outputs":{"document":{"delivery_ref":delivery["id"]}}}),
+    );
+    drive(&e, 8);
+    let failed = instance(&e, &run["id"]);
+    assert_eq!(failed["steps"][0]["status"], "failed");
+    assert!(
+        failed["steps"][0]["outputs"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
+    let valid = json!("# Conclusion\nConcrete result\n# Evidence\nExact source");
+    let lint = e
+        .specification_lint(&json!({"delivery_ref":delivery["id"],"value":valid}))
+        .unwrap();
+    assert_eq!(lint["structure_valid"], true);
+    harness.responses.lock().unwrap().push(json!({"status":"completed","summary":"Actual checked content","outputs":{"document":valid}}));
+    command(
+        &e,
+        "workflow.step.retry",
+        run["id"].as_str(),
+        json!({"step":"study"}),
+    )
+    .unwrap();
+    drive(&e, 8);
+    let result = instance(&e, &run["id"]);
+    assert_eq!(result["status"], "completed");
+    let s = e.store.snapshot().unwrap();
+    let output = s
+        .configuration(result["steps"][0]["outputs"]["document"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(output.data["spec_validation"]["checks"], lint["checks"]);
+    assert_eq!(
+        output.data["spec_validation"]["value_digest"],
+        lint["value_digest"]
+    );
+    assert!(
+        s.configuration(output.data["input_manifest_ref"].as_str().unwrap())
+            .is_ok()
+    );
+}
+#[test]
+fn review_locations_are_bound_to_actual_frozen_inputs_and_rejection_history_survives() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(RecordingAgent::default());
+    e.harness = harness.clone();
+    let (role, agent) = research_agent(&e);
+    let spec=command(&e,"spec.create",None,json!({"name":"Located review","data":{"schema_version":3,"body":"Cite actual frozen input","checks":[{"key":"source","name":"Source","instructions":"Review exact input","evidence_required":true}]}})).unwrap();
+    let report_delivery=command(&e,"delivery_type.create",None,json!({"name":"Review report","spec_refs":["fixture-spec:1"],"data":{"format":"json","content_schema":{"type":"object"}}})).unwrap();
+    let document = json!("First line\n第二行证据");
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"inputs":{"document":{"type":"constant","value":document}},"spec_refs":[spec["id"]],"outputs":{"review":{"delivery_ref":report_delivery["id"],"content_checks":true}}}),
+    );
+    let bad = json!({"approve":true,"summary":"Claim","checks":[{"key":"source","passed":true,"evidence":"Claim with invented input","locations":[{"source_ref":"forged-source","value_digest":configuration_hash(&document),"locator":{"type":"lines","start":2,"end":2}}]}]});
+    harness
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"completed","summary":"Claim","outputs":{"review":bad}}));
+    drive(&e, 8);
+    assert_eq!(instance(&e, &run["id"])["steps"][0]["status"], "failed");
+    command(
+        &e,
+        "workflow.step.retry",
+        run["id"].as_str(),
+        json!({"step":"study"}),
+    )
+    .unwrap();
+    let execution = instance(&e, &run["id"])["steps"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let valid = json!({"approve":true,"summary":"Grounded judgment","checks":[{"key":"source","passed":true,"evidence":"Reviewed the second actual line","locations":[{"source_ref":format!("execution-input:{execution}:document"),"value_digest":configuration_hash(&document),"locator":{"type":"lines","start":2,"end":2},"quote":"第二行证据"}]}]});
+    harness
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"completed","summary":"Grounded","outputs":{"review":valid}}));
+    drive(&e, 8);
+    let completed = instance(&e, &run["id"]);
+    assert_eq!(completed["status"], "completed");
+    let calls = harness.calls.lock().unwrap();
+    let task = &calls.last().unwrap().configured_task.as_ref().unwrap().task;
+    let schema = &task["output_contract"];
+    let mut response =
+        json!({"status":"completed","summary":"Grounded","outputs":{"review":valid}});
+    let validator = NativeTools::new(dir.path()).unwrap();
+    validator.validate_arguments(schema, &response).unwrap();
+    let location = &mut response["outputs"]["review"]["checks"][0]["locations"][0];
+    location["evidence_source_ref"] = location["source_ref"].take();
+    location.as_object_mut().unwrap().remove("source_ref");
+    assert!(validator.validate_arguments(schema, &response).is_err());
+    drop(calls);
+    let s = e.store.snapshot().unwrap();
+    let manifest = s
+        .configuration(&format!("workflow-inputs:{execution}"))
+        .unwrap();
+    assert_eq!(
+        manifest.data["targets"][0]["value_digest"],
+        configuration_hash(&document)
+    );
+    assert!(
+        s.conversation_events
+            .iter()
+            .any(|event| event.content.contains("forged-source"))
+    );
+}

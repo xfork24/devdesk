@@ -69,7 +69,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
 }
 fn setup_agent(e: &Engine, role: &str) -> String {
     let model=command(e,"model.create",None,json!({"name":"Model A","data":{"provider":"openai","model":"model-a","parameters":{},"capabilities":[]}})).unwrap();
-    let harness=command(e,"harness.create",None,json!({"name":"Harness","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}})).unwrap();
+    let harness=command(e,"harness.create",None,json!({"name":"Harness","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}})).unwrap();
     let tool=command(e,"tool.create",None,json!({"name":"原生工具","data":{"qualified_name":"fixture.native","implementation":"harness.native","input_schema":{},"output_schema":{},"capabilities":[]}})).unwrap();
     let state = e.store.snapshot().unwrap();
     let target = permission_target(

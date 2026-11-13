@@ -435,7 +435,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
     if let Some(path) = option("--factory-export") {
         let mut state = devdesk_domain::EngineeringState::default();
-        devdesk_core::seed_configuration(&mut state);
+        devdesk_adapters::seed_factory_configuration(&mut state);
         std::fs::write(path, serde_json::to_vec(&state)?)?;
         return Ok(());
     }

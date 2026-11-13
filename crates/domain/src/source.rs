@@ -41,6 +41,7 @@ pub fn parse_source_reference(reference: &str) -> Result<(&str, u64)> {
 
 impl SourceDefinition {
     pub fn into_record(self) -> Result<ConfigurationRecord> {
+        require(!self.name.trim().is_empty(), "配置名称不能为空")?;
         validate_source_data(&self.r#type, &self.refs, &self.data)?;
         let id = source_reference(&self.identity, self.revision)?;
         Ok(ConfigurationRecord {
@@ -176,6 +177,16 @@ pub fn validate_source_data(kind: &str, refs: &References, data: &Value) -> Resu
             let catalog: ModelCatalogDefinition =
                 serde_json::from_value(data.clone()).map_err(invalid)?;
             catalog.validate()?;
+        }
+        "orchestration_policy" => {
+            serde_json::from_value::<OrchestrationPolicy>(data.clone())
+                .map_err(invalid)?
+                .validate()?;
+        }
+        "runtime_resource" => {
+            serde_json::from_value::<RuntimeResourceDefinition>(data.clone())
+                .map_err(invalid)?
+                .validate()?;
         }
         "harness" => {
             serde_json::from_value::<HarnessDefinition>(data.clone()).map_err(invalid)?;

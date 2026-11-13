@@ -104,12 +104,18 @@ pub(crate) fn validate_capability(
             let t: ExternalTool = record.decode()?;
             t.validate()?;
             reference(s, &t.integration_ref, "integration", scope)?;
-            require(harness.provider == "codex", "此 Harness 尚不支持外部工具")?;
+            require(
+                driver_supports(&harness.provider, "external-tools"),
+                "此 Harness 尚不支持外部工具",
+            )?;
             continue;
         }
         let t: ToolDefinition = record.decode()?;
         if t.implementation == "platform" {
-            require(harness.provider == "codex", "此 Harness 尚不支持平台工具桥")?;
+            require(
+                driver_supports(&harness.provider, "platform-tools"),
+                "此 Harness 尚不支持平台工具桥",
+            )?;
             require(
                 crate::platform_tools::PLATFORM_HANDLERS.contains(&t.qualified_name.as_str()),
                 "平台工具处理器不可用",
@@ -154,14 +160,6 @@ pub(crate) fn validate_capability(
     }
     Ok(())
 }
-fn references_value(value: &Value, ids: &[&str]) -> bool {
-    match value {
-        Value::String(s) => ids.contains(&s.as_str()),
-        Value::Array(v) => v.iter().any(|v| references_value(v, ids)),
-        Value::Object(v) => v.values().any(|v| references_value(v, ids)),
-        _ => false,
-    }
-}
 pub(crate) fn references(s: &EngineeringState, source: &ConfigurationRecord) -> Vec<Value> {
     reference_users(s, source, false)
 }
@@ -176,78 +174,42 @@ fn reference_users(
     source: &ConfigurationRecord,
     recursive: bool,
 ) -> Vec<Value> {
-    fn contains(
+    let targets: std::collections::BTreeSet<_> = s
+        .governance
+        .iter()
+        .filter(|r| r.r#type == source.r#type && r.definition_id == source.definition_id)
+        .map(|r| r.id.clone())
+        .collect();
+    fn uses(
         s: &EngineeringState,
-        value: &Value,
-        ids: &[&str],
-        seen: &mut std::collections::BTreeSet<Id>,
+        r: &ConfigurationRecord,
+        targets: &std::collections::BTreeSet<String>,
+        recursive: bool,
+        seen: &mut std::collections::BTreeSet<String>,
     ) -> bool {
-        match value {
-            Value::String(id) => {
-                ids.contains(&id.as_str())
-                    || (seen.insert(id.clone())
-                        && s.configuration(id).is_ok_and(|r| {
-                            contains(s, &json!({"data":r.data,"refs":r.refs}), ids, seen)
-                        }))
-            }
-            Value::Array(values) => values.iter().any(|v| contains(s, v, ids, seen)),
-            Value::Object(values) => values.values().any(|v| contains(s, v, ids, seen)),
-            _ => false,
-        }
-    }
-    let mut ids = vec![source.id.as_str(), source.definition_id.as_str()];
-    if source.r#type == "role" {
-        ids.extend(
-            s.governance
-                .iter()
-                .filter(|r| r.r#type == "role" && r.definition_id == source.definition_id)
-                .map(|r| r.id.as_str()),
-        );
+        let Ok(edges) = configuration_edges(r) else {
+            return false;
+        };
+        edges.iter().any(|edge| {
+            resolve_configuration_edge(s, edge).is_ok_and(|target| targets.contains(&target.id))
+                || (recursive
+                    && seen.insert(edge.to.clone())
+                    && s.configuration(&edge.to)
+                        .is_ok_and(|target| uses(s, target, targets, true, seen)))
+        })
     }
     s.governance
         .iter()
         .filter(|r| {
             r.id != source.id
-                && (r.is_definition()
-                    || [
-                        "project_configuration",
-                        "integration_project_configuration",
-                        "skill_package",
-                    ]
-                    .contains(&r.r#type.as_str()))
+                && !retired(s, r)
+                && !(s.governance.iter().any(|n| {
+                    n.r#type == r.r#type
+                        && n.definition_id == r.definition_id
+                        && n.version > r.version
+                }))
         })
-        .filter(|r| {
-            !s.governance.iter().any(|next| {
-                next.r#type == r.r#type
-                    && next.definition_id == r.definition_id
-                    && next.version > r.version
-            })
-        })
-        .filter(|r| {
-            !s.governance.iter().any(|t| {
-                (t.r#type == "configuration_retirement" && t.definition_id == r.id)
-                    || (t.r#type == "role_retirement" && t.definition_id == r.definition_id)
-            })
-        })
-        .filter(|r| {
-            r.r#type != "skill_package"
-                || s.configuration(&r.definition_id).is_ok_and(|owner| {
-                    !retired(s, owner)
-                        && !s.governance.iter().any(|next| {
-                            next.r#type == "skill"
-                                && next.definition_id == owner.definition_id
-                                && next.version > owner.version
-                        })
-                })
-        })
-        .filter(|r| {
-            let payload = json!({"data":r.data,"refs":r.refs});
-            if recursive {
-                contains(s, &payload, &ids, &mut Default::default())
-            } else {
-                references_value(&payload, &ids)
-            }
-        })
+        .filter(|r| uses(s, r, &targets, recursive, &mut Default::default()))
         .map(|r| json!({"id":r.id,"name":r.name,"type":r.r#type,"scope":r.scope}))
         .collect()
 }
@@ -304,58 +266,23 @@ pub fn project_configuration_references(
     s: &EngineeringState,
     source: &ConfigurationRecord,
 ) -> Vec<Value> {
-    fn contains(
-        s: &EngineeringState,
-        value: &Value,
-        source: &ConfigurationRecord,
-        seen: &mut std::collections::BTreeSet<Id>,
-    ) -> bool {
-        match value {
-            Value::String(id) => {
-                if id == &source.id || id == &source.definition_id {
-                    return true;
-                }
-                if !seen.insert(id.clone()) {
-                    return false;
-                }
-                s.configuration(id).is_ok_and(|r| {
-                    r.definition_id == source.definition_id
-                        || contains(s, &json!({"data":r.data,"refs":r.refs}), source, seen)
-                })
-            }
-            Value::Array(items) => items.iter().any(|v| contains(s, v, source, seen)),
-            Value::Object(fields) => fields
-                .iter()
-                .any(|(k, v)| k == &source.definition_id || contains(s, v, source, seen)),
-            _ => false,
-        }
-    }
-    s.governance
-        .iter()
+    reference_users(s, source, true)
+        .into_iter()
         .filter(|r| {
-            ["project_configuration", "integration_project_configuration"]
-                .contains(&r.r#type.as_str())
-                && !s.governance.iter().any(|next| {
-                    next.r#type == r.r#type
-                        && next.definition_id == r.definition_id
-                        && next.version > r.version
-                })
+            [
+                "project_configuration",
+                "work_configuration",
+                "integration_project_configuration",
+            ]
+            .contains(&r["type"].as_str().unwrap_or(""))
         })
-        .filter(|r| {
-            contains(
-                s,
-                &json!({"data":r.data,"refs":r.refs}),
-                source,
-                &mut Default::default(),
-            )
-        })
-        .map(|r| json!({"id":r.id,"name":r.name,"type":r.r#type,"scope":r.scope}))
         .collect()
 }
 
 pub fn retired(s: &EngineeringState, r: &ConfigurationRecord) -> bool {
     s.governance.iter().any(|t| {
-        (t.r#type == "role_retirement" && t.definition_id == r.definition_id)
+        (t.r#type == "agent_instance_retirement" && t.definition_id == r.definition_id)
+            || (t.r#type == "role_retirement" && t.definition_id == r.definition_id)
             || (t.r#type == "configuration_retirement"
                 && s.configuration(&t.definition_id).is_ok_and(|source| {
                     source.r#type == r.r#type && source.definition_id == r.definition_id
@@ -420,6 +347,29 @@ pub(crate) fn validate_harness(
         "无效 Harness 或运行版本",
     )?;
     validate_source_data("harness", refs, data)?;
+    require(
+        h.capabilities
+            .iter()
+            .all(|c| driver_supports(&h.provider, c)),
+        "Harness 声明了实际驱动没有的能力",
+    )?;
+    let probe = SourceDefinition {
+        r#type: "harness".into(),
+        identity: "validation-harness".into(),
+        revision: 1,
+        name: "validation".into(),
+        scope: scope.clone(),
+        refs: refs.clone(),
+        data: data.clone(),
+    }
+    .into_record()?;
+    if refs.contains_key("runtime_resource_ref") || h.recipe_digest.is_some() {
+        // A direct source reference can resolve before publication; legacy content edges
+        // use this temporary origin solely to carry provider/scope into resolution.
+        let mut candidate = s.clone();
+        candidate.governance.push(probe.clone());
+        harness_runtime_resource(&candidate, &probe)?;
+    }
     let mut provider_ids = std::collections::BTreeSet::new();
     for provider_ref in &reference_list(refs, "model_providers")? {
         let provider: ProviderFacts =
@@ -436,10 +386,7 @@ pub(crate) fn validate_harness(
     if let Some(catalog_ref) = reference_value(refs, "model_catalog_ref").as_str() {
         let catalog: ModelCatalogDefinition =
             reference(s, catalog_ref, "model_catalog", scope)?.decode()?;
-        require(
-            h.recipe_digest.as_deref() == Some(catalog.recipe_digest.as_str()),
-            "模型目录与 Harness 的构建配方不一致",
-        )?;
+        catalog.validate()?;
     }
     Ok(())
 }

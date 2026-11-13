@@ -31,11 +31,7 @@ impl Workspace {
                 .as_str()
                 .ok_or_else(|| err("invalid_configuration", "后继会话缺失"))?
                 .to_owned();
-            let result=e.store.transact(Some((&c.command_id,&fp)),&mut |s| {
-                let turn=s.turns.iter().find(|t|t.session_id==next && json!(t.client_message_id)==c.payload["client_message_id"]).ok_or_else(||err("needs_reconciliation","切换输入记录缺失"))?;
-                if json!(turn.input)!=c.payload["input"] {return Err(err("revision_conflict","客户端消息 ID 被不同输入复用"));}
-                Ok(json!({"id":turn.id,"operation_id":turn.id,"replayed":true,"effective_session_id":next}))
-            })?;
+            let result = e.replay_successor_input(&c, &next)?;
             return Ok(Some(result));
         }
         let session = s
@@ -564,14 +560,13 @@ mod tests {
             model_parameters: Default::default(),
             permissions: Some(permissions),
             installation: RuntimeInstallation {
+                recipe_digest: Some(
+                    devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),
+                ),
                 id: "explicit-port-fixture".into(),
                 key: RuntimeKey {
                     provider: HarnessProvider::Codex,
-                    version: format!(
-                        "{}+recipe.{}",
-                        devdesk_adapters::runtime_preparation::CODEX_VERSION,
-                        devdesk_adapters::runtime_preparation::default_codex_recipe_digest()
-                    ),
+                    version: "fixture-label".into(),
                     os: "linux".into(),
                     arch: "aarch64".into(),
                 },
@@ -669,7 +664,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":format!("project:{project}"),"model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}}})).unwrap();
+        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":format!("project:{project}"),"model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}}})).unwrap();
         let catalog = w
             .dispatch("query.permission_resources", json!({"project_id":project}))
             .unwrap();

@@ -9,6 +9,7 @@
 | `dev/` | `run-host.py` | 启动已构建的 Host；macOS 使用私有临时副本，后续重建不影响运行中签名，退出时清理 |
 | `check/` | `check.sh` | 默认离线回归：权限资产、Web、Rust、HTTP、运行环境准备、debug/release Chromium |
 | `check/` | `check-live.sh` | 调用 `tests/live/check_live.py`，执行专用资源上的真实验收或已有证据复核 |
+| `check/` | `check-architecture.sh` | 检查层依赖、domain 环境访问、出厂资产与业务接纳边界 |
 | `check/` | `check-permissions.sh` | 校验权限预设、后端 manifest 与不可变文件摘要 |
 | `check/` | `doctor.sh` | 检查宿主环境、Docker、GitHub CLI 和所选权限后端 |
 | `release/` | `package.sh` | 先构建，再生成本机独立运行包与 SHA-256 文件 |

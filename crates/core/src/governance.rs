@@ -1,6 +1,135 @@
 //! Configuration commands, immutable publication and workflow runtime coordination.
 use crate::*;
 
+pub(crate) fn validate_source_payload(
+    s: &EngineeringState,
+    family: &str,
+    refs: &References,
+    data: &Value,
+    scope: &Scope,
+    old: Option<&ConfigurationRecord>,
+) -> Result<()> {
+    validate_source_data(family, &refs, &data)?;
+    if family == "agent" {
+        crate::configuration::normalize_agent(s, &refs, &scope)?;
+    }
+    match family {
+        "sandbox" => {
+            let sandbox: SandboxDefinition = decode(&data)?;
+            require(
+                sandbox.provider == "docker"
+                    && !sandbox.runtime_version.is_empty()
+                    && !sandbox.enforcement.is_empty()
+                    && !sandbox.platforms.is_empty()
+                    && sandbox
+                        .platforms
+                        .iter()
+                        .all(|v| ["linux/aarch64", "linux/x86_64"].contains(&v.as_str())),
+                "不支持的 Sandbox 执行合同",
+            )?;
+        }
+        "role" => {
+            let role: RoleDefinition = decode(&data)?;
+            require(
+                !role.instructions.trim().is_empty(),
+                "Role 职责说明不能为空",
+            )?;
+            if let Some(visibility) = &role.visibility {
+                visibility.validate()?;
+            }
+        }
+        "permission_context" => {
+            validate_source_data("permission_context", &refs, &data)?;
+            let context: PermissionContextDefinition = decode(&data)?;
+            reference(s, &reference_id(&refs, "sandbox_ref")?, "sandbox", &scope)?;
+            for (selection, kind) in [
+                (&context.harness, PermissionTargetKind::Harness),
+                (&context.sandbox, PermissionTargetKind::Sandbox),
+            ] {
+                if let PermissionSelection::Pinned {
+                    binding_revision_id,
+                } = selection
+                {
+                    let binding: VersionedPermissionBinding =
+                        reference(s, binding_revision_id, "permission_binding", &scope)?
+                            .decode()?;
+                    require(binding.target.kind == kind, "授权绑定层不匹配")?;
+                }
+            }
+            for grant in context.step_grants {
+                let workflow: WorkflowDefinition =
+                    reference(s, &grant.workflow_ref, "workflow", &scope)?.decode()?;
+                require(
+                    workflow.steps.iter().any(|step| step.key == grant.step),
+                    "授权引用了不存在的步骤",
+                )?;
+                for tool in grant.tool_refs {
+                    reference(s, &tool, "tool", &scope)?;
+                }
+            }
+        }
+        "delivery_type" => {
+            let delivery: DeliveryTypeDefinition = decode(&data)?;
+            s.validate_delivery_specs(&refs, &delivery, &scope)?;
+            for spec in reference_list(&refs, "spec_refs")? {
+                reference(s, &spec, "spec", &scope)?
+                    .decode::<ConfiguredSpecification>()?
+                    .validate()?;
+            }
+        }
+        "capability" => crate::configuration::validate_capability(s, &refs, &scope)?,
+        "model" => {
+            let m: ModelDefinition = decode(&data)?;
+            validate_model_definition(&m, &s.provider_facts_any(&m.provider)?)?;
+        }
+        "model_provider" => crate::configuration::validate_model_provider(
+            s,
+            &data,
+            old.as_ref().map(|r| r.definition_id.as_str()),
+        )?,
+        "model_catalog" => crate::configuration::validate_model_catalog(s, &data, &scope)?,
+        "harness" => crate::configuration::validate_harness(s, &refs, &data, &scope)?,
+        "tool" => {
+            let t: ToolDefinition = decode(&data)?;
+            require(
+                match t.implementation.as_str() {
+                    "platform" => crate::platform_tools::PLATFORM_HANDLERS
+                        .contains(&t.qualified_name.as_str()),
+                    "harness.native" => true,
+                    _ => false,
+                },
+                "未知 Tool 执行原语或平台处理器",
+            )?;
+            require(
+                t.harness_provider
+                    .as_deref()
+                    .is_none_or(known_harness_provider),
+                "无效原生工具组 Harness",
+            )?;
+            require(
+                t.implementation != "experience.lookup",
+                "Agent 经验属于可检索与恢复的上下文，不能定义为 Tool",
+            )?;
+            require(
+                !t.qualified_name.is_empty()
+                    && t.input_schema.is_object()
+                    && t.output_schema.is_object(),
+                "无效 Tool 契约",
+            )?;
+        }
+        "agent" => {
+            reference(s, &reference_id(&refs, "role_ref")?, "role", &scope)?;
+            reference(
+                s,
+                &reference_id(&refs, "capability_ref")?,
+                "capability",
+                &scope,
+            )?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
 pub(crate) fn record(
     kind: &str,
     definition_id: Id,
@@ -38,6 +167,8 @@ pub(crate) fn record_with_refs(
         "model",
         "model_provider",
         "model_catalog",
+        "runtime_resource",
+        "orchestration_policy",
         "tool",
         "harness",
         "agent",
@@ -388,6 +519,8 @@ impl Engine {
             "model",
             "model_provider",
             "model_catalog",
+            "runtime_resource",
+            "orchestration_policy",
             "tool",
             "harness",
             "skill",
@@ -420,6 +553,10 @@ impl Engine {
                     "配置修订冲突或类型错误",
                 )?;
                 require(
+                    !crate::configuration::retired(s, r),
+                    "已停用的配置不能修改，请新建身份",
+                )?;
+                require(
                     !s.governance.iter().any(|next| {
                         next.r#type == r.r#type
                             && next.definition_id == r.definition_id
@@ -447,130 +584,7 @@ impl Engine {
                 }),
                 "配置参数包含未知字段；引用只能通过声明的引用字段提供",
             )?;
-            validate_source_data(family, &refs, &data)?;
-            if family == "agent" {
-                crate::configuration::normalize_agent(s, &refs, &scope)?;
-            }
-            match family {
-                "sandbox" => {
-                    let sandbox: SandboxDefinition = decode(&data)?;
-                    require(
-                        sandbox.provider == "docker"
-                            && sandbox.runtime_version == "1"
-                            && sandbox.enforcement == "docker-worker/v1"
-                            && !sandbox.platforms.is_empty()
-                            && sandbox
-                                .platforms
-                                .iter()
-                                .all(|v| ["linux/aarch64", "linux/x86_64"].contains(&v.as_str())),
-                        "不支持的 Sandbox 执行合同",
-                    )?;
-                }
-                "role" => {
-                    let role: RoleDefinition = decode(&data)?;
-                    require(
-                        !role.instructions.trim().is_empty(),
-                        "Role 职责说明不能为空",
-                    )?;
-                    if let Some(old) = &old {
-                        require(
-                            !s.governance.iter().any(|r| {
-                                r.r#type == "role"
-                                    && r.definition_id == old.definition_id
-                                    && r.version > old.version
-                            }),
-                            "Role 已有新版本，请重新读取后编辑",
-                        )?;
-                        require(
-                            !crate::builtin_defaults::role_deleted(s, old),
-                            "已删除的 Role 不能修改，请新建角色",
-                        )?;
-                    }
-                    if let Some(visibility) = &role.visibility {
-                        visibility.validate()?;
-                    }
-                }
-                "permission_context" => {
-                    validate_source_data("permission_context", &refs, &data)?;
-                    let context: PermissionContextDefinition = decode(&data)?;
-                    reference(s, &reference_id(&refs, "sandbox_ref")?, "sandbox", &scope)?;
-                    for (selection, kind) in [
-                        (&context.harness, PermissionTargetKind::Harness),
-                        (&context.sandbox, PermissionTargetKind::Sandbox),
-                    ] {
-                        if let PermissionSelection::Pinned {
-                            binding_revision_id,
-                        } = selection
-                        {
-                            let binding: VersionedPermissionBinding =
-                                reference(s, binding_revision_id, "permission_binding", &scope)?
-                                    .decode()?;
-                            require(binding.target.kind == kind, "授权绑定层不匹配")?;
-                        }
-                    }
-                    for grant in context.step_grants {
-                        let workflow: WorkflowDefinition =
-                            reference(s, &grant.workflow_ref, "workflow", &scope)?.decode()?;
-                        require(
-                            workflow.steps.iter().any(|step| step.key == grant.step),
-                            "授权引用了不存在的步骤",
-                        )?;
-                        for tool in grant.tool_refs {
-                            reference(s, &tool, "tool", &scope)?;
-                        }
-                    }
-                }
-                "delivery_type" => {
-                    let delivery: DeliveryTypeDefinition = decode(&data)?;
-                    s.validate_delivery_specs(&refs, &delivery, &scope)?;
-                    for spec in reference_list(&refs, "spec_refs")? {
-                        reference(s, &spec, "spec", &scope)?
-                            .decode::<ConfiguredSpecification>()?
-                            .validate()?;
-                    }
-                }
-                "capability" => crate::configuration::validate_capability(s, &refs, &scope)?,
-                "model" => {
-                    let m: ModelDefinition = decode(&data)?;
-                    validate_model_definition(&m, &s.provider_facts_any(&m.provider)?)?;
-                }
-                "model_provider" => crate::configuration::validate_model_provider(
-                    s,
-                    &data,
-                    old.as_ref().map(|r| r.definition_id.as_str()),
-                )?,
-                "model_catalog" => crate::configuration::validate_model_catalog(s, &data, &scope)?,
-                "harness" => crate::configuration::validate_harness(s, &refs, &data, &scope)?,
-                "tool" => {
-                    let t: ToolDefinition = decode(&data)?;
-                    require(
-                        t.harness_provider
-                            .as_deref()
-                            .is_none_or(known_harness_provider),
-                        "无效原生工具组 Harness",
-                    )?;
-                    require(
-                        t.implementation != "experience.lookup",
-                        "Agent 经验属于可检索与恢复的上下文，不能定义为 Tool",
-                    )?;
-                    require(
-                        !t.qualified_name.is_empty()
-                            && t.input_schema.is_object()
-                            && t.output_schema.is_object(),
-                        "无效 Tool 契约",
-                    )?;
-                }
-                "agent" => {
-                    reference(s, &reference_id(&refs, "role_ref")?, "role", &scope)?;
-                    reference(
-                        s,
-                        &reference_id(&refs, "capability_ref")?,
-                        "capability",
-                        &scope,
-                    )?;
-                }
-                _ => {}
-            }
+            validate_source_payload(s, family, &refs, &data, &scope, old.as_ref())?;
             let definition_id = old
                 .as_ref()
                 .map(|r| r.definition_id.clone())
@@ -688,6 +702,66 @@ impl Engine {
                 s.governance.push(r);
                 json!({"id":target,"retired":true})
             }
+            "agent.instance.rebind" | "agent.instance.remove" => {
+                let old = s.configuration(target)?.clone();
+                require(
+                    old.r#type == "agent_instance" && c.expected_revision == Some(old.revision),
+                    "实例修订冲突",
+                )?;
+                require(
+                    old.scope
+                        == self
+                            .store
+                            .project_id()
+                            .map_or(Scope::global(), Scope::project),
+                    "实例不能跨配置库修改",
+                )?;
+                require(
+                    !crate::configuration::retired(s, &old)
+                        && !s.governance.iter().any(|r| {
+                            r.r#type == "agent_instance"
+                                && r.definition_id == old.definition_id
+                                && r.version > old.version
+                        }),
+                    "实例已换绑或移除",
+                )?;
+                if method.ends_with("remove") {
+                    let mut retired = record(
+                        "agent_instance_retirement",
+                        old.definition_id.clone(),
+                        old.scope.clone(),
+                        old.name.clone(),
+                        1,
+                        None,
+                        json!({"instance_ref":old.id}),
+                        true,
+                    );
+                    retired.id = format!("instance-retired:{}", old.definition_id);
+                    s.governance.push(retired);
+                    json!({"id":old.id,"removed":true})
+                } else {
+                    let key = text(p, "agent_revision_id")?;
+                    reference(s, &key, "agent", &old.scope)?;
+                    let mut next = record(
+                        "agent_instance",
+                        old.definition_id.clone(),
+                        old.scope.clone(),
+                        p["name"].as_str().unwrap_or(&old.name).into(),
+                        old.version + 1,
+                        Some(old.id.clone()),
+                        json!(AgentInstance {
+                            agent_revision_id: key,
+                            scope: old.scope.clone(),
+                            source_instance_id: Some(old.id)
+                        }),
+                        true,
+                    );
+                    next.id = format!("{}:{}", next.definition_id, next.version);
+                    let result = json!(next);
+                    s.governance.push(next);
+                    result
+                }
+            }
             "agent.instance.create" => {
                 let scope: Scope = decode(&p["scope"])?;
                 check_scope(s, &scope, self.store.project_id().as_deref())?;
@@ -729,9 +803,9 @@ impl Engine {
                 } else {
                     reference(s, &key, "agent", &scope)?;
                 }
-                let row = record(
+                let mut row = record(
                     "agent_instance",
-                    id(),
+                    format!("agent-instance.{}", c.command_id),
                     scope.clone(),
                     text(p, "name")?,
                     1,
@@ -743,6 +817,7 @@ impl Engine {
                     }),
                     true,
                 );
+                row.id = format!("{}:{}", row.definition_id, row.version);
                 let result = json!(row);
                 s.governance.push(row);
                 result

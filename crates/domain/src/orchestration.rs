@@ -86,6 +86,8 @@ impl WorkflowControlPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowController {
+    #[serde(default)]
+    pub workspace_only: bool,
     pub project_id: Id,
     pub owner_id: Id,
     pub root_instance_id: Option<Id>,
@@ -137,6 +139,10 @@ pub enum WorkflowActor {
         controller_id: Id,
         session_id: Id,
         turn_id: Id,
+        epoch: u64,
+    },
+    Driver {
+        driver_id: Id,
         epoch: u64,
     },
     Segment {

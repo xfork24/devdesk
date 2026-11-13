@@ -1,10 +1,10 @@
 {
   "type": "agent",
   "identity": "builtin-agent-sol-high-project-manager",
-  "revision": 5,
+  "revision": 7,
   "name": "项目经理 · Sol High / Codex",
   "scope": "global",
-  "capability_ref": "builtin-capability-project-manager-codex:4",
+  "capability_ref": "builtin-capability-project-manager-codex:6",
   "role_ref": "builtin-role-project-manager:1",
   "data": {}
 }

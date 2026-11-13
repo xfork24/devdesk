@@ -1,4 +1,5 @@
 use devdesk_adapters::{CliGit, CommandTests, configuration_digest};
+use devdesk_core::id;
 use devdesk_core::{TestRequest, ports::Tests};
 use devdesk_domain::*;
 use serde_json::Value;

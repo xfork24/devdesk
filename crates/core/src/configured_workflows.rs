@@ -195,7 +195,12 @@ impl Engine {
                         state.resolve_agent(&reference(state, agent, "agent", &scope)?.id)?;
                     require(composition.role == role.definition_id, "编排身份不匹配")?;
                     require(
-                        state.configuration(&composition.harness_ref)?.data["provider"] == "codex",
+                        driver_supports(
+                            state.configuration(&composition.harness_ref)?.data["provider"]
+                                .as_str()
+                                .unwrap_or(""),
+                            "orchestration",
+                        ),
                         "此 Harness 尚不支持编排原生工具桥",
                     )?;
                     let policy: WorkflowControlPolicy = serde_json::from_value(
@@ -243,6 +248,11 @@ impl Engine {
                     })
                     .max_by_key(|r| r.version)
                     .cloned();
+                let orchestration = p
+                    .get("orchestration")
+                    .cloned()
+                    .unwrap_or(json!({"mode":"manual"}));
+                crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
                 let row = record(
                     "project_configuration",
                     project.id.clone(),
@@ -250,7 +260,7 @@ impl Engine {
                     project.title,
                     old.as_ref().map_or(1, |r| r.version + 1),
                     old.map(|r| r.id),
-                    json!({"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
+                    json!({"orchestration":orchestration,"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
                     "orchestrator_role_ref":p["orchestrator_role_ref"],"permission_context_ref":context_ref}),
                     true,
                 );

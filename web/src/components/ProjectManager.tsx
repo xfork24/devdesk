@@ -4,10 +4,10 @@ import {
   ActionSelect,
   useActionFeedback,
 } from "./ActionFeedback";
+import { WorkflowController } from "./WorkflowController";
 import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
 import { useCallback, useEffect, useState } from "react";
 import {
-  latest,
   loadCatalog,
   RevisionSelect,
   useDraft,
@@ -42,6 +42,7 @@ export function ProjectManager({
     [health, setHealth] = useState<Row>(),
     [requirements, setRequirements] = useState<Row>(),
     [busy, setBusy] = useState(false);
+  const [orchestration, setOrchestration] = useState<Row>({ mode: "manual" });
   const [repository, setRepository] = useState(""),
     [mainline, setMainline] = useState("main"),
     [title, setTitle] = useState("");
@@ -68,6 +69,9 @@ export function ProjectManager({
       }).catch(() => undefined),
     ]);
     setProjects(workspace.projects || []);
+    setOrchestration(
+      configuration.configuration?.data.orchestration || { mode: "manual" },
+    );
     const ids = new Set(records.map((row: Row) => row.id));
     setRecords([
       ...records,
@@ -146,10 +150,7 @@ export function ProjectManager({
       active = false;
     };
   }, [request, project?.id, draft.workflow_ref, draft.standard_ref]);
-  const workflows = records.filter(
-    (r) =>
-      r.type === "workflow",
-  );
+  const workflows = records.filter((r) => r.type === "workflow");
   const standards = records.filter(
     (r) => r.type === "standard" && Array.isArray(r.root_workflow_refs),
   );
@@ -166,6 +167,7 @@ export function ProjectManager({
         target: project.id,
         expected_revision: project.revision,
         payload: {
+          orchestration,
           orchestrator_role_ref: draft.orchestrator_role_ref || null,
           permission_context_ref: draft.permission_context_ref,
           workflow_ref: draft.workflow_ref,
@@ -198,6 +200,17 @@ export function ProjectManager({
             </p>
           </div>
         </div>
+        {project && (
+          <WorkflowController
+            request={request}
+            instance={{ id: project.id, data: { status: "active" } }}
+            projectId={project.id}
+            refresh={async () => {
+              await refresh();
+            }}
+            workspaceOnly
+          />
+        )}
         {defaults && (
           <div className="notice">
             <strong>默认配置已准备好</strong>
@@ -389,8 +402,7 @@ export function ProjectManager({
                         draft.workflow_ref,
                       )
                         ? draft.workflow_ref
-                        : standard?.root_workflow_refs[0] ||
-                          draft.workflow_ref,
+                        : standard?.root_workflow_refs[0] || draft.workflow_ref,
                     });
                   }}
                 >
@@ -422,6 +434,32 @@ export function ProjectManager({
                 新建或编辑 Agent
               </a>
             </p>
+            <label>
+              默认调度模式
+              <ActionSelect
+                aria-label="默认调度模式"
+                value={orchestration.mode}
+                onChange={(e) =>
+                  setOrchestration({ ...orchestration, mode: e.target.value })
+                }
+              >
+                <option value="manual">人工控制</option>
+                <option value="rust">Rust 自动调度</option>
+                <option value="agent">Agent 调度</option>
+              </ActionSelect>
+            </label>
+            {orchestration.mode === "rust" && (
+              <RevisionSelect
+                label="自动调度策略"
+                records={records.filter(
+                  (r) => r.type === "orchestration_policy",
+                )}
+                value={orchestration.policy_ref || ""}
+                onChange={(policy_ref) =>
+                  setOrchestration({ ...orchestration, policy_ref })
+                }
+              />
+            )}
             <RevisionSelect
               label="执行授权"
               records={records.filter((r) => r.type === "permission_context")}
@@ -443,11 +481,13 @@ export function ProjectManager({
                 }
               >
                 <option value="">仅手动操作工作流</option>
-                {latest(records.filter((r) => r.type === "role")).map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
+                {records
+                  .filter((r) => r.type === "role")
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
               </select>
             </label>
             {draft.orchestrator_role_ref && (

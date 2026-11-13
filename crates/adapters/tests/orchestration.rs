@@ -734,7 +734,7 @@ fn a_controller_does_not_inherit_a_live_owners_code_view() {
             Ok(Value::Null)
         })
         .unwrap();
-    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
+    let controller = cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..50 {
         drive_manager(&e);
         if runtime(&e, &root)["runtime"]["status"] == "completed" {
@@ -765,7 +765,7 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
     let harness = Arc::new(NativeManager::default());
     e.harness = harness.clone();
     let id = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&id),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..60 {
         drive_manager(&e);
         if runtime(&e, &id)["runtime"]["status"] == "completed" {
@@ -810,7 +810,7 @@ fn native_control_survives_restart_after_action_and_before_reply_without_replay(
     let mut e = engine(directory.path());
     e.harness = harness.clone();
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -895,7 +895,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
         ..Default::default()
     });
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager_cycle(&e, true, false);
         if e.store
@@ -1576,7 +1576,7 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
     let harness = Arc::new(NativeManager::default());
     e.harness = harness;
     let root = start(&e, document());
-    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
+    let controller=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap()["id"].as_str().unwrap().to_owned();
     for _ in 0..8 {
         drive_manager(&e);
         if e.store
@@ -1663,7 +1663,7 @@ fn changes_before_send_admission_are_coalesced_into_one_pending_wakeup() {
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..3 {
         drive_manager_with_send(&e, false);
     }
@@ -1698,7 +1698,7 @@ fn human_input_follows_the_controller_epoch_across_background_revision_updates()
     let mut e = engine(directory.path());
     e.harness = Arc::new(NativeManager::default());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
     let controller = opened["id"].as_str().unwrap();
     let original = e
         .store
@@ -1776,7 +1776,7 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
         json!({"step":"one"}),
     )
     .unwrap();
-    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5","policy":WorkflowControlPolicy::default()})).unwrap();
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
     for _ in 0..20 {
         drive_manager(&e);
     }
@@ -2029,7 +2029,7 @@ fn source_control_policy_is_canonical_after_reload_without_changing_authorizatio
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());
     let root = start(&e, document());
-    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:5"})).unwrap();
+    let opened=cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7"})).unwrap();
     let controller = opened["id"].as_str().unwrap().to_owned();
     let before = e
         .store
@@ -2065,4 +2065,220 @@ fn source_control_policy_is_canonical_after_reload_without_changing_authorizatio
         .clone();
     assert_eq!(before["policy"], after["policy"]);
     assert_eq!(before["policy_digest"], after["policy_digest"]);
+}
+
+fn rust_policy(e: &Engine, max_actions: usize) -> String {
+    cmd(e,"orchestration_policy.create",None,json!({"name":"Bounded driver","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":max_actions,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}})).unwrap()["id"].as_str().unwrap().into()
+}
+#[test]
+fn rust_driver_completes_control_graph_and_idle_ticks_have_no_business_writes() {
+    let d = tempfile::tempdir().unwrap();
+    let e = engine(d.path());
+    let root = start(&e, document());
+    let policy = rust_policy(&e, 16);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(s.configuration(&root).unwrap().data["status"], "completed");
+    assert!(
+        s.governance
+            .iter()
+            .any(|r| r.r#type == "workflow_decision" && r.data["actor"]["kind"] == "driver")
+    );
+    let before = serde_json::to_value(&s).unwrap();
+    e.drive_rust_workflows().unwrap();
+    let after = serde_json::to_value(e.store.snapshot().unwrap()).unwrap();
+    assert_eq!(before, after);
+    drop(e);
+    let e = engine(d.path());
+    e.drive_rust_workflows().unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&root)
+            .unwrap()
+            .data["status"],
+        "completed"
+    );
+}
+#[test]
+fn rust_driver_waits_for_human_confirmation_and_switch_preserves_execution() {
+    let d = tempfile::tempdir().unwrap();
+    let e = engine(d.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    let root = start(&e, doc);
+    let policy = rust_policy(&e, 1);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    e.drive_rust_workflows().unwrap();
+    e.evaluate_workflows().unwrap();
+    for _ in 0..3 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    let before = runtime(&e, &root);
+    let execution = &before["runtime"]["steps"][0];
+    assert!(
+        ["waiting_confirmation", "awaiting_acceptance"]
+            .contains(&execution["status"].as_str().unwrap())
+    );
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"manual"}),
+    )
+    .unwrap();
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"],
+        before["runtime"]["steps"]
+    );
+    e.drive_rust_workflows().unwrap();
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"],
+        before["runtime"]["steps"]
+    );
+    cmd(&e,"workflow.step.confirm",Some(&root),json!({"step":"one","execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"]})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+}
+#[test]
+fn rust_driver_drives_child_instances_and_does_not_dispatch_while_paused() {
+    let d = tempfile::tempdir().unwrap();
+    let e = engine(d.path());
+    let draft = cmd(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"child","document":document()}),
+    )
+    .unwrap();
+    let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let root = start(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"parent"}],"steps":[{"key":"call","name":"child invocation","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"]}}]}),
+    );
+    let policy = rust_policy(&e, 16);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    cmd(&e, "workflow.pause", Some(&root), json!({})).unwrap();
+    e.drive_rust_workflows().unwrap();
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "queued"
+    );
+    cmd(&e, "workflow.resume", Some(&root), json!({})).unwrap();
+    for _ in 0..20 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+    let s = e.store.snapshot().unwrap();
+    let children: Vec<_> = s
+        .governance
+        .iter()
+        .filter(|r| {
+            r.r#type == "workflow_instance" && r.id != root && r.data["root_instance_id"] == root
+        })
+        .collect();
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].data["status"], "completed");
+    assert_eq!(
+        s.governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_driver")
+            .count(),
+        1
+    );
+}
+#[test]
+fn switching_agent_to_rust_rejects_already_prepared_native_calls() {
+    let d = tempfile::tempdir().unwrap();
+    let mut e = engine(d.path());
+    let harness = Arc::new(NativeManager::default());
+    e.harness = harness;
+    let root = start(&e, document());
+    cmd(&e,"orchestration.open",Some(&root),json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:7","policy":WorkflowControlPolicy::default()})).unwrap();
+    for _ in 0..20 {
+        drive_manager_cycle(&e, true, false);
+        if e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "prepared")
+        {
+            break;
+        }
+    }
+    let call = e
+        .store
+        .snapshot()
+        .unwrap()
+        .governance
+        .into_iter()
+        .find(|r| r.r#type == "controller_tool_call" && r.data["status"] == "prepared")
+        .unwrap();
+    let policy = rust_policy(&e, 16);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    e.drive_controllers().unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&call.id)
+            .unwrap()
+            .data["status"],
+        "failed"
+    );
+    for _ in 0..8 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+    let s = e.store.snapshot().unwrap();
+    assert_eq!(
+        s.governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_dispatch")
+            .count(),
+        2
+    );
 }

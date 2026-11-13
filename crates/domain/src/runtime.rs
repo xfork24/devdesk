@@ -27,7 +27,7 @@ impl HarnessProvider {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeKey {
     pub provider: HarnessProvider,
-    /// Includes a build identity when two artifacts have the same upstream version.
+    /// Display/selection metadata only; content provenance uses recipe_digest/artifact.
     pub version: String,
     pub os: String,
     pub arch: String,
@@ -72,6 +72,8 @@ pub enum RuntimeArtifact {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeInstallation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_digest: Option<String>,
     pub id: Id,
     pub key: RuntimeKey,
     pub artifact: RuntimeArtifact,

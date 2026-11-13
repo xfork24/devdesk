@@ -1,4 +1,5 @@
 use devdesk_adapters::permissions;
+use devdesk_core::id;
 use devdesk_domain::*;
 #[path = "../../../tests/support/permissions.rs"]
 mod permission_fixture;

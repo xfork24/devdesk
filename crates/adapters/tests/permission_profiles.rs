@@ -504,7 +504,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
         &json!(next.harness.binding),
     );
     schemas::SCHEMAS.assert_valid("rpc.schema.json#/$defs/ExecutionPermissions", &json!(old));
-    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"capabilities":[]}}),None,None)).unwrap();
+    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"capabilities":[]}}),None,None)).unwrap();
     assert!(
         resolve_bound_permission(
             &e.store.snapshot().unwrap(),
@@ -619,6 +619,7 @@ fn prepared_discussion(e: &Engine) -> (Id, Id, RuntimeBinding) {
         model_parameters: Default::default(),
         permissions: None,
         installation: RuntimeInstallation {
+            recipe_digest: None,
             id: "fixture-runtime".into(),
             key: RuntimeKey {
                 provider: HarnessProvider::Codex,
@@ -982,7 +983,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
     for provider in ["codex", "dsh"] {
         let root = tempfile::tempdir().unwrap();
         let (_, e) = global(root.path());
-        let harness=execute(&e,command("harness.create",json!({"name":provider,"model_providers":[],"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::CODEX_VERSION}else{devdesk_adapters::runtime_preparation::DSH_VERSION},"capabilities":[]}}),None,None)).unwrap();
+        let harness=execute(&e,command("harness.create",json!({"name":provider,"model_providers":[],"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex)}else{devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Dsh)},"capabilities":[]}}),None,None)).unwrap();
         let h = harness["id"].as_str().unwrap();
         let p=execute(&e,command("permission.profile.create",json!({"identity":format!("native-{provider}"),"name":"Native v2 restrictions","target_kind":"harness","policy":{
             "filesystem":{"mode":"scoped","rules":[{"path":"/","access":"read"},{"path":"/work","access":"read_write"},{"path":"/work/tests","access":"read"}]},

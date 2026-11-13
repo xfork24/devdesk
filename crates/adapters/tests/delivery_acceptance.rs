@@ -5,6 +5,7 @@ mod runtime;
 use devdesk_adapters::{
     CliGit, CommandTests, FileArtifacts, SqliteStore, integrations::NativeTools,
 };
+use devdesk_core::id;
 use devdesk_core::{
     Command, Engine,
     ports::{Git, TestRequest, Tests, ToolExecutor},

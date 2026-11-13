@@ -1,4 +1,8 @@
 mod catalog;
+mod configuration_backend;
+pub use configuration_backend::ConfigurationBackend;
+mod factory_bundle;
+pub mod session_resources;
 mod source_store;
 mod source_views;
 pub use source_views::runtime_digest;
@@ -24,6 +28,7 @@ pub use harness::{CodexHarness, DshHarness, RoutingHarness, RuntimeWorkers};
 mod process;
 pub mod runtime_preparation;
 mod runtime_registry;
+pub mod runtime_verification;
 pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -60,6 +65,7 @@ impl Drop for SqliteStore {
 }
 impl SqliteStore {
     pub fn open(path: &Path) -> Result<Self> {
+        factory_bundle::initialize()?;
         let (root, lock) = lock_dataset(path)?;
         require(
             !root.join("global.sqlite3").exists(),
@@ -744,4 +750,10 @@ pub fn execution_adapters(root: &Path) -> Result<ports::ExecutionAdapters> {
         tests: std::sync::Arc::new(CommandTests::new(root)?),
         pull_requests: Some(std::sync::Arc::new(github::GitHubPullRequests)),
     })
+}
+
+/// Product/test composition boundary for callers constructing a state without a Store.
+pub fn seed_factory_configuration(state: &mut EngineeringState) {
+    factory_bundle::initialize().expect("validated packaged factory resources");
+    devdesk_core::seed_configuration(state);
 }

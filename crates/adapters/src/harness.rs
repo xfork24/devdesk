@@ -1521,7 +1521,7 @@ mod protocol_tests {
             (None, Some(json!({})), None),
         ] {
             let mut binding = json!({
-                "installation":{"id":"fixture","key":{"provider":"codex","version":runtime_preparation::CODEX_VERSION,"os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
+                "installation":{"id":"fixture","key":{"provider":"codex","version":runtime_preparation::default_version(HarnessProvider::Codex),"os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"test"},
                 "adapter_version":"fixture/v1","model":"catalog-model","model_parameters":effort.map(|effort| json!({"reasoning_effort":effort})).unwrap_or(json!({})),
                 "tool_policy":"read_only","work_type":"discussion","configuration_digest":"a".repeat(64)
             });
@@ -1649,4 +1649,38 @@ mod protocol_tests {
         worker.activity = Some(activity);
         assert_eq!(worker.poll().unwrap_err().code, "provider_timeout");
     }
+}
+
+/// Facts about the actual compiled wire adapters; configuration cannot add implementations.
+pub fn driver_capability_registry()
+-> std::collections::BTreeMap<String, devdesk_core::DriverCapabilities> {
+    HARNESS_PROVIDERS
+        .iter()
+        .map(|provider| {
+            let mut features: std::collections::BTreeSet<String> =
+                ["structured-output", "tool-calling", "cancel", "poll"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+            if *provider == HarnessProvider::Codex {
+                features.extend(
+                    [
+                        "dynamic-tools",
+                        "external-tools",
+                        "platform-tools",
+                        "orchestration",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned),
+                );
+            }
+            (
+                provider.as_str().into(),
+                devdesk_core::DriverCapabilities {
+                    implementation_id: managed_adapter_identity(*provider),
+                    features,
+                },
+            )
+        })
+        .collect()
 }

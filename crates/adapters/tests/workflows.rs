@@ -239,7 +239,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 17),
+        (dir.path().join("global.sqlite3"), 18),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()

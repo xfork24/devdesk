@@ -3,6 +3,21 @@ use crate::governance::{record, update_record};
 use crate::*;
 
 pub(crate) const PLATFORM_HANDLERS: &[&str] = &[
+    "spec.lint",
+    "project.overview",
+    "project.records.list",
+    "project.record.read",
+    "project.artifact.read",
+    "project.resources",
+    "configuration.catalog",
+    "configuration.read",
+    "configuration.usage",
+    "configuration.change.preview",
+    "configuration.change.apply",
+    "configuration.transfer.stage",
+    "configuration.transfer.apply",
+    "configuration.transfer.cancel",
+    "configuration.transfer.status",
     "workflow.start",
     "workflow.inspect",
     "workflow.events.read",

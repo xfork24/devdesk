@@ -31,70 +31,7 @@ impl Workspace {
             require(p["snapshot_id"].is_string(), "恢复需要选择具体快照")?;
             let command: Command = serde_json::from_value(params.clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
-            let mut snap: Snapshot = serde_json::from_value(detail["snapshot"].clone())
-                .map_err(|e| err("storage", e.to_string()))?;
-            let original = snap.id.clone();
-            snap.id = format!("import:{}", command.command_id);
-            snap.project_id = (pid != GLOBAL_DISCUSSION_NAMESPACE).then(|| pid.clone());
-            snap.feature_id = None;
-            snap.task_id = None;
-            snap.documents.clear();
-            snap.inherited_from = e
-                .store
-                .snapshot()?
-                .snapshots
-                .iter()
-                .any(|s| s.id == original)
-                .then_some(original.clone());
-            snap.kind = "experience_import".into();
-            snap.content = format!(
-                "{}\n\nHistorical source (data only): {}",
-                snap.content,
-                serde_json::to_string(
-                    &json!({"entry":detail["entry"],"documents":detail["documents"]})
-                )
-                .unwrap()
-            );
-            // Imported historical material is context; it never changes code, governance, or current document revisions.
-            let snapid = snap.id.clone();
-            e.store.transact(None, &mut |s| {
-                if !s.snapshots.iter().any(|old| old.id == snapid) {
-                    s.snapshots.push(snap.clone());
-                    s.events.push(Event {
-                        id: s.events.last().map_or(1, |e| e.id + 1),
-                        target: snapid.clone(),
-                        kind: "experience.imported".into(),
-                        detail: serde_json::to_string(
-                            &json!({"source":detail["entry"],"new_snapshot":snapid}),
-                        )
-                        .unwrap(),
-                        time: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64,
-                    });
-                    s.governance.push(ConfigurationRecord {
-                        id: format!("source:{}", command.command_id),
-                        r#type: "experience_import".into(),
-                        refs: References::new(),
-                        definition_id: snapid.clone(),
-                        scope: if pid == GLOBAL_DISCUSSION_NAMESPACE {
-                            Scope::global()
-                        } else {
-                            Scope::project(pid.clone())
-                        },
-                        name: "恢复经验场景".into(),
-                        version: 1,
-                        supersedes: None,
-                        data: detail["entry"].clone(),
-                        content_hash: content_digest(&References::new(), &detail["entry"]),
-                        immutable: true,
-                        revision: 1,
-                        created_at: detail["entry"]["captured_at"].as_u64().unwrap_or(0),
-                    });
-                }
-                Ok(Value::Null)
-            })?;
+            let snapid = e.import_experience(&command, &pid, &detail)?;
             let mut opened = command;
             opened.command_id = format!("{}:restore-session", opened.command_id);
             opened.payload = json!({"agent_instance_id":p["agent_instance_id"],"snapshot_id":snapid,"work_type":"discussion","force_new":true});
@@ -161,157 +98,13 @@ impl Workspace {
         }
         e.evaluate_workflows()
     }
+    #[cfg(test)]
     pub(super) fn resolve_agent_composition(
         &self,
         e: &Engine,
         command: &mut Command,
     ) -> Result<()> {
-        let state = e.store.snapshot()?;
-        let selected = command.payload["agent_instance_id"]
-            .as_str()
-            .map(str::to_owned);
-        let agent_id = if let Some(instance) = &selected {
-            let r = state.configuration(instance)?;
-            require(r.r#type == "agent_instance", "无效 Agent")?;
-            r.data["agent_revision_id"]
-                .as_str()
-                .ok_or_else(|| err("blocked", "Agent 缺少组合"))?
-                .to_owned()
-        } else {
-            command.payload["agent"]
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| err("invalid_params", "请选择完整 Agent 或 AgentID"))?
-        };
-        let Some(record) = state
-            .governance
-            .iter()
-            .find(|r| r.r#type == "agent" && r.id == agent_id)
-        else {
-            require(
-                !state
-                    .projects
-                    .iter()
-                    .any(|project| project.execution_mode == "live"),
-                "新原生 Session 需要完整 AgentRevision 和 Agent；历史角色定义不能分开覆盖 Model/Harness",
-            )?;
-            return Ok(());
-        };
-        let agent = state.resolve_agent(&record.id)?;
-        let owner = command.target.as_deref().unwrap_or("");
-        let feature = state
-            .tasks
-            .iter()
-            .find(|task| task.id == owner)
-            .map_or(owner, |task| task.feature_id.as_str());
-        let configured = e.configured_agent_request(command)?;
-        let frozen = configured.is_some();
-        require(
-            frozen
-                || (!devdesk_core::configuration_retired(&state, record)
-                    && devdesk_core::configuration_visible(
-                        &state,
-                        record,
-                        state.projects.first().map(|p| p.id.as_str()),
-                    )),
-            "Agent 及其 Role/Capability 不适用于此项目，已有 Feature 保留冻结配置",
-        )?;
-
-        if let Some(role_ref) = &agent.role_ref {
-            let role = state.configuration(role_ref)?;
-            let retired = state
-                .governance
-                .iter()
-                .any(|r| r.r#type == "role_retirement" && r.definition_id == role.definition_id);
-            require(
-                !retired || frozen,
-                "Role 已删除，新的项目讨论不能再采用它；已有 Feature 保留冻结版本",
-            )?;
-        }
-        let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
-        let harness_record = state.configuration(&agent.harness_ref)?.clone();
-        let harness: HarnessDefinition = harness_record.decode()?;
-        for key in [
-            "model",
-            "role_ref",
-            "provider",
-            "permission_overrides",
-            "installation_id",
-        ] {
-            require(
-                command.payload.get(key).is_none(),
-                "Agent 执行不能单独覆盖 Role/Model/Harness/Permission，请采用新的 Agent 版本",
-            )?;
-        }
-        let project = state.projects.first();
-        require(
-            project.is_some() || owner == "global",
-            "Agent 执行需要项目或全局讨论范围",
-        )?;
-        let scope = project.map_or(Scope::global(), |p| Scope::project(p.id.clone()));
-        let title = project.map_or("全局 / 跨项目", |p| p.title.as_str());
-        let instance = if let Some(instance) = selected {
-            let r = state.configuration(&instance)?;
-            let i: AgentInstance = r.decode()?;
-            require(i.scope.visible_from(&scope), "Agent 不属于当前项目")?;
-            instance
-        } else if let Some(r) = state.governance.iter().find(|r| {
-            r.r#type == "agent_instance"
-                && r.data["agent_revision_id"] == agent_id
-                && r.scope.visible_from(&scope)
-        }) {
-            r.id.clone()
-        } else {
-            e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen && !command.payload["controller_id"].is_string(){Some(feature)}else{None},"frozen_controller_id":command.payload["controller_id"]})})?["id"].as_str().unwrap().into()
-        };
-        state.resolve_model_connection(&model, &harness_record)?;
-        require(
-            !["managed", "latest", "default"].contains(&harness.runtime_version.as_str()),
-            "Harness 必须选择精确运行版本",
-        )?;
-        if harness.recipe_digest.is_some() {
-            let materialized =
-                self.materialize_harness(e, state.configuration(&agent.harness_ref)?)?;
-            command.payload["installation_id"] = json!(materialized.id);
-        }
-        let installations = self.global.runtime_installations()?;
-        if let Some(installation) = installations.iter().find(|r| {
-            r.key.provider.as_str() == harness.provider
-                && r.key.os == "linux"
-                && matches!(r.artifact, RuntimeArtifact::DockerImage { .. })
-                && r.key.version == harness.runtime_version
-        }) {
-            command.payload["installation_id"] = json!(installation.id);
-        }
-        let integration_lock = match configured {
-            Some(configured) => configured.integration_lock,
-            None => {
-                let mut lock = devdesk_core::freeze_integrations(
-                    &state,
-                    &agent,
-                    state.projects.first().map(|p| p.id.as_str()),
-                )?;
-                // Managed platform operations require a frozen Workflow caller and scope.
-                lock.platform_tools.clear();
-                lock
-            }
-        };
-        command.payload["agent_configuration"] = json!(AgentExecutionConfiguration {
-            integration_lock: Some(integration_lock),
-            agent_instance_id: instance.clone(),
-            agent_revision_id: agent_id.clone(),
-            composition_hash: record.content_hash.clone(),
-            model_revision_id: agent.model_ref.clone(),
-            harness_revision_id: agent.harness_ref.clone(),
-            model_provider: model.provider.clone(),
-            model_parameters: model.parameters.clone(),
-            tool_revisions: agent.tools.clone()
-        });
-        command.payload["agent"] = json!(agent_id);
-        command.payload["agent_instance_id"] = json!(instance);
-        command.payload["model"] = json!(model.model);
-        command.payload["provider"] = json!(harness.provider);
-        Ok(())
+        e.resolve_session_composition(&self.session_resources(), command)
     }
 
     pub(super) fn governance_dispatch(
@@ -319,7 +112,40 @@ impl Workspace {
         method: &str,
         params: &Value,
     ) -> Option<Result<Value>> {
-        let command = method == "standard.capture"
+        if method.starts_with("configuration.transfer.") {
+            return Some((|| {
+                let project = self.active_engine(params["project_id"].as_str())?;
+                let command: Command = serde_json::from_value(params.clone())
+                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                match method {
+                    "configuration.transfer.stage" => {
+                        self.sync_configuration(&project)?;
+                        self.configuration
+                            .stage_configuration_transfer(&project, command)
+                    }
+                    "configuration.transfer.apply" => {
+                        self.configuration.apply_configuration_transfer(
+                            &project,
+                            command
+                                .target
+                                .as_deref()
+                                .ok_or_else(|| err("invalid_params", "需要暂存操作 ID"))?,
+                        )
+                    }
+                    "configuration.transfer.cancel" => {
+                        self.configuration.cancel_configuration_transfer(
+                            command
+                                .target
+                                .as_deref()
+                                .ok_or_else(|| err("invalid_params", "需要暂存操作 ID"))?,
+                        )
+                    }
+                    _ => Err(err("method_not_found", "未知跨库配置操作")),
+                }
+            })());
+        }
+        let command = method == "configuration.change.apply"
+            || method == "standard.capture"
             || method == "standard.archive"
             || method == "work.configuration.update"
             || method == "configuration.retire"
@@ -336,6 +162,8 @@ impl Workspace {
             || method.starts_with("model_provider.")
             || method.starts_with("model_catalog.")
             || method.starts_with("tool.")
+            || method.starts_with("orchestration_policy.")
+            || method.starts_with("runtime_resource.")
             || method.starts_with("harness.")
             || method.starts_with("sandbox.")
             || method.starts_with("role.")
@@ -347,6 +175,10 @@ impl Workspace {
             || (["agent.create", "agent.revise"].contains(&method)
                 && params["payload"].get("data").is_some());
         let query = [
+            "configuration.change.preview",
+            "query.configuration_graph",
+            "query.spec_lint",
+            "query.workflow_driver",
             "workflow.inspect",
             "workflow.change.preview",
             "workflow.execution.inspect",
@@ -525,11 +357,19 @@ impl Workspace {
                 .or_else(|| params["payload"].get("scope"));
             let local = !method.starts_with("role.")
                 && ((params["project_id"].is_string()
-                    && (method.starts_with("query.workflow")
-                        || method == "query.specification_audit"
-                        || method.starts_with("query.standard")
-                        || method.starts_with("query.work_")
-                        || method == "standard.capture.preview"))
+                    && [
+                        "configuration.change.apply",
+                        "configuration.change.preview",
+                        "query.configuration_graph",
+                        "query.workflow_driver",
+                    ]
+                    .contains(&method))
+                    || (params["project_id"].is_string()
+                        && (method.starts_with("query.workflow")
+                            || method == "query.specification_audit"
+                            || method.starts_with("query.standard")
+                            || method.starts_with("query.work_")
+                            || method == "standard.capture.preview"))
                     || explicit_scope
                         .and_then(|s| s.as_str())
                         .is_some_and(|s| s.starts_with("project:"))
@@ -558,6 +398,34 @@ impl Workspace {
                                 self.global.project(&id)?.is_some(),
                                 format!("项目不存在: {id}"),
                             )?;
+                        }
+                    }
+                }
+            }
+            if method == "configuration.change.apply" && !local {
+                let change: ConfigurationChangeSet =
+                    serde_json::from_value(params["payload"]["changeset"].clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?;
+                let mut retired = Vec::new();
+                for op in &change.operations {
+                    if let ConfigurationOperation::Retire { reference, .. } = op {
+                        retired.push(reference.clone());
+                    }
+                }
+                if !retired.is_empty() {
+                    let mut offset = 0;
+                    loop {
+                        let (projects, total) = self.global.projects(offset, 100)?;
+                        for project in &projects {
+                            let state = SqliteStore::read_project_snapshot(
+                                Path::new(&self.global.root()),
+                                &project.id,
+                            )?;
+                            check_configuration_retirements(&change, &project.title, &state)?;
+                        }
+                        offset += projects.len();
+                        if offset >= total || projects.is_empty() {
+                            break;
                         }
                     }
                 }

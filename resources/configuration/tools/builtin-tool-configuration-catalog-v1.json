@@ -1,0 +1,41 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-configuration-catalog",
+  "revision": 1,
+  "name": "配置完整目录",
+  "scope": "global",
+  "data": {
+    "qualified_name": "configuration.catalog",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "snapshot_digest": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

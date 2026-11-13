@@ -30,6 +30,7 @@ impl GlobalStore {
         )
     }
     pub fn open(path: &Path) -> Result<Self> {
+        factory_bundle::initialize()?;
         let (root, lock) = lock_dataset(path)?;
         require(
             !root.join("engineering.sqlite3").exists(),
@@ -40,7 +41,7 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 17,
+            version == 0 || version == 18,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
         connection
@@ -305,7 +306,7 @@ impl GlobalStore {
             require(fp == previous, "command_id 被不同参数复用")?;
             return Ok(id);
         }
-        let id = devdesk_domain::id();
+        let id = devdesk_core::id();
         conn.execute(
             "INSERT INTO project_catalog(id,command_id,fingerprint) VALUES(?1,?2,?3)",
             params![id, command.command_id, fp],
@@ -435,7 +436,7 @@ impl EngineeringStore for GlobalStore {
     }
 }
 
-fn setting(conn: &Connection, key: &str) -> Result<Option<Value>> {
+pub(crate) fn setting(conn: &Connection, key: &str) -> Result<Option<Value>> {
     let value: Option<String> = conn
         .query_row(
             "SELECT CAST(value AS TEXT) FROM settings WHERE key=?1",
@@ -448,7 +449,7 @@ fn setting(conn: &Connection, key: &str) -> Result<Option<Value>> {
         .map(|v| serde_json::from_str(&v).map_err(storage))
         .transpose()
 }
-fn put_setting(conn: &Connection, key: &str, value: &Value) -> Result<()> {
+pub(crate) fn put_setting(conn: &Connection, key: &str, value: &Value) -> Result<()> {
     conn.execute("INSERT INTO settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![key,value.to_string()]).map_err(storage)?;
     Ok(())
 }

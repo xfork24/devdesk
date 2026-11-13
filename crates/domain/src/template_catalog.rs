@@ -27,6 +27,8 @@ pub fn template_definition_kind(kind: &str) -> bool {
             | "model"
             | "model_provider"
             | "model_catalog"
+            | "runtime_resource"
+            | "orchestration_policy"
             | "harness"
             | "sandbox"
             | "tool"
@@ -77,53 +79,6 @@ pub fn template_record_current(s: &EngineeringState, r: &ConfigurationRecord) ->
         .unwrap_or(TEMPLATE_INITIAL_GENERATION)
         == template_catalog_generation(s)
 }
-pub fn template_definition_write(method: &str) -> bool {
-    let (family, action) = method.split_once('.').unwrap_or((method, ""));
-    (template_definition_kind(family)
-        && matches!(
-            action,
-            "create" | "revise" | "delete" | "retire" | "disable"
-        ))
-        || matches!(
-            method,
-            "configuration.retire"
-                | "workflow.publish"
-                | "workflow.draft.create"
-                | "workflow.draft.update"
-                | "workflow.draft.upgrade"
-                | "skill.import"
-                | "skill.import_package"
-                | "integration.openapi.import"
-                | "integration.tools.publish"
-                | "integration.binding.create"
-                | "integration.binding.revise"
-                | "integration.tool.create"
-                | "integration.tool.revise"
-                | "permission.profile.create"
-                | "permission.profile.revise"
-                | "permission.profile.import"
-                | "permission.profile.reload"
-        )
-}
-
-pub fn template_catalog_query(method: &str) -> bool {
-    matches!(
-        method,
-        "query.workspace"
-            | "query.project_configuration"
-            | "query.configurations"
-            | "query.roles"
-            | "query.capabilities"
-            | "query.workflows"
-            | "query.integrations"
-            | "query.integration_bindings"
-            | "query.permission_resources"
-            | "query.configuration_defaults"
-            | "query.template_catalog"
-            | "query.template_reset_preview"
-    )
-}
-
 /// Configuration projections used by workspace selectors belong to the same current directory.
 pub fn template_projection_current(s: &EngineeringState, definition: &Definition) -> bool {
     if let Some(record) = s

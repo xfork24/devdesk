@@ -23,6 +23,8 @@ export function DeliverySpecPreview({
                   {(spec.data.checks || []).map((check: Row) => (
                     <li key={check.key}>
                       <strong>{check.name}</strong>：{check.instructions}
+                      {check.assertion && <span> · 自动结构检查</span>}
+                      {check.evidence_required && <span> · 需定位证据</span>}
                     </li>
                   ))}
                 </ul>
@@ -59,6 +61,12 @@ export function DeliveryOutput({
         references={delivery?.spec_refs || []}
         records={records}
       />
+      {output.spec_validation && (
+        <p>
+          结构检查：{output.spec_validation.structure_valid ? "通过" : "未通过"}{" "}
+          · 语义质量由实际评审判断。
+        </p>
+      )}
       {provenance ? (
         <p>
           来源：{provenance.kind} {provenance.tool || ""} ·{" "}

@@ -1,0 +1,21 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-project-overview",
+  "revision": 1,
+  "name": "项目总览",
+  "scope": "global",
+  "data": {
+    "qualified_name": "project.overview",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

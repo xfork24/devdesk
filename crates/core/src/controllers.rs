@@ -150,6 +150,7 @@ impl Engine {
     ) -> Result<Option<Value>> {
         if ![
             "orchestration.open",
+            "manager.open",
             "orchestration.input",
             "orchestration.takeover",
             "orchestration.resume",
@@ -159,12 +160,20 @@ impl Engine {
             return Ok(None);
         }
         let target = c.target.as_deref().unwrap_or("");
-        if method == "orchestration.open" {
+        if method == "orchestration.open" || method == "manager.open" {
+            let workspace_only = method == "manager.open";
+            let defaults = current_template_defaults(s).unwrap_or(Value::Null);
+            require(
+                !workspace_only || s.projects.iter().any(|p| p.id == target),
+                "经理工作台必须绑定项目",
+            )?;
             let root = s
                 .governance
                 .iter()
-                .find(|r| r.id == target && r.r#type == "workflow_instance");
+                .find(|r| r.id == target && r.r#type == "workflow_instance")
+                .cloned();
             let owner = root
+                .as_ref()
                 .and_then(|r| r.data["owner_id"].as_str())
                 .unwrap_or(target)
                 .to_owned();
@@ -180,15 +189,55 @@ impl Engine {
                         .map(|f| f.project_id.clone())
                 })
                 .ok_or_else(|| err("not_found", "编排归属不存在"))?;
-            if let Some(existing) = s.governance.iter().find(|r| {
-                r.r#type == "workflow_controller"
-                    && r.data["owner_id"] == owner
-                    && (r.data["status"] != "closed"
-                        || root.is_some_and(|root| r.data["root_instance_id"] == root.id))
-            }) {
-                return Ok(Some(
-                    json!({"id":existing.id,"reused":true,"controller":existing.data}),
-                ));
+            if let Some(existing) = s
+                .governance
+                .iter()
+                .find(|r| {
+                    r.r#type == "workflow_controller"
+                        && r.data["owner_id"] == owner
+                        && r.data["workspace_only"].as_bool().unwrap_or(false) == workspace_only
+                        && (r.data["status"] != "closed"
+                            || root
+                                .as_ref()
+                                .is_some_and(|root| r.data["root_instance_id"] == root.id))
+                })
+                .cloned()
+            {
+                let replacing = workspace_only
+                    && (c.payload["agent_ref"]
+                        .as_str()
+                        .is_some_and(|id| existing.data["agent_revision_id"] != id)
+                        || c.payload["permission_context_ref"]
+                            .as_str()
+                            .is_some_and(|id| existing.data["permission_context_ref"] != id));
+                if !replacing {
+                    return Ok(Some(
+                        json!({"id":existing.id,"reused":true,"controller":existing.data}),
+                    ));
+                }
+                let sid = existing.data["session_id"].as_str();
+                require(
+                    existing.data["status"] != "active"
+                        && !s
+                            .turns
+                            .iter()
+                            .any(|t| Some(t.session_id.as_str()) == sid && t.status.active())
+                        && !s
+                            .executions
+                            .iter()
+                            .any(|e| Some(e.session_id.as_str()) == sid && !e.writer_revoked),
+                    "请先暂停并核对原经理 worker，再采用后继配置",
+                )?;
+                let mut data = existing.data.clone();
+                data["status"] = json!("closed");
+                data["epoch"] = json!(data["epoch"].as_u64().unwrap_or(0) + 1);
+                update_record(
+                    s.governance
+                        .iter_mut()
+                        .find(|r| r.id == existing.id)
+                        .unwrap(),
+                    data,
+                );
             }
             let config = s
                 .governance
@@ -197,12 +246,32 @@ impl Engine {
                 .max_by_key(|r| r.version);
             let role = c.payload["role_ref"]
                 .as_str()
+                .or_else(|| {
+                    workspace_only
+                        .then(|| {
+                            c.payload["agent_ref"]
+                                .as_str()
+                                .and_then(|id| s.configuration(id).ok())
+                                .and_then(|r| r.refs["role_ref"].as_str())
+                        })
+                        .flatten()
+                })
                 .or_else(|| config.and_then(|r| r.data["orchestrator_role_ref"].as_str()))
+                .or_else(|| {
+                    workspace_only
+                        .then(|| defaults["orchestrator_role_ref"].as_str())
+                        .flatten()
+                })
                 .ok_or_else(|| err("configuration_required", "项目需要明确编排 Role"))?;
             let role = crate::configuration::role_record(s, role)?;
             let agent_id = c.payload["agent_ref"]
                 .as_str()
                 .or_else(|| config.and_then(|r| r.data["role_agent_bindings"][&role.id].as_str()))
+                .or_else(|| {
+                    workspace_only
+                        .then(|| defaults["role_agent_bindings"][&role.id].as_str())
+                        .flatten()
+                })
                 .ok_or_else(|| err("configuration_required", "编排 Role 未绑定 Agent"))?;
             let agent = s.configuration(agent_id)?;
             let composition = s.resolve_agent(&agent.id)?;
@@ -211,7 +280,12 @@ impl Engine {
                 "编排 Agent 的 Role 不匹配",
             )?;
             require(
-                s.configuration(&composition.harness_ref)?.data["provider"] == "codex",
+                driver_supports(
+                    s.configuration(&composition.harness_ref)?.data["provider"]
+                        .as_str()
+                        .unwrap_or(""),
+                    "orchestration",
+                ),
                 "此 Harness 尚不支持编排原生工具桥",
             )?;
             crate::governance::validate_composition(
@@ -239,9 +313,10 @@ impl Engine {
                     .map_err(|e| err("invalid_source", e.to_string()))?;
             policy.validate()?;
             let controller = WorkflowController {
+                workspace_only,
                 project_id: project.clone(),
                 owner_id: owner,
-                root_instance_id: root.map(|r| r.id.clone()),
+                root_instance_id: root.as_ref().map(|r| r.id.clone()),
                 agent_revision_id: agent.id.clone(),
                 role_ref: role.id.clone(),
                 permission_context_ref: context_ref,
@@ -403,9 +478,13 @@ impl Engine {
         )?;
         let mut lock = freeze_integrations(&s, &agent, Some(&controller.project_id))?;
         lock.platform_tools.retain(|r| {
-            r.data["qualified_name"]
-                .as_str()
-                .is_some_and(|n| CONTROL_TOOLS.contains(&n))
+            r.data["qualified_name"].as_str().is_some_and(|n| {
+                if controller.workspace_only {
+                    MANAGER_TOOLS.contains(&n)
+                } else {
+                    CONTROL_TOOLS.contains(&n) || MANAGER_TOOLS.contains(&n)
+                }
+            })
         });
         require(
             !lock.platform_tools.is_empty(),
@@ -441,6 +520,10 @@ impl Engine {
             .configuration(bound.data["controller_id"].as_str().unwrap_or(""))?
             .clone();
         let controller: WorkflowController = row.decode()?;
+        require(
+            crate::manager_workspace::session_instance_current(s, &controller),
+            "经理实例已改变，需要后继会话",
+        )?;
         let name = text(&definition.data, "qualified_name")?;
         let worker = s
             .executions
@@ -448,8 +531,11 @@ impl Engine {
             .find(|e| e.session_id == session.id && !e.writer_revoked)
             .ok_or_else(|| err("tool_not_authorized", "编排 worker 已停止"))?;
         require(
-            CONTROL_TOOLS.contains(&name.as_str())
-                && controller.session_id.as_deref() == Some(&session.id)
+            (if controller.workspace_only {
+                MANAGER_TOOLS.contains(&name.as_str())
+            } else {
+                CONTROL_TOOLS.contains(&name.as_str()) || MANAGER_TOOLS.contains(&name.as_str())
+            }) && controller.session_id.as_deref() == Some(&session.id)
                 && controller.status == "active"
                 && bound.data["epoch"] == controller.epoch,
             "编排身份或代次已失效",
@@ -530,6 +616,12 @@ impl Engine {
             for row in rows{
                 let mut controller:WorkflowController=row.decode()?;
                 if controller.status!="active"{continue;}
+                if !crate::manager_workspace::session_instance_current(s,&controller) {
+                    if s.governance.iter().any(|call|call.r#type=="controller_tool_call"&&call.definition_id==row.id&&!s.governance.iter().any(|reply|reply.r#type=="controller_tool_reply"&&reply.definition_id==call.id)){continue;}
+                    for turn in s.turns.iter_mut().filter(|t|Some(&t.session_id)==controller.session_id.as_ref()&&t.status.active()){turn.cancel_requested=true;turn.revision+=1;}
+                    controller.epoch+=1;controller.status="paused".into();controller.reason="经理实例已换绑/移除，当前冻结会话已撤权；需要人类建立后继会话".into();
+                    update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
+                }
                 if controller.session_id.is_none(){
                     let opened=s.governance.iter().rev().find(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="session.open"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch).cloned();
                     if let Some(opened)=opened{
@@ -563,6 +655,7 @@ impl Engine {
                     controller.status="failed".into();controller.reason=failed.data["error"].to_string();
                     update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
                 }
+                if controller.workspace_only && user.is_empty(){continue;}
                 let digest=configuration_hash(&json!({"instances":instances,"decisions":decisions,"inputs":user.iter().map(|r|&r.id).collect::<Vec<_>>() }));
                 if digest==controller.last_state_digest{continue;}
                 let results=configuration_hash(&instances.iter().flat_map(|i|i["steps"].as_array().into_iter().flatten()).map(|e|json!({"outputs":e["outputs"],"confirmation_ref":e["confirmation_ref"],"confirmation_waiver_ref":e["confirmation_waiver_ref"]})).collect::<Vec<_>>());
@@ -572,7 +665,7 @@ impl Engine {
                 for instance in &mut visible {if let Some(steps)=instance["steps"].as_array(){let total=steps.len();let mut shown=steps.clone();shown.sort_by_key(step_attention);shown.truncate(16);for step in &mut shown {if let Some(reason)=step["reason"].as_str(){step["reason"]=json!(reason.chars().take(160).collect::<String>());}}instance["steps"]=json!(shown);instance["step_total"]=json!(total);instance["step_selection"]=json!("attention_then_pending");}}
                 let visible_decisions=decisions.iter().rev().take(32).map(|d|json!({"id":d["id"],"instance_id":d["instance_id"],"status":d["status"],"decision_ref":d["decision_ref"],"operation":d["request"]["operation"]})).collect::<Vec<_>>();
                 let scope_snapshot=json!({"renderer_version":ORCHESTRATION_RENDERER,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"instances":visible,"instance_total":instances.len(),"event_hint":s.events.last().map(|e|e.id),
-                    "instructions":"Use workflow tools to inspect the current plan and outputs, dispatch and accept explicit steps, and complete workflows. Every child also requires explicit dispatch and completion. Projected steps prioritize unresolved and pending work, not authoring order; inspect omitted steps when needed. human_satisfied and confirmation_ref reflect matching recorded decisions; execution.reason is an earlier message. waiting_confirmation does not mean a human decision is still missing: when human_satisfied is true, inspect the current result and accept it if all conditions hold. Do not simulate tool receipts. Submit changes through preview and apply. When only workers or humans can act, finish this turn and wait. Never approve as a human. Use tools for every actual operation.",
+                    "workspace_only":controller.workspace_only,"project_id":controller.project_id,"project_tools":MANAGER_TOOLS,"project_overview_only":true,"instructions":if controller.workspace_only {"You are a project-bound manager workspace. Use project.overview and paginated project.records.list/read to obtain facts. Use configuration catalog/read/usage, then change.preview and change.apply with the exact preview hash. Source edits publish new immutable revisions; adoption is explicit. You have no root scheduling lease. Never claim a write succeeded without its tool receipt. Do not change your own current permissions. Shared configuration writes require configuration.global.write; otherwise create project-owned successors. Finish and wait after answering the user's request."}else{"Use workflow tools to inspect the current plan and outputs, dispatch and accept explicit steps, and complete workflows. Every child also requires explicit dispatch and completion. Projected steps prioritize unresolved and pending work, not authoring order; inspect omitted steps when needed. human_satisfied and confirmation_ref reflect matching recorded decisions; execution.reason is an earlier message. waiting_confirmation does not mean a human decision is still missing: when human_satisfied is true, inspect the current result and accept it if all conditions hold. Do not simulate tool receipts. Submit changes through preview and apply. When only workers or humans can act, finish this turn and wait. Never approve as a human. Use tools for every actual operation."},
                     "root":root.map(|r|json!({"id":r.id,"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"]})),"policy":controller.policy,"decisions":visible_decisions,"user_messages":user.iter().map(|r|&r.data["input"]).collect::<Vec<_>>()});
                 controller.event_cursor+=1;controller.wakeup_turns+=1;controller.last_state_digest=digest;
                 let payload=json!({"client_message_id":format!("controller:{}:{}:{}",row.id,controller.epoch,controller.event_cursor),"input":scope_snapshot.to_string(),"controller_epoch":controller.epoch,"controller_input_refs":user.iter().map(|r|&r.id).collect::<Vec<_>>()});
@@ -604,6 +697,9 @@ impl Engine {
                 let method = call.data["method"].as_str().unwrap_or("");
                 let args = call.data["arguments"].clone();
                 let result = (|| -> Result<Value> {
+                    if MANAGER_TOOLS.contains(&method) {
+                        return self.manager_tool(&controller, call, method, &args);
+                    }
                     require(
                         controller.status == "active" && call.data["epoch"] == controller.epoch,
                         "编排租约已失效",
@@ -714,6 +810,8 @@ impl Engine {
                         let revision=s.configuration(&target).ok().map(|r|r.revision).or_else(||revision(s,&target));
                         if method!="workflow.start"{require(args["plan_revision_id"]==s.configuration(&target)?.data["active_plan_revision_id"],"活动计划已变化")?;}
                         let c=Command{command_id:format!("{}:action",call.id),target:Some(target.clone()),expected_revision:revision,payload:args.clone()};
+                        self.authorize_driver_action(s,method,&c,&actor)?;
+                        InvocationContext::workflow(actor.clone(),Some(controller.project_id.clone())).record(s,method,&c)?;
                         let result=if let Some(v)=self.workflow_control_command(method,&c,s,&actor)?{v}else{require(!["workflow.step.confirm","workflow.step.approve"].contains(&method),"Agent 无权签署人工决定")?;let result=self.configured_runtime_command(if method=="workflow.execution.reconcile"{"workflow.step.reconcile"}else{method},&c,s)?.ok_or_else(||err("method_not_found","未知编排命令"))?;crate::orchestration::record_auxiliary_decision(s,method,&c,&actor,&result)?;result};
                         if method=="workflow.start"{let mut next=current;next.root_instance_id=Some(text(&result,"id")?);if let Some(lease)=s.orchestration_leases.iter_mut().find(|l|l.controller_id==call.definition_id){lease.root_instance_id=next.root_instance_id.clone();}update_record(s.governance.iter_mut().find(|r|r.id==call.definition_id).unwrap(),json!(next));}
                         Ok(result)

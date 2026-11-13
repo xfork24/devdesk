@@ -3,7 +3,8 @@
 //! These runtime interfaces are separate from `devdesk_domain::Harness` and
 //! `devdesk_domain::Sandbox`, which describe persisted configuration and instances.
 use devdesk_domain::{
-    AdvanceObservation, Document, ExecutionInstance, GitContext, Id, Origin, Result,
+    AdvanceObservation, Artifact, Document, EngineeringState, ExecutionInstance, GitContext, Id,
+    MaterialOwner, Origin, Result, err,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -323,4 +324,119 @@ pub trait PullRequests: Send + Sync {
         &self,
         request: &devdesk_domain::PullRequestRequest,
     ) -> Result<devdesk_domain::PullRequestReceipt>;
+}
+
+pub trait EngineeringStore: Send + Sync {
+    /// Lookup through the same idempotency contract without creating a missing operation.
+    fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
+        let mut missing = false;
+        let result = self.transact(Some((id, fingerprint)), &mut |_| {
+            missing = true;
+            Err(err("operation_absent", "操作尚未登记"))
+        });
+        if missing { Ok(None) } else { result.map(Some) }
+    }
+    /// Conservative scheduling hint; providers without an indexed query remain always eligible.
+    fn has_pending_work(&self) -> Result<bool> {
+        Ok(true)
+    }
+    fn snapshot(&self) -> Result<EngineeringState>;
+    fn transact(
+        &self,
+        key: Option<(&str, &str)>,
+        action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
+    ) -> Result<Value>;
+    fn root(&self) -> String;
+    fn project_id(&self) -> Option<String> {
+        None
+    }
+}
+pub trait ArtifactStore: Send + Sync {
+    fn seal_scoped(&self, owner: &MaterialOwner, category: &str, body: &str) -> Result<Artifact> {
+        match owner {
+            MaterialOwner::Feature { id } => self.seal(id, None, category, body),
+            MaterialOwner::Task { feature, id } => self.seal(feature, Some(id), category, body),
+            MaterialOwner::Global | MaterialOwner::Project { .. } => {
+                Err(err("unsupported", "ArtifactStore 未提供 Project 产物封存"))
+            }
+        }
+    }
+    fn seal(
+        &self,
+        feature: &str,
+        task: Option<&str>,
+        category: &str,
+        body: &str,
+    ) -> Result<Artifact>;
+    fn read(&self, artifact: &Artifact) -> Result<Vec<u8>>;
+}
+
+/// Environment operations used while core assembles and verifies a Session binding.
+pub trait SessionResources {
+    fn shared_store(&self) -> &dyn EngineeringStore;
+    fn architecture(&self) -> String;
+    fn prepare_harness(
+        &self,
+        record: &devdesk_domain::ConfigurationRecord,
+        resource: &devdesk_domain::ConfigurationRecord,
+    ) -> Result<devdesk_domain::RuntimeInstallation>;
+    fn installations(&self) -> Result<Vec<devdesk_domain::RuntimeInstallation>>;
+    fn ensure_runtime(
+        &self,
+        provider: devdesk_domain::HarnessProvider,
+        preferred: Option<&str>,
+    ) -> Result<devdesk_domain::RuntimeInstallation>;
+    fn runtime_verified(&self, id: &str) -> Result<bool>;
+    fn installation_recipe(&self, installation: &devdesk_domain::RuntimeInstallation) -> String;
+    fn validate_installation(
+        &self,
+        installation: &devdesk_domain::RuntimeInstallation,
+    ) -> Result<()>;
+    fn verify_permissions(
+        &self,
+        state: &EngineeringState,
+        lock: &devdesk_domain::VersionedPermissionLock,
+        installation: &devdesk_domain::RuntimeInstallation,
+    ) -> Result<()>;
+    fn compile_permissions(
+        &self,
+        state: &EngineeringState,
+        lock: &devdesk_domain::VersionedPermissionLock,
+        scope: Option<devdesk_domain::ExecutionScope>,
+    ) -> Result<devdesk_domain::ExecutionPermissions>;
+    fn adapter_identity(&self, provider: devdesk_domain::HarnessProvider) -> String;
+    fn credential_reference(
+        &self,
+        provider: devdesk_domain::HarnessProvider,
+        connection: Option<&devdesk_domain::ModelConnection>,
+        state: &EngineeringState,
+    ) -> Result<Option<String>>;
+    fn model_profile_digest(
+        &self,
+        connection: &devdesk_domain::ModelConnection,
+        model: &str,
+    ) -> Result<String>;
+    fn runtime_digest(
+        &self,
+        agent: &devdesk_domain::Definition,
+        binding: &devdesk_domain::RuntimeBinding,
+    ) -> Result<String>;
+}
+
+/// Application-level ID and time sources; domain only consumes their values.
+pub trait ApplicationEnvironment: Send + Sync {
+    fn allocate_id(&self) -> String;
+    fn unix_millis(&self) -> u64;
+}
+
+/// Read-only project inventory and pure backend feasibility; adapters provide environment facts.
+pub trait ProjectInventory: Send + Sync {
+    fn snapshots(&self) -> Result<Vec<EngineeringState>>;
+    fn runtime_facts(&self) -> Result<Value> {
+        Ok(serde_json::json!({"available":false}))
+    }
+}
+pub trait ConfigurationBackend: Send + Sync {
+    fn prepare_permission_binding(&self, state: &EngineeringState, change: &Value)
+    -> Result<Value>;
 }

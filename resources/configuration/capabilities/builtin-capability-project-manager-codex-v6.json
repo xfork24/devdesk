@@ -1,7 +1,7 @@
 {
   "type": "capability",
   "identity": "builtin-capability-project-manager-codex",
-  "revision": 4,
+  "revision": 6,
   "name": "项目经理能力 · Sol High / Codex",
   "scope": "global",
   "harness_ref": "builtin-harness-codex-managed:1",
@@ -9,7 +9,8 @@
   "skills": [
     "builtin-skill-engineering-context:2",
     "builtin-skill-project-planning:2",
-    "builtin-skill-workflow-orchestration:2"
+    "builtin-skill-workflow-orchestration:2",
+    "builtin-skill-project-workbench:1"
   ],
   "tools": [
     "builtin-tool-codex-native:1",
@@ -33,7 +34,22 @@
     "builtin-tool-workflow-decision-request:1",
     "builtin-tool-workflow-execution-reconcile:1",
     "builtin-tool-workflow-complete:1",
-    "builtin-tool-workflow-segment-dispatch:1"
+    "builtin-tool-workflow-segment-dispatch:1",
+    "builtin-tool-project-overview:1",
+    "builtin-tool-project-records-list:1",
+    "builtin-tool-project-record-read:1",
+    "builtin-tool-project-artifact-read:1",
+    "builtin-tool-project-resources:1",
+    "builtin-tool-configuration-catalog:1",
+    "builtin-tool-configuration-read:1",
+    "builtin-tool-configuration-usage:1",
+    "builtin-tool-configuration-change-preview:1",
+    "builtin-tool-configuration-change-apply:1",
+    "builtin-tool-configuration-transfer-stage:1",
+    "builtin-tool-configuration-transfer-apply:1",
+    "builtin-tool-configuration-transfer-cancel:1",
+    "builtin-tool-configuration-transfer-status:1",
+    "builtin-tool-spec-lint:1"
   ],
   "data": {}
 }

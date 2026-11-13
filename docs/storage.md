@@ -42,6 +42,8 @@
 
 完整表清单见 [SQL 说明](../sql/README.md)。
 
+源描述的文件/SQL 编解码在 adapters；冻结计划与任务选择的纯重建在 core/frozen_views。两者共享精确源引用，不以当前目录最新版重选执行依赖。`command_context` 保留由可信入口构造的 Actor/项目归属与原请求指纹，不接受客户端提供的解析后身份。
+
 ## 幂等与恢复模型
 
 所有外部调用遵循三段式：**持久化意图 → 事务外执行 → 核对回执并接纳**。命令以 command_id + 参数指纹幂等；相同 ID 不同参数被拒绝；重放先于版本冲突检查。
@@ -55,3 +57,7 @@
 ## 升级策略
 
 系统只支持当前协议与当前 SQLite 基线（见 [SQL 说明](../sql/README.md)）：旧结构明确拒绝，不自动删除、不转换、不保留双版本执行器。升级前备份整个数据集目录；验证新版本使用独立空目录，不用既有数据目录试验。凭据引用绑定数据集与服务商，换机器后需重新配置本机凭据。
+
+## 配置发布恢复
+
+`configuration_transfer` 保存跨库候选及 prepared/applying/completed/failed/cancelled 状态；暂存正文不是 source_definitions 中的可用源。项目原子提交源副本、选择和 configuration_transfer_receipt；共享库随后发布相同源并标记完成。重启从 applying 与项目幂等回执继续，不重复创建选择。相同源引用的内容必须一致；本协议未增加投影表或改动 SQL 基线。

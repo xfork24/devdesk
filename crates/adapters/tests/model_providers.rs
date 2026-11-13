@@ -1,4 +1,5 @@
 use devdesk_adapters::{configuration_digest, model_providers::*};
+use devdesk_core::id;
 use devdesk_domain::*;
 use serde_json::json;
 use std::{
@@ -94,7 +95,7 @@ fn generated_profiles_select_only_the_frozen_route_without_secret_values() {
 
 #[test]
 fn new_providers_require_a_complete_snapshot_and_matching_profile_digest() {
-    let mut b: RuntimeBinding=serde_json::from_value(json!({"installation":{"id":id(),"key":{"provider":"dsh","version":devdesk_adapters::runtime_preparation::DSH_VERSION,"os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"MIT"},"adapter_version":"fixture","model":"devdesk-mock-model","tool_policy":"read_only","work_type":"discussion","configuration_digest":"fixture","agent_configuration":{"agent_instance_id":id(),"agent_revision_id":id(),"composition_hash":"fixture","model_revision_id":id(),"harness_revision_id":id(),"model_provider":"ollama","model_parameters":{},"tool_revisions":[]}})).unwrap();
+    let mut b: RuntimeBinding=serde_json::from_value(json!({"installation":{"id":id(),"key":{"provider":"dsh","version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Dsh),"os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"fixture","license":"MIT"},"adapter_version":"fixture","model":"devdesk-mock-model","tool_policy":"read_only","work_type":"discussion","configuration_digest":"fixture","agent_configuration":{"agent_instance_id":id(),"agent_revision_id":id(),"composition_hash":"fixture","model_revision_id":id(),"harness_revision_id":id(),"model_provider":"ollama","model_parameters":{},"tool_revisions":[]}})).unwrap();
     assert!(binding_model_connection(&b).is_err());
     let c = connection("ollama");
     b.model_profile_digest =

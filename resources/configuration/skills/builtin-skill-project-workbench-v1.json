@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "builtin-skill-project-workbench",
+  "revision": 1,
+  "name": "项目经理全项目工作台",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "project-workbench.md"
+  }
+}

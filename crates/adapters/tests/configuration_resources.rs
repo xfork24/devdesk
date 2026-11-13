@@ -445,7 +445,14 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
         .iter()
         .filter(|r| r.r#type == "delivery_type" && r.id != "fixture-delivery-object:1")
         .collect();
-    assert_eq!(deliveries.len(), 21);
+    let manifest: Value = serde_json::from_str(include_str!(
+        "../../../resources/configuration/manifest.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        deliveries.len(),
+        manifest["types"]["delivery_type"].as_array().unwrap().len()
+    );
     for delivery in &deliveries {
         state
             .validate_delivery_specs(&delivery.refs, &delivery.decode().unwrap(), &delivery.scope)

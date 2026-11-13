@@ -1,6 +1,6 @@
 //! Explicit test coordinator for execution-contract tests. Production never calls this helper.
 #![allow(dead_code)]
-use devdesk_core::{Command, Engine};
+use devdesk_core::{Command, Engine, id};
 use devdesk_domain::*;
 use serde_json::{Value, json};
 

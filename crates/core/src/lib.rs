@@ -1,13 +1,31 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
 mod agent_tasks;
+mod invocation;
+pub use invocation::InvocationContext;
+mod catalog_sync;
+mod default_permissions;
+mod resource_receipts;
+mod session_assembly;
+pub use default_permissions::template_permission_defaults;
 mod builtin_defaults;
 mod configuration;
+mod configuration_changes;
+mod configuration_transfers;
+pub use configuration_changes::{
+    ConfigurationChangeSet, ConfigurationDiagnostic, ConfigurationOperation,
+    check_configuration_retirements, configuration_fingerprint, configuration_identity_usage,
+    configuration_usage,
+};
 mod configured_runtime;
 mod configured_workflows;
 mod controllers;
+mod manager_workspace;
+mod spec_lint;
+pub use manager_workspace::{MANAGER_TOOLS, ManagerServices};
 mod orchestration;
 mod platform_tools;
 mod standards;
+mod workflow_driver;
 pub use controllers::CONTROL_TOOLS;
 pub use standards::{compare_work_standards, work_standard_choices, work_standard_selection};
 mod workflow_changes;
@@ -17,11 +35,22 @@ pub use configured_runtime::{
 };
 pub use configured_workflows::{ConfiguredWorkflowPlan, compile_workflow_sources};
 pub use platform_tools::PlatformToolRequest;
+mod command_catalog;
+pub mod frozen_views;
 mod templates;
+pub use command_catalog::*;
+pub use templates::{ConfigurationBundle, install_configuration_bundle};
+mod driver_capabilities;
+pub use driver_capabilities::{
+    DriverCapabilities, driver_capabilities, driver_supports, install_driver_capabilities,
+};
+mod environment;
 pub use configuration::{
     project_configuration_references, retired as configuration_retired,
     visible as configuration_visible,
 };
+use environment::now;
+pub use environment::{id, with_application_environment};
 pub use templates::{
     copy_template_catalog, current_template_defaults, initialize_template_catalog,
     register_template_members, restore_template_catalog, template_bundle_info,
@@ -51,50 +80,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub trait EngineeringStore: Send + Sync {
-    /// Lookup through the same idempotency contract without creating a missing operation.
-    fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
-        let mut missing = false;
-        let result = self.transact(Some((id, fingerprint)), &mut |_| {
-            missing = true;
-            Err(err("operation_absent", "操作尚未登记"))
-        });
-        if missing { Ok(None) } else { result.map(Some) }
-    }
-    /// Conservative scheduling hint; providers without an indexed query remain always eligible.
-    fn has_pending_work(&self) -> Result<bool> {
-        Ok(true)
-    }
-    fn snapshot(&self) -> Result<EngineeringState>;
-    fn transact(
-        &self,
-        key: Option<(&str, &str)>,
-        action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
-    ) -> Result<Value>;
-    fn root(&self) -> String;
-    fn project_id(&self) -> Option<String> {
-        None
-    }
-}
-pub trait ArtifactStore: Send + Sync {
-    fn seal_scoped(&self, owner: &MaterialOwner, category: &str, body: &str) -> Result<Artifact> {
-        match owner {
-            MaterialOwner::Feature { id } => self.seal(id, None, category, body),
-            MaterialOwner::Task { feature, id } => self.seal(feature, Some(id), category, body),
-            MaterialOwner::Global | MaterialOwner::Project { .. } => {
-                Err(err("unsupported", "ArtifactStore 未提供 Project 产物封存"))
-            }
-        }
-    }
-    fn seal(
-        &self,
-        feature: &str,
-        task: Option<&str>,
-        category: &str,
-        body: &str,
-    ) -> Result<Artifact>;
-    fn read(&self, artifact: &Artifact) -> Result<Vec<u8>>;
-}
+pub use ports::{ArtifactStore, EngineeringStore};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Command {
     pub command_id: String,
@@ -107,6 +93,8 @@ pub fn command_fingerprint(method: &str, c: &Command) -> String {
     serde_json::to_string(&(method, &c.target, &c.expected_revision, &c.payload)).unwrap()
 }
 pub struct Engine {
+    pub manager_services: Option<ManagerServices>,
+    pub configuration_backend: Option<Arc<dyn ports::ConfigurationBackend>>,
     pub tool_executor: Option<Arc<dyn ports::ToolExecutor>>,
     pub store: Arc<dyn EngineeringStore>,
     pub artifacts: Arc<dyn ArtifactStore>,
@@ -125,12 +113,7 @@ fn text(v: &Value, k: &str) -> Result<String> {
 fn opt(v: &Value, k: &str) -> Option<String> {
     v.get(k).and_then(Value::as_str).map(str::to_owned)
 }
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
+
 fn event(s: &mut EngineeringState, target: &str, kind: &str, detail: &str) {
     s.events.push(Event {
         id: s.events.last().map_or(1, |e| e.id + 1),
@@ -309,6 +292,8 @@ impl Engine {
         adapters: ports::ExecutionAdapters,
     ) -> Self {
         Self {
+            manager_services: None,
+            configuration_backend: None,
             tool_executor: None,
             store,
             artifacts,
@@ -317,6 +302,17 @@ impl Engine {
             tests: adapters.tests,
             pull_requests: adapters.pull_requests,
         }
+    }
+    pub fn with_manager_services(mut self, services: ManagerServices) -> Self {
+        self.manager_services = Some(services);
+        self
+    }
+    pub fn with_configuration_backend(
+        mut self,
+        backend: Arc<dyn ports::ConfigurationBackend>,
+    ) -> Self {
+        self.configuration_backend = Some(backend);
+        self
     }
     pub fn bootstrap(&self) -> Result<()> {
         if self
@@ -413,7 +409,11 @@ impl Engine {
         Ok(())
     }
     pub fn execute(&self, method: &str, c: Command) -> Result<Value> {
-        self.execute_internal(method, c, None)
+        self.execute_in_context(
+            method,
+            c,
+            &InvocationContext::human(self.store.project_id()),
+        )
     }
     /// Trusted coordinator resolves configuration after checking the original request's replay key.
     /// RPC callers cannot provide this override.
@@ -433,19 +433,34 @@ impl Engine {
             .contains(&method),
             "该命令不支持绑定解析",
         )?;
-        self.execute_internal(method, c, Some(original_fingerprint))
+        self.execute_internal(
+            method,
+            c,
+            Some(original_fingerprint),
+            &InvocationContext::human(self.store.project_id()),
+        )
+    }
+    pub fn execute_in_context(
+        &self,
+        method: &str,
+        c: Command,
+        context: &InvocationContext,
+    ) -> Result<Value> {
+        self.execute_internal(method, c, None, context)
     }
     fn execute_internal(
         &self,
         method: &str,
         c: Command,
         original_fingerprint: Option<&str>,
+        context: &InvocationContext,
     ) -> Result<Value> {
         require(!c.command_id.is_empty(), "command_id 不能为空")?;
         let fingerprint = original_fingerprint
             .map(str::to_owned)
             .unwrap_or_else(|| command_fingerprint(method, &c));
         let mut action = |s: &mut EngineeringState| {
+            configuration_transfers::configuration_transfer_guard(s, method)?;
             if template_definition_write(method) {
                 if let Some(target) = c.target.as_deref().and_then(|id| s.configuration(id).ok()) {
                     require(
@@ -455,8 +470,9 @@ impl Engine {
                 }
             }
 
-            let result = self.apply_command(method, &c, s)?;
+            let result = self.apply_command(method, &c, s, context.actor())?;
             self.governance_after_command(method, &c, s, &result)?;
+            context.record(s, method, &c)?;
             register_template_members(s, template_catalog_generation(s));
             Ok(result)
         };
@@ -466,8 +482,17 @@ impl Engine {
         // Long operations return their durable ID; the scheduler owns supplier dispatch.
         Ok(result)
     }
-    fn apply_command(&self, method: &str, c: &Command, s: &mut EngineeringState) -> Result<Value> {
-        if let Some(result) = self.orchestration_command(method, c, s)? {
+    fn apply_command(
+        &self,
+        method: &str,
+        c: &Command,
+        s: &mut EngineeringState,
+        actor: &WorkflowActor,
+    ) -> Result<Value> {
+        if let Some(result) = self.configuration_change_command(method, c, s, actor)? {
+            return Ok(result);
+        }
+        if let Some(result) = self.orchestration_command(method, c, s, actor)? {
             return Ok(result);
         }
         if let Some(result) = self.configured_runtime_command(method, c, s)? {
@@ -709,13 +734,33 @@ impl Engine {
         self.evaluate_configured_workflows()?;
         self.drive_workflow_changes()?;
         self.drive_workflow_segments()?;
+        self.drive_rust_workflows()?;
         self.drive_controllers()
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if let Some(result) = self.configuration_change_query(method, p) {
+            return result;
+        }
+        if method == "query.spec_lint" {
+            return self.specification_lint(p);
+        }
+        if method == "query.project_knowledge" {
+            let project = self
+                .store
+                .project_id()
+                .ok_or_else(|| err("project_required", "需要项目"))?;
+            return self.manager_knowledge("project.overview", &project, p);
+        }
+        if method == "query.workflow_driver" {
+            return self.workflow_driver_query(p);
+        }
         if method == "query.orchestration" {
             let s = self.store.snapshot()?;
             let row = s.governance.iter().rev().find(|r| {
                 r.r#type == "workflow_controller"
+                    && p["workspace_only"].as_bool().is_none_or(|workspace| {
+                        r.data["workspace_only"].as_bool().unwrap_or(false) == workspace
+                    })
                     && (p["id"].as_str() == Some(r.id.as_str())
                         || p["root_instance_id"]
                             .as_str()

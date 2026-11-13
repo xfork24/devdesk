@@ -1,0 +1,16 @@
+{
+  "type": "delivery_type",
+  "identity": "builtin-delivery-checked-markdown",
+  "revision": 1,
+  "name": "可机器核验的 Markdown",
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-checked-markdown:1"
+  ],
+  "data": {
+    "format": "markdown",
+    "producer": {
+      "kind": "agent"
+    }
+  }
+}

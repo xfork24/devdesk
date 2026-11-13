@@ -98,7 +98,7 @@ pub fn compile(
     policy: PermissionPolicy,
 ) -> Result<ExecutionPermissions> {
     let mut s = EngineeringState::default();
-    devdesk_core::seed_configuration(&mut s);
+    devdesk_adapters::seed_factory_configuration(&mut s);
     let lock = prepare(&mut s, provider, policy);
     devdesk_adapters::permission_profiles::compile_permission_profiles(&s, &lock, Some(scope))
 }

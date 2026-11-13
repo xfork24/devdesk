@@ -97,6 +97,10 @@
         "pattern": "^\\S+:[1-9][0-9]*$"
       },
       "uniqueItems": true
+    },
+    "runtime_resource_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
     }
   },
   "additionalProperties": false,
@@ -162,6 +166,11 @@
               "required": [
                 "spec_refs"
               ]
+            },
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
             }
           ]
         }
@@ -224,6 +233,11 @@
             {
               "required": [
                 "tools"
+              ]
+            },
+            {
+              "required": [
+                "runtime_resource_ref"
               ]
             }
           ]
@@ -292,6 +306,11 @@
             {
               "required": [
                 "tools"
+              ]
+            },
+            {
+              "required": [
+                "runtime_resource_ref"
               ]
             }
           ]
@@ -424,6 +443,11 @@
               "required": [
                 "tools"
               ]
+            },
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
             }
           ]
         }
@@ -491,6 +515,11 @@
             {
               "required": [
                 "tools"
+              ]
+            },
+            {
+              "required": [
+                "runtime_resource_ref"
               ]
             }
           ]
@@ -594,7 +623,16 @@
         "required": [
           "role_ref",
           "capability_ref"
-        ]
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -614,7 +652,16 @@
           "model_ref",
           "skills",
           "tools"
-        ]
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -631,7 +678,16 @@
       "then": {
         "required": [
           "spec_refs"
-        ]
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -648,7 +704,16 @@
       "then": {
         "required": [
           "sandbox_ref"
-        ]
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -665,7 +730,149 @@
       "then": {
         "required": [
           "root_workflow_refs"
-        ]
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "runtime_resource"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "provider",
+              "version",
+              "license"
+            ],
+            "properties": {
+              "provider": {
+                "enum": [
+                  "codex",
+                  "dsh"
+                ]
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "license": {
+                "type": "string",
+                "minLength": 1
+              },
+              "files": {
+                "type": "array",
+                "maxItems": 128,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "content"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "native_releases": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "harness_ref"
+              ]
+            },
+            {
+              "required": [
+                "role_ref"
+              ]
+            },
+            {
+              "required": [
+                "capability_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_ref"
+              ]
+            },
+            {
+              "required": [
+                "sandbox_ref"
+              ]
+            },
+            {
+              "required": [
+                "runtime_resource_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_catalog_ref"
+              ]
+            },
+            {
+              "required": [
+                "spec_refs"
+              ]
+            },
+            {
+              "required": [
+                "skills"
+              ]
+            },
+            {
+              "required": [
+                "tools"
+              ]
+            },
+            {
+              "required": [
+                "model_providers"
+              ]
+            },
+            {
+              "required": [
+                "root_workflow_refs"
+              ]
+            }
+          ]
+        }
       }
     }
   ]

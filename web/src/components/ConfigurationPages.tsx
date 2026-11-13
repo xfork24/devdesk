@@ -20,6 +20,8 @@ const processTabs = [
 const foundationTabs = [
   ["model", "Model"],
   ["harness", "Harness"],
+  ["runtime_resource", "运行资源"],
+  ["orchestration_policy", "调度策略"],
   ["mcp", "MCP"],
   ["skills", "Skills"],
   ["http", "Tools"],
@@ -74,7 +76,14 @@ export function ConfigurationPage({
         />
       ) : tab === "standard" ? (
         <StandardManager request={props.request} project={props.project} />
-      ) : ["model", "harness", "spec", "delivery_type"].includes(tab) ? (
+      ) : [
+          "model",
+          "harness",
+          "runtime_resource",
+          "orchestration_policy",
+          "spec",
+          "delivery_type",
+        ].includes(tab) ? (
         <ResourceEditor
           key={`${tab}:${props.project?.id}`}
           kind={tab}

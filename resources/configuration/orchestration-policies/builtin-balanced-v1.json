@@ -1,0 +1,14 @@
+{
+  "type": "orchestration_policy",
+  "identity": "builtin-orchestration-policy-balanced",
+  "revision": 1,
+  "name": "有界自动调度",
+  "scope": "global",
+  "data": {
+    "max_concurrency": 4,
+    "max_actions_per_tick": 16,
+    "lease_seconds": 60,
+    "max_retries": 0,
+    "retry_error_codes": []
+  }
+}

@@ -20,7 +20,8 @@
       "skills/builtin-skill-tdd-implementation-v2.json",
       "skills/builtin-skill-release-verification-v2.json",
       "skills/builtin-skill-independent-review-v2.json",
-      "skills/builtin-skill-workflow-orchestration-v2.json"
+      "skills/builtin-skill-workflow-orchestration-v2.json",
+      "skills/builtin-skill-project-workbench-v1.json"
     ],
     "spec": [
       "specs/builtin-spec-stage-prd-v1.json",
@@ -46,7 +47,9 @@
       "specs/builtin-spec-delivery-task-report-v1.json",
       "specs/builtin-spec-delivery-baseline-doc-v1.json",
       "specs/builtin-spec-delivery-implementation-doc-v1.json",
-      "specs/builtin-spec-delivery-feature-report-v1.json"
+      "specs/builtin-spec-delivery-feature-report-v1.json",
+      "specs/builtin-spec-checked-markdown-v1.json",
+      "specs/builtin-spec-located-review-v1.json"
     ],
     "standard": [
       "standards/builtin-standard-engineering-v3.json"
@@ -76,13 +79,14 @@
       "deliveries/builtin-delivery-collection-v2.json",
       "deliveries/builtin-delivery-baseline-doc-v1.json",
       "deliveries/builtin-delivery-implementation-doc-v1.json",
-      "deliveries/builtin-delivery-feature-report-v1.json"
+      "deliveries/builtin-delivery-feature-report-v1.json",
+      "deliveries/builtin-delivery-checked-markdown-v1.json"
     ],
     "capability": [
       "capabilities/builtin-capability-sol-high-codex-v3.json",
       "capabilities/builtin-capability-analyst-codex-v3.json",
       "capabilities/builtin-capability-architect-codex-v3.json",
-      "capabilities/builtin-capability-project-manager-codex-v4.json",
+      "capabilities/builtin-capability-project-manager-codex-v6.json",
       "capabilities/builtin-capability-developer-codex-v3.json",
       "capabilities/builtin-capability-tester-codex-v3.json",
       "capabilities/builtin-capability-reviewer-codex-v3.json",
@@ -104,7 +108,7 @@
     "agent": [
       "agents/builtin-agent-sol-high-analyst-v4.json",
       "agents/builtin-agent-sol-high-architect-v4.json",
-      "agents/builtin-agent-sol-high-project-manager-v5.json",
+      "agents/builtin-agent-sol-high-project-manager-v7.json",
       "agents/builtin-agent-sol-high-developer-v4.json",
       "agents/builtin-agent-sol-high-tester-v4.json",
       "agents/builtin-agent-sol-high-reviewer-v4.json",
@@ -165,7 +169,22 @@
       "tools/builtin-tool-workflow-decision-request-v1.json",
       "tools/builtin-tool-workflow-execution-reconcile-v1.json",
       "tools/builtin-tool-workflow-complete-v1.json",
-      "tools/builtin-tool-workflow-segment-dispatch-v1.json"
+      "tools/builtin-tool-workflow-segment-dispatch-v1.json",
+      "tools/builtin-tool-project-overview-v1.json",
+      "tools/builtin-tool-project-records-list-v1.json",
+      "tools/builtin-tool-project-record-read-v1.json",
+      "tools/builtin-tool-project-artifact-read-v1.json",
+      "tools/builtin-tool-project-resources-v1.json",
+      "tools/builtin-tool-configuration-catalog-v1.json",
+      "tools/builtin-tool-configuration-read-v1.json",
+      "tools/builtin-tool-configuration-usage-v1.json",
+      "tools/builtin-tool-configuration-change-preview-v1.json",
+      "tools/builtin-tool-configuration-change-apply-v1.json",
+      "tools/builtin-tool-configuration-transfer-stage-v1.json",
+      "tools/builtin-tool-configuration-transfer-apply-v1.json",
+      "tools/builtin-tool-configuration-transfer-cancel-v1.json",
+      "tools/builtin-tool-configuration-transfer-status-v1.json",
+      "tools/builtin-tool-spec-lint-v1.json"
     ],
     "permission_profile": [
       "permissions/profiles/builtin-permission-harness-full-access-v1.json",
@@ -173,7 +192,7 @@
       "permissions/profiles/builtin-permission-sandbox-full-access-v1.json"
     ],
     "permission_context": [
-      "permissions/bindings/builtin-permission-context-engineering-v3.json"
+      "permissions/bindings/builtin-permission-context-engineering-v4.json"
     ],
     "model_provider": [
       "model-providers/builtin-model-provider-openai-v1.json",
@@ -184,6 +203,13 @@
     ],
     "model_catalog": [
       "harnesses/builtin-model-catalog-dsh-v1.json"
+    ],
+    "runtime_resource": [
+      "runtime-resources/builtin-runtime-codex-v1.json",
+      "runtime-resources/builtin-runtime-dsh-v1.json"
+    ],
+    "orchestration_policy": [
+      "orchestration-policies/builtin-balanced-v1.json"
     ]
   },
   "defaults": "defaults.json"

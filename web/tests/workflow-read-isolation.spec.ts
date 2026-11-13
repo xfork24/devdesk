@@ -116,6 +116,9 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
       case "query.orchestration":
         result = { record: null };
         break;
+      case "query.workflow_driver":
+        result = { driver: null };
+        break;
       default:
         return route.fallback();
     }

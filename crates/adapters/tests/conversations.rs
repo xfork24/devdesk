@@ -64,6 +64,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
                     model_parameters: Default::default(),
                     permissions: None,
                     installation: RuntimeInstallation {
+                        recipe_digest: None,
                         id: "fixture-runtime".into(),
                         key: RuntimeKey {
                             provider: HarnessProvider::Codex,
@@ -949,10 +950,14 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
         model_parameters: Default::default(),
         permissions: None,
         installation: RuntimeInstallation {
+            recipe_digest: None,
             id: "global-fixture".into(),
             key: RuntimeKey {
                 provider: HarnessProvider::Codex,
-                version: devdesk_adapters::runtime_preparation::CODEX_VERSION.into(),
+                version: devdesk_adapters::runtime_preparation::default_version(
+                    HarnessProvider::Codex,
+                )
+                .into(),
                 os: "linux".into(),
                 arch: "aarch64".into(),
             },

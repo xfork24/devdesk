@@ -31,3 +31,9 @@ Git 候选以预期目标为父提交。默认接纳要求确切候选的真实�
 当前配置使用扁平源协议，数据库基线为 global 17 / project 48。仅支持新数据集，不提供旧协议转换或升级；验证使用独立空目录。既有目录会被明确拒绝且不改写。
 
 合并后的完整 Feature 验收还核对 Task documentation/review/candidate_review 和 Feature closure_review/candidate_review 的实际渲染任务封套：原始逐增量 TDD evidence 必须完整到达，输入来源必须指向相应的密封输出。默认 automatic 数据集中出现 Human 确认、人工批准、旁路或豁免即判失败；不允许通过手动 approve 完成探针。运行计划原始合同通过不可变修订祖先核对，不能将修订后的图当作自身验收基线。
+
+## 本地验收证据保留
+
+`tests/live/probe_default_engineering_workflow.py` 在独立数据目录运行真实默认 Feature/Task 图，默认保留数据、原生日志、冻结工作实例、回执及 report.md；只有明确调用才产生模型调用和测试仓库变化。`--dedicated-repository` 用于调用者明确指定、名称不含 test 的专用仓库；它不自动授权其他仓库。中断后的 `--resume` 保留历史并核对原执行者，已完成实例只复核证据，不重新派发或发布。
+
+`tests/live/export_evidence.py` 保存一致的项目 SQLite 快照、按登记摘要核验的产物、遮蔽凭据字段的记录投影、实际运行资源事实和逐文件 SHA256 清单。它不复制全局凭据设置、认证文件、worker 状态或进程环境。导出到新的本地私有目录；保留失败/未运行项，不能仅凭模型回复宣布验收通过。证据导出本身失败也必须报告。

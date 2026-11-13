@@ -1,0 +1,35 @@
+{
+  "type": "spec",
+  "identity": "builtin-spec-checked-markdown",
+  "revision": 1,
+  "name": "可执行 Markdown 结构规范",
+  "scope": "global",
+  "data": {
+    "schema_version": 3,
+    "body": "结构规则由声明的机器原语执行；通过这些规则不代表语义完整、代码正确或工具执行成功。章节与长度参数属于此配置，可独立修订。",
+    "checks": [
+      {
+        "key": "length",
+        "name": "有界内容长度",
+        "instructions": "内容需满足本配置的长度边界。",
+        "assertion": {
+          "type": "text_length",
+          "min": 12,
+          "max": 200000
+        }
+      },
+      {
+        "key": "sections",
+        "name": "结论与依据章节",
+        "instructions": "内容需包含实际章节，代码示例中的标题不能代替文档章节。",
+        "assertion": {
+          "type": "required_sections",
+          "headings": [
+            "结论",
+            "依据"
+          ]
+        }
+      }
+    ]
+  }
+}

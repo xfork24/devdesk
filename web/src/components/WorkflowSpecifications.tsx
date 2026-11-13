@@ -1,4 +1,4 @@
-import { ActionButton } from "./ActionFeedback";
+import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { JsonField } from "./WorkflowDeliveries";
 import { MarkdownField, type Row } from "./configuration-ui";
 
@@ -82,6 +82,47 @@ export function WorkflowSpecifications({
                 required
                 onChange={(instructions) => patch({ instructions })}
               />
+              <label>
+                自动检查原语
+                <ActionSelect
+                  aria-label={`自动检查原语 ${index + 1}`}
+                  value={check.assertion?.type || "semantic"}
+                  onChange={(event) => {
+                    const type = event.target.value;
+                    const assertion =
+                      type === "semantic"
+                        ? undefined
+                        : type === "text_length"
+                          ? { type, min: 0, max: 200000 }
+                          : type === "required_sections"
+                            ? { type, headings: ["结论", "依据"] }
+                            : { type, pointers: ["/summary"] };
+                    patch({ assertion });
+                  }}
+                >
+                  <option value="semantic">语义判断</option>
+                  <option value="text_length">文字长度</option>
+                  <option value="required_sections">必需章节</option>
+                  <option value="required_pointers">必需 JSON 路径</option>
+                </ActionSelect>
+              </label>
+              {check.assertion && (
+                <JsonField
+                  label={`自动检查参数 ${index + 1}`}
+                  value={check.assertion}
+                  onChange={(assertion) => patch({ assertion })}
+                />
+              )}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={check.evidence_required || false}
+                  onChange={(e) =>
+                    patch({ evidence_required: e.target.checked })
+                  }
+                />
+                评审必须提供可定位的冻结输入证据
+              </label>
               <ActionButton
                 type="button"
                 onClick={() =>

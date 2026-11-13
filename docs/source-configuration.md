@@ -50,3 +50,31 @@ Delivery 描述格式、结构合同及允许的产出来源，必填 `spec_refs
 Standard 不是持久化的展开投影，它是持有确切 Workflow 根引用的不可变源。规范摘要、源图与差异按需计算；原有逐步清单改名为 `specification_view`，仅作为执行要求视图。Spec 发布新版本不会改变已有 Delivery、Workflow 或 Standard。
 
 实际调用记录 `workflow_invocation` 固定工作身份、父执行、初始计划和 Standard；计划修订固定每次采用。Task 绑定真实业务 owner，不从节点名称或集合下标推断。子工作按自己所选配置独立编译，不复制父 Plan 替换文档。存储 codec 保存这些确切引用，并从历史计划恢复当时的原生任务正文。
+
+## 批量创作与依赖诊断
+
+`configuration.change.preview` / `configuration.change.apply` 在完整候选图中处理 Create、Revise、Retire、SelectProject、SelectWork；前端与受管工具共用应用服务。新源显式提供稳定身份与修订，可以反序提交相互依赖的对象。同一身份一次只发布一个后继，保持类型/Scope、检查当前 head；旧消费者不自动跟随。预演令牌绑定基准配置、操作、结果与 Actor，提交时重新核对，同库整体提交。审计时间不参与语义预演摘要。
+
+`query.configuration_graph` 返回对象、带类型和字段路径的依赖边、使用方和诊断。根级引用、流程端口/角色/子流程、权限授权、目录、Integration 和工作选择有明确边定义；说明、示例与常量输入不产生依赖。递归 Workflow 由编译器拒绝，不把历史/普通引用一律当成 DAG。停用以身份为边界检查当前消费者，也检查它们对旧修订的引用；历史与冻结源保留。
+
+修订选择器允许主动选择任何可见历史修订，包括未曾采用的中间版本；目录/定义编辑列表仍可只显示当前 head。Project 默认选择与 Work 冻结选择保留各自生命周期。新 Work 选择有稳定身份，选择本身不启动流程，已开始的工作必须通过现有运行计划变更入口切换。
+
+共享源发布与项目采用可使用 `configuration.transfer.stage/apply/cancel`。暂存候选不进入可用源目录；采用时在项目库一次提交所需源副本和选择，再完成共享目录发布。途中状态持久化，Host 打开项目时先恢复 applying 操作，再同步目录。prepared 可取消；项目冲突在无采用回执时记录失败。该协议不宣称两个 SQLite 库存在原子事务。
+
+## 运行资源源修订
+
+`runtime_resource` 保存驱动、显示标签、许可证、不可变 OCI digest 或有界构建文件，以及按平台校验的登录下载件。Harness 用根级 `runtime_resource_ref` 选择精确修订；旧不可变出厂 Harness 的 `data.recipe_digest` 作为有类型内容地址边解析到该资源，不能用任意版本字符串查找安装。配置发布/预演不构建或执行这些资产。默认发行版只在资源包数据中指定。
+
+安装以独立 `recipe_digest` 保存来源，版本仅为标签。同一驱动允许多个不同配方。`runtime.prepare_harness` 构建/拉取后核验实际镜像，再进行不调用模型的初始化/会话/动态工具注册探针；报告绑定 image、driver 和权限资产。报告明确 `inference_verified=false`、`tool_execution_verified=false`，真实会话仍必须完成权限、认证及执行边界验证。准备意图可通过 `runtime.preparation_status` 查询，取消在外部调用返回后的检查点生效，未知结果须 `runtime.preparation_reconcile` 后重试。
+
+配置变更集补充 `manage_instance`（create/rebind/remove）、`permission_bindings`、`import_skill`，与源修订、项目/工作选择使用同一候选状态和依赖诊断。实例换绑创建后继引用，移除记录停用事实，旧会话/实例修订仍可读；预演中的身份由逻辑操作稳定生成。权限绑定通过注入的后端纯可行性校验，Skill 包路径/引用按既有约束验证，预演不执行包或外部工具。
+
+## 可执行 Spec 与定位证据
+
+检查项可声明 `assertion`：`text_length` 按 Unicode 字符计数，`required_sections` 检查代码围栏之外的 ATX 章节，`required_pointers` 检查 JSON Pointer 存在性。参数和标题属于配置。未声明 assertion 的检查项属于语义判断，不被结构 lint 视为已通过的质量证明。`evidence_required` 要求实际冻结输入位置；带机器 assertion 的评审检查也必须提供位置，并由内核复算结果。
+
+`query.spec_lint` / `spec.lint` 接受精确 Delivery、未发布 Delivery 或 Spec 草稿与内容样本。草稿、Workflow 输入、材料导入、输出接纳使用同一结构检查链，JSON Schema 复用既有 Delivery.content_schema。输出封存 `spec_validation` 的 checker、源引用、内容摘要和机器结论；语义质量单独标为需要判断。预览结果不能替代实际内容接纳。
+
+派发时保存 `workflow_input_manifest`，记录冻结输入摘要及实际源产物链。评审通过 `input_sources.evidence_source_ref` 和 value_digest 声明 `locations`，定位方式是 JSON Pointer、1 起始的闭区间行范围，或 0 起始/末端排除的 Unicode 字符范围；可选 quote 必须与该范围完全相同。外部输入、错误摘要、越界/悬空位置和伪造引用被拒绝。既有纯语义 Spec 的文字依据继续按其声明解释，不能冒充定位证明；可逐个发布后继 Spec 加强要求。
+
+检查器有内容/数量/深度/工作量边界；JSON Schema 只接受有界的非递归本地引用展开，pattern 使用线性 regex 引擎及编译内存边界，不支持回溯式反向引用。规范不会执行任意命令；测试/Git/发布事实继续走实际平台用例和回执。

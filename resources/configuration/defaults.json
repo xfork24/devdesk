@@ -9,7 +9,7 @@
   "role_agent_bindings": {
     "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:4",
     "builtin-role-architect:1": "builtin-agent-sol-high-architect:4",
-    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:5",
+    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:7",
     "builtin-role-developer:1": "builtin-agent-sol-high-developer:4",
     "builtin-role-tester:1": "builtin-agent-sol-high-tester:4",
     "builtin-role-reviewer:1": "builtin-agent-sol-high-reviewer:4"
@@ -24,5 +24,9 @@
     }
   },
   "orchestrator_role_ref": "builtin-role-project-manager:1",
-  "permission_context_ref": "builtin-permission-context-engineering:3"
+  "permission_context_ref": "builtin-permission-context-engineering:4",
+  "runtime_resources": {
+    "codex": "builtin-runtime-codex:1",
+    "dsh": "builtin-runtime-dsh:1"
+  }
 }

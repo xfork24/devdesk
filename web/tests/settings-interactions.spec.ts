@@ -166,8 +166,8 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   await expect(page.getByLabel("运行时后端", { exact: true })).toHaveValue(
     "dsh",
   );
-  await expect(page.getByLabel("固定运行版本", { exact: true })).toHaveValue(
-    "0.2.2-rc.1",
+  await expect(page.getByLabel("运行资源精确修订", { exact: true })).toHaveValue(
+    "builtin-runtime-dsh:1",
   );
   await page.unrouteAll({ behavior: "wait" });
 });

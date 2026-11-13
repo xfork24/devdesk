@@ -1,0 +1,31 @@
+{
+  "type": "runtime_resource",
+  "identity": "builtin-runtime-dsh",
+  "revision": 1,
+  "name": "DSH runtime inputs",
+  "scope": "global",
+  "data": {
+    "provider": "dsh",
+    "version": "0.2.2-rc.1",
+    "license": "MIT",
+    "files": [
+      {
+        "path": "Dockerfile",
+        "content": "# One complete runtime layer per version/platform, shared by all role/session workers.\nFROM node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f\nARG DSH_VERSION=0.2.2-rc.1\nRUN npm install --global --omit=dev @deepseek-ai/dsh@${DSH_VERSION} \\\n    && dsh --version \\\n    && npm cache clean --force\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates bubblewrap \\\n    && rm -rf /var/lib/apt/lists/*\nCOPY permissions/backends/dsh /opt/devdesk/dsh-policy\n# Load immutable native addons from the image; restricted profiles may keep /tmp noexec.\nENV DSH_HOME=/state/dsh DSH_MAX_TOKENS_AS_SUCCESS=false NARB_DISABLE_NATIVE_CACHE=1\nUSER 1000:1000\nWORKDIR /work\nENTRYPOINT [\"dsh\", \"--profile\", \"sdk\"]\n"
+      },
+      {
+        "path": "permissions/backends/dsh/package.json",
+        "content": "{\n  \"name\": \"@devdesk/dsh-tool-boundary\",\n  \"version\": \"0.1.0\",\n  \"type\": \"module\",\n  \"license\": \"MIT\",\n  \"engines\": { \"dsh\": \"=0.2.2-rc.1\" }\n}\n"
+      },
+      {
+        "path": "permissions/backends/dsh/tool-policy.mjs",
+        "content": "// Trusted SDK extension: consume the same immutable Permission used by Docker.\nimport { readFileSync } from 'node:fs';\nexport const name = 'devdesk-tool-boundary';\nexport const inject = ['tools'];\nexport function apply(ctx) {\n  const plan = JSON.parse(readFileSync('/run/devdesk/permission', 'utf8'));\n  const policy = plan.harness.policy.tools;\n  ctx.on('tools/execute', async (execution, next) => {\n    const allowed = policy.mode === 'all_available' ||\n      (policy.allow.includes(execution.name) && !policy.deny.includes(execution.name));\n    const escalation = execution.arguments?.sandbox_permissions;\n    if (!allowed || (plan.approval === 'never' && escalation != null)) {\n      const message = 'The frozen DevDesk Permission denies this tool or escalation.';\n      return { content: [{ type: 'text', text: message }], isError: true,\n        error: { message, info: { name: 'DevDeskToolPolicy', code: 'permission_denied' } } };\n    }\n    return next();\n  });\n}\n"
+      },
+      {
+        "path": "permissions/backends/dsh/bwrap-runner.sh",
+        "content": "#!/bin/bash\n# Public DSH runnerCommand seam. Docker already owns the outer PID namespace.\n# Keep a private tool PID namespace, but use an empty /proc: Docker's default\n# masked proc submounts intentionally prevent mounting another proc filesystem.\n# No parent environment, harness state or coordinator policy is exposed to tools.\nset -euo pipefail\nprofile=()\nwhile (($#)) && [[ \"$1\" != -- ]]; do\n  if [[ \"$1\" == --proc ]]; then\n    [[ $# -ge 2 && \"$2\" == /proc ]] || exit 64\n    profile+=(--tmpfs /proc)\n    shift 2\n  else\n    profile+=(\"$1\")\n    shift\n  fi\ndone\n[[ $# -gt 1 && \"$1\" == -- ]] || exit 64\nshift\nexec /usr/bin/bwrap --unshare-net \"${profile[@]}\" --tmpfs /state --tmpfs /run/devdesk -- \"$@\"\n"
+      }
+    ],
+    "native_releases": {}
+  }
+}

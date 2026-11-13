@@ -1,5 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useMockCodexCatalog } from "./support/model-catalog";
@@ -30,10 +30,24 @@ async function rpc(page: Page, method: string, params: any = {}) {
 
 test("内置 Delivery 全部关联内容标准并可查看确切规范", async ({ page }) => {
   await setup(page);
-  const catalog = await rpc(page, "query.configurations", {kind:"delivery_type",limit:100});
-  const specs = await rpc(page, "query.configurations", {kind:"spec",limit:100});
-  const deliveries = catalog.records.filter((r: any) => r.definition_id.startsWith("builtin-delivery-"));
-  expect(deliveries).toHaveLength(21);
+  const catalog = await rpc(page, "query.configurations", {
+    kind: "delivery_type",
+    limit: 100,
+  });
+  const specs = await rpc(page, "query.configurations", {
+    kind: "spec",
+    limit: 100,
+  });
+  const deliveries = catalog.records.filter((r: any) =>
+    r.definition_id.startsWith("builtin-delivery-"),
+  );
+  const manifest = JSON.parse(
+    readFileSync(
+      new URL("../../resources/configuration/manifest.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  expect(deliveries).toHaveLength(manifest.types.delivery_type.length);
   expect(deliveries.some((r: any) => r.name === "结构化材料")).toBe(false);
   for (const delivery of deliveries) {
     expect(delivery.spec_refs.length).toBeGreaterThan(0);
@@ -43,13 +57,20 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
       expect(spec?.data.checks.length).toBeGreaterThan(0);
     }
   }
-  await page.getByRole("button", {name:"流程与规范",exact:true}).click();
-  await page.getByRole("tab", {name:"Delivery",exact:true}).click();
-  await page.getByRole("button", {name:/^Test Report\s/}).click();
+  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
+  await page.getByRole("tab", { name: "Delivery", exact: true }).click();
+  await page.getByRole("button", { name: /^Test Report\s/ }).click();
   const report = deliveries.find((r: any) => r.name === "Test Report");
-  await expect(page.getByLabel("内容规范", {exact:true})).toHaveValues(report.spec_refs);
-  await page.getByLabel("交付内容标准", {exact:true}).locator("summary").click();
-  await expect(page.getByLabel("交付内容标准", {exact:true})).toContainText("平台 tests.run");
+  await expect(page.getByLabel("内容规范", { exact: true })).toHaveValues(
+    report.spec_refs,
+  );
+  await page
+    .getByLabel("交付内容标准", { exact: true })
+    .locator("summary")
+    .click();
+  await expect(page.getByLabel("交付内容标准", { exact: true })).toContainText(
+    "平台 tests.run",
+  );
 });
 test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", async ({
   page,
@@ -532,13 +553,10 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
     feature_id: f.id,
   });
   const lock = state.configurations.find(
-    (r: any) =>
-      r.type === "work_configuration" && r.definition_id === f.id,
+    (r: any) => r.type === "work_configuration" && r.definition_id === f.id,
   );
   expect(lock.data.schema_version).toBe(1);
-  expect(lock.data.role_agent_bindings).toEqual(
-    defaults.role_agent_bindings,
-  );
+  expect(lock.data.role_agent_bindings).toEqual(defaults.role_agent_bindings);
   const instance = state.configurations.find(
     (r: any) => r.type === "workflow_instance" && r.data.owner_id === f.id,
   );
@@ -629,6 +647,8 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
   ).toHaveText([
     "Model",
     "Harness",
+    "运行资源",
+    "调度策略",
     "MCP",
     "Skills",
     "Tools",
@@ -780,4 +800,44 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
     path: info.outputPath("delivery-reference.png"),
     fullPage: true,
   });
+});
+
+test("配置选择器可主动采用未选过的历史中间修订", async ({ page }) => {
+  await setup(page);
+  const identity = "history-skill-" + crypto.randomUUID();
+  for (let revision = 1; revision <= 3; revision++) {
+    const source = {
+      type: "skill",
+      identity,
+      revision,
+      name: "History skill",
+      scope: "global",
+      data: { body: `method ${revision}`, rules: [] },
+    };
+    const changeset = {
+      operations: [
+        revision === 1
+          ? { type: "create", source }
+          : {
+              type: "revise",
+              base_ref: `${identity}:${revision - 1}`,
+              expected_revision: 1,
+              source,
+            },
+      ],
+    };
+    const preview = await rpc(page, "configuration.change.preview", {
+      changeset,
+    });
+    await rpc(page, "configuration.change.apply", {
+      command_id: crypto.randomUUID(),
+      payload: { changeset, preview_hash: preview.preview_hash },
+    });
+  }
+  await page.getByRole("button", { name: "角色与 Agent", exact: true }).click();
+  await page.getByRole("tab", { name: "Capability", exact: true }).click();
+  const skills = page.getByLabel("Skills", { exact: true });
+  await expect(skills.locator(`option[value^="${identity}:"]`)).toHaveCount(3);
+  await skills.selectOption(`${identity}:2`);
+  await expect(skills).toHaveValues([`${identity}:2`]);
 });

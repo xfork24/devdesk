@@ -1,0 +1,37 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-configuration-transfer-stage",
+  "revision": 1,
+  "name": "预演并暂存跨库配置",
+  "scope": "global",
+  "data": {
+    "qualified_name": "configuration.transfer.stage",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "global_changeset": {
+          "type": "object",
+          "required": [
+            "operations"
+          ]
+        },
+        "project_changeset": {
+          "type": "object",
+          "required": [
+            "operations"
+          ]
+        }
+      },
+      "required": [
+        "global_changeset",
+        "project_changeset"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

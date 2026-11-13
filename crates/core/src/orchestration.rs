@@ -377,6 +377,7 @@ impl Engine {
         method: &str,
         c: &Command,
         state: &mut EngineeringState,
+        actor: &WorkflowActor,
     ) -> Result<Option<Value>> {
         if method == "workflow.decision.resolve" {
             let row = state
@@ -461,12 +462,26 @@ impl Engine {
                 json!({"id":row.id,"status":state.configuration(&row.id)?.data["status"]}),
             ));
         }
+        if !matches!(actor, WorkflowActor::Human) {
+            require(
+                ![
+                    "workflow.step.confirm",
+                    "workflow.step.approve",
+                    "workflow.decision.resolve",
+                    "orchestration.takeover",
+                ]
+                .contains(&method),
+                "非人类调用不能签署人工决定或接管",
+            )?;
+        }
+        if let Some(result) = self.workflow_driver_command(method, c, state, actor)? {
+            return Ok(Some(result));
+        }
+        self.authorize_driver_action(state, method, c, actor)?;
         if let Some(result) = self.controller_command(method, c, state)? {
             return Ok(Some(result));
         }
-        if let Some(result) =
-            self.workflow_control_command(method, c, state, &WorkflowActor::Human)?
-        {
+        if let Some(result) = self.workflow_control_command(method, c, state, actor)? {
             return Ok(Some(result));
         }
         if [
@@ -494,7 +509,7 @@ impl Engine {
                 state,
             )?;
             if let Some(result) = &result {
-                record_auxiliary_decision(state, method, c, &WorkflowActor::Human, result)?;
+                record_auxiliary_decision(state, method, c, actor, result)?;
             }
             return Ok(result);
         }
@@ -522,6 +537,7 @@ impl Engine {
         {
             return Ok(None);
         }
+        self.authorize_driver_action(state, method, c, actor)?;
         let row = state
             .configuration(c.target.as_deref().unwrap_or(""))?
             .clone();
@@ -581,7 +597,7 @@ impl Engine {
                 .payload
                 .get("value")
                 .ok_or_else(|| err("invalid_params", "缺少材料正文"))?;
-            self.validate_configured_value(&delivery.decode()?, value)?;
+            self.enforce_delivery_value(state, delivery, value)?;
             let artifact = self.artifacts.seal_scoped(
                 &MaterialOwner::Project {
                     id: instance.project_id.clone(),

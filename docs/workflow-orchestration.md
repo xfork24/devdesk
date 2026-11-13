@@ -67,3 +67,11 @@ ChangeSet 提供 12 类类型化操作（增删改步骤、绕过阶段、改依
 ## 预算与并发
 
 步骤预算含轮次/时长/重试（默认 authoring 预算 8 轮/300 秒/3 次；默认流程 Agent 步骤实际为 30 轮/1800 秒）。foreach 并发默认 1，可配置至 32（写者按 worktree 互斥）。会话并发 = min(全局额度, 项目额度) − 在跑轮次。编排唤醒有独立预算（轮次/工具调用/超时），人工等待与祖先暂停不消耗执行预算。
+
+## Rust / Agent 根实例调度
+
+项目/工作选择的 `orchestration` 包含 `mode: manual | rust | agent`，Rust 模式须明确引用 `orchestration_policy` 源修订。策略规定每轮动作上限、根实例 worker 并发上限、租约时间和可重试的结构化技术错误码/次数；缺少可信错误码、未知副作用、业务拒绝或人工门禁时等待。默认策略不开启技术重试。所有自动动作仍受冻结 Permission Context 的 allowed/human operations、步骤预算及同一 dispatch/accept/complete 内核约束。
+
+根实例的 `workflow_driver` 保存策略快照、来源和 epoch；子实例继承该控制归属。`workflow.driver.select` 是人类入口，使用根实例 revision CAS；切换撤销原经理控制代次、未派发控制意图和委托，不停止业务 worker。已有运行 worker/结果继续通过实际回执接纳。Rust tick 从分页的共同 inspect/ready 投影稳定选择动作，事务内保存决定及外部 worker 意图；外部效果由现有 intent/receipt 管线执行。每项逻辑动作有幂等键，计划和代次变化后旧动作不能生效。
+
+`query.workflow_driver` 展示模式、精确策略、epoch 和等待事项。项目管理可选择未来默认模式，流程的经理协作面可切换当前根实例。没有选择驱动的已有实例维持明确的人工控制行为。经理工作台查询/配置创作与根实例调度授权分别处理。

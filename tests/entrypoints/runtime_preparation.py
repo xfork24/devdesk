@@ -65,6 +65,14 @@ import hashlib,json,os,sys,time
 from pathlib import Path
 root=Path(os.environ['DEVDESK_DOCKER_FIXTURE']);args=sys.argv[1:]
 with (root/'calls').open('a') as f:f.write(json.dumps(args)+'\n')
+if args[0]=='rm':sys.exit(0)
+if args[0]=='run':
+    for line in sys.stdin:
+        request=json.loads(line)
+        if 'id' not in request:continue
+        result={'thread':{'id':'probe-thread'}} if request['method']=='thread/start' else {}
+        print(json.dumps({'id':request['id'],'result':result}),flush=True)
+    sys.exit(0)
 if args[0]=='info':
     if (root/'offline').exists():sys.exit(1)
     print('linux');sys.exit(0)
@@ -73,6 +81,11 @@ if args[:2]==['image','inspect']:
     file=root/key
     if not file.exists():sys.exit(1)
     print(file.read_text());sys.exit(0)
+if args[:2]==['image','tag']:
+    source=root/hashlib.sha256(args[2].encode()).hexdigest()
+    if not source.exists():sys.exit(1)
+    (root/hashlib.sha256(args[3].encode()).hexdigest()).write_text(source.read_text())
+    sys.exit(0)
 if args[0]=='build':
     tag=args[args.index('--tag')+1];context=Path(args[-1])
     assert (context/'Dockerfile').is_file()

@@ -114,12 +114,12 @@ impl Workspace {
                     "定义或默认版本已变化，请重新预览后再确认重置",
                 ));
             }
-            self.global.transact(Some((&c.command_id,&fingerprint)),&mut |s| {
-                if preview["pristine"]==true {return Ok(json!({"generation":preview["generation"],"changed":false,"counts":preview["current_counts"],"bundle_version":preview["bundle_version"]}));}
-                let result=restore_template_catalog(s,&c.command_id)?;
-                template_permission_defaults(s)?;
-                Ok(result)
-            })
+            self.configuration.reset_factory_catalog(
+                &c,
+                &fingerprint,
+                &preview,
+                &permission_profiles::permission_contract,
+            )
         })())
     }
 }

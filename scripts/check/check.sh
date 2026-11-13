@@ -4,6 +4,7 @@ if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOM
 cd "$(dirname "$0")/../.."
 ./scripts/check/check-permissions.sh
 ./scripts/check/check-defaults.sh
+./scripts/check/check-architecture.sh
 npm --prefix web run build
 cargo test --workspace --locked
 cargo build --locked -p devdesk-host

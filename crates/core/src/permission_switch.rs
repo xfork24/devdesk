@@ -200,14 +200,14 @@ impl Engine {
             let mut payload=json!({"agent":original.agent,"binding":binding,"force_new":true,"predecessor":sid,"snapshot_id":snapshot});
             if let Some(instance)=instance {payload["agent_instance_id"]=json!(instance);}
             let open=Command {command_id:format!("{}:successor",c.command_id),target:Some(original.owner_id.clone()),expected_revision:revision(s,&original.owner_id),payload};
-            let opened=self.apply_command("session.open",&open,s)?;
+            let opened=self.apply_command("session.open",&open,s,&WorkflowActor::Human)?;
             self.governance_after_command("session.open",&open,s,&opened)?;
             let next=opened["id"].as_str().ok_or_else(||err("invalid_configuration","缺少后继 Session"))?.to_owned();
             self.inherit_task_binding(s,sid,&next)?;
             let old=s.sessions.iter_mut().find(|v|v.id==sid).unwrap();
             old.lifecycle=Some(SessionLifecycle::RequiresSuccessor);old.revision+=1;
             let send=Command {command_id:c.command_id.clone(),target:Some(next.clone()),expected_revision:Some(1),payload:c.payload.clone()};
-            let mut result=self.apply_command("conversation.send",&send,s)?;
+            let mut result=self.apply_command("conversation.send",&send,s,&WorkflowActor::Human)?;
             self.governance_after_command("conversation.send",&send,s,&result)?;
             result["effective_session_id"]=json!(next);
             result["predecessor"]=json!(sid);
@@ -216,5 +216,16 @@ impl Engine {
             crate::governance::update_record(r,data);
             Ok(result)
         })
+    }
+}
+
+impl Engine {
+    pub fn replay_successor_input(&self, c: &Command, next: &str) -> Result<Value> {
+        let fp = command_fingerprint("conversation.send", c);
+        self.store.transact(Some((&c.command_id,&fp)),&mut |s|{
+        let turn=s.turns.iter().find(|t|t.session_id==next&&json!(t.client_message_id)==c.payload["client_message_id"]).ok_or_else(||err("needs_reconciliation","切换输入记录缺失"))?;
+        require(json!(turn.input)==c.payload["input"],"客户端消息 ID 被不同输入复用")?;
+        Ok(json!({"id":turn.id,"operation_id":turn.id,"replayed":true,"effective_session_id":next}))
+    })
     }
 }

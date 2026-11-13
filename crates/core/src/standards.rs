@@ -129,13 +129,19 @@ pub(crate) fn select_work_configuration(
         .ok_or_else(|| err("permission_unconfigured", "工作需要执行授权上下文"))?;
     reference(state, &context, "permission_context", &scope)?;
     let old = work_configuration(state, owner).cloned();
-    let selection = json!({"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"permission_context_ref":context,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
+    let orchestration = payload
+        .get("orchestration")
+        .or_else(|| data.get("orchestration"))
+        .cloned()
+        .unwrap_or(json!({"mode":"manual"}));
+    crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
+    let selection = json!({"orchestration":orchestration,"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"permission_context_ref":context,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
     if let Some(old) = &old {
         if old.data == selection {
             return Ok(old.clone());
         }
     }
-    let row = record(
+    let mut row = record(
         "work_configuration",
         owner.into(),
         scope,
@@ -145,6 +151,7 @@ pub(crate) fn select_work_configuration(
         selection,
         true,
     );
+    row.id = format!("work-configuration.{}:{}", owner, row.version);
     state.governance.push(row.clone());
     Ok(row)
 }

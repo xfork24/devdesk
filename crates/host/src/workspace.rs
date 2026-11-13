@@ -37,8 +37,8 @@ pub struct Workspace {
     active: RwLock<Active>,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
     switching: Mutex<()>,
-    template_gate: Mutex<()>,
-    runtime_setup: runtime_setup::RuntimeSetup,
+    template_gate: Arc<Mutex<()>>,
+    runtime_setup: session_resources::RuntimePreparation,
 }
 fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters) -> Arc<Engine> {
     let artifacts = Arc::new(FileArtifacts::new(PathBuf::from(store.root())));
@@ -46,267 +46,21 @@ fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters)
         devdesk_adapters::integrations::NativeTools::new(store.root())
             .expect("existing execution root"),
     );
-    Arc::new(Engine::new(store, artifacts, adapters.clone()).with_tool_executor(tools))
-}
-fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
-    let defaults = current_template_defaults(s)
-        .ok_or_else(|| err("configuration_required", "默认模板目录未初始化"))?;
-    let mut targets = std::collections::BTreeSet::new();
-    for r in s.governance.iter().filter(|r| {
-        r.r#type == "agent"
-            && template_record_current(s, r)
-            && template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
-    }) {
-        let agent = s.resolve_agent(&r.id)?;
-        targets.insert(agent.harness_ref);
-    }
-    for r in s
-        .governance
-        .iter()
-        .filter(|r| r.r#type == "harness" && template_record_current(s, r))
-    {
-        if template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
-            && !s.governance.iter().any(|n| {
-                n.r#type == r.r#type && n.definition_id == r.definition_id && n.version > r.version
-            })
-        {
-            targets.insert(r.id.clone());
-        }
-    }
-    let mut changes = Vec::new();
-    for (kind, id, profile) in targets
-        .into_iter()
-        .map(|id| {
-            (
-                PermissionTargetKind::Harness,
-                id,
-                defaults["harness_permission_ref"].as_str().unwrap(),
-            )
-        })
-        .chain(std::iter::once((
-            PermissionTargetKind::Sandbox,
-            defaults["sandbox_ref"]
-                .as_str()
-                .ok_or_else(|| err("invalid_template", "默认 Sandbox 缺失"))?
-                .to_owned(),
-            defaults["sandbox_permission_ref"].as_str().unwrap(),
-        )))
-    {
-        let target = permission_target(s, kind, &id)?;
-        if active_permission_binding(s, &target).is_none() {
-            changes.push(json!({"target":target,"permission_revision_id":profile,"expected_revision":0,"enforcement_contract":permission_profiles::permission_contract(s,&target)?}));
-        }
-    }
-    if !changes.is_empty() {
-        apply_permission_bindings(s, &changes)?;
-    }
-    Ok(())
+    Arc::new(
+        Engine::new(store, artifacts, adapters.clone())
+            .with_tool_executor(tools)
+            .with_configuration_backend(Arc::new(devdesk_adapters::ConfigurationBackend)),
+    )
 }
 fn workspace_defaults(e: &Engine) -> Result<()> {
-    e.store.transact(None, &mut |s| {
-        template_permission_defaults(s)?;
-        Ok(json!({"ok":true}))
-    })?;
-    Ok(())
+    e.ensure_default_permissions(&permission_profiles::permission_contract)
 }
 
 impl Workspace {
     fn open_conversation(&self, e: &Engine, command: Command) -> Result<Value> {
-        self.open_role_session(e, command, false)
+        e.open_prepared_session(&self.session_resources(), command)
     }
-    fn open_role_session(
-        &self,
-        e: &Engine,
-        mut command: Command,
-        _engineering: bool,
-    ) -> Result<Value> {
-        require(!command.command_id.is_empty(), "command_id 不能为空")?;
-        require(
-            command.payload.get("binding").is_none(),
-            "会话绑定由协调器解析，不能由客户端提供",
-        )?;
-        let fingerprint = command_fingerprint("session.open", &command);
-        if let Some(previous) = e.store.replay(&command.command_id, &fingerprint)? {
-            return Ok(previous);
-        }
-        let configured = e.configured_agent_request(&command)?;
-        self.resolve_agent_composition(e, &mut command)?;
-        let state = e.store.snapshot()?;
-        let agent = command.payload["agent"]
-            .as_str()
-            .ok_or_else(|| err("invalid_params", "需要 Agent 修订 ID"))?;
-        let definition = state
-            .definitions
-            .iter()
-            .find(|d| d.id == agent && d.agent_profile.is_some())
-            .ok_or_else(|| err("not_found", "Agent 角色修订不存在"))?;
-        let work_type: WorkType = command
-            .payload
-            .get("work_type")
-            .map(|v| serde_json::from_value(v.clone()))
-            .transpose()
-            .map_err(|_| err("invalid_params", "无效工作类型"))?
-            .unwrap_or(WorkType::Discussion);
-        require(
-            configured.is_some() || work_type == WorkType::Discussion,
-            "Workflow 执行须来自冻结的步骤意图",
-        )?;
-        let provider: HarnessProvider = serde_json::from_value(command.payload["provider"].clone())
-            .map_err(|_| err("invalid_configuration", "Agent 缺少 Harness 后端"))?;
-        let installation =
-            self.ensure_runtime(provider, command.payload["installation_id"].as_str())?;
-        if let Some(agent) = command.payload["agent_configuration"]["harness_revision_id"].as_str()
-        {
-            let h: HarnessDefinition = state.configuration(agent)?.decode()?;
-            if let Some(recipe) = &h.recipe_digest {
-                // Content match: the selected installation must originate from the exact
-                // recipe the Agent's Harness revision pinned.
-                require(
-                    permissions::installation_recipe(&installation) == *recipe,
-                    "安装配方与 Agent 锁定的 Harness 配方不匹配",
-                )?;
-            }
-        }
-        permissions::validate_runtime_version(&installation)?;
-        require(
-            self.global.runtime_integrity(&installation.id)?.verified,
-            "运行时镜像内容或平台未通过核验",
-        )?;
-        let model = command.payload["model"]
-            .as_str()
-            .ok_or_else(|| err("invalid_configuration", "Agent 缺少 Model 修订"))?
-            .to_owned();
-        require(
-            !model.trim().is_empty() && model.len() <= 160,
-            "模型 ID 无效",
-        )?;
-        let policy = if let Some(configured) = &configured {
-            let requested = if configured.access.writable_paths.is_empty() {
-                ToolPolicy::ReadOnly
-            } else if configured.access.writable_paths == ["."] {
-                ToolPolicy::WorkspaceWrite
-            } else {
-                ToolPolicy::ScopedWrite
-            };
-            requested
-        } else {
-            ToolPolicy::ReadOnly
-        };
-        require(
-            command.payload.get("writable_paths").is_none(),
-            "写目录只能由正式工程入口解析",
-        )?;
-        let writable_paths: Vec<String> = if let Some(configured) = &configured {
-            configured.access.writable_paths.clone()
-        } else if policy == ToolPolicy::ReadOnly {
-            vec![]
-        } else {
-            serde_json::from_value(command.payload["writable_paths"].clone())
-                .map_err(|_| err("invalid_params", "缺少冻结写目录"))?
-        };
-        let read_only_paths = if let Some(configured) = &configured {
-            configured.access.read_only_paths.clone()
-        } else {
-            vec![]
-        };
-        require(
-            command.payload.get("permission_overrides").is_none(),
-            "旧权限覆盖已移除",
-        )?;
-        let composition = state.resolve_agent(agent)?;
-        let selection = permission_selection(&state)?;
-        let lock = if let Some(configured) = &configured {
-            configured.permissions.clone()
-        } else {
-            resolve_permission_lock(&state, &composition.harness_ref, &selection)?
-        };
-        permission_profiles::verify_permission_installation(&state, &lock, &installation)?;
-        let resolved_permissions = permission_profiles::compile_permission_profiles(
-            &state,
-            &lock,
-            Some(ExecutionScope {
-                work_type,
-                writable_paths: writable_paths.clone(),
-                read_only_paths: read_only_paths.clone(),
-            }),
-        )?;
-        let adapter = harness::managed_adapter_identity(provider);
-        let agent_configuration: Option<AgentExecutionConfiguration> = command
-            .payload
-            .get("agent_configuration")
-            .map(|v| {
-                serde_json::from_value(v.clone())
-                    .map_err(|_| err("invalid_params", "无效 Agent 执行配置"))
-            })
-            .transpose()?;
-        let model_connection = if provider == HarnessProvider::Dsh {
-            let a = agent_configuration
-                .as_ref()
-                .ok_or_else(|| err("invalid_configuration", "缺少 Agent 执行配置"))?;
-            let m: ModelDefinition = state.configuration(&a.model_revision_id)?.decode()?;
-            let h = state.configuration(&a.harness_revision_id)?;
-            require(m.model == model, "Model 修订与执行模型不一致")?;
-            let connection = state.resolve_model_connection(&m, h)?;
-            require(
-                resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled,
-                "Sandbox 禁网，无法连接模型服务",
-            )?;
-            connection
-        } else {
-            None
-        };
-        let credential_ref = match provider {
-            HarnessProvider::Codex => Some(self.codex_auth.credential_reference()?),
-            HarnessProvider::Dsh => {
-                let connection = model_connection
-                    .as_ref()
-                    .ok_or_else(|| err("invalid_configuration", "缺少模型连接"))?;
-                let facts = state.provider_facts_any(&connection.provider)?;
-                if facts.requires_key {
-                    let vault = credentials::CredentialVault::new(Path::new(&self.global.root()))?;
-                    let status = vault.status_model_reference(
-                        &facts,
-                        self.global.model_credential_reference(&facts)?.as_deref(),
-                    )?;
-                    require(
-                        status.available,
-                        "系统凭据库不可用，请检查共享凭据助手或 Secret Service",
-                    )?;
-                    require(status.configured, format!("请先配置 {} 凭据", facts.label))?;
-                    vault.verify_model_reference(&facts, &status.reference)?;
-                    Some(status.reference)
-                } else {
-                    None
-                }
-            }
-        };
-        let model_profile_digest = model_connection
-            .as_ref()
-            .map(|c| {
-                devdesk_adapters::model_providers::dsh_model_patch(c, &model)
-                    .and_then(|patch| configuration_digest(&json!(patch)))
-            })
-            .transpose()?;
-        let mut binding = RuntimeBinding {
-            model_connection,
-            model_profile_digest,
-            agent_configuration,
-            permissions: Some(resolved_permissions),
-            installation: installation.clone(),
-            adapter_version: adapter,
-            model,
-            model_parameters: Default::default(),
-            tool_policy: policy,
-            writable_paths,
-            read_only_paths,
-            work_type,
-            configuration_digest: String::new(),
-            credential_ref,
-        };
-        binding.configuration_digest = Self::permission_runtime_digest(definition, &binding)?;
-        command.payload["binding"] = json!(binding);
-        e.execute_resolved("session.open", command, &fingerprint)
-    }
+
     pub fn open(root: &Path) -> Result<Arc<Self>> {
         Self::open_with_adapters(root, execution_adapters(root)?)
     }
@@ -337,8 +91,8 @@ impl Workspace {
             active: RwLock::new(None),
             opened: Mutex::new(BTreeMap::new()),
             switching: Mutex::new(()),
-            template_gate: Mutex::new(()),
-            runtime_setup: runtime_setup::RuntimeSetup::default(),
+            template_gate: Arc::new(Mutex::new(())),
+            runtime_setup: session_resources::RuntimePreparation::default(),
         });
         let mut offset = 0;
         loop {
@@ -377,105 +131,7 @@ impl Workspace {
             .ok_or_else(|| err("project_required", "请先创建或打开项目"))
     }
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
-        let existing = e.store.snapshot()?;
-        // One global directory indexes project-owned Role identities without changing their owner or revision.
-        self.global.transact(None, &mut |directory| {
-            for role in existing
-                .governance
-                .iter()
-                .filter(|r| r.r#type == "role" || r.r#type == "role_retirement")
-            {
-                if let Some(old) = directory.governance.iter().find(|r| r.id == role.id) {
-                    require(old.content_hash == role.content_hash, "Role 目录摘要冲突")?;
-                } else {
-                    directory.governance.push(role.clone());
-                }
-            }
-            Ok(Value::Null)
-        })?;
-        let shared = self.global.snapshot()?;
-        if existing.projects.iter().any(|p| p.execution_mode != "live") {
-            return Ok(());
-        }
-        if template_catalog_state(&shared) == template_catalog_state(&existing)
-            && shared
-                .governance
-                .iter()
-                .filter(|r| {
-                    r.immutable
-                        && (r.r#type == "role"
-                            || r.r#type == "role_retirement"
-                            || devdesk_core::configuration_visible(
-                                &shared,
-                                r,
-                                e.store.project_id().as_deref(),
-                            ))
-                })
-                .all(|r| {
-                    existing
-                        .governance
-                        .iter()
-                        .any(|v| v.id == r.id && v.content_hash == r.content_hash)
-                })
-            && shared.definitions.iter().all(|d| {
-                existing.definitions.iter().any(|v| {
-                    v.id == d.id
-                        && serde_json::to_value(v).unwrap() == serde_json::to_value(d).unwrap()
-                })
-            })
-            && shared
-                .harnesses
-                .iter()
-                .all(|h| existing.harnesses.iter().any(|v| v.id == h.id))
-            && shared
-                .sandboxes
-                .iter()
-                .all(|b| existing.sandboxes.iter().any(|v| v.id == b.id))
-        {
-            return Ok(());
-        }
-        e.store.transact(None, &mut |s| {
-            for r in shared.governance.iter().filter(|r| {
-                r.immutable
-                    && (r.r#type == "role"
-                        || r.r#type == "role_retirement"
-                        || devdesk_core::configuration_visible(
-                            &shared,
-                            r,
-                            e.store.project_id().as_deref(),
-                        ))
-            }) {
-                if let Some(old) = s.governance.iter().find(|v| v.id == r.id) {
-                    require(old.content_hash == r.content_hash, "共享配置摘要冲突")?;
-                } else {
-                    s.governance.push(r.clone());
-                }
-            }
-            // Revisions are immutable. Copies keep historical foreign keys self-contained.
-            for d in &shared.definitions {
-                if let Some(old) = s.definitions.iter().find(|old| old.id == d.id) {
-                    require(
-                        serde_json::to_value(old).unwrap() == serde_json::to_value(d).unwrap(),
-                        "共享定义修订发生冲突",
-                    )?;
-                } else {
-                    s.definitions.push(d.clone());
-                }
-            }
-            for h in &shared.harnesses {
-                if !s.harnesses.iter().any(|old| old.id == h.id) {
-                    s.harnesses.push(h.clone());
-                }
-            }
-            for b in &shared.sandboxes {
-                if !s.sandboxes.iter().any(|old| old.id == b.id) {
-                    s.sandboxes.push(b.clone());
-                }
-            }
-            copy_template_catalog(&shared, s)?;
-            Ok(json!({"ok":true}))
-        })?;
-        Ok(())
+        e.sync_shared_configuration(self.global.as_ref())
     }
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
         let root = PathBuf::from(self.global.root());
@@ -495,12 +151,22 @@ impl Workspace {
             Arc::new(SqliteStore::open_project(&root, id)?),
             &self.adapters,
         );
+        let e = Arc::new(
+            Arc::try_unwrap(e)
+                .map_err(|_| err("storage", "装配项目服务失败"))?
+                .with_manager_services(ManagerServices {
+                    shared: self.configuration.clone(),
+                    inventory: self.global.clone(),
+                    gate: self.template_gate.clone(),
+                }),
+        );
         if !creating {
             require(
                 e.store.snapshot()?.projects.len() == 1,
                 "项目数据库未包含有效 Project",
             )?;
         }
+        self.configuration.recover_configuration_transfers(&e)?;
         self.sync_configuration(&e)?;
         e.bootstrap()?;
         e.recover_tool_receipts()?;
@@ -588,9 +254,14 @@ impl Workspace {
         let coordinated = template_definition_write(method)
             || template_catalog_query(method)
             || method == "configuration.templates.reset"
+            || ["project.configuration.update", "work.configuration.update"].contains(&method)
             || matches!(
                 method,
-                "project.create" | "project.open" | "project.open_github"
+                "project.create"
+                    | "project.open"
+                    | "project.open_github"
+                    | "workflow.start"
+                    | "feature.create"
             );
         let _guard = if coordinated {
             Some(
@@ -733,7 +404,21 @@ impl Workspace {
             return self.open_github_project(params);
         }
         if method == "runtime.preparation_status" {
-            return Ok(self.runtime_setup.status());
+            let mut status = self.runtime_setup.status();
+            status["intents"] = json!(self.global.runtime_preparation_records()?);
+            return Ok(status);
+        }
+        if method == "runtime.preparation_cancel" {
+            return self
+                .global
+                .cancel_runtime_preparation(params["recipe_digest"].as_str().unwrap_or(""));
+        }
+        if method == "runtime.preparation_reconcile" {
+            let digest = params["recipe_digest"].as_str().unwrap_or("");
+            let provider = self.global.preparation_provider(digest)?;
+            return self.runtime_setup.run(&provider, |_| {
+                self.global.reconcile_runtime_preparation(digest)
+            });
         }
         if method == "runtime.prepare" {
             let provider = serde_json::from_value(params["provider"].clone())
@@ -842,12 +527,17 @@ impl Workspace {
                 let status=vault.status_model_reference(&p,reference.as_deref()).ok();
                 json!({"id":p.id,"label":p.label,"configured":status.as_ref().is_some_and(|s|s.configured),"available":status.as_ref().is_some_and(|s|s.available),"auth_kind":if p.requires_key{"api_key"}else{"none"}})
             }).collect();
+            let recipe_state = if let Ok(engine) = self.active_engine(params["project_id"].as_str())
+            {
+                engine.store.snapshot()?
+            } else {
+                self.global.snapshot()?
+            };
+            let recipes: Vec<_> = recipe_state.governance.iter().filter(|r|r.r#type == "runtime_resource" && !devdesk_core::configuration_retired(&recipe_state, r))
+                .filter_map(|r| r.decode::<RuntimeResourceDefinition>().ok().map(|d|json!({"reference":r.id,"name":r.name,"provider":d.provider,"version":d.version,"recipe_digest":d.recipe_digest(),"os":"linux","arch":std::env::consts::ARCH}))).collect();
             return Ok(
                 json!({"default_harness":self.global.default_harness()?,"host_os":std::env::consts::OS,"host_arch":std::env::consts::ARCH,
-                "installations":installations,"model_providers":providers,"recipes":[
-                    {"provider":"codex","version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest()},
-                    {"provider":"dsh","version":devdesk_adapters::runtime_preparation::DSH_VERSION,"os":"linux","arch":std::env::consts::ARCH,"recipe_digest":devdesk_adapters::runtime_preparation::default_dsh_recipe_digest()}
-                ]}),
+                "installations":installations,"model_providers":providers,"recipes":recipes,"drivers":devdesk_core::driver_capabilities()}),
             );
         }
         if method == "runtime.register" {
@@ -1180,29 +870,7 @@ impl Workspace {
             if should_stop() {
                 break;
             }
-            let experiences: Vec<_> = e
-                .store
-                .snapshot()?
-                .governance
-                .into_iter()
-                .filter(|r| r.r#type == "experience")
-                .collect();
-            if !experiences.is_empty() {
-                let known = self.global.snapshot()?;
-                if experiences
-                    .iter()
-                    .any(|r| !known.governance.iter().any(|old| old.id == r.id))
-                {
-                    self.global.transact(None, &mut |s| {
-                        for r in &experiences {
-                            if !s.governance.iter().any(|old| old.id == r.id) {
-                                s.governance.push(r.clone());
-                            }
-                        }
-                        Ok(Value::Null)
-                    })?;
-                }
-            }
+            e.publish_experience_index(self.global.as_ref())?;
             let next = e.conversation_running()?;
             total = total - running[index] + next;
             running[index] = next;
@@ -1254,7 +922,7 @@ mod tests {
             "project.create",
             None,
             None,
-            &devdesk_domain::id(),
+            &devdesk_core::id(),
             json!({"title":title}),
         )["id"]
             .as_str()
@@ -1267,7 +935,7 @@ mod tests {
             "project.open",
             None,
             Some(id),
-            &devdesk_domain::id(),
+            &devdesk_core::id(),
             json!({}),
         );
     }
@@ -1477,7 +1145,7 @@ mod tests {
         assert!(
             w.dispatch(
                 "project.open",
-                json!({"command_id":"missing","target":devdesk_domain::id(),"payload":{}})
+                json!({"command_id":"missing","target":devdesk_core::id(),"payload":{}})
             )
             .is_err()
         );
@@ -1724,7 +1392,7 @@ mod adapter_injection_tests {
         };
         let harness = create_resource(
             "harness.create",
-            json!({"name":"Explicit pinned Harness","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"capabilities":[]}}),
+            json!({"name":"Explicit pinned Harness","runtime_resource_ref":"builtin-runtime-codex:1","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"capabilities":[]}}),
         );
         let capability = create_resource(
             "capability.create",
@@ -1742,7 +1410,13 @@ mod adapter_injection_tests {
             expected_revision: Some(1),
             payload: json!({"agent":agent["id"]}),
         };
-        w.resolve_agent_composition(&e, &mut command).unwrap();
+        e.resolve_session_composition(
+            &crate::test_runtime::ResourceFixture {
+                store: w.global.as_ref(),
+            },
+            &mut command,
+        )
+        .unwrap();
         assert!(command.payload.get("permission_overrides").is_none());
         let state = e.store.snapshot().unwrap();
         state.resolve_agent(agent["id"].as_str().unwrap()).unwrap();
@@ -1876,5 +1550,15 @@ impl FrozenConfiguredPlanForTests for EngineeringState {
                     && r.data["parent_execution_id"].is_null()
             })
             .and_then(|r| serde_json::from_value(r.data["plan"].clone()).ok())
+    }
+}
+
+impl Workspace {
+    pub(super) fn session_resources(&self) -> session_resources::SessionResourceAdapter<'_> {
+        session_resources::SessionResourceAdapter {
+            global: &self.global,
+            codex_auth: &self.codex_auth,
+            preparation: &self.runtime_setup,
+        }
     }
 }

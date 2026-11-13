@@ -5,8 +5,9 @@ from pathlib import Path
 from client import Client
 
 from engineering_evidence import verify_evidence
+from export_evidence import export as export_project_evidence
 
-parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--github-repo',required=True);parser.add_argument('--report-directory',type=Path);parser.add_argument('--resume',action='store_true');parser.add_argument('--unattended',action='store_true',help='Fresh run: fail on supplemental input or any Human gate; no probe intervention');parser.add_argument('--guidance',default='');parser.add_argument('--timeout-seconds',type=int,default=10800);args=parser.parse_args();assert args.timeout_seconds>0;assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset';assert 'test' in args.github_repo.lower(), 'use a dedicated test repository'
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--github-repo',required=True);parser.add_argument('--dedicated-repository',action='store_true',help='Explicitly designate this repository for test branches, commits and PRs');parser.add_argument('--report-directory',type=Path);parser.add_argument('--resume',action='store_true');parser.add_argument('--unattended',action='store_true',help='Fresh run: fail on supplemental input or any Human gate; no probe intervention');parser.add_argument('--guidance',default='');parser.add_argument('--timeout-seconds',type=int,default=10800);args=parser.parse_args();assert args.timeout_seconds>0;assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset';assert args.dedicated_repository or 'test' in args.github_repo.lower(), 'designate the dedicated test repository explicitly'
 OUT=args.report_directory or Path(tempfile.mkdtemp(prefix='devdesk-engineering-v5-'));OUT.mkdir(parents=True,exist_ok=True);OUT=OUT.resolve();print('Evidence:',OUT,flush=True)
 assert args.resume == (OUT/'context.json').exists(), 'select --resume for an existing acceptance dataset'
 private_binary=OUT/'devdesk-host';shutil.copy2(args.binary.resolve(),private_binary)
@@ -70,7 +71,7 @@ try:
   goal=f'''本次验收事实已经全部确定，无需等待用户补充：在已有仓库新增依赖免费的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 `Hello, <trimmed>!`；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；本次明确两个 TDD 增量：先 AC-GREET 的问候与 trim，再 AC-INVALID 的无效输入拒绝，每个增量分别保留真实 Red 和 Green。独立 tests 断言保持只读，自有增量测试按这两个冻结增量逐步增加并分别采集 Red/Green；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。测试使用 node:test、node:assert/strict，无 npm 安装、无联网、无外部依赖。测试 import 为 ../../{module}。模块或导出缺失属于运行前置条件错误，不使用动态 import 的 catch、assert.fail 或伪造返回值将它包装成业务 Red；由 Task Workflow 的 red_baseline 步骤准备可调用的最小接口，平台 Red 必须来自真实业务断言差异。实施逐次原始日志及测试/源码内容快照通过必需 evidence 输出交付，不能只提交临时路径或摘要。每轮采集真实 run 后，将该轮完整结构化 run JSON 输出到原生命令工具的 stdout，保留在工具观察账本中，再将相同记录汇总到 evidence；不要只在最终模型回答中补写记录。Task 配方仅运行 {task_test}；Feature 和最终候选配方运行 {task_test} 与 {feature_test} 两个文件。固定 Node TestRecipe 的 runner=node_test、image={image}、timeout_seconds=60。测试、实现、文档和独立评审必须按各自 Skill 和当前 Step 合同真实完成，不能把计划、模型自述或未运行内容当作工具回执。业务文档通过当前输出端口交付。README 修改是可选项，不属于本次必填交付物；规划和评审不得把它升级为新增完成条件，文档节点为只读时必须通过 result 端口交付完整文档。'''
   assert all(step.get('confirmation','automatic')=='automatic' for step in workflow['steps'])
   published={'id':defaults['workflow_ref']};p=c.rpc('query.workspace')['active_project']
-  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'permission_context_ref':defaults['permission_context_ref']})
+  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'permission_context_ref':defaults['permission_context_ref'],'orchestration':{'mode':'agent'}})
   feature=c.command('feature.create',payload={'project_id':project,'title':'Workflow v6 greeting '+suffix,'configuration_revision_id':configuration['id']})['id']
   (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':True,'required_increment_pairs':2,'unattended':args.unattended},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
   initial=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=initial['record']['id']
@@ -127,7 +128,18 @@ except SystemExit:
 except BaseException as error:
  (OUT/'failure.txt').write_text(str(error));raise
 finally:
+ prior_error=sys.exc_info()[0] is not None
  if child.poll() is None:child.send_signal(signal.SIGINT);child.wait(timeout=30)
  shutil.rmtree(OUT/'data/credentials',ignore_errors=True)
  for private_auth in (OUT/'data').rglob('auth.json'):private_auth.unlink(missing_ok=True)
  print('Evidence:',OUT,flush=True)
+
+ if 'c' in globals() and c.project:
+  try:
+   archive=OUT/('project-evidence-'+str(time.time_ns()))
+   manifest=export_project_evidence(OUT/'data',c.project,archive,private_binary)
+   with (OUT/'evidence-index.jsonl').open('a') as index:index.write(json.dumps({'archive':str(archive),'project':c.project,'artifacts_verified':manifest['artifacts_verified']})+'\n')
+   if not manifest['artifacts_verified']:raise RuntimeError('Archived artifact integrity failed')
+  except Exception as archive_error:
+   (OUT/'archive-failure.txt').write_text(str(archive_error)+'\n')
+   if not prior_error:raise

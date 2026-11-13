@@ -7,105 +7,39 @@ use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
-include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Manifest {
-    #[serde(rename = "schema_version")]
-    _schema_version: u32,
-    bundle_version: String,
-    types: BTreeMap<String, Vec<String>>,
-    defaults: String,
+/// Product-neutral factory data installed by the outer resource loader.
+#[derive(Debug, Clone)]
+pub struct ConfigurationBundle {
+    pub bundle_version: String,
+    pub types: BTreeMap<String, Vec<String>>,
+    pub entries: Vec<ConfigurationRecord>,
+    pub defaults: Value,
+    pub hash: String,
 }
-struct TemplateEntry {
-    template_key: String,
-    record: Value,
-}
-struct Bundle {
-    manifest: Manifest,
-    entries: Vec<TemplateEntry>,
-    defaults: Value,
-    hash: String,
-}
-fn resource(path: &str) -> Result<&'static str> {
-    require(
-        !path.is_empty()
-            && std::path::Path::new(path)
-                .components()
-                .all(|p| matches!(p, std::path::Component::Normal(_))),
-        "模板资源路径越界",
-    )?;
-    TEMPLATE_FILES
-        .iter()
-        .find(|(p, _)| *p == path)
-        .map(|(_, v)| *v)
-        .ok_or_else(|| err("invalid_template", format!("缺少模板文件 {path}")))
-}
-fn load_bundle() -> Result<Bundle> {
-    let manifest: Manifest = serde_json::from_str(resource("manifest.json")?)
-        .map_err(|e| err("invalid_template", e.to_string()))?;
-    let mut entries = Vec::new();
-    let mut keys = BTreeSet::new();
-    let mut hashed = BTreeMap::new();
-    for (kind, paths) in &manifest.types {
-        for path in paths {
-            let body = resource(path)?;
-            hashed.insert(path.clone(), body.to_owned());
-            let mut source: SourceDefinition = serde_json::from_str(body)
-                .map_err(|e| err("invalid_template", format!("{path}: {e}")))?;
-            require(source.r#type == *kind, "资源分类与类型不一致")?;
-            // Markdown is owned source text, read once into its owning definition.
-            let object = source
-                .data
-                .as_object_mut()
-                .ok_or_else(|| err("invalid_template", "配置正文必须为对象"))?;
-            let fields: Vec<_> = object
-                .keys()
-                .filter(|key| key.ends_with("_file"))
-                .cloned()
-                .collect();
-            for field in fields {
-                let filename = object
-                    .remove(&field)
-                    .and_then(|v| v.as_str().map(str::to_owned))
-                    .ok_or_else(|| err("invalid_template", "正文文件引用无效"))?;
-                let parent = std::path::Path::new(path).parent().unwrap();
-                let file = parent.join(filename);
-                let name = file.to_str().unwrap();
-                let text = resource(name)?;
-                hashed.insert(name.to_owned(), text.to_owned());
-                object.insert(field.trim_end_matches("_file").into(), json!(text));
-            }
-            let record = source.into_record()?;
-            require(keys.insert(record.id.clone()), "源定义修订重复")?;
-            entries.push(TemplateEntry {
-                template_key: record.id.clone(),
-                record: json!(record),
-            });
-        }
+static BUNDLE: OnceLock<ConfigurationBundle> = OnceLock::new();
+pub fn install_configuration_bundle(bundle: ConfigurationBundle) -> Result<()> {
+    if let Some(current) = BUNDLE.get() {
+        require(current.hash == bundle.hash, "出厂资源已初始化为另一内容")?;
+        return Ok(());
     }
-    let defaults: Value = serde_json::from_str(resource(&manifest.defaults)?)
-        .map_err(|e| err("invalid_template", e.to_string()))?;
-    let hash = configuration_hash(&json!({"sources": hashed, "defaults": defaults}));
-    Ok(Bundle {
-        manifest,
-        entries,
-        defaults,
-        hash,
-    })
+    let hash = bundle.hash.clone();
+    if BUNDLE.set(bundle).is_err() {
+        require(
+            BUNDLE.get().is_some_and(|b| b.hash == hash),
+            "出厂资源并发初始化冲突",
+        )?;
+    }
+    Ok(())
 }
-fn bundle() -> Result<&'static Bundle> {
-    static BUNDLE: OnceLock<Result<Bundle>> = OnceLock::new();
+fn bundle() -> Result<&'static ConfigurationBundle> {
     BUNDLE
-        .get_or_init(load_bundle)
-        .as_ref()
-        .map_err(Clone::clone)
+        .get()
+        .ok_or_else(|| err("configuration_required", "外层尚未提供出厂配置资源"))
 }
 pub fn template_bundle_info() -> Result<Value> {
     let b = bundle()?;
     Ok(
-        json!({"bundle_version":b.manifest.bundle_version,"bundle_hash":b.hash,"types":b.manifest.types.iter().map(|(k,v)|(k.clone(),json!(v.len()))).collect::<serde_json::Map<String,Value>>()}),
+        json!({"bundle_version":b.bundle_version,"bundle_hash":b.hash,"types":b.types.iter().map(|(k,v)|(k.clone(),json!(v.len()))).collect::<serde_json::Map<String,Value>>()}),
     )
 }
 fn materialize(
@@ -115,9 +49,8 @@ fn materialize(
     let mut s = EngineeringState::default();
     let mut origins = Vec::new();
     for entry in &b.entries {
-        let r: ConfigurationRecord = serde_json::from_value(entry.record.clone())
-            .map_err(|e| err("invalid_template", e.to_string()))?;
-        origins.push((r.id.clone(), entry.template_key.clone()));
+        let r = entry.clone();
+        origins.push((r.id.clone(), entry.id.clone()));
         s.governance.push(r);
     }
     s.refresh_configuration_views()?;
@@ -229,7 +162,7 @@ fn register_existing_members(s: &mut EngineeringState) {
 
 fn set_state(s: &mut EngineeringState, generation: u64, defaults: Value) -> Result<()> {
     let b = bundle()?;
-    let data = json!({"generation":generation,"initial_generation":TEMPLATE_INITIAL_GENERATION,"bundle_version":b.manifest.bundle_version,"bundle_hash":b.hash,"defaults":defaults});
+    let data = json!({"generation":generation,"initial_generation":TEMPLATE_INITIAL_GENERATION,"bundle_version":b.bundle_version,"bundle_hash":b.hash,"defaults":defaults});
     if let Some(state) = s
         .governance
         .iter_mut()
@@ -307,10 +240,8 @@ pub fn initialize_template_catalog(s: &mut EngineeringState) -> Result<()> {
         let Some(r) = s.governance.iter().find(|r| r.id == id).cloned() else {
             continue;
         };
-        let source = b.entries.iter().find(|e| e.template_key == key).unwrap();
-        let is_source = r
-            == serde_json::from_value::<ConfigurationRecord>(source.record.clone())
-                .expect("bundled record");
+        let source = b.entries.iter().find(|e| e.id == key).unwrap();
+        let is_source = r == *source;
         add_member(
             s,
             &r,
@@ -377,7 +308,7 @@ pub fn restore_template_catalog(s: &mut EngineeringState, command_id: &str) -> R
 
     set_state(s, generation, defaults)?;
     let counts = template_catalog_counts(s);
-    let result = json!({"generation":generation,"previous_generation":old,"bundle_version":b.manifest.bundle_version,"bundle_hash":b.hash,"counts":counts,"changed":true,"receipt_id":format!("template-reset:{command_id}")});
+    let result = json!({"generation":generation,"previous_generation":old,"bundle_version":b.bundle_version,"bundle_hash":b.hash,"counts":counts,"changed":true,"receipt_id":format!("template-reset:{command_id}")});
     let mut receipt = record(
         "template_reset_receipt",
         command_id.into(),
@@ -493,4 +424,42 @@ pub fn pinned_template_records(
 
 pub fn current_template_defaults(s: &EngineeringState) -> Option<Value> {
     template_catalog_state(s).map(|r| r.data["defaults"].clone())
+}
+
+#[cfg(test)]
+mod portable_bundle_tests {
+    use super::*;
+    #[test]
+    fn an_outer_bundle_initializes_a_catalog_without_product_files() {
+        let source = SourceDefinition {
+            r#type: "skill".into(),
+            identity: "portable-skill".into(),
+            revision: 1,
+            name: "Portable".into(),
+            scope: Scope::global(),
+            refs: References::new(),
+            data: json!({"body":"A product-independent method"}),
+        }
+        .into_record()
+        .unwrap();
+        install_configuration_bundle(ConfigurationBundle {
+            bundle_version: "arbitrary-label".into(),
+            types: BTreeMap::from([("skill".into(), vec!["not-a-real-file".into()])]),
+            entries: vec![source],
+            defaults: json!({}),
+            hash: "unit-test-bundle".into(),
+        })
+        .unwrap();
+        let mut state = EngineeringState::default();
+        initialize_template_catalog(&mut state).unwrap();
+        assert_eq!(
+            state.configuration("portable-skill:1").unwrap().data["body"],
+            "A product-independent method"
+        );
+        assert_eq!(template_catalog_generation(&state), 1);
+        assert_eq!(
+            template_bundle_info().unwrap()["bundle_version"],
+            "arbitrary-label"
+        );
+    }
 }

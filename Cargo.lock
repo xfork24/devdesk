@@ -289,9 +289,9 @@ name = "devdesk-core"
 version = "0.2.0"
 dependencies = [
  "devdesk-domain",
- "jsonschema",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -313,7 +313,6 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror",
  "url",
- "uuid",
 ]
 
 [[package]]
