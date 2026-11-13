@@ -10,7 +10,11 @@ from export_evidence import export as export_project_evidence
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--github-repo',required=True);parser.add_argument('--dedicated-repository',action='store_true',help='Explicitly designate this repository for test branches, commits and PRs');parser.add_argument('--report-directory',type=Path);parser.add_argument('--resume',action='store_true');parser.add_argument('--unattended',action='store_true',help='Fresh run: fail on supplemental input or any Human gate; no probe intervention');parser.add_argument('--guidance',default='');parser.add_argument('--timeout-seconds',type=int,default=10800);args=parser.parse_args();assert args.timeout_seconds>0;assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset';assert args.dedicated_repository or 'test' in args.github_repo.lower(), 'designate the dedicated test repository explicitly'
 OUT=args.report_directory or Path(tempfile.mkdtemp(prefix='devdesk-engineering-v5-'));OUT.mkdir(parents=True,exist_ok=True);OUT=OUT.resolve();print('Evidence:',OUT,flush=True)
 assert args.resume == (OUT/'context.json').exists(), 'select --resume for an existing acceptance dataset'
+if (OUT/'failure.txt').exists():(OUT/'failure.txt').rename(OUT/('failure-before-launch-'+str(time.time_ns())+'.txt'))
 private_binary=OUT/'devdesk-host';shutil.copy2(args.binary.resolve(),private_binary)
+attempt=OUT/'attempts'/str(time.time_ns());attempt.mkdir(parents=True)
+for name in [Path(__file__).name,'client.py','engineering_evidence.py','export_evidence.py']:shutil.copy2(Path(__file__).parent/name,attempt/name)
+(attempt/'ATTEMPT.json').write_text(json.dumps({'resume':args.resume,'unattended':args.unattended,'timeout_seconds':args.timeout_seconds,'binary_sha256':hashlib.sha256(private_binary.read_bytes()).hexdigest(),'guidance':args.guidance},ensure_ascii=False,indent=2))
 if (OUT/'host.log').exists():(OUT/'host.log').rename(OUT/('host-before-launch-'+str(time.time_ns())+'.log'))
 child=subprocess.Popen([str(private_binary),'--data',str(OUT/'data'),'--port','0'],stdout=(OUT/'host.log').open('w'),stderr=subprocess.STDOUT)
 try:
@@ -23,10 +27,12 @@ try:
  else:raise TimeoutError('Host startup')
  print(f'Host ready in {time.monotonic()-startup_started:.1f}s',flush=True)
  c=Client(urls[0]);auth=OUT/'data/credentials/codex/auth.json';auth.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(args.codex_auth_source.resolve(),auth);auth.chmod(0o600)
- recoverable_failures=set()
+ failure_observed={}
  if args.resume:
   context=json.loads((OUT/'context.json').read_text());project=context['project'];feature=context['feature'];goal=context['goal'];c.open(project)
-  (OUT/'failure.txt').rename(OUT/('failure-before-resume-'+str(time.time_ns())+'.txt')) if (OUT/'failure.txt').exists() else None
+  context.setdefault('initially_unattended',context.get('unattended',False));context['unattended']=False
+  context.setdefault('resumptions',[]).append({'time_ns':time.time_ns(),'binary_sha256':hashlib.sha256(private_binary.read_bytes()).hexdigest(),'classification':'same-dataset recovery; not an uninterrupted unattended run'})
+  (OUT/'context.json').write_text(json.dumps(context,ensure_ascii=False,indent=2))
   root_view=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=root_view['record']['id'];manager=c.rpc('query.orchestration',{'root_instance_id':root_id})['record']['id']
   if root_view['runtime']['status']=='completed':
    # A verifier correction must not take over or reopen a successfully finished
@@ -49,7 +55,6 @@ try:
    return all(t['status'] not in ['queued','dispatching','running','waiting_interaction','needs_reconciliation'] for t in session['turns']) and all(e['writer_revoked'] for e in session['executions'])
   c.wait(lambda:None,manager_stopped,120)
   state=c.rpc('query.workspace',{'feature_id':feature})
-  recoverable_failures={e['id'] for r in state['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id for e in r['data']['steps'] if e['status']=='failed'}
   for row in [r for r in state['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id]:
    for interrupted in row['data']['steps']:
     if interrupted['status'] not in ['needs_reconciliation','cancelled']:continue
@@ -78,12 +83,14 @@ try:
   manager=c.command('orchestration.open',root_id,initial['record']['revision'],{})['id']
   m=c.rpc('query.orchestration',{'id':manager})['record']
  c.command('orchestration.input',manager,m['revision'],{'epoch':m['data']['epoch'],'input':'业务 Agent 不会继承你的控制会话。派发需求前先检查输入，必要时通过 workflow.change.preview/apply 将下列完整业务事实绑定到需求节点的明确输入；不得让业务节点因缺少已经给出的事实而等待人工补充。请按当前默认 Feature 工作流组织完整交付，包括 Task 子流程，使用原生工具明确派发、接纳、完成每个实例。遵守全部测试、独立评审及当前 Plan 的确认策略，不绕过、不豁免任何条件。默认 automatic 不创建人工签署，但仍须通过 Harness 显式接纳；只有实际冻结 Plan 为 human 时由验收入口处理精确签署。可使用 workflow.segment.dispatch 有界委托当前已知的自动步骤，逐一列出确切节点；每个子流程仍需你明确 complete。碰到拒绝、人工门禁或异常时重新决策，不得跨过。只运行一个 Task。业务目标：'+goal+'\n补充执行指导：'+args.guidance})
- last=None;confirmed=set();inputs=set();deadline=time.monotonic()+args.timeout_seconds;recovery_deadline=time.monotonic()+600
+ last=None;confirmed=set();inputs=set();deadline=time.monotonic()+args.timeout_seconds;manager_progress=None;last_manager_progress=time.monotonic()
  while time.monotonic()<deadline:
   view=c.rpc('query.workspace',{'feature_id':feature});rows=[r for r in view['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id];root=next(r for r in rows if r['data']['parent_execution_id'] is None)
   status=[(r['id'],s['path'],s['status'],s['reason']) for r in rows for s in r['data']['steps'] if s['status'] not in ['completed','queued','skipped']]
   if status!=last:print(status,flush=True);last=status
   manager_view=c.rpc('query.orchestration',{'id':manager});(OUT/'latest-manager.json').write_text(json.dumps(manager_view,ensure_ascii=False,indent=2))
+  progress=[(r['id'],r['data'].get('status')) for r in manager_view['calls']]
+  if progress!=manager_progress:manager_progress=progress;last_manager_progress=time.monotonic()
   if manager_view['record']['data']['status'] in ['failed','needs_reconciliation','budget_exhausted']:raise RuntimeError(manager_view['record']['data'])
   if args.unattended:
    assert manager_view['record']['data']['status'] in ['active','closed'], 'Unattended controller paused for intervention'
@@ -91,9 +98,12 @@ try:
   (OUT/'latest.json').write_text(json.dumps(view,ensure_ascii=False,indent=2))
   for row in rows:
    for step in row['data']['steps']:
-    if step['status']!='failed':recoverable_failures.discard(step['id'])
     if step['status'] in ['failed','needs_reconciliation','cancelled']:
-     if step['status']=='failed' and step['id'] in recoverable_failures and time.monotonic()<recovery_deadline:continue
+     if step['status']=='failed':
+      # Observe the actual configured manager's recovery within its budget. The
+      # probe never retries, changes a result, or relaxes a completion condition.
+      first=failure_observed.setdefault(step['id'],time.monotonic())
+      if time.monotonic()-max(first,last_manager_progress)<600:continue
      detail=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'failed-instance.json').write_text(json.dumps(detail,ensure_ascii=False,indent=2));raise RuntimeError((step['path'],step['status'],step['reason']))
     if step['status']=='waiting_input':
      if args.unattended:raise RuntimeError('Unattended workflow requested supplemental input: '+step['path'])

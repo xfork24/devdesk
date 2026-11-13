@@ -27,3 +27,7 @@
 ## 5. 出厂配置自洽
 
 `resources/configuration` 的 manifest ↔ 文件 ↔ defaults 引用 ↔ 文件归属（md 正文与未发布 json 均不得游离）由 `scripts/py/check-defaults.py` 校验（入口 `scripts/check/check-defaults.sh`，接入 `check.sh`）——这是防止历史修订/孤儿文件重新堆积（它们仍会被 build.rs 嵌入二进制成死重）的唯一关卡；结构校验在编译期（build.rs schema），组合与引用校验在测试期（materialize）。
+
+## 6. 证据定位与引文
+
+`EvidenceLocation` 绑定确切 `source_ref`、`value_digest` 和定位器。可选 `quote` 必须等于定位器选中的完整文本；仅仅出现在该范围内不满足合同。空 JSON pointer 选择完整冻结输入，因此引用文档中的一句话时，应使用对应的行/字符范围，或省略可选引文。行号从 1 开始且包含末行；字符位置按 Unicode 字符从 0 开始，末端不包含在范围中。模型输出 Schema 与检查报告说明使用领域层的同一条引文说明，校验器仍拒绝范围和引文不一致的结果。

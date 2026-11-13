@@ -3,6 +3,7 @@ use crate::*;
 use std::collections::BTreeSet;
 pub const SPEC_CHECKER_ID: &str = "spec-primitives/v1";
 pub const SPEC_VALUE_LIMIT: usize = 8 * 1024 * 1024;
+pub const EVIDENCE_QUOTE_INSTRUCTIONS: &str = "Optional. If present, quote must equal the entire selected text, not merely occur within it. An empty JSON pointer selects the whole frozen input. For a short quotation, select its exact lines/characters range, or omit quote. Do not put a sentence quote on a whole-document pointer.";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MachineAssertion {
@@ -130,7 +131,7 @@ impl EvidenceLocation {
     /// The same bounded primitive shape must be visible to producers before admission.
     pub fn json_schema() -> Value {
         serde_json::json!({"type":"object","required":["source_ref","value_digest","locator"],"additionalProperties":false,
-        "properties":{"source_ref":{"type":"string","minLength":1},"value_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"quote":{"type":"string","maxLength":4096},
+        "properties":{"source_ref":{"type":"string","minLength":1},"value_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"},"quote":{"type":"string","maxLength":4096,"description":EVIDENCE_QUOTE_INSTRUCTIONS},
             "locator":{"oneOf":[
                 {"type":"object","required":["type","pointer"],"properties":{"type":{"const":"json_pointer"},"pointer":{"type":"string","maxLength":1024}},"additionalProperties":false},
                 {"type":"object","required":["type","start","end"],"properties":{"type":{"const":"lines"},"start":{"type":"integer","minimum":1},"end":{"type":"integer","minimum":1}},"additionalProperties":false},
@@ -243,6 +244,15 @@ mod tests {
             quote: Some("第二行证据".into()),
         };
         assert!(evidence.verify(std::slice::from_ref(&target)).is_ok());
+        evidence.locator = EvidenceLocator::JsonPointer { pointer: "".into() };
+        // A real substring is insufficient when the locator selects the whole document.
+        assert!(evidence.verify(std::slice::from_ref(&target)).is_err());
+        evidence.quote = None;
+        assert!(evidence.verify(std::slice::from_ref(&target)).is_ok());
+        evidence.locator = EvidenceLocator::Characters { start: 4, end: 9 };
+        evidence.quote = Some("第二行证据".into());
+        assert!(evidence.verify(std::slice::from_ref(&target)).is_ok());
+        evidence.locator = EvidenceLocator::Lines { start: 2, end: 2 };
         evidence.quote = Some("虚构证据".into());
         assert!(evidence.verify(std::slice::from_ref(&target)).is_err());
         evidence.quote = None;

@@ -115,7 +115,7 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
                     .is_ok_and(|r| r.r#type == "workflow_instance")
             })
     {
-        let selection = json!({"$source":"task","source":value["source"],"inputs":value["inputs"],"input_sources":value["input_sources"],
+        let selection = json!({"$source":"task","task_digest":configuration_hash(value),"source":value["source"],"inputs":value["inputs"],"input_sources":value["input_sources"],
                 "agent_ref":value["agent"]["id"],"supplemental_input":value["supplemental_input"]});
         if restore(state, &selection).is_ok_and(|restored| restored == *value) {
             return Ok(Some(selection));
@@ -328,6 +328,46 @@ fn restore_reference(
             ));
         }
         Some("task") => {
+            // A delivered task is an immutable execution fact, including its actual
+            // protocol contract. Re-rendering it with today's kernel rewrites history.
+            // The user-message ledger already retains the exact body; authenticate
+            // it against its sealed task record rather than comparing renderer labels.
+            let cache = format!("delivered-task:{value}");
+            if let Some(task) = memo.get(&cache) {
+                return Ok(task.clone());
+            }
+            for event in &state.conversation_events {
+                if event.kind != ConversationEventKind::User {
+                    continue;
+                }
+                let Some(record) = state.governance.iter().find(|r| {
+                    [
+                        "configured_execution_task",
+                        "archived_configured_execution_task",
+                    ]
+                    .contains(&r.r#type.as_str())
+                        && r.definition_id == event.turn_id
+                }) else {
+                    continue;
+                };
+                if value["task_digest"].is_string() && value["task_digest"] != record.data["digest"]
+                {
+                    continue;
+                }
+                let Ok(task) = serde_json::from_str::<Value>(&event.content) else {
+                    continue;
+                };
+                if task["source"] == value["source"]
+                    && task["inputs"] == value["inputs"]
+                    && task["input_sources"] == value["input_sources"]
+                    && task["agent"]["id"] == value["agent_ref"]
+                    && task["supplemental_input"] == value["supplemental_input"]
+                    && json!(configuration_hash(&task)) == record.data["digest"]
+                {
+                    memo.insert(cache, task.clone());
+                    return Ok(task);
+                }
+            }
             let source = &value["source"];
             let plan_record =
                 state.configuration(source["plan_revision_id"].as_str().unwrap_or(""))?;
@@ -500,6 +540,50 @@ pub fn runtime_digest(agent: &Definition, b: &RuntimeBinding) -> Result<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn delivered_task_contract_is_restored_from_authenticated_history_not_current_renderer() {
+        let mut state = EngineeringState::default();
+        let task = json!({"renderer_version":"independent-renderer-label","source":{"workflow_instance_id":"historical-instance","execution_id":"execution"},"inputs":{},"input_sources":{},"agent":{"id":"agent:1"},"supplemental_input":null,"output_contract":{"historical":"exact protocol sent to worker"}});
+        let digest = configuration_hash(&task);
+        state.governance.push(ConfigurationRecord {
+            id: "task-record".into(),
+            r#type: "configured_execution_task".into(),
+            definition_id: "turn".into(),
+            scope: Scope::global(),
+            name: "Historical task".into(),
+            version: 1,
+            supersedes: None,
+            content_hash: String::new(),
+            refs: References::new(),
+            data: json!({"digest":digest}),
+            immutable: true,
+            revision: 1,
+            created_at: 1,
+        });
+        state.conversation_events.push(ConversationEvent {
+            id: "event".into(),
+            session_id: "session".into(),
+            turn_id: "turn".into(),
+            sequence: 1,
+            deduplication_key: "input".into(),
+            kind: ConversationEventKind::User,
+            content: task.to_string(),
+            artifact_id: None,
+            time: 1,
+            mode: MessageMode::Full,
+            provider_item: None,
+        });
+        let legacy = json!({"$source":"task","source":task["source"],"inputs":{},"input_sources":{},"agent_ref":"agent:1","supplemental_input":null});
+        // No current plan/renderer exists for this historical task.
+        assert_eq!(restore(&state, &legacy).unwrap(), task);
+        let mut sealed = legacy;
+        sealed["task_digest"] = json!(digest);
+        assert_eq!(restore(&state, &sealed).unwrap(), task);
+        state.conversation_events[0].content = task
+            .to_string()
+            .replace("exact protocol", "forged protocol");
+        assert!(restore(&state, &sealed).is_err());
+    }
     #[test]
     fn source_records_are_references_but_forged_and_factual_values_are_preserved() {
         let mut state = EngineeringState::default();
