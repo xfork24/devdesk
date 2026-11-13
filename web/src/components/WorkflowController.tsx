@@ -25,6 +25,8 @@ export function WorkflowController({
   workspaceOnly = false,
 }: Props) {
   const [data, setData] = useState<Row>();
+  const [catalog, setCatalog] = useState<Row[]>([]);
+  const [catalogError, setCatalogError] = useState("");
   const [managerAgent, setManagerAgent] = useState("");
   const [managerPermission, setManagerPermission] = useState("");
   const [mode, setMode] = useState("manual");
@@ -35,7 +37,7 @@ export function WorkflowController({
   const epoch = useRef(0);
   const load = useCallback(async () => {
     const ticket = ++epoch.current;
-    const [next, driver, catalog] = await Promise.all([
+    const [next, driver] = await Promise.all([
       request("query.orchestration", {
         ...(workspaceOnly
           ? { owner_id: projectId, workspace_only: true }
@@ -48,17 +50,11 @@ export function WorkflowController({
             id: instance.id,
             project_id: projectId,
           }),
-      loadCatalog(request, { id: projectId }),
     ]);
     if (ticket === epoch.current)
       setData({
         ...next,
         driver: driver.driver,
-        agents: catalog.filter((r: Row) => r.type === "agent"),
-        permissions: catalog.filter(
-          (r: Row) => r.type === "permission_context",
-        ),
-        policies: catalog.filter((r: Row) => r.type === "orchestration_policy"),
       });
   }, [request, instance.id, projectId, workspaceOnly]);
   useEffect(() => {
@@ -82,6 +78,21 @@ export function WorkflowController({
       epoch.current++;
     };
   }, [load]);
+  useEffect(() => {
+    let active = true;
+    setCatalog([]);
+    setCatalogError("");
+    void loadCatalog(request, { id: projectId })
+      .then((records) => {
+        if (active) setCatalog(records);
+      })
+      .catch((e) => {
+        if (active) setCatalogError(String(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [request, projectId]);
   async function act(method: string) {
     setBusy(true);
     setError("");
@@ -94,7 +105,12 @@ export function WorkflowController({
             project_id: projectId,
             command_id: crypto.randomUUID(),
             target: instance.id,
-            payload: {},
+            payload: {
+              ...(managerAgent ? { agent_ref: managerAgent } : {}),
+              ...(managerPermission
+                ? { permission_context_ref: managerPermission }
+                : {}),
+            },
           },
         );
         const loaded = await request("query.orchestration", {
@@ -111,6 +127,14 @@ export function WorkflowController({
         payload: {
           epoch: record.data.epoch,
           ...(method === "orchestration.input" ? { input } : {}),
+          ...(method === "orchestration.resume"
+            ? {
+                ...(managerAgent ? { agent_ref: managerAgent } : {}),
+                ...(managerPermission
+                  ? { permission_context_ref: managerPermission }
+                  : {}),
+              }
+            : {}),
         },
       });
       if (method === "orchestration.input") setInput("");
@@ -210,37 +234,51 @@ export function WorkflowController({
       className="panel"
     >
       <h3>{workspaceOnly ? "项目经理工作台" : "项目经理协作"}</h3>
-      {workspaceOnly && (
+      {!data && <p role="status">正在读取经理状态…</p>}
+      {
         <>
           <RevisionSelect
-            label="工作台 Agent 精确修订"
-            records={data?.agents || []}
+            label={
+              workspaceOnly ? "工作台 Agent 精确修订" : "经理 Agent 精确修订"
+            }
+            records={catalog.filter((row) => row.type === "agent")}
             value={managerAgent}
             onChange={setManagerAgent}
           />
           <RevisionSelect
-            label="工作台授权上下文"
-            records={data?.permissions || []}
+            label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
+            records={catalog.filter((row) => row.type === "permission_context")}
             value={managerPermission}
             onChange={setManagerPermission}
           />
           <ActionButton
-            disabled={busy || (!managerAgent && !managerPermission)}
-            onClick={() => void adoptManager()}
+            disabled={
+              busy ||
+              !data ||
+              (!managerAgent && !managerPermission) ||
+              (!workspaceOnly && data?.record?.data.status === "active")
+            }
+            onClick={() =>
+              void (workspaceOnly
+                ? adoptManager()
+                : act("orchestration.resume"))
+            }
           >
-            采用工作台配置
+            {workspaceOnly ? "采用工作台配置" : "采用并恢复经理"}
           </ActionButton>
           <p className="muted">
             更换组合前先暂停当前经理会话；后继会话使用所选配置。
           </p>
         </>
-      )}
+      }
       {!workspaceOnly && (
         <>
-          <p>
-            当前调度：{data?.driver?.data.mode || "manual"} · 代次{" "}
-            {data?.driver?.data.epoch || 0}
-          </p>
+          {data && (
+            <p>
+              当前调度：{data.driver?.data.mode || "manual"} · 代次{" "}
+              {data.driver?.data.epoch || 0}
+            </p>
+          )}
           {data?.driver?.data.reason && (
             <p role="status">
               {typeof data.driver.data.reason === "string"
@@ -263,13 +301,15 @@ export function WorkflowController({
           {mode === "rust" && (
             <RevisionSelect
               label="根实例调度策略"
-              records={data?.policies || []}
+              records={catalog.filter(
+                (row) => row.type === "orchestration_policy",
+              )}
               value={policy}
               onChange={setPolicy}
             />
           )}
           <ActionButton
-            disabled={busy || (mode === "rust" && !policy)}
+            disabled={busy || !data || (mode === "rust" && !policy)}
             onClick={() => void selectDriver()}
           >
             采用调度模式
@@ -279,7 +319,9 @@ export function WorkflowController({
       <p>
         {controller
           ? statuses[controller.status] || controller.status
-          : "发送指令后启动项目经理"}
+          : data
+            ? "发送指令后启动项目经理"
+            : ""}
       </p>
       {controller?.reason && <p role="status">{controller.reason}</p>}
       <form
@@ -302,6 +344,7 @@ export function WorkflowController({
             type="submit"
             disabled={
               busy ||
+              !data ||
               !input.trim() ||
               ["completed", "cancelled"].includes(instance.data.status)
             }
@@ -328,6 +371,11 @@ export function WorkflowController({
       {error && (
         <p className="error" role="alert">
           {error}
+        </p>
+      )}
+      {catalogError && (
+        <p className="error" role="alert">
+          配置选项暂不可用：{catalogError}
         </p>
       )}
       {(data?.decisions || [])

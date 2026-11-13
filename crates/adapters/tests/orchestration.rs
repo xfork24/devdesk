@@ -2067,6 +2067,198 @@ fn source_control_policy_is_canonical_after_reload_without_changing_authorizatio
     assert_eq!(before["policy_digest"], after["policy_digest"]);
 }
 
+#[test]
+fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    e.harness = Arc::new(NativeManager::default());
+    let root = start(&e, document());
+    let state = e.store.snapshot().unwrap();
+    let original = state
+        .configuration("builtin-agent-sol-high-project-manager:7")
+        .unwrap();
+    let mut successor = original.source();
+    successor.identity = format!("selected-manager-{}", id());
+    successor.revision = 1;
+    successor.name = "Selected successor".into();
+    let next_agent = source_reference(&successor.identity, successor.revision).unwrap();
+    let change = ConfigurationChangeSet {
+        operations: vec![ConfigurationOperation::Create { source: successor }],
+    };
+    let preview = e.preview_configuration_change(&change).unwrap();
+    cmd(
+        &e,
+        "configuration.change.apply",
+        None,
+        json!({"changeset":change,"preview_hash":preview["preview_hash"]}),
+    )
+    .unwrap();
+    let context = permission_context(&state).unwrap();
+    let mut data = context.data.clone();
+    data["control_policy"]["timeout_seconds"] = json!(1800);
+    let mut payload = json!({"name":"Selected longer budget","scope":"global","data":data});
+    for (k, v) in &context.refs {
+        payload[k] = v.clone();
+    }
+    let next_context = cmd(&e, "permission_context.create", None, payload).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let controller = cmd(
+        &e,
+        "orchestration.open",
+        Some(&root),
+        json!({"role_ref":"builtin-role-project-manager:1","agent_ref":original.id}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"agent"}),
+    )
+    .unwrap();
+    for _ in 0..20 {
+        drive_manager_cycle(&e, true, false);
+        if e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "prepared")
+        {
+            break;
+        }
+    }
+    let before = e.store.snapshot().unwrap();
+    let old = before.configuration(&controller).unwrap().data.clone();
+    let old_sid = old["session_id"].as_str().unwrap().to_owned();
+    assert!(
+        before
+            .executions
+            .iter()
+            .any(|x| x.session_id == old_sid && !x.writer_revoked)
+    );
+    assert!(
+        cmd(
+            &e,
+            "orchestration.resume",
+            Some(&controller),
+            json!({"agent_ref":next_agent,"permission_context_ref":next_context})
+        )
+        .is_err()
+    );
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&controller)
+            .unwrap()
+            .data,
+        old
+    );
+    cmd(&e, "orchestration.takeover", Some(&controller), json!({})).unwrap();
+    for _ in 0..5 {
+        e.tick_conversations(4).unwrap();
+    }
+    let stopped = e.store.snapshot().unwrap();
+    assert!(
+        stopped
+            .executions
+            .iter()
+            .filter(|x| x.session_id == old_sid)
+            .all(|x| x.writer_revoked)
+    );
+    let reply = cmd(
+        &e,
+        "orchestration.resume",
+        Some(&controller),
+        json!({"agent_ref":next_agent,"permission_context_ref":next_context}),
+    )
+    .unwrap();
+    assert_eq!(reply["controller"]["agent_revision_id"], next_agent);
+    assert_eq!(reply["controller"]["permission_context_ref"], next_context);
+    assert_eq!(reply["controller"]["policy"]["timeout_seconds"], 1800);
+    assert_eq!(reply["controller"]["predecessor_session_id"], old_sid);
+    let successor = reply["id"].as_str().unwrap().to_owned();
+    assert_ne!(successor, controller);
+    e.drive_controllers().unwrap();
+    let after = e.store.snapshot().unwrap();
+    assert_eq!(
+        after.configuration(&controller).unwrap().data["status"],
+        "closed"
+    );
+    assert_eq!(
+        after.configuration(&controller).unwrap().data["policy"],
+        old["policy"]
+    );
+    assert_eq!(
+        after
+            .configuration(&format!("workflow-driver:{root}"))
+            .unwrap()
+            .data["controller_id"],
+        successor
+    );
+    assert!(
+        runtime(&e, &root)["runtime"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["status"] == "queued")
+    );
+    assert_eq!(
+        after
+            .sessions
+            .iter()
+            .find(|x| x.id == old_sid)
+            .unwrap()
+            .agent,
+        original.id
+    );
+    assert!(
+        after
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_selection" && r.definition_id == successor)
+    );
+    assert!(
+        after
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_call" && r.data["epoch"] == old["epoch"])
+    );
+    assert!(cmd(&e, "orchestration.resume", Some(&controller), json!({})).is_err());
+    for _ in 0..20 {
+        drive_manager_cycle(&e, true, true);
+        if runtime(&e, &root)["runtime"]["steps"][0]["status"] != "queued" {
+            break;
+        }
+    }
+    let effective = e.store.snapshot().unwrap();
+    assert!(
+        effective
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_decision"
+                && r.data["operation"] == "dispatch"
+                && r.data["actor"]["controller_id"] == successor)
+    );
+    drop(e);
+    let e = engine(dir.path());
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .configuration(&successor)
+            .unwrap()
+            .data["policy"]["timeout_seconds"],
+        1800
+    );
+}
+
 fn rust_policy(e: &Engine, max_actions: usize) -> String {
     cmd(e,"orchestration_policy.create",None,json!({"name":"Bounded driver","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":max_actions,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}})).unwrap()["id"].as_str().unwrap().into()
 }

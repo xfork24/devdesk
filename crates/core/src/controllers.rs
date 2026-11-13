@@ -189,9 +189,13 @@ impl Engine {
                         .map(|f| f.project_id.clone())
                 })
                 .ok_or_else(|| err("not_found", "编排归属不存在"))?;
+            let mut predecessor = None;
+            let mut snapshot = None;
+            let mut replaced = None;
             if let Some(existing) = s
                 .governance
                 .iter()
+                .rev()
                 .find(|r| {
                     r.r#type == "workflow_controller"
                         && r.data["owner_id"] == owner
@@ -203,13 +207,12 @@ impl Engine {
                 })
                 .cloned()
             {
-                let replacing = workspace_only
-                    && (c.payload["agent_ref"]
+                let replacing = c.payload["agent_ref"]
+                    .as_str()
+                    .is_some_and(|id| existing.data["agent_revision_id"] != id)
+                    || c.payload["permission_context_ref"]
                         .as_str()
-                        .is_some_and(|id| existing.data["agent_revision_id"] != id)
-                        || c.payload["permission_context_ref"]
-                            .as_str()
-                            .is_some_and(|id| existing.data["permission_context_ref"] != id));
+                        .is_some_and(|id| existing.data["permission_context_ref"] != id);
                 if !replacing {
                     return Ok(Some(
                         json!({"id":existing.id,"reused":true,"controller":existing.data}),
@@ -228,6 +231,19 @@ impl Engine {
                             .any(|e| Some(e.session_id.as_str()) == sid && !e.writer_revoked),
                     "请先暂停并核对原经理 worker，再采用后继配置",
                 )?;
+                if let Some(session) = sid
+                    .and_then(|id| s.sessions.iter().find(|v| v.id == id))
+                    .cloned()
+                {
+                    snapshot = Some(self.capture_conversation(
+                        s,
+                        &session,
+                        "orchestration_successor",
+                        None,
+                    )?);
+                    predecessor = Some(session.id);
+                }
+                replaced = Some(existing.id.clone());
                 let mut data = existing.data.clone();
                 data["status"] = json!("closed");
                 data["epoch"] = json!(data["epoch"].as_u64().unwrap_or(0) + 1);
@@ -323,8 +339,8 @@ impl Engine {
                 policy_digest: configuration_hash(&policy),
                 policy,
                 session_id: None,
-                predecessor_session_id: None,
-                snapshot_id: None,
+                predecessor_session_id: predecessor,
+                snapshot_id: snapshot,
                 epoch: 1,
                 status: "active".into(),
                 event_cursor: 0,
@@ -352,12 +368,70 @@ impl Engine {
                 expires_at: now() + controller.policy.timeout_seconds * 1000,
             });
             let out = json!({"id":row.id,"controller":controller});
+            let successor = row.id.clone();
             s.governance.push(row);
+            if let Some(previous) = replaced {
+                // Relinquish the unique root slot before persisting the successor.
+                // The expired row and closed controller preserve the old identity.
+                for lease in s
+                    .orchestration_leases
+                    .iter_mut()
+                    .filter(|l| l.controller_id == previous)
+                {
+                    lease.root_instance_id = None;
+                    lease.expires_at = now();
+                }
+                for intent in s.governance.iter_mut().filter(|r| {
+                    r.r#type == "workflow_intent"
+                        && r.definition_id == previous
+                        && r.data["status"] == "prepared"
+                }) {
+                    let mut data = intent.data.clone();
+                    data["status"] = json!("revoked");
+                    update_record(intent, data);
+                }
+                for segment in s.governance.iter_mut().filter(|r| {
+                    r.r#type == "workflow_segment"
+                        && r.data["actor"]["controller_id"] == previous
+                        && r.data["status"] == "active"
+                }) {
+                    let mut data = segment.data.clone();
+                    data["status"] = json!("stopped");
+                    data["reason"] = json!("人类采用后继经理");
+                    update_record(segment, data);
+                }
+                if !workspace_only {
+                    if let Some(driver) = s.governance.iter_mut().find(|r| {
+                        r.r#type == "workflow_driver"
+                            && Some(r.definition_id.as_str())
+                                == controller.root_instance_id.as_deref()
+                            && r.data["mode"] == "agent"
+                    }) {
+                        require(
+                            driver.data["controller_id"] == previous
+                                || driver.data["controller_id"].is_null(),
+                            "根控制权已经改变",
+                        )?;
+                        let mut data = driver.data.clone();
+                        data["controller_id"] = json!(successor);
+                        data["epoch"] = json!(data["epoch"].as_u64().unwrap_or(0) + 1);
+                        data["expires_at"] = json!(now() + 60_000);
+                        update_record(driver, data);
+                    }
+                }
+                s.governance.push(record("controller_selection",successor.clone(),Scope::project(controller.project_id.clone()),"人类采用后继经理".into(),1,None,json!({"predecessor_controller_id":previous,"successor_controller_id":successor,"agent_ref":controller.agent_revision_id,"context_ref":controller.permission_context_ref}),true));
+            }
             return Ok(Some(out));
         }
         let row = s.configuration(target)?.clone();
         require(row.r#type == "workflow_controller", "不是编排控制器")?;
         let mut controller: WorkflowController = row.decode()?;
+        require(
+            !s.governance.iter().any(|r| {
+                r.r#type == "controller_selection" && r.data["predecessor_controller_id"] == row.id
+            }),
+            "已交接的控制器不能恢复，请使用当前经理",
+        )?;
         if let Some(epoch) = c.payload["epoch"].as_u64() {
             require(epoch == controller.epoch, "编排代次已变化")?;
         }
@@ -401,6 +475,10 @@ impl Engine {
                     t.revision += 1;
                 }
             } else {
+                require(
+                    c.payload.get("policy").is_none(),
+                    "编排授权必须通过 Permission Context 源修订选择",
+                )?;
                 if let Some(sid) = &controller.session_id {
                     require(
                         !s.turns
@@ -412,6 +490,32 @@ impl Engine {
                                 .any(|e| e.session_id == *sid && !e.writer_revoked),
                         "请先停止并核对旧编排执行者",
                     )?;
+                }
+                for field in ["agent_ref", "permission_context_ref"] {
+                    if let Some(value) = c.payload.get(field) {
+                        require(value.is_string(), "经理配置引用必须是确切源修订字符串")?;
+                    }
+                }
+                let agent_ref = c.payload["agent_ref"]
+                    .as_str()
+                    .unwrap_or(&controller.agent_revision_id)
+                    .to_owned();
+                let context_ref = c.payload["permission_context_ref"]
+                    .as_str()
+                    .unwrap_or(&controller.permission_context_ref)
+                    .to_owned();
+                if agent_ref != controller.agent_revision_id
+                    || context_ref != controller.permission_context_ref
+                {
+                    require(
+                        row.data["status"] != "active" || controller.session_id.is_none(),
+                        "请先暂停旧经理再采用后继配置",
+                    )?;
+                    return self.controller_command(
+                        if controller.workspace_only { "manager.open" } else { "orchestration.open" },
+                        &Command { command_id:format!("{}:successor",c.command_id), target:Some(controller.root_instance_id.clone().unwrap_or_else(||controller.owner_id.clone())), expected_revision:None,
+                            payload:json!({"role_ref":controller.role_ref,"agent_ref":agent_ref,"permission_context_ref":context_ref}) }, s,
+                    );
                 }
                 if let Some(session) = controller
                     .session_id

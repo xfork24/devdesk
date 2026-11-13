@@ -85,6 +85,7 @@ impl Engine {
             .iter()
             .filter(|r| {
                 r.r#type == "workflow_controller"
+                    && r.data["status"] != "closed"
                     && r.data["workspace_only"] != true
                     && (r.data["root_instance_id"] == root.id
                         || r.data["owner_id"] == root.data["owner_id"])

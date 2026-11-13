@@ -7,7 +7,7 @@ from client import Client
 from engineering_evidence import verify_evidence
 from export_evidence import export as export_project_evidence
 
-parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--github-repo',required=True);parser.add_argument('--dedicated-repository',action='store_true',help='Explicitly designate this repository for test branches, commits and PRs');parser.add_argument('--report-directory',type=Path);parser.add_argument('--resume',action='store_true');parser.add_argument('--unattended',action='store_true',help='Fresh run: fail on supplemental input or any Human gate; no probe intervention');parser.add_argument('--guidance',default='');parser.add_argument('--timeout-seconds',type=int,default=10800);args=parser.parse_args();assert args.timeout_seconds>0;assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset';assert args.dedicated_repository or 'test' in args.github_repo.lower(), 'designate the dedicated test repository explicitly'
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--github-repo',required=True);parser.add_argument('--dedicated-repository',action='store_true',help='Explicitly designate this repository for test branches, commits and PRs');parser.add_argument('--report-directory',type=Path);parser.add_argument('--resume',action='store_true');parser.add_argument('--unattended',action='store_true',help='Fresh run: fail on supplemental input or any Human gate; no probe intervention');parser.add_argument('--guidance',default='');parser.add_argument('--timeout-seconds',type=int,default=10800);parser.add_argument('--manager-context-source',type=Path,help='Explicit immutable Permission Context source to adopt during stopped-controller recovery');args=parser.parse_args();assert args.manager_context_source is None or args.resume, 'manager context adoption is a resume operation';assert args.timeout_seconds>0;assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset';assert args.dedicated_repository or 'test' in args.github_repo.lower(), 'designate the dedicated test repository explicitly'
 OUT=args.report_directory or Path(tempfile.mkdtemp(prefix='devdesk-engineering-v5-'));OUT.mkdir(parents=True,exist_ok=True);OUT=OUT.resolve();print('Evidence:',OUT,flush=True)
 assert args.resume == (OUT/'context.json').exists(), 'select --resume for an existing acceptance dataset'
 if (OUT/'failure.txt').exists():(OUT/'failure.txt').rename(OUT/('failure-before-launch-'+str(time.time_ns())+'.txt'))
@@ -66,7 +66,18 @@ try:
     if c.rpc('query.workflow_instance',{'id':row['id']})['runtime']['steps'][row['data']['steps'].index(interrupted)]['status']=='needs_reconciliation':control('workflow.step.reconcile')
     c.wait(lambda:c.rpc('query.workflow_instance',{'id':row['id']}),lambda v:next(e for e in v['runtime']['steps'] if e['step']==interrupted['step'])['status']=='cancelled',60)
     control('workflow.step.retry')
-  manager_row=c.rpc('query.orchestration',{'id':manager})['record'];c.command('orchestration.resume',manager,manager_row['revision'],{'epoch':manager_row['data']['epoch']})
+  selected_context=None
+  if args.manager_context_source:
+   source=json.loads(args.manager_context_source.read_text());assert source['type']=='permission_context'
+   selected_context=source['identity']+':'+str(source['revision'])
+   catalog=c.rpc('query.configurations',{'kind':'permission_context','include_history':True,'limit':100})['records'];existing=next((r for r in catalog if r['id']==selected_context),None)
+   if existing:
+    assert existing['data']==source['data'] and existing['scope']==source['scope'],'Existing context differs from the explicit source'
+   else:
+    change={'operations':[{'type':'create','source':source}]};preview=c.rpc('configuration.change.preview',{'changeset':change});applied=c.command('configuration.change.apply',payload={'changeset':change,'preview_hash':preview['preview_hash']});(attempt/'manager-context-import.json').write_text(json.dumps({'source':source,'preview':preview,'receipt':applied},ensure_ascii=False,indent=2))
+   shutil.copy2(args.manager_context_source,attempt/'manager-context-source.json')
+  manager_row=c.rpc('query.orchestration',{'id':manager})['record'];resumed=c.command('orchestration.resume',manager,manager_row['revision'],{'epoch':manager_row['data']['epoch'],**({'permission_context_ref':selected_context} if selected_context else {})});manager=resumed['id']
+  context['resumptions'][-1]['controller_id']=manager;context['resumptions'][-1]['permission_context_ref']=resumed['controller']['permission_context_ref'];(OUT/'context.json').write_text(json.dumps(context,ensure_ascii=False,indent=2))
   m=c.rpc('query.orchestration',{'id':manager})['record'];print('Resumed preserved root:',root_id,flush=True)
  else:
   project=c.command('project.open_github',payload={'repository':args.github_repo,'mainline':'main','title':'Workflow v6 engineering acceptance'})['id'];c.project=project

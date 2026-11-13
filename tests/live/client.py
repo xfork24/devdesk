@@ -1,8 +1,8 @@
 """Small local acceptance client. Project pinning and unique commands are explicit."""
 import http.cookiejar,json,time,urllib.request,uuid
 class Client:
- def __init__(self,url='http://127.0.0.1:51751',project=None):
-  self.url=url;self.project=project;self.http=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));deadline=time.monotonic()+15
+ def __init__(self,url='http://127.0.0.1:51751',project=None,timeout=180):
+  self.url=url;self.project=project;self.timeout=timeout;self.http=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));deadline=time.monotonic()+15
   while True:
    try:self.http.open(url+'/',timeout=3).close();break
    except urllib.error.URLError:
@@ -12,7 +12,7 @@ class Client:
   params=dict(params or {})
   if self.project:params.setdefault('project_id',self.project)
   req=urllib.request.Request(self.url+'/rpc',data=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}).encode(),headers={'Content-Type':'application/json'})
-  value=json.load(self.http.open(req,timeout=40))
+  value=json.load(self.http.open(req,timeout=self.timeout))
   if 'error' in value:raise RuntimeError(method+': '+value['error']['data']['code']+': '+value['error']['message'])
   return value['result']
  def command(self,method,target=None,revision=None,payload=None,command_id=None):

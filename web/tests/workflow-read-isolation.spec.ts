@@ -192,6 +192,85 @@ test("slow controller polling renders its result without overlapping requests an
   expect(calls).toBe(before);
 });
 
+test("paused root manager adopts exact successor sources through the Human resume entry", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let adopted: Record<string, unknown> | undefined;
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.orchestration") {
+      result = {
+        record: {
+          id: "controller",
+          revision: adopted ? 2 : 1,
+          data: {
+            status: adopted ? "active" : "paused",
+            epoch: adopted ? 4 : 3,
+            role_ref: "manager-role:1",
+            agent_revision_id: "manager-old:1",
+            permission_context_ref: "context-old:1",
+          },
+        },
+        calls: [],
+        messages: [],
+        decisions: [],
+      };
+    } else if (call.method === "query.configurations") {
+      result = {
+        records: [
+          {
+            id: "manager-new:1",
+            type: "agent",
+            definition_id: "manager-new",
+            name: "Selected manager",
+            version: 1,
+            scope: "global",
+            role_ref: "manager-role:1",
+            data: {},
+          },
+          {
+            id: "context-new:1",
+            type: "permission_context",
+            definition_id: "context-new",
+            name: "Selected budget",
+            version: 1,
+            scope: "global",
+            data: {},
+          },
+        ],
+        total: 2,
+      };
+    } else if (call.method === "orchestration.resume") {
+      adopted = call.params.payload;
+      result = { id: "controller" };
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const panel = page.getByRole("region", { name: "项目经理协作" });
+  await panel
+    .getByLabel("经理 Agent 精确修订", { exact: true })
+    .selectOption("manager-new:1");
+  await panel
+    .getByLabel("经理授权上下文", { exact: true })
+    .selectOption("context-new:1");
+  await panel
+    .getByRole("button", { name: "采用并恢复经理", exact: true })
+    .click();
+  await expect
+    .poll(() => adopted)
+    .toEqual({
+      epoch: 3,
+      agent_ref: "manager-new:1",
+      permission_context_ref: "context-new:1",
+    });
+  await expect(
+    panel.getByRole("button", { name: "采用并恢复经理", exact: true }),
+  ).toBeDisabled();
+});
+
 for (const failure of ["catalog", "defaults"] as const) {
   test(`Standard history remains visible when ${failure} loading fails`, async ({
     page,
@@ -215,12 +294,23 @@ for (const failure of ["catalog", "defaults"] as const) {
   });
 }
 
-test("a late defaults read preserves an already displayed Standard comparison", async ({ page }) => {
+test("a late defaults read preserves an already displayed Standard comparison", async ({
+  page,
+}) => {
   const url = await fixture(page);
   let releaseDefaults!: () => void;
-  const defaults = new Promise<void>((resolve) => { releaseDefaults = resolve; });
-  const selection = { standard_ref: "standard-current:1", children: [], exceptions: [] };
-  const diff = { equal: false, changes: [{ kind: "definition_changed", source_kind: "workflow" }] };
+  const defaults = new Promise<void>((resolve) => {
+    releaseDefaults = resolve;
+  });
+  const selection = {
+    standard_ref: "standard-current:1",
+    children: [],
+    exceptions: [],
+  };
+  const diff = {
+    equal: false,
+    changes: [{ kind: "definition_changed", source_kind: "workflow" }],
+  };
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result: any;
@@ -228,21 +318,112 @@ test("a late defaults read preserves an already displayed Standard comparison", 
       await defaults;
       result = { configuration: null };
     } else if (call.method === "query.work_standard_choices") {
-      result = { records: [{ id: "other-work", project_title: "Fixture", title: "Other work", work: { kind: "task" } }], total: 1 };
+      result = {
+        records: [
+          {
+            id: "other-work",
+            project_title: "Fixture",
+            title: "Other work",
+            work: { kind: "task" },
+          },
+        ],
+        total: 1,
+      };
     } else if (call.method === "query.work_standard_diff") {
       result = { entry_diff: diff, diff, before: selection, after: selection };
     } else return route.fallback();
     await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
   await page.goto(url);
-  const standard = page.getByRole("region", { name: "当前工作流", exact: true }).locator(".work-standard");
+  const standard = page
+    .getByRole("region", { name: "当前工作流", exact: true })
+    .locator(".work-standard");
   await standard.locator(":scope > summary").click();
   await standard.getByText("与其他工作比较规范", { exact: true }).click();
-  await standard.getByLabel("比较工作", { exact: true }).selectOption("other-work");
-  await standard.getByRole("button", { name: "比较工作规范", exact: true }).click();
-  await expect(standard.locator(".standard-diff").first()).toContainText("1 项规范变化");
+  await standard
+    .getByLabel("比较工作", { exact: true })
+    .selectOption("other-work");
+  await standard
+    .getByRole("button", { name: "比较工作规范", exact: true })
+    .click();
+  await expect(standard.locator(".standard-diff").first()).toContainText(
+    "1 项规范变化",
+  );
   releaseDefaults();
   // This selection is set by the late read's callback, so the assertion runs after it.
-  await expect(standard.getByLabel("采用 Standard", { exact: true })).toHaveValue("standard-current:1");
-  await expect(standard.locator(".standard-diff").first()).toContainText("1 项规范变化");
+  await expect(
+    standard.getByLabel("采用 Standard", { exact: true }),
+  ).toHaveValue("standard-current:1");
+  await expect(standard.locator(".standard-diff").first()).toContainText(
+    "1 项规范变化",
+  );
 });
+
+for (const catalogState of ["pending", "failed"] as const) {
+  test(`manager runtime remains visible when configuration catalog is ${catalogState}`, async ({
+    page,
+  }) => {
+    const url = await fixture(page);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/rpc", async (route) => {
+      const call = route.request().postDataJSON();
+      let result: any;
+      if (call.method === "query.configurations") {
+        if (catalogState === "pending") await blocked;
+        return route.fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            error: {
+              code: -32000,
+              message: "catalog unavailable",
+              data: { code: "read_failed" },
+            },
+          },
+        });
+      } else if (call.method === "query.orchestration") {
+        result = {
+          record: {
+            id: "controller",
+            revision: 1,
+            data: {
+              status: "active",
+              epoch: 5,
+              reason: "actual manager is active",
+            },
+          },
+          calls: [],
+          messages: [],
+          decisions: [],
+        };
+      } else if (call.method === "query.workflow_driver") {
+        result = { driver: { data: { mode: "agent", epoch: 7 } } };
+      } else return route.fallback();
+      await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+    });
+    try {
+      await page.goto(url);
+      const panel = page.getByRole("region", { name: "项目经理协作" });
+      await expect(
+        panel.getByText("当前调度：agent · 代次 7", { exact: true }),
+      ).toBeVisible({ timeout: 6500 });
+      await expect(
+        panel.getByText("actual manager is active", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        panel.getByRole("button", { name: "人工接管", exact: true }),
+      ).toBeEnabled();
+      await expect(panel).not.toContainText("当前调度：manual");
+      await expect(panel).not.toContainText("发送指令后启动项目经理");
+      if (catalogState === "failed")
+        await expect(panel.getByRole("alert")).toContainText(
+          "配置选项暂不可用",
+        );
+    } finally {
+      release();
+    }
+  });
+}
