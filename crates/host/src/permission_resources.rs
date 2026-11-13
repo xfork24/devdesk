@@ -21,7 +21,7 @@ impl Workspace {
         }
         let s = e.store.snapshot()?;
         if let Some(transition) = s.governance.iter().find(|r| {
-            r.kind == "permission_switch"
+            r.r#type == "permission_switch"
                 && Some(r.definition_id.as_str()) == c.target.as_deref()
                 && r.data["status"] == "adopted"
                 && r.data["command"]["payload"]["client_message_id"]
@@ -81,7 +81,7 @@ impl Workspace {
         let integrations = if s
             .governance
             .iter()
-            .any(|r| r.kind == "configured_session" && r.definition_id == session.id)
+            .any(|r| r.r#type == "configured_session" && r.definition_id == session.id)
         {
             binding
                 .agent_configuration
@@ -143,7 +143,9 @@ impl Workspace {
             .find(|v| v.id == sid)
             .ok_or_else(|| err("not_found", "Session 不存在"))?;
         let pending = s.governance.iter().find(|r| {
-            r.kind == "permission_switch" && r.definition_id == sid && r.data["status"] != "adopted"
+            r.r#type == "permission_switch"
+                && r.definition_id == sid
+                && r.data["status"] != "adopted"
         });
         let frozen = session
             .runtime_binding
@@ -213,26 +215,31 @@ impl Workspace {
             match method {
                 "query.permission_resources" => {
                     let installations = self.global.runtime_installations()?;
-                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.kind.as_str()) && r.immutable && template_record_current(&s,r))
+                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.r#type.as_str()) && r.immutable && template_record_current(&s,r))
                         .filter_map(|r| {
-                            let kind=if r.kind=="harness" {PermissionTargetKind::Harness}else{PermissionTargetKind::Sandbox};
+                            let kind=if r.r#type=="harness" {PermissionTargetKind::Harness}else{PermissionTargetKind::Sandbox};
                             let target=permission_target(&s,kind,&r.id).ok()?;
                             let contract=permission_contract(&s,&target);
                             let active=active_permission_binding(&s,&target);
-                            let registered:Vec<_>=installations.iter().filter(|i|r.kind=="harness" && json!(i.key.provider)==r.data["provider"] &&
-                                (json!(i.key.version)==r.data["runtime_version"] || (r.data["recipe_digest"].is_string() && i.key.version.starts_with(&format!("{}+docker.",r.data["runtime_version"].as_str().unwrap_or("")))))).collect();
-                            let materializations:Vec<_>=s.governance.iter().filter(|m|m.kind=="harness_materialization" && m.definition_id==r.id).map(|m|&m.data).collect();
-                            let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.kind=="permission_profile" && template_record_current(&s,p))
+                            let registered: Vec<_> = installations.iter().filter(|installation| {
+                                r.r#type == "harness"
+                                    && json!(installation.key.provider) == r.data["provider"]
+                                    && r.data["recipe_digest"].as_str().is_some_and(|digest| {
+                                        devdesk_adapters::permissions::installation_recipe(installation) == digest
+                                    })
+                            }).collect();
+                            let materializations:Vec<_>=s.governance.iter().filter(|m|m.r#type=="harness_materialization" && m.definition_id==r.id).map(|m|&m.data).collect();
+                            let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.r#type=="permission_profile" && template_record_current(&s,p))
                                 .filter_map(|p|p.permission_profile().ok().filter(|profile|preflight_profile(&s,&target,profile).is_ok()).map(|profile|profile.id)).collect();
                             Some(json!({"target":target,"name":r.name,"version":r.version,"provider":r.data["provider"],"runtime_version":r.data["runtime_version"],
-                                "platforms":if r.kind=="sandbox" {r.data["platforms"].clone()}else{json!(["linux/aarch64","linux/x86_64"])},"recipe_digest":r.data["recipe_digest"],"registered_installations":registered,"materializations":materializations,
+                                "platforms":if r.r#type=="sandbox" {r.data["platforms"].clone()}else{json!(["linux/aarch64","linux/x86_64"])},"recipe_digest":r.data["recipe_digest"],"registered_installations":registered,"materializations":materializations,
                                 "supported":contract.is_ok(),"enforcement_contract":contract.as_ref().ok(),"unsupported_reason":contract.as_ref().err().map(|e|&e.message),
                                 "allowed_permission_ids":allowed_permission_ids,"active":active.map(|a|json!({"revision":a.version,"binding_revision_id":a.data["binding_revision_id"]}))}))
                         }).collect();
                     let records = |kind: &str| {
                         s.governance
                             .iter()
-                            .filter(|r| r.kind == kind && template_record_current(&s, r))
+                            .filter(|r| r.r#type == kind && template_record_current(&s, r))
                             .collect::<Vec<_>>()
                     };
                     Ok(
@@ -339,19 +346,19 @@ impl Workspace {
                         .and_then(|v| v["target"]["revision_id"].as_str())
                         .ok_or_else(|| err("invalid_params", "需要非空 bindings"))?;
                     let original_scope = &s.configuration(first_target)?.scope;
-                    let replay_store: &dyn EngineeringStore = match original_scope {
-                        Scope::Global => self.global.as_ref(),
-                        Scope::Project { project_id } => local
+                    let replay_store: &dyn EngineeringStore = if original_scope.is_global() {
+                        self.global.as_ref()
+                    } else if original_scope.is_feature() {
+                        return Err(err("invalid_scope", "Feature 不能持有可变目标默认"));
+                    } else {
+                        local
                             .as_ref()
                             .filter(|e| {
-                                e.store.project_id().as_deref() == Some(project_id.as_str())
+                                e.store.project_id().as_deref() == original_scope.project_id()
                             })
                             .ok_or_else(|| err("invalid_scope", "需要所属项目"))?
                             .store
-                            .as_ref(),
-                        Scope::Feature { .. } => {
-                            return Err(err("invalid_scope", "Feature 不能持有可变目标默认"));
-                        }
+                            .as_ref()
                     };
                     if let Some(previous) = replay_store.replay(&c.command_id, &fp)? {
                         return Ok(previous);
@@ -386,16 +393,14 @@ impl Workspace {
                         b["enforcement_contract"] = json!(permission_contract(&s, &target)?);
                     }
                     match binding_scope {
-                        Some(Scope::Project { project_id }) => local
-                            .as_ref()
-                            .filter(|e| {
-                                e.store.project_id().as_deref() == Some(project_id.as_str())
-                            })
-                            .ok_or_else(|| err("invalid_scope", "绑定需要明确所属项目"))?
-                            .execute_resolved(method, c, &fp),
-                        Some(Scope::Feature { .. }) => {
+                        Some(scope) if scope.is_feature() => {
                             Err(err("invalid_scope", "Feature 作用域不能作为可变目标默认"))
                         }
+                        Some(scope) if !scope.is_global() => local
+                            .as_ref()
+                            .filter(|e| e.store.project_id().as_deref() == scope.project_id())
+                            .ok_or_else(|| err("invalid_scope", "绑定需要明确所属项目"))?
+                            .execute_resolved(method, c, &fp),
                         _ => self.configuration.execute_resolved(method, c, &fp),
                     }
                 }
@@ -514,27 +519,30 @@ mod tests {
             harness: PermissionSelection::FollowTarget,
             sandbox: PermissionSelection::FollowTarget,
         };
-        let mut data = w
-            .global
-            .snapshot()
-            .unwrap()
-            .configuration(&default_configured_agent_id("analyst"))
-            .unwrap()
-            .data
-            .clone();
+        let data = json!(
+            w.global
+                .snapshot()
+                .unwrap()
+                .configuration(&default_configured_agent_id("analyst"))
+                .unwrap()
+                .refs
+        );
         // This fixture authors an explicit binding without an integration lock.
         // Keep its capability native-only; platform input readers are frozen by
         // actual Workflow sessions and belong to their separate integration tests.
         let sources = w.global.snapshot().unwrap();
-        let mut capability = sources
+        let capability_source = sources
             .configuration(data["capability_ref"].as_str().unwrap())
             .unwrap()
-            .data
             .clone();
-        capability["tools"] = json!([DEFAULT_NATIVE_TOOL_ID]);
-        let capability = w.dispatch("capability.create", json!({"command_id":id(),"payload":{"name":"Native permission fixture","data":capability}})).unwrap();
-        data["capability_ref"] = capability["id"].clone();
-        let agent=w.dispatch("agent.create",json!({"command_id":id(),"payload":{"name":"Followed runtime analyst","data":data}})).unwrap()["id"].as_str().unwrap().to_owned();
+        let mut refs = capability_source.refs.clone();
+        refs.insert("tools".into(), json!([DEFAULT_NATIVE_TOOL_ID]));
+        let mut payload = json!({"command_id":id(),"payload":{"name":"Native permission fixture","scope":"global","data":capability_source.data}});
+        for (key, value) in &refs {
+            payload["payload"][key] = value.clone();
+        }
+        let capability = w.dispatch("capability.create", payload).unwrap();
+        let agent=w.dispatch("agent.create",json!({"command_id":id(),"payload":{"name":"Followed runtime analyst","role_ref":data["role_ref"],"capability_ref":capability["id"],"data":{}}})).unwrap()["id"].as_str().unwrap().to_owned();
         let e = w.active_engine(Some(&project)).unwrap();
         w.sync_configuration(&e).unwrap();
         let state = e.store.snapshot().unwrap();
@@ -562,8 +570,7 @@ mod tests {
                     version: format!(
                         "{}+recipe.{}",
                         devdesk_adapters::runtime_preparation::CODEX_VERSION,
-                        &devdesk_adapters::runtime_preparation::default_codex_recipe_digest()
-                            [..16]
+                        devdesk_adapters::runtime_preparation::default_codex_recipe_digest()
                     ),
                     os: "linux".into(),
                     arch: "aarch64".into(),
@@ -662,7 +669,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":{"kind":"project","project_id":project},"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"model_providers":["builtin-model-provider-openai:1"],"capabilities":[]}}})).unwrap();
+        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":format!("project:{project}"),"model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}}})).unwrap();
         let catalog = w
             .dispatch("query.permission_resources", json!({"project_id":project}))
             .unwrap();

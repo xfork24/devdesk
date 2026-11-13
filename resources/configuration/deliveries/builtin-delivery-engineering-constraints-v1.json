@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-engineering-constraints",
   "revision": 1,
   "name": "Engineering Constraints Doc",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-delivery-engineering-constraints:1"
+  ],
   "data": {
     "format": "json",
-    "spec_refs": [
-      "builtin-spec-delivery-engineering-constraints:1"
-    ],
     "content_schema": {
       "type": "object",
       "required": [

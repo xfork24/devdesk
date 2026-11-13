@@ -7,14 +7,15 @@
     },
     {
       "properties": {
-        "kind": {
+        "type": {
           "const": "permission_profile"
         },
         "data": {
           "type": "object",
           "properties": {
             "schema_version": {
-              "const": 2
+              "type": "integer",
+              "minimum": 1
             },
             "target_kind": {
               "enum": [
@@ -215,7 +216,7 @@
                             "additionalProperties": false
                           }
                         ],
-                        "description": "allow \u4e0e deny \u5408\u8ba1\u6700\u591a 256 \u9879\uff0c\u7531\u9886\u57df\u6821\u9a8c\u68c0\u67e5\u3002"
+                        "description": "allow 与 deny 合计最多 256 项，由领域校验检查。"
                       },
                       "approval": {
                         "enum": [

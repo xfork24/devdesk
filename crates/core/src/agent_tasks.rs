@@ -8,7 +8,7 @@ pub(crate) fn session_binding<'a>(
     state
         .governance
         .iter()
-        .find(|r| r.kind == "configured_session" && r.definition_id == session)
+        .find(|r| r.r#type == "configured_session" && r.definition_id == session)
 }
 pub(crate) fn session_workflow_context(state: &EngineeringState, session: &str) -> Option<Value> {
     let source = session_binding(state, session)?;

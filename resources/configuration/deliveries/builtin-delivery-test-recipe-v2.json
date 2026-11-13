@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-test-recipe",
   "revision": 2,
   "name": "Test Doc",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-stage-test-design:2"
+  ],
   "data": {
     "format": "json",
-    "spec_refs": [
-      "builtin-spec-stage-test-design:2"
-    ],
     "content_schema": {
       "type": "object",
       "required": [

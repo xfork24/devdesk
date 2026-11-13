@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-git-advance",
   "revision": 1,
   "name": "接纳确切候选",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "git.advance",
     "implementation": "platform",

@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-task-delivery-report",
   "revision": 1,
   "name": "Task Delivery Report",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-delivery-task-delivery-report:1"
+  ],
   "data": {
     "format": "json",
-    "spec_refs": [
-      "builtin-spec-delivery-task-delivery-report:1"
-    ],
     "content_schema": {
       "type": "object",
       "required": [

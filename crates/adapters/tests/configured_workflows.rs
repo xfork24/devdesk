@@ -97,7 +97,8 @@ fn publish(engine: &Engine, mut document: Value) -> Value {
         engine
             .store
             .transact(None, &mut |s| {
-                let mut data = permission_context(s).unwrap().data.clone();
+                let context = permission_context(s).unwrap().clone();
+                let mut data = context.data.clone();
                 for grant in &mut grants {
                     grant["workflow_ref"] = workflow["id"].clone();
                 }
@@ -106,11 +107,12 @@ fn publish(engine: &Engine, mut document: Value) -> Value {
                     .unwrap()
                     .extend(grants.clone());
                 let source = SourceDefinition {
-                    kind: "permission_context".into(),
+                    r#type: "permission_context".into(),
                     identity: format!("fixture-permission.{}", id()),
                     revision: 1,
                     name: "Fixture execution authorization".into(),
-                    scope: Scope::Global,
+                    scope: Scope::global(),
+                    refs: context.refs.clone(),
                     data,
                 }
                 .into_record()?;
@@ -119,10 +121,10 @@ fn publish(engine: &Engine, mut document: Value) -> Value {
                 let selected = s
                     .governance
                     .iter_mut()
-                    .find(|r| r.kind == "template_catalog_state")
+                    .find(|r| r.r#type == "template_catalog_state")
                     .unwrap();
                 selected.data["defaults"]["permission_context_ref"] = json!(reference);
-                selected.content_hash = configuration_hash(&selected.data);
+                selected.content_hash = content_digest(&selected.refs, &selected.data);
                 selected.revision += 1;
                 Ok(Value::Null)
             })
@@ -137,7 +139,7 @@ fn custom_role_and_typed_business_step_publish_preview_and_reload() {
     let engine = engine(dir.path());
     let role=command(&engine,"role.create",None,json!({"name":"安全研究员","data":{"instructions":"调查输入材料的风险","visibility":{"kind":"global"}}})).unwrap();
     assert!(role["data"].get("execution_role").is_none());
-    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"spec_refs":["fixture-spec:1"],"body":"本次发现的风险与依据","format":"json","content_schema":{
+    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","spec_refs":["fixture-spec:1"],"data":{"body":"本次发现的风险与依据","format":"json","content_schema":{
         "type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
     let document = json!({"schema_version":6,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
         "key":"study","name":"识别风险","stage":"inquiry","executor":{"type":"agent"},"task_instructions":"按调研 Skill 分析并提交风险。",
@@ -274,7 +276,7 @@ fn child_closure_rejects_wrong_type_and_recursive_calls_before_publish() {
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"材料","data":{"spec_refs":["fixture-spec:1"],"body":"输入材料","format":"text"}}),
+        json!({"name":"材料","spec_refs":["fixture-spec:1"],"data":{"body":"输入材料","format":"text"}}),
     )
     .unwrap();
     let child = publish(
@@ -394,15 +396,15 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
         json!({"name":"研究员","data":{"instructions":"调查具体输入的风险"}}),
     )
     .unwrap();
-    let cap=command(&engine,"capability.create",None,json!({"name":"调研能力","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID]}})).unwrap();
+    let cap=command(&engine,"capability.create",None,json!({"name":"调研能力","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID],"data":{}})).unwrap();
     let agent = command(
         &engine,
         "agent.create",
         None,
-        json!({"name":"调研 Agent","data":{"role_ref":role["id"],"capability_ref":cap["id"]}}),
+        json!({"name":"调研 Agent","role_ref":role["id"],"capability_ref":cap["id"],"data":{}}),
     )
     .unwrap();
-    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","data":{"spec_refs":["fixture-spec:1"],"body":"风险列表","format":"json","content_schema":{"type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
+    let output=command(&engine,"delivery_type.create",None,json!({"name":"风险清单","spec_refs":["fixture-spec:1"],"data":{"body":"风险列表","format":"json","content_schema":{"type":"object","required":["risks"],"properties":{"risks":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}}})).unwrap();
     let workflow = publish(
         &engine,
         json!({"schema_version":6,"stages":[{"key":"inquiry","name":"调查","default_role_ref":role["id"]}],"steps":[{
@@ -492,7 +494,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
     let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
     let raw: String = conn
         .query_row(
-            "SELECT data FROM governance_records WHERE kind='workflow_instance' AND id=?1",
+            "SELECT data FROM governance_records WHERE type='workflow_instance' AND id=?1",
             [instance["id"].as_str().unwrap()],
             |r| r.get(0),
         )
@@ -502,7 +504,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
     assert!(raw["plan"].get("document").is_none());
     let raw_task: String = conn
         .query_row(
-            "SELECT data FROM governance_records WHERE kind='configured_execution_task' LIMIT 1",
+            "SELECT data FROM governance_records WHERE type='configured_execution_task' LIMIT 1",
             [],
             |r| r.get(0),
         )
@@ -520,7 +522,7 @@ fn custom_agent_executes_actual_task_through_ports_and_persists_typed_artifact()
         restored
             .governance
             .iter()
-            .find(|r| r.kind == "configured_execution_task")
+            .find(|r| r.r#type == "configured_execution_task")
             .unwrap()
             .data["task"],
         expected_task
@@ -535,10 +537,10 @@ fn reusable_children_and_collection_members_have_distinct_execution_paths() {
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"条目","data":{"spec_refs":["fixture-spec:1"],"body":"输入条目","format":"text"}}),
+        json!({"name":"条目","spec_refs":["fixture-spec:1"],"data":{"body":"输入条目","format":"text"}}),
     )
     .unwrap();
-    let array=command(&engine,"delivery_type.create",None,json!({"name":"条目集合","data":{"spec_refs":["fixture-spec:1"],"body":"输入集合","format":"json","content_schema":{"type":"array","items":{"type":"string"},"minItems":2}}})).unwrap();
+    let array=command(&engine,"delivery_type.create",None,json!({"name":"条目集合","spec_refs":["fixture-spec:1"],"data":{"body":"输入集合","format":"json","content_schema":{"type":"array","items":{"type":"string"},"minItems":2}}})).unwrap();
     let child = publish(
         &engine,
         json!({"schema_version":6,"stages":[{"key":"work","name":"处理"}],"inputs":{"entry":{"delivery_ref":text["id"]}},
@@ -578,7 +580,7 @@ fn reusable_children_and_collection_members_have_distinct_execution_paths() {
     let children: Vec<_> = state
         .governance
         .iter()
-        .filter(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"].is_string())
+        .filter(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"].is_string())
         .collect();
     assert_eq!(children.len(), 2);
     assert_ne!(
@@ -628,8 +630,8 @@ fn research_agent(engine: &Engine) -> (Value, Value) {
         json!({"name":"合规调查员","data":{"instructions":"分析明确输入并提供依据"}}),
     )
     .unwrap();
-    let capability=command(engine,"capability.create",None,json!({"name":"调查能力","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID]}})).unwrap();
-    let agent=command(engine,"agent.create",None,json!({"name":"调查 Agent","data":{"role_ref":role["id"],"capability_ref":capability["id"]}})).unwrap();
+    let capability=command(engine,"capability.create",None,json!({"name":"调查能力","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID],"data":{}})).unwrap();
+    let agent=command(engine,"agent.create",None,json!({"name":"调查 Agent","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
     (role, agent)
 }
 fn launch(engine: &Engine, role: &Value, agent: &Value, mut step: Value) -> Value {
@@ -648,14 +650,17 @@ fn launch(engine: &Engine, role: &Value, agent: &Value, mut step: Value) -> Valu
     command(engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap()
 }
 fn instance(engine: &Engine, id: &Value) -> Value {
-    engine
-        .store
-        .snapshot()
-        .unwrap()
+    let state = engine.store.snapshot().unwrap();
+    let data = state
         .configuration(id.as_str().unwrap())
         .unwrap()
         .data
-        .clone()
+        .clone();
+    if data["status"] == "needs_reconciliation" {
+        let calls: Vec<_> = state.governance.iter().filter(|r| r.r#type == "platform_call" && r.data["status"] == "needs_reconciliation").map(|r| json!({"id":r.id,"tool":r.data["request"]["definition"]["qualified_name"],"error":r.data["error"]})).collect();
+        eprintln!("platform reconciliation diagnostics: {}", json!(calls));
+    }
+    data
 }
 
 #[test]
@@ -671,7 +676,7 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
             state
                 .configuration(defaults["workflow_ref"].as_str().unwrap())
                 .unwrap(),
-            &Scope::Global,
+            &Scope::global(),
             Some(&bindings),
         )
         .unwrap();
@@ -679,7 +684,7 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
     for workflow in plan
         .definitions
         .values()
-        .filter(|row| row.kind == "workflow")
+        .filter(|row| row.r#type == "workflow")
     {
         let definition: WorkflowDefinition = workflow.decode().unwrap();
         assert!(
@@ -704,7 +709,7 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         created
             .governance
             .iter()
-            .find(|row| row.kind == "workflow_instance" && row.data["owner_id"] == feature["id"])
+            .find(|row| row.r#type == "workflow_instance" && row.data["owner_id"] == feature["id"])
             .unwrap()
             .data["plan"]
             .clone(),
@@ -977,7 +982,7 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
                 restored
                     .governance
                     .iter()
-                    .any(|r| r.kind == "role" && r.id == role)
+                    .any(|r| r.r#type == "role" && r.id == role)
             );
         }
     }
@@ -1030,7 +1035,7 @@ fn automatic_review_blocks_rejection_and_advances_after_rework_without_confirmat
         !state
             .governance
             .iter()
-            .any(|row| row.kind == "workflow_confirmation")
+            .any(|row| row.r#type == "workflow_confirmation")
     );
     assert!(!state.events.iter().any(|event| {
         ["workflow.step.confirm", "workflow.step.approve"].contains(&event.kind.as_str())
@@ -1309,7 +1314,7 @@ fn cancelling_a_child_under_a_paused_ancestor_still_releases_the_invocation() {
     let child = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"].is_string())
+        .find(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"].is_string())
         .unwrap()
         .clone();
     command(&engine, "workflow.pause", run["id"].as_str(), json!({})).unwrap();
@@ -1352,8 +1357,8 @@ fn persisted_evidence_case(large: bool) {
     }
     let (role, mut agent) = research_agent(&workbench);
     if large {
-        let capability = command(&workbench,"capability.create",None,json!({"name":"Evidence reader","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,"builtin-tool-workflow-outputs-read:2"]}})).unwrap();
-        agent = command(&workbench,"agent.revise",agent["id"].as_str(),json!({"name":"Evidence reader","data":{"role_ref":role["id"],"capability_ref":capability["id"]}})).unwrap();
+        let capability = command(&workbench,"capability.create",None,json!({"name":"Evidence reader","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,"builtin-tool-workflow-outputs-read:2"],"data":{}})).unwrap();
+        agent = command(&workbench,"agent.revise",agent["id"].as_str(),json!({"name":"Evidence reader","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
     }
     recorder.responses.lock().unwrap().extend([
         json!({"status":"completed","summary":"实际记录已交付","outputs":{"evidence":evidence,"unrelated":{"private_note":"unbound output must not reach reviewer"}}}),
@@ -1550,7 +1555,7 @@ fn invalid_typed_output_fails_and_retry_creates_a_new_execution_without_changing
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_execution_history")
+            .any(|r| r.r#type == "workflow_execution_history")
     );
 }
 
@@ -1579,7 +1584,7 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
     let call = state
         .governance
         .iter()
-        .find(|r| r.kind == "platform_call")
+        .find(|r| r.r#type == "platform_call")
         .unwrap();
     assert_eq!(call.data["request"]["execution_id"], data["steps"][0]["id"]);
     assert_eq!(
@@ -1596,7 +1601,7 @@ fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt
                     .find(|r| r.id == run["id"].as_str().unwrap())
                     .unwrap();
                 row.data["inputs"] = json!({"forged":true});
-                row.content_hash = configuration_hash(&row.data);
+                row.content_hash = content_digest(&row.refs, &row.data);
                 Ok(Value::Null)
             })
             .is_err()
@@ -1667,7 +1672,7 @@ fn stale_start_and_unprepared_agent_session_are_rejected_before_dispatch() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_instance")
+            .any(|r| r.r#type == "workflow_instance")
     );
 }
 
@@ -1708,13 +1713,13 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
     let left = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"] == first)
+        .find(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"] == first)
         .unwrap()
         .clone();
     let right = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"] == second)
+        .find(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"] == second)
         .unwrap()
         .clone();
     command(&engine, "workflow.cancel", Some(&left.id), json!({})).unwrap();
@@ -1749,7 +1754,7 @@ fn cancelling_one_child_does_not_cancel_its_sibling_and_rework_replaces_the_old_
         state
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_execution_history"
+            .any(|r| r.r#type == "workflow_execution_history"
                 && r.definition_id == first.as_str().unwrap())
     );
 }
@@ -2103,7 +2108,7 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
             state
                 .governance
                 .iter()
-                .any(|r| r.kind == "workflow_execution_history"
+                .any(|r| r.r#type == "workflow_execution_history"
                     && r.definition_id == old_writer["id"].as_str().unwrap()
                     && r.data == old_writer)
         );
@@ -2251,7 +2256,7 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
         let permits: Vec<_> = state
             .governance
             .iter()
-            .filter(|r| r.kind == "workflow_action_permit")
+            .filter(|r| r.r#type == "workflow_action_permit")
             .collect();
         assert!(!permits.is_empty());
         assert_eq!(
@@ -2262,8 +2267,8 @@ fn actual_git_candidate(waived_advance: bool, task_owner: bool, rework_writer: b
             !state
                 .governance
                 .iter()
-                .any(|r| r.kind == "workflow_confirmation"
-                    || (r.kind == "platform_call"
+                .any(|r| r.r#type == "workflow_confirmation"
+                    || (r.r#type == "platform_call"
                         && r.data["request"]["definition"]["qualified_name"] == "tests.run"))
         );
     }
@@ -2392,7 +2397,7 @@ fn ancestor_pause_suspends_nested_dispatch_without_overriding_a_child_pause() {
     let child = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["workflow_ref"] == middle["id"])
+        .find(|r| r.r#type == "workflow_instance" && r.data["workflow_ref"] == middle["id"])
         .unwrap()
         .id
         .clone();
@@ -2443,7 +2448,7 @@ fn supplemental_human_wait_does_not_consume_the_configured_execution_budget() {
                 .unwrap();
             row.data["steps"][0]["started"] = json!(fake_past);
             row.data["steps"][0]["budget_wait_started"] = json!(fake_past);
-            row.content_hash = configuration_hash(&row.data);
+            row.content_hash = content_digest(&row.refs, &row.data);
             Ok(Value::Null)
         })
         .unwrap();
@@ -2576,14 +2581,14 @@ fn canonical_output_contract_describes_text_values_dynamic_checks_and_conditiona
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"调研正文","data":{"spec_refs":["fixture-spec:1"],"body":"普通 Markdown 正文","format":"markdown"}}),
+        json!({"name":"调研正文","spec_refs":["fixture-spec:1"],"data":{"body":"普通 Markdown 正文","format":"markdown"}}),
     )
     .unwrap();
     let report = command(
         &engine,
         "delivery_type.create",
         None,
-        json!({"name":"动态报告","data":{"spec_refs":["fixture-spec:1"],"body":"按本次检查集合提交报告","format":"json"}}),
+        json!({"name":"动态报告","spec_refs":["fixture-spec:1"],"data":{"body":"按本次检查集合提交报告","format":"json"}}),
     )
     .unwrap();
     let workflow = publish(
@@ -2659,7 +2664,7 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
     let child = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"].is_string())
+        .find(|r| r.r#type == "workflow_instance" && r.data["parent_execution_id"].is_string())
         .unwrap()
         .clone();
     assert_eq!(child.data["steps"][0]["status"], "failed");
@@ -2781,8 +2786,8 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
         json!({"name":"材料调查员","data":{"instructions":"使用当前授权工具"}}),
     )
     .unwrap();
-    let capability=command(&engine,"capability.create",None,json!({"name":"平台工具能力","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,tool["id"]]}})).unwrap();
-    let agent=command(&engine,"agent.create",None,json!({"name":"平台调查 Agent","data":{"role_ref":role["id"],"capability_ref":capability["id"]}})).unwrap();
+    let capability=command(&engine,"capability.create",None,json!({"name":"平台工具能力","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,tool["id"]],"data":{}})).unwrap();
+    let agent=command(&engine,"agent.create",None,json!({"name":"平台调查 Agent","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
     let run = launch(
         &engine,
         &role,
@@ -2878,7 +2883,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
     let call = state
         .governance
         .iter()
-        .find(|record| record.kind == "platform_call")
+        .find(|record| record.r#type == "platform_call")
         .unwrap();
     let caller = &call.data["request"]["caller"];
     assert_eq!(caller["session_id"], state.sessions[0].id);
@@ -2887,7 +2892,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
         state
             .governance
             .iter()
-            .any(|record| record.kind == "platform_tool_reply"
+            .any(|record| record.r#type == "platform_tool_reply"
                 && record.definition_id == call.id
                 && record.data["status"] == "delivered")
     );
@@ -2895,7 +2900,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
         state
             .governance
             .iter()
-            .all(|record| record.kind != "tool_call")
+            .all(|record| record.r#type != "tool_call")
     );
     let history = engine
         .query(
@@ -3001,7 +3006,7 @@ fn configured_task_completion_works_without_git_and_releases_declared_dependenci
         state
             .governance
             .iter()
-            .filter(|record| record.kind == "platform_call")
+            .filter(|record| record.r#type == "platform_call")
             .all(
                 |record| !record.data["request"]["definition"]["qualified_name"]
                     .as_str()
@@ -3169,7 +3174,7 @@ fn changing_a_running_task_waits_for_stop_and_never_reuses_the_old_contract() {
         state
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_execution_history"
+            .any(|r| r.r#type == "workflow_execution_history"
                 && r.definition_id == old["id"]
                 && r.data["contract_digest"] == old["contract_digest"])
     );
@@ -3181,7 +3186,7 @@ fn changing_a_running_task_waits_for_stop_and_never_reuses_the_old_contract() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|r| r["kind"] == "workflow_execution_history" && r["data"]["id"] == old["id"])
+            .find(|r| r["type"] == "workflow_execution_history" && r["data"]["id"] == old["id"])
             .unwrap()["frozen_step"]["task_instructions"],
         "原任务只调查原材料。"
     );

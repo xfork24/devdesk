@@ -1,6 +1,6 @@
 # 架构与设计决策
 
-当前基线为 global 16 / project 47（源协议 v2）、Workflow v6。业务配置与执行边界见 [领域规范](domain.md) 和 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。历史实施过程保存在 `docs/plans/`；本页描述当前系统。
+当前基线为 global 17 / project 48（扁平源协议）、Workflow v6。业务配置与执行边界见 [领域规范](domain.md) 和 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。历史实施过程保存在 `docs/plans/`；本页描述当前系统。
 
 ## 模块与事实源
 

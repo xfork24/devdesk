@@ -1,11 +1,9 @@
 {
-  "kind": "model_provider",
+  "type": "model_provider",
   "identity": "builtin-model-provider-minimax-cn",
   "revision": 1,
   "name": "MiniMax 订阅 国内",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "id": "minimax-cn",
     "label": "MiniMax 订阅 国内",

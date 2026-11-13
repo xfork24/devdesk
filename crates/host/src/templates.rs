@@ -10,40 +10,41 @@ impl Workspace {
         let mut custom = 0usize;
         let mut drafts = 0usize;
         let mut seen = BTreeSet::new();
-        let mut inspect = |namespace: &str, s: &EngineeringState| {
-            for r in s
-                .governance
-                .iter()
-                .filter(|r| template_definition_kind(&r.kind) && template_record_current(s, r))
-            {
-                fingerprints.push(json!([
-                    namespace,
-                    r.id,
-                    r.revision,
-                    r.content_hash,
-                    configuration_retired(s, r),
-                    template_record_disabled(s, r)
-                ]));
-                if !seen.insert(r.id.clone()) {
-                    continue;
-                }
-                if r.kind == "workflow_draft" && r.data["published_revision_id"].is_null() {
-                    drafts += 1;
-                }
-                if s.governance.iter().any(|n| {
-                    n.kind == r.kind && n.definition_id == r.definition_id && n.version > r.version
+        let mut inspect =
+            |namespace: &str, s: &EngineeringState| {
+                for r in s.governance.iter().filter(|r| {
+                    template_definition_kind(&r.r#type) && template_record_current(s, r)
                 }) {
-                    continue;
+                    fingerprints.push(json!([
+                        namespace,
+                        r.id,
+                        r.revision,
+                        r.content_hash,
+                        configuration_retired(s, r),
+                        template_record_disabled(s, r)
+                    ]));
+                    if !seen.insert(r.id.clone()) {
+                        continue;
+                    }
+                    if r.r#type == "workflow_draft" && r.data["published_revision_id"].is_null() {
+                        drafts += 1;
+                    }
+                    if s.governance.iter().any(|n| {
+                        n.r#type == r.r#type
+                            && n.definition_id == r.definition_id
+                            && n.version > r.version
+                    }) {
+                        continue;
+                    }
+                    *counts.entry(r.r#type.clone()).or_default() += 1;
+                    if template_record_disabled(s, r)
+                        || template_catalog_member(s, r)
+                            .is_none_or(|m| m.data["source_hash"] != template_source_hash(r))
+                    {
+                        custom += 1;
+                    }
                 }
-                *counts.entry(r.kind.clone()).or_default() += 1;
-                if template_record_disabled(s, r)
-                    || template_catalog_member(s, r)
-                        .is_none_or(|m| m.data["source_hash"] != template_source_hash(r))
-                {
-                    custom += 1;
-                }
-            }
-        };
+            };
         inspect("global", &global);
         let mut projects = Vec::new();
         let mut pristine = template_catalog_pristine(&global);
@@ -58,7 +59,7 @@ impl Workspace {
                 inspect(&p.id, &s);
                 if s.governance
                     .iter()
-                    .any(|r| r.kind == "project_configuration" && r.definition_id == p.id)
+                    .any(|r| r.r#type == "project_configuration" && r.definition_id == p.id)
                 {
                     projects.push(json!({"id":p.id,"title":p.title}));
                 }
@@ -145,7 +146,7 @@ mod tests {
                 .iter()
                 .find(|r| r.id == id)
                 .map(|r| {
-                    if r.kind == "permission_profile" {
+                    if r.r#type == "permission_profile" {
                         r.version
                     } else {
                         r.revision
@@ -175,7 +176,13 @@ mod tests {
             &w,
             "harness.revise",
             Some(&source.id),
-            json!({"name":"New source revision","data":source.data}),
+            {
+                let mut payload = json!({"name":"New source revision","data":source.data});
+                for (key, value) in &source.refs {
+                    payload[key] = value.clone();
+                }
+                payload
+            },
             None,
         )
         .unwrap();
@@ -199,7 +206,7 @@ mod tests {
         let a = create(&w, "Project A");
         let b = create(&w, "Project B");
         select(&w, &a);
-        let local=write(&w,"delivery_type.create",None,json!({"name":"Local custom delivery","scope":{"kind":"project","project_id":a},"data":{"format":"markdown","spec_refs":["builtin-spec-stage-prd:1"],"body":"custom delivery"}}),Some(&a)).unwrap();
+        let local=write(&w,"delivery_type.create",None,json!({"name":"Local custom delivery","scope":format!("project:{a}"),"spec_refs":["builtin-spec-stage-prd:1"],"data":{"format":"markdown","body":"custom delivery"}}),Some(&a)).unwrap();
         let role=write(&w,"role.revise",Some(&default_role_id("analyst")),json!({"name":"Edited analyst","data":{"instructions":"custom responsibility","visibility":{"kind":"global"}}}),None).unwrap();
         let defaults = w
             .dispatch("query.configuration_defaults", json!({"project_id":a}))
@@ -370,7 +377,7 @@ mod tests {
             &w,
             "delivery_type.create",
             None,
-            json!({"name":"Extra","data":{"format":"markdown","spec_refs":["builtin-spec-stage-prd:1"],"body":"extra"}}),
+            json!({"name":"Extra","spec_refs":["builtin-spec-stage-prd:1"],"data":{"format":"markdown","body":"extra"}}),
             None,
         )
         .unwrap();
@@ -392,7 +399,7 @@ mod tests {
         assert_eq!(json!(w.global.snapshot().unwrap()), json!(before));
         w.dispatch("configuration.templates.reset", reset_command(&w))
             .unwrap();
-        let stale=w.dispatch("delivery_type.create",json!({"command_id":id(),"expected_catalog_generation":1,"payload":{"name":"Stale","data":{"format":"markdown","spec_refs":["builtin-spec-stage-prd:1"],"body":"stale"}}})).unwrap_err();
+        let stale=w.dispatch("delivery_type.create",json!({"command_id":id(),"expected_catalog_generation":1,"payload":{"name":"Stale","spec_refs":["builtin-spec-stage-prd:1"],"data":{"format":"markdown","body":"stale"}}})).unwrap_err();
         assert_eq!(stale.code, "catalog_changed");
         assert_eq!(w.dispatch("role.revise",json!({"command_id":id(),"target":default_role_id("analyst"),"expected_revision":1,"expected_catalog_generation":1,"payload":{"name":"Stale edit","data":{"instructions":"old body","visibility":{"kind":"global"}}}})).unwrap_err().code,"catalog_changed");
     }
@@ -421,26 +428,30 @@ mod tests {
             let source = initial
                 .governance
                 .iter()
-                .filter(|r| r.kind == kind && template_record_current(&initial, r))
+                .filter(|r| r.r#type == kind && template_record_current(&initial, r))
                 .max_by_key(|r| r.version)
                 .unwrap();
             let (method, payload) = if kind == "standard" {
                 (
                     "standard.capture".to_owned(),
-                    json!({"name":"Customized standard", "root_workflow_refs":source.data["root_workflow_refs"]}),
+                    json!({"name":"Customized standard", "root_workflow_refs":reference_value(&source.refs,"root_workflow_refs")}),
                 )
             } else {
-                (
-                    format!("{kind}.revise"),
-                    json!({"name":format!("Customized {kind}"),"data":source.data}),
-                )
+                (format!("{kind}.revise"), {
+                    let mut payload =
+                        json!({"name":format!("Customized {kind}"),"data":source.data});
+                    for (key, value) in &source.refs {
+                        payload[key] = value.clone();
+                    }
+                    payload
+                })
             };
             write(&w, &method, Some(&source.id), payload, None).unwrap();
         }
         let profile = initial
             .governance
             .iter()
-            .find(|r| r.kind == "permission_profile" && template_record_current(&initial, r))
+            .find(|r| r.r#type == "permission_profile" && template_record_current(&initial, r))
             .unwrap();
         write(&w,"permission.profile.revise",Some(&profile.id),json!({"name":"Customized permission","target_kind":profile.data["target_kind"],"policy":profile.data["policy"]}),None).unwrap();
         let source=write(&w,"integration.create",None,json!({"name":"Fixture MCP","data":{"source":{"kind":"mcp","transport":"streamable_http","url":"https://mcp.example.invalid","command":[]}}}),None).unwrap();
@@ -497,7 +508,7 @@ mod tests {
         let native = state
             .governance
             .iter()
-            .find(|r| r.kind == "tool" && template_record_current(&state, r))
+            .find(|r| r.r#type == "tool" && template_record_current(&state, r))
             .unwrap();
         let preview = reset_command(&w);
         write(&w, "integration.disable", Some(&native.id), json!({}), None).unwrap();

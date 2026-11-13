@@ -40,7 +40,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
             let key = state
                 .configuration(agent.as_str().unwrap())
                 .ok()
-                .and_then(|r| r.data["role_ref"].as_str())
+                .and_then(|r| reference_value(&r.refs, "role_ref").as_str())
                 .and_then(|id| state.configuration(id).ok())
                 .map(|r| r.definition_id.clone())
                 .unwrap_or_else(|| format!("builtin-role-{role}"));
@@ -69,7 +69,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
 }
 fn setup_agent(e: &Engine, role: &str) -> String {
     let model=command(e,"model.create",None,json!({"name":"Model A","data":{"provider":"openai","model":"model-a","parameters":{},"capabilities":[]}})).unwrap();
-    let harness=command(e,"harness.create",None,json!({"name":"Harness","data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[],"model_providers":["builtin-model-provider-openai:1"]}})).unwrap();
+    let harness=command(e,"harness.create",None,json!({"name":"Harness","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}})).unwrap();
     let tool=command(e,"tool.create",None,json!({"name":"原生工具","data":{"qualified_name":"fixture.native","implementation":"harness.native","input_schema":{},"output_schema":{},"capabilities":[]}})).unwrap();
     let state = e.store.snapshot().unwrap();
     let target = permission_target(
@@ -79,8 +79,8 @@ fn setup_agent(e: &Engine, role: &str) -> String {
     )
     .unwrap();
     command(e,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-full-access:1","expected_revision":0,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
-    let cap=command(e,"capability.create",None,json!({"name":"Fixture capability","data":{"model_ref":model["id"],"harness_ref":harness["id"],"tools":[tool["id"]],"skills":[]}})).unwrap();
-    command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"data":{"role_ref":default_role_id(role),"capability_ref":cap["id"]}})).unwrap()["id"].as_str().unwrap().into()
+    let cap=command(e,"capability.create",None,json!({"name":"Fixture capability","model_ref":model["id"],"harness_ref":harness["id"],"tools":[tool["id"]],"skills":[],"data":{}})).unwrap();
+    command(e,"agent.create",None,json!({"name":format!("{role} Agent"),"role_ref":default_role_id(role),"capability_ref":cap["id"],"data":{}})).unwrap()["id"].as_str().unwrap().into()
 }
 #[test]
 fn agent_instances_pin_composition_and_choose_independent_scope() {
@@ -101,10 +101,16 @@ fn agent_instances_pin_composition_and_choose_independent_scope() {
         &e,
         "agent.instance.create",
         None,
-        json!({"name":"全局实例","agent_revision_id":agent,"scope":{"kind":"global"}}),
+        json!({"name":"全局实例","agent_revision_id":agent,"scope":"global"}),
     )
     .unwrap();
-    let local=command(&e,"agent.instance.create",None,json!({"name":"项目实例","agent_revision_id":agent,"scope":{"kind":"project","project_id":project}})).unwrap();
+    let local = command(
+        &e,
+        "agent.instance.create",
+        None,
+        json!({"name":"项目实例","agent_revision_id":agent,"scope":format!("project:{project}")}),
+    )
+    .unwrap();
     assert_ne!(global["id"], local["id"]);
     assert!(
         e.store
@@ -125,9 +131,11 @@ fn agent_instances_pin_composition_and_choose_independent_scope() {
         .configuration(&agent)
         .unwrap()
         .clone();
-    let data = old.data.clone();
-
-    let revised = command(&e, "agent.revise", Some(&agent), json!({"data":data})).unwrap();
+    let mut payload = json!({"data":old.data});
+    for (key, value) in &old.refs {
+        payload[key] = value.clone();
+    }
+    let revised = command(&e, "agent.revise", Some(&agent), payload).unwrap();
     assert_ne!(revised["id"], agent);
     assert_eq!(
         e.store
@@ -158,7 +166,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         &shared,
         "agent.instance.create",
         None,
-        json!({"name":"Global experience","agent_revision_id":agent,"scope":{"kind":"global"}}),
+        json!({"name":"Global experience","agent_revision_id":agent,"scope":"global"}),
     )
     .unwrap()["id"]
         .as_str()
@@ -168,7 +176,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         &shared,
         "agent.instance.create",
         None,
-        json!({"name":"Separate instance","agent_revision_id":agent,"scope":{"kind":"global"}}),
+        json!({"name":"Separate instance","agent_revision_id":agent,"scope":"global"}),
     )
     .unwrap()["id"]
         .as_str()
@@ -215,7 +223,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             .publish_project(&e.store.snapshot().unwrap().projects[0])
             .unwrap();
         if index == 0 {
-            local_instance=command(&e,"agent.instance.create",None,json!({"name":"Project experience","agent_revision_id":agent,"scope":{"kind":"project","project_id":pid}})).unwrap()["id"].as_str().unwrap().to_owned();
+            local_instance=command(&e,"agent.instance.create",None,json!({"name":"Project experience","agent_revision_id":agent,"scope":format!("project:{pid}")})).unwrap()["id"].as_str().unwrap().to_owned();
         }
         let snapshot = command(&e, "snapshot.save", Some(&pid), json!({})).unwrap()["id"]
             .as_str()
@@ -224,15 +232,14 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         let metadata = json!({"agent_instance_id":instance,"agent_revision_id":agent,"snapshot_id":snapshot,"session_id":format!("synthetic-index-{index}"),"project_id":pid,"project_name":title,"feature_name":format!("Feature {index}"),"captured_at":1000+index as u64,"work_time":1000+index as u64,"kind":"project_context"});
         let row = ConfigurationRecord {
             id: id(),
-            kind: "experience".into(),
+            r#type: "experience".into(),
             definition_id: snapshot,
-            scope: Scope::Project {
-                project_id: pid.clone(),
-            },
+            scope: Scope::project(pid.clone()),
             name: title.to_string(),
             version: 1,
             supersedes: None,
-            content_hash: configuration_hash(&metadata),
+            content_hash: content_digest(&References::new(), &metadata),
+            refs: References::new(),
             data: metadata,
             immutable: true,
             revision: 1,
@@ -245,7 +252,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
                     let mut local = row.clone();
                     local.id = id();
                     local.data["agent_instance_id"] = json!(local_instance);
-                    local.content_hash = configuration_hash(&local.data);
+                    local.content_hash = content_digest(&local.refs, &local.data);
                     s.governance.push(local);
                 }
                 Ok(Value::Null)
@@ -489,7 +496,7 @@ fn reference_catalog_is_idempotent_and_does_not_configure_new_projects() {
         !before
             .governance
             .iter()
-            .any(|r| r.kind == "defaults_bundle")
+            .any(|r| r.r#type == "defaults_bundle")
     );
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
@@ -522,7 +529,7 @@ fn reference_catalog_is_idempotent_and_does_not_configure_new_projects() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "project_configuration")
+            .any(|r| r.r#type == "project_configuration")
     );
 }
 

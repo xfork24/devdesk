@@ -27,7 +27,7 @@ async function createGlobalAgent(page: Page, name: string) {
   const defaults = await rpc(page, "query.configuration_defaults");
   const definition = defaults.records.find((r: any) => r.id === defaults.role_agent_bindings["builtin-role-analyst:1"]);
   const created = await rpc(page, "agent.instance.create", {
-    command_id: crypto.randomUUID(), payload: { name, scope: {kind:"global"}, agent_revision_id:definition.id },
+    command_id: crypto.randomUUID(), payload: { name, scope: "global", agent_revision_id:definition.id },
   });
   return { instance: created.id, agent: definition.id };
 }
@@ -182,7 +182,7 @@ test("创建 Feature 提供全部同项目的前序选项，并说明关联语�
           configuration_ready: true,
           configurations: [
             {
-              kind: "project_configuration",
+              type: "project_configuration",
               id: "fixture-config",
               version: 1,
               data: {},

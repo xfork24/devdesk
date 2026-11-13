@@ -1,11 +1,9 @@
 {
-  "kind": "model_provider",
+  "type": "model_provider",
   "identity": "builtin-model-provider-openai",
   "revision": 1,
   "name": "OpenAI / ChatGPT",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "id": "openai",
     "label": "OpenAI / ChatGPT",

@@ -33,7 +33,7 @@ fn pending(state: &EngineeringState, instance_id: &str) -> bool {
         .and_then(|r| r.data["root_instance_id"].as_str())
         .unwrap_or(instance_id);
     state.governance.iter().any(|r| {
-        r.kind == "workflow_change"
+        r.r#type == "workflow_change"
             && ["prepared", "waiting_quiescence"].contains(&r.data["status"].as_str().unwrap_or(""))
             && state
                 .configuration(&r.definition_id)
@@ -57,7 +57,7 @@ impl Engine {
     ) -> Result<Preview> {
         let change = state.configuration(change_id)?;
         require(
-            change.kind == "workflow_change"
+            change.r#type == "workflow_change"
                 && change.definition_id == row.id
                 && change.data["status"] == "applied"
                 && change.data["new_plan_revision_id"] == old.active_plan_revision_id,
@@ -75,7 +75,7 @@ impl Engine {
         )?;
         let previous = state.configuration(&source_changes.plan_revision_id)?;
         require(
-            previous.kind == "workflow_plan_revision" && previous.data["instance_id"] == row.id,
+            previous.r#type == "workflow_plan_revision" && previous.data["instance_id"] == row.id,
             "原计划不属于此实例",
         )?;
         let source: Preview = serde_json::from_value(change.data["preview"].clone())
@@ -128,7 +128,7 @@ impl Engine {
             require(
                 execution.workflow_instance_id == row.id
                     && state.governance.iter().any(|r| {
-                        r.kind == "workflow_execution_history"
+                        r.r#type == "workflow_execution_history"
                             && r.definition_id == execution.id
                             && r.data == json!(execution)
                     })
@@ -186,7 +186,7 @@ impl Engine {
             .filter(|e| {
                 e.status == StepExecutionStatus::Skipped
                     && state.governance.iter().any(|r| {
-                        r.kind == "workflow_change"
+                        r.r#type == "workflow_change"
                             && r.data["status"] == "applied"
                             && r.data["new_plan_revision_id"] == e.plan_revision_id
                             && r.data["preview"]["bypassed"]
@@ -432,7 +432,7 @@ impl Engine {
                         e.node_id == step.node_id
                             && e.started.is_some()
                             && state.governance.iter().any(|r| {
-                                r.kind == "workflow_instance"
+                                r.r#type == "workflow_instance"
                                     && r.data["parent_execution_id"] == e.id
                             })
                     })
@@ -507,7 +507,7 @@ impl Engine {
                 if let InputBinding::Material { material_ref } = binding {
                     let m = state.configuration(material_ref)?;
                     require(
-                        m.kind == "typed_material"
+                        m.r#type == "typed_material"
                             && m.data["project_id"] == old.project_id
                             && m.data["root_instance_id"] == old.root_instance_id,
                         "材料来源跨流程",
@@ -555,7 +555,7 @@ impl Engine {
             p.definitions
                 .iter()
                 .filter(|(_, r)| {
-                    !["workflow", "runtime_workflow", "standard"].contains(&r.kind.as_str())
+                    !["workflow", "runtime_workflow", "standard"].contains(&r.r#type.as_str())
                 })
                 .map(|(k, r)| (k.clone(), r.content_hash.clone()))
                 .collect::<BTreeMap<_, _>>()
@@ -595,7 +595,7 @@ impl Engine {
             "包含未声明流程输入",
         )?;
         let footprint = json!({"executions":old.steps.iter().filter(|s|affected.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
-            "children":state.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
+            "children":state.governance.iter().filter(|r|r.r#type=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
         plan.permission_workflow_ref =
             if adopted.is_some() && plan.workflow_revision_id != old.plan.workflow_revision_id {
                 Some(plan.workflow_revision_id.clone())
@@ -665,7 +665,7 @@ impl Engine {
                 .or_else(|| p["instance_id"].as_str())
                 .unwrap_or(""),
         )?;
-        require(row.kind == "workflow_instance", "不是工作流实例")?;
+        require(row.r#type == "workflow_instance", "不是工作流实例")?;
         let changes: WorkflowChangeSet = serde_json::from_value(p["changeset"].clone())
             .map_err(|e| err("invalid_params", e.to_string()))?;
         let preview = self.change_preview_in(&state, row, &changes)?;
@@ -726,7 +726,7 @@ impl Engine {
             .plan
             .definitions
             .values()
-            .filter(|r| ["workflow", "standard"].contains(&r.kind.as_str()))
+            .filter(|r| ["workflow", "standard"].contains(&r.r#type.as_str()))
         {
             if state.configuration(&source.id).is_err() {
                 state.governance.push(source.clone());
@@ -773,7 +773,7 @@ impl Engine {
             for r in state
                 .governance
                 .iter()
-                .filter(|r| r.kind == "workflow_instance")
+                .filter(|r| r.r#type == "workflow_instance")
             {
                 if r.data["parent_execution_id"]
                     .as_str()
@@ -936,7 +936,7 @@ impl Engine {
                 .governance
                 .iter()
                 .find(|r| {
-                    r.kind == "workflow_instance"
+                    r.r#type == "workflow_instance"
                         && r.data["steps"]
                             .as_array()
                             .is_some_and(|steps| steps.iter().any(|s| s["id"] == e.id))
@@ -1026,7 +1026,7 @@ impl Engine {
             .plan
             .definitions
             .values()
-            .filter(|r| ["workflow", "standard"].contains(&r.kind.as_str()))
+            .filter(|r| ["workflow", "standard"].contains(&r.r#type.as_str()))
         {
             if state.configuration(&definition.id).is_err() {
                 state.governance.push(definition.clone());
@@ -1127,7 +1127,7 @@ impl Engine {
                 .governance
                 .iter()
                 .filter(|r| {
-                    r.kind == "workflow_change"
+                    r.r#type == "workflow_change"
                         && ["prepared", "waiting_quiescence"]
                             .contains(&r.data["status"].as_str().unwrap_or(""))
                 })
@@ -1195,7 +1195,7 @@ impl Engine {
 
     pub fn drive_workflow_segments(&self) -> Result<()> {
         self.store.transact(None,&mut|state|{
-            let rows:Vec<_>=state.governance.iter().filter(|r|r.kind=="workflow_segment"&&r.data["status"]=="active").cloned().collect();
+            let rows:Vec<_>=state.governance.iter().filter(|r|r.r#type=="workflow_segment"&&r.data["status"]=="active").cloned().collect();
             for segment in rows {
                 let row=state.configuration(&segment.definition_id)?.clone();let instance:ConfiguredWorkflowInstance=row.decode()?;
                 let mut data=segment.data.clone();

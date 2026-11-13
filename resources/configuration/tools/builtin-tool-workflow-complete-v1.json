@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-workflow-complete",
   "revision": 1,
   "name": "完成当前实例",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "workflow.complete",
     "implementation": "platform",

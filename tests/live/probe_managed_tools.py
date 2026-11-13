@@ -10,7 +10,7 @@ try:
 
  sid,tid,state=c.discuss(r['feature_id'],v['feature']['revision'],'analyst',a.provider,prompt)
  events=[e for e in state['events'] if e['turn_id']==tid and e['mode']=='full'];answer=next(e['content'] for e in reversed(events) if e['kind']=='assistant').strip().removeprefix('```json').removesuffix('```').strip();value=json.loads(answer)
- tool=[e for e in events if e['kind']=='tool' and 'DEVDESK_TOOL_EXECUTED' in e['content'] and '/work' in e['content'] and json.loads(e['content']).get('type') not in ['userMessage','reasoning']]
+ tool=[e for e in events if e['type']=='tool' and 'DEVDESK_TOOL_EXECUTED' in e['content'] and '/work' in e['content'] and json.loads(e['content']).get('type') not in ['userMessage','reasoning']]
  assert value['tool_ran'] and tool,'Actual confined tool did not prove hidden state'
  report.update(passed=True,session=sid,turn=tid,tool_events=[e['id'] for e in tool],protocol_artifacts=[e['protocol_artifact'] for e in state['executions'] if e['protocol_artifact']])
 except Exception as e:report.update(failure_type=type(e).__name__,failure=str(e));raise

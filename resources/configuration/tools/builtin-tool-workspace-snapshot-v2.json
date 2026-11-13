@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-workspace-snapshot",
   "revision": 2,
   "name": "固定代码版本",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "workspace.snapshot",
     "implementation": "platform",

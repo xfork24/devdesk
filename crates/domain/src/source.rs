@@ -2,13 +2,14 @@
 use crate::*;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct SourceDefinition {
-    pub kind: String,
+    pub r#type: String,
     pub identity: String,
     pub revision: u64,
     pub name: String,
     pub scope: Scope,
+    #[serde(flatten)]
+    pub refs: References,
     pub data: Value,
 }
 
@@ -40,17 +41,18 @@ pub fn parse_source_reference(reference: &str) -> Result<(&str, u64)> {
 
 impl SourceDefinition {
     pub fn into_record(self) -> Result<ConfigurationRecord> {
-        validate_source_data(&self.kind, &self.data)?;
+        validate_source_data(&self.r#type, &self.refs, &self.data)?;
         let id = source_reference(&self.identity, self.revision)?;
         Ok(ConfigurationRecord {
             id,
-            kind: self.kind,
+            r#type: self.r#type,
             definition_id: self.identity,
             scope: self.scope,
             name: self.name,
             version: self.revision,
             supersedes: None,
-            content_hash: configuration_hash(&self.data),
+            content_hash: content_digest(&self.refs, &self.data),
+            refs: self.refs,
             data: self.data,
             immutable: true,
             revision: 1,
@@ -62,7 +64,6 @@ impl SourceDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionContextDefinition {
-    pub sandbox_ref: Id,
     pub harness: PermissionSelection,
     pub sandbox: PermissionSelection,
     #[serde(default)]
@@ -82,38 +83,77 @@ pub struct StepPermissionGrant {
     pub tool_refs: Vec<Id>,
 }
 
-pub fn validate_source_data(kind: &str, data: &Value) -> Result<()> {
-    let invalid = |e: serde_json::Error| err("invalid_source", e.to_string());
-    match kind {
-        "agent" => {
-            let a: AgentDefinition = serde_json::from_value(data.clone()).map_err(invalid)?;
-            parse_source_reference(&a.role_ref)?;
-            parse_source_reference(&a.capability_ref)?;
-        }
-        "capability" => {
-            let cap: CapabilityDefinition =
-                serde_json::from_value(data.clone()).map_err(invalid)?;
-            for reference in [&cap.model_ref, &cap.harness_ref]
-                .into_iter()
-                .chain(&cap.skills)
-                .chain(&cap.tools)
-            {
+/// Flattened references must stay within the type's allowlist and use canonical
+/// `identity:revision` strings; lists never repeat a revision.
+pub fn validate_references(kind: &str, refs: &References) -> Result<()> {
+    let allowed = reference_fields(kind);
+    require(
+        refs.keys().all(|key| allowed.contains(&key.as_str())),
+        "引用字段不属于该定义类型",
+    )?;
+    for (key, value) in refs {
+        let list = [
+            "skills",
+            "tools",
+            "spec_refs",
+            "model_providers",
+            "root_workflow_refs",
+        ]
+        .contains(&key.as_str());
+        require(
+            if list {
+                value.is_array()
+            } else {
+                value.is_string()
+            },
+            format!("{key} 引用形状不匹配"),
+        )?;
+        match value {
+            Value::String(reference) => {
                 parse_source_reference(reference)?;
             }
+            Value::Array(items) => {
+                let mut seen = std::collections::BTreeSet::new();
+                for item in items {
+                    let reference = item
+                        .as_str()
+                        .ok_or_else(|| err("invalid_source", format!("{key} 引用必须为字符串")))?;
+                    parse_source_reference(reference)?;
+                    require(seen.insert(reference), format!("{key} 引用不得重复"))?;
+                }
+            }
+            _ => {
+                return Err(err(
+                    "invalid_source",
+                    format!("{key} 引用必须为字符串或列表"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_source_data(kind: &str, refs: &References, data: &Value) -> Result<()> {
+    let invalid = |e: serde_json::Error| err("invalid_source", e.to_string());
+    validate_references(kind, refs)?;
+    match kind {
+        "agent" => {
             require(
-                cap.skills
-                    .iter()
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len()
-                    == cap.skills.len()
-                    && cap
-                        .tools
-                        .iter()
-                        .collect::<std::collections::BTreeSet<_>>()
-                        .len()
-                        == cap.tools.len(),
-                "Capability 引用不得重复",
+                data.as_object().is_some_and(|data| data.is_empty()),
+                "Agent data 必须为空对象；引用属于信封根级",
             )?;
+            reference_id(refs, "role_ref")?;
+            reference_id(refs, "capability_ref")?;
+        }
+        "capability" => {
+            require(
+                data.as_object().is_some_and(|data| data.is_empty()),
+                "Capability data 必须为空对象；引用属于信封根级",
+            )?;
+            reference_list(refs, "skills")?;
+            reference_list(refs, "tools")?;
+            reference_id(refs, "model_ref")?;
+            reference_id(refs, "harness_ref")?;
         }
         "permission_profile" => {
             require(
@@ -138,20 +178,11 @@ pub fn validate_source_data(kind: &str, data: &Value) -> Result<()> {
             catalog.validate()?;
         }
         "harness" => {
-            let h: HarnessDefinition = serde_json::from_value(data.clone()).map_err(invalid)?;
-            let mut refs = std::collections::BTreeSet::new();
-            for reference in &h.model_providers {
-                parse_source_reference(reference)?;
-                require(refs.insert(reference.clone()), "Harness 服务商引用重复")?;
-            }
-            if let Some(catalog_ref) = &h.model_catalog_ref {
-                parse_source_reference(catalog_ref)?;
-            }
+            serde_json::from_value::<HarnessDefinition>(data.clone()).map_err(invalid)?;
         }
         "permission_context" => {
             let context: PermissionContextDefinition =
                 serde_json::from_value(data.clone()).map_err(invalid)?;
-            parse_source_reference(&context.sandbox_ref)?;
             context.control_policy.validate()?;
             let mut grants = std::collections::BTreeSet::new();
             for grant in &context.step_grants {
@@ -166,6 +197,11 @@ pub fn validate_source_data(kind: &str, data: &Value) -> Result<()> {
             let standard: ConfiguredStandard =
                 serde_json::from_value(data.clone()).map_err(invalid)?;
             standard.validate()?;
+            let roots = reference_list(refs, "root_workflow_refs")?;
+            require(
+                !roots.is_empty() && roots.len() <= 100,
+                "Standard 需要 1—100 个 Workflow 入口",
+            )?;
         }
         "workflow" => {
             for step in data["steps"].as_array().into_iter().flatten() {
@@ -187,45 +223,39 @@ pub fn validate_source_data(kind: &str, data: &Value) -> Result<()> {
 impl ConfigurationRecord {
     pub fn source(&self) -> SourceDefinition {
         SourceDefinition {
-            kind: self.kind.clone(),
+            r#type: self.r#type.clone(),
             identity: self.definition_id.clone(),
             revision: self.version,
             name: self.name.clone(),
             scope: self.scope.clone(),
+            refs: self.refs.clone(),
             data: self.data.clone(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentDefinition {
-    pub role_ref: Id,
-    pub capability_ref: Id,
-}
-
 impl EngineeringState {
     pub fn resolve_agent(&self, reference: &str) -> Result<AgentComposition> {
         let record = self.configuration(reference)?;
-        require(record.kind == "agent", "需要 Agent 源修订")?;
-        let agent: AgentDefinition = record.decode()?;
-        let role = self.configuration(&agent.role_ref)?;
-        let capability = self.configuration(&agent.capability_ref)?;
+        require(record.r#type == "agent", "需要 Agent 源修订")?;
+        let role_reference = reference_id(&record.refs, "role_ref")?;
+        let capability_reference = reference_id(&record.refs, "capability_ref")?;
+        let role = self.configuration(&role_reference)?;
+        let capability = self.configuration(&capability_reference)?;
         require(
-            role.kind == "role" && capability.kind == "capability",
+            role.r#type == "role" && capability.r#type == "capability",
             "Agent 引用类型不匹配",
         )?;
         let role_data: RoleDefinition = role.decode()?;
-        let cap: CapabilityDefinition = capability.decode()?;
         Ok(AgentComposition {
-            role_ref: Some(agent.role_ref),
-            capability_ref: Some(agent.capability_ref),
+            role_ref: Some(role_reference),
+            capability_ref: Some(capability_reference),
             role: role.definition_id.clone(),
             instructions: role_data.instructions,
-            model_ref: cap.model_ref,
-            harness_ref: cap.harness_ref,
-            skills: cap.skills,
-            tools: cap.tools,
+            model_ref: reference_id(&capability.refs, "model_ref")?,
+            harness_ref: reference_id(&capability.refs, "harness_ref")?,
+            skills: reference_list(&capability.refs, "skills")?,
+            tools: reference_list(&capability.refs, "tools")?,
         })
     }
 
@@ -235,7 +265,7 @@ impl EngineeringState {
         self.harnesses.clear();
         self.sandboxes.clear();
         for r in &self.governance {
-            match r.kind.as_str() {
+            match r.r#type.as_str() {
                 "skill" => self.definitions.push(Definition {
                     id: r.id.clone(),
                     family: "skill".into(),
@@ -304,7 +334,7 @@ impl EngineeringState {
                 let selection = self
                     .governance
                     .iter()
-                    .filter(|r| r.kind == "project_configuration")
+                    .filter(|r| r.r#type == "project_configuration")
                     .max_by_key(|r| r.version);
                 let selected = selection
                     .filter(|r| r.data["workflow_ref"].as_str() == Some(reference))
@@ -329,5 +359,68 @@ impl EngineeringState {
             }
         }
         Ok(doc)
+    }
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn flattened_references_validate_shape_payload_and_content_digest() {
+        let source = serde_json::json!({"type":"capability","identity":"cap","revision":1,"name":"Cap","scope":"global","harness_ref":"h:1","model_ref":"m:1","skills":[],"tools":["t:1"],"data":{}});
+        let decode = |value| {
+            serde_json::from_value::<SourceDefinition>(value)
+                .unwrap()
+                .into_record()
+        };
+        let record = decode(source.clone()).unwrap();
+        assert_eq!(
+            record.source(),
+            serde_json::from_value::<SourceDefinition>(source.clone()).unwrap()
+        );
+        assert_eq!(
+            ConfigurationRecord::from_storage(record.to_storage()).unwrap(),
+            record
+        );
+        let mut changed = source.clone();
+        changed["model_ref"] = json!("m:2");
+        assert_ne!(record.content_hash, decode(changed).unwrap().content_hash);
+        for (key, value) in [
+            ("model_ref", json!(["m:1"])),
+            ("skills", json!("s:1")),
+            ("tools", json!(["t:1", "t:1"])),
+            ("tools", json!(["t:0"])),
+            ("role_ref", json!("r:1")),
+            ("data", json!({"model_ref":"m:2"})),
+        ] {
+            let mut invalid = source.clone();
+            invalid[key] = value;
+            assert!(decode(invalid).is_err(), "accepted invalid {key}");
+        }
+    }
+
+    #[test]
+    fn scope_encoding_rejects_malformed_locators_and_preserves_visibility() {
+        for scope in [
+            "",
+            "project:",
+            "feature:p",
+            "project:p:extra",
+            "feature:p:",
+            "project:has space",
+        ] {
+            assert!(
+                serde_json::from_value::<Scope>(json!(scope)).is_err(),
+                "accepted {scope}"
+            );
+        }
+        let project: Scope = serde_json::from_value(json!("project:p")).unwrap();
+        let feature: Scope = serde_json::from_value(json!("feature:p:f")).unwrap();
+        assert!(project.visible_from(&feature));
+        assert!(!feature.visible_from(&project));
+        assert!(!project.visible_from(&Scope::feature("other", "f")));
+        assert_eq!(feature.project_id(), Some("p"));
     }
 }

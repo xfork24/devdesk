@@ -141,7 +141,7 @@ export function AgentExperience({
       ) : (
         <>
           <p className="mono">
-            {instanceId} · {data?.scope.kind || ""}
+            {instanceId} · {data?.scope || ""}
           </p>
           {filters}
           <p>{data?.total || 0} 条快照 · 时间按当前时区显示</p>

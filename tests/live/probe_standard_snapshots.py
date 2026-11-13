@@ -62,7 +62,7 @@ def wait(c, root, manager, predicate, phase):
     conflict_deadlines = {}
     while time.monotonic() < deadline:
         workspace = c.rpc('query.workspace', {'feature_id': feature, 'limit': 100})
-        instances = [r for r in workspace['configurations'] if r['kind'] == 'workflow_instance' and r['data']['root_instance_id'] == root]
+        instances = [r for r in workspace['configurations'] if r['type'] == 'workflow_instance' and r['data']['root_instance_id'] == root]
         current = next(r for r in instances if r['id'] == root)
         controller = c.rpc('query.orchestration', {'id': manager})
         state = [(r['data']['owner_id'], s['step'], s['status']) for r in instances for s in r['data']['steps'] if s['status'] not in ['queued', 'completed']]
@@ -124,7 +124,7 @@ try:
             if sid:
                 c.wait(lambda: c.rpc('query.session', {'id': sid}), stopped, 120)
             workspace = c.rpc('query.workspace', {'feature_id': feature, 'limit': 100})
-            instances = [r for r in workspace['configurations'] if r['kind'] == 'workflow_instance' and r['data']['root_instance_id'] == root]
+            instances = [r for r in workspace['configurations'] if r['type'] == 'workflow_instance' and r['data']['root_instance_id'] == root]
             recovery = []
             for row in instances:
                 for step in row['data']['steps']:
@@ -171,22 +171,23 @@ try:
         task_source = c.rpc('query.workflow', {'id': defaults['task_workflow_ref']})
         feature_doc = json.loads(json.dumps(feature_source['data']))
         goal_spec=c.command('spec.create',payload={'name':'Engineering goal input','data':{'schema_version':3,'body':'输入应完整提供本次工程目标与验收事实。','checks':[{'key':'goal_input','name':'工程目标','instructions':'核对 instructions 是完整、非空的工程目标。'}]}})
-        goal_delivery=c.command('delivery_type.create',payload={'name':'Engineering goal','data':{'format':'json','spec_refs':[goal_spec['id']],'content_schema':{'type':'object','required':['instructions'],'properties':{'instructions':{'type':'string','minLength':1}}}}})
+        goal_delivery=c.command('delivery_type.create',payload={'spec_refs':[goal_spec['id']],'name':'Engineering goal','data':{'format':'json','content_schema':{'type':'object','required':['instructions'],'properties':{'instructions':{'type':'string','minLength':1}}}}})
         feature_doc.setdefault('inputs', {})['goal'] = {'delivery_ref': goal_delivery['id']}
         first = next(s for s in feature_doc['steps'] if s['executor']['type'] == 'agent')
         first.setdefault('inputs', {})['goal'] = {'type': 'source', 'source': {'step': '$input', 'port': 'goal'}}
         invocation = next(s for s in feature_doc['steps'] if s['executor']['type'] == 'workflow' and s['executor'].get('work_binding'))
         invocation['executor']['foreach']['max_concurrency'] = 2
         wf = publish(c, feature_source, feature_doc, 'Two independent work selections')
-        sa = c.command('standard.capture', payload={'name': 'Reusable engineering snapshot A', 'root_workflow_refs': [wf['id']], 'scope': {'kind': 'global'}})
+        sa = c.command('standard.capture', payload={'name': 'Reusable engineering snapshot A', 'root_workflow_refs': [wf['id']], 'scope': 'global'})
 
         extra = c.command('spec.create', payload={'name': 'Additional traceability check', 'data': {'schema_version': 3, 'body': '逐项核对本次评审所用材料及真实测试回执的确切来源。', 'checks': [{'key': 'standard_b_trace', 'name': '材料与测试来源', 'instructions': '检查当前输入材料和真实测试回执确实对应被评审版本，给出具体来源；不得将文字自述当作测试通过。'}]}})
         task_doc = json.loads(json.dumps(task_source['data']))
         review = next(s for s in task_doc['steps'] if s['executor']['type'] == 'agent' and any(port.get('content_checks') for port in s.get('outputs', {}).values()))
         review.setdefault('spec_refs', []).append(extra['id'])
         wb = publish(c, task_source, task_doc, 'Additional traceability requirement')
-        sb = c.command('standard.capture', payload={'name': 'Reusable engineering snapshot B', 'root_workflow_refs': [wb['id']], 'scope': {'kind': 'global'}})
-        context = next(r['data'] for r in defaults['records'] if r['id'] == defaults['permission_context_ref'])
+        sb = c.command('standard.capture', payload={'name': 'Reusable engineering snapshot B', 'root_workflow_refs': [wb['id']], 'scope': 'global'})
+        context_source = next(r for r in defaults['records'] if r['id'] == defaults['permission_context_ref'])
+        context = context_source['data']
 
         def permission(task_ref, name):
             data = json.loads(json.dumps(context))
@@ -195,7 +196,7 @@ try:
                     grant['workflow_ref'] = wf['id']
                 if grant['workflow_ref'] == task_source['id']:
                     grant['workflow_ref'] = task_ref
-            return c.command('permission_context.create', payload={'name': name, 'scope': {'kind': 'project', 'project_id': project}, 'data': data})['id']
+            return c.command('permission_context.create', payload={'name': name, 'scope': 'project:' + str(project), 'sandbox_ref': context_source['sandbox_ref'], 'data': data})['id']
 
         pa, pb = permission(task_source['id'], 'Original work authorization'), permission(wb['id'], 'Selected work authorization')
         current = c.rpc('query.workspace')['active_project']
@@ -272,7 +273,7 @@ try:
     import sqlite3
     database = out / 'data/projects' / project / 'engineering.sqlite3'
     with sqlite3.connect(database) as connection:
-        calls = [json.loads(row[0]) for row in connection.execute("SELECT data FROM governance_records WHERE kind='platform_call'")]
+        calls = [json.loads(row[0]) for row in connection.execute("SELECT data FROM governance_records WHERE type='platform_call'")]
     succeeded = [r for r in calls if r['status'] == 'succeeded']
     names = [r['request']['definition']['qualified_name'] for r in succeeded]
     assert names.count('tests.run') >= 6 and names.count('git.advance') >= 3 and names.count('git.publish') >= 3

@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-design",
   "revision": 2,
   "name": "Design Doc",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-stage-architecture:1"
+  ],
   "data": {
     "format": "markdown",
-    "spec_refs": [
-      "builtin-spec-stage-architecture:1"
-    ],
     "producer": {
       "kind": "agent"
     }

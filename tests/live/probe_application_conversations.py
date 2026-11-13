@@ -27,7 +27,7 @@ try:
   assert operation['status']=='completed',operation.get('reason')
   report['repository_connected_before_web']=True;report['repository_operation']=operation['id']
  revision=rpc('query.workspace',{'project_id':project})['active_project']['revision']
- records=rpc('query.configurations',{'project_id':project,'limit':1000})['records'];by_id={r['id']:r for r in records};agent=next(r for r in records if r['kind']=='agent' and r['data']['role']=='analyst' and by_id[r['data']['harness_ref']]['data']['provider']==a.provider)
+ records=rpc('query.configurations',{'project_id':project,'limit':1000})['records'];by_id={r['id']:r for r in records};agent=next(r for r in records if r['type']=='agent' and r['data']['role']=='analyst' and by_id[r['data']['harness_ref']]['data']['provider']==a.provider)
  opened=cmd('session.open',project,revision,payload={'agent':agent['id']},project=project);sid=opened['id'];report['session_id']=sid
  marker=uuid.uuid4().hex
  prompts=[f'Remember marker {marker}. Do not use tools. Return only JSON {{"marker":"{marker}","role":"analyst"}}.','Without tools return only JSON with marker from the preceding message and role analyst.']

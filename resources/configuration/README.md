@@ -1,6 +1,6 @@
 # 默认源配置
 
-此目录使用源定义协议 v2，只发布源数据。每个 JSON 包含 `kind`、`identity`、`revision`、`name`、`scope`、`data`；引用统一为 `identity:revision`（Delivery 的 `producer.tools` 例外，按工具 `qualified_name` 声明行为约束而非内容引用）。修订不可变，使用方显式采用新引用。`manifest.json` 只声明发布资源与默认选择，不指定数据库表，也不重复维护引用图。文件名统一为 `<identity>-v<revision>.json`，目录内修订以文件内部的 `revision` 字段为准。
+此目录使用扁平源定义协议，只发布源数据。每个 JSON 包含 `type`、`identity`、`revision`、`name`、`scope`、根级引用字段及 `data`；引用统一为 `identity:revision`（Delivery 的 `producer.tools` 例外，按工具 `qualified_name` 声明行为约束而非内容引用）。修订不可变，使用方显式采用新引用。`manifest.json` 只声明发布资源与默认选择，不指定数据库表，也不重复维护引用图。文件名统一为 `<identity>-v<revision>.json`，目录内修订以文件内部的 `revision` 字段为准。
 
 ## 职责与引用
 
@@ -44,3 +44,5 @@ Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` �
 新协议只支持新数据集，不升级旧库。构建校验源形状；发布和执行检查引用类型、修订、作用域、能力需求、工具合同、依赖 DAG、权限及输出来源。
 
 默认 Feature 仍有 22 个步骤，Task 仍有 20 个步骤。目录自洽（manifest ↔ 文件 ↔ defaults 引用 ↔ 正文归属）由 `scripts/py/check-defaults.py` 把关；结构校验在构建期，交叉引用与能力组合校验在测试期 materialize 完成。
+
+源与运行时记录统一使用 `type` 判别类型；`scope` 为 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。Capability 的 `harness_ref/model_ref/skills/tools`、Agent 的 `role_ref/capability_ref`、Delivery 的 `spec_refs`、Harness 的 `model_providers/model_catalog_ref`、PermissionContext 的 `sandbox_ref`、Standard 的 `root_workflow_refs` 位于根级，其余载荷保留在 `data`。能力标签和嵌套引用保持原位。内容摘要同时覆盖引用与载荷。只支持当前协议的新数据集。

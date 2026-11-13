@@ -2,7 +2,7 @@
 
 本地软件工程工作台原型。Rust 内核实现全部领域规则与权威终态，React Web 提供完整操作入口，SQLite 分库真实保存配置、工程事实、文档与历史。Web 统一接入 GitHub 仓库，使用 Codex / DeepSeek Harness、Git worktree、Docker 隔离测试和 GitHub PR（只创建不合入）。打开项目时自动登记并克隆仓库，执行时按需准备所选 Harness；运行路径只接受当前协议与配置，离线测试使用独立夹具。账号授权在设置中完成，操作流程见[真实工程接入](docs/real-engineering.md)。
 
-一切配置为不可变源修订（源协议 v2，引用形如 `identity:revision`）。Workflow v6 通过显式端口传递材料：Stage 提供背景与默认 Role，Step 声明任务指令、必需 Skill、验收 Spec、工作上下文与完成条件；Agent、工具、子流程、控制是四种执行方式。执行授权独立归属 Permission（v2 Profile 与按流程步骤授权的 Context）。运行冻结确切修订，补充输入、重试、返工与人工确认都关联实际 StepExecution；测试与候选只接受真实回执，模型自述不构成证据。项目经理 Agent 通过独立编排会话与原生控制工具决定派发、接纳与完成，用户可随时人工接管，运行中的计划按"预演—等待静止—原子应用"修改。Standard 是 Workflow、Delivery、Spec 及关联的不可变快照，每个工作采用自己的规范。运行语义见[工作流与编排](docs/workflow-orchestration.md)，领域概念见[领域规范](docs/domain.md)。
+一切配置为不可变源修订（扁平源协议，引用形如 `identity:revision`）。Workflow v6 通过显式端口传递材料：Stage 提供背景与默认 Role，Step 声明任务指令、必需 Skill、验收 Spec、工作上下文与完成条件；Agent、工具、子流程、控制是四种执行方式。执行授权独立归属 Permission（v2 Profile 与按流程步骤授权的 Context）。运行冻结确切修订，补充输入、重试、返工与人工确认都关联实际 StepExecution；测试与候选只接受真实回执，模型自述不构成证据。项目经理 Agent 通过独立编排会话与原生控制工具决定派发、接纳与完成，用户可随时人工接管，运行中的计划按"预演—等待静止—原子应用"修改。Standard 是 Workflow、Delivery、Spec 及关联的不可变快照，每个工作采用自己的规范。运行语义见[工作流与编排](docs/workflow-orchestration.md)，领域概念见[领域规范](docs/domain.md)。
 
 ## 运行
 
@@ -53,7 +53,7 @@ npm --prefix web ci
 
 ## 数据与存储
 
-数据集以 `.devdesk-dataset` 标记（内容 `devdesk-source-v2-standard-v1`）并施加独占写锁；非空非 DevDesk 目录不初始化，更换 data 路径需退出重启，不隐式搬迁。全局配置、每项目工程数据与全局讨论分别使用独立 SQLite 文件：
+数据集以 `.devdesk-dataset` 标记（内容 `devdesk-source-flat-v1`）并施加独占写锁；非空非 DevDesk 目录不初始化，更换 data 路径需退出重启，不隐式搬迁。全局配置、每项目工程数据与全局讨论分别使用独立 SQLite 文件：
 
 ```text
 <data>/global.sqlite3                             # 并发配置、共享定义、项目索引、运行时安装、权限预设
@@ -63,7 +63,7 @@ npm --prefix web ci
 <data>/projects/<project-id>/execution/           # 会话、测试、Git 意图与工具执行目录
 ```
 
-数据库由 `sql/global/schema.sql` 与 `sql/project/schema.sql` 的当前基线直接创建（global 16 / project 47）；只支持新数据集，不提供旧库升级。选择项目即打开对应数据库，重启恢复上次选择；已打开项目的执行继续受全局并发额度约束。表结构与幂等/恢复模型见 [存储与数据布局](docs/storage.md) 和 [结构说明](sql/README.md)。
+数据库由 `sql/global/schema.sql` 与 `sql/project/schema.sql` 的当前基线直接创建（global 17 / project 48）；只支持新数据集，不提供旧库升级。选择项目即打开对应数据库，重启恢复上次选择；已打开项目的执行继续受全局并发额度约束。表结构与幂等/恢复模型见 [存储与数据布局](docs/storage.md) 和 [结构说明](sql/README.md)。
 
 ## 关键边界
 

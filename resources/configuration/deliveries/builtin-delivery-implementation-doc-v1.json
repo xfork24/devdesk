@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-implementation-doc",
   "revision": 1,
   "name": "Implementation Doc",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-delivery-implementation-doc:1"
+  ],
   "data": {
     "format": "markdown",
-    "spec_refs": [
-      "builtin-spec-delivery-implementation-doc:1"
-    ],
     "producer": {
       "kind": "agent"
     }

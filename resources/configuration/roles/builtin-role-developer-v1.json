@@ -1,11 +1,9 @@
 {
-  "kind": "role",
+  "type": "role",
   "identity": "builtin-role-developer",
   "revision": 1,
   "name": "开发",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "instructions_file": "developer.md"
   }

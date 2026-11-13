@@ -4,9 +4,9 @@
 
 ## 1. 领域对象与原语（代码的职责）
 
-- **领域对象**由 serde 结构定义（`deny_unknown_fields`）：`WorkflowDefinition`（stages/steps/executor/端口/预算/completion）、`AgentDefinition`（role_ref + capability_ref）、`CapabilityDefinition`（harness_ref + model_ref + skills + tools）、`DeliveryTypeDefinition`（format + spec_refs + content_schema）、`ConfiguredSpecification`（body + checks）、`PermissionProfile` 等。
-- **原语**是可指派的执行与组合能力：StepExecutor 类型（agent / tool / workflow / control）、CompletionRule 算子、平台工具与控制工具注册表（`PLATFORM_HANDLERS`、`CONTROL_TOOLS`）、harness 能力要求、21 种定义 kind。
-- 组合示例：建立一个开发工程师 agent（AgentDefinition → capability → model/harness）→ 产出 diff delivery（DeliveryTypeDefinition）→ diff 必须符合 Diff spec（ConfiguredSpecification）。全部由领域对象间的引用表达，引擎按结构解析。
+- **领域对象**由 serde 结构定义（`deny_unknown_fields`）：`WorkflowDefinition`（stages/steps/executor/端口/预算/completion）、`ConfigurationRecord` / `SourceDefinition`（type + scope + 按类型允许的根级引用 + data）、`DeliveryTypeDefinition`（format + content_schema，spec_refs 属于根级引用）、`ConfiguredSpecification`（body + checks）、`PermissionProfile` 等。
+- **原语**是可指派的执行与组合能力：StepExecutor 类型（agent / tool / workflow / control）、CompletionRule 算子、平台工具与控制工具注册表（`PLATFORM_HANDLERS`、`CONTROL_TOOLS`）、harness 能力要求、受支持的定义 type。
+- 组合示例：建立一个开发工程师 agent（agent → capability → model/harness）→ 产出 diff delivery（DeliveryTypeDefinition）→ diff 必须符合 Diff spec（ConfiguredSpecification）。全部由领域对象间的引用表达，引擎按结构解析。
 
 ## 2. 结构识别规则（判定规则）
 

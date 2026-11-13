@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-workflow-cancel",
   "revision": 1,
   "name": "取消当前流程",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "workflow.cancel",
     "implementation": "platform",

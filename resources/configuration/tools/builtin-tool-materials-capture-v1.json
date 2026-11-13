@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-materials-capture",
   "revision": 1,
   "name": "封存输入材料",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "materials.capture",
     "implementation": "platform",

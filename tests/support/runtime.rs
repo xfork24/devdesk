@@ -137,11 +137,20 @@ pub fn configure_project(e: &Engine, project: &str) {
 pub fn bind_default_permissions(e: &Engine) {
     e.store.transact(None, &mut |s| {
         if s.configuration("fixture-spec:1").is_err() {
-            for (kind, identity, data) in [
-                ("spec", "fixture-spec", json!({"schema_version":3,"body":"测试场景明确声明的输入、输出和断言；逐项核对类型、值和来源，不作为产品默认规范。","checks":[{"key":"fixture_content","name":"场景内容","instructions":"核对本测试明确声明的字段、预期和实际来源。"}]})),
-                ("delivery_type", "fixture-delivery-object", json!({"format":"json","spec_refs":["fixture-spec:1"],"content_schema":{"type":"object"}})),
-            ] {
-                s.governance.push(SourceDefinition {kind:kind.into(),identity:identity.into(),revision:1,name:identity.into(),scope:Scope::Global,data}.into_record()?);
+            let spec = (
+                "spec",
+                "fixture-spec",
+                References::new(),
+                json!({"schema_version":3,"body":"测试场景明确声明的输入、输出和断言；逐项核对类型、值和来源，不作为产品默认规范。","checks":[{"key":"fixture_content","name":"场景内容","instructions":"核对本测试明确声明的字段、预期和实际来源。"}]}),
+            );
+            let delivery = (
+                "delivery_type",
+                "fixture-delivery-object",
+                References::from([("spec_refs".to_string(), json!(["fixture-spec:1"]))]),
+                json!({"format":"json","content_schema":{"type":"object"}}),
+            );
+            for (kind, identity, refs, data) in [spec, delivery] {
+                s.governance.push(SourceDefinition {r#type:kind.into(),identity:identity.into(),revision:1,name:identity.into(),scope:Scope::global(),refs,data}.into_record()?);
             }
         }
         Ok(json!(null))

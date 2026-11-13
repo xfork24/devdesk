@@ -137,19 +137,15 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   const choose = useCallback(
     (row: Row) => {
       const document =
-        row.kind === "workflow_draft" ? row.data.document : row.data;
-      if (document.schema_version !== 6) {
-        setError("此流程使用过时的开发合同，请重建配置。");
-        return;
-      }
+        row.type === "workflow_draft" ? row.data.document : row.data;
       setDraft({
         ...draft,
         selected: row.id,
         revision: row.revision,
         name: row.name,
-        scope: row.scope?.kind || "global",
+        scope: row.scope === "global" ? "global" : "project",
         view: "editor",
-        editing: row.kind === "workflow_draft",
+        editing: row.type === "workflow_draft",
         node: "workflow",
         document: structuredClone(document),
         expandedStages: [],
@@ -170,7 +166,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       choose(row);
   }, [rows, choose, draft.selected, draft.view]);
   const document = draft.document;
-  const roles = latest(records.filter((row) => row.kind === "role")).map(
+  const roles = latest(records.filter((row) => row.type === "role")).map(
     (row) => ({ ...row, id: row.id }),
   );
   const stage = draft.node.startsWith("stage:")
@@ -180,7 +176,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     ? document.steps.find((step: Row) => step.key === draft.node.slice(5))
     : undefined;
   const workflows = rows.filter(
-    (row) => row.kind === "workflow" && row.data.schema_version === 6,
+    (row) => row.type === "workflow",
   );
   const update = (patch: Row) => {
     setValidation(undefined);
@@ -243,8 +239,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
           name: draft.name,
           scope:
             draft.scope === "project"
-              ? { kind: "project", project_id: project!.id }
-              : { kind: "global" },
+              ? `project:${project!.id}`
+              : "global",
           document,
         });
     setDraft((current) => ({
@@ -326,12 +322,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
     );
     update(replacePort({ ...document, steps }, step.key, previous, next));
   }
-  const visibleRows = rows.filter(
-    (row) =>
-      (row.kind === "workflow_draft"
-        ? row.data.document?.schema_version
-        : row.data.schema_version) === 6,
-  );
+  const visibleRows = rows;
   return (
     <section
       ref={editorRef}
@@ -376,7 +367,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
             >
               <strong>{row.name}</strong>
               <small>
-                {row.kind === "workflow_draft" ? "草稿" : `v${row.version}`}
+                {row.type === "workflow_draft" ? "草稿" : `v${row.version}`}
               </small>
             </ActionButton>
           ))}
@@ -922,7 +913,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         <RevisionSelect
                           label="本次必需 Skills"
                           records={records.filter(
-                            (row) => row.kind === "skill",
+                            (row) => row.type === "skill",
                           )}
                           multiple
                           value={step.required_skill_refs || []}
@@ -938,8 +929,8 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                           label="执行工具"
                           records={records.filter(
                             (row) =>
-                              row.kind === "tool" &&
-                              (row.data.schema_version === 2 ||
+                              row.type === "tool" &&
+                              (typeof row.data.integration_ref === "string" ||
                                 row.data.implementation === "platform"),
                           )}
                           required
@@ -1156,7 +1147,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                     ) : null}
                     <RevisionSelect
                       label="验收 Spec"
-                      records={records.filter((row) => row.kind === "spec")}
+                      records={records.filter((row) => row.type === "spec")}
                       multiple
                       value={step.spec_refs || []}
                       onChange={(spec_refs) => updateStep({ spec_refs })}

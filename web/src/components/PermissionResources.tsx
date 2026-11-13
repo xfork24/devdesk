@@ -15,7 +15,7 @@ type Request = (
 ) => Promise<any>;
 type Profile = {
   schema_version: number;
-  scope: Record<string, unknown>;
+  scope: string;
   id: string;
   identity: string;
   name: string;
@@ -32,7 +32,7 @@ const profileView = (source: any): Profile => ({
   id: `${source.identity}:${source.revision}`,
 });
 const profileSource = (p: Profile) => ({
-  kind: "permission_profile",
+  type: "permission_profile",
   identity: p.identity,
   revision: p.version,
   name: p.name,
@@ -181,11 +181,11 @@ export function PermissionResources({
       throw new Error("权限 JSON 必须是对象");
     for (const key of Object.keys(value)) {
       if (
-        !["kind", "identity", "revision", "name", "scope", "data"].includes(key)
+        !["type", "identity", "revision", "name", "scope", "data"].includes(key)
       )
         throw new Error(`未知权限字段：${key}`);
     }
-    if (value.kind !== "permission_profile" || value.data?.schema_version !== 2)
+    if (value.type !== "permission_profile")
       throw new Error(
         "此编辑器使用 permission_profile 源定义与 schema_version 2",
       );
@@ -207,11 +207,11 @@ export function PermissionResources({
     setDraft(
       JSON.stringify(
         {
-          kind: "permission_profile",
+          type: "permission_profile",
           identity: `custom-${crypto.randomUUID()}`,
           revision: 1,
           name: "新权限",
-          scope: { kind: "global" },
+          scope: "global",
           data: {
             schema_version: 2,
             target_kind: kind,

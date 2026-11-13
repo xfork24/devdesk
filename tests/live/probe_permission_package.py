@@ -124,8 +124,8 @@ try:
         assert preview['task']['agent'] and preview['task']['specifications']
         assert preview['task']['renderer_version'] == 'agent-task/v6'
         report['workflow_v6_embedded_tasks_edit_publish_preview'] = True
-        capture = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'materials.capture')
-        complete = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == 'tasks.complete')
+        capture = next(row for row in defaults['records'] if row['type'] == 'tool' and row['data'].get('qualified_name') == 'materials.capture')
+        complete = next(row for row in defaults['records'] if row['type'] == 'tool' and row['data'].get('qualified_name') == 'tasks.complete')
         task_workflow = rpc('query.workflow', {'id': defaults['task_workflow_ref']})
         task_steps = {step['key']: step for step in task_workflow['data']['steps']}
         feature_steps = {step['key']: step for step in workflow['data']['steps']}
@@ -148,7 +148,7 @@ try:
         for key in ['closure_review', 'candidate_review']:
             assert feature_steps[key]['inputs']['tasks']['source'] == {'step': 'implementation', 'port': 'result', 'pointer': ''}
         for method in ['workflow.change.preview', 'workflow.change.apply']:
-            tool = next(row for row in defaults['records'] if row['kind'] == 'tool' and row['data'].get('qualified_name') == method)
+            tool = next(row for row in defaults['records'] if row['type'] == 'tool' and row['data'].get('qualified_name') == method)
             operations = tool['data']['input_schema']['properties']['changeset']['properties']['operations']['items']['oneOf']
             assert any(operation['properties']['type'].get('const') == 'revert_change' for operation in operations)
         report['complete_feature_review_evidence_and_bounded_change_recovery'] = True
@@ -169,7 +169,7 @@ try:
         assert verify_step['executor']['type'] == 'tool' and verify_step['key'] in ancestors
         # Exercise the actual standalone scheduler and platform handler without a model or fake Session.
         spec = command('spec.create', {'name': '包验收记录规范', 'data': {'schema_version': 3, 'body': '记录当前包验收明确提供的 version 输入与真实封存操作。', 'checks': [{'key': 'version', 'name': '输入版本', 'instructions': '核对 version 为本次提供的值且回执来自当前封存操作。'}]}})
-        delivery = command('delivery_type.create', {'name': '包验收记录', 'data': {'format': 'json', 'spec_refs': [spec['id']], 'content_schema': {'type': 'object', 'required': ['inputs', 'captured_at', 'operation_id']}}})
+        delivery = command('delivery_type.create', {'spec_refs':[spec['id']],'name': '包验收记录', 'data': {'format':'json','content_schema':{'type': 'object', 'required': ['inputs', 'captured_at', 'operation_id']}}})
         generic = command('workflow.create', {'name': 'Standalone configured capture', 'document': {
             'schema_version': 6, 'stages': [{'key': 'audit', 'name': '自定义包验收'}], 'steps': [
                 {'key': 'ready', 'name': '准备', 'stage': 'audit', 'executor': {'type': 'control'}},
@@ -208,7 +208,7 @@ try:
         assert execution['outputs'][captured['outputs']['result']]['value']['inputs']['value'] == {'version': 5}
         standard = execution['runtime']['plan']['standard_ref']
         snapshot = rpc('query.standard', {'id': standard})
-        assert set(snapshot['record']['data']) == {'schema_version', 'root_workflow_refs'}
+        assert set(snapshot['record']['data']) == {'schema_version'}
         assert snapshot['record']['data']['schema_version'] == 4
         assert set(node['kind'] for node in snapshot['nodes']) == {'workflow', 'delivery_type', 'spec'}
         assert rpc('query.work_standard_diff', {'before_owner_id': project, 'after_owner_id': project})['diff']['equal']

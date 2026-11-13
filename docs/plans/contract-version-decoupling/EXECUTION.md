@@ -51,3 +51,7 @@
   - 元数据写入常量：`WORKFLOW_INSTANCE_SCHEMA`（domain/workflow.rs）、`AGENT_TASK_RENDERER`（domain/agent_task.rs）、`ORCHESTRATION_RENDERER`（domain/orchestration.rs 恢复）——只写不读。
 - `docs/contracts.md` 重写为"原语、领域对象与结构识别"（领域对象/原语/结构规则五条/实现身份/外部锚/出厂自洽）。
 - 验证：`cargo test --workspace --locked` 26 套件全绿；`grep` 确认无 `Contract::` 残留、无版本全等断言、`schema_version` 仅剩测试夹具/字段透传/元数据写入。
+
+## 2026-11-13 收尾
+
+[源配置信封扁平化](../source-envelope-flattening/EXECUTION.md) 同时清理了 Standard、接入工具识别、Web 筛选、发布 Schema、模板清单和权限出厂检查中残留的业务版本号全等条件；以领域形状、业务约束及普通整数元数据为准。新增元数据版本 999 结构接受回归。W06 大型测试文件重构及原报告其他未尽事项仍不属于该次收尾。

@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-acceptance-report",
   "revision": 1,
   "name": "Acceptance Report",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-delivery-acceptance-report:1"
+  ],
   "data": {
     "format": "json",
-    "spec_refs": [
-      "builtin-spec-delivery-acceptance-report:1"
-    ],
     "content_schema": {
       "type": "object",
       "required": [

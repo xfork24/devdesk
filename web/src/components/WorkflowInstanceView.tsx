@@ -235,12 +235,12 @@ export function WorkflowInstanceView({
           {data.history.map((r: Row) => (
             <article key={r.id}>
               <p>
-                {r.name} · {r.kind} · {r.id}
+                {r.name} · {r.type} · {r.id}
               </p>
-              {r.kind === "workflow_plan_revision" && (
+              {r.type === "workflow_plan_revision" && (
                 <p>来源计划：{r.data.parent_revision_id || "初始计划"}</p>
               )}
-              {r.kind === "workflow_execution_history" && (
+              {r.type === "workflow_execution_history" && (
                 <details>
                   <summary>
                     {r.data.step} ·{" "}

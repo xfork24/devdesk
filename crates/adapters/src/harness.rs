@@ -440,7 +440,8 @@ impl RuntimeWorkers {
                         .credential_ref
                         .as_deref()
                         .ok_or_else(|| err("credentials_required", "DSH 缺少所选服务商凭据引用"))?;
-                    CredentialVault::new(&self.root)?.read_connection_reference(connection, reference)?
+                    CredentialVault::new(&self.root)?
+                        .read_connection_reference(connection, reference)?
                 } else {
                     require(
                         binding.credential_ref.is_none(),

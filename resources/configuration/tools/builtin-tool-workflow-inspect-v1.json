@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-workflow-inspect",
   "revision": 1,
   "name": "查看当前计划与缺口",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "workflow.inspect",
     "implementation": "platform",

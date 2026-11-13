@@ -86,12 +86,12 @@ def main():
                 tool = c.command('tool.create', payload={'name': 'Controlled native tools', 'data': {
                     'qualified_name': 'harness.native', 'implementation': 'harness.native',
                     'input_schema': {}, 'output_schema': {}, 'capabilities': []}})['id']
-                capability = c.command('capability.create', payload={'name': 'Controlled permission capability', 'data': {'model_ref': model, 'harness_ref': harness['revision_id'], 'skills': [], 'tools': [tool]}})['id']
+                capability = c.command('capability.create', payload={'model_ref':model,'harness_ref':harness['revision_id'],'skills':[],'tools':[tool],'name': 'Controlled permission capability', 'data': {}})['id']
                 role = c.command('role.create', payload={'name':'Controlled probe duties','data':{'instructions':'Run only the supplied controlled shell probe. Do not inspect credentials or runtime state, delegate, or propose changes.'}})['id']
-                agent = c.command('agent.create', payload={'name': 'Follow target permission probe', 'data': {'role_ref': role, 'capability_ref': capability}})['id']
+                agent = c.command('agent.create', payload={'role_ref':role,'capability_ref':capability,'name': 'Follow target permission probe', 'data': {}})['id']
                 c.rpc('runtime.prepare_harness', {'id': harness['revision_id']})
                 instance = c.command('agent.instance.create', payload={'name': 'Isolated permission probe',
-                    'agent_revision_id': agent, 'scope': {'kind': 'project', 'project_id': project}})['id']
+                    'agent_revision_id': agent, 'scope': 'project:' + str(project)})['id']
                 state = c.rpc('query.workspace')['active_project']
                 original = c.command('session.open', project, state['revision'], {
                     'agent_instance_id': instance, 'work_type': 'discussion', 'force_new': True})['id']
@@ -123,7 +123,7 @@ def main():
                     assert status == 'completed', 'Real model Turn ended with ' + status
                     assert c.rpc('conversation.send', command) == sent, 'Original send replay differs'
                     outputs = [json.loads(e['content']) for e in state['events']
-                               if e['turn_id'] == sent['id'] and e['kind'] == 'tool'
+                               if e['turn_id'] == sent['id'] and e['type'] == 'tool'
                                and (str(e.get('provider_item', '')).startswith('tool/result:')
                                     or e['deduplication_key'].endswith(':complete'))]
                     marker = 'PERMISSION_DENIED_OK' if restricted else 'PERMISSION_NETWORK_OK'

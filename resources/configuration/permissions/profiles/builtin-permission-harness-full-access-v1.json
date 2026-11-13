@@ -1,11 +1,9 @@
 {
-  "kind": "permission_profile",
+  "type": "permission_profile",
   "identity": "builtin-permission-harness-full-access",
   "revision": 1,
   "name": "Harness 容器内全权限",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "policy": {
       "approval": "never",

@@ -1,11 +1,9 @@
 {
-  "kind": "model",
+  "type": "model",
   "identity": "builtin-model-glm-5-3-flash",
   "revision": 1,
   "name": "GLM 5.3 Flash",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "capabilities": [
       "structured-output",

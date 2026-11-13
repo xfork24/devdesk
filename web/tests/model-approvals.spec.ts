@@ -29,13 +29,9 @@ async function approvalDelivery(page: Page) {
   });
   return rpc(page, "delivery_type.create", {
     command_id: crypto.randomUUID(),
-    payload: {
+    payload: {spec_refs: [spec.id],
       name: "审批材料",
-      data: {
-        format: "json",
-        spec_refs: [spec.id],
-        content_schema: { type: "object" },
-      },
+      data: {format: "json",content_schema: { type: "object" }},
     },
   });
 }

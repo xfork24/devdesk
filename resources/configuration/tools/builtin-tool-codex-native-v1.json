@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-codex-native",
   "revision": 1,
   "name": "Codex 原生工具组",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "capabilities": [],
     "implementation": "harness.native",

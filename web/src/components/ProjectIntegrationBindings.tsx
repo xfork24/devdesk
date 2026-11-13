@@ -53,9 +53,8 @@ export function ProjectIntegrationBindings({
     const current = latest(
       result.filter(
         (r) =>
-          r.kind === "integration_project_configuration" &&
-          r.scope.kind === "project" &&
-          r.scope.project_id === project.id,
+          r.type === "integration_project_configuration" &&
+          r.scope === `project:${project.id}`,
       ),
     )[0];
     setRows(result);
@@ -68,10 +67,10 @@ export function ProjectIntegrationBindings({
   const required = new Set<string>();
   for (const id of agents) {
     const agent = catalog.find((r) => r.id === id);
-    const capability = catalog.find((r) => r.id === agent?.data.capability_ref);
-    for (const tool of capability?.data.tools || []) {
+    const capability = catalog.find((r) => r.id === agent?.capability_ref);
+    for (const tool of capability?.tools || []) {
       const row = catalog.find((r) => r.id === tool);
-      if (row?.data.schema_version === 2)
+      if (typeof row?.data.integration_ref === "string")
         required.add(row.data.integration_ref);
     }
   }
@@ -89,7 +88,7 @@ export function ProjectIntegrationBindings({
             label={`接入 ${catalog.find((r) => r.id === id)?.name || id} 的绑定`}
             records={rows.filter(
               (r) =>
-                r.kind === "integration_binding" &&
+                r.type === "integration_binding" &&
                 r.data.integration_ref === id,
             )}
             value={mapping[id] || ""}

@@ -41,7 +41,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
             let key = state
                 .configuration(agent.as_str().unwrap())
                 .ok()
-                .and_then(|r| r.data["role_ref"].as_str())
+                .and_then(|r| reference_value(&r.refs, "role_ref").as_str())
                 .and_then(|id| state.configuration(id).ok())
                 .map(|r| r.definition_id.clone())
                 .unwrap_or_else(|| format!("builtin-role-{role}"));
@@ -97,7 +97,7 @@ fn current_defaults_exclude_experience_tools_and_reject_them_at_creation() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "tool" && r.data["implementation"] == "experience.lookup")
+            .any(|r| r.r#type == "tool" && r.data["implementation"] == "experience.lookup")
     );
     assert!(command(&e,"tool.create",None,json!({"name":"Unsupported","data":{"qualified_name":"experience.lookup","implementation":"experience.lookup","input_schema":{},"output_schema":{},"capabilities":[]}})).is_err());
 }
@@ -137,18 +137,18 @@ fn agent_stores_only_sources_and_resolves_capability_without_copying() {
     let old = before
         .governance
         .iter()
-        .find(|r| r.kind == "agent" && r.data["role_ref"] == default_role_id("analyst"))
+        .find(|r| r.r#type == "agent" && r.refs["role_ref"] == default_role_id("analyst"))
         .unwrap();
     let a = before.resolve_agent(&old.id).unwrap();
-    let cap=command(&e,"capability.create",None,json!({"name":"Native analysis","data":{"model_ref":a.model_ref,"harness_ref":a.harness_ref,"tools":a.tools,"skills":a.skills}})).unwrap();
+    let role_ref = a.role_ref.clone().unwrap();
+    let cap=command(&e,"capability.create",None,json!({"name":"Native analysis","scope":"global","model_ref":a.model_ref,"harness_ref":a.harness_ref,"tools":a.tools,"skills":a.skills,"data":{}})).unwrap();
     let agent = command(
         &e,
         "agent.create",
         None,
-        json!({"name":"Named analyst","data":{"role_ref":a.role_ref,"capability_ref":cap["id"]}}),
+        json!({"name":"Named analyst","scope":"global","role_ref":role_ref,"capability_ref":cap["id"],"data":{}}),
     )
     .unwrap();
-    assert_eq!(agent["data"].as_object().unwrap().len(), 2);
     let resolved = e
         .store
         .snapshot()
@@ -156,8 +156,8 @@ fn agent_stores_only_sources_and_resolves_capability_without_copying() {
         .resolve_agent(agent["id"].as_str().unwrap())
         .unwrap();
     assert_eq!(resolved.model_ref, a.model_ref);
-    assert_eq!(agent["data"]["capability_ref"], cap["id"]);
-    assert!(command(&e,"agent.create",None,json!({"name":"Forged","data":{"role_ref":a.role_ref,"capability_ref":cap["id"],"model_ref":"other"}})).is_err());
+    assert_eq!(agent["capability_ref"], cap["id"]);
+    assert!(command(&e,"agent.create",None,json!({"name":"Forged","scope":"global","role_ref":role_ref,"capability_ref":cap["id"],"model_ref":"other","data":{}})).is_err());
     assert!(
         command(
             &e,
@@ -184,15 +184,18 @@ fn defaults_pin_exact_revisions_without_discarding_published_history() {
                 .unwrap(),
         ),
     ] {
-        let data = e
+        let source = e
             .store
             .snapshot()
             .unwrap()
             .configuration(id)
             .unwrap()
-            .data
             .clone();
-        let revision = command(&e, method, Some(id), json!({"data":data})).unwrap();
+        let mut payload = json!({"data":source.data});
+        for (key, value) in &source.refs {
+            payload[key] = value.clone();
+        }
+        let revision = command(&e, method, Some(id), payload).unwrap();
         let defaults = e.configuration_defaults(None).unwrap();
         let chosen = match method {
             "model.revise" => &defaults["model_ref"],
@@ -228,7 +231,7 @@ fn database_persists_sources_and_rebuilds_execution_views_after_reopen() {
     let conn = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
     let count:u64=conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('definitions','harnesses','sandboxes')",[],|r|r.get(0)).unwrap();
     assert_eq!(count, 0);
-    let copied:u64=conn.query_row("SELECT COUNT(*) FROM source_definitions WHERE kind='agent' AND (json_extract(data,'$.model_ref') IS NOT NULL OR json_extract(data,'$.permission_selection') IS NOT NULL)",[],|r|r.get(0)).unwrap();
+    let copied:u64=conn.query_row("SELECT COUNT(*) FROM source_definitions WHERE type='agent' AND (json_extract(refs,'$.model_ref') IS NOT NULL OR json_extract(data,'$.model_ref') IS NOT NULL OR json_extract(data,'$.permission_selection') IS NOT NULL)",[],|r|r.get(0)).unwrap();
     assert_eq!(copied, 0);
     drop(conn);
     drop(e);
@@ -339,12 +342,15 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
         )
         .is_err()
     );
-    let context = command(
-        &e,
-        "permission_context.create",
-        None,
-        json!({"name":"Project authorization","data":permission_context(&before).unwrap().data}),
-    )
+    let context = command(&e, "permission_context.create", None, {
+        let source = permission_context(&before).unwrap();
+        let mut payload =
+            json!({"name":"Project authorization","scope":"global","data":source.data});
+        for (key, value) in &source.refs {
+            payload[key] = value.clone();
+        }
+        payload
+    })
     .unwrap();
     let mut selected = payload;
     selected["permission_context_ref"] = context["id"].clone();
@@ -369,7 +375,7 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
     assert_eq!(saved["version"], 1);
 
     let after = e.store.snapshot().unwrap();
-    for agent in before.governance.iter().filter(|r| r.kind == "agent") {
+    for agent in before.governance.iter().filter(|r| r.r#type == "agent") {
         assert_eq!(after.configuration(&agent.id).unwrap(), agent);
     }
 }
@@ -383,7 +389,7 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
             &e,
             "delivery_type.create",
             None,
-            json!({"name":"Dangling spec","data":{"format":"markdown","spec_refs":["missing:1"]}})
+            json!({"name":"Dangling spec","spec_refs":["missing:1"],"data":{"format":"markdown"}})
         )
         .is_err()
     );
@@ -392,7 +398,7 @@ fn delivery_reuses_the_same_pinned_spec_for_producers_and_consumers() {
         &e,
         "delivery_type.create",
         None,
-        json!({"name":"Shared document","data":{"format":"markdown","spec_refs":[spec["id"]]}}),
+        json!({"name":"Shared document","scope":"global","spec_refs":[spec["id"]],"data":{"format":"markdown"}}),
     )
     .unwrap();
     assert!(delivery["data"].get("body").is_none());
@@ -437,12 +443,12 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
     let deliveries: Vec<_> = state
         .governance
         .iter()
-        .filter(|r| r.kind == "delivery_type" && r.id != "fixture-delivery-object:1")
+        .filter(|r| r.r#type == "delivery_type" && r.id != "fixture-delivery-object:1")
         .collect();
     assert_eq!(deliveries.len(), 21);
     for delivery in &deliveries {
         state
-            .validate_delivery_specs(&delivery.decode().unwrap(), &delivery.scope)
+            .validate_delivery_specs(&delivery.refs, &delivery.decode().unwrap(), &delivery.scope)
             .unwrap();
         assert_ne!(delivery.name, "结构化材料");
     }
@@ -478,7 +484,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
             .configuration(&format!("builtin-workflow-{kind}-sol-high:6"))
             .unwrap();
         let plan = e
-            .compile_configured_workflow(&state, workflow, &Scope::Global, None)
+            .compile_configured_workflow(&state, workflow, &Scope::global(), None)
             .unwrap();
         for step in &plan.document.steps {
             for port in step.outputs.values() {
@@ -563,9 +569,13 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
             "reviewer",
             "project-manager",
         ] {
-            let composition =
-                state.resolve_agent(&format!("builtin-agent-{vendor}-{role}:1")).unwrap();
-            assert_eq!(composition.harness_ref, "builtin-harness-dsh-multi-provider:1");
+            let composition = state
+                .resolve_agent(&format!("builtin-agent-{vendor}-{role}:1"))
+                .unwrap();
+            assert_eq!(
+                composition.harness_ref,
+                "builtin-harness-dsh-multi-provider:1"
+            );
             assert_eq!(
                 composition.tools,
                 vec!["builtin-tool-dsh-native:1".to_string()],
@@ -581,7 +591,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
         let default = state
             .configuration(&format!("builtin-capability-{vendor}-dsh:1"))
             .unwrap();
-        assert_eq!(default.data["model_ref"], json!(model_id));
+        assert_eq!(default.refs["model_ref"], json!(model_id));
     }
     // Role skills mirror the codex counterparts, headed by the shared engineering context.
     for (vendor, role, composition) in &compositions {
@@ -666,14 +676,15 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
     let e = engine(dir.path());
     let before = e.store.snapshot().unwrap();
     // A custom permission context without the factory's codex-only step tool grants.
-    let mut context = permission_context(&before).unwrap().data.clone();
-    context["step_grants"] = json!([]);
-    let context = command(
-        &e,
-        "permission_context.create",
-        None,
-        json!({"name":"Bridge-free context","data":context}),
-    )
+    let mut source = permission_context(&before).unwrap().clone();
+    source.data["step_grants"] = json!([]);
+    let context = command(&e, "permission_context.create", None, {
+        let mut payload = json!({"name":"Bridge-free context","scope":"global","data":source.data});
+        for (key, value) in &source.refs {
+            payload[key] = value.clone();
+        }
+        payload
+    })
     .unwrap();
     let draft = command(
         &e,
@@ -689,9 +700,8 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
     let project_id = project["id"].as_str().unwrap();
     // Binding the analyst role to a dsh agent compiles a workflow whose steps carry no
     // platform-tool grants; the factory flows are the codex-bound ones, not the mechanism.
-    let mut bindings = e.configuration_defaults(Some(project_id)).unwrap()
-        ["role_agent_bindings"]
-        .clone();
+    let mut bindings =
+        e.configuration_defaults(Some(project_id)).unwrap()["role_agent_bindings"].clone();
     bindings["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:1");
     let saved = command(
         &e,
@@ -708,4 +718,41 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
         saved["data"]["role_agent_bindings"]["builtin-role-analyst:1"],
         json!("builtin-agent-glm-analyst:1")
     );
+}
+
+#[test]
+fn project_usage_follows_flattened_agent_and_capability_references() {
+    let root = tempfile::tempdir().unwrap();
+    let engine = engine(root.path());
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"Transitive configuration usage"}),
+    )
+    .unwrap();
+    let defaults = engine
+        .configuration_defaults(project["id"].as_str())
+        .unwrap();
+    let selection = command(
+        &engine,
+        "project.configuration.update",
+        project["id"].as_str(),
+        json!({
+            "workflow_ref":defaults["workflow_ref"],
+            "role_agent_bindings":defaults["role_agent_bindings"],
+            "orchestrator_role_ref":defaults["orchestrator_role_ref"],
+            "permission_context_ref":defaults["permission_context_ref"],
+        }),
+    )
+    .unwrap();
+    let state = engine.store.snapshot().unwrap();
+    for reference in [DEFAULT_MODEL_ID, DEFAULT_HARNESS_ID, DEFAULT_NATIVE_TOOL_ID] {
+        let uses =
+            project_configuration_references(&state, state.configuration(reference).unwrap());
+        assert!(
+            uses.iter().any(|row| row["id"] == selection["id"]),
+            "missed transitive use of {reference}"
+        );
+    }
 }

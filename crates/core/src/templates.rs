@@ -12,7 +12,8 @@ include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
-    schema_version: u32,
+    #[serde(rename = "schema_version")]
+    _schema_version: u32,
     bundle_version: String,
     types: BTreeMap<String, Vec<String>>,
     defaults: String,
@@ -53,7 +54,7 @@ fn load_bundle() -> Result<Bundle> {
             hashed.insert(path.clone(), body.to_owned());
             let mut source: SourceDefinition = serde_json::from_str(body)
                 .map_err(|e| err("invalid_template", format!("{path}: {e}")))?;
-            require(source.kind == *kind, "资源分类与类型不一致")?;
+            require(source.r#type == *kind, "资源分类与类型不一致")?;
             // Markdown is owned source text, read once into its owning definition.
             let object = source
                 .data
@@ -122,7 +123,7 @@ fn materialize(
     s.refresh_configuration_views()?;
     s.validate_governance(&EngineeringState::default())?;
     for r in &s.governance {
-        match r.kind.as_str() {
+        match r.r#type.as_str() {
             "model" => {
                 let model: ModelDefinition = r.decode()?;
                 validate_model_definition(&model, &s.provider_facts_any(&model.provider)?)?;
@@ -131,8 +132,8 @@ fn materialize(
                 configuration::validate_model_provider(&s, &r.data, Some(&r.definition_id))?
             }
             "model_catalog" => configuration::validate_model_catalog(&s, &r.data, &r.scope)?,
-            "harness" => configuration::validate_harness(&s, &r.data, &r.scope)?,
-            "capability" => configuration::validate_capability(&s, &r.data, &r.scope)?,
+            "harness" => configuration::validate_harness(&s, &r.refs, &r.data, &r.scope)?,
+            "capability" => configuration::validate_capability(&s, &r.refs, &r.scope)?,
             "agent" => governance::validate_composition(&s, &s.resolve_agent(&r.id)?, &r.scope)?,
             "workflow" => {
                 r.decode::<WorkflowDefinition>()?.validate()?;
@@ -140,7 +141,7 @@ fn materialize(
             "standard" => {
                 standard_snapshot(&s, &r.id, &r.scope)?;
             }
-            "delivery_type" => s.validate_delivery_specs(&r.decode()?, &r.scope)?,
+            "delivery_type" => s.validate_delivery_specs(&r.refs, &r.decode()?, &r.scope)?,
             _ => {}
         }
     }
@@ -160,7 +161,7 @@ fn add_member(
     generation: u64,
     source: Option<(&str, &str)>,
 ) {
-    if !template_definition_kind(&r.kind)
+    if !template_definition_kind(&r.r#type)
         || template_catalog_member(s, r).is_some_and(|m| m.data["generation"] == generation)
     {
         return;
@@ -179,7 +180,7 @@ fn add_member(
         .map(|s| json!(s.1))
         .or_else(|| inherited.as_ref().map(|m| m["source_hash"].clone()))
         .unwrap_or(Value::Null);
-    let data = json!({"kind":template_member_kind(&r.kind),"generation":generation,"template_key":template_key,"source_hash":source_hash,"origin":if template_key.is_string(){"default"}else{"custom"}});
+    let data = json!({"kind":template_member_kind(&r.r#type),"generation":generation,"template_key":template_key,"source_hash":source_hash,"origin":if template_key.is_string(){"default"}else{"custom"}});
     let mut member = record(
         "template_catalog_member",
         r.id.clone(),
@@ -193,7 +194,7 @@ fn add_member(
     member.created_at = 0;
     member.id = format!(
         "template-member:{}",
-        configuration_hash(&(template_member_kind(&r.kind), &r.id, generation))
+        configuration_hash(&(template_member_kind(&r.r#type), &r.id, generation))
     );
     s.governance.push(member);
 }
@@ -201,7 +202,7 @@ pub fn register_template_members(s: &mut EngineeringState, generation: u64) {
     let records: Vec<_> = s
         .governance
         .iter()
-        .filter(|r| template_definition_kind(&r.kind) && template_catalog_member(s, r).is_none())
+        .filter(|r| template_definition_kind(&r.r#type) && template_catalog_member(s, r).is_none())
         .cloned()
         .collect();
     for r in records {
@@ -212,17 +213,17 @@ fn register_existing_members(s: &mut EngineeringState) {
     let before: BTreeSet<_> = s
         .governance
         .iter()
-        .filter(|r| r.kind == "template_catalog_member")
+        .filter(|r| r.r#type == "template_catalog_member")
         .map(|r| r.id.clone())
         .collect();
     register_template_members(s, TEMPLATE_INITIAL_GENERATION);
     for member in s.governance.iter_mut().filter(|r| {
-        r.kind == "template_catalog_member"
+        r.r#type == "template_catalog_member"
             && !before.contains(&r.id)
             && r.data["template_key"].is_null()
     }) {
         member.data["origin"] = json!("existing");
-        member.content_hash = configuration_hash(&member.data);
+        member.content_hash = content_digest(&member.refs, &member.data);
     }
 }
 
@@ -239,7 +240,7 @@ fn set_state(s: &mut EngineeringState, generation: u64, defaults: Value) -> Resu
         let mut state = record(
             "template_catalog_state",
             TEMPLATE_CATALOG_STATE.into(),
-            Scope::Global,
+            Scope::global(),
             "模板定义目录".into(),
             1,
             None,
@@ -268,7 +269,7 @@ pub fn initialize_template_catalog(s: &mut EngineeringState) -> Result<()> {
                     s.governance
                         .iter()
                         .filter(|r| {
-                            r.kind == source.kind && r.definition_id == source.definition_id
+                            r.r#type == source.r#type && r.definition_id == source.definition_id
                         })
                         .max_by_key(|r| r.version)
                 })
@@ -307,9 +308,9 @@ pub fn initialize_template_catalog(s: &mut EngineeringState) -> Result<()> {
             continue;
         };
         let source = b.entries.iter().find(|e| e.template_key == key).unwrap();
-        let is_source = r.data == source.record["data"]
-            && json!(r.name) == source.record["name"]
-            && json!(r.scope) == source.record["scope"];
+        let is_source = r
+            == serde_json::from_value::<ConfigurationRecord>(source.record.clone())
+                .expect("bundled record");
         add_member(
             s,
             &r,
@@ -333,7 +334,7 @@ pub fn copy_template_catalog(
     for member in source
         .governance
         .iter()
-        .filter(|r| r.kind == "template_catalog_member")
+        .filter(|r| r.r#type == "template_catalog_member")
     {
         if !target.governance.iter().any(|r| r.id == member.id) {
             target.governance.push(member.clone());
@@ -380,7 +381,7 @@ pub fn restore_template_catalog(s: &mut EngineeringState, command_id: &str) -> R
     let mut receipt = record(
         "template_reset_receipt",
         command_id.into(),
-        Scope::Global,
+        Scope::global(),
         "重置模板定义".into(),
         1,
         None,
@@ -394,14 +395,14 @@ pub fn restore_template_catalog(s: &mut EngineeringState, command_id: &str) -> R
 pub fn template_catalog_counts(s: &EngineeringState) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for r in s.governance.iter().filter(|r| {
-        template_definition_kind(&r.kind)
+        template_definition_kind(&r.r#type)
             && template_record_current(s, r)
             && !configuration::retired(s, r)
     }) {
         if !s.governance.iter().any(|n| {
-            n.kind == r.kind && n.definition_id == r.definition_id && n.version > r.version
+            n.r#type == r.r#type && n.definition_id == r.definition_id && n.version > r.version
         }) {
-            *counts.entry(r.kind.clone()).or_default() += 1;
+            *counts.entry(r.r#type.clone()).or_default() += 1;
         }
     }
     counts
@@ -421,7 +422,7 @@ pub fn template_catalog_pristine(s: &EngineeringState) -> bool {
                 .any(|r| r.id == d.id && r.is_definition())
                 && s.governance
                     .iter()
-                    .find(|m| m.kind == "template_catalog_member" && m.definition_id == d.id)
+                    .find(|m| m.r#type == "template_catalog_member" && m.definition_id == d.id)
                     .is_none_or(|m| m.data["source_hash"] != configuration_hash(d))
         })
     {
@@ -429,15 +430,15 @@ pub fn template_catalog_pristine(s: &EngineeringState) -> bool {
     }
     s.governance
         .iter()
-        .filter(|r| template_definition_kind(&r.kind) && template_record_current(s, r))
-        .filter(|r| r.kind != "workflow_draft" || r.data["published_revision_id"].is_null())
+        .filter(|r| template_definition_kind(&r.r#type) && template_record_current(s, r))
+        .filter(|r| r.r#type != "workflow_draft" || r.data["published_revision_id"].is_null())
         .filter(|r| {
             !s.governance.iter().any(|n| {
-                n.kind == r.kind && n.definition_id == r.definition_id && n.version > r.version
+                n.r#type == r.r#type && n.definition_id == r.definition_id && n.version > r.version
             })
         })
         .all(|r| {
-            r.kind != "workflow_draft"
+            r.r#type != "workflow_draft"
                 && !configuration::retired(s, r)
                 && !template_record_disabled(s, r)
                 && template_catalog_member(s, r)
@@ -476,6 +477,7 @@ pub fn pinned_template_records(
         for r in &s.governance {
             if ids.contains(&r.id) || ids.contains(&r.definition_id) {
                 collect(&r.data, &mut ids);
+                collect(&json!(r.refs), &mut ids);
             }
         }
         if before == ids.len() {

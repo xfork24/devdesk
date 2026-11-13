@@ -23,15 +23,21 @@ fn cmd(e: &Engine, method: &str, target: Option<&str>, mut p: Value) -> Result<V
     if method == "orchestration.open" {
         if let Some(policy) = p.as_object_mut().and_then(|v| v.remove("policy")) {
             let state = e.store.snapshot()?;
-            let mut data = permission_context(&state).unwrap().data.clone();
+            let source = permission_context(&state).unwrap().clone();
+            let mut data = source.data.clone();
             data["control_policy"] = policy;
+            let mut payload =
+                json!({"name":"Fixture controller authorization","scope":"global","data":data});
+            for (key, value) in &source.refs {
+                payload[key] = value.clone();
+            }
             let context = e.execute(
                 "permission_context.create",
                 Command {
                     command_id: id(),
                     target: None,
                     expected_revision: None,
-                    payload: json!({"name":"Fixture controller authorization","data":data}),
+                    payload,
                 },
             )?;
             p["permission_context_ref"] = context["id"].clone();
@@ -46,7 +52,7 @@ fn cmd(e: &Engine, method: &str, target: Option<&str>, mut p: Value) -> Result<V
     });
     if let Some(row) = target
         .and_then(|id| s.configuration(id).ok())
-        .filter(|r| r.kind == "workflow_instance")
+        .filter(|r| r.r#type == "workflow_instance")
     {
         p["plan_revision_id"] = row.data["active_plan_revision_id"].clone();
     }
@@ -307,7 +313,7 @@ fn bypass_keeps_a_distinct_decision_and_cannot_hide_a_missing_final_output() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_decision" && r.data["operation"] == "change")
+            .any(|r| r.r#type == "workflow_decision" && r.data["operation"] == "change")
     );
 }
 
@@ -321,7 +327,7 @@ fn a_plan_cannot_be_mutated_by_direct_storage_writes() {
             .transact(None, &mut |state| {
                 let r = state.governance.iter_mut().find(|r| r.id == id).unwrap();
                 r.data["plan"]["document"]["steps"][0]["name"] = json!("篡改");
-                r.content_hash = configuration_hash(&r.data);
+                r.content_hash = content_digest(&r.refs, &r.data);
                 Ok(Value::Null)
             })
             .is_err()
@@ -462,7 +468,7 @@ fn bounded_segment_requires_explicit_authorization_and_stops_at_plan_change() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_segment" && r.data["status"] == "completed")
+            .any(|r| r.r#type == "workflow_segment" && r.data["status"] == "completed")
     );
 }
 
@@ -771,7 +777,11 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
     assert_eq!(runtime(&e, &id)["runtime"]["status"], "completed");
     assert_eq!(harness.replies.lock().unwrap().len(), 5);
     assert!(harness.replies.lock().unwrap().iter().all(|r| r.success));
-    assert!(!s.governance.iter().any(|r| r.kind == "configured_session"));
+    assert!(
+        !s.governance
+            .iter()
+            .any(|r| r.r#type == "configured_session")
+    );
     assert!(
         s.orchestration_wakeups
             .iter()
@@ -780,14 +790,14 @@ fn a_native_manager_controls_without_a_running_step_and_persists_its_real_call_c
     assert_eq!(
         s.governance
             .iter()
-            .filter(|r| r.kind == "controller_tool_reply")
+            .filter(|r| r.r#type == "controller_tool_reply")
             .count(),
         5
     );
     assert_eq!(
         s.governance
             .iter()
-            .filter(|r| r.kind == "workflow_decision" && r.data["actor"]["kind"] == "controller")
+            .filter(|r| r.r#type == "workflow_decision" && r.data["actor"]["kind"] == "controller")
             .count(),
         5
     );
@@ -808,7 +818,7 @@ fn native_control_survives_restart_after_action_and_before_reply_without_replay(
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "controller_tool_call" && r.data["status"] == "prepared")
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "prepared")
         {
             break;
         }
@@ -819,7 +829,7 @@ fn native_control_survives_restart_after_action_and_before_reply_without_replay(
         .unwrap()
         .governance
         .into_iter()
-        .find(|r| r.kind == "controller_tool_call")
+        .find(|r| r.r#type == "controller_tool_call")
         .unwrap();
     assert_eq!(call.data["status"], "prepared");
     assert!(
@@ -862,7 +872,7 @@ fn native_control_survives_restart_after_action_and_before_reply_without_replay(
         state
             .governance
             .iter()
-            .filter(|r| r.kind == "controller_tool_reply" && r.definition_id == call.id)
+            .filter(|r| r.r#type == "controller_tool_reply" && r.definition_id == call.id)
             .count(),
         1
     );
@@ -870,7 +880,7 @@ fn native_control_survives_restart_after_action_and_before_reply_without_replay(
         state
             .governance
             .iter()
-            .filter(|r| r.kind == "workflow_decision" && r.data["operation"] == "dispatch")
+            .filter(|r| r.r#type == "workflow_decision" && r.data["operation"] == "dispatch")
             .count(),
         1
     );
@@ -893,7 +903,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "controller_tool_call" && r.data["status"] == "prepared")
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "prepared")
         {
             break;
         }
@@ -905,7 +915,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
         .unwrap()
         .governance
         .into_iter()
-        .filter(|r| r.kind == "controller_tool_call")
+        .filter(|r| r.r#type == "controller_tool_call")
         .collect::<Vec<_>>();
     assert!(
         e.store
@@ -913,7 +923,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_segment" && r.data["status"] == "active"),
+            .any(|r| r.r#type == "workflow_segment" && r.data["status"] == "active"),
         "{calls:?}"
     );
     cmd(
@@ -929,7 +939,7 @@ fn human_takeover_revokes_an_already_authorized_native_segment() {
         state
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_segment" && r.data["status"] == "stopped")
+            .any(|r| r.r#type == "workflow_segment" && r.data["status"] == "stopped")
     );
     assert!(
         runtime(&e, &root)["runtime"]["steps"]
@@ -970,7 +980,7 @@ fn revising_child_ignores_unused_parent_roles_and_resource_locks() {
     let child = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.id != root)
+        .find(|r| r.r#type == "workflow_instance" && r.id != root)
         .unwrap()
         .id
         .clone();
@@ -1180,7 +1190,7 @@ fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
         s.governance
             .iter()
             .find(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["parent_execution_id"]
                         == parent.steps.iter().find(|e| e.step == key).unwrap().id
             })
@@ -1245,7 +1255,7 @@ fn revising_one_child_preserves_its_sibling_and_parent_output_contract() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_child_override" && r.data["child_instance_id"] == left)
+            .any(|r| r.r#type == "workflow_child_override" && r.data["child_instance_id"] == left)
     );
     cmd(
         &e,
@@ -1302,7 +1312,7 @@ fn delegated_segment_stops_on_a_rejected_condition_and_keeps_the_report() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_segment"
+            .any(|r| r.r#type == "workflow_segment"
                 && r.data["status"] == "stopped"
                 && r.data["reason"].as_str().unwrap_or("").contains("完成条件"))
     );
@@ -1338,7 +1348,7 @@ fn a_parent_does_not_spend_execution_budget_while_children_wait_for_controller_c
         .governance
         .iter()
         .find(|r| {
-            r.kind == "workflow_instance" && r.id != root && r.data["root_instance_id"] == root
+            r.r#type == "workflow_instance" && r.id != root && r.data["root_instance_id"] == root
         })
         .unwrap();
     cmd(
@@ -1385,7 +1395,9 @@ fn extending_an_invocation_timeout_keeps_its_children_and_original_execution_con
     let invocation = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"] == execution["id"])
+        .find(|r| {
+            r.r#type == "workflow_instance" && r.data["parent_execution_id"] == execution["id"]
+        })
         .unwrap();
     let original_child = runtime(&e, &invocation.id);
     let mut step = before["runtime"]["plan"]["document"]["steps"][0].clone();
@@ -1482,13 +1494,13 @@ fn a_waiver_keeps_the_rejected_value_and_the_human_signature_separate() {
         state
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_waiver" && r.data["requirement"] == "completion")
+            .any(|r| r.r#type == "workflow_waiver" && r.data["requirement"] == "completion")
     );
     assert!(
         !state
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_confirmation" || r.kind == "workflow_human_decision")
+            .any(|r| r.r#type == "workflow_confirmation" || r.r#type == "workflow_human_decision")
     );
 }
 
@@ -1532,7 +1544,7 @@ fn output_reads_are_root_scoped_and_large_unicode_materials_are_chunked() {
             let mut foreign = s.configuration(material["id"].as_str().unwrap())?.clone();
             foreign.id = id();
             foreign.data["root_instance_id"] = json!("another-root");
-            foreign.content_hash = configuration_hash(&foreign.data);
+            foreign.content_hash = content_digest(&foreign.refs, &foreign.data);
             s.governance.push(foreign);
             Ok(Value::Null)
         })
@@ -1543,7 +1555,7 @@ fn output_reads_are_root_scoped_and_large_unicode_materials_are_chunked() {
         .unwrap()
         .governance
         .iter()
-        .find(|r| r.kind == "typed_material" && r.data["root_instance_id"] == "another-root")
+        .find(|r| r.r#type == "typed_material" && r.data["root_instance_id"] == "another-root")
         .unwrap()
         .id
         .clone();
@@ -1572,7 +1584,7 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "controller_tool_call" && r.data["status"] == "succeeded")
+            .any(|r| r.r#type == "controller_tool_call" && r.data["status"] == "succeeded")
         {
             break;
         }
@@ -1582,14 +1594,14 @@ fn takeover_fences_a_late_native_command_without_advancing_the_next_node() {
     let mut late = state
         .governance
         .iter()
-        .find(|r| r.kind == "controller_tool_call" && r.data["status"] == "succeeded")
+        .find(|r| r.r#type == "controller_tool_call" && r.data["status"] == "succeeded")
         .unwrap()
         .clone();
     cmd(&e, "orchestration.takeover", Some(&controller), json!({})).unwrap();
     late.id = id();
     late.data["status"] = json!("prepared");
     late.data["arguments"]["step"] = json!("two");
-    late.content_hash = configuration_hash(&late.data);
+    late.content_hash = content_digest(&late.refs, &late.data);
     let late_id = late.id.clone();
     e.store
         .transact(None, &mut |s| {
@@ -1670,7 +1682,7 @@ fn changes_before_send_admission_are_coalesced_into_one_pending_wakeup() {
         state
             .governance
             .iter()
-            .filter(|r| r.kind == "workflow_intent"
+            .filter(|r| r.r#type == "workflow_intent"
                 && r.data["method"] == "conversation.send"
                 && r.data["status"] == "prepared")
             .count(),
@@ -1783,7 +1795,7 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
                 .governance
                 .iter()
                 .rev()
-                .find(|r| r.kind == "workflow_intent" && r.data["method"] == "conversation.send")
+                .find(|r| r.r#type == "workflow_intent" && r.data["method"] == "conversation.send")
                 .unwrap()
                 .data["command"]["payload"]["input"]
                 .as_str()
@@ -1833,7 +1845,7 @@ fn signing_an_unchanged_waiting_gate_wakes_the_idle_manager() {
     let confirmation = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_confirmation" && r.definition_id == execution["id"])
+        .find(|r| r.r#type == "workflow_confirmation" && r.definition_id == execution["id"])
         .unwrap();
     assert_eq!(projected["human_satisfied"], true);
     assert_eq!(projected["confirmation_status"], "confirmed");
@@ -1871,7 +1883,7 @@ fn control_version_fences_commands_while_budget_observations_change_row_revision
             let row = s.governance.iter_mut().find(|r| r.id == root).unwrap();
             row.data["steps"][0]["budget_waited_ms"] = json!(1);
             row.revision += 1;
-            row.content_hash = configuration_hash(&row.data);
+            row.content_hash = content_digest(&row.refs, &row.data);
             Ok(Value::Null)
         })
         .unwrap();
@@ -1925,7 +1937,7 @@ fn a_pending_human_decision_signs_only_the_exact_current_business_gate() {
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_confirmation")
+            .any(|r| r.r#type == "workflow_confirmation")
     );
     cmd(
         &e,
@@ -1938,7 +1950,7 @@ fn a_pending_human_decision_signs_only_the_exact_current_business_gate() {
     let signed = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_confirmation")
+        .find(|r| r.r#type == "workflow_confirmation")
         .unwrap();
     assert_eq!(signed.data["actor"]["kind"], "human");
     assert_eq!(signed.definition_id, execution["id"]);
@@ -1950,7 +1962,7 @@ fn a_pending_human_decision_signs_only_the_exact_current_business_gate() {
     let decision = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_human_decision")
+        .find(|r| r.r#type == "workflow_human_decision")
         .unwrap();
     let chunk = e
         .query(

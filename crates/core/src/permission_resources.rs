@@ -27,7 +27,7 @@ pub fn insert_permission_profiles(
                 .governance
                 .iter()
                 .find(|r| {
-                    r.kind == "permission_profile"
+                    r.r#type == "permission_profile"
                         && r.definition_id == p.identity
                         && r.version + 1 == p.version
                 })
@@ -35,7 +35,7 @@ pub fn insert_permission_profiles(
         }
         let data = permission_profile_data(&p);
         if let Some(old) = s.governance.iter().find(|r| r.id == p.id) {
-            if old.kind != "permission_profile"
+            if old.r#type != "permission_profile"
                 || old.data != data
                 || old.name != p.name
                 || old.scope != p.scope
@@ -49,7 +49,7 @@ pub fn insert_permission_profiles(
             continue;
         }
         if s.governance.iter().any(|r| {
-            r.kind == "permission_profile"
+            r.r#type == "permission_profile"
                 && r.definition_id == p.identity
                 && r.version == p.version
         }) {
@@ -65,7 +65,7 @@ pub fn insert_permission_profiles(
                 .as_ref()
                 .and_then(|id| s.configuration(id).ok())
                 .filter(|r| {
-                    r.kind == "permission_profile"
+                    r.r#type == "permission_profile"
                         && r.definition_id == p.identity
                         && r.version + 1 == p.version
                 })
@@ -78,7 +78,7 @@ pub fn insert_permission_profiles(
                 ));
             }
             if s.governance.iter().any(|r| {
-                r.kind == "permission_profile" && r.supersedes.as_ref() == Some(&parent.id)
+                r.r#type == "permission_profile" && r.supersedes.as_ref() == Some(&parent.id)
             }) {
                 return Err(err("revision_conflict", "权限已有后继修订"));
             }
@@ -102,7 +102,7 @@ pub fn insert_permission_profiles(
         let mut origin = record(
             "permission_origin",
             p.id.clone(),
-            Scope::Global,
+            Scope::global(),
             source.into(),
             1,
             None,
@@ -128,7 +128,7 @@ pub fn permission_profile_export(s: &EngineeringState, id: &str) -> Result<Value
             return Err(err("invalid_configuration", "权限前序链过长"));
         }
         let r = s.configuration(&id)?;
-        if r.kind != "permission_profile" {
+        if r.r#type != "permission_profile" {
             return Err(err("invalid_params", "需要 v2 权限修订"));
         }
         next = r.supersedes.clone();
@@ -166,7 +166,7 @@ impl Engine {
                 }
                 let old = if method.ends_with("revise") {
                     let r = s.configuration(c.target.as_deref().unwrap_or(""))?;
-                    if r.kind != "permission_profile" || c.expected_revision != Some(r.version) {
+                    if r.r#type != "permission_profile" || c.expected_revision != Some(r.version) {
                         return Err(err("revision_conflict", "权限版本已改变"));
                     }
                     Some(r.permission_profile()?)
@@ -177,7 +177,7 @@ impl Engine {
                     scope: old
                         .as_ref()
                         .map(|p| p.scope.clone())
-                        .unwrap_or(Scope::Global),
+                        .unwrap_or(Scope::global()),
                     schema_version: 2,
                     id: String::new(),
                     identity: match &old {
@@ -194,11 +194,12 @@ impl Engine {
                 };
                 profile.id = source_reference(&profile.identity, profile.version)?;
                 let source = SourceDefinition {
-                    kind: "permission_profile".into(),
+                    r#type: "permission_profile".into(),
                     identity: profile.identity.clone(),
                     revision: profile.version,
                     name: profile.name.clone(),
                     scope: profile.scope.clone(),
+                    refs: References::new(),
                     data: permission_profile_data(&profile),
                 };
                 insert_permission_profiles(s, &[json!(source)], "ui")?;
@@ -240,7 +241,7 @@ pub fn apply_permission_bindings(s: &mut EngineeringState, changes: &[Value]) ->
         let pr = s.configuration(&profile_id)?;
         let mut profile = pr.permission_profile()?;
         profile.normalize()?;
-        if pr.kind != "permission_profile" || profile.target_kind != target.kind {
+        if pr.r#type != "permission_profile" || profile.target_kind != target.kind {
             return Err(err("permission_inapplicable", "profile 不适用于目标"));
         }
         let contract = text(change, "enforcement_contract")?;
@@ -253,7 +254,7 @@ pub fn apply_permission_bindings(s: &mut EngineeringState, changes: &[Value]) ->
         let previous = s
             .governance
             .iter()
-            .filter(|r| r.kind == "permission_binding" && r.definition_id == identity)
+            .filter(|r| r.r#type == "permission_binding" && r.definition_id == identity)
             .max_by_key(|r| r.version)
             .cloned();
         let r = record(

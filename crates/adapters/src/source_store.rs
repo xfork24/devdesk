@@ -8,14 +8,17 @@ pub(super) fn is_source(r: &ConfigurationRecord) -> bool {
             "project_configuration",
             "integration_project_configuration",
         ]
-        .contains(&r.kind.as_str())
+        .contains(&r.r#type.as_str())
 }
 
 pub(super) fn load_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {
-    let mut records: Vec<ConfigurationRecord> = load_table(conn, "governance_records")?;
+    let mut records: Vec<ConfigurationRecord> = load_table::<Value>(conn, "governance_records")?
+        .into_iter()
+        .map(ConfigurationRecord::from_storage)
+        .collect::<Result<_>>()?;
     let mut query = conn
         .prepare(
-            "SELECT kind,identity,revision,name,scope,data FROM source_definitions ORDER BY rowid",
+            "SELECT type,identity,revision,name,scope,refs,data FROM source_definitions ORDER BY rowid",
         )
         .map_err(storage)?;
     let sources = query
@@ -27,31 +30,34 @@ pub(super) fn load_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
                 row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
             ))
         })
         .map_err(storage)?;
     for source in sources {
-        let (kind, identity, revision, name, scope, data) = source.map_err(storage)?;
+        let (r#type, identity, revision, name, scope, refs, data) = source.map_err(storage)?;
         let definition = SourceDefinition {
-            kind,
+            r#type,
             identity,
             revision,
             name,
             scope: serde_json::from_str(&scope).map_err(storage)?,
+            refs: serde_json::from_str(&refs).map_err(storage)?,
             data: serde_json::from_str(&data).map_err(storage)?,
         };
         records.push(definition.into_record()?);
     }
     for index in 0..records.len() {
-        if records[index].kind == "skill_package" {
+        if records[index].r#type == "skill_package" {
             let owner = records[index].definition_id.clone();
             if let Some(body) = records
                 .iter()
-                .find(|r| r.id == owner && r.kind == "skill")
+                .find(|r| r.id == owner && r.r#type == "skill")
                 .map(|r| r.data["body"].clone())
             {
                 records[index].data["body"] = body;
-                records[index].content_hash = configuration_hash(&records[index].data);
+                records[index].content_hash =
+                    content_digest(&records[index].refs, &records[index].data);
             }
         }
     }
@@ -60,7 +66,7 @@ pub(super) fn load_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>
             records[index].supersedes = records
                 .iter()
                 .filter(|r| {
-                    r.kind == records[index].kind
+                    r.r#type == records[index].r#type
                         && r.definition_id == records[index].definition_id
                         && r.version < records[index].version
                 })
@@ -81,14 +87,14 @@ pub(super) fn save_records(
         if before.governance.iter().any(|old| old.id == record.id) {
             continue;
         }
-        validate_source_data(&record.kind, &record.data)?;
+        validate_source_data(&record.r#type, &record.refs, &record.data)?;
         require(
             record.id == source_reference(&record.definition_id, record.version)?,
             "源修订必须使用 identity:revision 引用",
         )?;
-        conn.execute("INSERT INTO source_definitions(identity,revision,kind,name,scope,data) VALUES(?1,?2,?3,?4,?5,?6)",rusqlite::params![record.definition_id,record.version,record.kind,record.name,serde_json::to_string(&record.scope).map_err(storage)?,record.data.to_string()]).map_err(storage)?;
+        conn.execute("INSERT INTO source_definitions(identity,revision,type,name,scope,refs,data) VALUES(?1,?2,?3,?4,?5,?6,?7)",rusqlite::params![record.definition_id,record.version,record.r#type,record.name,serde_json::to_string(&record.scope).map_err(storage)?,serde_json::to_value(&record.refs).map_err(storage)?.to_string(),record.data.to_string()]).map_err(storage)?;
     }
-    let runtime: Vec<_> = state
+    let packed: Vec<ConfigurationRecord> = state
         .governance
         .iter()
         .filter(|r| {
@@ -101,6 +107,7 @@ pub(super) fn save_records(
         })
         .map(|r| pack_record(state, r))
         .collect::<Result<_>>()?;
+    let runtime: Vec<Value> = packed.iter().map(|r| r.to_storage()).collect();
     save_table(conn, "governance_records", &runtime, &[])
 }
 
@@ -109,18 +116,18 @@ fn pack_record(
     record: &ConfigurationRecord,
 ) -> Result<ConfigurationRecord> {
     let mut stored = record.clone();
-    if record.kind == "skill_package" {
+    if record.r#type == "skill_package" {
         stored.data.as_object_mut().unwrap().remove("body");
     } else {
         stored.data = source_views::pack(state, &record.data)?;
     }
-    if record.kind == "configured_execution_task" {
+    if record.r#type == "configured_execution_task" {
         require(
             stored.data["task"]["$source"] == "task",
             "任务必须能由源修订和实际输入完整重建",
         )?;
     }
-    stored.content_hash = configuration_hash(&stored.data);
+    stored.content_hash = content_digest(&stored.refs, &stored.data);
     Ok(stored)
 }
 pub(super) fn restore_records(
@@ -131,7 +138,7 @@ pub(super) fn restore_records(
     for record in &mut state.governance {
         if !is_source(record) {
             record.data = source_views::restore_with(&snapshot, &record.data, memo)?;
-            record.content_hash = configuration_hash(&record.data);
+            record.content_hash = content_digest(&record.refs, &record.data);
         }
     }
     Ok(())

@@ -34,13 +34,3 @@ impl DefinitionVisibility {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CapabilityDefinition {
-    pub model_ref: Id,
-    pub harness_ref: Id,
-    #[serde(default)]
-    pub tools: Vec<Id>,
-    #[serde(default)]
-    pub skills: Vec<Id>,
-}

@@ -187,7 +187,7 @@ impl Engine {
             configuration_hash(&json!([session.id, tid, operation, call]))
         );
         if let Some(old) = state.governance.iter().find(|record| {
-            record.kind == "agent_platform_request" && record.definition_id == invocation
+            record.r#type == "agent_platform_request" && record.definition_id == invocation
         }) {
             require(
                 old.data["request"]["arguments"] == *arguments,
@@ -305,7 +305,7 @@ impl Engine {
         let execution_id = text(&command.payload, "execution_id")?;
         require(
             state.governance.iter().any(|r| {
-                r.kind == "workflow_intent"
+                r.r#type == "workflow_intent"
                     && r.definition_id == execution_id
                     && r.data["method"] == "workflow.tool.execute"
                     && r.data["command"] == json!(command)
@@ -317,7 +317,7 @@ impl Engine {
                 .governance
                 .iter()
                 .find(|record| {
-                    record.kind == "agent_platform_request" && record.definition_id == invocation
+                    record.r#type == "agent_platform_request" && record.definition_id == invocation
                 })
                 .ok_or_else(|| err("not_found", "平台调用来源不存在"))?;
             let request: PlatformToolRequest =
@@ -343,7 +343,7 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|s| s.iter().any(|s| s["id"] == execution_id))
@@ -453,9 +453,9 @@ impl Engine {
             require(state.configuration(&request.instance_id)?.data["steps"].as_array().is_some_and(|s|s.iter().any(|e|e["id"]==request.step_execution_id()&&e["status"]=="running")),"执行已失效")?;
             if request.definition.qualified_name=="git.advance" {
                 let permit=self.workflow_action_permit(state,request)?;
-                state.governance.push(record("workflow_action_permit",request.execution_id.clone(),Scope::Project{project_id:request.project_id.clone()},"候选接纳许可".into(),1,None,json!(permit),true));
+                state.governance.push(record("workflow_action_permit",request.execution_id.clone(),Scope::project(request.project_id.clone()),"候选接纳许可".into(),1,None,json!(permit),true));
             }
-            let mut row=record("platform_call",request.execution_id.clone(),Scope::Project{project_id:request.project_id.clone()},request.definition.qualified_name.clone(),1,None,
+            let mut row=record("platform_call",request.execution_id.clone(),Scope::project(request.project_id.clone()),request.definition.qualified_name.clone(),1,None,
                 json!({"status":"prepared","request":request,"operations":{"base":id(),"candidate":id(),"remote":id()}}),false);row.id=request.execution_id.clone();let result=json!({"id":row.id});state.governance.push(row);Ok(result)
         })
     }
@@ -545,7 +545,7 @@ impl Engine {
                 .governance
                 .iter()
                 .filter(|r| {
-                    r.kind == "platform_call"
+                    r.r#type == "platform_call"
                         && r.data["status"] == "succeeded"
                         && r.data["receipt"]["workspace_id"] == workspace
                         && r.data["receipt"]["revision"] == grant["revision"]
@@ -849,7 +849,7 @@ impl Engine {
                 let operation = text(candidate, "operation_id")?;
                 require(
                     state.configuration(&operation).is_ok_and(|r| {
-                        r.kind == "platform_call"
+                        r.r#type == "platform_call"
                             && r.data["request"]["instance_id"] == request.instance_id
                             && r.data["status"] == "succeeded"
                             && r.data["request"]["definition"]["qualified_name"] == "git.candidate"
@@ -860,7 +860,7 @@ impl Engine {
                 let permit = self.workflow_action_permit(state, request)?;
                 require(
                     state.governance.iter().any(|r| {
-                        r.kind == "workflow_action_permit"
+                        r.r#type == "workflow_action_permit"
                             && r.definition_id == request.execution_id
                             && r.data == json!(permit)
                     }),
@@ -893,7 +893,7 @@ impl Engine {
                     accepted["revision"] == revision
                         && accepted["previous"] == expected
                         && state.governance.iter().any(|r| {
-                            r.kind == "platform_call"
+                            r.r#type == "platform_call"
                                 && r.data["request"]["instance_id"] == request.instance_id
                                 && r.data["status"] == "succeeded"
                                 && r.data["request"]["definition"]["qualified_name"]
@@ -1012,7 +1012,7 @@ impl Engine {
         if let Some(record) = state
             .governance
             .iter()
-            .find(|r| r.kind == "platform_repository_receipt" && r.definition_id == operation.id)
+            .find(|r| r.r#type == "platform_repository_receipt" && r.definition_id == operation.id)
         {
             require(
                 record.data["operation"] == json!(operation),
@@ -1030,9 +1030,7 @@ impl Engine {
             state.governance.push(record(
                 "platform_repository_receipt",
                 operation.id.clone(),
-                Scope::Project {
-                    project_id: request.project_id.clone(),
-                },
+                Scope::project(request.project_id.clone()),
                 key.into(),
                 1,
                 None,
@@ -1046,7 +1044,7 @@ impl Engine {
     pub fn drive_platform_tools(&self) -> Result<()> {
         let snapshot = self.store.snapshot()?;
         for row in snapshot.governance.iter().filter(|r| {
-            r.kind == "platform_call"
+            r.r#type == "platform_call"
                 && ["prepared", "running"].contains(&r.data["status"].as_str().unwrap_or(""))
         }) {
             let request: PlatformToolRequest = serde_json::from_value(row.data["request"].clone())
@@ -1128,7 +1126,7 @@ impl Engine {
                                     let parent_instance=state.configuration(&request.instance_id)?;
                                     let standard=parent_instance.data["plan"]["standard_ref"].as_str().or_else(||parent.data["standard_ref"].as_str());
                                     if let Some(standard)=standard {
-                                        let definition=standard_snapshot(state,standard,&Scope::Project{project_id:request.project_id.clone()})?;
+                                        let definition=standard_snapshot(state,standard,&Scope::project(request.project_id.clone()))?;
                                         let doc:WorkflowDefinition=serde_json::from_value(parent_instance.data["plan"]["document"].clone()).map_err(|e|err("invalid_configuration",e.to_string()))?;
                                         if let Some(entry)=doc.steps.iter().find_map(|step|match &step.executor {StepExecutor::Workflow{workflow_ref,work_binding:Some(_),..} if definition.nodes.iter().any(|n|n.kind=="workflow" && &n.reference==workflow_ref)=>Some(workflow_ref.clone()),_=>None}) {
                                             let selection=json!({"standard_ref":standard,"workflow_ref":entry,"role_agent_bindings":parent_instance.data["role_agent_bindings"],"permission_context_ref":parent_instance.data["plan"]["permission_context_ref"]});
@@ -1239,7 +1237,7 @@ impl Engine {
         for source in snapshot
             .governance
             .iter()
-            .filter(|record| record.kind == "agent_platform_request")
+            .filter(|record| record.r#type == "agent_platform_request")
         {
             let request: PlatformToolRequest =
                 serde_json::from_value(source.data["request"].clone())
@@ -1247,12 +1245,11 @@ impl Engine {
             let Some(caller) = &request.caller else {
                 continue;
             };
-            let result = snapshot
-                .governance
-                .iter()
-                .find(|record| record.id == request.execution_id && record.kind == "platform_call");
+            let result = snapshot.governance.iter().find(|record| {
+                record.id == request.execution_id && record.r#type == "platform_call"
+            });
             let failed = snapshot.governance.iter().find(|record| {
-                record.kind == "workflow_intent"
+                record.r#type == "workflow_intent"
                     && record.data["command"]["payload"]["agent_platform_call_id"]
                         == request.execution_id
                     && record.data["status"] == "failed"
@@ -1265,7 +1262,8 @@ impl Engine {
             }
             let Some(result) = result else { continue };
             if snapshot.governance.iter().any(|record| {
-                record.kind == "platform_tool_reply" && record.definition_id == request.execution_id
+                record.r#type == "platform_tool_reply"
+                    && record.definition_id == request.execution_id
             }) || !["succeeded", "failed", "cancelled", "needs_reconciliation"]
                 .contains(&result.data["status"].as_str().unwrap_or(""))
             {
@@ -1301,7 +1299,7 @@ impl Engine {
                     .is_ok()
             {
                 self.store.transact(None, &mut |state| {
-                    if !state.governance.iter().any(|record|record.kind=="platform_tool_reply"&&record.definition_id==request.execution_id){
+                    if !state.governance.iter().any(|record|record.r#type=="platform_tool_reply"&&record.definition_id==request.execution_id){
                         state.governance.push(record("platform_tool_reply",request.execution_id.clone(),source.scope.clone(),"原生工具回执交付".into(),1,None,json!({"status":if active{"delivered"}else{"worker_unavailable"},"receipt":receipt}),true));
                     }
                     Ok(Value::Null)
@@ -1332,7 +1330,7 @@ pub(crate) fn project_platform_call(
             .governance
             .iter()
             .find(|definition| {
-                definition.kind == "tool" && definition.data == request["definition"]
+                definition.r#type == "tool" && definition.data == request["definition"]
             })
             .map(|definition| definition.id.as_str())
     });
@@ -1349,6 +1347,6 @@ pub(crate) fn project_platform_call(
     });
     projected.data["invocation"] = json!({"id":record.id,"project_id":request["project_id"],"feature_id":feature,"task_id":task.map(|task|&task.id),"agent_instance_id":agent_instance,"session_id":caller["session_id"],"turn_id":caller["turn_id"],"operation_id":caller["operation_id"].as_str().unwrap_or(&record.id),"tool":{"revision_id":definition,"definition":request["definition"]},"arguments":request["arguments"],"input_hash":configuration_hash(&request["arguments"])});
     projected.data["platform_receipt"] = record.data["receipt"].clone();
-    projected.data["receipt"]=state.governance.iter().find(|reply|reply.kind=="platform_tool_reply"&&reply.definition_id==record.id).map(|reply|reply.data["receipt"].clone()).unwrap_or_else(||json!({"success":record.data["status"]=="succeeded","structured_content":record.data["receipt"],"error":record.data["error"]}));
+    projected.data["receipt"]=state.governance.iter().find(|reply|reply.r#type=="platform_tool_reply"&&reply.definition_id==record.id).map(|reply|reply.data["receipt"].clone()).unwrap_or_else(||json!({"success":record.data["status"]=="succeeded","structured_content":record.data["receipt"],"error":record.data["error"]}));
     projected
 }

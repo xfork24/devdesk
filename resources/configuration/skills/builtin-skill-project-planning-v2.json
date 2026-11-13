@@ -1,11 +1,9 @@
 {
-  "kind": "skill",
+  "type": "skill",
   "identity": "builtin-skill-project-planning",
   "revision": 2,
   "name": "Task Plan 项目管理",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "rules": [],
     "body_file": "project-planning.md"

@@ -135,7 +135,12 @@ impl NativeTools {
             }
             let c = Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .map_err(storage)?;
-            disabled.extend(load_table::<ConfigurationRecord>(&c, "governance_records")?);
+            disabled.extend(
+                load_table::<Value>(&c, "governance_records")?
+                    .into_iter()
+                    .map(ConfigurationRecord::from_storage)
+                    .collect::<Result<Vec<_>>>()?,
+            );
         }
         let refs = [
             &tool.revision_id,
@@ -148,7 +153,7 @@ impl NativeTools {
             .map(|r| r.definition_id.as_str())
             .collect();
         Ok(disabled.iter().any(|r| {
-            r.kind == "integration_disabled" && identities.contains(&r.definition_id.as_str())
+            r.r#type == "integration_disabled" && identities.contains(&r.definition_id.as_str())
         }))
     }
     fn secret(

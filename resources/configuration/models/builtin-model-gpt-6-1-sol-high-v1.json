@@ -1,11 +1,9 @@
 {
-  "kind": "model",
+  "type": "model",
   "identity": "builtin-model-gpt-6-1-sol-high",
   "revision": 1,
   "name": "GPT-6.1 Sol High",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "capabilities": [
       "structured-output",

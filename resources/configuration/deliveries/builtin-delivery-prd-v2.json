@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-prd",
   "revision": 2,
   "name": "PRD",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-stage-prd:1"
+  ],
   "data": {
     "format": "markdown",
-    "spec_refs": [
-      "builtin-spec-stage-prd:1"
-    ],
     "producer": {
       "kind": "agent"
     }

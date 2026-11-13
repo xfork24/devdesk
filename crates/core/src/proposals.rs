@@ -82,9 +82,7 @@ impl Engine {
                         .map_err(|e| err("invalid_proposal", e.to_string()))?
                 };
                 require(!content.title.trim().is_empty(), "材料标题不能为空")?;
-                let scope = Scope::Project {
-                    project_id: turn.project_id.clone(),
-                };
+                let scope = Scope::project(turn.project_id.clone());
                 let delivery = crate::governance::reference(
                     state,
                     &content.delivery_ref,
@@ -114,8 +112,8 @@ impl Engine {
                                         .is_some_and(|f| f.project_id == turn.project_id)
                             })
                             || state.configuration(input).is_ok_and(|r| {
-                                r.kind == "workflow_output"
-                                    && r.scope.project() == Some(turn.project_id.as_str())
+                                r.r#type == "workflow_output"
+                                    && r.scope.project_id() == Some(turn.project_id.as_str())
                             });
                     require(same_project, "材料输入必须属于同一项目")?;
                 }

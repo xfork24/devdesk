@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import {
   loadCatalog,
@@ -41,12 +41,18 @@ export function WorkStandard({
   const [compareOwner, setCompareOwner] = useState("");
   const [workComparison, setWorkComparison] = useState<Row>();
   const [selectionVersion, setSelectionVersion] = useState(0);
+  const comparisonGeneration = useRef(0);
+  useEffect(() => {
+    comparisonGeneration.current++;
+    setWorkComparison(undefined);
+  }, [projectId, owner.id, instance?.data.active_plan_revision_id, selectionVersion]);
   const runtime = instance?.data;
   const activeStandard =
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
   useEffect(() => {
     let active = true;
     setHistoryLoading(true);
+    setPreview(undefined);
     void loadCatalog(request, { id: projectId }, true)
       .then((rows) => {
         if (active) setRecords(rows);
@@ -84,8 +90,6 @@ export function WorkStandard({
               data.configuration?.data.workflow_ref ||
               "",
           );
-          setPreview(undefined);
-          setWorkComparison(undefined);
           setBindings(
             instance?.data.role_agent_bindings ||
               data.configuration?.data.role_agent_bindings ||
@@ -134,7 +138,7 @@ export function WorkStandard({
   }, [workflow, request, projectId]);
   const snapshot = records.find((r) => r.id === selected);
   const roots: string[] =
-    snapshot?.workflow_refs || snapshot?.data.root_workflow_refs || [];
+    snapshot?.workflow_refs || snapshot?.root_workflow_refs || [];
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -179,7 +183,7 @@ export function WorkStandard({
             label="采用 Standard"
             records={records.filter(
               (r) =>
-                r.kind === "standard" &&
+                r.type === "standard" &&
                 (!r.archived || r.id === activeStandard),
             )}
             value={selected}
@@ -208,7 +212,7 @@ export function WorkStandard({
                 key={role.role_id}
                 label={`${role.role?.name || role.role_id} 的 Agent`}
                 records={records.filter(
-                  (r) => r.kind === "agent" && r.data.role_ref === role.role_id,
+                  (r) => r.type === "agent" && r.role_ref === role.role_id,
                 )}
                 value={bindings[role.role_id] || ""}
                 onChange={(value) => {
@@ -219,7 +223,7 @@ export function WorkStandard({
             ))}
             <RevisionSelect
               label="工作执行授权"
-              records={records.filter((r) => r.kind === "permission_context")}
+              records={records.filter((r) => r.type === "permission_context")}
               value={permission}
               onChange={(value) => {
                 setPermission(value);
@@ -341,6 +345,7 @@ export function WorkStandard({
             aria-label="比较工作"
             value={compareOwner}
             onChange={(event) => {
+              comparisonGeneration.current++;
               setCompareOwner(event.target.value);
               setWorkComparison(undefined);
             }}
@@ -383,13 +388,14 @@ export function WorkStandard({
           disabled={busy || !compareOwner}
           onClick={() =>
             void run(async () => {
-              setWorkComparison(
-                await request("query.work_standard_diff", {
-                  project_id: projectId,
-                  before_owner_id: owner.id,
-                  after_owner_id: compareOwner,
-                }),
-              );
+              const generation = comparisonGeneration.current;
+              const comparison = await request("query.work_standard_diff", {
+                project_id: projectId,
+                before_owner_id: owner.id,
+                after_owner_id: compareOwner,
+              });
+              if (generation === comparisonGeneration.current)
+                setWorkComparison(comparison);
             })
           }
         >

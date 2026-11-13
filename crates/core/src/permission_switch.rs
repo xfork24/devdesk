@@ -79,7 +79,7 @@ impl Engine {
                 ));
             }
             if s.governance.iter().any(|r| {
-                r.kind == "permission_switch"
+                r.r#type == "permission_switch"
                     && r.definition_id == sid
                     && r.data["status"] != "adopted"
             }) {
@@ -88,9 +88,7 @@ impl Engine {
             let mut r = crate::governance::record(
                 "permission_switch",
                 sid.into(),
-                Scope::Project {
-                    project_id: session.project_id.clone().unwrap(),
-                },
+                Scope::project(session.project_id.clone().unwrap()),
                 "权限会话切换".into(),
                 1,
                 None,
@@ -198,7 +196,7 @@ impl Engine {
                 return Err(err("needs_reconciliation","原会话尚未静止"));
             }
             let snapshot=self.capture_conversation(s,&original,"permission_handoff",None)?;
-            let instance=s.governance.iter().find(|r|r.kind=="agent_session" && r.definition_id==sid).and_then(|r|r.data["agent_instance_id"].as_str()).map(str::to_owned);
+            let instance=s.governance.iter().find(|r|r.r#type=="agent_session" && r.definition_id==sid).and_then(|r|r.data["agent_instance_id"].as_str()).map(str::to_owned);
             let mut payload=json!({"agent":original.agent,"binding":binding,"force_new":true,"predecessor":sid,"snapshot_id":snapshot});
             if let Some(instance)=instance {payload["agent_instance_id"]=json!(instance);}
             let open=Command {command_id:format!("{}:successor",c.command_id),target:Some(original.owner_id.clone()),expected_revision:revision(s,&original.owner_id),payload};

@@ -1,11 +1,9 @@
 {
-  "kind": "workflow",
+  "type": "workflow",
   "identity": "builtin-workflow-feature-sol-high",
   "revision": 6,
   "name": "默认 Feature 开发流程",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "schema_version": 6,
     "stages": [

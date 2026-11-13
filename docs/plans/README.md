@@ -4,7 +4,8 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [合同版本去硬编码](contract-version-decoupling/PLAN.md) | [实施与验收](contract-version-decoupling/EXECUTION.md) | 部分实施（2026-11-12）；W01-W05+W08+W09 完成：合同注册表、结构识别、白名单枚举化、读取机制外置、normalize-plan 删除、check-defaults 脚本；W06 大文件重构与 W07 展示过滤待后续批次 |
+| [源配置信封扁平化](source-envelope-flattening/PLAN.md) | [评审](source-envelope-flattening/REVIEW.md)、[实施与验收](source-envelope-flattening/EXECUTION.md)、[验证报告](source-envelope-flattening/VALIDATION.md) | 已完成；151 源、Rust 236 项、浏览器 debug/release 各 51 项通过；真实 Codex Feature 42 节点完成，两次精确发布，证据复核与现场封存完成 |
+| [合同版本去硬编码](contract-version-decoupling/PLAN.md) | [实施与验收](contract-version-decoupling/EXECUTION.md) | 部分实施（2026-11-12）；W01-W05+W08+W09 完成：结构识别、白名单枚举化、读取机制外置、normalize-plan 删除、check-defaults 脚本；W06 大文件重构等后续工作保留；W07 展示过滤与残留版本门禁已在源信封扁平化中清理 |
 | [出厂配置精简与 dsh/minimax/glm 栈补全](configuration-slimming-dsh-stack/PLAN.md) | [实施与验收](configuration-slimming-dsh-stack/EXECUTION.md) | 已完成（2026-11-12，W4 门禁能力化当晚按用户决定回滚）；61 个历史修订删除、dsh 双栈补全（PM 为普通 agent 形态）；出厂 codex 修订链维持 main 原版本；测试全绿 |
 | [DSH 工具执行桥](dsh-tool-bridge/PLAN.md) | 提案·挂起（源自 review/plans p14） | 用户决定暂维持仅 codex 调度；SDK 协议扩展或容器内插件旁路方案已论证，等上游发版意愿恢复时重启 |
 | [现行系统文档补全](current-documentation/PLAN.md) | [实施与验收](current-documentation/EXECUTION.md) | 已完成；5 篇新文档（工作流与编排/运行时权限/存储/讨论与经验/Web 工作台）、8 处漂移修复与 --normalize-plan v6 化；host 32 项测试通过；版本锚点机制按用户决定撤回 |

@@ -341,7 +341,7 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
             "目录非空且不是 DevDesk 数据集；请选择空目录",
         )?;
         require(
-            fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-v2-standard-v1\n",
+            fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-flat-v1\n",
             "数据集标记不受支持",
         )
     };
@@ -360,7 +360,7 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
         .map_err(|_| err("dataset_locked", "此 data 已由另一个 host 打开"))?;
     // Recheck after obtaining ownership. Never replace a lock file that another Host can hold.
     if metadata_only()? {
-        fs::write(&marker, "devdesk-source-v2-standard-v1\n").map_err(storage)?;
+        fs::write(&marker, "devdesk-source-flat-v1\n").map_err(storage)?;
     } else {
         validate_marker()?;
     }
@@ -373,7 +373,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 47,
+        version == 0 || version == 48,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -510,10 +510,10 @@ impl EngineeringStore for SqliteStore {
         // Idle projects must not deserialize their complete protocol history on every tick.
         let conn = self.connection.lock().map_err(storage)?;
         conn.query_row("SELECT
-          EXISTS(SELECT 1 FROM governance_records WHERE kind='workflow_controller' AND json_extract(data,'$.status')='active') OR
-          EXISTS(SELECT 1 FROM governance_records WHERE kind='workflow_instance' AND json_extract(data,'$.status') NOT IN ('cancelled','completed') AND (json_extract(data,'$.cancel_requested')=1 OR (json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('failed','needs_reconciliation')))) OR
-          EXISTS(SELECT 1 FROM governance_records WHERE kind='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR
-          EXISTS(SELECT 1 FROM governance_records WHERE kind='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
+          EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_controller' AND json_extract(data,'$.status')='active') OR
+          EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.status') NOT IN ('cancelled','completed') AND (json_extract(data,'$.cancel_requested')=1 OR (json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('failed','needs_reconciliation')))) OR
+          EXISTS(SELECT 1 FROM governance_records WHERE type='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR
+          EXISTS(SELECT 1 FROM governance_records WHERE type='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
           EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
           EXISTS(SELECT 1 FROM turns WHERE status IN ('queued','dispatching','running','waiting_interaction') OR (status='needs_reconciliation' AND cancel_requested=1)) OR
           EXISTS(SELECT 1 FROM executions WHERE writer_revoked=0 OR status='succeeded')",

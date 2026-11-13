@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-dsh-native",
   "revision": 1,
   "name": "DSH 原生工具组",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "capabilities": [],
     "harness_provider": "dsh",

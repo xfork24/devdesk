@@ -104,7 +104,7 @@ fn current_settings_and_preference_updates_are_atomic() {
     fs::create_dir_all(temp.path().join("data")).unwrap();
     fs::write(
         temp.path().join("data/.devdesk-dataset"),
-        "devdesk-source-v2-standard-v1\n",
+        "devdesk-source-flat-v1\n",
     )
     .unwrap();
     let conn = rusqlite::Connection::open(temp.path().join("data/global.sqlite3")).unwrap();

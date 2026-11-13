@@ -2,9 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DevDesk source definition",
   "type": "object",
-  "additionalProperties": false,
   "required": [
-    "kind",
+    "type",
     "identity",
     "revision",
     "name",
@@ -12,7 +11,7 @@
     "data"
   ],
   "properties": {
-    "kind": {
+    "type": {
       "type": "string"
     },
     "identity": {
@@ -29,10 +28,645 @@
       "minLength": 1
     },
     "scope": {
-      "$ref": "rpc.schema.json#/$defs/Scope"
+      "type": "string",
+      "pattern": "^(global|project:[^:\\s]+|feature:[^:\\s]+:[^:\\s]+)$"
     },
     "data": {
       "type": "object"
+    },
+    "capability_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "role_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "model_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "harness_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "sandbox_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "model_catalog_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "spec_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^\\S+:[1-9][0-9]*$"
+      },
+      "uniqueItems": true
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^\\S+:[1-9][0-9]*$"
+      },
+      "uniqueItems": true
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^\\S+:[1-9][0-9]*$"
+      },
+      "uniqueItems": true
+    },
+    "model_providers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^\\S+:[1-9][0-9]*$"
+      },
+      "uniqueItems": true
+    },
+    "root_workflow_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^\\S+:[1-9][0-9]*$"
+      },
+      "uniqueItems": true
     }
-  }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "reference": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "referenceList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reference"
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "capability"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "capability_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_catalog_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_providers"
+              ]
+            },
+            {
+              "required": [
+                "role_ref"
+              ]
+            },
+            {
+              "required": [
+                "root_workflow_refs"
+              ]
+            },
+            {
+              "required": [
+                "sandbox_ref"
+              ]
+            },
+            {
+              "required": [
+                "spec_refs"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "harness_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_catalog_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_providers"
+              ]
+            },
+            {
+              "required": [
+                "model_ref"
+              ]
+            },
+            {
+              "required": [
+                "root_workflow_refs"
+              ]
+            },
+            {
+              "required": [
+                "sandbox_ref"
+              ]
+            },
+            {
+              "required": [
+                "skills"
+              ]
+            },
+            {
+              "required": [
+                "spec_refs"
+              ]
+            },
+            {
+              "required": [
+                "tools"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "delivery_type"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "capability_ref"
+              ]
+            },
+            {
+              "required": [
+                "harness_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_catalog_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_providers"
+              ]
+            },
+            {
+              "required": [
+                "model_ref"
+              ]
+            },
+            {
+              "required": [
+                "role_ref"
+              ]
+            },
+            {
+              "required": [
+                "root_workflow_refs"
+              ]
+            },
+            {
+              "required": [
+                "sandbox_ref"
+              ]
+            },
+            {
+              "required": [
+                "skills"
+              ]
+            },
+            {
+              "required": [
+                "tools"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "harness"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "capability_ref"
+              ]
+            },
+            {
+              "required": [
+                "harness_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_ref"
+              ]
+            },
+            {
+              "required": [
+                "role_ref"
+              ]
+            },
+            {
+              "required": [
+                "root_workflow_refs"
+              ]
+            },
+            {
+              "required": [
+                "sandbox_ref"
+              ]
+            },
+            {
+              "required": [
+                "skills"
+              ]
+            },
+            {
+              "required": [
+                "spec_refs"
+              ]
+            },
+            {
+              "required": [
+                "tools"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "permission_context"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "capability_ref"
+              ]
+            },
+            {
+              "required": [
+                "harness_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_catalog_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_providers"
+              ]
+            },
+            {
+              "required": [
+                "model_ref"
+              ]
+            },
+            {
+              "required": [
+                "role_ref"
+              ]
+            },
+            {
+              "required": [
+                "root_workflow_refs"
+              ]
+            },
+            {
+              "required": [
+                "skills"
+              ]
+            },
+            {
+              "required": [
+                "spec_refs"
+              ]
+            },
+            {
+              "required": [
+                "tools"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "standard"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "capability_ref"
+              ]
+            },
+            {
+              "required": [
+                "harness_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_catalog_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_providers"
+              ]
+            },
+            {
+              "required": [
+                "model_ref"
+              ]
+            },
+            {
+              "required": [
+                "role_ref"
+              ]
+            },
+            {
+              "required": [
+                "sandbox_ref"
+              ]
+            },
+            {
+              "required": [
+                "skills"
+              ]
+            },
+            {
+              "required": [
+                "spec_refs"
+              ]
+            },
+            {
+              "required": [
+                "tools"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "not": {
+              "enum": [
+                "capability",
+                "agent",
+                "delivery_type",
+                "harness",
+                "permission_context",
+                "standard"
+              ]
+            }
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "capability_ref"
+              ]
+            },
+            {
+              "required": [
+                "harness_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_catalog_ref"
+              ]
+            },
+            {
+              "required": [
+                "model_providers"
+              ]
+            },
+            {
+              "required": [
+                "model_ref"
+              ]
+            },
+            {
+              "required": [
+                "role_ref"
+              ]
+            },
+            {
+              "required": [
+                "root_workflow_refs"
+              ]
+            },
+            {
+              "required": [
+                "sandbox_ref"
+              ]
+            },
+            {
+              "required": [
+                "skills"
+              ]
+            },
+            {
+              "required": [
+                "spec_refs"
+              ]
+            },
+            {
+              "required": [
+                "tools"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "role_ref",
+          "capability_ref"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "capability"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "harness_ref",
+          "model_ref",
+          "skills",
+          "tools"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "delivery_type"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "spec_refs"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "permission_context"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "sandbox_ref"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "standard"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "root_workflow_refs"
+        ]
+      }
+    }
+  ]
 }

@@ -75,20 +75,19 @@ impl Workspace {
                     });
                     s.governance.push(ConfigurationRecord {
                         id: format!("source:{}", command.command_id),
-                        kind: "experience_import".into(),
+                        r#type: "experience_import".into(),
+                        refs: References::new(),
                         definition_id: snapid.clone(),
                         scope: if pid == GLOBAL_DISCUSSION_NAMESPACE {
-                            Scope::Global
+                            Scope::global()
                         } else {
-                            Scope::Project {
-                                project_id: pid.clone(),
-                            }
+                            Scope::project(pid.clone())
                         },
                         name: "恢复经验场景".into(),
                         version: 1,
                         supersedes: None,
                         data: detail["entry"].clone(),
-                        content_hash: configuration_hash(&detail["entry"]),
+                        content_hash: content_digest(&References::new(), &detail["entry"]),
                         immutable: true,
                         revision: 1,
                         created_at: detail["entry"]["captured_at"].as_u64().unwrap_or(0),
@@ -127,7 +126,7 @@ impl Workspace {
                 .governance
                 .iter()
                 .find(|r| {
-                    r.kind == "workflow_instance"
+                    r.r#type == "workflow_instance"
                         && r.data["steps"].as_array().is_some_and(|steps| {
                             steps.iter().any(|step| step["id"] == intent.definition_id)
                         })
@@ -137,7 +136,7 @@ impl Workspace {
                     state
                         .governance
                         .iter()
-                        .find(|r| r.kind == "workflow_controller" && r.id == intent.definition_id)
+                        .find(|r| r.r#type == "workflow_controller" && r.id == intent.definition_id)
                         .and_then(|r| r.data["owner_id"].as_str())
                 });
             if owner.is_none()
@@ -173,7 +172,7 @@ impl Workspace {
             .map(str::to_owned);
         let agent_id = if let Some(instance) = &selected {
             let r = state.configuration(instance)?;
-            require(r.kind == "agent_instance", "无效 Agent")?;
+            require(r.r#type == "agent_instance", "无效 Agent")?;
             r.data["agent_revision_id"]
                 .as_str()
                 .ok_or_else(|| err("blocked", "Agent 缺少组合"))?
@@ -187,7 +186,7 @@ impl Workspace {
         let Some(record) = state
             .governance
             .iter()
-            .find(|r| r.kind == "agent" && r.id == agent_id)
+            .find(|r| r.r#type == "agent" && r.id == agent_id)
         else {
             require(
                 !state
@@ -223,14 +222,15 @@ impl Workspace {
             let retired = state
                 .governance
                 .iter()
-                .any(|r| r.kind == "role_retirement" && r.definition_id == role.definition_id);
+                .any(|r| r.r#type == "role_retirement" && r.definition_id == role.definition_id);
             require(
                 !retired || frozen,
                 "Role 已删除，新的项目讨论不能再采用它；已有 Feature 保留冻结版本",
             )?;
         }
         let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
-        let harness: HarnessDefinition = state.configuration(&agent.harness_ref)?.decode()?;
+        let harness_record = state.configuration(&agent.harness_ref)?.clone();
+        let harness: HarnessDefinition = harness_record.decode()?;
         for key in [
             "model",
             "role_ref",
@@ -248,9 +248,7 @@ impl Workspace {
             project.is_some() || owner == "global",
             "Agent 执行需要项目或全局讨论范围",
         )?;
-        let scope = project.map_or(Scope::Global, |p| Scope::Project {
-            project_id: p.id.clone(),
-        });
+        let scope = project.map_or(Scope::global(), |p| Scope::project(p.id.clone()));
         let title = project.map_or("全局 / 跨项目", |p| p.title.as_str());
         let instance = if let Some(instance) = selected {
             let r = state.configuration(&instance)?;
@@ -258,7 +256,7 @@ impl Workspace {
             require(i.scope.visible_from(&scope), "Agent 不属于当前项目")?;
             instance
         } else if let Some(r) = state.governance.iter().find(|r| {
-            r.kind == "agent_instance"
+            r.r#type == "agent_instance"
                 && r.data["agent_revision_id"] == agent_id
                 && r.scope.visible_from(&scope)
         }) {
@@ -266,7 +264,7 @@ impl Workspace {
         } else {
             e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen && !command.payload["controller_id"].is_string(){Some(feature)}else{None},"frozen_controller_id":command.payload["controller_id"]})})?["id"].as_str().unwrap().into()
         };
-        state.resolve_model_connection(&model, &harness)?;
+        state.resolve_model_connection(&model, &harness_record)?;
         require(
             !["managed", "latest", "default"].contains(&harness.runtime_version.as_str()),
             "Harness 必须选择精确运行版本",
@@ -335,6 +333,8 @@ impl Workspace {
                 ]
                 .contains(&method))
             || method.starts_with("model.")
+            || method.starts_with("model_provider.")
+            || method.starts_with("model_catalog.")
             || method.starts_with("tool.")
             || method.starts_with("harness.")
             || method.starts_with("sandbox.")
@@ -456,27 +456,17 @@ impl Workspace {
                                 params[project_key].as_str() == Some(project.id.as_str())
                                     && state.configuration(&reference).is_ok()
                             }) {
-                            (
-                                state,
-                                Scope::Project {
-                                    project_id: project.id.clone(),
-                                },
-                            )
+                            (state, Scope::project(project.id.clone()))
                         } else if params[project_key].is_string() {
                             return Err(err("not_found", "规范不在指定项目中"));
                         } else if global.configuration(&reference).is_ok() {
-                            (&global, Scope::Global)
+                            (&global, Scope::global())
                         } else {
                             let (project, state) = states
                                 .iter()
                                 .find(|(_, state)| state.configuration(&reference).is_ok())
                                 .ok_or_else(|| err("not_found", "规范不在可访问的项目中"))?;
-                            (
-                                state,
-                                Scope::Project {
-                                    project_id: project.id.clone(),
-                                },
-                            )
+                            (state, Scope::project(project.id.clone()))
                         };
                         let snapshot = standard_snapshot(state, &reference, &scope)?;
                         if let Some(entry) = params[entry_key].as_str() {
@@ -493,7 +483,7 @@ impl Workspace {
 
             if method == "query.standard_usage" && params["project_id"].is_null() && target_global {
                 let reference = target.unwrap();
-                standard_snapshot(&global, reference, &Scope::Global)?;
+                standard_snapshot(&global, reference, &Scope::global())?;
                 let mut records = Vec::new();
                 let mut offset = 0;
                 loop {
@@ -513,7 +503,7 @@ impl Workspace {
                                         "work_configuration",
                                         "workflow_plan_revision",
                                     ]
-                                    .contains(&r.kind.as_str())
+                                    .contains(&r.r#type.as_str())
                                         && r.data["standard_ref"] == reference
                                 })
                                 .map(|r| json!(r)),
@@ -540,7 +530,9 @@ impl Workspace {
                         || method.starts_with("query.standard")
                         || method.starts_with("query.work_")
                         || method == "standard.capture.preview"))
-                    || explicit_scope.is_some_and(|s| s["kind"] == "project")
+                    || explicit_scope
+                        .and_then(|s| s.as_str())
+                        .is_some_and(|s| s.starts_with("project:"))
                     || (!target_global && target.is_some())
                     || params["local"] == true);
             let engine = if local {
@@ -551,8 +543,10 @@ impl Workspace {
                 self.configuration.clone()
             };
             if ["role.create", "role.revise"].contains(&method) {
-                if let Some(owner) = params["payload"]["scope"]["project_id"].as_str() {
-                    require(self.global.project(owner)?.is_some(), "Role 所属项目不存在")?;
+                if let Some(scope) = params["payload"]["scope"].as_str() {
+                    if let Some(owner) = scope.strip_prefix("project:") {
+                        require(self.global.project(owner)?.is_some(), "Role 所属项目不存在")?;
+                    }
                 }
                 if let Some(value) = params["payload"]["data"].get("visibility") {
                     let visibility: DefinitionVisibility = serde_json::from_value(value.clone())
@@ -602,11 +596,11 @@ impl Workspace {
                         .into_iter()
                         .filter(|r| {
                             if method == "query.workflows" {
-                                ["workflow", "workflow_draft"].contains(&r.kind.as_str())
+                                ["workflow", "workflow_draft"].contains(&r.r#type.as_str())
                             } else {
                                 params["kind"].as_str().map_or(
-                                    r.is_definition() || r.kind == "agent_instance",
-                                    |kind| r.kind == kind,
+                                    r.is_definition() || r.r#type == "agent_instance",
+                                    |kind| r.r#type == kind,
                                 )
                             }
                         })
@@ -614,7 +608,7 @@ impl Workspace {
                     for r in global
                         .governance
                         .iter()
-                        .filter(|r| r.kind == "workflow_draft" && r.scope == Scope::Global)
+                        .filter(|r| r.r#type == "workflow_draft" && r.scope == Scope::global())
                     {
                         if method == "query.workflows" && !records.iter().any(|old| old.id == r.id)
                         {
@@ -641,7 +635,7 @@ impl Workspace {
                         }
                         if params["include_history"] != true
                             && directory.governance.iter().any(|n| {
-                                n.kind == r.kind
+                                n.r#type == r.r#type
                                     && n.definition_id == r.definition_id
                                     && n.version > r.version
                                     && (params["include_archived"] == true
@@ -669,6 +663,87 @@ impl Workspace {
                 engine.execute(method, c)
             }
         })())
+    }
+}
+
+#[cfg(test)]
+mod role_discussion_instance_loading {
+    use super::*;
+    use crate::workspace::tests::{create, select};
+    /// The discussion page lists Agent instances by agent definition, while
+    /// instances pin the exact revision they were created with. Revising an
+    /// agent must keep both the instance and its superseded revision visible
+    /// to the local catalog query, otherwise selecting the Role shows no
+    /// created Agent.
+    #[test]
+    fn revising_an_agent_keeps_instances_and_pinned_revisions_queryable() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let pid = create(&w, "Role discussion");
+        select(&w, &pid);
+        let page = w
+            .dispatch(
+                "query.configurations",
+                json!({"local":true,"project_id":pid,"include_history":true,"limit":100}),
+            )
+            .unwrap();
+        let agent = page["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["type"] == "agent")
+            .unwrap()
+            .clone();
+        let pinned = agent["id"].as_str().unwrap();
+        let instance = w
+            .dispatch(
+                "agent.instance.create",
+                json!({"command_id":id(),"project_id":pid,"payload":{
+                    "name":"讨论身份","agent_revision_id":pinned,
+                    "scope":format!("project:{pid}")}}),
+            )
+            .unwrap();
+        let revised = w
+            .dispatch(
+                "agent.revise",
+                json!({"command_id":id(),"project_id":pid,"target":pinned,
+                    "expected_revision":agent["revision"],
+                    "payload":{"name":agent["name"],"scope":agent["scope"],"role_ref":agent["role_ref"],"capability_ref":agent["capability_ref"],"data":agent["data"]}}),
+            )
+            .unwrap();
+        assert_ne!(revised["id"], json!(pinned));
+        let mut records = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = w
+                .dispatch(
+                    "query.configurations",
+                    json!({"local":true,"project_id":pid,"include_history":true,
+                        "offset":offset,"limit":100}),
+                )
+                .unwrap();
+            records.extend(page["records"].as_array().unwrap().iter().cloned());
+            offset += page["records"].as_array().unwrap().len();
+            if offset >= page["total"].as_u64().unwrap() as usize {
+                break;
+            }
+        }
+        let find = |id: &str| {
+            records
+                .iter()
+                .find(|r| r["id"] == id)
+                .unwrap_or_else(|| panic!("catalog 缺少 {id}"))
+        };
+        find(instance["id"].as_str().unwrap());
+        // Both revisions stay queryable so instances pinned to the old one
+        // still resolve their composition.
+        find(pinned);
+        find(revised["id"].as_str().unwrap());
+        assert_eq!(
+            find(instance["id"].as_str().unwrap())["data"]["agent_revision_id"],
+            json!(pinned)
+        );
     }
 }
 

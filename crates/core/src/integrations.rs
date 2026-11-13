@@ -14,14 +14,14 @@ fn enabled(s: &EngineeringState, r: &ConfigurationRecord) -> Result<()> {
     require(
         !s.governance
             .iter()
-            .any(|v| v.kind == "integration_disabled" && v.definition_id == r.definition_id),
+            .any(|v| v.r#type == "integration_disabled" && v.definition_id == r.definition_id),
         "接入已停用",
     )
 }
 fn latest<'a>(s: &'a EngineeringState, kind: &str, key: &str) -> Option<&'a ConfigurationRecord> {
     s.governance
         .iter()
-        .filter(|r| r.kind == kind && r.definition_id == key)
+        .filter(|r| r.r#type == kind && r.definition_id == key)
         .max_by_key(|r| r.version)
 }
 pub fn freeze_integrations(
@@ -30,10 +30,8 @@ pub fn freeze_integrations(
     project: Option<&str>,
 ) -> Result<IntegrationLock> {
     let scope = project
-        .map(|p| Scope::Project {
-            project_id: p.into(),
-        })
-        .unwrap_or(Scope::Global);
+        .map(|p| Scope::project(p))
+        .unwrap_or(Scope::global());
     let mapping = project
         .and_then(|p| {
             latest(
@@ -56,7 +54,7 @@ pub fn freeze_integrations(
             lock.platform_tools.push(r.clone());
             continue;
         }
-        if r.data["schema_version"] != 2 {
+        if !r.data["integration_ref"].is_string() {
             continue;
         }
         let tool: ExternalTool = r.decode()?;
@@ -111,7 +109,7 @@ pub fn freeze_integrations(
         if let Some(r) = s
             .governance
             .iter()
-            .find(|r| r.kind == "skill_package" && r.definition_id == *id)
+            .find(|r| r.r#type == "skill_package" && r.definition_id == *id)
         {
             let package: SkillPackage = r.decode()?;
             package.validate()?;
@@ -137,45 +135,45 @@ pub fn integration_deletion_targets(
     source: &ConfigurationRecord,
 ) -> Result<Vec<ConfigurationRecord>> {
     require(
-        ["integration", "integration_binding", "tool"].contains(&source.kind.as_str())
-            && (source.kind != "tool" || source.data["integration_ref"].is_string()),
+        ["integration", "integration_binding", "tool"].contains(&source.r#type.as_str())
+            && (source.r#type != "tool" || source.data["integration_ref"].is_string()),
         "只能删除接入源、绑定或已发布的外部工具",
     )?;
     let source_ids: Vec<_> = s
         .governance
         .iter()
-        .filter(|r| r.kind == source.kind && r.definition_id == source.definition_id)
+        .filter(|r| r.r#type == source.r#type && r.definition_id == source.definition_id)
         .map(|r| r.id.as_str())
         .collect();
     let mut targets: Vec<_> = s
         .governance
         .iter()
-        .filter(|r| r.kind == source.kind && r.definition_id == source.definition_id)
+        .filter(|r| r.r#type == source.r#type && r.definition_id == source.definition_id)
         .cloned()
         .collect();
-    if source.kind == "integration" {
+    if source.r#type == "integration" {
         // A tool/binding family may have moved to another source in a later revision.
         // Only cascade families whose current revision still belongs to this source.
         let families: BTreeSet<_> = s
             .governance
             .iter()
             .filter(|r| {
-                ["integration_binding", "tool"].contains(&r.kind.as_str())
+                ["integration_binding", "tool"].contains(&r.r#type.as_str())
                     && r.data["integration_ref"]
                         .as_str()
                         .is_some_and(|id| source_ids.contains(&id))
                     && !s.governance.iter().any(|next| {
-                        next.kind == r.kind
+                        next.r#type == r.r#type
                             && next.definition_id == r.definition_id
                             && next.version > r.version
                     })
             })
-            .map(|r| (r.kind.clone(), r.definition_id.clone()))
+            .map(|r| (r.r#type.clone(), r.definition_id.clone()))
             .collect();
         targets.extend(
             s.governance
                 .iter()
-                .filter(|r| families.contains(&(r.kind.clone(), r.definition_id.clone())))
+                .filter(|r| families.contains(&(r.r#type.clone(), r.definition_id.clone())))
                 .cloned(),
         );
     }
@@ -294,9 +292,7 @@ impl Engine {
             let mut r = record(
                 "tool_call",
                 invocation.id.clone(),
-                Scope::Project {
-                    project_id: session.project_id.clone().unwrap_or_default(),
-                },
+                Scope::project(session.project_id.clone().unwrap_or_default()),
                 tool.clone(),
                 1,
                 None,
@@ -373,10 +369,8 @@ impl Engine {
         let scope = i
             .project_id
             .as_ref()
-            .map(|id| Scope::Project {
-                project_id: id.clone(),
-            })
-            .unwrap_or(Scope::Global);
+            .map(|id| Scope::project(id.clone()))
+            .unwrap_or(Scope::global());
         let mut r = record(
             "tool_call",
             i.id.clone(),
@@ -466,8 +460,8 @@ impl Engine {
                 c.command_id.clone(),
                 self.store
                     .project_id()
-                    .map(|project_id| Scope::Project { project_id })
-                    .unwrap_or(Scope::Global),
+                    .map(|project_id| Scope::project(project_id))
+                    .unwrap_or(Scope::global()),
                 method.into(),
                 1,
                 None,
@@ -488,7 +482,7 @@ impl Engine {
             let r = s
                 .governance
                 .iter_mut()
-                .find(|r| r.id == key && r.kind == "integration_operation")
+                .find(|r| r.id == key && r.r#type == "integration_operation")
                 .ok_or_else(|| err("not_found", "接入操作意图缺失"))?;
             let mut data = r.data.clone();
             match result {
@@ -516,7 +510,7 @@ impl Engine {
             .snapshot()?
             .governance
             .iter()
-            .filter(|r| r.kind == "tool_call" && r.data["status"] == "needs_reconciliation")
+            .filter(|r| r.r#type == "tool_call" && r.data["status"] == "needs_reconciliation")
         {
             let i: ToolInvocation = decode(&r.data["invocation"])?;
             if let Ok(Some(receipt)) = executor.poll(&i) {
@@ -539,7 +533,7 @@ impl Engine {
             .governance
             .into_iter()
             .filter(|r| {
-                r.kind == "tool_call"
+                r.r#type == "tool_call"
                     && ([
                         "awaiting_approval",
                         "prepared",
@@ -662,7 +656,7 @@ impl Engine {
             let r = s
                 .governance
                 .iter_mut()
-                .find(|r| r.id == key && r.kind == "tool_call")
+                .find(|r| r.id == key && r.r#type == "tool_call")
                 .ok_or_else(|| err("not_found", "ToolCall 缺失"))?;
             let mut data = r.data.clone();
             f(&mut data);
@@ -720,7 +714,7 @@ impl Engine {
                     .governance
                     .iter()
                     .filter(|r| {
-                        r.kind == "tool"
+                        r.r#type == "tool"
                             && r.data["integration_ref"].is_string()
                             && r.data["qualified_name"] == tool["qualified_name"]
                     })
@@ -736,7 +730,7 @@ impl Engine {
                     command_id: format!("{}:{index}", c.command_id),
                     target: old.as_ref().map(|r| r.id.clone()),
                     expected_revision: old.as_ref().map(|r| r.revision),
-                    payload: json!({"name":tool["qualified_name"],"scope":p.get("scope").cloned().unwrap_or(json!({"kind":"global"})),"data":tool}),
+                    payload: json!({"name":tool["qualified_name"],"scope":p.get("scope").cloned().unwrap_or(json!("global")),"data":tool}),
                 };
                 rows.push(
                     self.integration_command(
@@ -756,9 +750,7 @@ impl Engine {
         if method == "integration.project.bind" {
             let project = text(p, "project_id")?;
             require(s.projects.iter().any(|r| r.id == project), "需要当前项目")?;
-            let scope = Scope::Project {
-                project_id: project.clone(),
-            };
+            let scope = Scope::project(project.clone());
             let bindings = p
                 .get("bindings")
                 .and_then(Value::as_object)
@@ -840,7 +832,7 @@ impl Engine {
         if method == "integration.disable" || method == "integration.retire" {
             let source = s.configuration(c.target.as_deref().unwrap_or(""))?.clone();
             require(
-                ["integration", "integration_binding", "tool"].contains(&source.kind.as_str()),
+                ["integration", "integration_binding", "tool"].contains(&source.r#type.as_str()),
                 "无效接入资源",
             )?;
             let kind = if method == "integration.disable" {
@@ -871,7 +863,7 @@ impl Engine {
         }
         if method == "tool.call.cancel"
             && s.governance.iter().any(|record| {
-                record.id == c.target.as_deref().unwrap_or("") && record.kind == "platform_call"
+                record.id == c.target.as_deref().unwrap_or("") && record.r#type == "platform_call"
             })
         {
             let call = s
@@ -892,7 +884,7 @@ impl Engine {
             let index = s
                 .governance
                 .iter()
-                .position(|r| r.id == c.target.as_deref().unwrap_or("") && r.kind == "tool_call")
+                .position(|r| r.id == c.target.as_deref().unwrap_or("") && r.r#type == "tool_call")
                 .ok_or_else(|| err("not_found", "ToolCall 不存在"))?;
             let mut data = s.governance[index].data.clone();
             if method.ends_with("reconcile") {
@@ -957,7 +949,7 @@ impl Engine {
             let r = s
                 .governance
                 .iter_mut()
-                .find(|r| r.id == c.target.as_deref().unwrap_or("") && r.kind == "tool_call")
+                .find(|r| r.id == c.target.as_deref().unwrap_or("") && r.r#type == "tool_call")
                 .ok_or_else(|| err("not_found", "ToolCall 不存在"))?;
             require(
                 r.data["status"] == "awaiting_approval",
@@ -987,10 +979,10 @@ impl Engine {
         if method == "skill.import" {
             let package: SkillPackage = decode(p.get("package").unwrap_or(p))?;
             package.validate()?;
-            let scope: Scope = decode(p.get("scope").unwrap_or(&json!({"kind":"global"})))?;
+            let scope: Scope = decode(p.get("scope").unwrap_or(&json!("global")))?;
             require(
                 scope
-                    .project()
+                    .project_id()
                     .is_none_or(|id| self.store.project_id().as_deref() == Some(id)),
                 "Skill 作用域不符",
             )?;
@@ -1047,11 +1039,11 @@ impl Engine {
             "integration.tool.create" | "integration.tool.revise" => "tool",
             _ => return Ok(None),
         };
-        let scope: Scope = decode(p.get("scope").unwrap_or(&json!({"kind":"global"})))?;
+        let scope: Scope = decode(p.get("scope").unwrap_or(&json!("global")))?;
         require(
-            !matches!(scope, Scope::Feature { .. })
+            !scope.is_feature()
                 && scope
-                    .project()
+                    .project_id()
                     .is_none_or(|id| self.store.project_id().as_deref() == Some(id)),
             "接入作用域不符",
         )?;
@@ -1150,7 +1142,7 @@ impl Engine {
                 require(
                     s.governance
                         .iter()
-                        .any(|r| r.id == b.sandbox_ref && r.kind == "sandbox")
+                        .any(|r| r.id == b.sandbox_ref && r.r#type == "sandbox")
                         || s.sandboxes.iter().any(|r| r.id == b.sandbox_ref),
                     "Sandbox 不存在",
                 )?;
@@ -1265,7 +1257,7 @@ impl Engine {
             if method == "skill.export" {
                 let key = text(p, "id")?;
                 let r = s.configuration(&key)?;
-                let package=s.governance.iter().find(|r|r.kind=="skill_package"&&r.definition_id==key).map(|r|r.data.clone()).unwrap_or_else(||json!({"body":r.data["body"],"description":r.name,"files":[],"requires_tools":[],"source":"inline_markdown","scripts_disabled":false}));
+                let package=s.governance.iter().find(|r|r.r#type=="skill_package"&&r.definition_id==key).map(|r|r.data.clone()).unwrap_or_else(||json!({"body":r.data["body"],"description":r.name,"files":[],"requires_tools":[],"source":"inline_markdown","scripts_disabled":false}));
                 return Ok(package);
             }
             let rows = integration_records(&s, method, p);
@@ -1287,10 +1279,10 @@ pub(crate) fn integration_records(
     s.governance
         .iter()
         .filter(|r| match method {
-            "query.tool_calls" => ["tool_call", "platform_call"].contains(&r.kind.as_str()),
+            "query.tool_calls" => ["tool_call", "platform_call"].contains(&r.r#type.as_str()),
             "query.integration_bindings" => {
                 ["integration_binding", "integration_project_configuration"]
-                    .contains(&r.kind.as_str())
+                    .contains(&r.r#type.as_str())
             }
             _ => [
                 "integration",
@@ -1300,10 +1292,10 @@ pub(crate) fn integration_records(
                 "skill_package",
                 "integration_operation",
             ]
-            .contains(&r.kind.as_str()),
+            .contains(&r.r#type.as_str()),
         })
         .map(|record| {
-            if record.kind == "platform_call" {
+            if record.r#type == "platform_call" {
                 crate::platform_tools::project_platform_call(s, record)
             } else {
                 record.clone()
@@ -1313,8 +1305,8 @@ pub(crate) fn integration_records(
         .filter(|r| crate::configuration::visible(s, r, p["project_id"].as_str()))
         .filter(|r| {
             p["include_history"] == true
-                || r.kind == "tool_call"
-                || latest(s, &r.kind, &r.definition_id).is_none_or(|n| n.id == r.id)
+                || r.r#type == "tool_call"
+                || latest(s, &r.r#type, &r.definition_id).is_none_or(|n| n.id == r.id)
         })
         .filter(|r| p["include_retired"] == true || !crate::configuration::retired(s, r))
         .filter(|r| {
@@ -1339,7 +1331,7 @@ pub(crate) fn integration_records(
         .rev()
         .map(|r| {
             let mut r = r.clone();
-            if r.kind == "tool_call" {
+            if r.r#type == "tool_call" {
                 let pointers: Vec<String> = serde_json::from_value(
                     r.data["invocation"]["tool"]["definition"]["sensitive_parameters"].clone(),
                 )

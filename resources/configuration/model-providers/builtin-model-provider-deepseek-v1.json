@@ -1,11 +1,9 @@
 {
-  "kind": "model_provider",
+  "type": "model_provider",
   "identity": "builtin-model-provider-deepseek",
   "revision": 1,
   "name": "DeepSeek 官方 API",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "id": "deepseek",
     "label": "DeepSeek 官方 API",

@@ -10,6 +10,7 @@ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binar
 OUT=args.report_directory or Path(tempfile.mkdtemp(prefix='devdesk-engineering-v5-'));OUT.mkdir(parents=True,exist_ok=True);OUT=OUT.resolve();print('Evidence:',OUT,flush=True)
 assert args.resume == (OUT/'context.json').exists(), 'select --resume for an existing acceptance dataset'
 private_binary=OUT/'devdesk-host';shutil.copy2(args.binary.resolve(),private_binary)
+if (OUT/'host.log').exists():(OUT/'host.log').rename(OUT/('host-before-launch-'+str(time.time_ns())+'.log'))
 child=subprocess.Popen([str(private_binary),'--data',str(OUT/'data'),'--port','0'],stdout=(OUT/'host.log').open('w'),stderr=subprocess.STDOUT)
 try:
  startup_started=time.monotonic()
@@ -31,7 +32,7 @@ try:
    # controller, dispatch new work, or repeat a real publication.
    completed=c.rpc('query.workspace',{'feature_id':feature})
    assert completed['detail']['feature']['status']=='completed' and len(completed['detail']['tasks'])==1 and completed['detail']['tasks'][0]['status']=='completed'
-   rows=[r for r in completed['configurations'] if r['kind']=='workflow_instance' and r['data']['root_instance_id']==root_id]
+   rows=[r for r in completed['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id]
    publications=verify_evidence(c,rows,OUT)
    (OUT/'report.md').write_text('# Native default engineering Workflow v6\n\nPassed actual Codex, managed Git, Docker Red/Green, independent reviews, the frozen confirmation policy and explicit completion. Both GitHub PRs merged at their exact tested candidate SHA. Completed-instance resume only revalidated saved facts; it did not take over, dispatch or republish. The documented same-dataset failures and resumptions remain preserved.\n\nRoot: '+root_id+'\nFeature: '+feature+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n')
    print('PASS completed native default engineering Workflow evidence; no takeover or redispatch',flush=True)
@@ -47,8 +48,8 @@ try:
    return all(t['status'] not in ['queued','dispatching','running','waiting_interaction','needs_reconciliation'] for t in session['turns']) and all(e['writer_revoked'] for e in session['executions'])
   c.wait(lambda:None,manager_stopped,120)
   state=c.rpc('query.workspace',{'feature_id':feature})
-  recoverable_failures={e['id'] for r in state['configurations'] if r['kind']=='workflow_instance' and r['data']['root_instance_id']==root_id for e in r['data']['steps'] if e['status']=='failed'}
-  for row in [r for r in state['configurations'] if r['kind']=='workflow_instance' and r['data']['root_instance_id']==root_id]:
+  recoverable_failures={e['id'] for r in state['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id for e in r['data']['steps'] if e['status']=='failed'}
+  for row in [r for r in state['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id]:
    for interrupted in row['data']['steps']:
     if interrupted['status'] not in ['needs_reconciliation','cancelled']:continue
     definition=next(s for s in row['data']['plan']['document']['steps'] if s['key']==interrupted['step']);assert definition['executor']['type']=='agent','external tool effects require dedicated reconciliation'
@@ -78,14 +79,14 @@ try:
  c.command('orchestration.input',manager,m['revision'],{'epoch':m['data']['epoch'],'input':'业务 Agent 不会继承你的控制会话。派发需求前先检查输入，必要时通过 workflow.change.preview/apply 将下列完整业务事实绑定到需求节点的明确输入；不得让业务节点因缺少已经给出的事实而等待人工补充。请按当前默认 Feature 工作流组织完整交付，包括 Task 子流程，使用原生工具明确派发、接纳、完成每个实例。遵守全部测试、独立评审及当前 Plan 的确认策略，不绕过、不豁免任何条件。默认 automatic 不创建人工签署，但仍须通过 Harness 显式接纳；只有实际冻结 Plan 为 human 时由验收入口处理精确签署。可使用 workflow.segment.dispatch 有界委托当前已知的自动步骤，逐一列出确切节点；每个子流程仍需你明确 complete。碰到拒绝、人工门禁或异常时重新决策，不得跨过。只运行一个 Task。业务目标：'+goal+'\n补充执行指导：'+args.guidance})
  last=None;confirmed=set();inputs=set();deadline=time.monotonic()+args.timeout_seconds;recovery_deadline=time.monotonic()+600
  while time.monotonic()<deadline:
-  view=c.rpc('query.workspace',{'feature_id':feature});rows=[r for r in view['configurations'] if r['kind']=='workflow_instance' and r['data']['root_instance_id']==root_id];root=next(r for r in rows if r['data']['parent_execution_id'] is None)
+  view=c.rpc('query.workspace',{'feature_id':feature});rows=[r for r in view['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id];root=next(r for r in rows if r['data']['parent_execution_id'] is None)
   status=[(r['id'],s['path'],s['status'],s['reason']) for r in rows for s in r['data']['steps'] if s['status'] not in ['completed','queued','skipped']]
   if status!=last:print(status,flush=True);last=status
   manager_view=c.rpc('query.orchestration',{'id':manager});(OUT/'latest-manager.json').write_text(json.dumps(manager_view,ensure_ascii=False,indent=2))
   if manager_view['record']['data']['status'] in ['failed','needs_reconciliation','budget_exhausted']:raise RuntimeError(manager_view['record']['data'])
   if args.unattended:
    assert manager_view['record']['data']['status'] in ['active','closed'], 'Unattended controller paused for intervention'
-   assert not any(r['kind']=='workflow_pending_decision' and r['data']['status']=='pending' for r in manager_view['decisions']), 'Unattended workflow requested a Human decision'
+   assert not any(r['type']=='workflow_pending_decision' and r['data']['status']=='pending' for r in manager_view['decisions']), 'Unattended workflow requested a Human decision'
   (OUT/'latest.json').write_text(json.dumps(view,ensure_ascii=False,indent=2))
   for row in rows:
    for step in row['data']['steps']:
@@ -112,6 +113,10 @@ try:
      confirmed.add(step['id']);print('Confirmed:',step['path'],flush=True);break
   if root['data']['status']=='completed':
    assert view['detail']['feature']['status']=='completed';assert len(view['detail']['tasks'])==1 and view['detail']['tasks'][0]['status']=='completed'
+   # The controller may still be finishing the native tool call that completed
+   # the root. Let that turn settle before SIGINT can mark it unknown.
+   settled=c.wait(lambda:c.rpc('query.orchestration',{'id':manager}),lambda state:state['record']['data']['status']=='closed',120)
+   (OUT/'settled-manager.json').write_text(json.dumps(settled,ensure_ascii=False,indent=2))
    publications=verify_evidence(c,rows,OUT)
    print('PASS native default engineering Workflow',root['id'],flush=True)
    (OUT/'report.md').write_text('# Native default engineering Workflow v6\n\nPassed through actual Codex, managed Git, Docker Red/Green and candidate tests; both GitHub PRs merged at their exact candidate SHA.\n\nRoot: '+root['id']+'\nFeature: '+feature+'\nNew confirmations in this invocation: '+str(len(confirmed))+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n');break

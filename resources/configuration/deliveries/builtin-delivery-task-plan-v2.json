@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-task-plan",
   "revision": 2,
   "name": "Task Doc",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-stage-project-planning:2"
+  ],
   "data": {
     "format": "json",
-    "spec_refs": [
-      "builtin-spec-stage-project-planning:2"
-    ],
     "content_schema": {
       "type": "object",
       "required": [

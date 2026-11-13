@@ -7,14 +7,14 @@ p=argparse.ArgumentParser();p.add_argument('--url',required=True);p.add_argument
 try:
  c.open(a.project);owner=c.rpc('query.workspace')['active_project'];runtime=next(r for r in reversed(c.rpc('query.runtime_installations')['installations']) if r['key']['provider']==a.provider and r['key']['os']=='linux');provider='openai' if a.provider=='codex' else 'deepseek'
  model=c.command('model.create',payload={'name':'Native '+provider+' typed model','data':{'provider':provider,'model':a.model,'parameters':({'reasoning_effort':'low'} if a.provider=='codex' else {'max_tokens':4096}),'capabilities':[]}})['id']
- harness=c.command('harness.create',payload={'name':'Native '+a.provider+' typed Harness','data':{'provider':a.provider,'runtime_version':runtime['key']['version'],'capabilities':[],'model_providers':[provider]}})['id']
+ harness=c.command('harness.create',payload={'model_providers':[provider],'name':'Native '+a.provider+' typed Harness','data':{'provider':a.provider,'runtime_version':runtime['key']['version'],'capabilities':[]}})['id']
  tool=c.command('tool.create',payload={'name':'Native tools','data':{'qualified_name':'harness.native','implementation':'harness.native','input_schema':{},'output_schema':{},'capabilities':[]}})['id']
  resources=c.rpc('query.permission_resources');target=next(t['target'] for t in resources['targets'] if t['target']['revision_id']==harness)
  c.command('permission.bindings.apply',payload={'bindings':[{'target':target,'permission_revision_id':'builtin-permission-harness-full-access:1','expected_revision':0}]})
- cap=c.command('capability.create',payload={'name':'Native typed capability','data':{'model_ref':model,'harness_ref':harness,'skills':[],'tools':[tool]}})['id']
+ cap=c.command('capability.create',payload={'model_ref':model,'harness_ref':harness,'skills':[],'tools':[tool],'name':'Native typed capability','data':{}})['id']
  role=c.command('role.create',payload={'name':'Native acceptance role','data':{'instructions':'Answer the supplied acceptance prompt concisely without changing files.'}})['id']
- agent=c.command('agent.create',payload={'name':'Native typed analyst','data':{'role_ref':role,'capability_ref':cap}})['id']
- instance=c.command('agent.instance.create',payload={'name':'Native typed Project instance','agent_revision_id':agent,'scope':{'kind':'project','project_id':a.project}})['id']
+ agent=c.command('agent.create',payload={'role_ref':role,'capability_ref':cap,'name':'Native typed analyst','data':{}})['id']
+ instance=c.command('agent.instance.create',payload={'name':'Native typed Project instance','agent_revision_id':agent,'scope':'project:' + str(a.project)})['id']
  for payload in [{'agent':'builtin-agent-analyst-v1','provider':a.provider},{'agent_instance_id':instance,'model':'runtime-override'}]:
   try:c.command('session.open',owner['id'],owner['revision'],payload)
   except RuntimeError:pass

@@ -9,16 +9,23 @@ impl Workspace {
         let state = self.configuration.store.snapshot()?;
         let mut facts = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
-        for r in state.governance.iter().filter(|r| r.kind == "model_provider") {
+        for r in state.governance.iter().filter(|r| {
+            r.r#type == "model_provider"
+                && template_record_current(&state, r)
+                && !devdesk_core::configuration_retired(&state, r)
+                && !state.governance.iter().any(|next| {
+                    next.r#type == r.r#type
+                        && next.definition_id == r.definition_id
+                        && next.version > r.version
+                })
+        }) {
             let mut p: ProviderFacts = r.decode()?;
             if seen.insert(p.id.clone()) && p.models.is_empty() {
-                for h in state.governance.iter().filter(|h| h.kind == "harness") {
-                    if let Ok(harness) = h.decode::<HarnessDefinition>() {
-                        if let Ok(covered) = state.provider_facts(&harness, &p.id) {
-                            if !covered.models.is_empty() {
-                                p.models = covered.models;
-                                break;
-                            }
+                for h in state.governance.iter().filter(|h| h.r#type == "harness") {
+                    if let Ok(covered) = state.provider_facts(h, &p.id) {
+                        if !covered.models.is_empty() {
+                            p.models = covered.models;
+                            break;
                         }
                     }
                 }
@@ -73,12 +80,12 @@ mod tests {
         let create = |method: &str, data: Value| {
             w.dispatch(
                 method,
-                json!({"command_id":id(),"payload":{"name":"provider test","data":data}}),
+                json!({"command_id":id(),"payload":if method == "capability.create" { data } else { json!({"name":"provider test","data":data}) }}),
             )
         };
         let model=create("model.create",json!({"provider":"ollama","model":"fixture-local","context_window":32768,"max_output_tokens":4096})).unwrap();
-        assert!(create("capability.create",json!({"model_ref":model["id"],"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[]})).is_err());
-        create("capability.create",json!({"model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[]})).unwrap();
+        assert!(create("capability.create",json!({"name":"rejected","scope":"global","model_ref":model["id"],"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[],"data":{}})).is_err());
+        create("capability.create",json!({"name":"accepted","scope":"global","model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap();
         assert!(
             w.dispatch("query.runtime_installations", json!({}))
                 .unwrap()["installations"]
@@ -93,8 +100,46 @@ mod tests {
             .find(|(_, p)| p.id == "ollama")
             .map(|(_, p)| p)
             .unwrap();
-        assert!(w.global.model_credential_reference(&ollama).unwrap().is_none());
+        assert!(
+            w.global
+                .model_credential_reference(&ollama)
+                .unwrap()
+                .is_none()
+        );
     }
+    #[test]
+    fn provider_catalog_selects_latest_revision_while_harness_keeps_its_pin() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = Workspace::open(root.path()).unwrap();
+        let state = workspace.configuration.store.snapshot().unwrap();
+        let old = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "model_provider" && r.data["id"] == "openai")
+            .unwrap();
+        let mut data = old.data.clone();
+        data["label"] = json!("Revised provider label");
+        let revised = workspace.dispatch("model_provider.revise", json!({"command_id":id(),"target":old.id,"expected_revision":old.revision,"payload":{"data":data}})).unwrap();
+        let catalog = workspace
+            .dispatch("query.model_providers", json!({}))
+            .unwrap();
+        let providers: Vec<_> = catalog["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["id"] == "openai")
+            .collect();
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0]["reference"], revised["id"]);
+        assert_eq!(providers[0]["label"], "Revised provider label");
+        let current = workspace.configuration.store.snapshot().unwrap();
+        let harness = current.configuration(DEFAULT_HARNESS_ID).unwrap();
+        assert_eq!(
+            current.provider_facts(harness, "openai").unwrap().label,
+            old.data["label"].as_str().unwrap()
+        );
+    }
+
     #[test]
     fn removed_agent_diagnostics_have_no_dispatch_or_runtime_side_effects() {
         let root = tempfile::tempdir().unwrap();
@@ -223,8 +268,10 @@ impl Workspace {
                     .set_model_credential_reference(&p, &status.reference)?;
                 return Ok(json!(status));
             }
-            let status = vault
-                .status_model_reference(&p, self.global.model_credential_reference(&p)?.as_deref())?;
+            let status = vault.status_model_reference(
+                &p,
+                self.global.model_credential_reference(&p)?.as_deref(),
+            )?;
             if method == "credentials.status" {
                 return Ok(json!(status));
             }

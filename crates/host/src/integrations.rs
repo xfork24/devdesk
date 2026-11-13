@@ -211,7 +211,9 @@ impl Workspace {
             .contains(&method);
             let local = (!definition_write
                 && (params["local"] == true || params["project_id"].is_string()))
-                || params["payload"]["scope"]["kind"] == "project"
+                || params["payload"]["scope"]
+                    .as_str()
+                    .is_some_and(|s| s.starts_with("project:"))
                 || method == "integration.project.bind";
             let global = self.global.snapshot()?;
             let target = params["target"].as_str().or(params["id"].as_str());
@@ -229,7 +231,7 @@ impl Workspace {
                 let s = e.store.snapshot()?;
                 let r = s.configuration(params["target"].as_str().unwrap_or(""))?;
                 require(
-                    r.kind == "tool_call"
+                    r.r#type == "tool_call"
                         && configuration_visible(&s, r, e.store.project_id().as_deref()),
                     "文件结果不属于当前作用域",
                 )?;
@@ -338,7 +340,7 @@ impl Workspace {
                 .map_err(|e| err("invalid_params", e.to_string()))?;
             let fp = command_fingerprint(method, &c);
             if let Some(previous) = e.store.replay(&c.command_id, &fp)? {
-                if previous["kind"] == "integration_operation" {
+                if previous["type"] == "integration_operation" {
                     let state = e.store.snapshot()?;
                     let operation = state.configuration(previous["id"].as_str().unwrap_or(""))?;
                     if operation.data["status"] == "succeeded" {
@@ -443,11 +445,9 @@ impl Workspace {
                     };
                     if c.payload["markdown"].is_string() {
                         if let Some(previous) = c.payload["source_revision_id"].as_str() {
-                            if let Some(old) =
-                                e.store.snapshot()?.governance.iter().find(|r| {
-                                    r.kind == "skill_package" && r.definition_id == previous
-                                })
-                            {
+                            if let Some(old) = e.store.snapshot()?.governance.iter().find(|r| {
+                                r.r#type == "skill_package" && r.definition_id == previous
+                            }) {
                                 let original: SkillPackage = old.decode()?;
                                 package.files = original.files;
                                 package.scripts_disabled = original.scripts_disabled;
@@ -474,7 +474,7 @@ impl Workspace {
                 let state = e.store.snapshot()?;
                 let key = text(&c.payload, "binding_ref")?;
                 let record = state.configuration(&key)?;
-                require(record.kind == "integration_binding", "需要接入绑定修订")?;
+                require(record.r#type == "integration_binding", "需要接入绑定修订")?;
                 let binding: IntegrationBinding = record.decode()?;
                 require(
                     devdesk_core::configuration_visible(
@@ -546,7 +546,7 @@ impl Workspace {
             if method == "integration.publish_tools" {
                 let s = e.store.snapshot()?;
                 let discovery = s.configuration(&text(&c.payload, "discovery_ref")?)?;
-                require(discovery.kind == "integration_discovery", "需要发现记录")?;
+                require(discovery.r#type == "integration_discovery", "需要发现记录")?;
                 let requested: Scope = serde_json::from_value(
                     c.payload
                         .get("scope")
@@ -616,7 +616,7 @@ impl Workspace {
                 e.recover_tool_receipts()?;
                 if let Some(record) = e.store.snapshot()?.governance.iter().find(|r| {
                     Some(r.id.as_str()) == c.target.as_deref()
-                        && r.kind == "tool_call"
+                        && r.r#type == "tool_call"
                         && r.data["status"] != "needs_reconciliation"
                 }) {
                     return Ok(json!(record));
@@ -687,7 +687,7 @@ mod tests {
             json!({"command_id":id(),"target":a,"payload":{}}),
         )
         .unwrap();
-        let source=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Project A service","scope":{"kind":"project","project_id":a},"data":{"source":{"kind":"http_api","base_url":"https://a.example.test"}}}})).unwrap();
+        let source=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Project A service","scope":format!("project:{a}"),"data":{"source":{"kind":"http_api","base_url":"https://a.example.test"}}}})).unwrap();
         let visible = w
             .dispatch("query.integrations", json!({"project_id":a}))
             .unwrap();
@@ -718,7 +718,7 @@ mod tests {
             json!({"command_id":id(),"target":a,"payload":{}}),
         )
         .unwrap();
-        let shared=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Shared service","scope":{"kind":"global"},"data":{"source":{"kind":"http_api","base_url":"https://shared.example.test"}}}})).unwrap();
+        let shared=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Shared service","scope":"global","data":{"source":{"kind":"http_api","base_url":"https://shared.example.test"}}}})).unwrap();
         assert!(
             w.global
                 .snapshot()

@@ -16,10 +16,31 @@ fn engine(path: &std::path::Path) -> Engine {
     .with_tool_executor(Arc::new(NativeTools::new(path).unwrap()));
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
-    e.store.transact(None,&mut |state| {
-        if state.configuration("fixture-standard-collection:1").is_err(){state.governance.push(SourceDefinition{kind:"delivery_type".into(),identity:"fixture-standard-collection".into(),revision:1,name:"Standard test collection".into(),scope:Scope::Global,data:json!({"format":"json","spec_refs":["fixture-spec:1"],"content_schema":{"type":"array"}})}.into_record()?);}
-        Ok(Value::Null)
-    }).unwrap();
+    e.store
+        .transact(None, &mut |state| {
+            if state
+                .configuration("fixture-standard-collection:1")
+                .is_err()
+            {
+                state.governance.push(
+                    SourceDefinition {
+                        r#type: "delivery_type".into(),
+                        identity: "fixture-standard-collection".into(),
+                        revision: 1,
+                        name: "Standard test collection".into(),
+                        scope: Scope::global(),
+                        refs: References::from([(
+                            "spec_refs".to_string(),
+                            json!(["fixture-spec:1"]),
+                        )]),
+                        data: json!({"format":"json","content_schema":{"type":"array"}}),
+                    }
+                    .into_record()?,
+                );
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
     e
 }
 fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -> Result<Value> {
@@ -47,7 +68,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
     });
     if let Some(row) = target
         .and_then(|id| state.configuration(id).ok())
-        .filter(|r| r.kind == "workflow_instance")
+        .filter(|r| r.r#type == "workflow_instance")
     {
         payload["plan_revision_id"] = row.data["active_plan_revision_id"].clone();
     }
@@ -148,15 +169,20 @@ fn standards_freeze_only_normative_sources_and_detect_relationship_changes() {
             .iter()
             .all(|n| ["workflow", "delivery_type", "spec"].contains(&n["kind"].as_str().unwrap()))
     );
+    let standard_row = row(&e, &standard);
     assert_eq!(
-        row(&e, &standard)
+        standard_row
             .data
             .as_object()
             .unwrap()
             .keys()
             .cloned()
             .collect::<Vec<_>>(),
-        vec!["root_workflow_refs", "schema_version"]
+        vec!["schema_version"]
+    );
+    assert_eq!(
+        standard_row.refs.keys().cloned().collect::<Vec<_>>(),
+        vec!["root_workflow_refs"]
     );
     let duplicate = capture(&e, vec![workflow.clone()]);
     assert_eq!(duplicate, standard);
@@ -248,7 +274,7 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
         .unwrap()
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == feature)
+        .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == feature)
         .unwrap()
         .id
         .clone();
@@ -283,14 +309,14 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
     let ca = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == ta)
+        .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == ta)
         .unwrap()
         .id
         .clone();
     let cb = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == tb)
+        .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == tb)
         .unwrap()
         .id
         .clone();
@@ -347,7 +373,7 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
             .unwrap()
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_execution_history" && r.data == old_execution)
+            .any(|r| r.r#type == "workflow_execution_history" && r.data == old_execution)
     );
     dispatch(&e, &ca, "capture");
     tools(&e);
@@ -407,7 +433,7 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
     assert_eq!(row(&e, &old_output.id).data, old_output.data);
     assert_eq!(row(&e, &ca).data["plan"]["standard_ref"], sb);
     let db = rusqlite::Connection::open(dir.path().join("engineering.sqlite3")).unwrap();
-    let copied:i64=db.query_row("SELECT count(*) FROM source_definitions WHERE kind='standard' AND (json_extract(data,'$.body') IS NOT NULL OR json_extract(data,'$.baseline_rules') IS NOT NULL OR json_extract(data,'$.feature_id') IS NOT NULL)",[],|r|r.get(0)).unwrap();
+    let copied:i64=db.query_row("SELECT count(*) FROM source_definitions WHERE type='standard' AND (json_extract(data,'$.body') IS NOT NULL OR json_extract(data,'$.baseline_rules') IS NOT NULL OR json_extract(data,'$.feature_id') IS NOT NULL)",[],|r|r.get(0)).unwrap();
     assert_eq!(copied, 0);
 }
 
@@ -419,18 +445,11 @@ fn invalid_standard_shapes_and_wrong_entry_are_rejected() {
     let b = child(&e, "B");
     let standard = capture(&e, vec![a.clone()]);
     let state = e.store.snapshot().unwrap();
-    assert!(standard_entry(&state, &standard, &b, &Scope::Global).is_err());
-    assert!(
-        ConfiguredStandard {
-            schema_version: 4,
-            root_workflow_refs: vec![a.clone(), a]
-        }
-        .validate()
-        .is_err()
-    );
+    assert!(standard_entry(&state, &standard, &b, &Scope::global()).is_err());
+    assert!(ConfiguredStandard { schema_version: 3 }.validate().is_ok());
     assert!(
         serde_json::from_value::<ConfiguredStandard>(
-            json!({"schema_version":4,"root_workflow_refs":[b],"feature_id":"fake"})
+            json!({"schema_version":4,"feature_id":"fake"})
         )
         .is_err()
     );
@@ -463,13 +482,13 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
     let root=command(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow,"role_agent_bindings":{"builtin-role-analyst:1":"builtin-agent-sol-high-analyst:4"},"inputs":{"data":{"value":"before"}}})).unwrap()["id"].as_str().unwrap().to_owned();
     let initial = row(&e, &root);
     let standard = initial.data["plan"]["standard_ref"].clone();
-    let replacement = command(
-        &e,
-        "agent.create",
-        None,
-        json!({"name":"同职责的另一执行者","data":row(&e,"builtin-agent-sol-high-analyst:4").data}),
-    )
-    .unwrap();
+    let source_record = row(&e, "builtin-agent-sol-high-analyst:4");
+    let mut payload =
+        json!({"name":"同职责的另一执行者","scope":"global","data":source_record.data});
+    for (key, value) in &source_record.refs {
+        payload[key] = value.clone();
+    }
+    let replacement = command(&e, "agent.create", None, payload).unwrap();
     let changes = json!({"plan_revision_id":initial.data["active_plan_revision_id"],"reason":"仅调整运行输入和执行者","operations":[{"type":"set_inputs","inputs":{"data":{"value":"after"}}},{"type":"set_bindings","bindings":{"builtin-role-analyst:1":replacement["id"]}}]});
     let preview = e
         .query(
@@ -489,7 +508,7 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
     .unwrap();
     assert_eq!(row(&e, &root).data["plan"]["standard_ref"], standard);
     assert_eq!(row(&e, &root).data["workflow_ref"], workflow);
-    command(&e,"agent.instance.create",None,json!({"name":"按当前工作冻结依据讨论","agent_revision_id":replacement["id"],"frozen_work_id":project["id"],"scope":{"kind":"project","project_id":project["id"]}})).unwrap();
+    command(&e,"agent.instance.create",None,json!({"name":"按当前工作冻结依据讨论","agent_revision_id":replacement["id"],"frozen_work_id":project["id"],"scope":format!("project:{}", project["id"].as_str().unwrap())})).unwrap();
 
     assert_eq!(
         row(
@@ -553,7 +572,10 @@ fn project_execution_selections_rebuild_in_their_own_access_context() {
             .as_str()
             .unwrap()
             .to_owned();
-        assert_eq!(row(&e, &standard).scope.project(), project["id"].as_str());
+        assert_eq!(
+            row(&e, &standard).scope.project_id(),
+            project["id"].as_str()
+        );
         roots.push(root["id"].as_str().unwrap().to_owned());
         standards.push(standard);
     }

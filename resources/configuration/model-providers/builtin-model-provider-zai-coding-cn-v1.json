@@ -1,11 +1,9 @@
 {
-  "kind": "model_provider",
+  "type": "model_provider",
   "identity": "builtin-model-provider-zai-coding-cn",
   "revision": 1,
   "name": "智谱 AI 编程订阅 国内",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "id": "zai-coding-cn",
     "label": "智谱 AI 编程订阅 国内",

@@ -667,7 +667,7 @@ impl Engine {
                 .any(|t| t.id == tid && t.status == TurnStatus::Completed)
                 && s.governance
                     .iter()
-                    .any(|r| r.kind == "agent_session" && r.definition_id == session.id)
+                    .any(|r| r.r#type == "agent_session" && r.definition_id == session.id)
             {
                 self.capture_conversation(s, session, "conversation_completed", None)?;
             }

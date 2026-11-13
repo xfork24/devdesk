@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-git-candidate",
   "revision": 1,
   "name": "准备代码候选",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "git.candidate",
     "implementation": "platform",

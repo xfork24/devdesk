@@ -1,16 +1,14 @@
 {
-  "kind": "standard",
+  "type": "standard",
   "identity": "builtin-standard-engineering",
   "revision": 3,
   "name": "默认工程规范快照",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "root_workflow_refs": [
+    "builtin-workflow-feature-sol-high:6",
+    "builtin-workflow-task-sol-high:6"
+  ],
   "data": {
-    "schema_version": 4,
-    "root_workflow_refs": [
-      "builtin-workflow-feature-sol-high:6",
-      "builtin-workflow-task-sol-high:6"
-    ]
+    "schema_version": 4
   }
 }

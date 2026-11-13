@@ -406,7 +406,7 @@ test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建�
   const result = await response.json();
   expect(result.error).toBeUndefined();
   expect(response.request().postDataJSON().params.payload.agent_revision_id).toBe(agentId);
-  expect(response.request().postDataJSON().params.payload.scope).toEqual({ kind: "global" });
+  expect(response.request().postDataJSON().params.payload.scope).toEqual("global");
   await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(result.result.id);
   await page.goto(`/?tab=actors&config_tab=agent_instance&config_object=${result.result.id}`);
   await expect(page.getByRole("tab", { name: "Agent", exact: true })).toHaveAttribute("aria-selected", "true");

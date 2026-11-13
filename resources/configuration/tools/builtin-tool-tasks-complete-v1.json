@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-tasks-complete",
   "revision": 1,
   "name": "完成明确任务",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "tasks.complete",
     "implementation": "platform",

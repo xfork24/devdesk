@@ -183,7 +183,7 @@ impl GlobalStore {
                 provider,
                 // The recipe identity is the content anchor; permission acceptance and
                 // harness materialization compare it, never the base version string.
-                version: format!("{version}+recipe.{}", &recipe_digest[..16]),
+                version: format!("{version}+recipe.{recipe_digest}"),
                 os: value["os"].as_str().unwrap_or("").into(),
                 arch: arch.into(),
             },

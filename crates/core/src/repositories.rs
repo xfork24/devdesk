@@ -28,8 +28,8 @@ impl Engine {
                 )?;
                 require(
                     !s.governance.iter().any(|r| {
-                        r.kind == "platform_call"
-                            && r.scope.project() == Some(target)
+                        r.r#type == "platform_call"
+                            && r.scope.project_id() == Some(target)
                             && ["prepared", "running", "needs_reconciliation"]
                                 .contains(&r.data["status"].as_str().unwrap_or(""))
                             && r.data["request"]["definition"]["qualified_name"]
@@ -256,12 +256,12 @@ impl Engine {
                                 )?;
                                 head.revision = revision.clone();
                                 for r in s.governance.iter_mut().filter(|r| {
-                                    r.kind == "workflow_instance"
+                                    r.r#type == "workflow_instance"
                                         && r.data["status"] != "completed"
                                         && r.data["status"] != "cancelled"
                                 }) {
                                     r.data["dirty"] = json!(true);
-                                    r.content_hash = configuration_hash(&r.data);
+                                    r.content_hash = content_digest(&r.refs, &r.data);
                                     r.revision += 1;
                                 }
                                 None

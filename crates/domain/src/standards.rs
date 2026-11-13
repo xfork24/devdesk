@@ -9,19 +9,10 @@ pub const STANDARD_SNAPSHOT_VERSION: &str = "standard-snapshot/v1";
 #[serde(deny_unknown_fields)]
 pub struct ConfiguredStandard {
     pub schema_version: u64,
-    pub root_workflow_refs: Vec<Id>,
 }
 impl ConfiguredStandard {
     pub fn validate(&self) -> Result<()> {
-        require(
-            !self.root_workflow_refs.is_empty() && self.root_workflow_refs.len() <= 100,
-            "Standard 需要 1—100 个 Workflow 入口",
-        )?;
-        let mut seen = BTreeSet::new();
-        for reference in &self.root_workflow_refs {
-            parse_source_reference(reference)?;
-            require(seen.insert(reference), "Standard 的 Workflow 入口不能重复")?;
-        }
+        // Version is provenance metadata; source references carry the entry constraints.
         Ok(())
     }
 }
@@ -43,24 +34,16 @@ impl WorkReference {
         match self {
             Self::Project { id } => {
                 require(state.projects.iter().any(|p| &p.id == id), "Project 不存在")?;
-                Ok(Scope::Project {
-                    project_id: id.clone(),
-                })
+                Ok(Scope::project(id))
             }
             Self::Feature { id } => {
                 let f = state.feature(id)?;
-                Ok(Scope::Feature {
-                    project_id: f.project_id.clone(),
-                    feature_id: f.id.clone(),
-                })
+                Ok(Scope::feature(&f.project_id, &f.id))
             }
             Self::Task { id } => {
                 let t = state.task(id)?;
                 let f = state.feature(&t.feature_id)?;
-                Ok(Scope::Feature {
-                    project_id: f.project_id.clone(),
-                    feature_id: f.id.clone(),
-                })
+                Ok(Scope::feature(&f.project_id, &f.id))
             }
         }
     }
@@ -131,10 +114,13 @@ pub fn canonical_standard_content(value: &Value) -> Value {
 
 pub fn resolve_standard_sources(
     state: &EngineeringState,
-    definition: &ConfiguredStandard,
+    roots: &[Id],
     scope: &Scope,
 ) -> Result<StandardSnapshot> {
-    definition.validate()?;
+    require(
+        !roots.is_empty() && roots.len() <= 100,
+        "Standard 需要 1—100 个 Workflow 入口",
+    )?;
     struct Resolver<'a> {
         state: &'a EngineeringState,
         nodes: BTreeMap<Id, StandardNode>,
@@ -193,7 +179,7 @@ pub fn resolve_standard_sources(
                 .map_err(|_| err("missing_source_revision", format!("缺少源修订 {reference}")))?
                 .clone();
             require(
-                source.kind == kind && source.immutable,
+                source.r#type == kind && source.immutable,
                 format!("{reference} 需要已发布的 {kind} 源修订"),
             )?;
             if !source.scope.visible_from(scope) {
@@ -252,9 +238,10 @@ pub fn resolve_standard_sources(
                 }
                 "delivery_type" => {
                     let delivery: DeliveryTypeDefinition = source.decode()?;
+                    let specs = reference_list(&source.refs, "spec_refs")?;
                     self.state
-                        .validate_delivery_specs(&delivery, &source.scope)?;
-                    for spec in &delivery.spec_refs {
+                        .validate_delivery_specs(&source.refs, &delivery, &source.scope)?;
+                    for spec in &specs {
                         self.link(
                             &source,
                             "spec_refs".into(),
@@ -294,8 +281,9 @@ pub fn resolve_standard_sources(
         edges: BTreeSet::new(),
         active: BTreeSet::new(),
     };
-    let mut roots = definition.root_workflow_refs.clone();
+    let mut roots = roots.to_vec();
     roots.sort();
+    roots.dedup();
     for root in &roots {
         resolver.visit(root, "workflow", scope, 0)?;
     }
@@ -320,17 +308,18 @@ pub fn standard_snapshot(
 ) -> Result<StandardSnapshot> {
     let source = state.configuration(reference)?;
     require(
-        source.kind == "standard" && source.immutable,
+        source.r#type == "standard" && source.immutable,
         "需要不可变 Standard 修订",
     )?;
-    require(
-        !matches!(source.scope, Scope::Feature { .. }),
-        "Standard 不具有 Feature 归属",
-    )?;
+    require(!source.scope.is_feature(), "Standard 不具有 Feature 归属")?;
     if !source.scope.visible_from(scope) {
         return Err(err("source_scope_violation", "Standard 源不可见"));
     }
-    resolve_standard_sources(state, &source.decode()?, &source.scope)
+    resolve_standard_sources(
+        state,
+        &reference_list(&source.refs, "root_workflow_refs")?,
+        &source.scope,
+    )
 }
 
 pub fn standard_entry(

@@ -8,7 +8,10 @@ fn global_records(root: &Path) -> Result<Vec<ConfigurationRecord>> {
         OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .map_err(storage)?;
-    load_table(&conn, "governance_records")
+    load_table::<Value>(&conn, "governance_records")?
+        .into_iter()
+        .map(ConfigurationRecord::from_storage)
+        .collect()
 }
 fn projects(root: &Path) -> Result<Vec<Project>> {
     let conn = Connection::open_with_flags(
@@ -32,13 +35,11 @@ fn instance(root: &Path, current_project: &str, id: &str) -> Result<AgentInstanc
     }
     let r = records
         .iter()
-        .find(|r| r.id == id && r.kind == "agent_instance")
+        .find(|r| r.id == id && r.r#type == "agent_instance")
         .ok_or_else(|| err("not_found", "Agent 不存在"))?;
     let i: AgentInstance = r.decode()?;
     require(
-        i.scope.visible_from(&Scope::Project {
-            project_id: current_project.into(),
-        }),
+        i.scope.visible_from(&Scope::project(current_project)),
         "Agent 不属于当前项目",
     )?;
     Ok(i)
@@ -51,10 +52,10 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
     let mut rows: Vec<Value> = global_records(root)?
         .into_iter()
         .filter(|r| {
-            r.kind == "experience"
+            r.r#type == "experience"
                 && r.data["agent_instance_id"] == id
                 && i.scope
-                    .project()
+                    .project_id()
                     .is_none_or(|pid| r.data["project_id"] == pid)
         })
         .map(|r| {
@@ -63,12 +64,12 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
             data
         })
         .collect();
-    if i.scope == Scope::Global {
+    if i.scope == Scope::global() {
         if let Ok(s) = SqliteStore::read_global_discussion_snapshot(root) {
             rows.extend(
                 s.governance
                     .into_iter()
-                    .filter(|r| r.kind == "experience" && r.data["agent_instance_id"] == id)
+                    .filter(|r| r.r#type == "experience" && r.data["agent_instance_id"] == id)
                     .map(|r| {
                         let mut data = r.data;
                         data["availability"] = json!("available");
@@ -79,11 +80,11 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
     }
     let mut unavailable = vec![];
     for project in projects(root)? {
-        if i.scope.project().is_some_and(|pid| pid != project.id) {
+        if i.scope.project_id().is_some_and(|pid| pid != project.id) {
             continue;
         }
         match SqliteStore::read_project_snapshot(root,&project.id){Ok(s)=>{
-            rows.extend(s.governance.into_iter().filter(|r|r.kind=="experience"&&r.data["agent_instance_id"]==id).map(|r|{let mut data=r.data;data["availability"]=json!("available");data}));
+            rows.extend(s.governance.into_iter().filter(|r|r.r#type=="experience"&&r.data["agent_instance_id"]==id).map(|r|{let mut data=r.data;data["availability"]=json!("available");data}));
         },Err(_)=>unavailable.push(json!({"project_id":project.id,"project_name":project.title,"availability":"unavailable"}))}
     }
     let mut seen = std::collections::BTreeSet::new();

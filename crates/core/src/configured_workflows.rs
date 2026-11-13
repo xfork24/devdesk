@@ -29,7 +29,7 @@ impl Engine {
         let configuration = state
             .governance
             .iter()
-            .filter(|r| r.kind == "project_configuration")
+            .filter(|r| r.r#type == "project_configuration")
             .max_by_key(|r| r.version);
         let result = (|| {
             let configuration = configuration
@@ -95,7 +95,8 @@ impl Engine {
         .find_map(|id| state.configuration(id).ok())
         .cloned();
         let family = method.split('.').next().unwrap_or("");
-        if family == "spec" && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
+        if family == "spec"
+            && ["create", "revise"].contains(&method.split('.').nth(1).unwrap_or(""))
         {
             let old = if method.ends_with("revise") {
                 Some(
@@ -108,7 +109,7 @@ impl Engine {
             };
             if let Some(old) = &old {
                 require(
-                    old.kind == family && command.expected_revision == Some(old.revision),
+                    old.r#type == family && command.expected_revision == Some(old.revision),
                     "配置修订冲突",
                 )?;
             }
@@ -116,10 +117,8 @@ impl Engine {
                 .as_ref()
                 .map(|r| Ok(r.scope.clone()))
                 .unwrap_or_else(|| {
-                    serde_json::from_value(
-                        p.get("scope").cloned().unwrap_or(json!({"kind":"global"})),
-                    )
-                    .map_err(|e| err("invalid_params", e.to_string()))
+                    serde_json::from_value(p.get("scope").cloned().unwrap_or(json!("global")))
+                        .map_err(|e| err("invalid_params", e.to_string()))
                 })?;
             self.check_configured_workflow_scope(&scope)?;
             serde_json::from_value::<ConfiguredSpecification>(p["data"].clone())
@@ -143,7 +142,8 @@ impl Engine {
         }
         // A draft or workflow counts as current when its document parses as the
         // workflow domain object — shape decides, never a version number.
-        let parses = |value: &Value| serde_json::from_value::<WorkflowDefinition>(value.clone()).is_ok();
+        let parses =
+            |value: &Value| serde_json::from_value::<WorkflowDefinition>(value.clone()).is_ok();
         let is_current = document.as_ref().is_some_and(|doc| parses(doc))
             || selected
                 .as_ref()
@@ -163,9 +163,7 @@ impl Engine {
                     command.expected_revision == Some(project.revision),
                     "项目修订冲突",
                 )?;
-                let scope = Scope::Project {
-                    project_id: project.id.clone(),
-                };
+                let scope = Scope::project(project.id.clone());
                 let workflow = selected.unwrap();
                 let bindings: BTreeMap<Id, Id> =
                     serde_json::from_value(p["role_agent_bindings"].clone())
@@ -240,7 +238,9 @@ impl Engine {
                 let old = state
                     .governance
                     .iter()
-                    .filter(|r| r.kind == "project_configuration" && r.definition_id == project.id)
+                    .filter(|r| {
+                        r.r#type == "project_configuration" && r.definition_id == project.id
+                    })
                     .max_by_key(|r| r.version)
                     .cloned();
                 let row = record(
@@ -270,7 +270,7 @@ impl Engine {
                         selected
                             .as_ref()
                             .map(|r| json!(r.scope))
-                            .unwrap_or(json!({"kind":"global"}))
+                            .unwrap_or(json!("global"))
                     }))
                     .map_err(|e| err("invalid_params", e.to_string()))?;
                 self.check_configured_workflow_scope(&scope)?;
@@ -315,7 +315,7 @@ impl Engine {
                 let old = selected.unwrap();
                 self.check_configured_workflow_scope(&old.scope)?;
                 require(
-                    old.kind == "workflow_draft"
+                    old.r#type == "workflow_draft"
                         && old.data["published_revision_id"].is_null()
                         && command.expected_revision == Some(old.revision),
                     "草稿修订冲突",
@@ -340,7 +340,7 @@ impl Engine {
                 let old = selected.unwrap();
                 self.check_configured_workflow_scope(&old.scope)?;
                 require(
-                    old.kind == "workflow_draft"
+                    old.r#type == "workflow_draft"
                         && old.data["published_revision_id"].is_null()
                         && command.expected_revision == Some(old.revision),
                     "草稿修订冲突",
@@ -350,7 +350,7 @@ impl Engine {
                 self.compile_configured_workflow(state, &candidate, &old.scope, None)?;
                 require(
                     !state.governance.iter().any(|r| {
-                        r.kind == "workflow"
+                        r.r#type == "workflow"
                             && r.definition_id == old.definition_id
                             && old.data["base_revision_id"]
                                 .as_str()
@@ -365,7 +365,7 @@ impl Engine {
                 let version = state
                     .governance
                     .iter()
-                    .filter(|r| r.kind == "workflow" && r.definition_id == old.definition_id)
+                    .filter(|r| r.r#type == "workflow" && r.definition_id == old.definition_id)
                     .map(|r| r.version)
                     .max()
                     .unwrap_or(0)
@@ -399,16 +399,18 @@ impl Engine {
     }
 
     fn check_configured_workflow_scope(&self, scope: &Scope) -> Result<()> {
-        match scope {
-            Scope::Global => require(
+        if scope.is_global() {
+            require(
                 self.store.project_id().is_none(),
                 "全局定义必须在全局目录维护",
-            ),
-            Scope::Project { project_id } => require(
-                self.store.project_id().as_ref() == Some(project_id),
+            )
+        } else if scope.is_feature() {
+            Err(err("invalid_scope", "不允许创建可变 Feature 定义"))
+        } else {
+            require(
+                self.store.project_id().as_deref() == scope.project_id(),
                 "配置项目范围不匹配",
-            ),
-            Scope::Feature { .. } => Err(err("invalid_scope", "不允许创建可变 Feature 定义")),
+            )
         }
     }
 
@@ -435,7 +437,7 @@ impl Engine {
             record(
                 "workflow",
                 "preview".into(),
-                Scope::Global,
+                Scope::global(),
                 "任务预览".into(),
                 1,
                 None,
@@ -451,7 +453,7 @@ impl Engine {
                 None => return None,
             }
         };
-        if row.kind == "workflow_draft" {
+        if row.r#type == "workflow_draft" {
             row.data = row.data["document"].clone();
         }
         if serde_json::from_value::<WorkflowDefinition>(row.data.clone()).is_err() {
@@ -460,10 +462,8 @@ impl Engine {
         Some((|| {
             let scope = params["project_id"]
                 .as_str()
-                .map(|id| Scope::Project {
-                    project_id: id.into(),
-                })
-                .unwrap_or(Scope::Global);
+                .map(|id| Scope::project(id))
+                .unwrap_or(Scope::global());
             let bindings: Option<BTreeMap<Id, Id>> = params
                 .get("role_agent_bindings")
                 .map(|v| {
@@ -569,7 +569,7 @@ impl Engine {
                     schema_version: 6,
                     owner_id: "preview".into(),
                     workflow_ref: row.id.clone(),
-                    project_id: scope.project().unwrap_or("").into(),
+                    project_id: scope.project_id().unwrap_or("").into(),
                     plan,
                     role_agent_bindings: BTreeMap::new(),
                     inputs: BTreeMap::new(),
@@ -633,7 +633,7 @@ pub fn compile_workflow_sources(
             if let Some(role) = doc.role(step) {
                 let record = crate::configuration::role_record(state, role)?;
                 require(
-                    crate::configuration::visible(state, record, scope.project())
+                    crate::configuration::visible(state, record, scope.project_id())
                         && !crate::configuration::retired(state, record),
                     "Role 不适用于当前范围",
                 )?;
@@ -667,7 +667,7 @@ pub fn compile_workflow_sources(
                         crate::integrations::freeze_integrations(
                             state,
                             &composition,
-                            scope.project(),
+                            scope.project_id(),
                         )?,
                     );
                     require(
@@ -742,7 +742,7 @@ pub fn compile_workflow_sources(
             {
                 let output = reference(state, &port.delivery_ref, "delivery_type", scope)?;
                 let definition: DeliveryTypeDefinition = output.decode()?;
-                state.validate_delivery_specs(&definition, scope)?;
+                state.validate_delivery_specs(&output.refs, &definition, scope)?;
                 if is_output {
                     match (&definition.producer, &step.executor) {
                         (Some(DeliveryProducer::Agent), StepExecutor::Agent { .. })
@@ -775,7 +775,7 @@ pub fn compile_workflow_sources(
                 }
                 require(!name.is_empty(), "端口名称不能为空")?;
                 plan.definitions.insert(output.id.clone(), output.clone());
-                for spec in &definition.spec_refs {
+                for spec in &reference_list(&output.refs, "spec_refs")? {
                     let spec = reference(state, spec, "spec", scope)?;
                     plan.definitions.insert(spec.id.clone(), spec.clone());
                 }
@@ -816,8 +816,7 @@ pub fn compile_workflow_sources(
                     let refs = plan
                         .definitions
                         .get(&port.delivery_ref)
-                        .and_then(|r| r.decode::<DeliveryTypeDefinition>().ok())
-                        .map(|d| d.spec_refs)
+                        .and_then(|r| reference_list(&r.refs, "spec_refs").ok())
                         .unwrap_or_default();
                     (name.clone(), refs)
                 })
@@ -872,15 +871,15 @@ pub fn compile_workflow_sources(
                         plan.definitions
                             .insert(integration.id.clone(), integration.clone());
                         if bindings.is_some() {
-                            let project = scope.project().ok_or_else(|| {
+                            let project = scope.project_id().ok_or_else(|| {
                                 err("project_required", "工具 Step 需要明确项目绑定")
                             })?;
                             let configuration = state
                                 .governance
                                 .iter()
                                 .filter(|r| {
-                                    r.kind == "integration_project_configuration"
-                                        && r.scope.project() == Some(project)
+                                    r.r#type == "integration_project_configuration"
+                                        && r.scope.project_id() == Some(project)
                                 })
                                 .max_by_key(|r| r.version)
                                 .ok_or_else(|| {

@@ -44,7 +44,7 @@ export function AgentInstances({
   const definitions = latest(
     records.filter(
       (r) =>
-        r.kind === "agent" && (scope !== "global" || r.scope.kind === "global"),
+        r.type === "agent" && (scope !== "global" || r.scope === "global"),
     ),
   );
   return (
@@ -70,8 +70,8 @@ export function AgentInstances({
                 agent_revision_id: agent,
                 scope:
                   scope === "global"
-                    ? { kind: "global" }
-                    : { kind: "project", project_id: project!.id },
+                    ? "global"
+                    : `project:${project!.id}`,
               },
             });
             setName("");
@@ -124,13 +124,13 @@ export function AgentInstances({
       {error && <p role="alert">{error}</p>}
       <h3>已有 Agent</h3>
       {records
-        .filter((r) => r.kind === "agent_instance")
+        .filter((r) => r.type === "agent_instance")
         .map((instance) => (
           <article key={instance.id} className="document-row">
             <div>
               <strong>{instance.name}</strong>
               <p>
-                {instance.scope.kind === "global" ? "全局" : "当前项目"} ·{" "}
+                {instance.scope === "global" ? "全局" : "当前项目"} ·{" "}
                 {records.find((r) => r.id === instance.data.agent_revision_id)
                   ?.name || instance.data.agent_revision_id}
               </p>

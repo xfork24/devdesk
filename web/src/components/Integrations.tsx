@@ -210,14 +210,14 @@ function NativeCatalog({
         {latest(
           rows.filter(
             (row) =>
-              row.kind === "tool" &&
+              row.type === "tool" &&
               row.data.implementation === "harness.native",
           ),
         ).flatMap((row) => {
           const harnesses = latest(
             rows.filter(
               (harness) =>
-                harness.kind === "harness" &&
+                harness.type === "harness" &&
                 harness.data.provider ===
                   (row.data.harness_provider || "codex"),
             ),
@@ -231,7 +231,7 @@ function NativeCatalog({
               <article>
                 <h3>{row.name}</h3>
                 <p>
-                  v{row.version} · {row.scope.kind}
+                  v{row.version} · {row.scope}
                   {harness ? ` · ${harness.name}` : ""}
                 </p>
                 <p>
@@ -310,7 +310,7 @@ function SourceManager({
     sources.find(
       (r) =>
         r.id === draft.selected &&
-        r.kind === "integration" &&
+        r.type === "integration" &&
         r.data.source.kind === sourceKind,
     ) || deletedSource;
   const missingSource = !loading && !!draft.selected && !selected;
@@ -323,7 +323,7 @@ function SourceManager({
     setDraft({
       selected: r.id,
       name: r.name,
-      scope: r.scope.kind,
+      scope: r.scope === "global" ? "global" : "project",
       description: r.data.description || "",
       base_url: s.base_url || "",
       transport: s.transport || "streamable_http",
@@ -342,10 +342,10 @@ function SourceManager({
   useEffect(() => {
     if (routeConsumed.current || !sources.length) return;
     const target = new URLSearchParams(location.search).get("config_object");
-    const tool = catalog.find((r) => r.id === target && r.kind === "tool");
+    const tool = catalog.find((r) => r.id === target && r.type === "tool");
     const row = sources.find(
       (r) =>
-        r.kind === "integration" &&
+        r.type === "integration" &&
         r.data.source.kind === sourceKind &&
         (r.id === target || r.id === tool?.data.integration_ref),
     );
@@ -382,7 +382,7 @@ function SourceManager({
   const rows = latest(
     sources.filter(
       (r) =>
-        r.kind === "integration" &&
+        r.type === "integration" &&
         r.data.source.kind === (kind === "http" ? "http_api" : "mcp"),
     ),
   );
@@ -416,7 +416,7 @@ function SourceManager({
               >
                 <strong>{r.name}</strong>
                 <span>
-                  v{r.version} · {r.scope.kind}
+                  v{r.version} · {r.scope}
                 </span>
               </ActionButton>
             ))}
@@ -452,8 +452,8 @@ function SourceManager({
                     name: draft.name,
                     scope:
                       draft.scope === "project"
-                        ? { kind: "project", project_id: project!.id }
-                        : { kind: "global" },
+                        ? `project:${project!.id}`
+                        : "global",
                     data: {
                       source,
                       description: draft.description,
@@ -759,7 +759,7 @@ function SourceManager({
                     {sources
                       .filter(
                         (r) =>
-                          r.kind === "integration" &&
+                          r.type === "integration" &&
                           r.definition_id === selected.definition_id,
                       )
                       .map((r) => (
@@ -832,7 +832,7 @@ function PublishedTools({
   const [busy, setBusy] = useState(false);
   const tools = latest(
     catalog.filter(
-      (r) => r.kind === "tool" && r.data.integration_ref === source.id,
+      (r) => r.type === "tool" && r.data.integration_ref === source.id,
     ),
   );
   return (
@@ -966,7 +966,7 @@ function BindingManager({
   const bindings = latest(
     sources.filter(
       (r) =>
-        r.kind === "integration_binding" &&
+        r.type === "integration_binding" &&
         r.data.integration_ref === source.id,
     ),
   );
@@ -975,7 +975,7 @@ function BindingManager({
     sources.find((r) => r.id === draft.selected) || deletedBinding;
   const tools = latest(
     catalog.filter(
-      (r) => r.kind === "tool" && r.data.integration_ref === source.id,
+      (r) => r.type === "tool" && r.data.integration_ref === source.id,
     ),
   );
   const choose = (r: Row) => {
@@ -984,7 +984,7 @@ function BindingManager({
     setDraft({
       selected: r.id,
       name: r.name,
-      scope: r.scope.kind,
+      scope: r.scope === "global" ? "global" : "project",
       harness_ref: b.harness_ref,
       sandbox_ref: b.sandbox_ref,
       auth_kind:
@@ -1085,8 +1085,8 @@ function BindingManager({
                   name: draft.name,
                   scope:
                     draft.scope === "project"
-                      ? { kind: "project", project_id: project!.id }
-                      : { kind: "global" },
+                      ? `project:${project!.id}`
+                      : "global",
                   data: {
                     integration_ref: source.id,
                     auth,
@@ -1137,7 +1137,7 @@ function BindingManager({
             </label>
             <RevisionSelect
               label="接入 Harness"
-              records={catalog.filter((r) => r.kind === "harness")}
+              records={catalog.filter((r) => r.type === "harness")}
               value={draft.harness_ref}
               onChange={(harness_ref) => {
                 captureFeedback();
@@ -1155,7 +1155,7 @@ function BindingManager({
                     name: r.name,
                     version: r.version,
                     definition_id: r.target.revision_id,
-                    scope: { kind: "global" },
+                    scope: "global",
                   })) || []
               }
               value={draft.sandbox_ref}
@@ -1482,7 +1482,7 @@ function BindingManager({
                   {sources
                     .filter(
                       (r) =>
-                        r.kind === "integration_binding" &&
+                        r.type === "integration_binding" &&
                         r.definition_id === selected.definition_id,
                     )
                     .map((r) => (
@@ -1551,7 +1551,7 @@ function BindingManager({
                         latest(
                           rows.filter(
                             (r) =>
-                              r.kind === "integration_project_configuration" &&
+                              r.type === "integration_project_configuration" &&
                               r.definition_id === project.id,
                           ),
                         )[0]?.data || {};
@@ -1784,7 +1784,7 @@ function HttpToolEditor({
     [aliases, setAliases] = useState<Record<string, string>>({});
   const tools = latest(
     catalog.filter(
-      (r) => r.kind === "tool" && r.data.integration_ref === source.id,
+      (r) => r.type === "tool" && r.data.integration_ref === source.id,
     ),
   );
   const selected = catalog.find((r) => r.id === draft.selected);
@@ -2156,7 +2156,7 @@ function HttpToolEditor({
                 {catalog
                   .filter(
                     (r) =>
-                      r.kind === "tool" &&
+                      r.type === "tool" &&
                       r.definition_id === selected.definition_id,
                   )
                   .map((r) => (
@@ -2433,8 +2433,8 @@ function SkillImport({
             const r = await command(request, "skill.import_package", project, {
               name,
               scope: project
-                ? { kind: "project", project_id: project.id }
-                : { kind: "global" },
+                ? `project:${project.id}`
+                : "global",
               requires_tools: requires,
               source_revision_id: sourceRevision || undefined,
               ...(sourceRevision
@@ -2474,7 +2474,7 @@ function SkillImport({
         </label>
         <RevisionSelect
           label="更新已有 Skill 修订（可选）"
-          records={catalog.filter((r) => r.kind === "skill")}
+          records={catalog.filter((r) => r.type === "skill")}
           value={sourceRevision}
           onChange={async (value) => {
             captureFeedback();
@@ -2580,7 +2580,7 @@ function SkillImport({
         )}
         <RevisionSelect
           label="Skill 必需工具"
-          records={catalog.filter((r) => r.kind === "tool")}
+          records={catalog.filter((r) => r.type === "tool")}
           value={requires}
           multiple
           onChange={setRequires}

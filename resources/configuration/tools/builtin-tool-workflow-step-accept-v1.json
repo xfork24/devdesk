@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-workflow-step-accept",
   "revision": 1,
   "name": "接纳确切执行产物",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "workflow.step.accept",
     "implementation": "platform",

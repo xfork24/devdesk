@@ -1,11 +1,9 @@
 {
-  "kind": "model",
+  "type": "model",
   "identity": "builtin-model-minimax-m3-1-flash",
   "revision": 1,
   "name": "MiniMax M3.1 Flash",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "capabilities": [
       "structured-output",

@@ -40,7 +40,7 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 16,
+            version == 0 || version == 17,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
         connection

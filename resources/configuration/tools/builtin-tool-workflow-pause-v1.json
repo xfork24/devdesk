@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-workflow-pause",
   "revision": 1,
   "name": "暂停流程派发",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "workflow.pause",
     "implementation": "platform",

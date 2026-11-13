@@ -65,7 +65,7 @@ fn published_configuration_wrappers_accept_current_builtin_revisions() {
     let mut covered = std::collections::BTreeSet::new();
     for record in &state.governance {
         round_trip::<ConfigurationRecord>("ConfigurationRecord", json!(record));
-        let schema = match record.kind.as_str() {
+        let schema = match record.r#type.as_str() {
             "model" => "model.schema.json",
             "tool" => "tool.schema.json",
             "agent" => "agent-composition.schema.json",
@@ -77,7 +77,12 @@ fn published_configuration_wrappers_accept_current_builtin_revisions() {
             }
             _ => continue,
         };
-        SCHEMAS.assert_valid(schema, &record.data);
+        let value = if record.r#type == "agent" {
+            json!({"role_ref":reference_value(&record.refs,"role_ref"),"capability_ref":reference_value(&record.refs,"capability_ref")})
+        } else {
+            record.data.clone()
+        };
+        SCHEMAS.assert_valid(schema, &value);
         covered.insert(schema);
     }
     assert_eq!(covered.len(), 5);
@@ -138,7 +143,7 @@ fn execution_and_interaction_schemas_match_serde_defaults_and_nested_values() {
     }
     round_trip::<AgentInstance>(
         "AgentInstance",
-        json!({"agent_revision_id":"agent-1","scope":{"kind":"global"}}),
+        json!({"agent_revision_id":"agent-1","scope":"global"}),
     );
     let workflow = json!({"schema_version":6,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"finish","name":"Finish","stage":"work","executor":{"type":"control"}}]});
     let doc: WorkflowDefinition = serde_json::from_value(workflow.clone()).unwrap();
@@ -275,9 +280,11 @@ fn standalone_permission_contract_matches_rpc_and_preserves_null_rejection() {
             serde_json::from_slice(&std::fs::read(file.unwrap().path()).unwrap()).unwrap();
         // Shipped profiles must declare a document shape this parser understands.
         // The set is a capability declaration, not a pinned version gate.
-        assert!(value["data"]["schema_version"]
-            .as_u64()
-            .is_some_and(|v| (1..=2).contains(&v)));
+        assert!(
+            value["data"]["schema_version"]
+                .as_u64()
+                .is_some_and(|v| (1..=2).contains(&v))
+        );
         SCHEMAS.assert_valid("permission-profile.schema.json", &value);
         serde_json::from_value::<PermissionProfile>(value)
             .unwrap()
@@ -430,18 +437,15 @@ fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
         "DefinitionVisibility",
         json!({"kind":"projects","project_ids":["one","two"]}),
     );
-    round_trip::<CapabilityDefinition>(
-        "CapabilityDefinition",
-        json!({"model_ref":"model-v1","harness_ref":"harness-v1","tools":["native-v1"],"skills":["prd-v1"]}),
+    round_trip::<HarnessDefinition>(
+        "HarnessDefinition",
+        json!({"provider":"dsh","runtime_version":"0.2.2-rc.1","capabilities":["tool-calling"]}),
     );
     round_trip::<ConfiguredSpecification>(
         "ConfiguredSpecification",
         json!({"schema_version":3,"body":"# 内容规范","checks":[]}),
     );
-    round_trip::<ConfiguredStandard>(
-        "ConfiguredStandard",
-        json!({"schema_version":4,"root_workflow_refs":["workflow:1"]}),
-    );
+    round_trip::<ConfiguredStandard>("ConfiguredStandard", json!({"schema_version":4}));
     let project = json!({"schema_version":4,"workflow_ref":"workflow:1","standard_ref":"standard:1","role_agent_bindings":{"product":"analyst-v2"},"permission_context_ref":"authorization:1"});
     SCHEMAS.assert_valid("project-configuration.schema.json", &project);
     let dir = tempfile::tempdir().unwrap();
@@ -452,7 +456,7 @@ fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
     );
     e.bootstrap().unwrap();
     let state = e.store.snapshot().unwrap();
-    for row in state.governance.iter().filter(|r| r.kind == "workflow") {
+    for row in state.governance.iter().filter(|r| r.r#type == "workflow") {
         let id = &row.id;
         let value = state.configuration(id).unwrap().data.clone();
         SCHEMAS.assert_valid("workflow.schema.json", &value);
@@ -470,11 +474,18 @@ fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
         let agent = state
             .configuration(&default_configured_agent_id(role))
             .unwrap();
-        SCHEMAS.assert_valid("agent-composition.schema.json", &agent.data);
+        SCHEMAS.assert_valid(
+            "agent-composition.schema.json",
+            &json!({"role_ref":reference_value(&agent.refs,"role_ref"),"capability_ref":reference_value(&agent.refs,"capability_ref")}),
+        );
         let cap = state
-            .configuration(agent.data["capability_ref"].as_str().unwrap())
+            .configuration(
+                reference_value(&agent.refs, "capability_ref")
+                    .as_str()
+                    .unwrap(),
+            )
             .unwrap();
-        SCHEMAS.assert_valid("capability.schema.json", &cap.data);
+        SCHEMAS.assert_valid("capability.schema.json", &json!(cap.refs));
     }
 }
 
@@ -511,4 +522,34 @@ fn integration_contracts_cover_current_serde_and_optional_structured_output() {
         "ToolReceipt",
         json!({"invocation_id":"call","success":false,"content":[],"remote_effect":"unknown","origin":"external"}),
     );
+}
+
+#[test]
+fn business_metadata_versions_do_not_gate_structurally_valid_definitions() {
+    let specification = json!({"schema_version":999,"body":"明确的内容标准","checks":[]});
+    round_trip::<ConfiguredSpecification>("ConfiguredSpecification", specification.clone());
+    serde_json::from_value::<ConfiguredSpecification>(specification)
+        .unwrap()
+        .validate()
+        .unwrap();
+    let standard = json!({"schema_version":999});
+    round_trip::<ConfiguredStandard>("ConfiguredStandard", standard.clone());
+    serde_json::from_value::<ConfiguredStandard>(standard)
+        .unwrap()
+        .validate()
+        .unwrap();
+    let workflow = json!({"schema_version":999,"stages":[{"key":"work","name":"Work"}],"steps":[{"key":"done","name":"Done","stage":"work","executor":{"type":"control"}}]});
+    round_trip::<WorkflowDefinition>("WorkflowDefinition", workflow.clone());
+    serde_json::from_value::<WorkflowDefinition>(workflow)
+        .unwrap()
+        .validate()
+        .unwrap();
+    SCHEMAS.assert_valid("template-manifest.schema.json", &{
+        let mut manifest: Value = serde_json::from_str(include_str!(
+            "../../../resources/configuration/manifest.json"
+        ))
+        .unwrap();
+        manifest["schema_version"] = json!(999);
+        manifest
+    });
 }

@@ -1,11 +1,9 @@
 {
-  "kind": "workflow",
+  "type": "workflow",
   "identity": "builtin-workflow-task-sol-high",
   "revision": 6,
   "name": "默认 Task 开发流程",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "schema_version": 6,
     "stages": [

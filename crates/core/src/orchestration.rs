@@ -30,7 +30,7 @@ pub(crate) fn freeze_plan(
         step.access.read_only_paths.clear();
         step.access.tool_refs.clear();
     }
-    if current_source.kind != "workflow"
+    if current_source.r#type != "workflow"
         || serde_json::to_value(&source_document).unwrap()
             != serde_json::to_value(&original).unwrap()
     {
@@ -73,8 +73,7 @@ pub(crate) fn freeze_plan(
         let mut roots = existing
             .as_deref()
             .and_then(|r| state.configuration(r).ok())
-            .and_then(|r| r.decode::<ConfiguredStandard>().ok())
-            .map(|s| s.root_workflow_refs)
+            .and_then(|r| reference_list(&r.refs, "root_workflow_refs").ok())
             .unwrap_or_default();
         if let Some(old) = instance
             .plan
@@ -181,7 +180,7 @@ pub(crate) fn waiver(
     requirement: &str,
 ) -> bool {
     state.governance.iter().any(|r| {
-        r.kind == "workflow_waiver"
+        r.r#type == "workflow_waiver"
             && r.data["plan_revision_id"] == instance.active_plan_revision_id
             && r.data["node_id"] == node
             && r.data["requirement"] == requirement
@@ -252,7 +251,7 @@ pub(crate) fn record_auxiliary_decision(
     let Some(row) = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.id == id)
+        .find(|r| r.r#type == "workflow_instance" && r.id == id)
         .cloned()
     else {
         return Ok(());
@@ -324,7 +323,7 @@ impl Engine {
                         && test["status"] == "succeeded"
                         && test["expected_failure"] == false
                         && s.governance.iter().any(|r| {
-                            r.kind == "platform_call"
+                            r.r#type == "platform_call"
                                 && r.data["request"]["instance_id"] == request.instance_id
                                 && r.data["status"] == "succeeded"
                                 && r.data["request"]["definition"]["qualified_name"] == "tests.run"
@@ -334,7 +333,7 @@ impl Engine {
                 "confirmation" => instance.steps.iter().any(|e| {
                     e.inputs.values().any(|v| v == candidate)
                         && s.governance.iter().any(|r| {
-                            r.kind == "workflow_confirmation"
+                            r.r#type == "workflow_confirmation"
                                 && r.definition_id == e.id
                                 && r.data["outputs"] == json!(e.outputs)
                                 && r.data["input_digest"] == e.input_digest
@@ -350,7 +349,7 @@ impl Engine {
             if satisfied {
                 requirements.insert(requirement.clone(), "satisfied".into());
             } else if let Some(w) = s.governance.iter().find(|r| {
-                r.kind == "workflow_waiver"
+                r.r#type == "workflow_waiver"
                     && r.data["plan_revision_id"] == instance.active_plan_revision_id
                     && r.data["node_id"] == step.node_id
                     && r.data["requirement"] == *requirement
@@ -384,7 +383,7 @@ impl Engine {
                 .configuration(c.target.as_deref().unwrap_or(""))?
                 .clone();
             require(
-                row.kind == "workflow_pending_decision"
+                row.r#type == "workflow_pending_decision"
                     && row.data["status"] == "pending"
                     && c.expected_revision == Some(row.revision),
                 "决定已结束或版本变化",
@@ -526,7 +525,7 @@ impl Engine {
         let row = state
             .configuration(c.target.as_deref().unwrap_or(""))?
             .clone();
-        require(row.kind == "workflow_instance", "目标不是流程实例")?;
+        require(row.r#type == "workflow_instance", "目标不是流程实例")?;
         let mut instance: ConfiguredWorkflowInstance = row.decode()?;
         require(
             c.expected_revision == Some(row.revision)
@@ -567,7 +566,7 @@ impl Engine {
         if method == "workflow.materials.import" {
             let delivery = state.configuration(&text(&c.payload, "delivery_ref")?)?;
             require(
-                delivery.kind == "delivery_type" && delivery.scope.visible_from(&row.scope),
+                delivery.r#type == "delivery_type" && delivery.scope.visible_from(&row.scope),
                 "交付类型不可用",
             )?;
             let definition: DeliveryTypeDefinition = delivery.decode()?;
@@ -764,7 +763,7 @@ impl Engine {
                     let group = state
                         .governance
                         .iter()
-                        .find(|r| r.kind == "workflow_children" && r.definition_id == *parent)
+                        .find(|r| r.r#type == "workflow_children" && r.definition_id == *parent)
                         .ok_or_else(|| err("invalid_workflow", "子流程来源缺失"))?;
                     let others = group.data["children"]
                         .as_array()
@@ -823,7 +822,7 @@ impl Engine {
                 )?;
                 let current = facts(state, &instance)?;
                 let overridden = state.governance.iter().any(|r| {
-                    r.kind == "workflow_confirmation"
+                    r.r#type == "workflow_confirmation"
                         && r.definition_id == execution.id
                         && r.data["override_completion"] == true
                         && r.data["input_digest"] == execution.input_digest
@@ -866,7 +865,7 @@ impl Engine {
                     .governance
                     .iter()
                     .filter(|r| {
-                        r.kind == "workflow_instance"
+                        r.r#type == "workflow_instance"
                             && r.data["parent_execution_id"] == execution.id
                     })
                     .map(|r| r.id.clone())
@@ -976,13 +975,13 @@ impl Engine {
             if method == "workflow.inspect" {
                 if let Some(id) = p["decision_ref"].as_str() {
                     let decision = s.configuration(id)?;
-                    let pending = if decision.kind == "workflow_human_decision" {
+                    let pending = if decision.r#type == "workflow_human_decision" {
                         s.configuration(&decision.definition_id)?
                     } else {
                         decision
                     };
                     require(
-                        pending.kind == "workflow_pending_decision"
+                        pending.r#type == "workflow_pending_decision"
                             && s.configuration(&pending.definition_id)?.data["root_instance_id"]
                                 == instance.root_instance_id,
                         "决定不属于当前根实例",
@@ -1003,17 +1002,17 @@ impl Engine {
                 let count = ids.len().max(1);
                 for id in ids {
                     let r = s.configuration(&id)?;
-                    let same_root = if r.kind == "typed_material" {
+                    let same_root = if r.r#type == "typed_material" {
                         r.data["root_instance_id"] == instance.root_instance_id
                     } else {
                         s.governance.iter().any(|owner| {
-                            owner.kind == "workflow_instance"
+                            owner.r#type == "workflow_instance"
                                 && owner.data["root_instance_id"] == instance.root_instance_id
                                 && owner.data["steps"].as_array().is_some_and(|steps| {
                                     steps.iter().any(|e| e["id"] == r.data["execution_id"])
                                 })
                         }) || s.governance.iter().any(|e| {
-                            e.kind == "workflow_execution_history"
+                            e.r#type == "workflow_execution_history"
                                 && e.data["id"] == r.data["execution_id"]
                                 && s.configuration(
                                     e.data["workflow_instance_id"].as_str().unwrap_or(""),
@@ -1024,9 +1023,9 @@ impl Engine {
                         })
                     };
                     require(
-                        r.scope.project() == Some(instance.project_id.as_str())
+                        r.scope.project_id() == Some(instance.project_id.as_str())
                             && same_root
-                            && ["workflow_output", "typed_material"].contains(&r.kind.as_str()),
+                            && ["workflow_output", "typed_material"].contains(&r.r#type.as_str()),
                         "产物不属于当前流程",
                     )?;
                     let value = r.data["value"]
@@ -1067,7 +1066,7 @@ impl Engine {
                         e.id > cursor
                             && (e.target == instance.root_instance_id
                                 || s.configuration(&e.target).is_ok_and(|r| {
-                                    r.kind == "workflow_instance"
+                                    r.r#type == "workflow_instance"
                                         && r.data["root_instance_id"] == instance.root_instance_id
                                 }))
                     })
@@ -1091,7 +1090,7 @@ impl Engine {
                         s.governance
                             .iter()
                             .find(|r| {
-                                r.kind == "workflow_execution_history"
+                                r.r#type == "workflow_execution_history"
                                     && r.definition_id == id
                                     && r.data["workflow_instance_id"] == row.id
                             })
@@ -1122,7 +1121,7 @@ impl Engine {
                 let e=instance.steps.iter().find(|e|e.step==step.key).unwrap();
                 let dependencies=step.dependencies.iter().all(|k|instance.steps.iter().any(|e|&e.step==k&&matches!(e.status,StepExecutionStatus::Completed|StepExecutionStatus::Skipped)));
                 let inputs=if e.status==StepExecutionStatus::Queued&&dependencies&&step.condition.evaluate(&current){crate::configured_runtime::material_inputs(step,&current).map(|_|()).map_err(|e|e.message)}else{Ok(())};
-                json!({"step":step.key,"node_id":step.node_id,"execution":e,"dispatchable":!terminal&&!pending&&inputs.is_ok()&&e.status==StepExecutionStatus::Queued&&dependencies&&!s.workflow_instance_suspended(&row.id),"input_gap":inputs.err(),"completion_satisfied":rule_satisfied(&s,&instance,&step.node_id,&step.completion,&current),"completion_overridden":s.governance.iter().any(|r|r.kind=="workflow_confirmation"&&r.definition_id==e.id&&r.data["override_completion"]==true&&r.data["input_digest"]==e.input_digest&&r.data["outputs"]==json!(e.outputs)),"human_satisfied":step.confirmation!=ConfirmationPolicy::Human||current.approvals.contains(&step.key)||waiver(&s,&instance,&step.node_id,"confirmation")})
+                json!({"step":step.key,"node_id":step.node_id,"execution":e,"dispatchable":!terminal&&!pending&&inputs.is_ok()&&e.status==StepExecutionStatus::Queued&&dependencies&&!s.workflow_instance_suspended(&row.id),"input_gap":inputs.err(),"completion_satisfied":rule_satisfied(&s,&instance,&step.node_id,&step.completion,&current),"completion_overridden":s.governance.iter().any(|r|r.r#type=="workflow_confirmation"&&r.definition_id==e.id&&r.data["override_completion"]==true&&r.data["input_digest"]==e.input_digest&&r.data["outputs"]==json!(e.outputs)),"human_satisfied":step.confirmation!=ConfirmationPolicy::Human||current.approvals.contains(&step.key)||waiver(&s,&instance,&step.node_id,"confirmation")})
             }).collect::<Vec<_>>();
             let mut allowed = vec!["inspect"];
             if !terminal {
@@ -1151,7 +1150,7 @@ impl Engine {
                     allowed.push("complete");
                 }
             }
-            let children=s.governance.iter().filter(|r|r.kind=="workflow_instance"&&r.data["root_instance_id"]==instance.root_instance_id&&r.id!=row.id).map(|r|json!({"id":r.id,"parent_execution_id":r.data["parent_execution_id"],"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"],"item_id":r.data["inputs"]["item"]["id"]})).collect::<Vec<_>>();
+            let children=s.governance.iter().filter(|r|r.r#type=="workflow_instance"&&r.data["root_instance_id"]==instance.root_instance_id&&r.id!=row.id).map(|r|json!({"id":r.id,"parent_execution_id":r.data["parent_execution_id"],"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"],"item_id":r.data["inputs"]["item"]["id"]})).collect::<Vec<_>>();
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 64) as usize;
             let total = instance.plan.document.steps.len();
@@ -1184,7 +1183,7 @@ impl Engine {
                     .collect::<Vec<_>>()
             );
             Ok(
-                json!({"record":{"id":row.id,"revision":row.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total {Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps.into_iter().skip(offset).take(limit).collect::<Vec<_>>(),"allowed_actions":allowed,"children_page":{"offset":offset,"total":children.len(),"next_offset":if offset+limit<children.len(){Some(offset+limit)}else{None}},"delivery_types":instance.plan.definitions.values().filter(|r|r.kind=="delivery_type").collect::<Vec<_>>(),"children":children.iter().skip(offset).take(limit).collect::<Vec<_>>()}),
+                json!({"record":{"id":row.id,"revision":row.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total {Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps.into_iter().skip(offset).take(limit).collect::<Vec<_>>(),"allowed_actions":allowed,"children_page":{"offset":offset,"total":children.len(),"next_offset":if offset+limit<children.len(){Some(offset+limit)}else{None}},"delivery_types":instance.plan.definitions.values().filter(|r|r.r#type=="delivery_type").collect::<Vec<_>>(),"children":children.iter().skip(offset).take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

@@ -1,21 +1,18 @@
 {
-  "kind": "capability",
+  "type": "capability",
   "identity": "builtin-capability-sol-high-codex",
   "revision": 3,
   "name": "默认能力 · GPT-6.1 Sol High / Codex",
-  "scope": {
-    "kind": "global"
-  },
-  "data": {
-    "harness_ref": "builtin-harness-codex-managed:1",
-    "model_ref": "builtin-model-gpt-6-1-sol-high:1",
-    "skills": [
-      "builtin-skill-engineering-context:2",
-      "builtin-skill-engineering-method:1"
-    ],
-    "tools": [
-      "builtin-tool-codex-native:1",
-      "builtin-tool-workflow-outputs-read:2"
-    ]
-  }
+  "scope": "global",
+  "harness_ref": "builtin-harness-codex-managed:1",
+  "model_ref": "builtin-model-gpt-6-1-sol-high:1",
+  "skills": [
+    "builtin-skill-engineering-context:2",
+    "builtin-skill-engineering-method:1"
+  ],
+  "tools": [
+    "builtin-tool-codex-native:1",
+    "builtin-tool-workflow-outputs-read:2"
+  ],
+  "data": {}
 }

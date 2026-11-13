@@ -10,7 +10,7 @@ export function DeliverySpecPreview({
   return (
     <div aria-label="交付内容标准">
       {references.map((id) => {
-        const spec = records.find((r) => r.id === id && r.kind === "spec");
+        const spec = records.find((r) => r.id === id && r.type === "spec");
         return (
           <details key={id}>
             <summary>
@@ -56,7 +56,7 @@ export function DeliveryOutput({
         {output.delivery_ref}
       </p>
       <DeliverySpecPreview
-        references={delivery?.data?.spec_refs || []}
+        references={delivery?.spec_refs || []}
         records={records}
       />
       {provenance ? (

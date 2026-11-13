@@ -2,32 +2,86 @@
 import hashlib,json,os,re,sqlite3,subprocess
 from pathlib import PurePosixPath
 
+def frozen_document(connection, frozen):
+ """Resolve the immutable Workflow revision selected by the stored plan codec."""
+ selection=frozen['plan']
+ assert selection['$source']=='workflow_plan', 'Expected the current source-backed plan encoding'
+ reference=selection['workflow_ref']
+ assert reference==frozen['workflow_ref'], 'Frozen workflow selection does not match its plan'
+ source=connection.execute("SELECT data FROM source_definitions WHERE reference=? AND type='workflow'",(reference,)).fetchone()
+ assert source is not None, 'Original frozen Workflow source must remain available'
+ return json.loads(source[0])
+
+def verify_chunk_reads(reference, expected, output_id, current, calls, wire_items):
+ """Reconstruct a large input from receipts delivered to this exact native turn."""
+ assert reference['read_tool']=='devdesk_workflow_outputs_read' and reference['complete'] is False
+ assert reference['source_output_id']==output_id and reference['pointer']==''
+ assert reference['arguments']=={'ids':[output_id],'max_bytes':32768,'offset':0,'pointer':''}
+ total=reference['total_bytes'];digest=reference['value_digest'];chunks={}
+ assert total>32768 and re.fullmatch('[0-9a-f]{64}',digest)
+ for call in calls:
+  request=call['request'];caller=request.get('caller') or {};arguments=request.get('arguments',{})
+  if (caller.get('turn_id'),caller.get('session_id'),caller.get('execution_id'))!=(current['turn_id'],current['session_id'],current['id']):continue
+  if request.get('definition',{}).get('qualified_name')!='workflow.outputs.read' or arguments.get('ids')!=[output_id] or arguments.get('pointer','')!='':continue
+  assert call['status']=='succeeded','Large input read did not succeed'
+  receipt=call['receipt'];observed=None
+  for wire in wire_items:
+   item=wire['item']
+   if item.get('id')!=caller['call_id']:continue
+   assert item['type']=='dynamicToolCall' and item['tool']==reference['read_tool'] and item['status']=='completed' and item['success'] is True
+   assert item['arguments']==arguments,'Native read arguments differ from durable request'
+   bodies=[]
+   for part in item.get('contentItems') or []:
+    if part.get('type')!='inputText':continue
+    try:bodies.append(json.loads(part['text']))
+    except (ValueError,KeyError):continue
+   assert receipt in bodies,'Complete read receipt absent from actual native tool response'
+   observed=wire;break
+  assert observed is not None,'Large input read absent from native journal'
+  assert len(receipt['outputs'])==1
+  chunk=receipt['outputs'][0];offset=chunk['offset'];body=chunk['value_chunk']
+  assert chunk['id']==output_id and chunk['total_bytes']==total and offset==arguments.get('offset',0)
+  assert chunk['data']['provenance']['value_digest']==digest,'Input provenance digest differs'
+  end=offset+len(body.encode())
+  assert body and 0<=offset<end<=total
+  assert chunk['next_offset']==(end if end<total else None),'Invalid next chunk boundary'
+  if offset in chunks:assert chunks[offset]['body']==body,'Repeated read changed its content'
+  chunks[offset]={'body':body,'proof':{'offset':offset,'next_offset':chunk['next_offset'],'utf8_bytes':len(body.encode()),'call_id':caller['call_id'],'journal':observed['journal']}}
+ offset=0;parts=[];proof=[]
+ while offset<total:
+  assert offset in chunks,'Large input read has a missing chunk at '+str(offset)
+  chunk=chunks[offset];parts.append(chunk['body']);proof.append(chunk['proof']);offset+=chunk['proof']['utf8_bytes']
+ body=''.join(parts)
+ assert len(body.encode())==total and hashlib.sha256(body.encode()).hexdigest()==digest,'Large input content digest differs'
+ assert json.loads(body)==expected,'Read input differs from sealed handoff'
+ return {'execution':current['id'],'turn':current['turn_id'],'session':current['session_id'],'source_output_id':output_id,'total_bytes':total,'value_digest':digest,'chunks':proof,'native_delivery_verified':True}
+
 def verify_evidence(client, rows, output):
  views={row['id']:client.rpc('query.workflow_instance',{'id':row['id']}) for row in rows}
  root=next(v for v in views.values() if v['runtime']['parent_execution_id'] is None)
  children=[v for v in views.values() if v['runtime']['parent_execution_id'] is not None]
  assert len(children)==1, 'Expected one actual Task invocation'
- child=children[0];context=json.loads((output/'context.json').read_text());task_snapshots={};wire_deliveries={}
+ child=children[0];context=json.loads((output/'context.json').read_text());task_snapshots={};wire_deliveries={};input_reads=[]
  database=output/'data/projects'/root['runtime']['project_id']/'engineering.sqlite3'
  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
-  assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='workflow_waiver'").fetchone()[0]==0
-  confirmations={key:json.loads(data) for key,data in connection.execute("SELECT definition_id,data FROM governance_records WHERE kind='workflow_confirmation'")}
+  assert connection.execute("SELECT count(*) FROM governance_records WHERE type='workflow_waiver'").fetchone()[0]==0
+  confirmations={key:json.loads(data) for key,data in connection.execute("SELECT definition_id,data FROM governance_records WHERE type='workflow_confirmation'")}
  if context.get('unattended'):
   with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
-   assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='controller_input'").fetchone()[0]==1, 'Unattended run received additional human steering'
-   controller_id,controller=connection.execute("SELECT id,data FROM governance_records WHERE kind='workflow_controller' AND json_extract(data,'$.root_instance_id')=?",(root['record']['id'],)).fetchone()
+   assert connection.execute("SELECT count(*) FROM governance_records WHERE type='controller_input'").fetchone()[0]==1, 'Unattended run received additional human steering'
+   controller_id,controller=connection.execute("SELECT id,data FROM governance_records WHERE type='workflow_controller' AND json_extract(data,'$.root_instance_id')=?",(root['record']['id'],)).fetchone()
    assert json.loads(controller)['epoch']==1,'Unattended controller was taken over or resumed'
-   for data, in connection.execute("SELECT data FROM governance_records WHERE kind='workflow_decision'"):
+   for data, in connection.execute("SELECT data FROM governance_records WHERE type='workflow_decision'"):
     actor=json.loads(data)['actor']
     if actor['kind']=='segment':
-     authorization=connection.execute("SELECT data FROM governance_records WHERE kind='workflow_segment' AND id=?",(actor['authorization_id'],)).fetchone()
+     authorization=connection.execute("SELECT data FROM governance_records WHERE type='workflow_segment' AND id=?",(actor['authorization_id'],)).fetchone()
      assert authorization is not None,'Segment lacks a durable authorization'
      actor=json.loads(authorization[0])['actor']
     assert actor['kind']=='controller' and actor['controller_id']==controller_id and actor['epoch']==1,'Workflow was advanced outside the native controller'
  human_confirmations=0
  for view in views.values():
   assert view['runtime']['status']=='completed' and all(s['status']=='completed' for s in view['runtime']['steps'])
-  assert not any(item['data'].get('bypassed') for item in view['history'] if item['kind']=='workflow_change')
+  assert not any(item['data'].get('bypassed') for item in view['history'] if item['type']=='workflow_change')
   # Runtime workflow refs change; follow immutable revision ancestry rather than
   # trusting the mutable catalog or treating the revised graph as its own baseline.
   revision=view['runtime']['active_plan_revision_id'];seen=set()
@@ -35,10 +89,10 @@ def verify_evidence(client, rows, output):
    while revision:
     assert revision not in seen,'Plan revision ancestry cycle'
     seen.add(revision)
-    original=connection.execute("SELECT data FROM governance_records WHERE kind='workflow_plan_revision' AND id=?",(revision,)).fetchone()
+    original=connection.execute("SELECT data FROM governance_records WHERE type='workflow_plan_revision' AND id=?",(revision,)).fetchone()
     assert original is not None,'Original frozen plan must remain available'
     frozen=json.loads(original[0]);assert frozen['instance_id']==view['record']['id']
-    source=frozen['plan']['document'];revision=frozen.get('parent_revision_id')
+    source=frozen_document(connection,frozen);revision=frozen.get('parent_revision_id')
   if context.get('unattended'):
    assert view['runtime']['role_agent_bindings']==frozen['role_agent_bindings'], 'Unattended run replaced the default role bindings'
   for action,requirements in source.get('action_requirements',{}).items():
@@ -69,7 +123,7 @@ def verify_evidence(client, rows, output):
  if context.get('default_automatic_confirmations'):
   assert human_confirmations==0 and not confirmations, 'Default automatic policy must not create Human approvals'
   with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
-   assert connection.execute("SELECT count(*) FROM governance_records WHERE kind='workflow_human_decision' AND json_extract(data,'$.approved')=1").fetchone()[0]==0, 'No manual decision approval may advance the default workflow'
+   assert connection.execute("SELECT count(*) FROM governance_records WHERE type='workflow_human_decision' AND json_extract(data,'$.approved')=1").fetchone()[0]==0, 'No manual decision approval may advance the default workflow'
  def step(view,key):return next(s for s in view['runtime']['steps'] if s['step']==key)
  def receipt(view,key):
   current=step(view,key);assert current['status']=='completed'
@@ -180,9 +234,20 @@ def verify_evidence(client, rows, output):
  assert contains_evidence(handed_off),'Task handoff dropped raw TDD evidence'
  for key in ['closure_review','candidate_review']:
   current=step(root,key);rendered=task(root,key)
-  assert current['inputs']['tasks']==rendered['inputs']['tasks']==handed_off
-  assert rendered['input_sources']['tasks']['source_output_id']==step(root,'implementation')['outputs']['result']
-  assert contains_evidence(rendered['inputs']['tasks']),'Feature reviewer did not actually receive complete TDD evidence'
+  source_id=step(root,'implementation')['outputs']['result']
+  assert current['inputs']['tasks']==handed_off,'Feature input differs from its sealed handoff: '+key
+  assert rendered['input_sources']['tasks']['source_output_id']==source_id
+  delivered=rendered['inputs']['tasks']
+  if delivered!=handed_off:
+   with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
+    calls=[json.loads(row[0]) for row in connection.execute("SELECT data FROM governance_records WHERE type='platform_call'")]
+   wire_items=[]
+   journals=output/'data/projects'/root['runtime']['project_id']/'execution/sessions'/current['session_id']/'coordinator'
+   for journal in journals.glob('*.jsonl'):
+    for line in journal.open():
+     envelope=json.loads(line);frame=envelope['frame']
+     if envelope['direction']=='in' and frame.get('method')=='item/completed':wire_items.append({'journal':journal.name,'item':frame['params']['item']})
+   proof=verify_chunk_reads(delivered,handed_off,source_id,current,calls,wire_items);proof['step']=key;input_reads.append(proof)
  diagnostic_red=red
  if any(s['step']=='red_diagnostics' for s in child['runtime']['steps']):
   diagnostic_red=receipt(child,'red_diagnostics')
@@ -216,7 +281,8 @@ def verify_evidence(client, rows, output):
  for ident,view in views.items():(output/(ident+'.json')).write_text(json.dumps(view,ensure_ascii=False,indent=2))
  (output/'execution-tasks.json').write_text(json.dumps(task_snapshots,ensure_ascii=False,indent=2))
  (output/'reviewer-wire-deliveries.json').write_text(json.dumps(list(wire_deliveries.values()),ensure_ascii=False,indent=2))
+ (output/'reviewer-input-reads.json').write_text(json.dumps(input_reads,ensure_ascii=False,indent=2))
  (output/'raw-tdd-evidence.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2))
  (output/'publication-evidence.json').write_text(json.dumps(publications,ensure_ascii=False,indent=2))
- validation={'passed':True,'runs':len(runs),'increment_pairs':pairs,'unchanged_test_files':sorted(red_files),'platform_red_copied':platform_copy,'declared_run_fields':required,'no_bypass_or_waivers':True,'human_confirmation_count':human_confirmations,'human_confirmations_match_exact_results':True,'consumer_task_provenance_matches':True,'diagnostic_operation_id':diagnostic_red['operation_id'],'final_candidate_files_match_evidence':True,'independent_feature_test_included':True,'red_revision':red['candidate'],'green_revision':green['candidate']}
+ validation={'passed':True,'runs':len(runs),'increment_pairs':pairs,'unchanged_test_files':sorted(red_files),'platform_red_copied':platform_copy,'declared_run_fields':required,'no_bypass_or_waivers':True,'human_confirmation_count':human_confirmations,'human_confirmations_match_exact_results':True,'consumer_task_provenance_matches':True,'large_inputs_read_in_full':len(input_reads),'diagnostic_operation_id':diagnostic_red['operation_id'],'final_candidate_files_match_evidence':True,'independent_feature_test_included':True,'red_revision':red['candidate'],'green_revision':green['candidate']}
  (output/'raw-evidence-validation.json').write_text(json.dumps(validation,ensure_ascii=False,indent=2));return publications

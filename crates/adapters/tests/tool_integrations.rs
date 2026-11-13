@@ -86,7 +86,7 @@ fn resource_revisions_scope_and_actual_schema_validation_are_enforced() {
         json!(e.store.snapshot().unwrap().configuration(&old.id).unwrap()),
         json!(old)
     );
-    assert!(command(&e,"integration.create",None,json!({"name":"Wrong scope","scope":{"kind":"project","project_id":"other"},"data":{"source":{"kind":"http_api","base_url":"https://example.test"}}})).is_err());
+    assert!(command(&e,"integration.create",None,json!({"name":"Wrong scope","scope":"project:other","data":{"source":{"kind":"http_api","base_url":"https://example.test"}}})).is_err());
     let before = e.store.snapshot().unwrap().governance.len();
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
@@ -1065,7 +1065,7 @@ fn deleting_source_retires_descendants_atomically_and_protects_active_references
     )
     .unwrap();
     let binding=command(&e,"integration.binding.create",None,json!({"name":"Disposable binding","data":{"integration_ref":source["id"],"harness_ref":DEFAULT_HARNESS_ID,"sandbox_ref":DEFAULT_PERMISSION_SANDBOX,"allowed_origins":["https://example.test"],"allowed_tools":[tool["id"]]}})).unwrap();
-    let cap=command(&e,"capability.create",None,json!({"name":"In-use tool","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID,tool["id"]],"skills":[]}})).unwrap();
+    let cap=command(&e,"capability.create",None,json!({"name":"In-use tool","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID,tool["id"]],"skills":[],"data":{}})).unwrap();
     let error = command(&e, "integration.delete", source["id"].as_str(), json!({})).unwrap_err();
     assert!(error.message.contains("In-use tool"));
     let before = e.store.snapshot().unwrap();
@@ -1108,8 +1108,8 @@ fn dsh_native_group_is_available_and_rejects_cross_harness_composition() {
         json!({"name":"DSH model","data":{"provider":"deepseek","model":"deepseek-chat"}}),
     )
     .unwrap();
-    command(&e,"capability.create",None,json!({"name":"DSH native","data":{"model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[]}})).unwrap();
-    assert!(command(&e,"capability.create",None,json!({"name":"Wrong harness","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[]}})).unwrap_err().message.contains("原生工具组不适用"));
+    command(&e,"capability.create",None,json!({"name":"DSH native","model_ref":model["id"],"harness_ref":"builtin-harness-dsh-multi-provider:1","tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap();
+    assert!(command(&e,"capability.create",None,json!({"name":"Wrong harness","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_DSH_NATIVE_TOOL_ID],"skills":[],"data":{}})).unwrap_err().message.contains("原生工具组不适用"));
 }
 
 #[test]
@@ -1135,7 +1135,7 @@ fn deleting_an_old_source_protects_pinned_users_and_preserves_tools_moved_to_ano
         json!({"name":"Moved lookup","data":api_tool(b["id"].as_str().unwrap())}),
     )
     .unwrap();
-    let cap=command(&e,"capability.create",None,json!({"name":"Pins original source","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID,first["id"]],"skills":[]}})).unwrap();
+    let cap=command(&e,"capability.create",None,json!({"name":"Pins original source","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"tools":[DEFAULT_NATIVE_TOOL_ID,first["id"]],"skills":[],"data":{}})).unwrap();
     assert!(
         command(&e, "integration.delete", a["id"].as_str(), json!({}))
             .unwrap_err()

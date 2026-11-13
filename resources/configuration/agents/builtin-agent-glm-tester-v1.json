@@ -1,13 +1,10 @@
 {
-  "kind": "agent",
+  "type": "agent",
   "identity": "builtin-agent-glm-tester",
   "revision": 1,
   "name": "测试 · GLM 5.3 Flash / DSH",
-  "scope": {
-    "kind": "global"
-  },
-  "data": {
-    "role_ref": "builtin-role-tester:1",
-    "capability_ref": "builtin-capability-tester-glm-dsh:1"
-  }
+  "scope": "global",
+  "capability_ref": "builtin-capability-tester-glm-dsh:1",
+  "role_ref": "builtin-role-tester:1",
+  "data": {}
 }

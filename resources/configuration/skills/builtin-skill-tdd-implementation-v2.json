@@ -1,11 +1,9 @@
 {
-  "kind": "skill",
+  "type": "skill",
   "identity": "builtin-skill-tdd-implementation",
   "revision": 2,
   "name": "Task 实现与文档",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "rules": [],
     "body_file": "tdd-implementation.md"

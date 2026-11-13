@@ -389,7 +389,7 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
     await rpc(page, "query.integrations", { include_history: true })
   ).records;
   const src = sources.find(
-    (r: any) => r.kind === "integration" && r.name === name,
+    (r: any) => r.type === "integration" && r.name === name,
   );
   const tools = (
     await rpc(page, "query.configurations", {

@@ -534,7 +534,7 @@ impl EngineeringState {
                                 .governance
                                 .iter()
                                 .find(|r| {
-                                    r.kind == "configured_execution_task"
+                                    r.r#type == "configured_execution_task"
                                         && r.definition_id == turn.id
                                 })
                                 .map(|r| &r.data["task"]);
@@ -595,7 +595,7 @@ impl EngineeringState {
                     && !turn.input.trim().is_empty()
                     && turn.input.len()
                         <= if self.governance.iter().any(|r| {
-                            r.kind == "configured_session" && r.definition_id == turn.session_id
+                            r.r#type == "configured_session" && r.definition_id == turn.session_id
                         }) {
                             512 * 1024
                         } else {
@@ -868,9 +868,9 @@ impl EngineeringState {
             for reference in &document.input_refs {
                 if let Ok(output) = self.configuration(reference) {
                     require(
-                        output.kind == "workflow_output"
+                        output.r#type == "workflow_output"
                             && output.immutable
-                            && output.scope.project() == Some(project),
+                            && output.scope.project_id() == Some(project),
                         "材料输入跨项目或不是可信产物",
                     )?;
                     continue;

@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-workflow-segment-dispatch",
   "revision": 1,
   "name": "有界委托自动步骤",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "workflow.segment.dispatch",
     "implementation": "platform",

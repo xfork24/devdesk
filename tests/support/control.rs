@@ -13,7 +13,7 @@ pub fn evaluate(e: &Engine) -> Result<()> {
             .governance
             .iter()
             .filter(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && !state.workflow_instance_suspended(&r.id)
                     && !["completed", "cancelled"]
                         .contains(&r.data["status"].as_str().unwrap_or(""))

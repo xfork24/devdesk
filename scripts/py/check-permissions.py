@@ -14,9 +14,9 @@ for backend in manifest['backends']:
 presets=[json.loads(p.read_text()) for p in sorted((root/'resources/configuration/permissions/profiles').glob('*.json'))]
 assert len({(p['identity'],p['revision']) for p in presets})==len(presets)
 for source in presets:
- assert source['kind']=='permission_profile' and source['revision']>=1
+ assert source['type']=='permission_profile' and source['revision']>=1
  p=source['data']
- assert p['schema_version']==2
+ assert type(p['schema_version']) is int and p['schema_version'] >= 1
  assert set(p['policy'])==({'filesystem','network','tools','approval'} if p['target_kind']=='harness' else {'filesystem','network'})
  assert p['policy']['filesystem']['mode'] in ['full_access','read_only','scoped']
  assert p['policy']['network']['mode'] in ['enabled','disabled','allowlist']

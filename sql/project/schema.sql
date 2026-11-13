@@ -3,14 +3,15 @@ BEGIN IMMEDIATE;
 CREATE TABLE source_definitions (
  identity TEXT NOT NULL,
  revision INTEGER NOT NULL CHECK(revision > 0),
- kind TEXT NOT NULL,
+ type TEXT NOT NULL,
  name TEXT NOT NULL,
  scope JSON NOT NULL CHECK(json_valid(scope)),
+ refs JSON NOT NULL CHECK(json_valid(refs)),
  data JSON NOT NULL CHECK(json_valid(data)),
  reference TEXT GENERATED ALWAYS AS (identity || ':' || revision) VIRTUAL UNIQUE,
  PRIMARY KEY(identity,revision)
 );
-CREATE INDEX idx_source_kind ON source_definitions(kind,identity,revision);
+CREATE INDEX idx_source_type ON source_definitions(type,identity,revision);
 CREATE TRIGGER source_immutable_update BEFORE UPDATE ON source_definitions BEGIN SELECT RAISE(ABORT,'source revision is immutable'); END;
 CREATE TRIGGER source_no_delete BEFORE DELETE ON source_definitions BEGIN SELECT RAISE(ABORT,'source revision cannot be deleted'); END;
 
@@ -91,13 +92,14 @@ CREATE TABLE features (
 
 CREATE TABLE governance_records (
  id TEXT PRIMARY KEY,
- kind TEXT NOT NULL,
+ type TEXT NOT NULL,
  definition_id TEXT NOT NULL,
  scope JSON NOT NULL CHECK(json_valid(scope)),
  name TEXT NOT NULL,
  version INTEGER NOT NULL CHECK(version > 0),
  supersedes TEXT,
  content_hash TEXT NOT NULL,
+ refs JSON NOT NULL CHECK(json_valid(refs)),
  data JSON NOT NULL CHECK(json_valid(data)),
  immutable BOOLEAN NOT NULL,
  revision INTEGER NOT NULL CHECK(revision > 0),
@@ -210,8 +212,8 @@ CREATE INDEX idx_artifacts_task_id ON artifacts(task_id);
 
 CREATE INDEX idx_contexts_owner_id ON contexts("owner_id");
 
-CREATE UNIQUE INDEX idx_delivery_type_revision ON governance_records(kind,definition_id,version)
- WHERE kind='delivery_type';
+CREATE UNIQUE INDEX idx_delivery_type_revision ON governance_records(type,definition_id,version)
+ WHERE type='delivery_type';
 
 CREATE INDEX idx_documents_feature_id ON documents("feature_id");
 
@@ -225,8 +227,8 @@ CREATE INDEX idx_events_kind ON events("kind");
 
 CREATE INDEX idx_events_time ON events("time");
 
-CREATE UNIQUE INDEX idx_configured_execution_task ON governance_records(kind,definition_id)
- WHERE kind = 'configured_execution_task';
+CREATE UNIQUE INDEX idx_configured_execution_task ON governance_records(type,definition_id)
+ WHERE type = 'configured_execution_task';
 
 
 
@@ -234,25 +236,25 @@ CREATE INDEX idx_features_project_id ON features("project_id");
 
 CREATE INDEX idx_features_status ON features("status");
 
-CREATE INDEX idx_governance_capability_reference ON governance_records(json_extract(data,'$.capability_ref')) WHERE kind='agent';
+CREATE INDEX idx_governance_capability_reference ON governance_records(json_extract(refs,'$.capability_ref')) WHERE type='agent';
 
-CREATE INDEX idx_governance_kind ON governance_records(kind,definition_id,version);
+CREATE INDEX idx_governance_type ON governance_records(type,definition_id,version);
 
-CREATE UNIQUE INDEX idx_governance_published_version ON governance_records(kind,definition_id,version) WHERE kind IN ('model','tool','harness','agent','workflow','standard','skill','spec','project_configuration');
+CREATE UNIQUE INDEX idx_governance_published_version ON governance_records(type,definition_id,version) WHERE type IN ('model','tool','harness','agent','workflow','standard','skill','spec','project_configuration');
 
-CREATE UNIQUE INDEX idx_governance_resource_version ON governance_records(kind,definition_id,version) WHERE kind IN ('capability','role');
+CREATE UNIQUE INDEX idx_governance_resource_version ON governance_records(type,definition_id,version) WHERE type IN ('capability','role');
 
-CREATE INDEX idx_governance_scope ON governance_records(json_extract(scope,'$.project_id'),kind);
+CREATE INDEX idx_governance_scope ON governance_records(json_extract(scope,'$'),type);
 
 CREATE INDEX idx_heads_project_id ON heads("project_id");
 
-CREATE UNIQUE INDEX idx_integration_revision ON governance_records(kind,definition_id,version)
- WHERE kind IN ('integration','integration_binding','skill_package','integration_project_configuration');
+CREATE UNIQUE INDEX idx_integration_revision ON governance_records(type,definition_id,version)
+ WHERE type IN ('integration','integration_binding','skill_package','integration_project_configuration');
 
-CREATE UNIQUE INDEX idx_permission_resource_revision ON governance_records(kind,definition_id,version)
- WHERE kind IN ('sandbox','permission_profile','permission_binding','permission_assignment');
+CREATE UNIQUE INDEX idx_permission_resource_revision ON governance_records(type,definition_id,version)
+ WHERE type IN ('sandbox','permission_profile','permission_binding','permission_assignment');
 
-CREATE INDEX idx_permission_switch ON governance_records(definition_id) WHERE kind='permission_switch';
+CREATE INDEX idx_permission_switch ON governance_records(definition_id) WHERE type='permission_switch';
 
 CREATE INDEX idx_sessions_owner_id ON sessions(owner_id);
 
@@ -272,9 +274,9 @@ CREATE INDEX idx_tasks_feature_id ON tasks("feature_id");
 
 CREATE INDEX idx_tasks_status ON tasks("status");
 
-CREATE INDEX idx_tool_call_session ON governance_records(json_extract(data,'$.invocation.session_id'),json_extract(data,'$.invocation.turn_id')) WHERE kind='tool_call';
+CREATE INDEX idx_tool_call_session ON governance_records(json_extract(data,'$.invocation.session_id'),json_extract(data,'$.invocation.turn_id')) WHERE type='tool_call';
 
-CREATE INDEX idx_tool_call_status ON governance_records(json_extract(data,'$.status'),created_at) WHERE kind='tool_call';
+CREATE INDEX idx_tool_call_status ON governance_records(json_extract(data,'$.status'),created_at) WHERE type='tool_call';
 
 CREATE UNIQUE INDEX sessions_external_identity ON sessions(json_extract(runtime_binding,'$.installation.id'),external_session) WHERE scope IS NOT NULL AND external_session IS NOT NULL;
 
@@ -284,9 +286,9 @@ CREATE UNIQUE INDEX turns_one_active ON turns(session_id) WHERE status NOT IN ('
 
 CREATE INDEX turns_project_session ON turns(project_id,session_id);
 
-CREATE TRIGGER agent_instance_binding_update BEFORE UPDATE ON governance_records WHEN OLD.kind='agent_instance' AND (json_extract(NEW.data,'$.agent_revision_id')!=json_extract(OLD.data,'$.agent_revision_id') OR json_extract(NEW.data,'$.scope')!=json_extract(OLD.data,'$.scope')) BEGIN SELECT RAISE(ABORT,'AgentID binding cannot change'); END;
+CREATE TRIGGER agent_instance_binding_update BEFORE UPDATE ON governance_records WHEN OLD.type='agent_instance' AND (json_extract(NEW.data,'$.agent_revision_id')!=json_extract(OLD.data,'$.agent_revision_id') OR json_extract(NEW.data,'$.scope')!=json_extract(OLD.data,'$.scope')) BEGIN SELECT RAISE(ABORT,'AgentID binding cannot change'); END;
 
-CREATE TRIGGER governance_identity_update BEFORE UPDATE ON governance_records WHEN NEW.id!=OLD.id OR NEW.kind!=OLD.kind OR NEW.definition_id!=OLD.definition_id OR NEW.scope!=OLD.scope BEGIN SELECT RAISE(ABORT,'configuration identity cannot change'); END;
+CREATE TRIGGER governance_identity_update BEFORE UPDATE ON governance_records WHEN NEW.id!=OLD.id OR NEW.type!=OLD.type OR NEW.definition_id!=OLD.definition_id OR NEW.scope!=OLD.scope BEGIN SELECT RAISE(ABORT,'configuration identity cannot change'); END;
 
 CREATE TRIGGER governance_immutable_update BEFORE UPDATE ON governance_records WHEN OLD.immutable=1 BEGIN SELECT RAISE(ABORT,'immutable configuration'); END;
 
@@ -300,11 +302,11 @@ CREATE TRIGGER sessions_project_insert BEFORE INSERT ON sessions WHEN NEW.projec
 
 CREATE TRIGGER sessions_project_update BEFORE UPDATE OF project_id,scope ON sessions WHEN NEW.project_id IS NOT NULL AND NEW.scope!='global' AND NOT EXISTS(SELECT 1 FROM projects WHERE id=NEW.project_id) BEGIN SELECT RAISE(ABORT,'Session project does not exist'); END;
 
-CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(kind) WHERE kind='template_catalog_state';
-CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
-CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE kind='template_catalog_member';
+CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(type) WHERE type='template_catalog_state';
+CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE type='template_catalog_member';
+CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 
-PRAGMA user_version=47;
+PRAGMA user_version=48;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,

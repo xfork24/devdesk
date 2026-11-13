@@ -427,7 +427,7 @@ pub fn validate_runtime_version(installation: &RuntimeInstallation) -> Result<()
     Ok(())
 }
 
-/// Recipe identity embedded in a runtime key (`...+recipe.<16 hex>`), if any.
+/// Recipe identity embedded in a runtime key (`...+recipe.<64 hex>`), if any.
 pub fn installation_recipe(installation: &RuntimeInstallation) -> String {
     installation
         .key
@@ -435,4 +435,37 @@ pub fn installation_recipe(installation: &RuntimeInstallation) -> String {
         .split_once("+recipe.")
         .map(|(_, recipe)| recipe.to_owned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod recipe_tests {
+    use super::*;
+
+    #[test]
+    fn permission_acceptance_uses_the_complete_registered_recipe_digest() {
+        let digest = runtime_preparation::default_codex_recipe_digest();
+        let mut installation = RuntimeInstallation {
+            id: "recipe-regression".into(),
+            key: RuntimeKey {
+                provider: HarnessProvider::Codex,
+                version: format!("display-metadata+recipe.{digest}"),
+                os: "linux".into(),
+                arch: "aarch64".into(),
+            },
+            artifact: RuntimeArtifact::DockerImage {
+                image_id: format!("sha256:{}", "a".repeat(64)),
+            },
+            source: "test fixture".into(),
+            license: "test".into(),
+        };
+        assert!(validate_runtime_version(&installation).is_ok());
+        installation.key.version = format!("display-metadata+recipe.{}", &digest[..16]);
+        assert!(validate_runtime_version(&installation).is_err());
+        installation.key.version = format!(
+            "display-metadata+recipe.{}{}",
+            &digest[..63],
+            if digest.ends_with('0') { '1' } else { '0' }
+        );
+        assert!(validate_runtime_version(&installation).is_err());
+    }
 }

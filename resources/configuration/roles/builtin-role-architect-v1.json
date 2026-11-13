@@ -1,11 +1,9 @@
 {
-  "kind": "role",
+  "type": "role",
   "identity": "builtin-role-architect",
   "revision": 1,
   "name": "架构师",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "instructions_file": "architect.md"
   }

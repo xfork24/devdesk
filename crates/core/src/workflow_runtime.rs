@@ -9,7 +9,7 @@ impl Engine {
         let active: Vec<String> = s
             .governance
             .iter()
-            .filter(|r| r.kind == "workflow_instance" && r.data["status"] != "cancelled")
+            .filter(|r| r.r#type == "workflow_instance" && r.data["status"] != "cancelled")
             .filter(|r| {
                 !s.workflow_instance_suspended(&r.id)
                     && r.data["owner_id"]
@@ -29,13 +29,13 @@ impl Engine {
         active.extend(
             s.governance
                 .iter()
-                .filter(|r| r.kind == "workflow_controller" && r.data["status"] == "active")
+                .filter(|r| r.r#type == "workflow_controller" && r.data["status"] == "active")
                 .map(|r| r.id.clone()),
         );
         Ok(s.governance
             .iter()
             .filter(|r| {
-                r.kind == "workflow_intent"
+                r.r#type == "workflow_intent"
                     && r.data["status"] == "prepared"
                     && active.contains(&r.definition_id)
             })
@@ -46,7 +46,7 @@ impl Engine {
     pub fn observe_workflow_intent(&self, intent: &str, result: &Result<Value>) -> Result<()> {
         self.store.transact(None, &mut |s| {
             let old = s.configuration(intent)?.clone();
-            require(old.kind == "workflow_intent", "不是工作流动作")?;
+            require(old.r#type == "workflow_intent", "不是工作流动作")?;
             let mut data = old.data.clone();
             match result {
                 Ok(value) => {

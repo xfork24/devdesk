@@ -106,12 +106,12 @@ export function RoleConversation({
         : tasks.find((t) => t.id === owner);
   const workLock = configurations.filter(
     (r) =>
-      r.kind === "work_configuration" &&
+      r.type === "work_configuration" &&
       r.definition_id === owner,
   ).at(-1);
   const runtime = configurations.filter(
     (r) =>
-      r.kind === "workflow_instance" &&
+      r.type === "workflow_instance" &&
       r.data.owner_id === owner &&
       r.work_root !== false,
   ).at(-1);
@@ -126,11 +126,34 @@ export function RoleConversation({
     (s: Row) => s.key === recommendedExecution?.step,
   );
   const boundAgents = runtime?.data.plan?.definitions
-    ? Object.values(runtime.data.plan.definitions as Row).filter((row:any) => row.kind === "agent").map((row:any) => row.id as string)
+    ? Object.values(runtime.data.plan.definitions as Row).filter((row:any) => row.type === "agent").map((row:any) => row.id as string)
     : Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}) as string[];
-  const composite = catalog.find((r) => r.id === agent && r.kind === "agent");
+  const composite = catalog.find((r) => r.id === agent && r.type === "agent");
+  // Agent instances pin the exact revision they were created with; a Role
+  // selection offers the latest revision of that definition. Match instances
+  // by agent definition so superseded revisions still load their instances.
+  const definitionOf = (id: string | undefined) => {
+    if (!id) return "";
+    return (
+      catalog.find((r) => r.id === id && r.type === "agent")?.definition_id ||
+      id.slice(0, id.lastIndexOf(":"))
+    );
+  };
+  const selectedDefinition = definitionOf(agent);
+  const instances = catalog.filter(
+    (r) =>
+      r.type === "agent_instance" &&
+      definitionOf(r.data.agent_revision_id) === selectedDefinition &&
+      (!global || r.scope === "global"),
+  );
+  const pinnedRevision = instances.find((r) => r.id === instanceId)?.data
+    .agent_revision_id;
+  // Sessions execute the revision pinned by the instance, not the latest one.
+  const running = catalog.find(
+    (r) => r.id === (pinnedRevision || agent) && r.type === "agent",
+  );
   const capability = catalog.find(
-    (r) => r.id === composite?.data.capability_ref,
+    (r) => r.id === running?.capability_ref,
   );
 
   useEffect(() => {
@@ -171,11 +194,11 @@ export function RoleConversation({
   const choices: Row[] = [
     ...agents,
     ...catalog
-      .filter((r) => r.kind == "agent" && !agents.some((a) => a.id === r.id))
+      .filter((r) => r.type == "agent" && !agents.some((a) => a.id === r.id))
       .map((r) => ({
         ...r,
         agent_profile: {
-          role: catalog.find((role) => role.id === r.data.role_ref)
+          role: catalog.find((role) => role.id === r.role_ref)
             ?.definition_id,
         },
       })),
@@ -183,7 +206,7 @@ export function RoleConversation({
   const roles = choices.filter(
     (a) =>
       a.agent_profile &&
-      (catalog.some((r) => r.id === a.id && r.kind === "agent") ||
+      (catalog.some((r) => r.id === a.id && r.type === "agent") ||
         detail?.session.agent === a.id) &&
       (detail?.session.agent === a.id ||
         (workLock && owner !== project.id && !global
@@ -196,7 +219,7 @@ export function RoleConversation({
     if (sessionId || composite || !catalog.length) return;
     const candidates = catalog.filter(
       (r) =>
-        r.kind == "agent" &&
+        r.type == "agent" &&
         (!workLock ||
           owner === project.id ||
           global ||
@@ -216,12 +239,6 @@ export function RoleConversation({
           : selected.id,
       );
   }, [catalog, owner, runtime?.data.active_plan_revision_id, workLock?.id, recommendation, sessionId, composite?.id]);
-  const instances = catalog.filter(
-    (r) =>
-      r.kind === "agent_instance" &&
-      r.data.agent_revision_id === agent &&
-      (!global || r.scope.kind === "global"),
-  );
   useEffect(() => {
     if (!sessionId && !instances.some((r) => r.id === instanceId))
       setInstanceId(instances[0]?.id || "");
@@ -408,7 +425,8 @@ export function RoleConversation({
         owner,
         selectedOwner.revision,
         {
-          agent,
+          // The backend freezes the composition pinned by the instance.
+          agent: pinnedRevision || agent,
           ...(instanceId ? { agent_instance_id: instanceId } : {}),
           ...(forceNew ? { force_new: true } : {}),
         },
@@ -542,7 +560,12 @@ export function RoleConversation({
                 </option>
                 {instances.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.name} · {r.scope.kind} · {r.id.slice(0, 8)}
+                    {r.name} · {r.scope} · v
+                    {
+                      catalog.find((c) => c.id === r.data.agent_revision_id)
+                        ?.version
+                    }{" "}
+                    · {r.id.slice(0, 8)}
                   </option>
                 ))}
               </ActionSelect>
@@ -566,8 +589,8 @@ export function RoleConversation({
                           ? { frozen_work_id: owner }
                           : {}),
                         scope: global
-                          ? { kind: "global" }
-                          : { kind: "project", project_id: project.id },
+                          ? "global"
+                          : `project:${project.id}`,
                       },
                     });
                     clearSelectedSession();
@@ -589,7 +612,7 @@ export function RoleConversation({
             {instanceId && (
               <p className="muted">
                 该 Agent 的经验范围：
-                {instances.find((r) => r.id === instanceId)?.scope.kind ===
+                {instances.find((r) => r.id === instanceId)?.scope ===
                 "global"
                   ? "全局 / 跨项目"
                   : "当前项目"}
@@ -598,23 +621,23 @@ export function RoleConversation({
             )}
             <p>
               Model{" "}
-              {catalog.find((r) => r.id === capability?.data.model_ref)?.data
-                .model || capability?.data.model_ref}{" "}
+              {catalog.find((r) => r.id === capability?.model_ref)?.data
+                .model || capability?.model_ref}{" "}
               · Harness{" "}
               {
-                catalog.find((r) => r.id === capability?.data.harness_ref)?.data
+                catalog.find((r) => r.id === capability?.harness_ref)?.data
                   .provider
               }{" "}
               /{" "}
               {
-                catalog.find((r) => r.id === capability?.data.harness_ref)?.data
+                catalog.find((r) => r.id === capability?.harness_ref)?.data
                   .runtime_version
               }{" "}
-              · Agent v{composite.version}
+              · Agent v{running?.version ?? composite.version}
             </p>
             <details>
               <summary>Role / Capability 及定义 Scope</summary>
-              <pre>{JSON.stringify(composite, null, 2)}</pre>
+              <pre>{JSON.stringify(running || composite, null, 2)}</pre>
             </details>
           </>
         )}

@@ -14,7 +14,7 @@ pub fn prepare(
     let harness = s
         .governance
         .iter()
-        .find(|r| r.kind == "harness" && r.data["provider"] == provider.as_str())
+        .find(|r| r.r#type == "harness" && r.data["provider"] == provider.as_str())
         .unwrap()
         .id
         .clone();
@@ -48,7 +48,7 @@ pub fn prepare(
             .iter_mut()
             .find(|r| r.id == profile_id)
             .unwrap();
-        r.content_hash = configuration_hash(&data);
+        r.content_hash = content_digest(&r.refs, &data);
         r.data = data;
         let target = permission_target(s, kind, &target).unwrap();
         let binding = VersionedPermissionBinding {
@@ -65,23 +65,25 @@ pub fn prepare(
         let data = json!(binding);
         s.governance.push(ConfigurationRecord {
             id: id.clone(),
-            kind: "permission_binding".into(),
+            r#type: "permission_binding".into(),
             definition_id: identity,
-            scope: Scope::Global,
+            scope: Scope::global(),
             name: profile.name.clone(),
             version: 1,
             supersedes: None,
-            content_hash: configuration_hash(&data),
+            content_hash: content_digest(&References::new(), &data),
+            refs: References::new(),
             data,
             immutable: true,
             revision: 1,
             created_at: 0,
         });
+        let record = s.governance.last().unwrap();
         bounds.push(BoundPermission {
             binding_revision_id: id,
-            binding_hash: hash,
+            binding_hash: record.content_hash.clone(),
             binding,
-            profile_hash: permission_content_hash(&permission_profile_data(&profile)),
+            profile_hash: s.configuration(profile_id).unwrap().content_hash.clone(),
             profile,
         });
     }

@@ -41,8 +41,8 @@ try:
         # The test uses actual configured capabilities; it does not silently replace models or permissions.
         for agent_id in bindings.values():
             agent = client.rpc('query.agent_revision', {'id': agent_id})
-            capability = next(r for r in client.rpc('query.configurations', {'kind': 'capability', 'include_history': True, 'limit': 100})['records'] if r['id'] == agent['data']['capability_ref'])
-            harness = next(r for r in client.rpc('query.configurations', {'kind': 'harness', 'include_history': True, 'limit': 100})['records'] if r['id'] == capability['data']['harness_ref'])
+            capability = next(r for r in client.rpc('query.configurations', {'kind': 'capability', 'include_history': True, 'limit': 100})['records'] if r['id'] == agent['capability_ref'])
+            harness = next(r for r in client.rpc('query.configurations', {'kind': 'harness', 'include_history': True, 'limit': 100})['records'] if r['id'] == capability['harness_ref'])
             assert harness['data']['provider'] == args.provider, 'configure matching Agents or pass --bindings'
         current = client.rpc('query.workspace')['active_project']
         client.command('project.configuration.update', project, current['revision'], {'workflow_ref': workflow, 'role_agent_bindings': bindings})
@@ -57,8 +57,8 @@ try:
     supplied = set()
     while time.monotonic() < deadline:
         view = client.rpc('query.workspace', {'feature_id': feature})
-        root = next(r for r in view['configurations'] if r['kind'] == 'workflow_instance' and r['data']['owner_id'] == feature and r['data']['parent_execution_id'] is None)
-        instances = [r for r in view['configurations'] if r['kind'] == 'workflow_instance' and r['data']['root_instance_id'] == root['id']]
+        root = next(r for r in view['configurations'] if r['type'] == 'workflow_instance' and r['data']['owner_id'] == feature and r['data']['parent_execution_id'] is None)
+        instances = [r for r in view['configurations'] if r['type'] == 'workflow_instance' and r['data']['root_instance_id'] == root['id']]
         if root['data']['status'] == 'completed':
             assert view['detail']['feature']['status'] == 'completed'
             report.append('Status: passed. Frozen Workflow and all actual child executions completed.')

@@ -1,11 +1,9 @@
 {
-  "kind": "skill",
+  "type": "skill",
   "identity": "builtin-skill-prd",
   "revision": 2,
   "name": "PRD 需求分析",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "rules": [],
     "body_file": "prd.md"

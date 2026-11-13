@@ -1,16 +1,14 @@
 {
-  "kind": "delivery_type",
+  "type": "delivery_type",
   "identity": "builtin-delivery-diff",
   "revision": 2,
   "name": "Diff",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "spec_refs": [
+    "builtin-spec-delivery-diff:1"
+  ],
   "data": {
     "format": "diff",
-    "spec_refs": [
-      "builtin-spec-delivery-diff:1"
-    ],
     "content_schema": {
       "type": "string"
     },

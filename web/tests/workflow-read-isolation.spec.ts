@@ -36,7 +36,7 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
   const document = { stages: [], steps: [] };
   const instance = {
     id: "read-instance",
-    kind: "workflow_instance",
+    type: "workflow_instance",
     name: "读取隔离流程",
     revision: 1,
     data: {
@@ -211,3 +211,35 @@ for (const failure of ["catalog", "defaults"] as const) {
     ).toBeVisible();
   });
 }
+
+test("a late defaults read preserves an already displayed Standard comparison", async ({ page }) => {
+  const url = await fixture(page);
+  let releaseDefaults!: () => void;
+  const defaults = new Promise<void>((resolve) => { releaseDefaults = resolve; });
+  const selection = { standard_ref: "standard-current:1", children: [], exceptions: [] };
+  const diff = { equal: false, changes: [{ kind: "definition_changed", source_kind: "workflow" }] };
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.project_configuration") {
+      await defaults;
+      result = { configuration: null };
+    } else if (call.method === "query.work_standard_choices") {
+      result = { records: [{ id: "other-work", project_title: "Fixture", title: "Other work", work: { kind: "task" } }], total: 1 };
+    } else if (call.method === "query.work_standard_diff") {
+      result = { entry_diff: diff, diff, before: selection, after: selection };
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const standard = page.getByRole("region", { name: "当前工作流", exact: true }).locator(".work-standard");
+  await standard.locator(":scope > summary").click();
+  await standard.getByText("与其他工作比较规范", { exact: true }).click();
+  await standard.getByLabel("比较工作", { exact: true }).selectOption("other-work");
+  await standard.getByRole("button", { name: "比较工作规范", exact: true }).click();
+  await expect(standard.locator(".standard-diff").first()).toContainText("1 项规范变化");
+  releaseDefaults();
+  // This selection is set by the late read's callback, so the assertion runs after it.
+  await expect(standard.getByLabel("采用 Standard", { exact: true })).toHaveValue("standard-current:1");
+  await expect(standard.locator(".standard-diff").first()).toContainText("1 项规范变化");
+});

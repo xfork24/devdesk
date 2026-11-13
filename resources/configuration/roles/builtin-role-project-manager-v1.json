@@ -1,11 +1,9 @@
 {
-  "kind": "role",
+  "type": "role",
   "identity": "builtin-role-project-manager",
   "revision": 1,
   "name": "项目经理",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "visibility": {
       "kind": "global"

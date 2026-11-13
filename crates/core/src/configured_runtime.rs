@@ -93,8 +93,8 @@ fn rework_workspace(
         return Ok(None);
     }
     let output = state.governance.iter().rev().find(|output| {
-        output.kind == "workflow_output"
-            && output.scope.project() == Some(instance.project_id.as_str())
+        output.r#type == "workflow_output"
+            && output.scope.project_id() == Some(instance.project_id.as_str())
             && output.data["value"]["workspace_id"] == previous["workspace_id"]
             && output.data["value"]["owner_id"] == instance.owner_id
             && output.data["value"]["revision"] == head.revision
@@ -103,7 +103,7 @@ fn rework_workspace(
             && output.data["provenance"]["pointer"] == ""
             && state.governance.iter().any(|call| {
                 call.id == output.data["provenance"]["call_id"].as_str().unwrap_or("")
-                    && call.kind == "platform_call"
+                    && call.r#type == "platform_call"
                     && call.data["status"] == "succeeded"
                     && call.data["request"]["instance_id"] == instance_id
                     && call.data["receipt"] == output.data["value"]
@@ -201,7 +201,7 @@ fn instances_for_executions(
         .governance
         .iter()
         .filter(|r| {
-            r.kind == "workflow_instance"
+            r.r#type == "workflow_instance"
                 && r.data["parent_execution_id"]
                     .as_str()
                     .is_some_and(|id| executions.contains(id))
@@ -218,14 +218,16 @@ pub(crate) fn active_execution(state: &EngineeringState, execution: &StepExecuti
     if state
         .governance
         .iter()
-        .filter(|r| r.kind == "workflow_instance" && r.data["parent_execution_id"] == execution.id)
+        .filter(|r| {
+            r.r#type == "workflow_instance" && r.data["parent_execution_id"] == execution.id
+        })
         .filter_map(|r| r.decode::<ConfiguredWorkflowInstance>().ok())
         .any(|child| child.steps.iter().any(|e| active_execution(state, e)))
     {
         return true;
     }
     if state.governance.iter().any(|r| {
-        r.kind == "platform_call"
+        r.r#type == "platform_call"
             && r.definition_id == execution.id
             && !matches!(
                 r.data["status"].as_str(),
@@ -266,7 +268,7 @@ pub(crate) fn descendant_instances(state: &EngineeringState, parent: &str) -> BT
             .governance
             .iter()
             .filter(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["parent_execution_id"]
                         .as_str()
                         .is_some_and(|id| executions.contains(id))
@@ -371,7 +373,7 @@ pub(crate) fn matching_confirmation<'a>(
     outputs: &Value,
 ) -> Option<&'a ConfigurationRecord> {
     state.governance.iter().find(|r| {
-        r.kind == "workflow_confirmation"
+        r.r#type == "workflow_confirmation"
             && r.definition_id == execution_id
             && r.data["input_digest"] == input_digest
             && r.data["outputs"] == *outputs
@@ -392,7 +394,7 @@ pub(crate) fn facts(
         for (name, id) in &execution.outputs {
             let output = state.configuration(id)?;
             require(
-                output.kind == "workflow_output" && output.data["execution_id"] == execution.id,
+                output.r#type == "workflow_output" && output.data["execution_id"] == execution.id,
                 "步骤产物来源不匹配",
             )?;
             facts.values.insert(
@@ -432,7 +434,7 @@ pub(crate) fn facts(
         }
     }
     for material in state.governance.iter().filter(|r| {
-        r.kind == "typed_material"
+        r.r#type == "typed_material"
             && r.data["project_id"] == instance.project_id
             && r.data["root_instance_id"] == instance.root_instance_id
     }) {
@@ -528,7 +530,7 @@ pub fn task_input(
                     _ => "",
                 };
                 let reader = instance.plan.definitions.values().find(|r| {
-                    r.kind == "tool"
+                    r.r#type == "tool"
                         && r.data["qualified_name"] == "workflow.outputs.read"
                         && step.access.tool_refs.contains(&r.id)
                 });
@@ -558,8 +560,8 @@ pub fn task_input(
         .values()
         .chain(input_deliveries)
         .filter_map(|port| definitions.get(&port.delivery_ref))
-        .filter_map(|r| r.decode::<DeliveryTypeDefinition>().ok())
-        .flat_map(|delivery| delivery.spec_refs)
+        .filter_map(|r| reference_list(&r.refs, "spec_refs").ok())
+        .flat_map(|refs| refs)
         .filter(|reference| !step.spec_refs.contains(reference))
         .collect();
     let mut input = json!({"renderer_version":AGENT_TASK_RENDERER,"source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
@@ -620,18 +622,18 @@ fn output_provenance(
     step: &StepDefinition,
     execution: &StepExecution,
     name: &str,
-    definition: &DeliveryTypeDefinition,
+    delivery: &ConfigurationRecord,
     value: &Value,
 ) -> Result<Value> {
-    let mut provenance =
-        json!({"value_digest":configuration_hash(value),"spec_refs":definition.spec_refs});
+    let definition: DeliveryTypeDefinition = delivery.decode()?;
+    let mut provenance = json!({"value_digest":configuration_hash(value),"spec_refs":reference_list(&delivery.refs, "spec_refs")?});
     match &step.executor {
         StepExecutor::Tool { output_mapping, .. } => {
             if let Some(call) = execution
                 .tool_call_id
                 .as_ref()
                 .and_then(|id| state.configuration(id).ok())
-                .filter(|r| r.kind == "platform_call")
+                .filter(|r| r.r#type == "platform_call")
             {
                 let tool = call.data["request"]["definition"]["qualified_name"]
                     .as_str()
@@ -697,7 +699,7 @@ fn output_provenance(
             let group = state
                 .governance
                 .iter()
-                .find(|r| r.kind == "workflow_children" && r.definition_id == execution.id)
+                .find(|r| r.r#type == "workflow_children" && r.definition_id == execution.id)
                 .ok_or_else(|| err("output_invalid", "缺少实际子流程交付来源"))?;
             let ids: Vec<String> = serde_json::from_value(group.data["children"].clone())
                 .map_err(|e| err("output_invalid", e.to_string()))?;
@@ -755,7 +757,7 @@ fn intent(
     if let Some(old) = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_intent" && r.data["command"]["command_id"] == operation)
+        .find(|r| r.r#type == "workflow_intent" && r.data["command"]["command_id"] == operation)
     {
         return old.id.clone();
     }
@@ -830,7 +832,7 @@ impl Engine {
         let state = self.store.snapshot()?;
         require(
             state.governance.iter().any(|r| {
-                r.kind == "workflow_intent"
+                r.r#type == "workflow_intent"
                     && r.definition_id == id
                     && r.data["method"] == "session.open"
                     && r.data["command"] == json!(command)
@@ -841,7 +843,7 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == id))
@@ -897,7 +899,7 @@ impl Engine {
         let Some(source) = state
             .governance
             .iter()
-            .find(|r| r.kind == "configured_session" && r.definition_id == session.id)
+            .find(|r| r.r#type == "configured_session" && r.definition_id == session.id)
         else {
             return Ok(None);
         };
@@ -941,7 +943,7 @@ impl Engine {
         let execution_id = text(&command.payload, "execution_id")?;
         require(
             state.governance.iter().any(|r| {
-                r.kind == "workflow_intent"
+                r.r#type == "workflow_intent"
                     && r.definition_id == execution_id
                     && r.data["method"] == "workflow.tool.execute"
                     && r.data["command"] == json!(command)
@@ -952,7 +954,7 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -1043,7 +1045,7 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["steps"]
                         .as_array()
                         .is_some_and(|steps| steps.iter().any(|s| s["id"] == execution_id))
@@ -1087,7 +1089,7 @@ impl Engine {
         let Some(source) = state
             .governance
             .iter()
-            .find(|r| r.kind == "configured_session" && r.definition_id == turn.session_id)
+            .find(|r| r.r#type == "configured_session" && r.definition_id == turn.session_id)
             .cloned()
         else {
             return Ok(());
@@ -1169,7 +1171,7 @@ impl Engine {
         state
             .governance
             .iter()
-            .find(|r| r.kind == "configured_execution_task" && r.definition_id == turn)
+            .find(|r| r.r#type == "configured_execution_task" && r.definition_id == turn)
             .map(|r| {
                 let task: ConfiguredAgentTask = r.decode()?;
                 task.validate()?;
@@ -1188,13 +1190,13 @@ impl Engine {
         let Some(source) = state
             .governance
             .iter()
-            .find(|r| r.kind == "configured_session" && r.definition_id == session.id)
+            .find(|r| r.r#type == "configured_session" && r.definition_id == session.id)
             .cloned()
         else {
             return Ok(None);
         };
         if state.governance.iter().any(|r| {
-            r.kind == "workflow_intent"
+            r.r#type == "workflow_intent"
                 && r.data["configured"] == true
                 && r.data["method"] == "conversation.send"
                 && r.data["command"] == json!(command)
@@ -1280,18 +1282,13 @@ impl Engine {
                 .projects
                 .iter()
                 .find(|r| r.id == target)
-                .map(|p| Scope::Project {
-                    project_id: p.id.clone(),
-                })
+                .map(|p| Scope::project(p.id.clone()))
                 .or_else(|| {
                     state
                         .features
                         .iter()
                         .find(|f| f.id == target)
-                        .map(|f| Scope::Feature {
-                            project_id: f.project_id.clone(),
-                            feature_id: f.id.clone(),
-                        })
+                        .map(|f| Scope::feature(f.project_id.clone(), f.id.clone()))
                 })
                 .or_else(|| {
                     state
@@ -1299,10 +1296,7 @@ impl Engine {
                         .iter()
                         .find(|t| t.id == target)
                         .and_then(|t| state.feature(&t.feature_id).ok())
-                        .map(|f| Scope::Feature {
-                            project_id: f.project_id.clone(),
-                            feature_id: f.id.clone(),
-                        })
+                        .map(|f| Scope::feature(f.project_id.clone(), f.id.clone()))
                 })
                 .ok_or_else(|| err("not_found", "工作流所属对象不存在"))?;
             let inherited = p["work_configuration_ref"]
@@ -1312,7 +1306,7 @@ impl Engine {
                 .cloned();
             if let Some(config) = &inherited {
                 require(
-                    config.kind == "work_configuration" && config.definition_id == target,
+                    config.r#type == "work_configuration" && config.definition_id == target,
                     "工作配置不属于此工作",
                 )?;
             }
@@ -1335,7 +1329,7 @@ impl Engine {
             plan.work_configuration_ref = Some(configuration.id.clone());
             require(
                 !state.governance.iter().any(|r| {
-                    r.kind == "workflow_instance"
+                    r.r#type == "workflow_instance"
                         && r.data["owner_id"] == target
                         && r.data["parent_execution_id"].is_null()
                         && !matches!(r.data["status"].as_str(), Some("completed" | "cancelled"))
@@ -1411,7 +1405,7 @@ impl Engine {
                 schema_version: WORKFLOW_INSTANCE_SCHEMA,
                 owner_id: target.into(),
                 workflow_ref: workflow.id.clone(),
-                project_id: scope.project().unwrap().into(),
+                project_id: scope.project_id().unwrap().into(),
                 plan,
                 role_agent_bindings: bindings,
                 inputs,
@@ -1457,7 +1451,7 @@ impl Engine {
             .governance
             .iter()
             .find(|r| {
-                r.id == target && r.kind == "workflow_instance" && r.data["steps"].is_array()
+                r.id == target && r.r#type == "workflow_instance" && r.data["steps"].is_array()
             })
             .cloned()
         else {
@@ -1595,7 +1589,7 @@ impl Engine {
                             state
                                 .governance
                                 .iter_mut()
-                                .find(|r| r.id == *id && r.kind == "platform_call")
+                                .find(|r| r.id == *id && r.r#type == "platform_call")
                         }) {
                             require(
                                 call.data["status"] == "needs_reconciliation",
@@ -1741,7 +1735,7 @@ impl Engine {
                                             .iter()
                                             .rev()
                                             .filter(|r| {
-                                                r.kind == "workflow_execution_history"
+                                                r.r#type == "workflow_execution_history"
                                                     && r.data["workflow_instance_id"]
                                                         == current.workflow_instance_id
                                                     && r.data["step"] == current.step
@@ -1809,7 +1803,7 @@ impl Engine {
                     .governance
                     .iter()
                     .find(|r| {
-                        r.kind == "workflow_instance"
+                        r.r#type == "workflow_instance"
                             && r.data["steps"].as_array().is_some_and(|steps| {
                                 steps.iter().any(|step| step["id"] == execution_id)
                             })
@@ -1855,7 +1849,7 @@ impl Engine {
             let rows: Vec<_> = state
                 .governance
                 .iter()
-                .filter(|r| r.kind == "workflow_instance" && r.data["steps"].is_array())
+                .filter(|r| r.r#type == "workflow_instance" && r.data["steps"].is_array())
                 .cloned()
                 .collect();
             for row in rows {
@@ -1948,13 +1942,13 @@ impl Engine {
                     let group = state
                         .governance
                         .iter()
-                        .find(|r| r.kind == "workflow_children" && r.definition_id == *parent)
+                        .find(|r| r.r#type == "workflow_children" && r.definition_id == *parent)
                         .ok_or_else(|| err("invalid_workflow", "子流程集合来源缺失"))?;
                     let _parent_row = state
                         .governance
                         .iter()
                         .find(|r| {
-                            r.kind == "workflow_instance"
+                            r.r#type == "workflow_instance"
                                 && r.data["steps"]
                                     .as_array()
                                     .is_some_and(|steps| steps.iter().any(|s| s["id"] == *parent))
@@ -2002,7 +1996,7 @@ impl Engine {
                         )
                     }) && instance.plan.document.completion.evaluate(&current_facts)
                         && state.governance.iter().any(|r| {
-                            r.kind == "workflow_completion"
+                            r.r#type == "workflow_completion"
                                 && r.definition_id == row.id
                                 && r.data["plan_revision_id"] == instance.active_plan_revision_id
                         })
@@ -2081,7 +2075,7 @@ impl Engine {
         if state
             .governance
             .iter()
-            .any(|r| r.kind == "workflow_stop" && r.definition_id == execution.id)
+            .any(|r| r.r#type == "workflow_stop" && r.definition_id == execution.id)
         {
             if !active_execution(state, &execution)
                 && execution.status != StepExecutionStatus::NeedsReconciliation
@@ -2115,7 +2109,7 @@ impl Engine {
         if execution.status == StepExecutionStatus::Queued {
             if state.workflow_instance_suspended(&row.id)
                 || !state.governance.iter().any(|r| {
-                    r.kind == "workflow_dispatch"
+                    r.r#type == "workflow_dispatch"
                         && r.definition_id == execution.id
                         && r.data["plan_revision_id"] == instance.active_plan_revision_id
                 })
@@ -2219,7 +2213,7 @@ impl Engine {
                         .governance
                         .iter()
                         .filter(|r| {
-                            r.kind == "workflow_instance"
+                            r.r#type == "workflow_instance"
                                 && r.data["root_instance_id"] == instance.root_instance_id
                         })
                         .map(|r| r.data["steps"].as_array().map_or(0, Vec::len))
@@ -2253,7 +2247,7 @@ impl Engine {
                                 .map_err(|e| err("invalid_params", format!("工作引用无效: {e}")))?;
                             let work_scope = work.scope(state)?;
                             require(
-                                work_scope.project() == Some(instance.project_id.as_str()),
+                                work_scope.project_id() == Some(instance.project_id.as_str()),
                                 "子工作跨项目",
                             )?;
                             if let WorkReference::Task { id } = &work {
@@ -2266,7 +2260,7 @@ impl Engine {
                             child_owner = work.id().into();
                             require(
                                 !state.governance.iter().any(|r| {
-                                    r.kind == "workflow_instance"
+                                    r.r#type == "workflow_instance"
                                         && r.data["owner_id"] == child_owner
                                         && !matches!(
                                             r.data["status"].as_str(),
@@ -2325,7 +2319,7 @@ impl Engine {
                             .governance
                             .iter()
                             .filter(|r| {
-                                r.kind == "workflow_instance"
+                                r.r#type == "workflow_instance"
                                     && r.data["root_instance_id"] == instance.root_instance_id
                             })
                             .map(|r| r.data["steps"].as_array().map_or(0, Vec::len))
@@ -2343,7 +2337,7 @@ impl Engine {
                                 .governance
                                 .iter()
                                 .find(|r| {
-                                    r.kind == "workflow_instance"
+                                    r.r#type == "workflow_instance"
                                         && r.data["steps"].as_array().is_some_and(|steps| {
                                             steps.iter().any(|e| e["id"] == parent)
                                         })
@@ -2460,7 +2454,7 @@ impl Engine {
             let group = state
                 .governance
                 .iter()
-                .find(|r| r.kind == "workflow_children" && r.definition_id == execution.id)
+                .find(|r| r.r#type == "workflow_children" && r.definition_id == execution.id)
                 .ok_or_else(|| err("invalid_workflow", "子流程成员来源缺失"))?;
             let children = group.data["children"]
                 .as_array()
@@ -2530,7 +2524,7 @@ impl Engine {
             }
         } else if matches!(step.executor, StepExecutor::Tool { .. }) {
             let request = state.governance.iter().find(|r| {
-                r.kind == "workflow_intent"
+                r.r#type == "workflow_intent"
                     && r.definition_id == execution.id
                     && r.data["method"] == "workflow.tool.execute"
             });
@@ -2544,7 +2538,7 @@ impl Engine {
                 } else if let Some(call_id) = request.data["result"]["id"].as_str() {
                     execution.tool_call_id = Some(call_id.into());
                     let call = state.configuration(call_id)?;
-                    if call.kind == "platform_call" {
+                    if call.r#type == "platform_call" {
                         if call.data["status"] == "succeeded" {
                             let outputs = mapped_tool_outputs(step, &call.data["receipt"])?;
                             if let Err(error)=self.accept_configured_outputs(state,&row,step,&mut execution,&json!({"status":"completed","summary":"平台工具实际完成","outputs":outputs})) {execution.status=StepExecutionStatus::Failed;execution.reason=error.message;}
@@ -2596,7 +2590,7 @@ impl Engine {
                     .governance
                     .iter()
                     .find(|r| {
-                        r.kind == "workflow_intent"
+                        r.r#type == "workflow_intent"
                             && r.definition_id == execution.id
                             && r.data["method"] == "session.open"
                     })
@@ -2623,7 +2617,7 @@ impl Engine {
                 }
             } else {
                 if let Some(failed) = state.governance.iter().find(|r| {
-                    r.kind == "workflow_intent"
+                    r.r#type == "workflow_intent"
                         && r.definition_id == execution.id
                         && r.data["method"] == "conversation.send"
                         && r.data["status"] == "failed"
@@ -2644,7 +2638,7 @@ impl Engine {
                         .governance
                         .iter()
                         .find(|r| {
-                            r.kind == "workflow_intent"
+                            r.r#type == "workflow_intent"
                                 && r.definition_id == execution.id
                                 && r.data["method"] == "conversation.send"
                                 && r.data["status"] == "completed"
@@ -2793,14 +2787,14 @@ impl Engine {
             }
             if let Some(value) = outputs.get(name) {
                 let instance: ConfiguredWorkflowInstance = row.decode()?;
-                let definition: DeliveryTypeDefinition = instance
+                let delivery = instance
                     .plan
                     .definitions
                     .get(&port.delivery_ref)
-                    .ok_or_else(|| err("configuration_required", "输出类型不在闭包中"))?
-                    .decode()?;
+                    .ok_or_else(|| err("configuration_required", "输出类型不在闭包中"))?;
+                let definition: DeliveryTypeDefinition = delivery.decode()?;
                 self.validate_configured_value(&definition, value)?;
-                output_provenance(state, row, step, execution, name, &definition, value)?;
+                output_provenance(state, row, step, execution, name, delivery, value)?;
                 if port.content_checks {
                     let expected = step
                         .spec_refs
@@ -2823,16 +2817,14 @@ impl Engine {
         let owner = MaterialOwner::Project {
             id: row
                 .scope
-                .project()
+                .project_id()
                 .ok_or_else(|| err("invalid_scope", "步骤需要项目归属"))?
                 .into(),
         };
         for (name, value) in outputs {
             let instance: ConfiguredWorkflowInstance = row.decode()?;
-            let definition: DeliveryTypeDefinition =
-                instance.plan.definitions[&step.outputs[name].delivery_ref].decode()?;
-            let provenance =
-                output_provenance(state, row, step, execution, name, &definition, value)?;
+            let delivery = &instance.plan.definitions[&step.outputs[name].delivery_ref];
+            let provenance = output_provenance(state, row, step, execution, name, delivery, value)?;
             let body =
                 serde_json::to_string(value).map_err(|e| err("serialization", e.to_string()))?;
             let artifact = self
@@ -2880,25 +2872,25 @@ impl Engine {
                     "configured_execution_task",
                     "archived_configured_execution_task",
                 ]
-                .contains(&r.kind.as_str())
+                .contains(&r.r#type.as_str())
                     && p["turn_id"] == r.definition_id
             })?;
             return Some(Ok(
-                json!({"configured":true,"archived":row.kind=="archived_configured_execution_task","task":row.data,"turn_id":row.definition_id}),
+                json!({"configured":true,"archived":row.r#type=="archived_configured_execution_task","task":row.data,"turn_id":row.definition_id}),
             ));
         }
         let row = if let Some(reference) = p["id"].as_str() {
             state
                 .governance
                 .iter()
-                .find(|r| r.kind == "workflow_instance" && r.id == reference)
+                .find(|r| r.r#type == "workflow_instance" && r.id == reference)
         } else {
             p["owner_id"]
                 .as_str()
                 .and_then(|owner| crate::standards::current_work_instance(&state, owner))
         }?;
         if let Some(project) = p["project_id"].as_str() {
-            if row.scope.project() != Some(project) {
+            if row.scope.project_id() != Some(project) {
                 return Some(Err(err("scope_violation", "工作流不属于当前项目")));
             }
         }
@@ -2930,7 +2922,7 @@ impl Engine {
             .governance
             .iter()
             .filter(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["parent_execution_id"]
                         .as_str()
                         .is_some_and(|id| executions.contains(id))
@@ -2947,16 +2939,16 @@ impl Engine {
         let completion_status = instance.steps.iter().map(|execution| {
             let step = instance.plan.document.steps.iter().find(|step| step.key == execution.step).unwrap();
             let confirmation = state.governance.iter().rev().find(|r| {
-                r.kind == "workflow_confirmation" && r.definition_id == execution.id
+                r.r#type == "workflow_confirmation" && r.definition_id == execution.id
                     && r.data["input_digest"] == execution.input_digest
                     && r.data["outputs"] == json!(execution.outputs)
             });
             (&execution.id, json!({"satisfied":step.completion.evaluate(&current_facts),"confirmation":confirmation.map(|r| &r.data)}))
         }).collect::<BTreeMap<_, _>>();
-        let history=state.governance.iter().filter(|r|(r.kind=="workflow_plan_revision"&&(r.data["instance_id"]==row.id||r.id==instance.active_plan_revision_id||instance.steps.iter().any(|e|e.plan_revision_id==r.id)))||(r.kind=="workflow_execution_history"&&r.data["workflow_instance_id"]==row.id)||(r.kind=="workflow_change"&&r.definition_id==row.id)).map(|r| {
-            let data=if r.kind=="workflow_plan_revision" {json!({"parent_revision_id":r.data["parent_revision_id"],"reason":r.data["reason"]})} else if r.kind=="workflow_change" {json!({"status":r.data["status"],"new_plan_revision_id":r.data["new_plan_revision_id"],"affected":r.data["preview"]["affected"],"bypassed":r.data["preview"]["bypassed"]})} else {r.data.clone()};
-            let frozen_step=if r.kind=="workflow_execution_history" {state.configuration(r.data["plan_revision_id"].as_str().unwrap_or("")).ok().and_then(|p|p.data["plan"]["document"]["steps"].as_array()).and_then(|steps|steps.iter().find(|s|s["node_id"]==r.data["node_id"]))} else {None};
-            json!({"id":r.id,"kind":r.kind,"name":r.name,"data":data,"frozen_step":frozen_step})
+        let history=state.governance.iter().filter(|r|(r.r#type=="workflow_plan_revision"&&(r.data["instance_id"]==row.id||r.id==instance.active_plan_revision_id||instance.steps.iter().any(|e|e.plan_revision_id==r.id)))||(r.r#type=="workflow_execution_history"&&r.data["workflow_instance_id"]==row.id)||(r.r#type=="workflow_change"&&r.definition_id==row.id)).map(|r| {
+            let data=if r.r#type=="workflow_plan_revision" {json!({"parent_revision_id":r.data["parent_revision_id"],"reason":r.data["reason"]})} else if r.r#type=="workflow_change" {json!({"status":r.data["status"],"new_plan_revision_id":r.data["new_plan_revision_id"],"affected":r.data["preview"]["affected"],"bypassed":r.data["preview"]["bypassed"]})} else {r.data.clone()};
+            let frozen_step=if r.r#type=="workflow_execution_history" {state.configuration(r.data["plan_revision_id"].as_str().unwrap_or("")).ok().and_then(|p|p.data["plan"]["document"]["steps"].as_array()).and_then(|steps|steps.iter().find(|s|s["node_id"]==r.data["node_id"]))} else {None};
+            json!({"id":r.id,"type":r.r#type,"name":r.name,"data":data,"frozen_step":frozen_step})
         }).collect::<Vec<_>>();
         Some(Ok(
             json!({"record":row,"runtime":row.data,"plan":row.data["plan"]["document"],"outputs":outputs,"children":children,"completion_status":completion_status,"history":history}),

@@ -294,7 +294,7 @@ export function StandardManager({
     }
   }
   const standards = records.filter(
-    (r) => r.kind === "standard" && r.data.schema_version === 4,
+    (r) => r.type === "standard",
   );
   return (
     <section className="panel standard-manager" aria-label="Standard 规范快照">
@@ -330,7 +330,7 @@ export function StandardManager({
         <RevisionSelect
           label="入口 Workflow"
           multiple
-          records={records.filter((r) => r.kind === "workflow")}
+          records={records.filter((r) => r.type === "workflow")}
           value={roots}
           onChange={(value) => {
             setRoots(value);
@@ -373,8 +373,8 @@ export function StandardManager({
                       root_workflow_refs: roots,
                       preview_digest: candidate.snapshot_digest,
                       scope: project
-                        ? { kind: "project", project_id: project.id }
-                        : { kind: "global" },
+                        ? `project:${project.id}`
+                        : "global",
                     },
                   });
                   await load();
@@ -400,8 +400,8 @@ export function StandardManager({
             disabled={
               busy ||
               (project
-                ? snapshot.record.scope.kind !== "project"
-                : snapshot.record.scope.kind !== "global")
+                ? snapshot.record.scope !== `project:${project.id}`
+                : snapshot.record.scope !== "global")
             }
             onClick={() =>
               void act(async () => {
@@ -424,8 +424,8 @@ export function StandardManager({
             disabled={
               busy ||
               (project
-                ? snapshot.record.scope.kind !== "project"
-                : snapshot.record.scope.kind !== "global")
+                ? snapshot.record.scope !== `project:${project.id}`
+                : snapshot.record.scope !== "global")
             }
             onClick={() => {
               setRoots(snapshot.root_workflow_refs);
@@ -468,7 +468,7 @@ export function StandardManager({
             <ul>
               {usage?.records.map((row: Row) => (
                 <li key={row.id}>
-                  {row.kind} ·{" "}
+                  {row.type} ·{" "}
                   {row.data.owner_id || row.data.work?.id || row.definition_id}{" "}
                   · {row.data.workflow_ref}
                 </li>

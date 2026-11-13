@@ -1,11 +1,9 @@
 {
-  "kind": "tool",
+  "type": "tool",
   "identity": "builtin-tool-git-publish",
   "revision": 1,
   "name": "发布并核对 GitHub 交付",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "qualified_name": "git.publish",
     "implementation": "platform",

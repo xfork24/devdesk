@@ -85,13 +85,9 @@ async function fixtures(page: Page) {
         undefined,
         undefined,
         undefined,
-        {
+        {spec_refs: [spec.id],
           name: `Standard browser ${type}`,
-          data: {
-            format: "json",
-            spec_refs: [spec.id],
-            content_schema: { type },
-          },
+          data: {format: "json",content_schema: { type }},
         },
       )
     ).id;
@@ -253,9 +249,9 @@ test("Standard 只读生成比较与归档保留规范源", async ({ page }, inf
   await page.screenshot({path:info.outputPath("standard-readonly-archived.png"),fullPage:true});
   const catalog = await rpc(page, "query.standard", { id: ids[1] });
   expect(Object.keys(catalog.record.data).sort()).toEqual([
-    "root_workflow_refs",
     "schema_version",
   ]);
+  expect(catalog.record.root_workflow_refs).toEqual([b.id]);
   await page.setViewportSize({width:390,height:844});
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
   await page.screenshot({path:info.outputPath("standard-readonly-mobile.png"),fullPage:true});
@@ -411,7 +407,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
           })
         ).configurations.filter(
           (r: any) =>
-            r.kind === "workflow_instance" && r.data.parent_execution_id,
+            r.type === "workflow_instance" && r.data.parent_execution_id,
         ).length,
     )
     .toBe(2);
@@ -420,7 +416,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
     feature_id: feature.id,
   });
   const children = workspace.configurations.filter(
-    (r: any) => r.kind === "workflow_instance" && r.data.parent_execution_id,
+    (r: any) => r.type === "workflow_instance" && r.data.parent_execution_id,
   );
   const childB = children.find((r: any) => r.data.owner_id === tb.id);
   expect(childB.data.plan.standard_ref).toBe(sb.id);

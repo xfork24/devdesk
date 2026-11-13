@@ -565,7 +565,7 @@ function App() {
     }
   };
   const configurationLock = data?.configurations?.find(
-    (r: RecordData) => r.kind === "feature_lock" && r.definition_id === f?.id,
+    (r: RecordData) => r.type === "feature_lock" && r.definition_id === f?.id,
   );
   const createProject = () =>
     show({
@@ -601,7 +601,7 @@ function App() {
           project_id: project?.id,
           require_configuration: true,
           configuration_revision_id: data?.configurations
-            ?.filter((r: RecordData) => r.kind === "project_configuration")
+            ?.filter((r: RecordData) => r.type === "project_configuration")
             .sort((a: RecordData, b: RecordData) => b.version - a.version)[0]
             ?.id,
         },
@@ -1049,7 +1049,7 @@ function App() {
                   {(
                     data.configurations?.find(
                       (r: RecordData) =>
-                        r.kind === "workflow_instance" &&
+                        r.type === "workflow_instance" &&
                         r.data.parent_execution_id == null,
                     )?.data.plan.document.stages || []
                   ).map((stage: RecordData) => (
@@ -1186,7 +1186,7 @@ function App() {
                   data?.configurations
                     ?.filter(
                       (r: RecordData) =>
-                        r.kind === "workflow_instance" &&
+                        r.type === "workflow_instance" &&
                         r.data.owner_id === f.id &&
                         r.data.parent_execution_id == null,
                     )
@@ -1220,7 +1220,7 @@ function App() {
                           owner={task}
                           instance={data?.configurations?.filter(
                             (r: RecordData) =>
-                              r.kind === "workflow_instance" && r.work_root !== false &&
+                              r.type === "workflow_instance" && r.work_root !== false &&
                               r.data.owner_id === task.id,
                           ).at(-1)}
                           refresh={load}
@@ -1320,7 +1320,7 @@ function App() {
             data?.configurations
               ?.filter(
                 (r: RecordData) =>
-                  r.kind === "workflow_instance" &&
+                  r.type === "workflow_instance" &&
                   r.data.owner_id === projectId &&
                   r.data.parent_execution_id == null,
               )

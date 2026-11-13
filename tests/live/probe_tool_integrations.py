@@ -23,12 +23,12 @@ log=open(ROOT.parent/(ROOT.name+'.host.log'),'w');host=subprocess.Popen([str(arg
 report={'dataset':str(ROOT),'real_models':['codex/gpt-6.1-sol'],'dsh_calls':0};args.report.parent.mkdir(parents=True,exist_ok=True)
 try:
  c=Client(f'http://127.0.0.1:{PORT}');shutil.copyfile(auth,ROOT/'credentials/codex/auth.json');(ROOT/'credentials/codex/auth.json').chmod(0o600);assert c.rpc('codex.auth.status')['authenticated']
- pid=c.command('project.create',payload={'title':'External tools and Skill acceptance'})['id'];c.project=pid;scope={'kind':'project','project_id':pid};defaults=c.rpc('query.configuration_defaults')
+ pid=c.command('project.create',payload={'title':'External tools and Skill acceptance'})['id'];c.project=pid;scope='project:' + str(pid);defaults=c.rpc('query.configuration_defaults')
  def create(method,name,data):return c.command(method,payload={'name':name,'scope':scope,'data':data})
  resources=c.rpc('query.permission_resources');changes=[]
  for resource in resources['targets']:
   if resource['target']['revision_id'] in [defaults['harness_ref'],'builtin-sandbox-docker:1']:
-   changes.append({'target':resource['target'],'permission_revision_id':'builtin-permission-harness-full-access:1' if resource['target']['kind']=='harness' else 'builtin-permission-sandbox-full-access:1','expected_revision':resource.get('active',{}).get('revision',0) if resource.get('active') else 0})
+   changes.append({'target':resource['target'],'permission_revision_id':'builtin-permission-harness-full-access:1' if resource['target']['type']=='harness' else 'builtin-permission-sandbox-full-access:1','expected_revision':resource.get('active',{}).get('revision',0) if resource.get('active') else 0})
  c.command('permission.bindings.apply',payload={'bindings':changes})
  api=create('integration.create','Local canary API',{'source':{'kind':'http_api','base_url':origin}})
  t=create('integration.tool.create','lookup_http_canary',{'schema_version':2,'qualified_name':'lookup_http_canary','description':'Read the canary marker from the explicitly bound local acceptance service.','integration_ref':api['id'],'implementation':{'kind':'http_api','method':'GET','path':'/canary'},'input_schema':{'type':'object','properties':{},'additionalProperties':False},'output_schema':{'type':'object','properties':{'marker':{'type':'string'}},'required':['marker']},'effect':'read_only'})

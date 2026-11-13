@@ -82,8 +82,8 @@ def main():
             project = c.command('project.create', payload={'title': 'Isolated provider acceptance'})['id']
             c.open(project)
             model = c.command('model.create', payload={'name': 'Host Ollama fixture', 'data': {'provider': 'ollama', 'model': 'host-fixture-model', 'endpoint': f'http://127.0.0.1:{server.server_port}/v1', 'context_window': 32768, 'max_output_tokens': 4096, 'parameters': {'max_tokens': 2048}}})['id']
-            cap = c.command('capability.create', payload={'name': 'Host Ollama capability', 'data': {'model_ref': model, 'harness_ref': 'builtin-harness-dsh-multi-provider:1', 'tools': ['builtin-tool-dsh-native:1'], 'skills': []}})['id']
-            agent = c.command('agent.create', payload={'name': 'Host Ollama Agent', 'data': {'role_ref': 'builtin-role-analyst:1', 'capability_ref': cap}})['id']
+            cap = c.command('capability.create', payload={'model_ref':model,'harness_ref':'builtin-harness-dsh-multi-provider:1','tools':['builtin-tool-dsh-native:1'],'skills':[],'name': 'Host Ollama capability', 'data': {}})['id']
+            agent = c.command('agent.create', payload={'role_ref':'builtin-role-analyst:1','capability_ref':cap,'name': 'Host Ollama Agent', 'data': {}})['id']
             catalog = c.rpc('models.list', {'model_provider': 'ollama', 'endpoint': f'http://127.0.0.1:{server.server_port}/v1'})
             assert catalog['models'] == [{'id': 'host-fixture-model'}] and not catalog['inference_verified']
             project_row = c.rpc('query.workspace')['active_project']
@@ -118,7 +118,7 @@ def main():
 
                 view = c.wait(completed, bool, timeout=300)
                 assert marker in '\n'.join(e['content'] for e in view['events'] if e['kind'] == 'assistant')
-                assert any(e['kind'] == 'tool' for e in view['events'])
+                assert any(e['type'] == 'tool' for e in view['events'])
                 original = view['session']['runtime_binding']
                 native = view['session']['external_session']
                 stop()

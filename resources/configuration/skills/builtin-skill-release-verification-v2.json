@@ -1,11 +1,9 @@
 {
-  "kind": "skill",
+  "type": "skill",
   "identity": "builtin-skill-release-verification",
   "revision": 2,
   "name": "Feature 与候选验证",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "rules": [],
     "body_file": "release-verification.md"

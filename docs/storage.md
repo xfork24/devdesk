@@ -4,7 +4,7 @@
 
 ## 数据集总览
 
-一个数据集目录（`--data`）以 `.devdesk-dataset` 标记（内容 `devdesk-source-v2-standard-v1`）并施加独占写锁（`.devdesk.lock`）；同一数据集同时只能有一个可写进程。
+一个数据集目录（`--data`）以 `.devdesk-dataset` 标记（内容 `devdesk-source-flat-v1`）并施加独占写锁（`.devdesk.lock`）；同一数据集同时只能有一个可写进程。
 
 ```text
 <data>/

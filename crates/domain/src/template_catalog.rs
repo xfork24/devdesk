@@ -50,21 +50,21 @@ pub fn template_catalog_member<'a>(
     s.governance
         .iter()
         .filter(|m| {
-            m.kind == "template_catalog_member"
+            m.r#type == "template_catalog_member"
                 && m.definition_id == r.id
-                && m.data["kind"] == template_member_kind(&r.kind)
+                && m.data["kind"] == template_member_kind(&r.r#type)
         })
         .max_by_key(|m| m.data["generation"].as_u64().unwrap_or(0))
 }
 pub fn template_record_current(s: &EngineeringState, r: &ConfigurationRecord) -> bool {
-    if !template_definition_kind(&r.kind) {
+    if !template_definition_kind(&r.r#type) {
         if matches!(
-            r.kind.as_str(),
+            r.r#type.as_str(),
             "skill_package" | "integration_discovery" | "integration_disabled"
         ) {
             if let Some(owner) = s.governance.iter().find(|v| {
                 v.id == r.definition_id
-                    || (v.kind == "integration" && v.definition_id == r.definition_id)
+                    || (v.r#type == "integration" && v.definition_id == r.definition_id)
             }) {
                 return template_record_current(s, owner);
             }
@@ -135,7 +135,7 @@ pub fn template_projection_current(s: &EngineeringState, definition: &Definition
     }
     s.governance
         .iter()
-        .find(|m| m.kind == "template_catalog_member" && m.definition_id == definition.id)
+        .find(|m| m.r#type == "template_catalog_member" && m.definition_id == definition.id)
         .and_then(|m| m.data["generation"].as_u64())
         .unwrap_or(TEMPLATE_INITIAL_GENERATION)
         == template_catalog_generation(s)
@@ -143,11 +143,17 @@ pub fn template_projection_current(s: &EngineeringState, definition: &Definition
 
 /// Source comparison includes editable presentation metadata as well as execution content.
 pub fn template_source_hash(record: &ConfigurationRecord) -> String {
-    configuration_hash(&(&record.kind, &record.name, &record.scope, &record.data))
+    configuration_hash(&(
+        &record.r#type,
+        &record.name,
+        &record.scope,
+        &record.refs,
+        &record.data,
+    ))
 }
 
 pub fn template_record_disabled(s: &EngineeringState, record: &ConfigurationRecord) -> bool {
     s.governance
         .iter()
-        .any(|r| r.kind == "integration_disabled" && r.definition_id == record.definition_id)
+        .any(|r| r.r#type == "integration_disabled" && r.definition_id == record.definition_id)
 }

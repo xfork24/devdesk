@@ -87,7 +87,7 @@ async function githubFixture(page: Page) {
             ? [
                 {
                   id: "configured-project",
-                  kind: "project_configuration",
+                  type: "project_configuration",
                   version: 1,
                   data: { agent_refs: { analyst: "configured-analyst" } },
                 },
@@ -106,10 +106,10 @@ async function githubFixture(page: Page) {
           records: [
             {
               id: "configured-analyst",
-              kind: "agent",
+              type: "agent",
               name: "配置的需求分析师",
               version: 1,
-              scope: { kind: "global" },
+              scope: "global",
               data: {
                 role: "analyst",
                 model_ref: "configured-model",
@@ -121,19 +121,19 @@ async function githubFixture(page: Page) {
             },
             {
               id: "configured-model",
-              kind: "model",
+              type: "model",
               data: { model: "fixture-model", provider: "openai" },
             },
             {
               id: "configured-harness",
-              kind: "harness",
+              type: "harness",
               data: { provider: "codex", runtime_version: "fixture" },
             },
             {
               id: "configured-instance",
-              kind: "agent_instance",
+              type: "agent_instance",
               name: "配置的全局 AgentID",
-              scope: { kind: "global" },
+              scope: "global",
               data: { agent_revision_id: "configured-analyst" },
             },
           ],
@@ -151,7 +151,7 @@ async function githubFixture(page: Page) {
           records: [],
           total: 0,
           unavailable: [],
-          scope: { kind: "global" },
+          scope: "global",
           agent_revision_id: "configured-analyst",
         };
         break;

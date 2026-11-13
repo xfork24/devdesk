@@ -46,7 +46,7 @@ export function ProjectManager({
     [mainline, setMainline] = useState("main"),
     [title, setTitle] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:source-v2-standard-v1:project:${project?.id || "global"}`,
+    `devdesk:source-flat-v1:project:${project?.id || "global"}`,
     () => ({
       orchestrator_role_ref: "",
       permission_context_ref: "",
@@ -85,7 +85,7 @@ export function ProjectManager({
     );
     setDefaults(preset);
     setHealth(workspace);
-    if (configuration.configuration?.data.schema_version === 4)
+    if (configuration.configuration?.data.workflow_ref)
       setDraft((current) =>
         current.workflow_ref
           ? current
@@ -148,12 +148,10 @@ export function ProjectManager({
   }, [request, project?.id, draft.workflow_ref, draft.standard_ref]);
   const workflows = records.filter(
     (r) =>
-      r.kind === "workflow" &&
-      r.data.schema_version >= 2 &&
-      r.data.schema_version === 6,
+      r.type === "workflow",
   );
   const standards = records.filter(
-    (r) => r.kind === "standard" && Array.isArray(r.data.root_workflow_refs),
+    (r) => r.type === "standard" && Array.isArray(r.root_workflow_refs),
   );
   async function save() {
     captureFeedback();
@@ -338,7 +336,7 @@ export function ProjectManager({
                 </p>
               )}
               <p>
-                {configuration?.data.schema_version === 2
+                {configuration?.data.workflow_ref
                   ? `已保存 v${configuration.version}`
                   : "待配置：选择 Workflow 并完成所有 Role 的 Agent 绑定"}
               </p>
@@ -387,11 +385,11 @@ export function ProjectManager({
                     return setDraft({
                       ...draft,
                       standard_ref: e.target.value,
-                      workflow_ref: standard?.data.root_workflow_refs.includes(
+                      workflow_ref: standard?.root_workflow_refs.includes(
                         draft.workflow_ref,
                       )
                         ? draft.workflow_ref
-                        : standard?.data.root_workflow_refs[0] ||
+                        : standard?.root_workflow_refs[0] ||
                           draft.workflow_ref,
                     });
                   }}
@@ -426,7 +424,7 @@ export function ProjectManager({
             </p>
             <RevisionSelect
               label="执行授权"
-              records={records.filter((r) => r.kind === "permission_context")}
+              records={records.filter((r) => r.type === "permission_context")}
               value={draft.permission_context_ref}
               onChange={(permission_context_ref) =>
                 setDraft({ ...draft, permission_context_ref })
@@ -445,7 +443,7 @@ export function ProjectManager({
                 }
               >
                 <option value="">仅手动操作工作流</option>
-                {latest(records.filter((r) => r.kind === "role")).map((r) => (
+                {latest(records.filter((r) => r.type === "role")).map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
                   </option>
@@ -457,11 +455,11 @@ export function ProjectManager({
                 label="编排 Agent"
                 records={records.filter(
                   (r) =>
-                    r.kind === "agent" &&
+                    r.type === "agent" &&
                     records.some(
                       (role) =>
-                        role.kind === "role" &&
-                        role.id === r.data.role_ref &&
+                        role.type === "role" &&
+                        role.id === r.role_ref &&
                         role.id === draft.orchestrator_role_ref,
                     ),
                 )}
@@ -490,11 +488,11 @@ export function ProjectManager({
                   {requirements.roles.map((item: Row) => {
                     const agents = records.filter(
                       (r) =>
-                        r.kind === "agent" &&
+                        r.type === "agent" &&
                         records.some(
                           (role) =>
-                            role.kind === "role" &&
-                            role.id === r.data.role_ref &&
+                            role.type === "role" &&
+                            role.id === r.role_ref &&
                             role.id === item.role_id,
                         ),
                     );

@@ -171,7 +171,7 @@ pub fn permission_target(
         PermissionTargetKind::Harness => "harness",
         PermissionTargetKind::Sandbox => "sandbox",
     };
-    if r.kind != expected || !r.immutable || r.content_hash != configuration_hash(&r.data) {
+    if r.r#type != expected || !r.immutable || r.content_hash != content_digest(&r.refs, &r.data) {
         return Err(err(
             "invalid_configuration",
             "权限目标不是匹配的不可变资源修订",
@@ -179,7 +179,7 @@ pub fn permission_target(
     }
     if s.governance
         .iter()
-        .any(|v| v.kind == "configuration_retirement" && v.definition_id == id)
+        .any(|v| v.r#type == "configuration_retirement" && v.definition_id == id)
     {
         return Err(err("invalid_configuration", "权限目标已停用"));
     }
@@ -196,7 +196,7 @@ pub fn active_permission_binding<'a>(
 ) -> Option<&'a ConfigurationRecord> {
     s.governance
         .iter()
-        .filter(|r| r.kind == "permission_assignment" && r.data["target"] == json!(target))
+        .filter(|r| r.r#type == "permission_assignment" && r.data["target"] == json!(target))
         .max_by_key(|r| r.version)
 }
 
@@ -220,7 +220,7 @@ pub fn resolve_bound_permission(
             })?,
     };
     let r = s.configuration(&id)?;
-    if r.kind != "permission_binding" || !r.immutable {
+    if r.r#type != "permission_binding" || !r.immutable {
         return Err(err("invalid_configuration", "需要确切权限绑定修订"));
     }
     let binding: VersionedPermissionBinding = r.decode()?;
@@ -232,7 +232,7 @@ pub fn resolve_bound_permission(
     if !r.scope.visible_from(scope) || !p.scope.visible_from(scope) {
         return Err(err("invalid_scope", "权限绑定或 profile 对目标不可见"));
     }
-    if p.kind != "permission_profile" || !p.immutable {
+    if p.r#type != "permission_profile" || !p.immutable {
         return Err(err(
             "invalid_configuration",
             "需要确切 Permission profile 修订",
@@ -242,7 +242,7 @@ pub fn resolve_bound_permission(
     profile.normalize()?;
     if profile.id != p.id
         || profile.target_kind != target.kind
-        || permission_content_hash(&permission_profile_data(&profile)) != p.content_hash
+        || content_digest(&p.refs, &permission_profile_data(&profile)) != p.content_hash
     {
         return Err(err("permission_conflict", "profile 目标或内容摘要不匹配"));
     }
@@ -278,7 +278,7 @@ pub fn permission_context(s: &EngineeringState) -> Option<&ConfigurationRecord> 
     let selected = s
         .governance
         .iter()
-        .filter(|r| r.kind == "project_configuration")
+        .filter(|r| r.r#type == "project_configuration")
         .max_by_key(|r| r.version)
         .and_then(|r| r.data["permission_context_ref"].as_str())
         .or_else(|| {
@@ -299,11 +299,11 @@ pub fn permission_selection_from_context(
 ) -> Result<ExecutionPermissionSelection> {
     let r = s.configuration(reference)?;
     require(
-        r.kind == "permission_context",
+        r.r#type == "permission_context",
         "需要 Permission Context 源修订",
     )?;
     Ok(ExecutionPermissionSelection {
-        sandbox_ref: r.data["sandbox_ref"]
+        sandbox_ref: reference_value(&r.refs, "sandbox_ref")
             .as_str()
             .ok_or_else(|| err("permission_unconfigured", "缺少 Sandbox"))?
             .into(),
@@ -330,24 +330,24 @@ pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermission
         checked.normalize()?;
         require(
             checked == bound.profile
-                && r.kind == "permission_binding"
+                && r.r#type == "permission_binding"
                 && r.immutable
-                && profile.kind == "permission_profile"
+                && profile.r#type == "permission_profile"
                 && profile.immutable
                 && r.data == serde_json::to_value(&bound.binding).unwrap()
                 && r.content_hash == bound.binding_hash
-                && r.content_hash == permission_content_hash(&bound.binding)
+                && r.content_hash == content_digest(&r.refs, &r.data)
                 && profile.data == permission_profile_data(&bound.profile)
                 && profile.content_hash == bound.profile_hash
                 && profile.content_hash
-                    == permission_content_hash(&permission_profile_data(&bound.profile))
+                    == content_digest(&profile.refs, &permission_profile_data(&bound.profile))
                 && bound.profile.target_kind == kind
                 && bound.binding.target.kind == kind
                 && bound.binding.permission_revision_id == bound.profile.id
                 && target.immutable
                 && target.content_hash == bound.binding.target.content_hash
-                && target.content_hash == configuration_hash(&target.data)
-                && target.kind
+                && target.content_hash == content_digest(&target.refs, &target.data)
+                && target.r#type
                     == if kind == PermissionTargetKind::Harness {
                         "harness"
                     } else {
@@ -368,7 +368,7 @@ pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermission
 
 impl ConfigurationRecord {
     pub fn permission_profile(&self) -> Result<PermissionProfile> {
-        require(self.kind == "permission_profile", "需要权限源修订")?;
+        require(self.r#type == "permission_profile", "需要权限源修订")?;
         let mut profile = PermissionProfile {
             scope: self.scope.clone(),
             schema_version: self.data["schema_version"]
@@ -399,11 +399,12 @@ impl Serialize for PermissionProfile {
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
         SourceDefinition {
-            kind: "permission_profile".into(),
+            r#type: "permission_profile".into(),
             identity: self.identity.clone(),
             revision: self.version,
             name: self.name.clone(),
             scope: self.scope.clone(),
+            refs: References::new(),
             data: permission_profile_data(self),
         }
         .serialize(serializer)

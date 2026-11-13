@@ -162,7 +162,7 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
         restored
             .governance
             .iter()
-            .filter(|record| record.kind == "role")
+            .filter(|record| record.r#type == "role")
             .count(),
         6
     );
@@ -941,7 +941,7 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);
     let agent = default_agent_id("analyst");
-    let instance = e.execute("agent.instance.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Global analyst","scope":{"kind":"global"},"agent_revision_id":agent})}).unwrap()["id"].as_str().unwrap().to_owned();
+    let instance = e.execute("agent.instance.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"Global analyst","scope":"global","agent_revision_id":agent})}).unwrap()["id"].as_str().unwrap().to_owned();
     let binding = RuntimeBinding {
         model_connection: None,
         model_profile_digest: None,
@@ -995,8 +995,8 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
     assert!(state.projects.is_empty());
     assert_eq!(state.sessions[0].scope, Some(SessionScope::Global));
     assert!(!state.snapshots.is_empty());
-    assert!(state.governance.iter().any(|r| r.kind == "experience"
-        && r.scope == Scope::Global
+    assert!(state.governance.iter().any(|r| r.r#type == "experience"
+        && r.scope == Scope::global()
         && r.data["agent_instance_id"] == instance));
     e.tick_conversations(1).unwrap();
     e.tick_conversations(1).unwrap();

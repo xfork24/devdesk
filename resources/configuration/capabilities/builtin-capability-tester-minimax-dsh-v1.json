@@ -1,21 +1,18 @@
 {
-  "kind": "capability",
+  "type": "capability",
   "identity": "builtin-capability-tester-minimax-dsh",
   "revision": 1,
   "name": "测试能力 · MiniMax M3.1 Flash / DSH",
-  "scope": {
-    "kind": "global"
-  },
-  "data": {
-    "harness_ref": "builtin-harness-dsh-multi-provider:1",
-    "model_ref": "builtin-model-minimax-m3-1-flash:1",
-    "skills": [
-      "builtin-skill-engineering-context:2",
-      "builtin-skill-test-design:2",
-      "builtin-skill-release-verification:2"
-    ],
-    "tools": [
-      "builtin-tool-dsh-native:1"
-    ]
-  }
+  "scope": "global",
+  "harness_ref": "builtin-harness-dsh-multi-provider:1",
+  "model_ref": "builtin-model-minimax-m3-1-flash:1",
+  "skills": [
+    "builtin-skill-engineering-context:2",
+    "builtin-skill-test-design:2",
+    "builtin-skill-release-verification:2"
+  ],
+  "tools": [
+    "builtin-tool-dsh-native:1"
+  ],
+  "data": {}
 }

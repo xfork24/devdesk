@@ -18,7 +18,7 @@ environment.pop("DEVDESK_ACCESS_TOKEN", None)
 with tempfile.TemporaryDirectory(prefix="devdesk-protocol-") as temp:
     root = Path(temp)
     for index, (marker, version) in enumerate([
-        ("devdesk-schema-v1\n", 14), ("devdesk-source-v2\n", 15), ("devdesk-source-v2-standard-v1\n", 14),
+        ("devdesk-schema-v1\n", 14), ("devdesk-source-v2\n", 15), ("devdesk-source-flat-v1\n", 16), ("devdesk-source-v2-standard-v1\n", 16),
     ]):
         data = root / f"incompatible-{index}"
         data.mkdir()
@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix="devdesk-protocol-") as temp:
         run = subprocess.run([str(binary), "--data", str(data), "--port", "0"],
                              env=environment, capture_output=True, text=True, timeout=15)
         assert run.returncode != 0, run.stdout
-        expected = "数据集标记不受支持" if marker != "devdesk-source-v2-standard-v1\n" else "数据集协议不兼容"
+        expected = "数据集标记不受支持" if marker != "devdesk-source-flat-v1\n" else "数据集协议不兼容"
         assert expected in run.stdout + run.stderr, (run.stdout, run.stderr)
         assert hashlib.sha256(db.read_bytes()).hexdigest() == before, "unsupported data was changed"
         assert (data / ".devdesk-dataset").read_text() == marker
@@ -66,9 +66,9 @@ with tempfile.TemporaryDirectory(prefix="devdesk-protocol-") as temp:
                     assert result == {"root": str(data.resolve())}, result
                 capabilities = json.load(client.open(url + "/capabilities", timeout=10))
                 assert capabilities["setup_required"] is False
-                assert (data / ".devdesk-dataset").read_text() == "devdesk-source-v2-standard-v1\n"
+                assert (data / ".devdesk-dataset").read_text() == "devdesk-source-flat-v1\n"
                 with sqlite3.connect(data / "global.sqlite3") as conn:
-                    assert conn.execute("PRAGMA user_version").fetchone()[0] == 16
+                    assert conn.execute("PRAGMA user_version").fetchone()[0] == 17
                     assert conn.execute("SELECT count(*) FROM source_definitions").fetchone()[0] > 0
                 post("/shutdown", {})
                 assert child.wait(timeout=15) == 0

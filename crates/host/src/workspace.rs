@@ -53,7 +53,7 @@ fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
         .ok_or_else(|| err("configuration_required", "默认模板目录未初始化"))?;
     let mut targets = std::collections::BTreeSet::new();
     for r in s.governance.iter().filter(|r| {
-        r.kind == "agent"
+        r.r#type == "agent"
             && template_record_current(s, r)
             && template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
     }) {
@@ -63,11 +63,11 @@ fn template_permission_defaults(s: &mut EngineeringState) -> Result<()> {
     for r in s
         .governance
         .iter()
-        .filter(|r| r.kind == "harness" && template_record_current(s, r))
+        .filter(|r| r.r#type == "harness" && template_record_current(s, r))
     {
         if template_catalog_member(s, r).is_some_and(|m| m.data["template_key"].is_string())
             && !s.governance.iter().any(|n| {
-                n.kind == r.kind && n.definition_id == r.definition_id && n.version > r.version
+                n.r#type == r.r#type && n.definition_id == r.definition_id && n.version > r.version
             })
         {
             targets.insert(r.id.clone());
@@ -162,7 +162,7 @@ impl Workspace {
                 // Content match: the selected installation must originate from the exact
                 // recipe the Agent's Harness revision pinned.
                 require(
-                    permissions::installation_recipe(&installation).starts_with(&recipe[..16]),
+                    permissions::installation_recipe(&installation) == *recipe,
                     "安装配方与 Agent 锁定的 Harness 配方不匹配",
                 )?;
             }
@@ -244,9 +244,9 @@ impl Workspace {
                 .as_ref()
                 .ok_or_else(|| err("invalid_configuration", "缺少 Agent 执行配置"))?;
             let m: ModelDefinition = state.configuration(&a.model_revision_id)?.decode()?;
-            let h: HarnessDefinition = state.configuration(&a.harness_revision_id)?.decode()?;
+            let h = state.configuration(&a.harness_revision_id)?;
             require(m.model == model, "Model 修订与执行模型不一致")?;
-            let connection = state.resolve_model_connection(&m, &h)?;
+            let connection = state.resolve_model_connection(&m, h)?;
             require(
                 resolved_permissions.sandbox.policy.network != NetworkPermission::Disabled,
                 "Sandbox 禁网，无法连接模型服务",
@@ -383,7 +383,7 @@ impl Workspace {
             for role in existing
                 .governance
                 .iter()
-                .filter(|r| r.kind == "role" || r.kind == "role_retirement")
+                .filter(|r| r.r#type == "role" || r.r#type == "role_retirement")
             {
                 if let Some(old) = directory.governance.iter().find(|r| r.id == role.id) {
                     require(old.content_hash == role.content_hash, "Role 目录摘要冲突")?;
@@ -403,8 +403,8 @@ impl Workspace {
                 .iter()
                 .filter(|r| {
                     r.immutable
-                        && (r.kind == "role"
-                            || r.kind == "role_retirement"
+                        && (r.r#type == "role"
+                            || r.r#type == "role_retirement"
                             || devdesk_core::configuration_visible(
                                 &shared,
                                 r,
@@ -437,8 +437,8 @@ impl Workspace {
         e.store.transact(None, &mut |s| {
             for r in shared.governance.iter().filter(|r| {
                 r.immutable
-                    && (r.kind == "role"
-                        || r.kind == "role_retirement"
+                    && (r.r#type == "role"
+                        || r.r#type == "role_retirement"
                         || devdesk_core::configuration_visible(
                             &shared,
                             r,
@@ -715,7 +715,7 @@ impl Workspace {
             };
             let state = engine.store.snapshot()?;
             let harness = state.configuration(id)?;
-            require(harness.kind == "harness", "需要 Harness 修订")?;
+            require(harness.r#type == "harness", "需要 Harness 修订")?;
             return Ok(json!(self.materialize_harness(&engine, harness)?));
         }
         if method == "query.history" && params["scope"] == "global" {
@@ -1185,7 +1185,7 @@ impl Workspace {
                 .snapshot()?
                 .governance
                 .into_iter()
-                .filter(|r| r.kind == "experience")
+                .filter(|r| r.r#type == "experience")
                 .collect();
             if !experiences.is_empty() {
                 let known = self.global.snapshot()?;
@@ -1400,7 +1400,7 @@ mod tests {
             .unwrap()
             .governance
             .iter()
-            .find(|r| r.kind == "skill")
+            .find(|r| r.r#type == "skill")
             .unwrap()
             .clone();
         let b = create(&w, "B");
@@ -1663,7 +1663,7 @@ mod adapter_injection_tests {
         let one = create(&w, "One");
         let two = create(&w, "Two");
         let other = create(&w, "Other");
-        let role=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"Shared specialist","scope":{"kind":"project","project_id":one},"data":{"instructions":"# Shared duty","visibility":{"kind":"projects","project_ids":[one,two]}}}})).unwrap();
+        let role=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"Shared specialist","scope":format!("project:{one}"),"data":{"instructions":"# Shared duty","visibility":{"kind":"projects","project_ids":[one,two]}}}})).unwrap();
         for pid in [&one, &two, &other] {
             select(&w, pid);
             let roles = w
@@ -1701,7 +1701,7 @@ mod adapter_injection_tests {
             global
                 .governance
                 .iter()
-                .filter(|r| r.kind == "role" && json!(r.definition_id) == role["definition_id"])
+                .filter(|r| r.r#type == "role" && json!(r.definition_id) == role["definition_id"])
                 .count(),
             2
         );
@@ -1710,7 +1710,7 @@ mod adapter_injection_tests {
                 .configuration(revised["id"].as_str().unwrap())
                 .unwrap()
                 .scope,
-            Scope::Project { project_id: one }
+            Scope::project(one)
         );
     }
     #[test]
@@ -1724,15 +1724,15 @@ mod adapter_injection_tests {
         };
         let harness = create_resource(
             "harness.create",
-            json!({"name":"Explicit pinned Harness","data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"model_providers":["builtin-model-provider-openai:1"],"capabilities":[]}}),
+            json!({"name":"Explicit pinned Harness","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"capabilities":[]}}),
         );
         let capability = create_resource(
             "capability.create",
-            json!({"name":"Explicit capability","data":{"model_ref":DEFAULT_MODEL_ID,"harness_ref":harness["id"],"tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[]}}),
+            json!({"name":"Explicit capability","model_ref":DEFAULT_MODEL_ID,"harness_ref":harness["id"],"tools":[DEFAULT_NATIVE_TOOL_ID],"skills":[],"data":{}}),
         );
         let agent = create_resource(
             "agent.create",
-            json!({"name":"Permission pair","data":{"role_ref":default_role_id("analyst"),"capability_ref":capability["id"]}}),
+            json!({"name":"Permission pair","role_ref":default_role_id("analyst"),"capability_ref":capability["id"],"data":{}}),
         );
         let e = w.active_engine(Some(&pid)).unwrap();
         w.sync_configuration(&e).unwrap();
@@ -1775,8 +1775,12 @@ mod adapter_injection_tests {
             expected_revision: Some(2),
             payload: json!({"agent":default_configured_agent_id("analyst")}),
         };
-        assert!(w.resolve_agent_composition(&e, &mut command).is_ok());
-        let payload = json!({"name":"Continuation instance","scope":{"kind":"project","project_id":two},"agent_revision_id":default_configured_agent_id("analyst")});
+        assert!(
+            w.resolve_agent_composition(&e, &mut command)
+                .inspect_err(|error| eprintln!("compose failed: {error:?}"))
+                .is_ok()
+        );
+        let payload = json!({"name":"Continuation instance","scope":format!("project:{two}"),"agent_revision_id":default_configured_agent_id("analyst")});
         assert!(
             e.execute(
                 "agent.instance.create",
@@ -1867,7 +1871,7 @@ impl FrozenConfiguredPlanForTests for EngineeringState {
         self.governance
             .iter()
             .find(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["owner_id"] == feature
                     && r.data["parent_execution_id"].is_null()
             })

@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前数据结构基线为 global 16 / project 47。Workflow 使用 v6，Spec 使用 v3，Standard 使用 v4，Agent 任务使用 `agent-task/v6`，普通 Proposal 使用 v2。只支持当前合同；只接受源协议 v2 和新数据集；不升级旧数据。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
+当前数据结构基线为 global 17 / project 48。Workflow 使用 v6，Spec 使用 v3，Standard 使用 v4，Agent 任务使用 `agent-task/v6`，普通 Proposal 使用 v2。只支持当前合同；只接受扁平源协议 和新数据集；不升级旧数据。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
 
 ## 配置概念
 

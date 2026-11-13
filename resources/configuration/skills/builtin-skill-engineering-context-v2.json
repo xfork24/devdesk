@@ -1,11 +1,9 @@
 {
-  "kind": "skill",
+  "type": "skill",
   "identity": "builtin-skill-engineering-context",
   "revision": 2,
   "name": "工程上下文与工作树规范",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "rules": [],
     "slots": [],

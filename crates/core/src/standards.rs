@@ -1,15 +1,13 @@
 //! Standard publication and consumer selections. No independent quality policy lives here.
-use crate::governance::{record, reference};
+use crate::governance::{record, record_with_refs, reference};
 use crate::*;
 use std::collections::BTreeMap;
 
 pub(crate) fn source_scope(scope: &Scope) -> Scope {
     scope
-        .project()
-        .map(|p| Scope::Project {
-            project_id: p.into(),
-        })
-        .unwrap_or(Scope::Global)
+        .project_id()
+        .map(|p| Scope::project(p))
+        .unwrap_or(Scope::global())
 }
 
 pub(crate) fn standard_archived(state: &EngineeringState, reference: &str) -> bool {
@@ -17,7 +15,7 @@ pub(crate) fn standard_archived(state: &EngineeringState, reference: &str) -> bo
         .governance
         .iter()
         .rev()
-        .find(|r| r.kind == "standard_archive" && r.definition_id == reference)
+        .find(|r| r.r#type == "standard_archive" && r.definition_id == reference)
         .map(|r| r.data["archived"] == true)
         .unwrap_or_else(|| {
             state
@@ -35,14 +33,12 @@ pub(crate) fn capture_standard(
     roots.sort();
     roots.dedup();
     let scope = source_scope(scope);
-    let definition = ConfiguredStandard {
-        schema_version: 4,
-        root_workflow_refs: roots,
-    };
-    resolve_standard_sources(state, &definition, &scope)?;
+    let definition = ConfiguredStandard { schema_version: 4 };
+    resolve_standard_sources(state, &roots, &scope)?;
     if let Some(existing) = state.governance.iter().find(|r| {
-        r.kind == "standard"
+        r.r#type == "standard"
             && r.scope.visible_from(&scope)
+            && *reference_value(&r.refs, "root_workflow_refs") == json!(roots)
             && r.data == json!(definition)
             && !standard_archived(state, &r.id)
     }) {
@@ -50,23 +46,24 @@ pub(crate) fn capture_standard(
     }
     let identity = format!(
         "standard.{}",
-        configuration_hash(&json!({"scope":scope,"definition":definition}))
+        configuration_hash(&json!({"scope":scope,"roots":roots}))
     );
     let version = state
         .governance
         .iter()
-        .filter(|r| r.kind == "standard" && r.definition_id == identity)
+        .filter(|r| r.r#type == "standard" && r.definition_id == identity)
         .map(|r| r.version)
         .max()
         .unwrap_or(0)
         + 1;
-    let row = record(
+    let row = record_with_refs(
         "standard",
         identity,
         scope,
         name.into(),
         version,
         None,
+        References::from([("root_workflow_refs".to_string(), json!(roots))]),
         json!(definition),
         true,
     );
@@ -81,7 +78,7 @@ pub(crate) fn work_configuration<'a>(
     state
         .governance
         .iter()
-        .filter(|r| r.kind == "work_configuration" && r.definition_id == owner)
+        .filter(|r| r.r#type == "work_configuration" && r.definition_id == owner)
         .max_by_key(|r| r.version)
 }
 
@@ -158,7 +155,7 @@ pub(crate) fn selection_state(state: &EngineeringState, selection: &Value) -> En
     selected.governance.push(record(
         "project_configuration",
         "execution-selection".into(),
-        Scope::Global,
+        Scope::global(),
         "执行选择".into(),
         u64::MAX,
         None,
@@ -180,8 +177,8 @@ impl Engine {
                 .configuration(c.target.as_deref().unwrap_or(""))?
                 .clone();
             require(
-                source.kind == "standard"
-                    && source.scope.project() == self.store.project_id().as_deref()
+                source.r#type == "standard"
+                    && source.scope.project_id() == self.store.project_id().as_deref()
                     && c.expected_revision == Some(source.revision),
                 "Standard 类型、维护范围或修订不匹配",
             )?;
@@ -231,7 +228,7 @@ impl Engine {
                 !state
                     .governance
                     .iter()
-                    .any(|r| r.kind == "workflow_instance" && r.data["owner_id"] == owner),
+                    .any(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == owner),
                 "工作已开始，请通过计划变更切换规范",
             )?;
             let inherited = work_configuration(state, owner).cloned();
@@ -261,20 +258,16 @@ impl Engine {
         let scope: Scope = serde_json::from_value(p.get("scope").cloned().unwrap_or_else(|| {
             self.store
                 .project_id()
-                .map(|p| json!({"kind":"project","project_id":p}))
-                .unwrap_or(json!({"kind":"global"}))
+                .map(|p| json!(format!("project:{p}")))
+                .unwrap_or(json!("global"))
         }))
         .map_err(|e| err("invalid_params", e.to_string()))?;
         require(
-            !matches!(scope, Scope::Feature { .. })
-                && scope.project() == self.store.project_id().as_deref(),
+            !scope.is_feature() && scope.project_id() == self.store.project_id().as_deref(),
             "Standard 源可见范围与当前入口不一致",
         )?;
-        let definition = ConfiguredStandard {
-            schema_version: 4,
-            root_workflow_refs: roots.clone(),
-        };
-        let snapshot = resolve_standard_sources(state, &definition, &scope)?;
+        let definition = ConfiguredStandard { schema_version: 4 };
+        let snapshot = resolve_standard_sources(state, &roots, &scope)?;
         if let Some(expected) = p["preview_digest"].as_str() {
             require(expected == snapshot.snapshot_digest, "规范候选已变化")?;
         }
@@ -287,19 +280,20 @@ impl Engine {
             )?;
             require(
                 !state.governance.iter().any(|r| {
-                    r.kind == "standard"
+                    r.r#type == "standard"
                         && r.definition_id == previous.definition_id
                         && r.version > previous.version
                 }),
                 "Standard 已有新修订",
             )?;
-            let row = record(
+            let row = record_with_refs(
                 "standard",
                 previous.definition_id,
                 scope,
                 name,
                 previous.version + 1,
                 Some(previous.id),
+                References::from([("root_workflow_refs".to_string(), json!(roots.clone()))]),
                 json!(definition),
                 true,
             );
@@ -331,15 +325,15 @@ impl Engine {
                 .store
                 .project_id()
                 .or_else(|| p["project_id"].as_str().map(str::to_owned))
-                .map(|p| Scope::Project { project_id: p })
-                .unwrap_or(Scope::Global);
+                .map(|p| Scope::project(p))
+                .unwrap_or(Scope::global());
             let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 1000) as usize;
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             if method == "query.standard_catalog" {
                 let rows = state
                     .governance
                     .iter()
-                    .filter(|r| r.kind == "standard" && r.scope.visible_from(&scope))
+                    .filter(|r| r.r#type == "standard" && r.scope.visible_from(&scope))
                     .filter(|r| p["include_archived"] == true || !standard_archived(&state, &r.id))
                     .map(|r| {
                         let mut value = json!(r);
@@ -361,10 +355,10 @@ impl Engine {
                 let owner = text(p, "owner_id")?;
                 let work = work_reference(&state, &owner)?;
                 require(
-                    scope.project().is_none_or(|project| {
+                    scope.project_id().is_none_or(|project| {
                         work.scope(&state)
                             .ok()
-                            .and_then(|s| s.project().map(str::to_owned))
+                            .and_then(|s| s.project_id().map(str::to_owned))
                             .as_deref()
                             == Some(project)
                     }),
@@ -375,16 +369,9 @@ impl Engine {
                 );
             }
             if method == "standard.capture.preview" {
-                let definition = ConfiguredStandard {
-                    schema_version: 4,
-                    root_workflow_refs: serde_json::from_value(p["root_workflow_refs"].clone())
-                        .map_err(|e| err("invalid_params", e.to_string()))?,
-                };
-                return Ok(json!(resolve_standard_sources(
-                    &state,
-                    &definition,
-                    &scope
-                )?));
+                let roots: Vec<Id> = serde_json::from_value(p["root_workflow_refs"].clone())
+                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                return Ok(json!(resolve_standard_sources(&state, &roots, &scope)?));
             }
             if method == "query.standard_diff" {
                 let mut left = standard_snapshot(&state, &text(p, "before_ref")?, &scope)?;
@@ -412,11 +399,11 @@ impl Engine {
                             "work_configuration",
                             "workflow_plan_revision",
                         ]
-                        .contains(&r.kind.as_str())
+                        .contains(&r.r#type.as_str())
                             && r.data["standard_ref"] == id
                             && scope
-                                .project()
-                                .is_none_or(|project| r.scope.project() == Some(project))
+                                .project_id()
+                                .is_none_or(|project| r.scope.project_id() == Some(project))
                     })
                     .collect();
                 return Ok(
@@ -471,10 +458,10 @@ pub(crate) fn check_invocation_contract(
 }
 
 pub(crate) fn is_work_root(state: &EngineeringState, row: &ConfigurationRecord) -> bool {
-    row.kind == "workflow_instance"
+    row.r#type == "workflow_instance"
         && (row.data["parent_execution_id"].is_null()
             || state.governance.iter().any(|invocation| {
-                invocation.kind == "workflow_invocation"
+                invocation.r#type == "workflow_invocation"
                     && invocation.data["child_instance_id"] == row.id
                     && invocation.data["member_identity"] == row.data["owner_id"]
             }))
@@ -492,7 +479,7 @@ pub(crate) fn current_work_instance<'a>(
 }
 
 fn is_work_plan(state: &EngineeringState, row: &ConfigurationRecord, owner: &str) -> bool {
-    row.kind == "workflow_plan_revision"
+    row.r#type == "workflow_plan_revision"
         && row.data["owner_id"] == owner
         && row.data["instance_id"]
             .as_str()
@@ -515,7 +502,7 @@ fn selected_work_record<'a>(
             state
                 .governance
                 .iter()
-                .filter(|r| r.kind == "project_configuration" && r.definition_id == owner)
+                .filter(|r| r.r#type == "project_configuration" && r.definition_id == owner)
                 .max_by_key(|r| r.version)
         })
 }
@@ -531,7 +518,7 @@ pub fn work_standard_selection(
     let source = if let Some(reference) = historical {
         let record = state.configuration(reference)?;
         require(
-            record.kind == "workflow_plan_revision" && record.data["owner_id"] == owner,
+            record.r#type == "workflow_plan_revision" && record.data["owner_id"] == owner,
             "历史计划不属于该工作",
         )?;
         record
@@ -542,13 +529,13 @@ pub fn work_standard_selection(
     let standard = text(&source.data, "standard_ref")?;
     let workflow = text(&source.data, "workflow_ref")?;
     standard_entry(state, &standard, &workflow, &scope)?;
-    let is_plan = source.kind == "workflow_plan_revision";
+    let is_plan = source.r#type == "workflow_plan_revision";
     let children = if historical.is_some() {
         state
             .governance
             .iter()
             .filter(|r| {
-                r.kind == "workflow_invocation" && r.data["parent_plan_revision_id"] == source.id
+                r.r#type == "workflow_invocation" && r.data["parent_plan_revision_id"] == source.id
             })
             .map(|r| r.data.clone())
             .collect::<Vec<_>>()
@@ -562,7 +549,7 @@ pub fn work_standard_selection(
             .flatten()
             .filter_map(|e| e["id"].as_str())
             .collect::<std::collections::BTreeSet<_>>();
-        state.governance.iter().filter(|r|r.kind=="workflow_instance" && r.data["parent_execution_id"].as_str().is_some_and(|id|executions.contains(id)))
+        state.governance.iter().filter(|r|r.r#type=="workflow_instance" && r.data["parent_execution_id"].as_str().is_some_and(|id|executions.contains(id)))
             .map(|r|json!({"instance_id":r.id,"owner_id":r.data["owner_id"],"standard_ref":r.data["plan"]["standard_ref"],"workflow_ref":r.data["workflow_ref"],"plan_revision_id":r.data["active_plan_revision_id"]})).collect::<Vec<_>>()
     } else {
         vec![]
@@ -572,11 +559,11 @@ pub fn work_standard_selection(
     let exceptions = state
         .governance
         .iter()
-        .filter(|r| r.kind == "workflow_waiver" && r.data["plan_revision_id"] == source.id)
+        .filter(|r| r.r#type == "workflow_waiver" && r.data["plan_revision_id"] == source.id)
         .map(|r| json!({"id":r.id,"data":r.data}))
         .collect::<Vec<_>>();
     Ok(
-        json!({"work":work,"project_id":scope.project(),"selection_ref":source.id,"basis":if is_plan{"execution"}else{"configured"},"plan_revision_id":if is_plan{Some(&source.id)}else{None},"standard_ref":standard,"workflow_ref":workflow,"children":children,"children_basis":if historical.is_some(){"invocation_initial"}else{"current"},"history":history,"exceptions":exceptions}),
+        json!({"work":work,"project_id":scope.project_id(),"selection_ref":source.id,"basis":if is_plan{"execution"}else{"configured"},"plan_revision_id":if is_plan{Some(&source.id)}else{None},"standard_ref":standard,"workflow_ref":workflow,"children":children,"children_basis":if historical.is_some(){"invocation_initial"}else{"current"},"history":history,"exceptions":exceptions}),
     )
 }
 
@@ -596,9 +583,7 @@ pub fn compare_work_standards(
         params["after_plan_revision_id"].as_str(),
     )?;
     let resolve = |state: &EngineeringState, selection: &Value| -> Result<StandardSnapshot> {
-        let scope = Scope::Project {
-            project_id: text(selection, "project_id")?,
-        };
+        let scope = Scope::project(text(selection, "project_id")?);
         standard_snapshot(state, &text(selection, "standard_ref")?, &scope)
     };
     let a = resolve(before, &left)?;
@@ -620,6 +605,6 @@ pub fn work_standard_choices(state: &EngineeringState) -> Vec<Value> {
             let record=selected_work_record(state,owner)?;
             let work=work_reference(state,owner).ok()?;
             let scope=work.scope(state).ok()?;
-            Some(json!({"id":owner,"title":title,"work":work,"project_id":scope.project(),"standard_ref":record.data["standard_ref"],"workflow_ref":record.data["workflow_ref"]}))
+            Some(json!({"id":owner,"title":title,"work":work,"project_id":scope.project_id(),"standard_ref":record.data["standard_ref"],"workflow_ref":record.data["workflow_ref"]}))
         }).collect()
 }

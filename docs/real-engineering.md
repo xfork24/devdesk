@@ -28,6 +28,6 @@ Git 候选以预期目标为父提交。默认接纳要求确切候选的真实�
 
 `./scripts/check/check.sh` 验证 Rust、HTTP、安全、SQLite、模板重置及 debug/release Chromium。真实 Docker 验证可使用 `scripts/check/check-live.sh --groups git,docker,permissions`，不调用模型。真实模型与 GitHub 发布须使用专用数据集和测试仓库；历史版本的验收报告不代表新执行器已完成相同实机验收。
 
-当前配置使用源协议 v2，数据库基线为 global 16 / project 47。仅支持新数据集，不提供旧协议转换或升级；验证使用独立空目录。既有目录会被明确拒绝且不改写。
+当前配置使用扁平源协议，数据库基线为 global 17 / project 48。仅支持新数据集，不提供旧协议转换或升级；验证使用独立空目录。既有目录会被明确拒绝且不改写。
 
 合并后的完整 Feature 验收还核对 Task documentation/review/candidate_review 和 Feature closure_review/candidate_review 的实际渲染任务封套：原始逐增量 TDD evidence 必须完整到达，输入来源必须指向相应的密封输出。默认 automatic 数据集中出现 Human 确认、人工批准、旁路或豁免即判失败；不允许通过手动 approve 完成探针。运行计划原始合同通过不可变修订祖先核对，不能将修订后的图当作自身验收基线。

@@ -22,7 +22,7 @@ class Client:
  def feature(self,feature):return self.rpc('query.workspace',{'feature_id':feature,'limit':100})['detail']
  def discuss(self,owner,revision,role,provider,prompt,timeout=240,work_type='discussion'):
   records=self.rpc('query.configurations',{'include_history':False,'limit':1000})['records'];by_id={r['id']:r for r in records}
-  agent=next((r for r in records if r['kind']=='agent' and by_id.get(r['data'].get('role_ref'),{}).get('definition_id')=='builtin-role-'+role and by_id.get(r['data']['harness_ref'],{}).get('data',{}).get('provider')==provider),None)
+  agent=next((r for r in records if r['type']=='agent' and by_id.get(r.get('role_ref'),{}).get('definition_id')=='builtin-role-'+role and by_id.get(by_id.get(r.get('capability_ref'),{}).get('harness_ref'),{}).get('data',{}).get('provider')==provider),None)
   if agent is None:raise RuntimeError('Configure a complete current Agent for the requested role and provider before this probe')
   sid=self.command('session.open',owner,revision,{'agent':agent['id'],'work_type':work_type})['id']
   state=self.rpc('query.session',{'id':sid});tid=self.command('conversation.send',sid,state['session']['revision'],{'client_message_id':str(uuid.uuid4()),'input':prompt})['id'];end=time.monotonic()+timeout

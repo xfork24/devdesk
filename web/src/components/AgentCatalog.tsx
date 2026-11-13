@@ -19,6 +19,8 @@ import { WorkflowSpecifications } from "./WorkflowSpecifications";
 import { DeliverySpecPreview } from "./DeliveryContent";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
 import {
+  sourceContent,
+  sourcePayload,
   latest,
   loadCatalog,
   templateSourceLabel,
@@ -204,7 +206,7 @@ export function ResourceEditor({
     [busy, setBusy] = useState(false),
     [integrations, setIntegrations] = useState<Row[]>([]);
   const [draft, setDraft] = useDraft(
-    `devdesk:source-v2-standard-v1:resource:${project?.id || "global"}:${kind}`,
+    `devdesk:source-flat-v1:resource:${project?.id || "global"}:${kind}`,
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
@@ -250,7 +252,7 @@ export function ResourceEditor({
   const runtimeVersions: Row[] = (runtimeOptions.recipes || []).filter(
     (r: Row) => r.provider === data.provider,
   );
-  const options = (family: string) => records.filter((r) => r.kind === family);
+  const options = (family: string) => records.filter((r) => r.type === family);
   const select = (
     label: string,
     family: string,
@@ -291,7 +293,7 @@ export function ResourceEditor({
   );
   const choose = (row: Row) => {
     setShowAdditionalEditor(false);
-    let value = structuredClone(row.data);
+    let value = sourceContent(row);
     if (kind === "agent") {
       value = {
         role_ref: value.role_ref || "",
@@ -301,7 +303,7 @@ export function ResourceEditor({
     setDraft({
       selected: row.id,
       name: row.name,
-      scope: row.scope.kind,
+      scope: row.scope === "global" ? "global" : "project",
       data: value,
     });
     const params = new URLSearchParams(location.search);
@@ -315,13 +317,13 @@ export function ResourceEditor({
     const selected = new URLSearchParams(location.search).get("config_object");
     if (selected) {
       const instance = records.find(
-        (r) => r.id === selected && r.kind === "agent_instance",
+        (r) => r.id === selected && r.type === "agent_instance",
       );
       const revision =
         kind === "agent" && instance
           ? instance.data.agent_revision_id
           : selected;
-      const row = records.find((r) => r.id === revision && r.kind === kind);
+      const row = records.find((r) => r.id === revision && r.type === kind);
       if (row) {
         routeConsumed.current = true;
         if (draft.selected !== row.id) choose(row);
@@ -379,9 +381,9 @@ export function ResourceEditor({
                 name: draft.name,
                 scope:
                   draft.scope === "project"
-                    ? { kind: "project", project_id: project!.id }
-                    : { kind: "global" },
-                data: payload,
+                    ? `project:${project!.id}`
+                    : "global",
+                ...sourcePayload(kind, payload),
               },
         },
       );
@@ -467,7 +469,7 @@ export function ResourceEditor({
             </ActionButton>
           )}
 
-          {latest(records.filter((r) => r.kind === kind)).map((row) => (
+          {latest(records.filter((r) => r.type === kind)).map((row) => (
             <ActionButton
               key={row.id}
               className={
@@ -483,7 +485,7 @@ export function ResourceEditor({
               <strong>{row.name}</strong>
               <span>
                 v{row.version} ·{" "}
-                {row.scope.kind === "global" ? "Global" : "项目"}
+                {row.scope === "global" ? "Global" : "项目"}
               </span>
             </ActionButton>
           ))}
@@ -552,18 +554,18 @@ export function ResourceEditor({
                 {capability && (
                   <div className="notice">
                     Model：
-                    {records.find((r) => r.id === capability.data.model_ref)
+                    {records.find((r) => r.id === capability.model_ref)
                       ?.name || "固定修订"}{" "}
                     · Harness：
-                    {records.find((r) => r.id === capability.data.harness_ref)
+                    {records.find((r) => r.id === capability.harness_ref)
                       ?.name || "固定修订"}{" "}
                     · Tools{" "}
                     {
-                      capability.data.tools.filter((id: string) =>
+                      capability.tools.filter((id: string) =>
                         options("tool").some((row) => row.id === id),
                       ).length
                     }{" "}
-                    · Skills {capability.data.skills.length}
+                    · Skills {capability.skills.length}
                   </div>
                 )}
                 <p className="muted full-width">
@@ -586,7 +588,7 @@ export function ResourceEditor({
                 {select("Skills", "skill", "skills", true)}
                 {(data.skills || []).map((id: string) => {
                   const pkg = integrations.find(
-                    (r) => r.kind === "skill_package" && r.definition_id === id,
+                    (r) => r.type === "skill_package" && r.definition_id === id,
                   );
                   if (!pkg) return null;
                   const missing = (pkg.data.requires_tools || []).filter(
@@ -609,7 +611,7 @@ export function ResourceEditor({
                 })}
                 {(data.tools || []).filter(
                   (id: string) =>
-                    records.find((r) => r.id === id)?.data.schema_version === 2,
+                    typeof records.find((r) => r.id === id)?.data.integration_ref === "string",
                 ).length > 0 && (
                   <p>
                     外部工具还需要项目选择接入绑定；保存 Capability
@@ -620,8 +622,8 @@ export function ResourceEditor({
 
                 {model && harness && (
                   <p className="notice">
-                    {harness.data.model_providers?.length &&
-                    !harness.data.model_providers.some(
+                    {harness.model_providers?.length &&
+                    !harness.model_providers.some(
                       (ref: string) =>
                         providers.find((p) => p.reference === ref)?.id ===
                         model.data.provider,
@@ -845,7 +847,7 @@ export function ResourceEditor({
               (() => {
                 const pkg = integrations.find(
                   (r) =>
-                    r.kind === "skill_package" && r.definition_id === old.id,
+                    r.type === "skill_package" && r.definition_id === old.id,
                 );
                 return pkg ? (
                   <div className="notice">
@@ -968,7 +970,7 @@ export function ResourceEditor({
                 <RevisionSelect
                   label="内容规范"
                   multiple
-                  records={records.filter((r) => r.kind === "spec")}
+                  records={records.filter((r) => r.type === "spec")}
                   value={data.spec_refs || []}
                   onChange={(spec_refs) => patch({ spec_refs })}
                 />
@@ -978,7 +980,7 @@ export function ResourceEditor({
                 />
                 {data.producer ? (
                   <p>
-                    产出来源：{data.producer.kind}
+                    产出来源：{data.producer.type}
                     {data.producer.tools
                       ? ` · ${data.producer.tools.join("、")}`
                       : ""}

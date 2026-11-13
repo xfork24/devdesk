@@ -25,7 +25,7 @@ export const templateSourceLabel = (row?: Row) =>
 export function latest(records: Row[]) {
   const map = new Map<string, Row>();
   for (const r of records) {
-    const key = `${r.kind}:${r.definition_id}`;
+    const key = `${r.type}:${r.definition_id}`;
     if (!map.has(key) || map.get(key)!.version < r.version) map.set(key, r);
   }
   return [...map.values()];
@@ -63,7 +63,7 @@ export async function loadCatalog(
     project_id: project?.id,
     include_archived: includeArchived,
   });
-  return [...result.filter((r) => r.kind !== "standard"), ...standards.records];
+  return [...result.filter((r) => r.type !== "standard"), ...standards.records];
 }
 export async function loadIntegrationRecords(request: Request, project?: Row) {
   const result: Row[] = [];
@@ -224,7 +224,7 @@ export function RevisionSelect({
         {options.map((r) => (
           <option key={r.id} value={r.id}>
             {r.name} · v{r.version}
-            {r.scope?.kind === "project" ? " · 项目" : ""}
+            {r.scope?.startsWith("project:") ? " · 项目" : ""}
           </option>
         ))}
         {ids
@@ -413,4 +413,27 @@ export function MarkdownTopicsField({
       )}
     </div>
   );
+}
+
+// References are edited with payload fields, and written directly on the source envelope.
+const sourceReferenceFields: Record<string, string[]> = {
+  capability: ["harness_ref", "model_ref", "skills", "tools"],
+  agent: ["role_ref", "capability_ref"],
+  delivery_type: ["spec_refs"],
+  harness: ["model_providers", "model_catalog_ref"],
+  permission_context: ["sandbox_ref"],
+  standard: ["root_workflow_refs"],
+};
+export function sourceContent(record: Row): Row {
+  return structuredClone({ ...record.data, ...Object.fromEntries(
+    (sourceReferenceFields[record.type] || []).filter((key) => key in record).map((key) => [key, record[key]]),
+  ) });
+}
+export function sourcePayload(type: string, content: Row): Row {
+  const data = { ...content };
+  const refs: Row = {};
+  for (const key of sourceReferenceFields[type] || []) {
+    if (key in data) { refs[key] = data[key]; delete data[key]; }
+  }
+  return { ...refs, data };
 }

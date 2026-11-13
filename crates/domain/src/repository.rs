@@ -172,9 +172,9 @@ impl EngineeringState {
                             .is_ok_and(|f| f.project_id == work.project_id)
                 }),
                 WorktreeKind::Candidate => self.governance.iter().any(|r| {
-                    r.kind == "platform_call"
+                    r.r#type == "platform_call"
                         && r.definition_id == work.owner_id
-                        && r.scope.project() == Some(work.project_id.as_str())
+                        && r.scope.project_id() == Some(work.project_id.as_str())
                 }),
             };
             require(valid, "worktree 归属不存在或跨项目")?;

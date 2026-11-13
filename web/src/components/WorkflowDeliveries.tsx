@@ -125,7 +125,7 @@ export function WorkflowDeliveries({
   onChange: (patch: Row) => void;
   onRenameOutput: (previous: string, next: string) => void;
 }) {
-  const types = records.filter((row) => row.kind === "delivery_type");
+  const types = records.filter((row) => row.type === "delivery_type");
   const inputs = step.inputs || {},
     outputs = step.outputs || {};
   const nextKey = (rows: Row, prefix: string) => {

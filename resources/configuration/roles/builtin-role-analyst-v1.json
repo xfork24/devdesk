@@ -1,11 +1,9 @@
 {
-  "kind": "role",
+  "type": "role",
   "identity": "builtin-role-analyst",
   "revision": 1,
   "name": "需求分析师",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "instructions_file": "analyst.md"
   }

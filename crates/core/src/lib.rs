@@ -333,7 +333,7 @@ impl Engine {
             for r in s
                 .governance
                 .iter_mut()
-                .filter(|r| r.kind == "tool_call" && r.data["status"] == "dispatched")
+                .filter(|r| r.r#type == "tool_call" && r.data["status"] == "dispatched")
             {
                 let mut d = r.data.clone();
                 d["status"] = json!("needs_reconciliation");
@@ -343,7 +343,7 @@ impl Engine {
             // Reconcile persisted workflow references once after opening, including
             // idle instances left waiting by an older evaluator.
             for record in s.governance.iter_mut().filter(|r| {
-                r.kind == "workflow_instance"
+                r.r#type == "workflow_instance"
                     && r.data["status"] != "completed"
                     && r.data["status"] != "cancelled"
             }) {
@@ -715,7 +715,7 @@ impl Engine {
         if method == "query.orchestration" {
             let s = self.store.snapshot()?;
             let row = s.governance.iter().rev().find(|r| {
-                r.kind == "workflow_controller"
+                r.r#type == "workflow_controller"
                     && (p["id"].as_str() == Some(r.id.as_str())
                         || p["root_instance_id"]
                             .as_str()
@@ -726,11 +726,11 @@ impl Engine {
             });
             if let Some(row) = row {
                 if let Some(project) = p["project_id"].as_str() {
-                    require(row.scope.project() == Some(project), "编排控制器跨项目")?;
+                    require(row.scope.project_id() == Some(project), "编排控制器跨项目")?;
                 }
                 let sid = row.data["session_id"].as_str();
                 return Ok(
-                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.kind=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"decisions":s.governance.iter().filter(|r|r.kind=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|instance| instance.data["root_instance_id"]==row.data["root_instance_id"])).rev().take(20).collect::<Vec<_>>() }),
+                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.r#type=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"decisions":s.governance.iter().filter(|r|r.r#type=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|instance| instance.data["root_instance_id"]==row.data["root_instance_id"])).rev().take(20).collect::<Vec<_>>() }),
                 );
             }
             return Ok(json!({"record":null,"messages":[],"calls":[],"decisions":[]}));
@@ -775,7 +775,7 @@ impl Engine {
                 let workflows: Vec<_> = s
                     .governance
                     .iter()
-                    .filter(|r| r.kind == "workflow_instance")
+                    .filter(|r| r.r#type == "workflow_instance")
                     .collect();
                 let steps: Vec<_> = workflows
                     .iter()
@@ -817,8 +817,8 @@ impl Engine {
                 Ok(
                     json!({"projects":s.projects,"features":features.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_features":features.len(),"total_projects":s.projects.len(),
                     "summary":{"features":s.features.len(),"tasks":s.tasks.len(),"running":steps.iter().filter(|r|r["status"]=="running").count(),"waiting_confirmation":steps.iter().filter(|r|r["status"]=="waiting_confirmation").count(),"blocked":steps.iter().filter(|r|["failed","needs_reconciliation","waiting_input"].contains(&r["status"].as_str().unwrap_or(""))).count()},
-                    "configurations":s.governance.iter().filter(|r|["workflow_instance","project_configuration","work_configuration"].contains(&r.kind.as_str())).map(|r|{let mut row=json!(r);if r.kind=="workflow_instance"{row["work_root"]=json!(standards::is_work_root(&s,r));}row}).collect::<Vec<_>>(),
-                    "delivery_types":s.governance.iter().filter(|r|r.kind=="delivery_type"&&template_record_current(&s,r)).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|template_projection_current(&s,d)).collect::<Vec<_>>(),"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live",
+                    "configurations":s.governance.iter().filter(|r|["workflow_instance","project_configuration","work_configuration"].contains(&r.r#type.as_str())).map(|r|{let mut row=json!(r);if r.r#type=="workflow_instance"{row["work_root"]=json!(standards::is_work_root(&s,r));}row}).collect::<Vec<_>>(),
+                    "delivery_types":s.governance.iter().filter(|r|r.r#type=="delivery_type"&&template_record_current(&s,r)).collect::<Vec<_>>(),"definitions":s.definitions.iter().filter(|d|template_projection_current(&s,d)).collect::<Vec<_>>(),"harnesses":s.harnesses,"sandboxes":s.sandboxes,"detail":detail,"data_root":self.store.root(),"execution_mode":"live",
                     "repository_ready":s.repository_worktrees.iter().any(|w|w.kind==WorktreeKind::Mainline),"global_concurrency":global_limit}),
                 )
             }

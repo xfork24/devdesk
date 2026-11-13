@@ -120,7 +120,7 @@ export function WorkflowTaskPreview({
     document.stages.find((stage: Row) => stage.key === step.stage)
       ?.default_role_ref;
   const agents = records.filter(
-    (row) => row.kind === "agent" && row.data.role_ref === role,
+    (row) => row.type === "agent" && row.role_ref === role,
   );
   const selectedAgent = agents.some((row) => row.id === agent) ? agent : "";
   const signature = JSON.stringify({

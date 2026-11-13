@@ -88,7 +88,7 @@ impl Workspace {
             .recipe_digest
             .as_ref()
             .ok_or_else(|| err("invalid_configuration", "Harness 没有固定构建配方"))?;
-        let store: Arc<dyn EngineeringStore> = if record.scope == Scope::Global {
+        let store: Arc<dyn EngineeringStore> = if record.scope == Scope::global() {
             self.global.clone()
         } else {
             e.store.clone()
@@ -124,8 +124,7 @@ impl Workspace {
         )?;
         let installation = self.ensure_runtime(provider, None)?;
         require(
-            devdesk_adapters::permissions::installation_recipe(&installation)
-                .starts_with(&digest[..16]),
+            devdesk_adapters::permissions::installation_recipe(&installation) == *digest,
             "实际安装与冻结 Harness 配方不符",
         )?;
         let data = json!({"harness_revision_id":record.id,"recipe_digest":digest,"installation_id":installation.id,"key":installation.key,"artifact":installation.artifact});
@@ -138,13 +137,14 @@ impl Workspace {
             } else {
                 s.governance.push(ConfigurationRecord {
                     id: key.clone(),
-                    kind: "harness_materialization".into(),
+                    r#type: "harness_materialization".into(),
                     definition_id: record.id.clone(),
                     scope: record.scope.clone(),
                     name: format!("{} · 已核验安装", record.name),
                     version: 1,
                     supersedes: None,
-                    content_hash: configuration_hash(&data),
+                    content_hash: content_digest(&References::new(), &data),
+                    refs: References::new(),
                     data: data.clone(),
                     immutable: true,
                     revision: 1,

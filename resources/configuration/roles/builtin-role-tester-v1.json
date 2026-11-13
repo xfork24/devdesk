@@ -1,11 +1,9 @@
 {
-  "kind": "role",
+  "type": "role",
   "identity": "builtin-role-tester",
   "revision": 1,
   "name": "测试",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "instructions_file": "tester.md"
   }

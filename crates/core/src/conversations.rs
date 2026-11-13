@@ -21,7 +21,7 @@ fn session_instance<'a>(state: &'a EngineeringState, session: &'a Session) -> Op
             state
                 .governance
                 .iter()
-                .find(|r| r.kind == "agent_session" && r.definition_id == session.id)
+                .find(|r| r.r#type == "agent_session" && r.definition_id == session.id)
                 .and_then(|r| r.data["agent_instance_id"].as_str())
         })
 }
@@ -175,7 +175,7 @@ impl Engine {
                             && v.agent == agent
                             && opt(p, "agent_instance_id").is_none_or(|instance| {
                                 s.governance.iter().any(|r| {
-                                    r.kind == "agent_session"
+                                    r.r#type == "agent_session"
                                         && r.definition_id == v.id
                                         && r.data["agent_instance_id"] == instance
                                 })
@@ -200,7 +200,7 @@ impl Engine {
                                     && v.owner_id == target
                                     && opt(p, "agent_instance_id").is_none_or(|instance| {
                                         s.governance.iter().any(|r| {
-                                            r.kind == "agent_session"
+                                            r.r#type == "agent_session"
                                                 && r.definition_id == v.id
                                                 && r.data["agent_instance_id"] == instance
                                         })
@@ -260,7 +260,7 @@ impl Engine {
                     ));
                 }
                 if s.governance.iter().any(|r| {
-                    r.kind == "permission_switch"
+                    r.r#type == "permission_switch"
                         && r.definition_id == target
                         && r.data["status"] != "adopted"
                 }) {
@@ -312,7 +312,7 @@ impl Engine {
                 let configured_step = s
                     .governance
                     .iter()
-                    .any(|r| r.kind == "configured_session" && r.definition_id == session.id);
+                    .any(|r| r.r#type == "configured_session" && r.definition_id == session.id);
                 require(
                     input.len()
                         <= if configured_step
@@ -683,7 +683,7 @@ impl Engine {
                                     .and_then(|b| b.agent_configuration.as_ref())
                                     .is_some_and(|a| a.agent_instance_id == instance)
                                     || s.governance.iter().any(|r| {
-                                        r.kind == "agent_session"
+                                        r.r#type == "agent_session"
                                             && r.definition_id == v.id
                                             && r.data["agent_instance_id"] == instance
                                     })

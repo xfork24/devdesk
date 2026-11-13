@@ -1,11 +1,9 @@
 {
-  "kind": "role",
+  "type": "role",
   "identity": "builtin-role-reviewer",
   "revision": 1,
   "name": "评审",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "instructions_file": "reviewer.md"
   }

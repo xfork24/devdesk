@@ -82,10 +82,10 @@ export function RoleManager({
       visibility: {
         kind:
           row.data.visibility?.kind ||
-          (row.scope.kind === "global" ? "global" : "projects"),
+          (row.scope === "global" ? "global" : "projects"),
         project_ids:
           row.data.visibility?.project_ids ||
-          [row.scope.project_id].filter(Boolean),
+          [row.scope.split(":")[1]].filter(Boolean),
       },
     });
     const params = new URLSearchParams(location.search);
@@ -121,7 +121,7 @@ export function RoleManager({
             ? {}
             : {
                 name: draft.name,
-                scope: { kind: "global" },
+                scope: "global",
                 data: {
                   instructions: draft.instructions,
                   visibility:

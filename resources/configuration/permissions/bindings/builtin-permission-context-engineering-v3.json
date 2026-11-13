@@ -1,13 +1,11 @@
 {
-  "kind": "permission_context",
+  "type": "permission_context",
   "identity": "builtin-permission-context-engineering",
   "revision": 3,
   "name": "默认工程执行授权",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
+  "sandbox_ref": "builtin-sandbox-docker:1",
   "data": {
-    "sandbox_ref": "builtin-sandbox-docker:1",
     "harness": {
       "mode": "follow_target"
     },

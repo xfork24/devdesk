@@ -4,14 +4,14 @@ fn add_history(engine: &Engine, name: &str) {
     let scope = engine
         .store
         .project_id()
-        .map_or(Scope::Global, |project_id| Scope::Project { project_id });
+        .map_or(Scope::global(), Scope::project);
     engine.store.transact(None, &mut |s| {
         let time = 9_000_000_000_000;
         let data = json!({"status":"succeeded","invocation":{"tool":{"definition":{}},"arguments":{}}});
         s.governance.push(ConfigurationRecord {
-            id: format!("{name}-call"), kind: "tool_call".into(), definition_id: format!("{name}-call"),
-            scope: scope.clone(), name: name.into(), version: 1, supersedes: None, content_hash: configuration_hash(&data),
-            data, immutable: false, revision: 1, created_at: time,
+            id: format!("{name}-call"), r#type: "tool_call".into(), definition_id: format!("{name}-call"),
+            scope: scope.clone(), name: name.into(), version: 1, supersedes: None, content_hash: content_digest(&References::new(), &data),
+            refs: References::new(), data, immutable: false, revision: 1, created_at: time,
         });
         s.events.push(Event {
             id: s.events.last().map_or(1, |event| event.id + 1), target: name.into(),

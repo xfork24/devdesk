@@ -65,10 +65,10 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   };
   await page.getByLabel("统一权限 JSON").fill(
     JSON.stringify({
-      kind: "permission_profile",
+      type: "permission_profile",
       identity,
       revision: 1,
-      scope: { kind: "global" },
+      scope: "global",
       name: "拒绝未知字段",
       data: { schema_version: 2, target_kind: "harness", policy },
       unexpected: true,
@@ -85,10 +85,10 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   ).toBe(false);
   await page.getByLabel("统一权限 JSON").fill(
     JSON.stringify({
-      kind: "permission_profile",
+      type: "permission_profile",
       identity,
       revision: 1,
-      scope: { kind: "global" },
+      scope: "global",
       name: "Web 受限评审",
       data: { schema_version: 2, target_kind: "harness", policy },
     }),

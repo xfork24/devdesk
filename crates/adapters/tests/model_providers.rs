@@ -8,13 +8,58 @@ use std::{
 
 /// The published provider facts, mirrored from resources/configuration sources.
 fn facts(provider: &str) -> ProviderFacts {
-    let (kind, endpoint, route, protocol, api_key_env, key, native, min, max, account) = match provider {
-        "deepseek" => ("cloud_subscription", "https://api.deepseek.com", "deepseek-official", "deepseek-native", "DEEPSEEK_API_KEY", true, true, 1024u64, Some(131072u64), "deepseek-api-key-"),
-        "zai-coding-cn" => ("cloud_subscription", "https://open.bigmodel.cn/api/coding/paas/v4", "zai-coding-cn", "openai-completions", "ZAI_CODING_CN_API_KEY", true, false, 1, None, "dsh-zai-coding-cn-api-key-"),
-        "minimax-cn" => ("cloud_subscription", "https://api.minimax.cn/anthropic", "minimax-cn", "anthropic-messages", "MINIMAX_CN_API_KEY", true, false, 1, None, "dsh-minimax-cn-api-key-"),
-        "ollama" => ("local_server", "http://127.0.0.1:11434/v1", "ollama", "openai-completions", "", false, false, 1, None, ""),
-        _ => panic!("unknown test provider"),
-    };
+    let (kind, endpoint, route, protocol, api_key_env, key, native, min, max, account) =
+        match provider {
+            "deepseek" => (
+                "cloud_subscription",
+                "https://api.deepseek.com",
+                "deepseek-official",
+                "deepseek-native",
+                "DEEPSEEK_API_KEY",
+                true,
+                true,
+                1024u64,
+                Some(131072u64),
+                "deepseek-api-key-",
+            ),
+            "zai-coding-cn" => (
+                "cloud_subscription",
+                "https://open.bigmodel.cn/api/coding/paas/v4",
+                "zai-coding-cn",
+                "openai-completions",
+                "ZAI_CODING_CN_API_KEY",
+                true,
+                false,
+                1,
+                None,
+                "dsh-zai-coding-cn-api-key-",
+            ),
+            "minimax-cn" => (
+                "cloud_subscription",
+                "https://api.minimax.cn/anthropic",
+                "minimax-cn",
+                "anthropic-messages",
+                "MINIMAX_CN_API_KEY",
+                true,
+                false,
+                1,
+                None,
+                "dsh-minimax-cn-api-key-",
+            ),
+            "ollama" => (
+                "local_server",
+                "http://127.0.0.1:11434/v1",
+                "ollama",
+                "openai-completions",
+                "",
+                false,
+                false,
+                1,
+                None,
+                "",
+            ),
+            _ => panic!("unknown test provider"),
+        };
     serde_json::from_value(json!({
         "id": provider, "label": provider, "kind": kind, "harness": "dsh",
         "endpoint": endpoint, "route": route, "protocol": protocol,
@@ -27,7 +72,9 @@ fn facts(provider: &str) -> ProviderFacts {
 }
 fn connection(provider: &str) -> ModelConnection {
     let m: ModelDefinition = serde_json::from_value(json!({"provider":provider,"model":"devdesk-mock-model","context_window":32768,"max_output_tokens":4096})).unwrap();
-    resolve_model_connection(&m, &facts(provider)).unwrap().unwrap()
+    resolve_model_connection(&m, &facts(provider))
+        .unwrap()
+        .unwrap()
 }
 
 #[test]

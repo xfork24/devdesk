@@ -15,8 +15,8 @@ def verify(directory: Path):
     before = json.loads((directory / 'before-switch.json').read_text())
     database = directory / 'data/projects' / context['project'] / 'engineering.sqlite3'
     with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as connection:
-        rows = connection.execute('SELECT id,kind,data FROM governance_records').fetchall()
-        sources = connection.execute("SELECT scope,data FROM source_definitions WHERE kind='standard'").fetchall()
+        rows = connection.execute('SELECT id,type,data FROM governance_records').fetchall()
+        sources = connection.execute("SELECT scope,data FROM source_definitions WHERE type='standard'").fetchall()
     by_id = {key: (kind, json.loads(raw)) for key, kind, raw in rows}
     by_kind = {}
     for key, kind, raw in rows:
@@ -53,8 +53,8 @@ def verify(directory: Path):
             assert by_id[output][1]['value'] == before['outputs'][output]['value']
             old_outputs.append(output)
     for scope, raw in sources:
-        assert json.loads(scope)['kind'] != 'feature'
-        assert set(json.loads(raw)) == {'schema_version', 'root_workflow_refs'}
+        assert not json.loads(scope).startswith('feature:')
+        assert set(json.loads(raw)) == {'schema_version'}
         assert json.loads(raw)['schema_version'] == 4
     initial_calls = [data for _, data in by_kind['workflow_invocation']]
     assert next(data for data in initial_calls if data['child_instance_id'] == before['a']['id'])['standard_ref'] == context['sa']['id']

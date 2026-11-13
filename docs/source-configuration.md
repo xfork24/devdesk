@@ -2,7 +2,9 @@
 
 ## 源协议
 
-配置以 `{kind, identity, revision, name, scope, data}` 表达不可变修订，引用为 `identity:revision`。源文件与数据库没有重复引用注册表、存储表选择或手工投影。源文件的正文路径在加载其所属修订时读取；其他定义只持有源引用。
+配置以 `{type, identity, revision, name, scope, 根级引用, data}` 表达不可变修订，引用为 `identity:revision`。源文件与数据库没有重复引用注册表、存储表选择或手工投影。源文件的正文路径在加载其所属修订时读取；其他定义只持有源引用。
+
+Scope 使用 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。引用白名单按类型定义，Capability/Agent 的组合引用、Delivery 的 `spec_refs`、Harness 的供应商/目录引用、Permission Context 的 `sandbox_ref` 和 Standard 的 `root_workflow_refs` 位于信封根级；其余内容及嵌套引用仍在 `data`。内容摘要覆盖根级引用与 `data`。
 
 Agent 仅组合 Role 与 Capability。Capability 选择模型、Harness、方法及工具。技术能力、任务要求和执行授权分别表达：要求某 Skill/Tool 不会自动给 Agent 增加能力；具备 Tool 也不会自动获得本次调用权限。
 
@@ -41,7 +43,7 @@ Delivery 描述格式、结构合同及允许的产出来源，必填 `spec_refs
 
 ## 数据边界
 
-只接受源协议 v2、新的数据集标记和当前 SQLite 基线。没有旧协议转换器、数据升级入口或兼容执行分支。不要使用既有数据目录验证本次改动；验证使用独立临时空目录。
+只接受扁平源协议、新的数据集标记和当前 SQLite 基线。没有旧协议转换器、数据升级入口或兼容执行分支。不要使用既有数据目录验证本次改动；验证使用独立临时空目录。
 
 ## Standard 源与执行选择
 

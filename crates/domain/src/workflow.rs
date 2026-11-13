@@ -903,7 +903,7 @@ impl EngineeringState {
         for record in self
             .governance
             .iter()
-            .filter(|r| r.kind == "configured_execution_task")
+            .filter(|r| r.r#type == "configured_execution_task")
         {
             let task: ConfiguredAgentTask = record.decode()?;
             task.validate()?;
@@ -927,7 +927,7 @@ impl EngineeringState {
         for record in self
             .governance
             .iter()
-            .filter(|r| r.kind == "workflow_instance")
+            .filter(|r| r.r#type == "workflow_instance")
         {
             require(
                 record.data["steps"].is_array(),
@@ -952,7 +952,7 @@ impl EngineeringState {
                     .unwrap_or(""),
             )?;
             require(
-                plan.kind == "workflow_plan_revision"
+                plan.r#type == "workflow_plan_revision"
                     && plan.immutable
                     && plan.data["plan"] == record.data["plan"]
                     && plan.data["inputs"] == record.data["inputs"]
@@ -967,9 +967,7 @@ impl EngineeringState {
                     && plan.data["owner_id"] == record.data["owner_id"],
                 "运行计划的规范采用与工作不一致",
             )?;
-            let scope = Scope::Project {
-                project_id: record.data["project_id"].as_str().unwrap_or("").into(),
-            };
+            let scope = Scope::project(record.data["project_id"].as_str().unwrap_or(""));
             require(
                 self.configuration(standard)?.scope.visible_from(&scope),
                 "Standard 源不可见",
@@ -1048,7 +1046,7 @@ impl EngineeringState {
                 if let Some(rework) = &step.rework {
                     require(
                         self.governance.iter().any(|old| {
-                            old.kind == "workflow_execution_history"
+                            old.r#type == "workflow_execution_history"
                                 && old.definition_id == rework.previous_execution_id
                                 && old.data["workflow_instance_id"] == record.id
                                 && old.data["step"] == step.step
@@ -1058,7 +1056,7 @@ impl EngineeringState {
                     for output in rework.outputs.values() {
                         require(
                             self.governance.iter().any(|old| {
-                                old.kind == "workflow_execution_history"
+                                old.r#type == "workflow_execution_history"
                                     && old.data["workflow_instance_id"] == record.id
                                     && old.data["step"] == step.step
                                     && old.data["outputs"].as_object().is_some_and(|outputs| {
@@ -1072,7 +1070,7 @@ impl EngineeringState {
                 if let Some(checkpoint) = &step.rework_workspace {
                     let output = self.configuration(&checkpoint.output_id)?;
                     require(
-                        output.kind == "workflow_output"
+                        output.r#type == "workflow_output"
                             && output.data["value"] == checkpoint.workspace
                             && output.data["provenance"]["kind"] == "platform"
                             && output.data["provenance"]["tool"] == "workspace.snapshot"
@@ -1088,7 +1086,7 @@ impl EngineeringState {
                 for output in step.outputs.values() {
                     let output = self.configuration(output)?;
                     require(
-                        output.kind == "workflow_output"
+                        output.r#type == "workflow_output"
                             && output.data["execution_id"] == step.id
                             && output.data["input_digest"] == step.input_digest,
                         "步骤产物版本不匹配",
@@ -1099,7 +1097,7 @@ impl EngineeringState {
         for row in self
             .governance
             .iter()
-            .filter(|r| r.kind == "workflow_controller")
+            .filter(|r| r.r#type == "workflow_controller")
         {
             let controller: WorkflowController = row.decode()?;
             controller.policy.validate()?;
@@ -1134,7 +1132,7 @@ impl EngineeringState {
             }
         }
         for previous in &before.governance {
-            let fields: &[&str] = match previous.kind.as_str() {
+            let fields: &[&str] = match previous.r#type.as_str() {
                 "controller_tool_call" => &[
                     "method",
                     "arguments",
@@ -1154,7 +1152,8 @@ impl EngineeringState {
             };
             let current = self.configuration(&previous.id)?;
             require(
-                current.kind == previous.kind && current.definition_id == previous.definition_id,
+                current.r#type == previous.r#type
+                    && current.definition_id == previous.definition_id,
                 "编排来源记录不能删除或改绑",
             )?;
             for field in fields {
@@ -1163,19 +1162,23 @@ impl EngineeringState {
                     "编排请求与授权来源不可改写",
                 )?;
             }
-            if previous.kind == "controller_tool_call"
+            if previous.r#type == "controller_tool_call"
                 && ["succeeded", "failed"].contains(&previous.data["status"].as_str().unwrap_or(""))
             {
                 require(current.data == previous.data, "编排调用终态不可改写")?;
             }
-            if previous.kind == "workflow_segment" {
+            if previous.r#type == "workflow_segment" {
                 require(
                     current.data["operations"].as_u64() >= previous.data["operations"].as_u64(),
                     "委托预算不能回退",
                 )?;
             }
         }
-        for record in self.governance.iter().filter(|r| r.kind == "platform_call") {
+        for record in self
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "platform_call")
+        {
             if let Some(old) = before.governance.iter().find(|r| r.id == record.id) {
                 require(
                     record.data["request"] == old.data["request"],
@@ -1200,7 +1203,7 @@ impl EngineeringState {
             let Some(row) = current.and_then(|id| {
                 self.governance
                     .iter()
-                    .find(|r| r.id == id && r.kind == "workflow_instance")
+                    .find(|r| r.id == id && r.r#type == "workflow_instance")
             }) else {
                 return false;
             };
@@ -1211,7 +1214,7 @@ impl EngineeringState {
                 .as_str()
                 .and_then(|execution| {
                     self.governance.iter().find(|r| {
-                        r.kind == "workflow_instance"
+                        r.r#type == "workflow_instance"
                             && r.data["steps"].as_array().is_some_and(|steps| {
                                 steps.iter().any(|step| step["id"] == execution)
                             })

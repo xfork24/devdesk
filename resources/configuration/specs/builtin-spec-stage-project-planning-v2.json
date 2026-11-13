@@ -1,11 +1,9 @@
 {
-  "kind": "spec",
+  "type": "spec",
   "identity": "builtin-spec-stage-project-planning",
   "revision": 2,
   "name": "Task Doc 内容规范",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "schema_version": 3,
     "checks": [

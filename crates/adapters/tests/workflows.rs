@@ -114,8 +114,8 @@ fn combined_history_sorts_before_paging_and_reuses_redacted_call_projections() {
                 json!({"status":"succeeded","invocation":{"tool":{"definition":{"sensitive_parameters":["/password"]}},"arguments":{"password":"secret-value","visible":"kept"}}})
             };
             s.governance.push(ConfigurationRecord {
-                id: id.into(), kind: kind.into(), definition_id: id.into(), scope: Scope::Global,
-                name: id.into(), version: 1, supersedes: None, content_hash: configuration_hash(&data), data,
+                id: id.into(), r#type: kind.into(), definition_id: id.into(), scope: Scope::global(),
+                name: id.into(), version: 1, supersedes: None, content_hash: content_digest(&References::new(), &data), refs: References::new(), data,
                 immutable: false, revision: 1, created_at: time + delta,
             });
         }
@@ -239,12 +239,12 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 16),
+        (dir.path().join("global.sqlite3"), 17),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            47,
+            48,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -340,7 +340,7 @@ fn native_configuration_has_no_prototype_provider_or_execution_controls() {
     );
     assert!(cmd(&e, "attempt.start", Some(&fid), json!({"phase":"planning"})).is_err());
     assert!(cmd(&e, "run.continue", None, json!({})).is_err());
-    assert!(cmd(&e,"harness.create",None,json!({"name":"Unsupported provider","data":{"provider":"simulation","runtime_version":"1","capabilities":[],"model_providers":[]}})).is_err());
+    assert!(cmd(&e,"harness.create",None,json!({"name":"Unsupported provider","model_providers":[],"data":{"provider":"simulation","runtime_version":"1","capabilities":[]}})).is_err());
     let state = e.store.snapshot().unwrap();
     assert!(state.projects.iter().all(|p| p.execution_mode == "live"));
     assert!(state.sessions.is_empty() && state.executions.is_empty());
@@ -354,7 +354,7 @@ fn empty_or_cleared_datasets_initialize_despite_hidden_metadata() {
         None,
         Some("devdesk-schema-v1\n"),
         Some("devdesk-schema-v1\\n"),
-        Some("devdesk-source-v2-standard-v1\n"),
+        Some("devdesk-source-flat-v1\n"),
     ] {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join(".DS_Store"), b"Finder metadata").unwrap();
@@ -365,7 +365,7 @@ fn empty_or_cleared_datasets_initialize_despite_hidden_metadata() {
         let store = GlobalStore::open(directory.path()).unwrap();
         assert_eq!(
             std::fs::read_to_string(directory.path().join(".devdesk-dataset")).unwrap(),
-            "devdesk-source-v2-standard-v1\n"
+            "devdesk-source-flat-v1\n"
         );
         assert!(directory.path().join("global.sqlite3").is_file());
         drop(store);

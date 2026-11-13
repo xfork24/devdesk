@@ -36,8 +36,8 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   expect(deliveries).toHaveLength(21);
   expect(deliveries.some((r: any) => r.name === "结构化材料")).toBe(false);
   for (const delivery of deliveries) {
-    expect(delivery.data.spec_refs.length).toBeGreaterThan(0);
-    for (const id of delivery.data.spec_refs) {
+    expect(delivery.spec_refs.length).toBeGreaterThan(0);
+    for (const id of delivery.spec_refs) {
       const spec = specs.records.find((r: any) => r.id === id);
       expect(spec?.data.body.length).toBeGreaterThan(0);
       expect(spec?.data.checks.length).toBeGreaterThan(0);
@@ -47,7 +47,7 @@ test("内置 Delivery 全部关联内容标准并可查看确切规范", async (
   await page.getByRole("tab", {name:"Delivery",exact:true}).click();
   await page.getByRole("button", {name:/^Test Report\s/}).click();
   const report = deliveries.find((r: any) => r.name === "Test Report");
-  await expect(page.getByLabel("内容规范", {exact:true})).toHaveValues(report.data.spec_refs);
+  await expect(page.getByLabel("内容规范", {exact:true})).toHaveValues(report.spec_refs);
   await page.getByLabel("交付内容标准", {exact:true}).locator("summary").click();
   await expect(page.getByLabel("交付内容标准", {exact:true})).toContainText("平台 tests.run");
 });
@@ -74,24 +74,22 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     ),
   ).toHaveLength(2);
   for (const row of defaults.records.filter(
-    (row: any) => row.kind === "capability",
+    (row: any) => row.type === "capability",
   ))
-    expect(row.data.tools).toContain("builtin-tool-codex-native:1");
+    expect(row.tools).toContain("builtin-tool-codex-native:1");
   for (const agent of defaults.records.filter(
-    (row: any) => row.kind === "agent",
+    (row: any) => row.type === "agent",
   )) {
-    expect(Object.keys(agent.data).sort()).toEqual([
-      "capability_ref",
-      "role_ref",
-    ]);
+    expect(agent.data).toEqual({});
+    expect(agent.capability_ref).toBeTruthy();
+    expect(agent.role_ref).toBeTruthy();
   }
   const manager = defaults.records.find(
     (r: any) =>
       r.id === defaults.role_agent_bindings[defaults.orchestrator_role_ref],
   );
   expect(
-    defaults.records.find((r: any) => r.id === manager.data.capability_ref).data
-      .tools,
+    defaults.records.find((r: any) => r.id === manager.capability_ref).tools,
   ).toContain("builtin-tool-workflow-inspect:1");
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "Harness原生工具", exact: true }).click();
@@ -280,7 +278,7 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
   await page.reload();
   const workflows = await rpc(page, "query.workflows", { limit: 100 });
   const workflow = workflows.records.find(
-    (r: any) => r.kind === "workflow" && r.name === name,
+    (r: any) => r.type === "workflow" && r.name === name,
   );
   expect(workflow.data.schema_version).toBe(6);
   expect(workflow.data.steps[0].executor.type).toBe("control");
@@ -484,7 +482,7 @@ test("阶段 Role 可继承，任务指令与子流程调用是独立配置", as
   ).toHaveText(/流程已发布/);
   const records = await rpc(page, "query.workflows", { limit: 100 });
   const workflow = records.records.find(
-    (r: any) => r.kind === "workflow" && r.name === name,
+    (r: any) => r.type === "workflow" && r.name === name,
   );
   const preview = await rpc(page, "query.workflow_task_preview", {
     id: workflow.id,
@@ -535,14 +533,14 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
   });
   const lock = state.configurations.find(
     (r: any) =>
-      r.kind === "work_configuration" && r.definition_id === f.id,
+      r.type === "work_configuration" && r.definition_id === f.id,
   );
   expect(lock.data.schema_version).toBe(1);
   expect(lock.data.role_agent_bindings).toEqual(
     defaults.role_agent_bindings,
   );
   const instance = state.configurations.find(
-    (r: any) => r.kind === "workflow_instance" && r.data.owner_id === f.id,
+    (r: any) => r.type === "workflow_instance" && r.data.owner_id === f.id,
   );
   expect(instance.data.schema_version).toBe(6);
   expect(
@@ -718,7 +716,7 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
     limit: 100,
   });
   const delivery = types.records.find((r: any) => r.name === name);
-  expect(delivery.data.spec_refs).toEqual([specification.id]);
+  expect(delivery.spec_refs).toEqual([specification.id]);
   expect(delivery.data.body).toBeUndefined();
   await page.getByRole("tab", { name: "Workflow", exact: true }).click();
   await page.getByRole("button", { name: "新建流程", exact: true }).click();
@@ -761,7 +759,7 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   ).toHaveText(/流程已发布/);
   const catalog = await rpc(page, "query.workflows", { limit: 100 });
   const saved = catalog.records.find(
-    (r: any) => r.kind === "workflow" && r.name === name + " 流程",
+    (r: any) => r.type === "workflow" && r.name === name + " 流程",
   );
   const [producer, consumer] = saved.data.steps;
   expect(producer.outputs.risks.delivery_ref).toBe(delivery.id);

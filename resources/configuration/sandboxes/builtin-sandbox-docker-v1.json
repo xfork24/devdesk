@@ -1,11 +1,9 @@
 {
-  "kind": "sandbox",
+  "type": "sandbox",
   "identity": "builtin-sandbox-docker",
   "revision": 1,
   "name": "Docker Sandbox",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "enforcement": "docker-worker/v1",
     "platforms": [

@@ -42,7 +42,7 @@ fn command(
 }
 fn execute(e: &Engine, c: (String, Command)) -> Result<Value> {
     let value = e.execute(&c.0, c.1)?;
-    if value["kind"] == "permission_profile" {
+    if value["type"] == "permission_profile" {
         let source: SourceDefinition = serde_json::from_value(value.clone()).unwrap();
         Ok(
             json!({"id":source_reference(&source.identity,source.revision)?,"identity":source.identity,"version":source.revision,"name":source.name,"policy":source.data["policy"],"target_kind":source.data["target_kind"],"source":value}),
@@ -120,7 +120,7 @@ fn strict_profiles_share_canonical_hashes_and_reject_v1() {
         .unwrap()
         .governance
         .iter()
-        .filter(|r| r.kind == "permission_profile")
+        .filter(|r| r.r#type == "permission_profile")
         .map(|r| r.id.clone())
         .collect::<Vec<_>>();
     store
@@ -133,7 +133,7 @@ fn strict_profiles_share_canonical_hashes_and_reject_v1() {
             .unwrap()
             .governance
             .iter()
-            .filter(|r| r.kind == "permission_profile")
+            .filter(|r| r.r#type == "permission_profile")
             .map(|r| r.id.clone())
             .collect::<Vec<_>>()
     );
@@ -154,7 +154,7 @@ fn strict_profiles_share_canonical_hashes_and_reject_v1() {
         .clone();
     assert_eq!(
         r.content_hash,
-        permission_content_hash(&permission_profile_data(&p))
+        content_digest(&r.refs, &permission_profile_data(&p))
     );
     schemas::SCHEMAS.assert_valid("permission-profile.schema.json", &json!(p));
     let mut bad = json!(p);
@@ -287,7 +287,7 @@ fn runtime_directory_reload_is_idempotent_and_does_not_assign_targets() {
             .unwrap()
             .governance
             .iter()
-            .all(|r| r.kind != "permission_assignment")
+            .all(|r| r.r#type != "permission_assignment")
     );
     p.name = "changed same ID".into();
     std::fs::write(root.join("new.json"), serde_json::to_vec(&p).unwrap()).unwrap();
@@ -384,7 +384,7 @@ fn preset_source_is_single_persistent_and_recoverable_with_builtin_reload() {
         state
             .governance
             .iter()
-            .all(|r| r.kind != "permission_assignment")
+            .all(|r| r.r#type != "permission_assignment")
     );
     assert!(
         store
@@ -423,7 +423,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
         .unwrap()
         .governance
         .iter()
-        .find(|r| r.kind == "harness")
+        .find(|r| r.r#type == "harness")
         .unwrap()
         .id
         .clone();
@@ -504,7 +504,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
         &json!(next.harness.binding),
     );
     schemas::SCHEMAS.assert_valid("rpc.schema.json#/$defs/ExecutionPermissions", &json!(old));
-    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"capabilities":[],"model_providers":["builtin-model-provider-openai:1"]}}),None,None)).unwrap();
+    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::CODEX_VERSION,"capabilities":[]}}),None,None)).unwrap();
     assert!(
         resolve_bound_permission(
             &e.store.snapshot().unwrap(),
@@ -530,7 +530,7 @@ fn compiler_rejects_unenforceable_rules_and_checks_the_real_scope() {
     let h = s
         .governance
         .iter()
-        .find(|r| r.kind == "harness" && r.data["provider"] == "codex")
+        .find(|r| r.r#type == "harness" && r.data["provider"] == "codex")
         .unwrap();
     let target = permission_target(&s, PermissionTargetKind::Harness, &h.id).unwrap();
     let mut p = profile(&e, "builtin-permission-harness-read-only:1");
@@ -576,7 +576,7 @@ fn defaults_use_v2_directly_and_restart_does_not_create_compatibility_records() 
     let dir = tempfile::tempdir().unwrap();
     let (store, e) = global(dir.path());
     let first = store.snapshot().unwrap();
-    for r in first.governance.iter().filter(|r| r.kind == "agent") {
+    for r in first.governance.iter().filter(|r| r.r#type == "agent") {
         assert!(r.data.get("permissions").is_none());
         assert!(r.data.get("approval").is_none());
         assert!(
@@ -587,7 +587,7 @@ fn defaults_use_v2_directly_and_restart_does_not_create_compatibility_records() 
         !first
             .governance
             .iter()
-            .any(|r| r.kind.starts_with("permission_migration"))
+            .any(|r| r.r#type.starts_with("permission_migration"))
     );
     drop(e);
     drop(store);
@@ -801,7 +801,11 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
         .as_str()
         .unwrap()
         .to_owned();
-    bind_pair(&e, DEFAULT_HARNESS_ID, "builtin-permission-harness-full-access:1");
+    bind_pair(
+        &e,
+        DEFAULT_HARNESS_ID,
+        "builtin-permission-harness-full-access:1",
+    );
     let defaults = e.configuration_defaults(Some(&project)).unwrap();
     let mut agents = defaults["role_agent_bindings"].clone();
     let role_key = e
@@ -813,24 +817,18 @@ fn frozen_feature_pins_followed_bindings_before_the_target_default_changes() {
         .id
         .clone();
     let source = agents[&role_key].as_str().unwrap();
-    let data = e
+    let record = e
         .store
         .snapshot()
         .unwrap()
         .configuration(source)
         .unwrap()
-        .data
         .clone();
-    let a = execute(
-        &e,
-        command(
-            "agent.create",
-            json!({"name":"Followed analyst","data":data}),
-            None,
-            None,
-        ),
-    )
-    .unwrap();
+    let mut payload = json!({"name":"Followed analyst","scope":"global","data":record.data});
+    for (key, value) in &record.refs {
+        payload[key] = value.clone();
+    }
+    let a = execute(&e, command("agent.create", payload, None, None)).unwrap();
     agents[&role_key] = a["id"].clone();
     let revision = e.store.snapshot().unwrap().projects[0].revision;
     execute(
@@ -984,7 +982,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
     for provider in ["codex", "dsh"] {
         let root = tempfile::tempdir().unwrap();
         let (_, e) = global(root.path());
-        let harness=execute(&e,command("harness.create",json!({"name":provider,"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::CODEX_VERSION}else{devdesk_adapters::runtime_preparation::DSH_VERSION},"model_providers":[],"capabilities":[]}}),None,None)).unwrap();
+        let harness=execute(&e,command("harness.create",json!({"name":provider,"model_providers":[],"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::CODEX_VERSION}else{devdesk_adapters::runtime_preparation::DSH_VERSION},"capabilities":[]}}),None,None)).unwrap();
         let h = harness["id"].as_str().unwrap();
         let p=execute(&e,command("permission.profile.create",json!({"identity":format!("native-{provider}"),"name":"Native v2 restrictions","target_kind":"harness","policy":{
             "filesystem":{"mode":"scoped","rules":[{"path":"/","access":"read"},{"path":"/work","access":"read_write"},{"path":"/work/tests","access":"read"}]},
@@ -1163,7 +1161,7 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
                     && state
                         .governance
                         .iter()
-                        .any(|r| r.kind == "permission_switch" && r.data["status"] == "adopted")
+                        .any(|r| r.r#type == "permission_switch" && r.data["status"] == "adopted")
                 {
                     std::process::exit(86);
                 }
@@ -1173,7 +1171,7 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
             if let Some(intent) = state
                 .governance
                 .iter()
-                .find(|r| r.kind == "permission_switch")
+                .find(|r| r.r#type == "permission_switch")
             {
                 let stopped = intent.data["stop_receipts"]
                     .as_object()
@@ -1369,7 +1367,7 @@ fn frozen_configured_permission(
     let instance = state
         .governance
         .iter()
-        .find(|r| r.kind == "workflow_instance" && r.data["owner_id"] == feature)
+        .find(|r| r.r#type == "workflow_instance" && r.data["owner_id"] == feature)
         .ok_or_else(|| err("not_found", "流程不存在"))?;
     let plan: ConfiguredWorkflowPlan =
         serde_json::from_value(instance.data["plan"].clone()).unwrap();
@@ -1391,7 +1389,7 @@ fn profile_revisions_preserve_the_source_owner_scope() {
         .unwrap()
         .source();
     source.identity = "project-owned-policy".into();
-    source.scope = Scope::Project { project_id: id() };
+    source.scope = Scope::project(id());
     engine
         .execute(
             "permission.profile.import",
@@ -1406,7 +1404,7 @@ fn profile_revisions_preserve_the_source_owner_scope() {
     let revised = engine.execute("permission.profile.revise", Command { command_id:id(), target:Some("project-owned-policy:1".into()), expected_revision:Some(1), payload:json!({"name":"Same owner revised policy","target_kind":source.data["target_kind"],"policy":source.data["policy"]}) }).unwrap();
     assert_eq!(revised["scope"], json!(source.scope));
     source.revision = 3;
-    source.scope = Scope::Global;
+    source.scope = Scope::global();
     assert!(
         engine
             .execute(

@@ -1,11 +1,9 @@
 {
-  "kind": "model_provider",
+  "type": "model_provider",
   "identity": "builtin-model-provider-ollama",
   "revision": 1,
   "name": "本机 Ollama",
-  "scope": {
-    "kind": "global"
-  },
+  "scope": "global",
   "data": {
     "id": "ollama",
     "label": "本机 Ollama",

@@ -6,8 +6,6 @@ use crate::*;
 pub struct DeliveryTypeDefinition {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub body: String,
-    #[serde(default)]
-    pub spec_refs: Vec<Id>,
     pub format: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_schema: Option<serde_json::Value>,
@@ -24,17 +22,6 @@ pub enum DeliveryProducer {
 }
 impl DeliveryTypeDefinition {
     pub fn validate(&self) -> Result<()> {
-        require(
-            !self.spec_refs.is_empty()
-                && self.spec_refs.iter().all(|s| !s.trim().is_empty())
-                && self
-                    .spec_refs
-                    .iter()
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len()
-                    == self.spec_refs.len(),
-            "Delivery 必须关联至少一个内容 Spec，引用不得为空或重复",
-        )?;
         if let Some(DeliveryProducer::Platform { tools }) = &self.producer {
             require(
                 !tools.is_empty() && tools.iter().all(|t| !t.trim().is_empty()),
@@ -48,9 +35,8 @@ impl DeliveryTypeDefinition {
             )?;
         }
         require(
-            (!self.body.trim().is_empty() || !self.spec_refs.is_empty())
-                && self.body.len() <= TASK_TEXT_LIMIT,
-            "Delivery 需要非空内容说明，最多 32 KiB",
+            self.body.len() <= TASK_TEXT_LIMIT,
+            "Delivery 正文最多 32 KiB；内容要求由根级 spec_refs 承担",
         )?;
         require(
             ["markdown", "diff", "test_report", "json", "text"].contains(&self.format.as_str()),
@@ -62,14 +48,20 @@ impl DeliveryTypeDefinition {
 impl EngineeringState {
     pub fn validate_delivery_specs(
         &self,
+        refs: &References,
         delivery: &DeliveryTypeDefinition,
         scope: &Scope,
     ) -> Result<()> {
         delivery.validate()?;
-        for id in &delivery.spec_refs {
+        let spec_refs = reference_list(refs, "spec_refs")?;
+        require(
+            !spec_refs.is_empty(),
+            "Delivery 必须关联至少一个内容 Spec，引用不得为空或重复",
+        )?;
+        for id in &spec_refs {
             let source = self.configuration(id)?;
             require(
-                source.kind == "spec" && source.scope.visible_from(scope),
+                source.r#type == "spec" && source.scope.visible_from(scope),
                 "Delivery 内容 Spec 类型或作用域不匹配",
             )?;
             let spec: ConfiguredSpecification = source.decode()?;

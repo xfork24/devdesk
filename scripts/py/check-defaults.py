@@ -12,6 +12,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2] / "resources" / "configuration"
 
+REFERENCE_FIELDS = (
+    "capability_ref",
+    "role_ref",
+    "model_ref",
+    "harness_ref",
+    "sandbox_ref",
+    "model_catalog_ref",
+    "spec_refs",
+    "skills",
+    "tools",
+    "model_providers",
+    "root_workflow_refs",
+)
+
 
 def fail(message: str) -> None:
     print(f"check-defaults: {message}", file=sys.stderr)
@@ -23,7 +37,8 @@ def main() -> None:
     # shape at load time); schema_version is recorded metadata, never a version check.
     manifest = json.loads((ROOT / "manifest.json").read_text())
 
-    published: dict[str, dict] = {}  # identity -> {kind, revision, path}
+    published: dict[str, dict] = {}  # (type, identity) -> {revision, path}
+    sources: dict[str, dict] = {}  # rel -> parsed source
     md_bodies: set[Path] = set()
     for kind, paths in sorted(manifest.get("types", {}).items()):
         for rel in paths:
@@ -34,20 +49,22 @@ def main() -> None:
                 source = json.loads(path.read_text())
             except json.JSONDecodeError as e:
                 fail(f"{rel}: invalid JSON: {e}")
-            for field in ("kind", "identity", "revision", "name", "scope", "data"):
+            for field in ("type", "identity", "revision", "name", "scope", "data"):
                 if field not in source:
                     fail(f"{rel}: missing envelope field {field!r}")
-            if source["kind"] != kind:
-                fail(f"{rel}: kind {source['kind']!r} does not match manifest type {kind!r}")
+            if source["type"] != kind:
+                fail(f"{rel}: type {source['type']!r} does not match manifest type {kind!r}")
+            if source["scope"] != "global":
+                fail(f"{rel}: factory sources must use the global scope")
             key = (kind, source["identity"])
             if key in published:
                 fail(
                     f"identity {source['identity']!r} published twice: "
                     f"{published[key]} and {rel}"
                 )
-            published[(kind, source["identity"])] = {"revision": source["revision"], "path": rel}
-            data = source["data"]
-            for field, value in list(data.items()):
+            published[key] = {"revision": source["revision"], "path": rel}
+            sources[rel] = source
+            for field, value in source["data"].items():
                 if field.endswith("_file"):
                     body = path.parent / value
                     if not body.is_file():
@@ -82,7 +99,17 @@ def main() -> None:
         for (_, ident), meta in published.items():
             if ident == identity and str(meta["revision"]) == revision:
                 return
-        fail(f"defaults {what} references unpublished revision {ref!r}")
+        fail(f"{what} references unpublished revision {ref!r}")
+
+    # Flattened root references must point at published revisions.
+    for rel, source in sources.items():
+        for field in REFERENCE_FIELDS:
+            value = source.get(field)
+            if isinstance(value, str):
+                resolve(value, f"{rel} {field}")
+            elif isinstance(value, list):
+                for item in value:
+                    resolve(item, f"{rel} {field}")
 
     defaults = json.loads((ROOT / manifest["defaults"]).read_text())
     scalar_refs = [

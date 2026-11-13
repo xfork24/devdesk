@@ -25,7 +25,9 @@ fn source_closure(state: &EngineeringState, value: &Value, ids: &mut BTreeSet<St
                 .is_ok_and(|r| source_store::is_source(r)) =>
         {
             if ids.insert(id.clone()) {
-                source_closure(state, &state.configuration(id).unwrap().data, ids);
+                let record = state.configuration(id).unwrap();
+                source_closure(state, &record.data, ids);
+                source_closure(state, &json!(record.refs), ids);
             }
         }
         Value::Array(items) => {
@@ -114,7 +116,7 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
     }
     if value.get("identity").is_some()
         && value.get("revision").is_some()
-        && value.get("kind").is_some()
+        && value.get("type").is_some()
     {
         if let Ok(source) = serde_json::from_value::<SourceDefinition>(value.clone()) {
             let reference = source_reference(&source.identity, source.revision)?;
@@ -138,7 +140,7 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
             .is_some_and(|id| {
                 state
                     .configuration(id)
-                    .is_ok_and(|r| r.kind == "workflow_instance")
+                    .is_ok_and(|r| r.r#type == "workflow_instance")
             })
     {
         let selection = json!({"$source":"task","source":value["source"],"inputs":value["inputs"],"input_sources":value["input_sources"],
@@ -196,7 +198,7 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
         if let Some(package) = state
             .governance
             .iter()
-            .find(|r| r.kind == "skill_package" && r.data == *value)
+            .find(|r| r.r#type == "skill_package" && r.data == *value)
         {
             return Ok(Some(json!({"$source":"skill_package","ref":package.id})));
         }
@@ -226,19 +228,19 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
             .work_configuration_ref
             .as_deref()
             .and_then(|id| state.configuration(id).ok())
-            .and_then(|r| r.scope.project())
+            .and_then(|r| r.scope.project_id())
             .or_else(|| {
                 state
                     .governance
                     .iter()
-                    .find(|r| r.kind == "workflow_plan_revision" && r.data["plan"] == *value)
-                    .and_then(|r| r.scope.project())
+                    .find(|r| r.r#type == "workflow_plan_revision" && r.data["plan"] == *value)
+                    .and_then(|r| r.scope.project_id())
             })
             .or_else(|| {
                 state
                     .configuration(&plan.workflow_revision_id)
                     .ok()
-                    .and_then(|r| r.scope.project())
+                    .and_then(|r| r.scope.project_id())
             })
             .or_else(|| (state.projects.len() == 1).then(|| state.projects[0].id.as_str()));
         return Ok(Some(
@@ -377,7 +379,8 @@ fn restore_reference(
                         .governance
                         .iter()
                         .find(|r| {
-                            r.kind == "workflow_execution_history" && r.data["id"] == execution_ref
+                            r.r#type == "workflow_execution_history"
+                                && r.data["id"] == execution_ref
                         })
                         .and_then(|r| serde_json::from_value(r.data.clone()).ok())
                 })
@@ -419,10 +422,10 @@ fn restore_reference(
             let model: ModelDefinition = state
                 .configuration(&configuration.model_revision_id)?
                 .decode()?;
-            let harness: HarnessDefinition = state
+            let harness_record = state
                 .configuration(&configuration.harness_revision_id)?
-                .decode()?;
-            let connection = state.resolve_model_connection(&model, &harness)?;
+                .clone();
+            let connection = state.resolve_model_connection(&model, &harness_record)?;
             let profile_digest = connection
                 .as_ref()
                 .map(|connection| {
@@ -568,30 +571,29 @@ fn restore_reference(
                 state
                     .governance
                     .iter()
-                    .filter(|r| r.kind == "skill_package" && ids.contains(&r.definition_id))
+                    .filter(|r| r.r#type == "skill_package" && ids.contains(&r.definition_id))
                     .cloned(),
             );
             let scope = value["project_id"]
                 .as_str()
-                .map(|id| Scope::Project {
-                    project_id: id.into(),
-                })
-                .unwrap_or(Scope::Global);
+                .map(|id| Scope::project(id))
+                .unwrap_or(Scope::global());
             let mut policy = ConfigurationRecord {
                 id: "resolver-context".into(),
-                kind: "project_configuration".into(),
+                r#type: "project_configuration".into(),
                 definition_id: "resolver".into(),
                 scope: scope.clone(),
                 name: "execution source choices".into(),
                 version: u64::MAX,
                 supersedes: None,
                 content_hash: String::new(),
+                refs: References::new(),
                 data: json!({"permission_context_ref":value["permission_context_ref"],"permission_workflow_ref":value["permission_workflow_ref"],"workflow_ref":value["workflow_ref"]}),
                 immutable: true,
                 revision: 1,
                 created_at: 0,
             };
-            policy.content_hash = configuration_hash(&policy.data);
+            policy.content_hash = content_digest(&policy.refs, &policy.data);
             context.governance.push(policy);
             for choice in value["permission_bindings"]
                 .as_object()
@@ -605,11 +607,11 @@ fn restore_reference(
                     let binding = state.configuration(id)?;
                     let data: VersionedPermissionBinding = binding.decode()?;
                     let mut row = binding.clone();
-                    row.kind = "permission_assignment".into();
+                    row.r#type = "permission_assignment".into();
                     row.id = format!("selected:{id}");
                     row.version = u64::MAX;
                     row.data = json!({"target":data.target,"binding_revision_id":id});
-                    row.content_hash = configuration_hash(&row.data);
+                    row.content_hash = content_digest(&row.refs, &row.data);
                     context.governance.push(row);
                 }
             }
@@ -622,14 +624,14 @@ fn restore_reference(
                 let definition: ExternalTool = state.configuration(tool)?.decode()?;
                 mapping.insert(definition.integration_ref, json!(binding));
             }
-            if let Some(project) = scope.project() {
+            if let Some(project) = scope.project_id() {
                 let mut row = context
                     .governance
                     .last()
                     .cloned()
                     .ok_or_else(|| err("storage", "源选择缺失"))?;
                 row.id = "selected-integrations".into();
-                row.kind = "integration_project_configuration".into();
+                row.r#type = "integration_project_configuration".into();
                 row.definition_id = format!("project-integrations.{project}");
                 row.version = u64::MAX;
                 row.data = Value::Object(mapping);
@@ -688,7 +690,11 @@ mod tests {
     fn source_records_are_references_but_forged_and_factual_values_are_preserved() {
         let mut state = EngineeringState::default();
         seed_configuration(&mut state);
-        let record = state.governance.iter().find(|r| r.kind == "agent").unwrap();
+        let record = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "agent")
+            .unwrap();
         let original = json!(record);
         let packed = pack(&state, &original).unwrap();
         assert_eq!(packed["$source"], "source");

@@ -4,7 +4,7 @@ use crate::*;
 pub(crate) fn role_deleted(s: &EngineeringState, role: &ConfigurationRecord) -> bool {
     s.governance
         .iter()
-        .any(|r| r.kind == "role_retirement" && r.definition_id == role.definition_id)
+        .any(|r| r.r#type == "role_retirement" && r.definition_id == role.definition_id)
 }
 
 impl Engine {
@@ -13,10 +13,8 @@ impl Engine {
         let mut defaults = current_template_defaults(&s)
             .ok_or_else(|| err("configuration_required", "模板目录尚未初始化"))?;
         let scope = project
-            .map(|id| Scope::Project {
-                project_id: id.into(),
-            })
-            .unwrap_or(Scope::Global);
+            .map(|id| Scope::project(id))
+            .unwrap_or(Scope::global());
         for agent in defaults["role_agent_bindings"]
             .as_object()
             .ok_or_else(|| err("configuration_required", "默认角色绑定缺失"))?
@@ -47,7 +45,7 @@ impl Engine {
         defaults["materializations"] = json!(
             s.governance
                 .iter()
-                .filter(|r| r.kind == "harness_materialization"
+                .filter(|r| r.r#type == "harness_materialization"
                     && json!(r.definition_id) == defaults["harness_ref"])
                 .collect::<Vec<_>>()
         );

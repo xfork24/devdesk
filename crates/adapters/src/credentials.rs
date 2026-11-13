@@ -168,7 +168,12 @@ impl CredentialVault {
             },
         }
     }
-    pub fn configure(&self, provider: HarnessProvider, deepseek: &ProviderFacts, secret: &str) -> Result<CredentialStatus> {
+    pub fn configure(
+        &self,
+        provider: HarnessProvider,
+        deepseek: &ProviderFacts,
+        secret: &str,
+    ) -> Result<CredentialStatus> {
         Self::provider(provider)?;
         self.configure_model(deepseek, secret)
     }
@@ -217,7 +222,11 @@ impl CredentialVault {
         #[allow(unreachable_code)]
         Ok(self.model_status_value(facts, &account, true))
     }
-    pub fn status(&self, provider: HarnessProvider, deepseek: &ProviderFacts) -> Result<CredentialStatus> {
+    pub fn status(
+        &self,
+        provider: HarnessProvider,
+        deepseek: &ProviderFacts,
+    ) -> Result<CredentialStatus> {
         self.status_reference(provider, deepseek, None)
     }
     fn reference_account(&self, reference: &str) -> Result<String> {
@@ -294,7 +303,9 @@ impl CredentialVault {
         }
         let split = account.len() - 36;
         let (prefix, uuid) = account.split_at(split);
-        uuid::Uuid::parse_str(uuid).is_ok().then_some((prefix, uuid))
+        uuid::Uuid::parse_str(uuid)
+            .is_ok()
+            .then_some((prefix, uuid))
     }
     fn account_for_prefix(&self, prefix: &str, reference: &str) -> Result<String> {
         let account = self.reference_account(reference)?;
@@ -467,7 +478,10 @@ mod tests {
                 if other != provider {
                     assert!(
                         first
-                            .validate_model_reference(&facts(other, other_account, true), &reference)
+                            .validate_model_reference(
+                                &facts(other, other_account, true),
+                                &reference
+                            )
                             .is_err()
                     );
                 }

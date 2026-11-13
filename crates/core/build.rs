@@ -35,7 +35,7 @@ fn main() {
             )
             .unwrap();
             schemas::SCHEMAS.assert_valid("source-definition.schema.json", &source);
-            assert_eq!(source["kind"], kind.as_str(), "source kind mismatch");
+            assert_eq!(source["type"], kind.as_str(), "source type mismatch");
         }
     }
     let mut files = vec![];

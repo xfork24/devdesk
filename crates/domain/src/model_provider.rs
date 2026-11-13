@@ -72,7 +72,10 @@ impl ProviderFacts {
         require(!self.label.trim().is_empty(), "服务商需要名称")?;
         require(
             !self.harness.trim().is_empty()
-                && !self.harness.chars().any(|c| c.is_whitespace() || c.is_control()),
+                && !self
+                    .harness
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control()),
             "服务商必须归属一个 Harness",
         )?;
         match self.kind {
@@ -101,7 +104,8 @@ impl ProviderFacts {
         if self.requires_key {
             require(
                 !self.api_key_env.is_empty()
-                    && self.api_key_env
+                    && self
+                        .api_key_env
                         .chars()
                         .all(|c| c.is_ascii_uppercase() || c == '_')
                     && !self.credential_account.is_empty(),
@@ -172,7 +176,10 @@ impl ModelCatalogDefinition {
         let mut refs = std::collections::BTreeSet::new();
         for provider in &self.providers {
             parse_source_reference(&provider.provider_ref)?;
-            require(refs.insert(provider.provider_ref.clone()), "目录服务商引用重复")?;
+            require(
+                refs.insert(provider.provider_ref.clone()),
+                "目录服务商引用重复",
+            )?;
             validate_capacities(&provider.models)?;
         }
         Ok(())
@@ -188,12 +195,18 @@ impl ModelCatalogDefinition {
 
 impl EngineeringState {
     /// Facts for a provider as reachable through one Harness, with catalog capacities.
-    pub fn provider_facts(&self, harness: &HarnessDefinition, provider_id: &str) -> Result<ProviderFacts> {
+    pub fn provider_facts(
+        &self,
+        harness: &ConfigurationRecord,
+        provider_id: &str,
+    ) -> Result<ProviderFacts> {
+        let definition: HarnessDefinition = harness.decode()?;
+        let model_providers = reference_list(&harness.refs, "model_providers")?;
         let mut matched: Option<(String, ProviderFacts)> = None;
-        for reference in &harness.model_providers {
+        for reference in &model_providers {
             let record = self.configuration(reference)?;
             require(
-                record.kind == "model_provider",
+                record.r#type == "model_provider",
                 "Harness 的服务商引用类型不匹配",
             )?;
             let candidate: ProviderFacts = record.decode()?;
@@ -205,18 +218,21 @@ impl EngineeringState {
         let (reference, mut facts) = match matched {
             Some(found) => found,
             // An empty provider list keeps the Harness open to any published provider.
-            None if harness.model_providers.is_empty() => {
+            None if model_providers.is_empty() => {
                 let record = self
                     .governance
                     .iter()
-                    .find(|r| r.kind == "model_provider" && r.data["id"] == provider_id)
+                    .find(|r| r.r#type == "model_provider" && r.data["id"] == provider_id)
                     .ok_or_else(|| err("blocked", "Harness 不支持该 Model 服务商"))?;
                 (record.id.clone(), record.decode()?)
             }
             None => return Err(err("blocked", "Harness 不支持该 Model 服务商")),
         };
-        require(facts.harness == harness.provider, "Model 服务商与 Harness 不兼容")?;
-        if let Some(catalog_ref) = &harness.model_catalog_ref {
+        require(
+            facts.harness == definition.provider,
+            "Model 服务商与 Harness 不兼容",
+        )?;
+        if let Some(catalog_ref) = reference_value(&harness.refs, "model_catalog_ref").as_str() {
             let catalog: ModelCatalogDefinition = self.configuration(catalog_ref)?.decode()?;
             facts.models = catalog.capacities(&reference).to_vec();
         }
@@ -226,19 +242,21 @@ impl EngineeringState {
     /// Facts for a provider from any Harness that declares it; bare record otherwise.
     /// Used to validate model sources before a Harness is selected.
     pub fn provider_facts_any(&self, provider_id: &str) -> Result<ProviderFacts> {
-        for r in self.governance.iter().filter(|r| r.kind == "harness") {
-            let harness: HarnessDefinition = r.decode()?;
-            if harness
-                .model_providers
+        for r in self.governance.iter().filter(|r| r.r#type == "harness") {
+            if reference_list(&r.refs, "model_providers")
+                .unwrap_or_default()
                 .iter()
-                .any(|reference| self.configuration(reference).is_ok_and(|c| c.kind == "model_provider" && c.data["id"] == provider_id))
+                .any(|reference| {
+                    self.configuration(reference)
+                        .is_ok_and(|c| c.r#type == "model_provider" && c.data["id"] == provider_id)
+                })
             {
-                return self.provider_facts(&harness, provider_id);
+                return self.provider_facts(r, provider_id);
             }
         }
         self.governance
             .iter()
-            .find(|r| r.kind == "model_provider" && r.data["id"] == provider_id)
+            .find(|r| r.r#type == "model_provider" && r.data["id"] == provider_id)
             .map(|r| r.decode())
             .transpose()?
             .ok_or_else(|| err("unsupported_model_provider", "未知 Model 服务商"))
@@ -247,7 +265,7 @@ impl EngineeringState {
     pub fn resolve_model_connection(
         &self,
         m: &ModelDefinition,
-        h: &HarnessDefinition,
+        h: &ConfigurationRecord,
     ) -> Result<Option<ModelConnection>> {
         let facts = self.provider_facts(h, &m.provider)?;
         resolve_model_connection(m, &facts)
@@ -394,7 +412,9 @@ pub fn validate_model_definition(m: &ModelDefinition, facts: &ProviderFacts) -> 
         let max = facts.max_output_request.unwrap_or(u64::MAX).min(output);
         require(
             key == "max_tokens"
-                && value.as_u64().is_some_and(|v| v >= facts.min_output_request && v <= max),
+                && value
+                    .as_u64()
+                    .is_some_and(|v| v >= facts.min_output_request && v <= max),
             format!("Model 参数 {key} 无法由此 Harness 精确执行"),
         )?;
     }
@@ -451,7 +471,10 @@ impl ModelConnection {
         )?;
         require(
             self.provider.len() <= 64
-                && !self.provider.chars().any(|c| c.is_whitespace() || c.is_control()),
+                && !self
+                    .provider
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control()),
             "冻结模型连接的服务商无效",
         )?;
         // Self-consistency: the frozen worker view must still derive from the declared
@@ -479,11 +502,16 @@ impl ModelConnection {
                 )?;
             }
         }
-        let max = self.max_output_request.unwrap_or(u64::MAX).min(self.max_output_tokens);
+        let max = self
+            .max_output_request
+            .unwrap_or(u64::MAX)
+            .min(self.max_output_tokens);
         for (key, value) in parameters {
             require(
                 key == "max_tokens"
-                    && value.as_u64().is_some_and(|v| v >= self.min_output_request && v <= max),
+                    && value
+                        .as_u64()
+                        .is_some_and(|v| v >= self.min_output_request && v <= max),
                 format!("Model 参数 {key} 无法由此 Harness 精确执行"),
             )?;
         }
@@ -529,8 +557,13 @@ mod tests {
             assert_eq!(c.worker_endpoint, f.endpoint);
             assert_eq!(c.host_gateway, false);
             assert_eq!(c.api_key_env.is_empty(), !requires_key);
-            c.validate("test-model", &model("zai-coding-cn").parameters).unwrap();
-            assert_eq!(c.output_budget(true, &model("zai-coding-cn").parameters).unwrap(), 2048);
+            c.validate("test-model", &model("zai-coding-cn").parameters)
+                .unwrap();
+            assert_eq!(
+                c.output_budget(true, &model("zai-coding-cn").parameters)
+                    .unwrap(),
+                2048
+            );
         }
     }
     #[test]

@@ -62,7 +62,7 @@ fn instance_summary(state: &EngineeringState, row: &ConfigurationRecord) -> Valu
         let definition = row.data["plan"]["document"]["steps"].as_array().into_iter().flatten().find(|step| step["key"] == execution["step"]);
         let policy = definition.and_then(|step| step["confirmation"].as_str()).unwrap_or("automatic");
         let confirmation = crate::configured_runtime::matching_confirmation(state, execution["id"].as_str().unwrap_or(""), execution["input_digest"].as_str().unwrap_or(""), &execution["outputs"]);
-        let waiver = state.governance.iter().find(|record| record.kind == "workflow_waiver" && record.data["plan_revision_id"] == row.data["active_plan_revision_id"] && record.data["node_id"] == execution["node_id"] && record.data["requirement"] == "confirmation");
+        let waiver = state.governance.iter().find(|record| record.r#type == "workflow_waiver" && record.data["plan_revision_id"] == row.data["active_plan_revision_id"] && record.data["node_id"] == execution["node_id"] && record.data["requirement"] == "confirmation");
         let disposition = if confirmation.is_some() { "confirmed" } else if waiver.is_some() { "waived" } else if policy == "human" { "pending" } else { "not_required" };
         json!({"step":execution["step"],"id":execution["id"],"status":execution["status"],"outputs":execution["outputs"],"input_digest":execution["input_digest"],"reason":execution["reason"],"confirmation_policy":policy,"human_satisfied":policy!="human"||confirmation.is_some()||waiver.is_some(),"confirmation_status":disposition,"confirmation_ref":confirmation.map(|record|&record.id),"confirmation_waiver_ref":waiver.map(|record|&record.id)})
     }).collect::<Vec<_>>();
@@ -86,7 +86,7 @@ fn step_attention(step: &Value) -> u8 {
 pub(crate) fn binding<'a>(s: &'a EngineeringState, sid: &str) -> Option<&'a ConfigurationRecord> {
     s.governance
         .iter()
-        .find(|r| r.kind == "controller_session" && r.definition_id == sid)
+        .find(|r| r.r#type == "controller_session" && r.definition_id == sid)
 }
 pub(crate) fn authorized_send(s: &EngineeringState, c: &Command) -> bool {
     let Some(target) = c.target.as_deref() else {
@@ -98,13 +98,13 @@ pub(crate) fn authorized_send(s: &EngineeringState, c: &Command) -> bool {
     let Ok(row) = s.configuration(binding.data["controller_id"].as_str().unwrap_or("")) else {
         return false;
     };
-    row.kind == "workflow_controller"
+    row.r#type == "workflow_controller"
         && row.data["status"] == "active"
         && row.data["session_id"] == target
         && row.data["epoch"] == binding.data["epoch"]
         && c.payload["controller_epoch"] == row.data["epoch"]
         && s.governance.iter().any(|r| {
-            r.kind == "workflow_intent"
+            r.r#type == "workflow_intent"
                 && r.definition_id == row.id
                 && r.data["method"] == "conversation.send"
                 && r.data["command"] == json!(c)
@@ -128,7 +128,7 @@ fn intent(
     );
     if s.governance
         .iter()
-        .any(|r| r.kind == "workflow_intent" && r.data["command"]["command_id"] == command_id)
+        .any(|r| r.r#type == "workflow_intent" && r.data["command"]["command_id"] == command_id)
     {
         return;
     }
@@ -163,7 +163,7 @@ impl Engine {
             let root = s
                 .governance
                 .iter()
-                .find(|r| r.id == target && r.kind == "workflow_instance");
+                .find(|r| r.id == target && r.r#type == "workflow_instance");
             let owner = root
                 .and_then(|r| r.data["owner_id"].as_str())
                 .unwrap_or(target)
@@ -181,7 +181,7 @@ impl Engine {
                 })
                 .ok_or_else(|| err("not_found", "编排归属不存在"))?;
             if let Some(existing) = s.governance.iter().find(|r| {
-                r.kind == "workflow_controller"
+                r.r#type == "workflow_controller"
                     && r.data["owner_id"] == owner
                     && (r.data["status"] != "closed"
                         || root.is_some_and(|root| r.data["root_instance_id"] == root.id))
@@ -193,7 +193,7 @@ impl Engine {
             let config = s
                 .governance
                 .iter()
-                .filter(|r| r.kind == "project_configuration" && r.definition_id == project)
+                .filter(|r| r.r#type == "project_configuration" && r.definition_id == project)
                 .max_by_key(|r| r.version);
             let role = c.payload["role_ref"]
                 .as_str()
@@ -217,9 +217,7 @@ impl Engine {
             crate::governance::validate_composition(
                 s,
                 &composition,
-                &Scope::Project {
-                    project_id: project.clone(),
-                },
+                &Scope::project(project.clone()),
             )?;
             require(
                 c.payload.get("policy").is_none(),
@@ -234,9 +232,7 @@ impl Engine {
                 s,
                 &context_ref,
                 "permission_context",
-                &Scope::Project {
-                    project_id: project.clone(),
-                },
+                &Scope::project(project.clone()),
             )?;
             let policy: WorkflowControlPolicy =
                 serde_json::from_value(context.data["control_policy"].clone())
@@ -265,9 +261,7 @@ impl Engine {
             let row = record(
                 "workflow_controller",
                 controller.owner_id.clone(),
-                Scope::Project {
-                    project_id: project,
-                },
+                Scope::project(project),
                 "项目经理".into(),
                 1,
                 None,
@@ -287,7 +281,7 @@ impl Engine {
             return Ok(Some(out));
         }
         let row = s.configuration(target)?.clone();
-        require(row.kind == "workflow_controller", "不是编排控制器")?;
+        require(row.r#type == "workflow_controller", "不是编排控制器")?;
         let mut controller: WorkflowController = row.decode()?;
         if let Some(epoch) = c.payload["epoch"].as_u64() {
             require(epoch == controller.epoch, "编排代次已变化")?;
@@ -389,13 +383,13 @@ impl Engine {
         let row = s.configuration(id)?;
         let controller: WorkflowController = row.decode()?;
         require(
-            row.kind == "workflow_controller"
+            row.r#type == "workflow_controller"
                 && controller.status == "active"
                 && c.payload["agent"] == controller.agent_revision_id
                 && c.payload["controller_epoch"] == controller.epoch
                 && c.target.as_deref() == Some(&controller.owner_id)
                 && s.governance.iter().any(|r| {
-                    r.kind == "workflow_intent"
+                    r.r#type == "workflow_intent"
                         && r.definition_id == id
                         && r.data["command"] == json!(c)
                 }),
@@ -508,7 +502,7 @@ impl Engine {
         let count = s
             .governance
             .iter()
-            .filter(|r| r.kind == "controller_tool_call" && r.data["turn_id"] == tid)
+            .filter(|r| r.r#type == "controller_tool_call" && r.data["turn_id"] == tid)
             .count();
         require(
             count < (controller.policy.max_tool_calls_per_turn as usize),
@@ -532,12 +526,12 @@ impl Engine {
     pub fn drive_controllers(&self) -> Result<()> {
         self.drive_controller_calls()?;
         self.store.transact(None,&mut|s|{
-            let rows:Vec<_>=s.governance.iter().filter(|r|r.kind=="workflow_controller").cloned().collect();
+            let rows:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_controller").cloned().collect();
             for row in rows{
                 let mut controller:WorkflowController=row.decode()?;
                 if controller.status!="active"{continue;}
                 if controller.session_id.is_none(){
-                    let opened=s.governance.iter().rev().find(|r|r.kind=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="session.open"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch).cloned();
+                    let opened=s.governance.iter().rev().find(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="session.open"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch).cloned();
                     if let Some(opened)=opened{
                         if let Some(sid)=opened.data["result"]["id"].as_str(){
                             controller.session_id=Some(sid.into());
@@ -556,16 +550,16 @@ impl Engine {
                 }
                 // A durable send can be awaiting Host dispatch before a Turn exists.
                 // Coalesce new events until that exact send has been admitted.
-                if s.governance.iter().any(|r|r.kind=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="conversation.send"&&r.data["status"]=="prepared"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch){continue;}
+                if s.governance.iter().any(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="conversation.send"&&r.data["status"]=="prepared"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch){continue;}
                 let root=controller.root_instance_id.as_ref().and_then(|id|s.configuration(id).ok());
                 if root.is_some_and(|r|["completed","cancelled"].contains(&r.data["status"].as_str().unwrap_or(""))){controller.status="closed".into();update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
-                let instances:Vec<_>=s.governance.iter().filter(|r|r.kind=="workflow_instance"&&Some(r.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref()).map(|row|instance_summary(s,row)).collect();
+                let instances:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_instance"&&Some(r.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref()).map(|row|instance_summary(s,row)).collect();
                 let mut input_bytes=0;
-                let user:Vec<_>=s.governance.iter().filter(|r|r.kind=="controller_input"&&r.definition_id==row.id&&r.data["consumed"]==false).take(8).take_while(|r|{let size=r.data["input"].as_str().unwrap_or("").len();if input_bytes+size>65536{false}else{input_bytes+=size;true}}).cloned().collect();
-                let decisions:Vec<_>=s.governance.iter().filter(|r|r.kind=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|i|Some(i.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref())).map(|r|json!({"id":r.id,"instance_id":r.definition_id,"status":r.data["status"],"decision_ref":r.data["decision_ref"],"request":r.data["request"]})).collect();
-                if let Some(failed)=s.governance.iter().rev().find(|r|r.kind=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="conversation.send"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch&&r.data["status"]=="failed").cloned() {
+                let user:Vec<_>=s.governance.iter().filter(|r|r.r#type=="controller_input"&&r.definition_id==row.id&&r.data["consumed"]==false).take(8).take_while(|r|{let size=r.data["input"].as_str().unwrap_or("").len();if input_bytes+size>65536{false}else{input_bytes+=size;true}}).cloned().collect();
+                let decisions:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|i|Some(i.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref())).map(|r|json!({"id":r.id,"instance_id":r.definition_id,"status":r.data["status"],"decision_ref":r.data["decision_ref"],"request":r.data["request"]})).collect();
+                if let Some(failed)=s.governance.iter().rev().find(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="conversation.send"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch&&r.data["status"]=="failed").cloned() {
                     let refs=failed.data["command"]["payload"]["controller_input_refs"].as_array().cloned().unwrap_or_default();
-                    for input in s.governance.iter_mut().filter(|r|r.kind=="controller_input"&&r.definition_id==row.id&&refs.contains(&json!(r.id))) {let mut data=input.data.clone();data["consumed"]=json!(false);update_record(input,data);}
+                    for input in s.governance.iter_mut().filter(|r|r.r#type=="controller_input"&&r.definition_id==row.id&&refs.contains(&json!(r.id))) {let mut data=input.data.clone();data["consumed"]=json!(false);update_record(input,data);}
                     controller.status="failed".into();controller.reason=failed.data["error"].to_string();
                     update_record(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
                 }
@@ -602,7 +596,7 @@ impl Engine {
         for call in snapshot
             .governance
             .iter()
-            .filter(|r| r.kind == "controller_tool_call")
+            .filter(|r| r.r#type == "controller_tool_call")
         {
             let controller: WorkflowController =
                 snapshot.configuration(&call.definition_id)?.decode()?;
@@ -636,7 +630,7 @@ impl Engine {
                         let decision_ref = args["decision_ref"].as_str().unwrap_or("");
                         let approved = snapshot.configuration(decision_ref)?;
                         require(
-                            approved.kind == "workflow_human_decision"
+                            approved.r#type == "workflow_human_decision"
                                 && approved.data["approved"] == true
                                 && approved.data["actor"]["kind"] == "human"
                                 && approved.data["plan_revision_id"] == args["plan_revision_id"]
@@ -654,14 +648,14 @@ impl Engine {
                     if let Some(target) = &target {
                         let r = snapshot.configuration(target)?;
                         require(
-                            r.kind == "workflow_instance"
+                            r.r#type == "workflow_instance"
                                 && r.data["root_instance_id"].as_str() == root.as_deref(),
                             "目标不属于编排根实例",
                         )?;
                     }
                     if method == "workflow.inspect" && root.is_none() {
                         return Ok(
-                            json!({"owner_id":controller.owner_id,"configuration":snapshot.governance.iter().filter(|r|r.kind=="project_configuration"&&r.definition_id==controller.project_id).max_by_key(|r|r.version),"allowed_actions":["start"]}),
+                            json!({"owner_id":controller.owner_id,"configuration":snapshot.governance.iter().filter(|r|r.r#type=="project_configuration"&&r.definition_id==controller.project_id).max_by_key(|r|r.version),"allowed_actions":["start"]}),
                         );
                     }
                     if control_query(method) {
@@ -747,7 +741,7 @@ impl Engine {
                 || snapshot
                     .governance
                     .iter()
-                    .any(|r| r.kind == "controller_tool_reply" && r.definition_id == call.id)
+                    .any(|r| r.r#type == "controller_tool_reply" && r.definition_id == call.id)
             {
                 continue;
             }
@@ -793,7 +787,7 @@ impl Engine {
                     .answer_tool_call(session, &call.data["request_id"], &receipt)
                     .is_ok()
             {
-                self.store.transact(None,&mut|s|{if !s.governance.iter().any(|r|r.kind=="controller_tool_reply"&&r.definition_id==call.id){s.governance.push(record("controller_tool_reply",call.id.clone(),call.scope.clone(),"编排原生回复".into(),1,None,json!({"status":if active{"delivered"}else{"worker_unavailable"},"receipt":receipt}),true));}Ok(Value::Null)})?;
+                self.store.transact(None,&mut|s|{if !s.governance.iter().any(|r|r.r#type=="controller_tool_reply"&&r.definition_id==call.id){s.governance.push(record("controller_tool_reply",call.id.clone(),call.scope.clone(),"编排原生回复".into(),1,None,json!({"status":if active{"delivered"}else{"worker_unavailable"},"receipt":receipt}),true));}Ok(Value::Null)})?;
             }
         }
         Ok(())

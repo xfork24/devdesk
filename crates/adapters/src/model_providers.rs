@@ -97,7 +97,11 @@ pub fn discover_ollama_models(endpoint: &str) -> Result<Value> {
 
 /// Read the account's published model directory, never invoking inference.
 /// Authentication goes over curl's stdin, not process arguments or a file.
-pub fn discover_deepseek_models(dataset: &Path, facts: &ProviderFacts, reference: &str) -> Result<Value> {
+pub fn discover_deepseek_models(
+    dataset: &Path,
+    facts: &ProviderFacts,
+    reference: &str,
+) -> Result<Value> {
     let mut key = crate::credentials::CredentialVault::new(dataset)?
         .read_model_reference(facts, reference)?;
     require(

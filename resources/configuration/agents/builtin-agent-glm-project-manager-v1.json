@@ -1,13 +1,10 @@
 {
-  "kind": "agent",
+  "type": "agent",
   "identity": "builtin-agent-glm-project-manager",
   "revision": 1,
   "name": "项目经理 · GLM 5.3 Flash / DSH",
-  "scope": {
-    "kind": "global"
-  },
-  "data": {
-    "role_ref": "builtin-role-project-manager:1",
-    "capability_ref": "builtin-capability-project-manager-glm-dsh:1"
-  }
+  "scope": "global",
+  "capability_ref": "builtin-capability-project-manager-glm-dsh:1",
+  "role_ref": "builtin-role-project-manager:1",
+  "data": {}
 }

@@ -9,9 +9,9 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
         "sandbox"
     };
     if !r.immutable
-        || r.kind != kind
+        || r.r#type != kind
         || r.content_hash != target.content_hash
-        || r.content_hash != configuration_hash(&r.data)
+        || r.content_hash != content_digest(&r.refs, &r.data)
     {
         return Err(err("revision_conflict", "权限目标摘要不一致"));
     }
@@ -71,8 +71,9 @@ pub fn compile_permission_profiles(
         let mut profile = bound.profile.clone();
         profile.normalize()?;
         if profile != bound.profile
-            || bound.profile_hash != permission_content_hash(&permission_profile_data(&profile))
-            || bound.binding_hash != permission_content_hash(&bound.binding)
+            || bound.profile_hash
+                != content_digest(&References::new(), &permission_profile_data(&profile))
+            || bound.binding_hash != content_digest(&References::new(), &json!(bound.binding))
             || bound.binding.permission_revision_id != profile.id
             || bound.binding.target.kind != profile.target_kind
             || bound.binding.enforcement_contract != permission_contract(s, &bound.binding.target)?
@@ -192,8 +193,8 @@ pub fn preflight_profile(
         };
         Ok(BoundPermission {
             binding_revision_id: "preview".into(),
-            binding_hash: permission_content_hash(&binding),
-            profile_hash: permission_content_hash(&permission_profile_data(&p)),
+            binding_hash: content_digest(&References::new(), &json!(binding)),
+            profile_hash: content_digest(&References::new(), &permission_profile_data(&p)),
             binding,
             profile: p,
         })
@@ -205,7 +206,7 @@ pub fn preflight_profile(
             .governance
             .iter()
             .find(|r| {
-                r.kind == "harness"
+                r.r#type == "harness"
                     && template_record_current(s, r)
                     && r.data["provider"] == "codex"
                     && permission_contract(
@@ -288,7 +289,7 @@ pub fn verify_permission_installation(
     let recipe_match = h
         .recipe_digest
         .as_deref()
-        .is_some_and(|recipe| permissions::installation_recipe(installation).starts_with(&recipe[..16]));
+        .is_some_and(|recipe| permissions::installation_recipe(installation) == recipe);
     if installation.key.provider.as_str() != h.provider
         || !recipe_match
         || !b.platforms.contains(&platform)
@@ -339,7 +340,7 @@ fn permission_preset_directory(path: &Path) -> Result<PathBuf> {
 fn preset_source_selection(s: &EngineeringState) -> Option<&ConfigurationRecord> {
     s.governance
         .iter()
-        .filter(|r| r.kind == "permission_source_selection")
+        .filter(|r| r.r#type == "permission_source_selection")
         .max_by_key(|r| r.version)
 }
 
@@ -365,13 +366,14 @@ fn select_preset_source(s: &mut EngineeringState, path: Option<&Path>) {
     let supersedes = previous.map(|r| r.id.clone());
     s.governance.push(ConfigurationRecord {
         id: id(),
-        kind: "permission_source_selection".into(),
+        r#type: "permission_source_selection".into(),
         definition_id: "permission-preset-source".into(),
-        scope: Scope::Global,
+        scope: Scope::global(),
         name: "权限预设目录".into(),
         version,
         supersedes,
-        content_hash: configuration_hash(&data),
+        content_hash: content_digest(&References::new(), &data),
+        refs: References::new(),
         data,
         immutable: true,
         revision: 1,
@@ -480,13 +482,14 @@ impl GlobalStore {
                 if !s.governance.iter().any(|r| r.id == key) {
                     s.governance.push(ConfigurationRecord {
                         id: key,
-                        kind: "permission_file_origin".into(),
+                        r#type: "permission_file_origin".into(),
                         definition_id: profile.clone(),
-                        scope: Scope::Global,
+                        scope: Scope::global(),
                         name: "预设文件来源".into(),
                         version: 1,
                         supersedes: None,
-                        content_hash: configuration_hash(data),
+                        content_hash: content_digest(&References::new(), data),
+                        refs: References::new(),
                         data: data.clone(),
                         immutable: true,
                         revision: 1,
