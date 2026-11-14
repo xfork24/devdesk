@@ -14,13 +14,13 @@
 
 <a id="file-src-history-tests-rs"></a>
 
-## src/history_tests.rs：全局讨论与多个工程的组合历史隔离
+## src/history_tests.rs：全局治理与多个工程的组合历史隔离
 
 源码：[crates/host/src/history_tests.rs](../../../crates/host/src/history_tests.rs)。
 
-此文件仅在 cfg(test) 下挂载。add_history 在指定 Engine 建立会话/快照事实，主场景为 global、项目 A 和项目 B 分别写入记录，再从 Workspace 路由组合历史查询。
+此文件仅在 cfg(test) 下挂载。add_history 在指定 Engine 直接写入一条 tool_call 治理记录和一条 Event，主场景为全局配置 Engine、项目 A 和项目 B 分别写入事实，再从 Workspace 路由组合历史查询。它未建立全局讨论 Session 或 Snapshot，不能用来证明全局讨论库的恢复。
 
-断言每个查询只读取其正确数据库，即使切换当前项目也不泄露其他工程事实。它防止为实现“统一历史界面”而把所有记录塞进全局库，也检查底层源 API 使用固定项目上下文。
+断言 scope=global 读取全局配置历史、项目查询读取当前工程；切到项目 B 后仍用项目 A 的 project_id 请求，会返回 project_changed。它防止为实现“统一历史界面”而把所有记录塞进全局库，并检查项目切换围栏。
 
 代码定位：[`add_history`](../../../crates/host/src/history_tests.rs#L3)、[`combined_history_keeps_global_and_each_project_in_their_own_database`](../../../crates/host/src/history_tests.rs#L25)。
 

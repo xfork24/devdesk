@@ -4,7 +4,7 @@
 
 Host 是可执行程序，提供 HTTP/JSON-RPC、SSE、嵌入式 Web 和数据集入口。Workspace 管理一个全局配置 Engine 与多个工程 Engine，把请求固定到正确数据库，并让各项目共享受管执行适配器和总并发预算。
 
-Host 负责连接认证、参数路由、资源准备与端口装配；业务状态、Actor 规则、配置发布和终态接纳仍调用 core。切换当前项目只改变后续界面请求的默认目标，不终止后台其他工程，也不把它们的历史搬到新项目。
+Host 负责连接认证、参数路由、资源准备与端口装配；业务状态、Actor 规则、配置发布和终态接纳仍调用 core。普通工程请求可携带预期 project_id，活动项目已改变时会被拒绝；选定 Engine 后固定本次范围。切换项目不终止后台其他工程，也不把它们的历史搬到新项目。全局讨论另有按需打开的独立 Engine，不与 global.sqlite3 的共享配置 Engine 混用。
 
 本包没有独立 lib.rs。main.rs 引入 workspace.rs，后者用显式 path 挂载治理、权限、集成等文件，它们是同一个 Workspace 的扩展实现。单元测试分散在对应模块，history_tests.rs 是单独的测试模块；测试阅读入口见本包测试专题。
 
@@ -24,7 +24,7 @@ Host 负责连接认证、参数路由、资源准备与端口装配；业务状
 | [Cargo.toml](../../../crates/host/Cargo.toml) | [HTTP 可执行包与 Web 嵌入依赖](overview.md#file-cargo-toml) |
 | [src/github_projects.rs](../../../crates/host/src/github_projects.rs) | [GitHub 项目身份与异步仓库准备](workspace-and-lifecycle.md#file-src-github-projects-rs) |
 | [src/governance.rs](../../../crates/host/src/governance.rs) | [治理路由和步骤执行的事务外编排](rpc-and-configuration.md#file-src-governance-rs) |
-| [src/history_tests.rs](../../../crates/host/src/history_tests.rs) | [全局讨论与多个工程的组合历史隔离](testing.md#file-src-history-tests-rs) |
+| [src/history_tests.rs](../../../crates/host/src/history_tests.rs) | [全局治理与多个工程的组合历史隔离](testing.md#file-src-history-tests-rs) |
 | [src/integrations.rs](../../../crates/host/src/integrations.rs) | [工具配置、实际调用和 OAuth callback 装配](rpc-and-configuration.md#file-src-integrations-rs) |
 | [src/main.rs](../../../crates/host/src/main.rs) | [服务启动、请求围栏与固定作用域 SSE](http-and-security.md#file-src-main-rs) |
 | [src/model_providers.rs](../../../crates/host/src/model_providers.rs) | [当前模型目录、凭据设置和冻结选择的区别](rpc-and-configuration.md#file-src-model-providers-rs) |

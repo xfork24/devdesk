@@ -36,6 +36,8 @@ NativeTools 实现 ToolExecutor。离线部分验证 JSON Schema、参数、Open
 
 执行部分以原 operation UUID 和冻结请求摘要建立私有作业，记录启动、poll、取消与结果。凭据在最后授权边界注入，目标 origin、网络权限、私网地址及重定向都需检查；HTTP/MCP 不接受任意宿主命令。OAuth 请求使用受管容器路径。
 
+execute 在远端返回成功时检查声明的 output_schema；不匹配就改为失败，但保留原 remote_effect，因为远端动作可能已执行。二进制文件结果写入该调用目录的 result.bin，回执换成 devdesk-tool-artifact:调用ID 的资源链接，带 MIME、SHA 和大小；read_artifact 再核对调用身份、链接、摘要与大小。它与 FileArtifacts 的领域 Artifact 是两套结果表示，不能混为同一张材料记录。
+
 OpenAPI 3.1 JSON/YAML 导入保留安全方案的替代关系，不把 AND 授权静默删成可执行的弱规则。Skill ZIP 拒绝非法路径、符号链接、非 UTF-8 和超限内容，Git 来源固定 40 位 commit；导入不运行安装脚本。
 
 失败结果保存完整 Error，包括可信 execution_failure 分类，而非仅错误文本。core 将它与真实工具回执、消费事实和业务拒绝一起判断，不能从供应商返回的文字推断安全重试。

@@ -45,7 +45,7 @@ flowchart TD
 
 [Definition](devdesk-domain/configuration-and-sources.md#file-src-source-rs) 的引用是 identity:revision。[类型化源图](devdesk-domain/configuration-and-sources.md#file-src-configuration-graph-rs) 只沿合同声明的引用建边，不扫描正文猜依赖。配置唯一保存到 source_definitions，运行治理记录另存；[源视图 codec](devdesk-adapters/storage-and-source-codecs.md#file-src-source-views-rs) 可以压缩可重建视图，输入、输出、参数和原始正文等事实必须无损。
 
-发布、目录可见、项目采用和一次执行的冻结选择分别有身份。修改当前默认不改变已运行的 Workflow、Standard、Agent、权限或工具连接；旧任务按原源闭包恢复。跨库发布使用 [stage/apply/recover](devdesk-core/configuration-and-catalog.md#file-src-configuration-transfers-rs)，保留项目独立回执和原 Actor，不宣称两个 SQLite 库共用原子事务。
+发布、目录可见、项目采用和一次执行的冻结选择分别有身份。修改当前默认不原地改变已运行的 Workflow、Standard、Agent、权限或工具连接；计划变更和权限后继各有显式接续路径。已发送任务优先从经摘要核验的 User 消息账本恢复，缺少该正文时才按原源闭包纯重建。跨库发布使用 [stage/apply/recover](devdesk-core/configuration-and-catalog.md#file-src-configuration-transfers-rs)，保留项目独立回执和原 Actor，不宣称两个 SQLite 库共用原子事务。
 
 ### 把职责、能力与授权分开
 
@@ -87,6 +87,7 @@ Session/Turn 记录原生输入和执行，WorkflowOutput/Artifact 记录封存�
 | 为什么按钮可见但动作仍被拒绝 | [业务资格](devdesk-core/orchestration-and-drivers.md#file-src-workflow-eligibility-rs) → [Actor/CAS/确切结果](devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs) → [驱动代次与策略](devdesk-core/orchestration-and-drivers.md#file-src-workflow-driver-rs) |
 | 默认修改后为什么历史不变 | [目录代次](devdesk-core/configuration-and-catalog.md#file-src-templates-rs) → [历史恢复](devdesk-core/workflow-compilation.md#file-src-frozen-views-rs) → [存储 codec](devdesk-adapters/storage-and-source-codecs.md#file-src-source-views-rs) |
 | 运行卡住、取消或重启如何收敛 | [意图](devdesk-core/workflow-execution.md#file-src-workflow-runtime-rs) → [原生观察](devdesk-core/conversations-and-history.md#file-src-conversation-runtime-rs) → [实际停止](devdesk-adapters/harness-and-protocols.md#file-src-harness-rs) |
+| 为什么项目切换后请求被拒，全局讨论又存在哪里 | [Workspace 路由](devdesk-host/workspace-and-lifecycle.md#file-src-workspace-rs) → [后台调度与全局讨论](execution-flows.md#scheduling-and-discussions) |
 | 权限/模型/密钥如何进入一次任务 | [会话与权限](devdesk-core/session-resources-and-permissions.md) → [运行准备](devdesk-adapters/runtime-preparation.md) → [凭据](devdesk-adapters/credentials-and-permissions.md) |
 | 如何新增工具或协议能力 | [合同](devdesk-domain/integrations.md#file-src-integrations-rs) → [用例](devdesk-core/integrations-and-repositories.md#file-src-integrations-rs) → [执行](devdesk-adapters/external-integrations.md#file-src-integrations-rs) → [路由](devdesk-host/rpc-and-configuration.md#file-src-integrations-rs) |
 

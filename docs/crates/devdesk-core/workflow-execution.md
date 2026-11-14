@@ -20,9 +20,11 @@
 
 `ConfiguredWorkflowInstance` 保存当前计划引用、control_version、owner/root/父调用、输入、步骤执行、暂停和取消状态。执行 ID、node_id、step key、round、sequence 各有用途：节点身份不能代替一次尝试身份，补充输入也不能被当成新任务。
 
-`material_inputs` 从已经接纳的值解析显式绑定；`task_input` 组合 Stage、职责、Skill、Spec、输入来源、输出 Schema、预算及授权，形成 canonical JSON。大于内联阈值的输入使用带 digest/offset 的输出引用，前提是 Agent 具有并获授权使用 outputs.read；原值仍封存。逐端口 content_checks 使用本次 Spec 的检查集合，不内置固定四项检查。
+workflow.start 固定整体输入和计划，但新 StepExecution 的 inputs 为空、input_digest 为空。步骤有本计划的显式 dispatch 记录、依赖已处置且 condition 成立后，首次推进才用 `material_inputs` 解析当时可用的显式绑定，计算摘要并保存输入证据清单；技术 retry 复用原输入并核对摘要，rework 才清空后重解析。condition 不成立时直接记录 Skipped，不启动执行器。
 
-运行入口先固定 Plan 与 StepExecution，派发经意图建立 Session/Turn 或工具请求。`advance_configured_step` 观察实际 Turn、工具和子流程，创建或更新子实例、执行状态和预算等待；父调用等待子实例完成，不按最近一次同名会话找结果。动态 work_binding 从真实子工作选择它自己的 Standard/Workflow。
+`task_input` 组合 Stage、职责、Skill、Spec、输入来源、输出 Schema、预算及授权，形成 canonical JSON。大于内联阈值的输入使用带 digest/offset 的输出引用，前提是 Agent 具有并获授权使用 outputs.read；原值仍封存。逐端口 content_checks 使用本次 Spec 的检查集合，不内置固定四项检查。
+
+四种执行器在这里分流：Agent 建立 session.open 意图，Session 就绪后再建立 conversation.send 意图；Tool 建立 workflow.tool.execute 意图；Control 不启动外部进程，直接进入 WaitingConfirmation 或 AwaitingAcceptance；Workflow 建立精确子实例及 workflow_children，foreach 为每个成员建立调用。`advance_configured_step` 后续观察 Turn、工具和子流程；父调用等待对应子实例完成并映射输出，不按最近一次同名会话找结果。动态 work_binding 从真实子工作选择它自己的 Standard/Workflow。
 
 `accept_configured_outputs` 核验统一封套、端口、结构、内容检查及实际 producer，再封存 Artifact/WorkflowOutput。执行终态与 awaiting_acceptance/人工确认分开。补充输入沿用原任务，retry 创建新 execution，rework 沿真实消费关系失效后继；写任务返工先保存可核验工作区检查点，不回退到旧 Red 基线丢失已写实现。
 
@@ -89,6 +91,8 @@ Host 领取后在事务外处理 session.open、workflow.tool.execute 或 Engine
 源码：[crates/core/src/workflow_failure.rs](../../../crates/core/src/workflow_failure.rs)。
 
 retry_count 按 workflow_instance_id、稳定 node_id 和业务 round 收集历史 execution 身份去重计数，不使用补充输入 sequence。技术重试的旧执行保留在 workflow_execution_history，重启或切驱动不会清空尝试预算。
+
+共同 retry 资格只检查 Failed/Cancelled、原执行者静止和步骤次数预算；人工显式重试并不要求失败一定为 Technical/NotApplied。Rust 自动重试才进一步要求可信安全分类、策略允许码与 max_retries。不能把自动策略的保守条件说成所有人工命令共有的拒绝条件。
 
 observed_failure 优先从工具调用/回执、失败 workflow_intent 或当前 Turn 的 execution-failure 事件恢复完整 Error，保留 source_ref。工具或 Turn 已成功而输出被拒，归 Business/Applied；缺可信分类保持 Unknown。Turn 已消费输入时，即使某边界称未应用也不能据此把当前工作判成安全重发，效果转 Unknown。
 

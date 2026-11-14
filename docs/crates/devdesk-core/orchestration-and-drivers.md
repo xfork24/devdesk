@@ -8,7 +8,7 @@
 
 - [src/orchestration.rs](#file-src-orchestration-rs)：显式控制、实际接纳、材料读取与动作凭据
 - [src/controllers.rs](#file-src-controllers-rs)：原生经理会话、唤醒和控制调用围栏
-- [src/workflow_driver.rs](#file-src-workflow-driver-rs)：Rust 根驱动的动作选择和当前局限
+- [src/workflow_driver.rs](#file-src-workflow-driver-rs)：Rust 根驱动的动作选择、预算与围栏
 - [src/workflow_eligibility.rs](#file-src-workflow-eligibility-rs)：查询与提交共用的业务动作资格
 
 <a id="file-src-orchestration-rs"></a>
@@ -49,11 +49,11 @@ inspect 为每步返回 actions.dispatch/accept/retry 及结构化 code/reason�
 
 <a id="file-src-workflow-driver-rs"></a>
 
-## src/workflow_driver.rs：Rust 根驱动的动作选择和当前局限
+## src/workflow_driver.rs：Rust 根驱动的动作选择、预算与围栏
 
 源码：[crates/core/src/workflow_driver.rs](../../../crates/core/src/workflow_driver.rs)。
 
-驱动选择固定在根实例，子实例继承同一控制归属。workflow_driver_command 校验人类入口、根 revision 和精确策略；切换撤销旧 Controller 代次、prepared 控制意图和 Segment，不直接停止业务 worker。authorize_driver_action 在每次提交重新核对 mode、epoch、租约与计划。
+驱动选择固定在根实例，子实例继承同一控制归属。workflow_driver_command 校验人类入口、根 revision 和精确策略；每次选择提高 Driver epoch，停止旧 Segment，切到非 agent 模式时还暂停相关 Controller、提高其 epoch、请求取消经理活动 Turn 并撤销其 prepared 意图。选择 agent 则打开或恢复相应 Controller，不一概撤销它。业务 worker 保留；authorize_driver_action 在每次提交重新核对 mode、epoch、租约与计划。
 
 drive_rust_workflows 续租后在 max_actions_per_tick 内分页读取共同 inspect，按子实例、步骤动作资格选择 dispatch、accept、retry 或 complete。它记录本 tick 已被拒绝的 method/execution/control_version 候选；blocked、revision_conflict、change_pending 发生时继续在剩余预算内读取并寻找其他合法动作，其他错误结束本轮。这样受阻子流程不会持续抢在另一个可接纳结果前面，也不会无限忙重试。
 
@@ -71,7 +71,7 @@ drive_rust_workflows 续租后在 max_actions_per_tick 内分页读取共同 ins
 
 源码：[crates/core/src/workflow_eligibility.rs](../../../crates/core/src/workflow_eligibility.rs)。
 
-WorkflowActionEligibility 返回 allowed、稳定 code 与可读 reason；WorkflowStepActions 为 dispatch/accept/retry 分别给出结论。common 先拒绝终态、取消和待应用计划；授权、当前 Actor、CAS 仍在命令接纳检查，资格查询不是一张长期有效的 permit。
+WorkflowActionEligibility 返回 allowed、稳定 code 与可读 reason；WorkflowStepActions 为 dispatch/accept/retry 分别给出结论。common 拒绝 Completed、Cancelled、已请求取消或存在待应用计划的实例；Failed 不被一概当成不可恢复终态。授权、当前 Actor、CAS 仍在命令接纳检查，资格查询不是一张长期有效的 permit。
 
 派发检查 queued、祖先暂停、Task 业务依赖、步骤依赖、foreach 槽位和显式输入。needs_reconciliation 的兄弟仍占槽位；condition 为 false 时允许显式 dispatch 记录配置的 skipped，而不是先要求被跳过步骤的输入可用。接纳检查结果状态、真实 writer 停止、完成规则/确切人工覆盖和 human 确认；技术 retry 检查失败/取消状态、停止和同 round 独立次数预算。
 

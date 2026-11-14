@@ -20,9 +20,13 @@ App 保存可选 Workspace、随机会话 cookie、规范 authority/origin、连
 
 connection_origin 只接受无凭据、路径、查询和 fragment 的 http(s) origin。非 loopback 或显式 public URL 要求 DEVDESK_ACCESS_TOKEN；值为 32..512 位非空白 ASCII，监听所有网卡还须指定客户端连接地址。
 
-RPC 使用有 id 的单请求 JSON-RPC，领域错误投影为统一错误形状；/rpc 请求体上限 4 MiB。Artifact 按正式引用读取，不暴露任意文件路径。SSE 在建立时固定 Engine、scope 与游标，事件 ID 带工程范围，每 250ms 读取一批，项目切换不会让旧流混入新库。
+RPC 使用有 id 的单请求 JSON-RPC，领域错误投影为统一错误形状；/rpc 请求体上限 4 MiB。Artifact 从当前活动工程的 query.artifact 取得记录后校验读取，不暴露任意文件路径；project_id 同样是活动项目校验值。这个 HTTP 下载入口不选择全局讨论库。
 
-启动处理 --data/--host/--port/--public-url、固定助手更新与显式凭据授权等入口，嵌入 web/dist。关闭先阻止新调度，等待当前调度阶段退出，再停止归属明确的执行者。文件末测试覆盖远程密钥、wildcard 和 origin 规范化；完整 HTTP 行为由跨进程测试补充。
+SSE 建立时通过 event_engine 固定当前工程 Engine；无活动工程时使用全局配置 Engine。事件 ID 为 scope:cursor，Last-Event-ID 只有 scope 相同才采用，随后才考虑查询参数 cursor；每 250ms 读取一批。项目切换不会让旧流混入新库，但它也不会自动转成新项目或全局讨论消息流。
+
+/oauth/integrations/callback 不在 cookie 保护列表中，以原 OAuth flow/state 和授权码完成交换；guard 仍核对 Host 及请求中出现的 Origin。回调只说明交换结果，用户还需回到接入页保存新的绑定修订，不因收到 callback 就自动替换旧执行锁。
+
+启动处理 --data/--host/--port/--public-url、固定助手更新与显式凭据授权等入口，嵌入 web/dist。75ms 定时器串行等待 spawn_blocking 中的 Workspace.tick 完成，再进行下一轮；这是调度唤醒周期，不是外部作业完成时限。关闭先阻止新调度、等待当前调度阶段退出，再停止并封存已打开 Engine 的 Harness writer，保留未知结果与排队输入。文件末测试覆盖远程密钥、wildcard 和 origin 规范化；完整 HTTP 行为由跨进程测试补充。
 
 代码定位：[`App`](../../../crates/host/src/main.rs#L34)、[`guard`](../../../crates/host/src/main.rs#L67)、[`connection`](../../../crates/host/src/main.rs#L121)、[`session`](../../../crates/host/src/main.rs#L133)、[`connection_origin`](../../../crates/host/src/main.rs#L161)、[`connection_key`](../../../crates/host/src/main.rs#L185)、[`rpc`](../../../crates/host/src/main.rs#L237)、[`events`](../../../crates/host/src/main.rs#L355)、[`run`](../../../crates/host/src/main.rs#L422)。
 

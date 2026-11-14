@@ -33,7 +33,9 @@
 
 `ConversationTurn` 独立保存 client_message_id、输入摘要、冻结代码视图、外部消息/轮次和 consumed 标记。事件有 sequence、幂等键及 Full/Delta 模式；工具审批与问题回答由类型化交互记录保存。Proposal 是讨论产生的通用材料，不等于正式 WorkflowOutput。
 
-`RuntimeExecution` 记录 operation、容器、镜像、输入接纳/消费、原生终态、日志和 writer 撤销等不可由配置重建的事实。`validate_conversations` 对比前后状态，禁止原地改 Session 范围/绑定、重写已提交输入或终态证据，并检查单活跃轮次、事件和执行归属。材料 owner 校验阻止跨项目混用。
+`RuntimeExecution` 每个 worker 生命周期追加一行，记录 operation、容器、镜像、权限、资源状态、起止时间、协议 Artifact 和 writer 撤销。输入是否消费保存在 `ConversationTurn.consumed`，外部消息/轮次身份也在 Turn 中；消费观察、停止证明和终态原因另有 ConversationEvent，不能只读 execution 的 status 判断任务结果。
+
+`validate_conversations` 对比前后状态，禁止原地改 Session 范围/绑定、重写已提交输入或终态证据，并检查单活跃轮次、事件和执行归属。材料 owner 校验阻止跨项目混用。
 
 “模型说完成”“收到原生终态”“实际 writer 已停止”是三个观察；core 需要按端口结果组合它们，不能只看最后一句回复。快照恢复只提供历史背景，不重新执行旧 Turn。
 

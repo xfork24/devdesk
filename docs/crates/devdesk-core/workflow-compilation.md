@@ -36,7 +36,7 @@ compile_workflow_sources 递归访问确切子流程，核对 DAG、深度/展�
 
 `restore_task` 根据原 plan_revision、实例、execution 和来源重建任务，必要时从 workflow_execution_history 找回被替代执行，再放回冻结输入、Agent 和补充文本。它没有环境访问：不会重新发现工具、读取凭据或安装镜像。
 
-原生实际发送正文还要由 adapter codec 核对历史摘要和已认证封存正文；不能因当前渲染器变化便改写过去的 task。源缺失或不一致是存储错误，而不是自动采用新版的理由。
+adapter codec 对已经发送的任务优先核对 User 事件中的实际 JSON 与正式任务记录的摘要，匹配后直接恢复；缺少该账本正文时才调用这里的纯重建。因而 restore_task 是恢复的一条后备路径，不是每次读取历史都先重跑的渲染步骤。源缺失或不一致是存储错误，而不是自动采用新版的理由。
 
 代码定位：[`source_closure`](../../../crates/core/src/frozen_views.rs#L16)、[`restore_plan`](../../../crates/core/src/frozen_views.rs#L125)、[`restore_task`](../../../crates/core/src/frozen_views.rs#L80)。
 

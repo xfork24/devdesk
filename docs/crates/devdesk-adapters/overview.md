@@ -82,7 +82,7 @@ adapters 实现 core 的端口：把工程状态写入 SQLite，把交付物封�
 
 源码：[crates/adapters/Cargo.toml](../../../crates/adapters/Cargo.toml)。
 
-本包依赖 core/domain，并引入 rusqlite、sha2、JSON Schema、ZIP/YAML 等外层实现库。系统凭据使用平台条件依赖；测试用 tempfile 创建独立数据与仓库。`build.rs` 参与编译，将配置资源和 Schema 校验入口嵌入产物。
+本包依赖 core/domain，并引入 rusqlite、sha2、JSON Schema、ZIP/YAML 等外层实现库。Unix 条件依赖 libc 供进程组等系统操作使用；macOS Security Framework 属于独立 credential-helper 的依赖，Linux Secret Service 通过外部 secret-tool 调用。测试用 tempfile 创建独立数据与仓库。`build.rs` 在编译时校验 manifest/源包装，并将配置资源嵌入产物。
 
 依赖应留在实际使用的边界：SQLite 和协议细节不应反向进入 domain/core。包中的 `tests.rs` 是生产测试执行适配器，`tests/` 才是 Rust 集成测试目录。二者名称相近，职责不同。
 

@@ -17,7 +17,9 @@
 
 `freeze_integrations` 沿 Agent/Skill/Tool 和项目绑定固定工具、来源、账户与包材料，确认 capability、认证和精确修订；当前默认选择改变不改旧 Feature/Session。定义删除检查所有仍被使用的修订和子资源，紧急停用另阻止后续执行。
 
-调用管线先建立 ToolInvocation、参数摘要、权限和操作记录，再由 drive_tool_calls 在事务外 start/poll/cancel，最后 accept_tool_receipt 核验真实身份、输出 Schema、文件 Artifact、remote_effect 和状态。用户批准、原生工具调用与独立测试调用保留各自来源，人工 reconcile 不伪造成外部成功。
+调用管线先建立 ToolInvocation、参数摘要、权限和操作记录；insert_tool_invocation 核对工具/来源/绑定启用、认证、输入 Schema 与当前授权，再由 drive_tool_calls 在事务外 start/poll/cancel。accept_tool_receipt 只核对 invocation_id 和 External origin，按 success/remote_effect 保存回执与状态；它不重新校验远端输出 Schema，也不读取结果文件。
+
+生产 NativeTools 在返回回执前校验 output_schema，将文件转换为带摘要/大小的专用资源链接；文件读取由其 read_artifact 再核对。正式 Workflow 输出还要通过 configured_runtime 的 Delivery/Spec/provenance 接纳。这些检查位于不同边界，不能把替身 ToolExecutor 返回一个成功回执当作已跑过生产输出校验。用户批准、原生工具调用与独立工具试用保留各自来源，人工 reconcile 不伪造成外部成功。
 
 prepare/finish_integration_operation 为发现、导入或授权相关的外部过程保存 durable 意图；recover_tool_receipts 在重启时读取已有回执，unknown 不重发。integration_query/records 生成有界、遮蔽的 UI/历史投影，回复交付与执行成功分开。
 

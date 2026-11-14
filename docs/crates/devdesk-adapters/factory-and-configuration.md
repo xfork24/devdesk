@@ -16,9 +16,9 @@
 
 源码：[crates/adapters/build.rs](../../../crates/adapters/build.rs)。
 
-构建脚本遍历 resources/configuration，排序后生成 OUT_DIR/template_files.rs，使用 include_str 将 manifest 管理的文件嵌入二进制。资源变化通过 Cargo 重建提示进入产物，运行时无需读取开发机 checkout。
+构建脚本先读取 manifest，校验 template-manifest/source-definition Schema，并核对每个声明源的 type 与分类相符；随后递归收集 resources/configuration 下的 JSON/Markdown，排序生成 OUT_DIR/template_files.rs，以 include_str 嵌入二进制。被嵌入不等于被发布：运行 loader 仍按 manifest.types 和 defaults 选择资源。资源变化通过 Cargo 重建提示进入产物，运行时无需读取开发机 checkout。
 
-Schema 校验编译复用 scripts/rust/schema_validation.rs；它与包内的离线 Schema 功能共同保证资源可在无网络条件下解析。新增出厂文件应进入 manifest 和对应合同，单纯放进目录不代表已成为默认资源。
+构建期校验器复用 scripts/rust/schema_validation.rs；它与包内的离线 Schema 功能都不抓取远端 Schema。新增出厂源应进入 manifest 和对应合同，单纯放进目录不代表已成为默认资源。
 
 代码定位：[`collect`](../../../crates/adapters/build.rs#L7)、[`main`](../../../crates/adapters/build.rs#L20)。
 

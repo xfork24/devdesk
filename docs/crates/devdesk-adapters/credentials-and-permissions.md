@@ -18,11 +18,11 @@
 
 源码：[crates/adapters/src/credentials.rs](../../../crates/adapters/src/credentials.rs)。
 
-CredentialVault 用规范化数据集根计算 service 命名空间，账户使用固定 provider 前缀加不透明 UUID。模型密钥与 integration-key 分开；数据库及冻结会话只保存引用，不保存密钥值。轮换会产生新引用，旧会话继续固定旧引用，避免新设置悄悄改变已启动执行。
+CredentialVault 用规范化数据集根计算 service 命名空间；模型账户前缀来自已发布 ProviderFacts 的 credential_account，再加不透明 UUID，集成账户则使用 integration-key-。模型密钥与集成秘密分开；数据库及冻结会话只保存引用，不保存密钥值。模型密钥轮换会产生新引用，旧会话继续固定旧引用，避免新设置悄悄改变已启动执行。OAuth token 刷新可更新同一集成秘密引用，不能把模型轮换规则套到所有秘密上。
 
 macOS 委托固定签名助手，Linux 使用 secret-tool 并经私有 stdin 传值。status 只描述配置事实，check 检查实际读取能力，authorize 才是显式交互授权。普通轮询不应弹系统授权窗口；Ollama 是无需该 API key 的独立路由。
 
-外部集成秘密也由此创建/读取/更新，只接受预先允许的账户命名空间。错误返回不附带原始密钥或任意系统凭据详情。调用者仍须先完成项目、工具与账户授权，知道一个引用并不代表有权使用。
+模型引用读取核对当前数据集 service、UUID 形状和冻结 provider/connection 的账户前缀；集成引用核对 integration-secret:UUID。macOS 助手另有明确账户前缀白名单，新增 provider 不能仅靠配置绕过它。错误返回不附带原始密钥或任意系统凭据详情。调用者仍须先完成项目、工具与账户授权，知道一个引用并不代表有权使用。
 
 代码定位：[`CredentialVault`](../../../crates/adapters/src/credentials.rs#L15)、[`CredentialStatus`](../../../crates/adapters/src/credentials.rs#L5)、[`integration_account`](../../../crates/adapters/src/credentials.rs#L35)、[`configure_integration`](../../../crates/adapters/src/credentials.rs#L42)。
 

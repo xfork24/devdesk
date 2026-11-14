@@ -20,9 +20,9 @@
 
 `SqliteStore` 打开工程目录，核对 `devdesk-source-flat-v1` 数据标记、数据库版本和独占锁；全局库与工程库使用各自 SQL 基线，当前版本分别为 18 和 48。非空的不兼容目录不会自动迁移或清空。只读工程快照用于跨项目查询，不取得执行控制权。
 
-EngineeringStore 的事务先核对 command_id 与请求指纹，载入状态并运行业务闭包，再校验状态和保存差异。单写入者约束与数据库事务共同保护提交；重放已提交操作直接返回原结果。`has_pending_work` 用数据库投影判断是否值得调度，避免每次 tick 为闲置工程加载全部历史。
+EngineeringStore 的 transact 先取得 writer 锁，核对 command_id 与请求指纹并载入状态；运行业务闭包前释放数据库连接锁。闭包成功且状态发生变化时校验差异，再打开短 SQLite 事务提交状态和操作回执；这期间 writer 锁仍在，其他只读查询可取得连接。重放已提交操作恢复原结果，不再次执行闭包。`has_pending_work` 用数据库投影判断是否值得调度，避免每次 tick 为闲置工程加载全部历史。
 
-`FileArtifacts` 在受管目录写临时文件，刷新后原子发布，并以内容摘要生成 ArtifactRef。读取再次检查归属、路径/符号链接与 SHA，不能只信调用者提供的相对路径。数据库引用和文件内容承担不同职责，业务接纳还需 core 核对来源。
+`FileArtifacts` 在受管目录写临时文件，刷新后原子发布，返回包含随机 ID、relative_path、SHA-256 和 owner 字段的 `Artifact`。ID 不是内容摘要；读取校验安全相对路径、符号链接、Artifact 根边界和实际 SHA。读取者是否有权取得该 Artifact，由 core/Host 查询边界核对，文件适配器不单凭 owner 字段完成授权。数据库事实提交与文件发布也不是一个原子事务，业务接纳还需 core 核对来源并保存引用。
 
 `execution_adapters` 集中装配 RoutingHarness、CliGit、CommandTests 和 GitHubPullRequests。创建适配器不立即运行模型或 GitHub；实际调用由后续 durable 意图触发。
 
@@ -70,7 +70,9 @@ source_definitions 保存配置源，governance_records 保存实例、回执等
 
 `pack/restore` 将可重建的配置视图变成确切 `$source` 引用；只有展开后与原值相等才采用压缩。inputs、outputs、arguments、content、value、error、input_sources 等事实字段不会被当作普通源投影替换。用户字面量中的 `$source` 与内部文本标记也有转义，防止把正文误当指令。
 
-正式任务按结构记录来源选择和恢复参数，而不是凭渲染字符串猜测。恢复先走纯 task compiler；若当前渲染与历史实际任务不一致，使用经过来源核验的历史任务或原生帧保存的实际正文，不能悄悄用新默认重写历史。共享 runtime_digest 负责内容身份。
+正式任务按结构记录来源选择和恢复参数，而不是凭 renderer 字符串猜测。恢复优先查 ConversationEvent 的 User 消息账本，将任务的 source、inputs、input_sources、Agent、补充文本及摘要与 configured_execution_task/archived 记录逐项核验；匹配时直接返回当时实际发送的 JSON，不先用当前渲染器重写。找不到这份已认证正文时，才按原 plan_revision 调用 core.frozen_views.restore_task 纯重建；这里不从原生协议 journal 提取替代正文。
+
+本文件的 runtime_digest 是另一项共用计算：对实际安装、adapter、完整 Agent/模型连接、权限、路径、WorkType 和凭据引用等 RuntimeBinding 选择计算摘要，供恢复和权限后继使用，不是任务正文摘要或 Artifact ID。
 
 包内测试覆盖伪造标记、嵌套恢复、文本转义及历史实际正文。修改任务渲染器时，必须同时考虑这里的往返相等和旧会话重放，而不只是新任务是否好看。
 

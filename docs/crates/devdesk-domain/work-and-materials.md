@@ -80,7 +80,7 @@ Error 还可携带 execution_failure（失败类别和副作用结论）。techn
 
 当前 `TestRunner` 只提供 NodeTest。`TestRecipe` 固定文件清单、Docker image ID 与超时，不接受一个任意 shell 命令字符串。校验要求完整小写 sha256 身份、1–300 秒超时、1–100 个不重复文件。
 
-文件必须是安全相对路径，不能以 `/` 或 `-` 开头，不能有反斜线、控制字符、空段、`.` 或 `..`。这同时限制目录越界和被解释成命令选项的输入。合法配方只是执行输入，真实通过/失败仍由报告器与容器回执决定。
+文件必须是安全相对路径，不能以 `/` 或 `-` 开头，不能有反斜线、换行、回车、NUL、空段、`.` 或 `..`。这里明确检查这些字符，并未笼统禁止所有控制字符。路径规则同时限制目录越界和被解释成命令选项的输入。合法配方只是执行输入，真实通过/失败仍由报告器与容器回执决定。
 
 代码定位：[`TestRunner`](../../../crates/domain/src/testing.rs#L5)、[`TestRecipe`](../../../crates/domain/src/testing.rs#L10)、[`validate`](../../../crates/domain/src/testing.rs#L17)。
 

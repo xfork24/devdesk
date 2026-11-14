@@ -51,7 +51,7 @@ permission_resource_command 处理 Profile 的创建/修订等应用命令，`ap
 
 接着逐执行核对并停止旧 worker、导出真实日志/停止证明，保存上下文快照，创建 force_new 后继 Session 并迁移正式任务/Controller 关联，最后 replay_successor_input 按原 command_id/client_message_id 消费一次。中断保留 durable intent，重试核对同一原绑定和 operation，不把输入重新解释为新任务。
 
-权限改绑不是在旧 RuntimeBinding 上改几个字段。讨论的 follow_target 检测可触发该路径；已冻结工程执行、重试或活动工作仍保持原选择，不能在未知边界直接提权。
+权限改绑通过后继 Session 生效，旧 RuntimeBinding 不原地修改。允许的差异仅为 permissions 与 configuration_digest，Agent、安装、模型和接入锁等其他字段必须一致；这不是任意配置升级入口。普通 Task 讨论不允许走此切换，已有 configured_session 关联的正式任务则可在静止边界迁移到后继，Controller 关联也有专门迁移规则。活动或结果未知时仍拒绝切换，不能在未知边界直接提权。
 
 代码定位：[`permission_switch_id`](../../../crates/core/src/permission_switch.rs#L4)、[`send_with_permission_binding`](../../../crates/core/src/permission_switch.rs#L10)、[`replay_successor_input`](../../../crates/core/src/permission_switch.rs#L223)。
 

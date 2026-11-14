@@ -35,9 +35,13 @@
 
 `tick_conversations` 在并发额度内处理 queued 输入和活动会话，持久化 dispatch 意图后在事务外打开/恢复 worker、发 Turn 并轮询。原生接纳、输入消费和终态分别投影为事件与执行事实，不能把模型普通文本中的“成功”当协议终态。
 
-project_conversation 将端口观察转成领域消息、工具调用、交互与 RuntimeExecution；commit_conversation_batch 以原身份接纳批量事件。finish_conversation 需要匹配原生 session/turn、消费证明和真实停止/writer 撤销，按需要封存协议日志和快照；清理失败单独留痕，不抹掉已经观察到的结果。
+并发额度限制新 queued Turn，已有活动 Turn 仍会被观察。可写 Turn 另按实际 code_view 的 source.worktree 排队：同一 worktree 有未撤销 writer 时不再启动第二个写者；只读 Turn 不进入该写者集合。这个工作副本边界与项目配额、Rust 根额度和 foreach 调用槽位分别判断。
 
-未知派发、停止或恢复错误进入 unknown_conversation/needs_reconciliation，不盲重发原输入。观察边界返回完整 execution_failure，record_conversation_failure 将其保存为当前 Turn 的不可变状态事件。明确 Technical/NotApplied 可安全结束为失败；原生超时或已经消费输入后的不确定结果继续核对。未携带可信分类的错误保持 Unknown，不默认归入可自动重试。
+project_conversation 将端口观察转成领域消息、工具调用、交互及执行事实，commit_conversation_batch 以原身份接纳批量事件。正常 Terminal 路径先提交此前观察，再核对本 Turn、quiescent 和 consumed，然后调用 finish_conversation；取消或派发前失败则不要求输入已经消费。finish_conversation 对原 operation 调用 stop_session，核对 writer_revoked，封存可取得的协议日志，并更新 Turn、SessionLifecycle、RuntimeExecution 和停止事件。只有符合条件的成功会话才自动捕获经验快照；清理失败单独记为 CleanupFailed，不抹掉已接纳的 Turn 结果。
+
+派发阶段明确 Technical/NotApplied 的错误会在取得停止证明后结束为 Failed，其余派发错误进入 unknown_conversation。轮询阶段对 provider_timeout、provider_rejected 或明确 Technical/NotApplied 先停止并将 Turn 记为 Failed，其他错误进入 NeedsReconciliation；record_conversation_failure 保留完整 Error 的不可变状态事件。
+
+Turn 的失败终态与步骤的效果判断是两层：工作流随后从该事件恢复分类，Technical/Unknown 的超时仍使 Step 进入 needs_reconciliation；已消费输入的 Turn 失败也不会因此获得 NotApplied 结论。恢复只停止/封存原 worker，保留未知结果，不重新提交输入；没有可信分类的错误不会被默认当成安全重试。
 
 代码定位：[`tick_conversations`](../../../crates/core/src/conversation_runtime.rs#L74)、[`unknown_conversation`](../../../crates/core/src/conversation_runtime.rs#L461)、[`commit_conversation_batch`](../../../crates/core/src/conversation_runtime.rs#L488)、[`project_conversation`](../../../crates/core/src/conversation_runtime.rs#L505)、[`finish_conversation`](../../../crates/core/src/conversation_runtime.rs#L609)。
 

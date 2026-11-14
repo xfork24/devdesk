@@ -16,7 +16,9 @@ Harness 将正式 Session/Turn 转成真实原生协议。此处同时处理操�
 
 源码：[crates/adapters/src/harness.rs](../../../crates/adapters/src/harness.rs)。
 
-RoutingHarness 按冻结 provider 选择 Codex 或 DSH 实现，RuntimeWorkers 按执行身份持有 worker。SessionPath 记录数据集、会话、操作和容器归属，私有目录保存协议与日志；路径和 Docker 标签共同防止误接管其他会话。
+RoutingHarness 按冻结 provider 选择 Codex 或 DSH 实现。RuntimeWorkers 以 Session ID 为键持有独立加锁的 worker 槽位，open 还要求已有 worker 的 operation_id 与请求一致。不同步骤即使选择同一个 Agent，也以各自 Session 隔离，不能用 Agent ID 找“最近的执行者”。
+
+location 根据 SessionScope 将私有目录放到工程执行根或全局讨论执行根。Worker 保存原生 session、operation、容器、镜像和日志身份；Docker 再核对实际标签。SessionPath 只是内存 worker 已丢失时的项目日志查找助手，仅保存 Session ID，按 Session/operation 在 projects/* 下查找 journal；它不是存储全部归属的记录，也不覆盖全局讨论目录的日志查找。
 
 任务代码使用受管 worktree 或固定只读导出，Skill、状态和认证挂载有各自边界。Codex app-server 与 DSH SDK 的协议分别处理初始化、输入派发、消费事件、文本全量/增量、工具调用、审批和用户问题。平台/编排动态桥只在实际驱动支持时开放；当前 Codex 支持这类桥，DSH 不提供相同能力。
 

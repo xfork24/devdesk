@@ -74,6 +74,8 @@ permission_resource_api 提供 Profile/Context、预设目录和绑定入口。�
 
 permission_session_status 分别展示 desired 与已冻结 Session 权限。send_permission_conversation 在需要切换时先取得静止/停止和快照，再创建后继会话发送，旧 Session 与历史保持原绑定。失败和重放继续使用原操作，而不是重复产生后继。
 
+发送前还核对实际 adapter 身份与已有权限锁；正式步骤的 integration_lock 保持原锁，普通讨论可重新计算接入选择。后续 core 切换仅接受权限与运行摘要的差异，所以这里发现接入锁改变，并不表示允许借同一权限切换原子替换接入配置。具体可切换字段与 Task/Controller 边界见 [permission_switch](../devdesk-core/session-resources-and-permissions.md#file-src-permission-switch-rs)。
+
 模块测试覆盖目录选择/恢复、权限切换重启、项目归属、原请求重放与不支持规则拒绝。后端是否实际落实策略，另见 adapters 的原生权限测试。
 
 代码定位：[`permission_runtime_digest`](../../../crates/host/src/permission_resources.rs#L7)、[`send_permission_conversation`](../../../crates/host/src/permission_resources.rs#L13)、[`permission_session_status`](../../../crates/host/src/permission_resources.rs#L134)、[`permission_resource_api`](../../../crates/host/src/permission_resources.rs#L177)。
@@ -86,9 +88,9 @@ permission_session_status 分别展示 desired 与已冻结 Session 权限。sen
 
 源码：[crates/host/src/templates.rs](../../../crates/host/src/templates.rs)。
 
-template_snapshot_summary 汇总全局和各工程当前配置/绑定及 pinned 历史，提供预演指纹。template_dispatch 核对 expected generation 和当前快照，协调 core 的目录恢复，拒绝旧页面基于过期目录写入。
+template_snapshot_summary 在全局及各工程只读快照中统计当前代次的定义、停用、草稿、修改数量和 pristine 状态，以 namespace/ID/revision/hash 等组成预演指纹；pinned_projects 列出已有 project_configuration 的项目，并非逐条枚举冻结 Session 或执行历史。template_dispatch 核对 generation、catalog_fingerprint、bundle_hash 和原请求重放，再调用 core 的目录恢复。
 
-恢复使用 adapters 注入的发行 bundle 与权限资产预检，切换当前目录成员，不删除不可变源或旧运行引用。项目目录、采用选择和冻结执行分别保存，所以重置后仍可解释历史依据。
+恢复使用 adapters 注入的发行 bundle 与权限合同，在全局配置库事务内切换目录并补齐默认绑定；项目库随后通过 sync_shared_configuration/copy_template_catalog 接收新代次，不是一次事务同时修改所有项目。只读 preview 会在临时快照上投影全局代次，不因此写项目库。不可变源、项目采用和旧执行引用保留，旧页面写入由目录代次围栏拒绝。
 
 模块测试检查只改名称的所有源类型、MCP 绑定、已固定引用、重放、stale preview 与失败事务回滚。默认修订断言跟随实际 manifest，不能仅更新一个硬编码 Agent ID 而漏掉整个源闭包。
 

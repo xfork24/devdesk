@@ -64,7 +64,7 @@ core 把领域规则组织成应用用例。它负责发布配置、固定执行
 | [src/standards.rs](../../../crates/core/src/standards.rs) | [规范快照发布与每个工作的独立采用](configuration-and-catalog.md#file-src-standards-rs) |
 | [src/templates.rs](../../../crates/core/src/templates.rs) | [外层资源注入与模板目录重置](configuration-and-catalog.md#file-src-templates-rs) |
 | [src/workflow_changes.rs](../../../crates/core/src/workflow_changes.rs) | [预演影响、停止执行者、切换计划与 Segment](workflow-changes.md#file-src-workflow-changes-rs) |
-| [src/workflow_driver.rs](../../../crates/core/src/workflow_driver.rs) | [Rust 根驱动的动作选择和当前局限](orchestration-and-drivers.md#file-src-workflow-driver-rs) |
+| [src/workflow_driver.rs](../../../crates/core/src/workflow_driver.rs) | [Rust 根驱动的动作选择、预算与围栏](orchestration-and-drivers.md#file-src-workflow-driver-rs) |
 | [src/workflow_eligibility.rs](../../../crates/core/src/workflow_eligibility.rs) | [查询与提交共用的业务动作资格](orchestration-and-drivers.md#file-src-workflow-eligibility-rs) |
 | [src/workflow_failure.rs](../../../crates/core/src/workflow_failure.rs) | [从持久化来源恢复失败与独立尝试计数](workflow-execution.md#file-src-workflow-failure-rs) |
 | [src/workflow_runtime.rs](../../../crates/core/src/workflow_runtime.rs) | [执行意图的领取和派发结果登记](workflow-execution.md#file-src-workflow-runtime-rs) |

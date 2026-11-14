@@ -18,9 +18,11 @@ Workspace 把目录、工程库与真实端口组合为服务。后台持续推�
 
 Workspace 持有 GlobalStore、全局配置 Engine、已打开工程表、active 选择、模板门和 RuntimePreparation。open_with_adapters 是可注入的装配入口，生产 open 则创建真实执行适配器。每个 Engine 使用自己的存储/Artifact 根，配置后端与原生执行器可以共享。
 
-打开时恢复全局和工程的持久化状态、工具回执、配置 transfer 和默认权限，再恢复目录中的活动项目。项目 reserve/publish、加载与激活分开；打开失败不能把原选择改成一半初始化的项目。请求在 dispatch 开始固定目标，显式 project_id 不得在调用中被当前 active 替换。没有项目时全局讨论使用固定命名空间，不伪造业务工程。
+打开时装配全局配置 Engine，并分页打开目录内所有工程、恢复配置 transfer/工具回执及工作流事实，最后恢复活动项目。项目 reserve/publish、加载与激活分开；打开失败不能把原选择改成一半初始化的项目。普通工程入口调用 active_engine(expected)：project_id 是“请求所预期的活动项目”，不同则返回 project_changed；省略才取当前项目。它不是按任意 ID 打开另一工程的选择器。选定 Arc<Engine> 后，本次处理固定到该库；跨项目只读比较等专用入口有自己的范围规则。
 
-`tick` 先处理共享工具，再筛选 has_pending_work 的工程，按总并发预算推进 workflow、repository、conversation 和 Engine 后台工作。非活动工程继续执行；不同工程已有会话占用同一配额。长时间安装准备不持有工程选择锁。每阶段检查停机信号，退出时未启动工作继续排队，已归属执行者由 stop_owned_runtime 核对停止。
+全局讨论通过支持该范围的方法加 scope=global 路由，即使当前有活动项目也可使用；它拒绝同时指定 project_id。首次访问时才打开 conversations/global/engineering.sqlite3 的独立 Engine，以 GLOBAL_DISCUSSION_NAMESPACE 放入 opened 表，随后参与调度，不创建 Project 行。全局配置 Engine 则使用 global.sqlite3；query.history 的 scope=global 和无活动项目时的 /events 指向这份配置库，不能把它们当作全局讨论消息查询。重启打开 Workspace 不会立即装配全局讨论 Engine，相关请求到来后才载入其旧状态。
+
+`tick` 先处理共享工具，再筛选 has_pending_work 的已打开 Engine，按总并发预算推进 workflow、repository、conversation 和 Engine 后台工作。非活动工程及已经装配的全局讨论继续执行；不同工程已有会话占用同一配额。长时间安装准备不持有工程选择锁。每阶段检查停机信号；stop_owned_runtime 遍历已打开 Engine，核对停止其 Harness writer，未启动输入继续排队。退出不是 workflow.cancel，也不表示已撤销外部工具或远端副作用。
 
 文件末集成测试覆盖项目创建/选择失败、请求隔离、恢复、共享预算和关闭等行为。新增入口应复用明确的 global/project 分派，避免 handler 直接操作 active 内部状态。
 

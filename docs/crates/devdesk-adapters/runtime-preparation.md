@@ -53,7 +53,7 @@ Codex 登录用的原生组件单独准备：按系统/架构选 HTTPS 发行文
 
 协议探针在无模型、禁网、只读的短生命周期容器里运行。Codex 检查 initialize、thread start 与动态工具注册；DSH 检查自身初始化协议。报告明确保留 inference/tool 实际验证范围，初始化通过不宣称完成了模型工具调用。
 
-文件也提供准备意图的查询、取消、checkpoint、恢复与 reconciliation。重启后遇到未知结果要检查原容器/安装，而不是直接再建一套资源。
+文件也提供准备意图的查询、取消、checkpoint 和 reconciliation。cancel 只保存 cancel_requested，准备过程在 checkpoint 拒绝采用结果，不保证立刻杀掉在途 Docker build/pull。Host 通过 RuntimePreparation.run 持有准备互斥锁，再调用 reconcile_runtime_preparation 将 preparing 标记为 reconciled 并清除取消标记；该函数本身不取得此锁、不检查镜像或证明构建成功。下一次 prepare 才检查原内容寻址标签和安装，再决定复用还是构建。
 
 代码定位：[`verification_key`](../../../crates/adapters/src/runtime_verification.rs#L13)、[`runtime_verification`](../../../crates/adapters/src/runtime_verification.rs#L18)、[`require_runtime_verification`](../../../crates/adapters/src/runtime_verification.rs#L27)、[`verify_runtime_protocol`](../../../crates/adapters/src/runtime_verification.rs#L38)。
 

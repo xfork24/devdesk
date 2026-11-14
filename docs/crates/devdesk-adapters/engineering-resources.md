@@ -53,7 +53,9 @@ GitHubPullRequests 使用 gh API 读取仓库身份、权限、保护分支和 r
 
 ContainerSpec 固定用途、数据集/工程/会话/操作、不可变镜像、代码与状态路径、权限及资源预算。DockerSandbox 用确定的操作身份找到容器，再核对 devdesk.root/spec/project/session 等标签；同名但不属于当前操作的容器不会被接管。
 
-路径、符号链接、挂载重叠和宿主目录边界在调用 Docker 前检查。容器按冻结策略设置只读根、cap drop、tmpfs、网络和资源限制；模型凭据只进入授权的 Harness 路径，不交给普通测试容器。嵌套 bwrap/AppArmor 依赖已核对内容的 Linux 主机资产，不能由容器内文件自称可信。
+路径、符号链接、挂载重叠和宿主目录边界在调用 Docker 前检查。容器初始参数包含只读根、cap drop、no-new-privileges、tmpfs、网络和资源限制；冻结策略允许可写根时会移除 --read-only，executable_tmp 也可将 /tmp 改为可执行。因此 full access 不能解释为容器内部仍全面只读。挂载的可写范围与根文件系统策略分别检查；模型凭据只进入授权的 Harness 路径，不交给普通测试容器。
+
+嵌套 bwrap、固定 seccomp 和适用环境中的 AppArmor 另有边界。检测到 Docker 启用 AppArmor 时，核对 Linux 主机 root 所有、不可被普通用户改写的专用策略内容；不能由容器内文件自称可信，也不使用 unconfined 兜底。
 
 start、inspect、stop、remove 是独立动作。回执使用 Docker 实际纳秒时间戳计算运行时间和超限情况，迟到观察不能把超时变成合规。清理只处理当前归属资源，不删除其他会话或共享镜像。
 

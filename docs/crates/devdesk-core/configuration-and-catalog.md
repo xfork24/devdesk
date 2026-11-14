@@ -87,6 +87,8 @@ apply 先持久化 applying，再在项目事务里复制所需源、采用选�
 
 目录状态记录当前 generation 与默认映射，成员记录区分默认、修改、自建和归档来源。restore_template_catalog 复用不可变源并切换当前目录代次；旧项目采用、冻结运行与历史仍可按 ID 读取。`pinned_template_records` 用于解释哪些工作还固定旧目录。
 
+单库恢复与跨工程目录同步分开：Host 先在共享配置 Engine 完成重置，项目后续经 catalog_sync 复制当前目录状态。切换选择列表不会把各项目已采用的配置自动换成新默认，也不要求一次写遍所有项目库。
+
 全局 bundle 使用一次性安装，不能在同进程悄悄换成另一套产品资源。包内测试用外部构造的小 bundle 证明 core 不依赖 resources 文件树；adapter factory_bundle 才负责实际内嵌加载。
 
 代码定位：[`ConfigurationBundle`](../../../crates/core/src/templates.rs#L12)、[`install_configuration_bundle`](../../../crates/core/src/templates.rs#L20)、[`materialize`](../../../crates/core/src/templates.rs#L45)、[`initialize_template_catalog`](../../../crates/core/src/templates.rs#L188)、[`restore_template_catalog`](../../../crates/core/src/templates.rs#L287)、[`current_template_defaults`](../../../crates/core/src/templates.rs#L425)。
