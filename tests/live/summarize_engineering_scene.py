@@ -43,8 +43,16 @@ def summarize(archive, scene):
             capability = plan.get('definitions', {}).get(capability_ref) or sources.get(capability_ref, {})
             refs = capability.get('refs', capability)
             actor_decisions = [row for row in decisions if row['data'].get('execution_id') == execution_id]
-            tools = [row for row in governance if row['type'] in ('platform_call', 'workflow_intent')
-                     and (row['definition_id'] == execution_id or row['data'].get('execution_id') == execution_id)]
+            tools = []
+            for row in governance:
+                if row['type'] == 'workflow_intent' and row['definition_id'] == execution_id:
+                    tools.append(row)
+                elif row['type'] == 'platform_call':
+                    caller = row['data'].get('request', {}).get('caller') or {}
+                    if row['id'] == step.get('tool_call_id') or (
+                        step.get('turn_id') and caller.get('turn_id') == step['turn_id']
+                    ):
+                        tools.append(row)
             outputs = {port: resolved_outputs.get(output_id) or by_id.get(output_id, {'id': output_id})
                        for port, output_id in step.get('outputs', {}).items()}
             steps.append({
@@ -57,6 +65,8 @@ def summarize(archive, scene):
                                 'session': session, 'turn': turn,
                                 'actual_executions': [row for row in executions if row['session_id'] == step.get('session_id')]},
                 'decisions': actor_decisions, 'tool_and_intent_records': tools, 'output_records': outputs,
+                'conversation_event_ids': [row['id'] for row in records.get('conversation_events', [])
+                                           if step.get('turn_id') and row['turn_id'] == step['turn_id']],
             })
     steps.sort(key=lambda item: (item['instance_id'], item['step']['path'], str(item['step'].get('started') or ''), item['execution_id']))
     result = {'snapshot': str(archive), 'scene': str(scene),
