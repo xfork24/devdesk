@@ -355,8 +355,9 @@ fn published_steps_cannot_share_a_stable_node_identity() {
 fn bypass_requires_typed_replacement_and_preserves_the_imported_content() {
     let d = tempfile::tempdir().unwrap();
     let e = engine(d.path());
+    let material_type = cmd(&e,"delivery_type.create",None,json!({"name":"fixture markdown","spec_refs":["fixture-spec:1"],"data":{"format":"markdown"}})).unwrap();
     let doc = json!({"schema_version":6,"stages":[{"key":"design","name":"设计"},{"key":"delivery","name":"交付"}],"steps":[
-        {"key":"design","name":"编写设计","stage":"design","executor":{"type":"agent","role_ref":"builtin-role-architect:1"},"task_instructions":"分析设计","outputs":{"result":{"delivery_ref":"builtin-delivery-design:3"}}},
+        {"key":"design","name":"编写设计","stage":"design","executor":{"type":"agent","role_ref":"builtin-role-architect:1"},"task_instructions":"分析设计","outputs":{"result":{"delivery_ref":material_type["id"]}}},
         {"key":"consume","name":"采用设计","stage":"delivery","executor":{"type":"control"},"dependencies":["design"],"inputs":{"design":{"type":"source","source":{"step":"design","port":"result"}}}}]});
     let id = start(&e, doc);
     let initial = runtime(&e, &id);
@@ -372,7 +373,7 @@ fn bypass_requires_typed_replacement_and_preserves_the_imported_content() {
         .message
         .contains("替代输入")
     );
-    let material=cmd(&e,"workflow.materials.import",Some(&id),json!({"delivery_ref":"builtin-delivery-design:3","value":"用户在线下完成的接口和失败处理设计","source":"用户提供的设计"})).unwrap();
+    let material=cmd(&e,"workflow.materials.import",Some(&id),json!({"delivery_ref":material_type["id"],"value":"用户在线下完成的接口和失败处理设计","source":"用户提供的设计"})).unwrap();
     let changes = json!({"plan_revision_id":plan,"reason":"采用用户设计并绕过重复编写","operations":[{"type":"bypass_stage","stage":"design","substitutions":{"design.result":{"type":"material","material_ref":material["id"]}}}]});
     let preview = e
         .query(
@@ -1508,13 +1509,14 @@ fn a_waiver_keeps_the_rejected_value_and_the_human_signature_separate() {
 fn output_reads_are_root_scoped_and_large_unicode_materials_are_chunked() {
     let directory = tempfile::tempdir().unwrap();
     let e = engine(directory.path());
+    let material_type = cmd(&e,"delivery_type.create",None,json!({"name":"fixture markdown","spec_refs":["fixture-spec:1"],"data":{"format":"markdown"}})).unwrap();
     let root = start(&e, document());
     let value = "材料🙂".repeat(2000);
     let material = cmd(
         &e,
         "workflow.materials.import",
         Some(&root),
-        json!({"delivery_ref":"builtin-delivery-design:3","value":value,"source":"用户长文档"}),
+        json!({"delivery_ref":material_type["id"],"value":value,"source":"用户长文档"}),
     )
     .unwrap();
     let mut offset = 0;
@@ -2856,4 +2858,134 @@ fn an_unknown_worker_reserves_its_root_capacity_until_reconciliation() {
     );
     assert_eq!(view["runtime"]["steps"][1]["status"], "queued");
     assert!(e.pending_workflow_intents().unwrap().is_empty());
+}
+
+#[test]
+fn task_dependencies_block_dispatch_without_starving_independent_tasks() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let anchor = start(&e, document());
+    let project = runtime(&e, &anchor)["runtime"]["project_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let feature = id();
+    let tasks = [id(), id(), id()];
+    // Business records are fixtures; dispatch, inspection and completion use production commands.
+    e.store
+        .transact(None, &mut |state| {
+            state.features.push(Feature {
+                id: feature.clone(),
+                project_id: project.clone(),
+                title: "three tasks".into(),
+                status: Status::Draft,
+                revision: 1,
+                input_version: 1,
+                predecessor: None,
+                source_materials: vec![],
+            });
+            for (index, task) in tasks.iter().enumerate() {
+                state.tasks.push(Task {
+                    id: task.clone(),
+                    feature_id: feature.clone(),
+                    title: format!("Task {index}"),
+                    status: Status::Draft,
+                    revision: 1,
+                    inherited_snapshot: None,
+                    dependencies: if index == 1 {
+                        vec![tasks[0].clone()]
+                    } else {
+                        vec![]
+                    },
+                    worktree: String::new(),
+                    scope: TaskScope::default(),
+                });
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let text_delivery = cmd(
+        &e,
+        "delivery_type.create",
+        None,
+        json!({"name":"task id","spec_refs":["fixture-spec:1"],"data":{"format":"text"}}),
+    )
+    .unwrap();
+    let draft = cmd(&e,"workflow.create",None,json!({"name":"task completion","document":{"schema_version":300,"stages":[{"key":"work","name":"work"}],"steps":[{"key":"finish","name":"finish","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete:1","arguments":{"task_id":{"type":"source","source":{"step":"$input","port":"task"}}}}}],"inputs":{"task":{"delivery_ref":text_delivery["id"]}}}})).unwrap();
+    let workflow = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let mut roots = vec![];
+    for task in &tasks {
+        let root=e.execute("workflow.start",Command {command_id:id(),target:Some(task.clone()),expected_revision:Some(1),payload:json!({"workflow_ref":workflow["id"],"role_agent_bindings":{},"inputs":{"task":task}})}).unwrap()["id"].as_str().unwrap().to_owned();
+        roots.push(root);
+    }
+    let blocked = runtime(&e, &roots[1]);
+    assert_eq!(
+        blocked["steps"][0]["actions"]["dispatch"]["code"],
+        "task_dependencies"
+    );
+    assert!(
+        cmd(
+            &e,
+            "workflow.step.dispatch",
+            Some(&roots[1]),
+            json!({"step":"finish"})
+        )
+        .is_err()
+    );
+    let policy = rust_policy(&e, 16);
+    // B is deliberately selected first. A remains manual while independent C completes.
+    for index in [1, 2] {
+        cmd(
+            &e,
+            "workflow.driver.select",
+            Some(&roots[index]),
+            json!({"mode":"rust","policy_ref":policy}),
+        )
+        .unwrap();
+    }
+    for _ in 0..8 {
+        e.drive_rust_workflows().unwrap();
+        for intent in e.pending_workflow_intents().unwrap() {
+            let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let request = e.configured_platform_request(&command).unwrap().unwrap();
+            let result = e.enqueue_platform_tool(&command, &request);
+            e.observe_workflow_intent(&intent.id, &result).unwrap();
+        }
+        e.drive_platform_tools().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    assert_eq!(runtime(&e, &roots[2])["runtime"]["status"], "completed");
+    assert_eq!(
+        runtime(&e, &roots[1])["runtime"]["steps"][0]["status"],
+        "queued"
+    );
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&roots[0]),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    for _ in 0..16 {
+        e.drive_rust_workflows().unwrap();
+        for intent in e.pending_workflow_intents().unwrap() {
+            let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let request = e.configured_platform_request(&command).unwrap().unwrap();
+            let result = e.enqueue_platform_tool(&command, &request);
+            e.observe_workflow_intent(&intent.id, &result).unwrap();
+        }
+        e.drive_platform_tools().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    for root in &roots {
+        assert_eq!(runtime(&e, root)["runtime"]["status"], "completed");
+    }
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .tasks
+            .iter()
+            .all(|t| t.status == Status::Completed)
+    );
 }

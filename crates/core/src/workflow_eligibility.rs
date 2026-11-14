@@ -105,6 +105,20 @@ pub(crate) fn step_actions_with_facts(
         WorkflowActionEligibility::blocked("execution_state", "步骤已派发或已结束")
     } else if state.workflow_instance_suspended(id) {
         WorkflowActionEligibility::blocked("paused", "流程暂停中")
+    } else if state
+        .tasks
+        .iter()
+        .find(|task| task.id == instance.owner_id)
+        .is_some_and(|task| {
+            !task.dependencies.iter().all(|dependency| {
+                state
+                    .tasks
+                    .iter()
+                    .any(|other| other.id == *dependency && other.status == Status::Completed)
+            })
+        })
+    {
+        WorkflowActionEligibility::blocked("task_dependencies", "Task 依赖尚未完成")
     } else if !step.dependencies.iter().all(|key| {
         instance.steps.iter().any(|e| {
             &e.step == key

@@ -75,8 +75,8 @@ try:
         {"key":"finish","name":"确认交接","stage":"handoff","executor":{"type":"control"},"dependencies":["optional"],"inputs":{"analysis":{"type":"source","source":{"step":"calculate","port":"result"}}}}
     ],"outputs":{"result":{"step":"calculate","port":"result"}}}
     draft=c.command("workflow.create",payload={"name":"Harness 控制的数字工作流","document":document});workflow=c.command("workflow.publish",draft["id"],draft["revision"])
-    context=next(r for r in defaults["records"] if r["id"]==defaults["permission_context_ref"])["data"]
-    permission=c.command("permission_context.create",payload={"name":"Native calculation authorization","data":{**context,"step_grants":[{"workflow_ref":workflow["id"],"step":"calculate","tool_refs":[capture]}]}})
+    context_source=next(r for r in defaults["records"] if r["id"]==defaults["permission_context_ref"]);context=context_source["data"]
+    permission=c.command("permission_context.create",payload={"name":"Native calculation authorization","scope":"project:"+project,"sandbox_ref":context_source["sandbox_ref"],"data":{**context,"step_grants":[{"workflow_ref":workflow["id"],"step":"calculate","tool_refs":[capture]}]}})
     bindings={role["id"]:agent["id"],**defaults["role_agent_bindings"]}
     p=c.rpc("query.workspace")["active_project"]
     config=c.command("project.configuration.update",project,p["revision"],{"workflow_ref":workflow["id"],"role_agent_bindings":bindings,"orchestrator_role_ref":defaults["orchestrator_role_ref"],"permission_context_ref":permission["id"]})

@@ -1,5 +1,6 @@
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
+mod support;
 use default_fixture::*;
 use devdesk_adapters::{permission_profiles::*, *};
 use devdesk_core::*;
@@ -1011,7 +1012,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
     for provider in ["codex", "dsh"] {
         let root = tempfile::tempdir().unwrap();
         let (_, e) = global(root.path());
-        let harness=execute(&e,command("harness.create",json!({"name":provider,"model_providers":[],"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex)}else{devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Dsh)},"capabilities":[]}}),None,None)).unwrap();
+        let harness=execute(&e,command("harness.create",json!({"name":provider,"runtime_resource_ref":format!("builtin-runtime-{provider}:1"),"model_providers":[],"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex)}else{devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Dsh)},"capabilities":[]}}),None,None)).unwrap();
         let h = harness["id"].as_str().unwrap();
         let p=execute(&e,command("permission.profile.create",json!({"identity":format!("native-{provider}"),"name":"Native v2 restrictions","target_kind":"harness","policy":{
             "filesystem":{"mode":"scoped","rules":[{"path":"/","access":"read"},{"path":"/work","access":"read_write"},{"path":"/work/tests","access":"read"}]},
@@ -1088,16 +1089,6 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
                 "/run/devdesk/profile".into(),
             ]
         };
-        let reference = if provider == "codex" {
-            "devdesk/codex:0.167.0"
-        } else {
-            "devdesk/dsh:0.2.2-rc.1"
-        };
-        let output = std::process::Command::new("docker")
-            .args(["image", "inspect", reference, "--format", "{{.Id}}"])
-            .output()
-            .unwrap();
-        assert!(output.status.success());
         let spec = ContainerSpec {
             host_gateway: false,
             permissions: Some(plan),
@@ -1105,7 +1096,7 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
             project_id: id(),
             session_id: id(),
             operation_id: id(),
-            image_id: String::from_utf8(output.stdout).unwrap().trim().into(),
+            image_id: support::image(provider),
             worktree: work.clone(),
             state: state.clone(),
             writable: true,

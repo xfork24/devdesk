@@ -95,3 +95,5 @@ Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.bindin
 结果未知的执行继续保留根 worker 和 foreach 槽位，核对前不能把它视为空闲容量。
 
 默认 Codex 业务角色获得只读 spec.lint，通过所选 Permission Context 的逐步授权使用。Agent 从 outputs.<port>.definition.id 取得精确 Delivery 引用，在提交前检查草稿；关键评审的定位、摘要和引文仍由同一接纳检查器复算。默认 PRD/Design 后继 Spec 已声明必要章节，关键评审后继 Spec 要求真实冻结输入位置；既有工作不会随出厂选择改变而升级。自检报告明确区分结构、报告证据和语义判断，不替代独立评审或真实工具结果。
+
+Task 所属流程派发还要求该 Task 的业务依赖全部 completed。该条件与步骤依赖分别核对，通过共同资格入口向 inspect、Rust 及命令返回 task_dependencies；依赖等待不占用已派发工作额度，也不阻止其他合法 Task 推进。工作空间仍只在依赖完成后从当时父工作实际 HEAD 准备，完成时再次核对业务依赖。

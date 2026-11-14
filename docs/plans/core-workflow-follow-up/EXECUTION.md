@@ -31,3 +31,17 @@ C1 验证：编排 37 项通过，Schema 14 项通过，domain/core 单元通过
 出厂配置按依赖闭包发布 25 个现有源后继和一个自检 Skill：PRD/Design 使用实际必需章节，关键评审要求真实位置；六个 Codex 业务职责通过 Capability 与 Permission Context 明确授权。Feature/Task 新选择为 revision 7，Standard 4，Permission Context 5，原 schema_version、并发及默认零重试不变；历史任务不升级。没有增加长度阈值、另一套 DSL 或账号等外围功能。
 
 验证：domain/core 27 项通过；configuration_changes 7、configuration_resources 15、configured_workflows 46、manager_workspace 8、schema_contracts 15、standard_snapshots 5 项全部通过。新增普通 Tool、原生 Agent、越范围/未授权、草稿不封存、报告伪造位置与实际默认章节测试通过。架构、出厂目录、格式检查通过。原生拒绝测试初版误期待被提前拒绝的调用仍有工具回执，修正断言以核对实际边界；失败日志保留。后继生成脚本和精确引用映射保存在 stages，未放入产品配置存储。仍未以测试端口结果冒充真实模型/Git/Docker 验收。
+
+## C4 实施与验收准备
+
+新增三 Task 生产命令回归，复现业务依赖只在工作空间准备和完成时核对、派发却仍返回 ready 的缺口。共同资格入口现增加 task_dependencies：A 待执行时 B 保持 queued，独立 C 可完成；A 真实 tasks.complete 回执投影后 B 才派发并完成。初始测试搭建中的缺少 Delivery/目标修订两项错误与实际 ready/blocked 红灯日志均保留，不将搭建错误冒充产品缺陷。
+
+现有真实默认工程探针增加明确的 Rust 驱动与策略选择，两个驱动从相同的预演/应用输入绑定开始；只对明确 CAS 拒绝进行有界重读，不重发未知外部结果。Rust 完成时验证无经理 Controller，业务调度 Actor 必须来自 driver。新增只读现场报告脚本，从停止后的真实快照索引每个执行、历史失败、冻结定义、模型/Session/Turn/运行镜像、控制 Actor、决策理由与产出，不创建成功事实或新归档产品。
+
+本机 Codex 的真实权限 5 项、通用 Docker 3 项，以及命令 Red/Green 2 项通过。整组 check-live 保留原失败：DSH 固定镜像缺失，准备请求又收到 provider_failure，未宣称 DSH 实机通过。原忽略权限用例补齐当前必需运行资源引用，使用实际测试镜像身份；本轮不实现 DSH 工具桥。
+
+完整回归首轮编排 40/42，两个旧用例把短字符串当作默认 Design，实际被新章节规则拒绝。材料替代/分块读取用例已改用独立最小 Delivery；默认规则未放宽，完整复验正在进行。真实小型经理探针首次两次在模型运行前暴露脚本旧写法（隐式 global 作用域、遗漏 sandbox_ref），已修正并另保留失败数据集；第三次已完成真实 start、计划修改、业务 Agent 与结果接纳，暂停/重启收口仍在执行。最终 main 全流程验收尚未开始。
+
+C4 预合入收口：完整 Rust workspace 290 项通过（17 项按现有配置忽略），HTTP/认证连接、模板重置、数据集及运行准备入口通过。debug 浏览器已通过相关布局/运行计划及部分接入用例；在进入 main 构建前主动结束本轮浏览器进程，避免共享 target 的运行二进制被覆盖，不把预合入 check.sh 记为完整通过。完整 debug/release check.sh 留在 main 执行。
+
+第三次真实小图已通过实际 Codex 经理、运行时 preview/apply、业务 Agent 的平台工具调用和精确结果接纳、暂停/人类接管/Host 重启/新控制会话继续，原执行与输出保持不变，完整原生回复均单 content item。根为 a0b4953a-3045-436f-97a1-f854772bcbe3。停止后已保存一致 project-evidence-final、5 个当前/历史执行的 ledger 与现场报告，Artifact 摘要核验通过。本次核心完整 Feature/Task 的最终双驱动验收仍以 main 的新场景为准。
