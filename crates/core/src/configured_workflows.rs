@@ -540,6 +540,8 @@ impl Engine {
                     step: step.key.clone(),
                     round: 1,
                     sequence: 1,
+                    failure: None,
+                    retry_of: None,
                     status: StepExecutionStatus::Queued,
                     input_digest: String::new(),
                     rework_workspace: None,

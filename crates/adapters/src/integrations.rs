@@ -619,7 +619,7 @@ impl ports::ToolExecutor for NativeTools {
                 content: vec![json!({"type":"text","text":e.message})],
                 structured_content: None,
                 remote_effect: "unknown".into(),
-                error: Some(json!({"code":e.code})),
+                error: Some(json!(e)),
                 origin: Origin::External,
             });
             let dir = root.join("tool-executions").join(operation(&invocation.id));

@@ -55,8 +55,12 @@ impl Engine {
                 }
                 Err(e) => {
                     data["status"] = json!("failed");
-                    data["error"] = json!(format!("{}: {}", e.code, e.message));
+                    data["error"] = json!(e);
                 }
+            }
+            if ["completed", "failed"].contains(&old.data["status"].as_str().unwrap_or("")) {
+                require(old.data == data, "意图终态不能被迟到结果改写")?;
+                return Ok(json!({"recorded":true}));
             }
             update_record(
                 s.governance.iter_mut().find(|r| r.id == intent).unwrap(),

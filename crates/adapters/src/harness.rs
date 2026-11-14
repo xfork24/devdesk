@@ -836,7 +836,8 @@ impl Worker {
                 return Err(err(
                     "provider_timeout",
                     "原生轮次超过配置的执行预算，停止所属 worker；不会重新派发输入",
-                ));
+                )
+                .technical_unknown());
             }
         }
         let frames = self.wire.drain()?;
@@ -862,7 +863,8 @@ impl Worker {
                     return Err(err(
                         "provider_rejected",
                         "供应商明确拒绝输入，请检查冻结模型和认证配置；详见脱敏协议 Artifact",
-                    ));
+                    )
+                    .technical_not_applied());
                 }
                 let external = match self.provider {
                     HarnessProvider::Codex => string(&f["result"]["turn"], "id")?,

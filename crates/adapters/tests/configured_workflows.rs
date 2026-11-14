@@ -3445,3 +3445,235 @@ fn review_locations_are_bound_to_actual_frozen_inputs_and_rejection_history_surv
             .any(|event| event.content.contains("forged-source"))
     );
 }
+
+#[test]
+fn supplemental_turns_do_not_spend_retry_quota_and_recovery_keeps_the_task_context() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(RecordingAgent::default());
+    e.harness = harness.clone();
+    let (role, agent) = research_agent(&e);
+    harness
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"needs_input","summary":"Need one detail","outputs":{}}));
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"inputs":{"material":{"type":"constant","value":{"frozen":true}}},"budget":{"max_turns":8,"timeout_seconds":300,"retry_limit":1},"outputs":{"document":{"delivery_ref":"fixture-delivery-object:1"}}}),
+    );
+    drive(&e, 4);
+    assert_eq!(
+        instance(&e, &run["id"])["steps"][0]["status"],
+        "waiting_input"
+    );
+    command(
+        &e,
+        "workflow.step.input",
+        run["id"].as_str(),
+        json!({"step":"study","input":"Preserve this additional business constraint"}),
+    )
+    .unwrap();
+    let pending = e.pending_workflow_intents().unwrap();
+    let send = pending
+        .iter()
+        .find(|r| r.data["method"] == "conversation.send")
+        .unwrap();
+    e.observe_workflow_intent(
+        &send.id,
+        &Err(err("temporary_admission_failure", "before input admission").technical_not_applied()),
+    )
+    .unwrap();
+    e.evaluate_workflows().unwrap();
+    let before = instance(&e, &run["id"])["steps"][0].clone();
+    assert_eq!(before["sequence"], 2);
+    assert_eq!(before["failure"]["code"], "temporary_admission_failure");
+    command(
+        &e,
+        "workflow.step.retry",
+        run["id"].as_str(),
+        json!({"step":"study"}),
+    )
+    .unwrap();
+    let after = instance(&e, &run["id"])["steps"][0].clone();
+    assert_eq!(after["retry_of"], before["id"]);
+    harness.responses.lock().unwrap().push(json!({"status":"completed","summary":"Recovered without dropping context","outputs":{"document":{"done":true}}}));
+    drive(&e, 8);
+    let state = e.store.snapshot().unwrap();
+    let recovered = state
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "configured_execution_task")
+        .map(|r| &r.data["task"])
+        .find(|task| task["source"]["execution_id"] == after["id"])
+        .unwrap();
+    assert_eq!(
+        recovered["supplemental_input"],
+        "Preserve this additional business constraint"
+    );
+    assert_eq!(recovered["inputs"], before["inputs"]);
+    assert_eq!(instance(&e, &run["id"])["status"], "completed");
+    assert!(
+        command(
+            &e,
+            "workflow.step.retry",
+            run["id"].as_str(),
+            json!({"step":"study"})
+        )
+        .is_err()
+    );
+}
+
+struct RejectedBeforeDispatch {
+    base: RecordingAgent,
+    attempts: std::sync::atomic::AtomicUsize,
+}
+impl ports::Harness for RejectedBeforeDispatch {
+    fn identity(&self) -> String {
+        self.base.identity()
+    }
+    fn open_session(&self, r: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+        self.base.open_session(r)
+    }
+    fn dispatch_turn(&self, r: &ports::TurnDispatch) -> Result<()> {
+        if self
+            .attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            == 0
+        {
+            Err(
+                err("provider_rejected", "fixture rejected before admission")
+                    .technical_not_applied(),
+            )
+        } else {
+            self.base.dispatch_turn(r)
+        }
+    }
+    fn poll_session(&self, s: &Session) -> Result<Vec<ports::ConversationObservation>> {
+        self.base.poll_session(s)
+    }
+    fn stop_session(&self, s: &Session, e: &RuntimeExecution) -> Result<ports::WorkerStop> {
+        self.base.stop_session(s, e)
+    }
+    fn cleanup_worker(&self, s: &Session, e: &RuntimeExecution) -> Result<()> {
+        self.base.cleanup_worker(s, e)
+    }
+}
+fn drive_native_rust(e: &Engine, rounds: usize) {
+    for _ in 0..rounds {
+        e.drive_rust_workflows().unwrap();
+        for row in e.pending_workflow_intents().unwrap() {
+            let method = row.data["method"].as_str().unwrap();
+            let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
+            if method == "session.open" {
+                c.payload["binding"] = json!(fixture_binding());
+            }
+            let result = e.execute(method, c);
+            e.observe_workflow_intent(&row.id, &result).unwrap();
+            result.unwrap();
+        }
+        e.tick_conversations(4).unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+}
+#[test]
+fn native_rejection_retries_only_after_real_stop_proof_and_keeps_the_failure_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let base = RecordingAgent::default();
+    base.responses.lock().unwrap().push(json!({"status":"completed","summary":"real fixture response after rejection","outputs":{"result":{"verified":true}}}));
+    e.harness = Arc::new(RejectedBeforeDispatch {
+        base,
+        attempts: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let (role, agent) = research_agent(&e);
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}),
+    );
+    let policy=command(&e,"orchestration_policy.create",None,json!({"name":"known native error","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["provider_rejected"]}})).unwrap();
+    command(
+        &e,
+        "workflow.driver.select",
+        run["id"].as_str(),
+        json!({"mode":"rust","policy_ref":policy["id"]}),
+    )
+    .unwrap();
+    drive_native_rust(&e, 14);
+    assert_eq!(instance(&e, &run["id"])["status"], "completed");
+    let state = e.store.snapshot().unwrap();
+    let old = state
+        .governance
+        .iter()
+        .find(|r| {
+            r.r#type == "workflow_execution_history" && r.data["workflow_instance_id"] == run["id"]
+        })
+        .unwrap();
+    assert_eq!(old.data["failure"]["code"], "provider_rejected");
+    let source = old.data["failure"]["source_ref"].as_str().unwrap();
+    assert!(
+        state
+            .conversation_events
+            .iter()
+            .any(|event| event.id == source
+                && event.deduplication_key.ends_with(":execution-failure"))
+    );
+    assert!(state.executions.iter().all(|run| run.writer_revoked));
+    assert_eq!(
+        state
+            .sessions
+            .iter()
+            .filter(|s| s.owner_id == instance(&e, &run["id"])["owner_id"])
+            .count(),
+        2
+    );
+    assert!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_decision"
+                && ["dispatch", "accept", "retry", "complete"]
+                    .contains(&r.data["operation"].as_str().unwrap_or("")))
+            .all(|r| r.data["actor"]["kind"] == "driver")
+    );
+}
+#[test]
+fn business_rejection_is_not_automatically_retried_by_a_matching_error_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let harness = Arc::new(RecordingAgent::default());
+    harness.responses.lock().unwrap().push(json!({"status":"blocked","summary":"The actual business condition is not met","outputs":{}}));
+    e.harness = harness;
+    let (role, agent) = research_agent(&e);
+    let run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}),
+    );
+    let policy=command(&e,"orchestration_policy.create",None,json!({"name":"must not override rejection","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":2,"retry_error_codes":["output_invalid"]}})).unwrap();
+    command(
+        &e,
+        "workflow.driver.select",
+        run["id"].as_str(),
+        json!({"mode":"rust","policy_ref":policy["id"]}),
+    )
+    .unwrap();
+    drive_native_rust(&e, 10);
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        instance(&e, &run["id"])["steps"][0]["failure"]["kind"],
+        "business"
+    );
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_execution_history")
+    );
+    assert_eq!(state.sessions.len(), 1);
+}

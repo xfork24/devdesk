@@ -9,6 +9,8 @@ pub use configuration::*;
 mod orchestration;
 mod template_catalog;
 mod workflow;
+mod workflow_failure;
+pub use workflow_failure::*;
 mod workflow_change;
 pub use orchestration::*;
 pub use template_catalog::*;
@@ -77,12 +79,32 @@ pub fn material_owner(
 pub struct Error {
     pub code: String,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_failure: Option<ExecutionFailureDisposition>,
+}
+impl Error {
+    /// Only the boundary that observed the result may supply this disposition.
+    pub fn technical_unknown(mut self) -> Self {
+        self.execution_failure = Some(ExecutionFailureDisposition {
+            kind: ExecutionFailureKind::Technical,
+            effect: ExecutionFailureEffect::Unknown,
+        });
+        self
+    }
+    pub fn technical_not_applied(mut self) -> Self {
+        self.execution_failure = Some(ExecutionFailureDisposition {
+            kind: ExecutionFailureKind::Technical,
+            effect: ExecutionFailureEffect::NotApplied,
+        });
+        self
+    }
 }
 pub type Result<T> = std::result::Result<T, Error>;
 pub fn err(code: &str, message: impl Into<String>) -> Error {
     Error {
         code: code.into(),
         message: message.into(),
+        execution_failure: None,
     }
 }
 pub fn require(ok: bool, message: impl Into<String>) -> Result<()> {

@@ -2659,3 +2659,201 @@ fn an_independent_result_progresses_while_another_step_waits_for_a_human() {
             .count()
     );
 }
+
+fn recovery_root(e: &Engine, effect: &str) -> (String, String) {
+    let mut doc = document();
+    doc["stages"][0]["default_role_ref"] = json!("builtin-role-analyst:1");
+    doc["steps"][0]["executor"] = json!({"type":"agent"});
+    doc["steps"][0]["task_instructions"] = json!("Return the declared result for the frozen input");
+    let root = start(e, doc);
+    let policy = cmd(e,"orchestration_policy.create",None,json!({"name":"recovery","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_transient"]}})).unwrap();
+    cmd(
+        e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy["id"]}),
+    )
+    .unwrap();
+    e.drive_rust_workflows().unwrap();
+    let pending = e.pending_workflow_intents().unwrap();
+    let intent = pending
+        .iter()
+        .find(|r| r.data["method"] == "session.open")
+        .unwrap();
+    let failure: Error=serde_json::from_value(json!({"code":"fixture_transient","message":"Explicit port failure; no input applied","execution_failure":{"kind":"technical","effect":effect}})).unwrap();
+    e.observe_workflow_intent(&intent.id, &Err(failure))
+        .unwrap();
+    e.evaluate_workflows().unwrap();
+    (root, intent.id.clone())
+}
+#[test]
+fn rust_retries_only_known_technical_failures_with_a_durable_source_and_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let (root, source) = recovery_root(&e, "not_applied");
+    let before = runtime(&e, &root)["runtime"]["steps"][0].clone();
+    assert_eq!(before["failure"]["code"], "fixture_transient");
+    assert_eq!(before["failure"]["source_ref"], source);
+    e.drive_rust_workflows().unwrap();
+    e.evaluate_workflows().unwrap();
+    let after = runtime(&e, &root)["runtime"]["steps"][0].clone();
+    assert_ne!(before["id"], after["id"]);
+    assert_eq!(before["inputs"], after["inputs"]);
+    assert_eq!(before["input_digest"], after["input_digest"]);
+    assert_eq!(after["sequence"], 1);
+    let next = e
+        .pending_workflow_intents()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.data["method"] == "session.open")
+        .unwrap();
+    let failure:Error=serde_json::from_value(json!({"code":"fixture_transient","message":"again","execution_failure":{"kind":"technical","effect":"not_applied"}})).unwrap();
+    e.observe_workflow_intent(&next.id, &Err(failure)).unwrap();
+    e.evaluate_workflows().unwrap();
+    e.drive_rust_workflows().unwrap();
+    let failed = runtime(&e, &root)["runtime"]["steps"][0].clone();
+    assert_eq!(failed["id"], after["id"]);
+    drop(e);
+    let e = engine(dir.path());
+    e.drive_rust_workflows().unwrap();
+    assert_eq!(runtime(&e, &root)["runtime"]["steps"][0]["id"], after["id"]);
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_execution_history" && r.data["step"] == "one")
+            .count(),
+        1
+    );
+    assert_eq!(
+        state.configuration(&source).unwrap().data["error"]["code"],
+        "fixture_transient"
+    );
+}
+#[test]
+fn an_unknown_effect_is_not_retried_even_when_its_code_is_in_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let (root, _) = recovery_root(&e, "unknown");
+    let before = runtime(&e, &root)["runtime"]["steps"][0].clone();
+    assert_eq!(before["failure"]["effect"], "unknown");
+    for _ in 0..4 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["id"],
+        before["id"]
+    );
+    assert!(e.pending_workflow_intents().unwrap().is_empty());
+}
+
+#[test]
+fn tool_preparation_recovers_through_the_same_known_failure_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let root = start(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"work"}],"steps":[{"key":"capture","name":"capture","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"data":"frozen input"}}}}}]}),
+    );
+    let policy=cmd(&e,"orchestration_policy.create",None,json!({"name":"technical recovery","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_preparation_failed"]}})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy["id"]}),
+    )
+    .unwrap();
+    e.drive_rust_workflows().unwrap();
+    let failed = e
+        .pending_workflow_intents()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.data["method"] == "workflow.tool.execute")
+        .unwrap();
+    let error = err(
+        "fixture_preparation_failed",
+        "explicit preparation port rejected before enqueue",
+    )
+    .technical_not_applied();
+    e.observe_workflow_intent(&failed.id, &Err(error.clone()))
+        .unwrap();
+    e.evaluate_workflows().unwrap();
+    let before = runtime(&e, &root)["runtime"]["steps"][0].clone();
+    e.drive_rust_workflows().unwrap();
+    let next = e
+        .pending_workflow_intents()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.data["method"] == "workflow.tool.execute")
+        .unwrap();
+    assert_ne!(failed.definition_id, next.definition_id);
+    let command: Command = serde_json::from_value(next.data["command"].clone()).unwrap();
+    let request = e.configured_platform_request(&command).unwrap().unwrap();
+    let result = e.enqueue_platform_tool(&command, &request);
+    e.observe_workflow_intent(&next.id, &result).unwrap();
+    e.drive_platform_tools().unwrap();
+    for _ in 0..4 {
+        e.evaluate_workflows().unwrap();
+        e.drive_rust_workflows().unwrap();
+    }
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state.configuration(&failed.id).unwrap().data["error"],
+        json!(error)
+    );
+    let history = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_execution_history" && r.definition_id == before["id"])
+        .unwrap();
+    assert_eq!(history.data["failure"]["source_ref"], failed.id);
+    assert!(
+        e.observe_workflow_intent(&failed.id, &Ok(json!({"id":"late-fabricated-result"})))
+            .is_err()
+    );
+}
+
+#[test]
+fn an_unknown_worker_reserves_its_root_capacity_until_reconciliation() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let mut doc = document();
+    doc["stages"][0]["default_role_ref"] = json!("builtin-role-analyst:1");
+    for step in doc["steps"].as_array_mut().unwrap() {
+        step["executor"] = json!({"type":"agent"});
+        step["task_instructions"] = json!("Respect the frozen task");
+        step["dependencies"] = json!([]);
+    }
+    let root = start(&e, doc);
+    let policy=cmd(&e,"orchestration_policy.create",None,json!({"name":"one physical worker","scope":"global","data":{"max_concurrency":1,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_unknown"]}})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy["id"]}),
+    )
+    .unwrap();
+    e.drive_rust_workflows().unwrap();
+    let first = e.pending_workflow_intents().unwrap();
+    assert_eq!(first.len(), 1);
+    e.observe_workflow_intent(
+        &first[0].id,
+        &Err(err("fixture_unknown", "outcome unavailable").technical_unknown()),
+    )
+    .unwrap();
+    e.evaluate_workflows().unwrap();
+    for _ in 0..3 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    let view = runtime(&e, &root);
+    assert_eq!(
+        view["runtime"]["steps"][0]["status"],
+        "needs_reconciliation"
+    );
+    assert_eq!(view["runtime"]["steps"][1]["status"], "queued");
+    assert!(e.pending_workflow_intents().unwrap().is_empty());
+}

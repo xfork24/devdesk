@@ -175,7 +175,12 @@ impl Engine {
                 Ok(())
             })();
             if let Err(error) = work {
-                if ["provider_timeout", "provider_rejected"].contains(&error.code.as_str()) {
+                if ["provider_timeout", "provider_rejected"].contains(&error.code.as_str())
+                    || error.execution_failure.is_some_and(|f| {
+                        f.kind == ExecutionFailureKind::Technical
+                            && f.effect == ExecutionFailureEffect::NotApplied
+                    })
+                {
                     self.finish_conversation(
                         session,
                         &turn.id,
@@ -183,8 +188,10 @@ impl Engine {
                         &error.code,
                         true,
                     )?;
+                    self.record_conversation_failure(session, &turn.id, &error)?;
                 } else {
                     self.unknown_conversation(session, &turn.id, &error.code)?;
+                    self.record_conversation_failure(session, &turn.id, &error)?;
                 }
             }
         }
@@ -411,9 +418,44 @@ impl Engine {
                 Ok(())
             })();
             if let Err(error) = result {
-                self.unknown_conversation(&session, &turn.id, &error.to_string())?;
+                if error.execution_failure.is_some_and(|f| {
+                    f.kind == ExecutionFailureKind::Technical
+                        && f.effect == ExecutionFailureEffect::NotApplied
+                }) {
+                    self.finish_conversation(
+                        &session,
+                        &turn.id,
+                        TurnStatus::Failed,
+                        &error.code,
+                        true,
+                    )?;
+                } else {
+                    self.unknown_conversation(&session, &turn.id, &error.to_string())?;
+                }
+                self.record_conversation_failure(&session, &turn.id, &error)?;
             }
         }
+        Ok(())
+    }
+    fn record_conversation_failure(
+        &self,
+        session: &Session,
+        tid: &str,
+        error: &Error,
+    ) -> Result<()> {
+        self.store.transact(None, &mut |state| {
+            append(
+                state,
+                session,
+                tid,
+                &format!("{tid}:execution-failure"),
+                ConversationEventKind::Status,
+                &serde_json::to_string(error).unwrap(),
+                MessageMode::Full,
+                None,
+            );
+            Ok(Value::Null)
+        })?;
         Ok(())
     }
     fn unknown_conversation(&self, session: &Session, tid: &str, reason: &str) -> Result<()> {

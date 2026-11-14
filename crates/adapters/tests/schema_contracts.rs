@@ -593,3 +593,19 @@ fn workflow_action_eligibility_has_a_published_bounded_shape() {
         }),
     );
 }
+
+#[test]
+fn trusted_execution_failure_fields_and_unknown_effects_round_trip() {
+    round_trip::<ExecutionFailureDisposition>(
+        "ExecutionFailureDisposition",
+        json!({"kind":"technical","effect":"not_applied"}),
+    );
+    round_trip::<WorkflowFailure>(
+        "WorkflowFailure",
+        json!({"code":"fixture_transient","message":"port rejected before apply","source_ref":"receipt-id","kind":"technical","effect":"not_applied"}),
+    );
+    round_trip::<WorkflowFailure>(
+        "WorkflowFailure",
+        json!({"code":"fixture_unknown","message":"result unavailable","source_ref":"operation-id","kind":"technical","effect":"unknown"}),
+    );
+}

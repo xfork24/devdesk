@@ -27,6 +27,7 @@ mod platform_tools;
 mod standards;
 mod workflow_driver;
 mod workflow_eligibility;
+mod workflow_failure;
 pub use controllers::CONTROL_TOOLS;
 pub use standards::{compare_work_standards, work_standard_choices, work_standard_selection};
 pub use workflow_eligibility::{WorkflowActionEligibility, WorkflowStepActions};

@@ -4914,6 +4914,22 @@
         },
         "runtime_context": {
           "$ref": "#/$defs/WorkflowRuntimeContext"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowFailure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retry_of": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -5966,6 +5982,65 @@
         "dispatch",
         "accept",
         "retry"
+      ],
+      "additionalProperties": false
+    },
+    "ExecutionFailureKind": {
+      "enum": [
+        "technical",
+        "business",
+        "cancelled",
+        "unknown"
+      ]
+    },
+    "ExecutionFailureEffect": {
+      "enum": [
+        "not_applied",
+        "applied",
+        "unknown"
+      ]
+    },
+    "ExecutionFailureDisposition": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ExecutionFailureKind"
+        },
+        "effect": {
+          "$ref": "#/$defs/ExecutionFailureEffect"
+        }
+      },
+      "required": [
+        "kind",
+        "effect"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowFailure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ExecutionFailureKind"
+        },
+        "effect": {
+          "$ref": "#/$defs/ExecutionFailureEffect"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "source_ref",
+        "kind",
+        "effect"
       ],
       "additionalProperties": false
     }

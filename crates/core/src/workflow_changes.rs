@@ -995,6 +995,8 @@ impl Engine {
                         .find(|e| e.node_id == step.node_id)
                         .map_or(1, |e| e.round + 1),
                     sequence: 1,
+                    failure: None,
+                    retry_of: None,
                     status: if preview.bypassed.contains(&step.key) {
                         StepExecutionStatus::Skipped
                     } else {

@@ -389,7 +389,8 @@ impl Engine {
                             .into_iter()
                             .flatten()
                             .filter(|e| {
-                                e["status"] == "running"
+                                ["running", "needs_reconciliation"]
+                                    .contains(&e["status"].as_str().unwrap_or(""))
                                     && r.data["plan"]["document"]["steps"].as_array().is_some_and(
                                         |steps| {
                                             steps.iter().any(|step| {
@@ -474,18 +475,17 @@ impl Engine {
                     for step in ready["steps"].as_array().into_iter().flatten() {
                         let status = step["execution"]["status"].as_str().unwrap_or("");
                         let execution = &step["execution"];
-                        let retry_code = execution["tool_call_id"]
-                            .as_str()
-                            .and_then(|id| s.configuration(id).ok())
-                            .and_then(|r| r.data["error"]["code"].as_str());
+                        let failure =
+                            serde_json::from_value::<WorkflowFailure>(execution["failure"].clone())
+                                .ok();
                         if status == "failed"
                             && permits("retry")
                             && candidate_available("workflow.step.retry", execution)
                             && step["actions"]["retry"]["allowed"] == true
-                            && execution["sequence"].as_u64().unwrap_or(1) <= policy.max_retries
-                            && retry_code.is_some_and(|code| {
-                                code != "needs_reconciliation"
-                                    && policy.retry_error_codes.contains(code)
+                            && step["retry_count"].as_u64().unwrap_or(u64::MAX) < policy.max_retries
+                            && failure.as_ref().is_some_and(|f| {
+                                f.automatic_retry_safe()
+                                    && policy.retry_error_codes.contains(&f.code)
                             })
                         {
                             selected = Some(("workflow.step.retry", step.clone()));

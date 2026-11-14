@@ -188,3 +188,5 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 实现依据：[HTTP 与认证](../crates/host/src/main.rs)、[项目及运行时路由](../crates/host/src/workspace.rs)、[配置路由](../crates/host/src/governance.rs)、[RPC Schema](../schemas/rpc.schema.json)、[控制工具](../crates/core/src/controllers.rs)、[经理工具](../crates/core/src/manager_workspace.rs)。
 
 `workflow.inspect` 每步附 `actions`，其 dispatch/accept/retry 使用 RPC `$defs/WorkflowActionEligibility`；`allowed_actions` 仅包含当前业务条件成立的动作，具体身份授权和 CAS 仍在命令入口检查。`query.workflow_driver.waiting` 返回相同动作资格与等待原因，查询不会派发或接纳。
+
+StepExecution 可带 failure（WorkflowFailure）和 retry_of；workflow.inspect 的 retry_count 从同一实例、节点和 round 的历史执行推导。可信端口错误可附 ExecutionFailureDisposition，缺失分类时不推测为可自动重试。旧的文本意图错误只保留原文；新观察保存结构化错误，已记录终态只能幂等重报。

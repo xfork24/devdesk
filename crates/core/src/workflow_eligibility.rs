@@ -130,7 +130,10 @@ pub(crate) fn step_actions_with_facts(
                 .filter_map(Value::as_str)
                 .filter(|child| *child != id)
                 .filter_map(|child| state.configuration(child).ok())
-                .filter(|r| r.data["status"] == "running")
+                .filter(|r| {
+                    ["running", "needs_reconciliation"]
+                        .contains(&r.data["status"].as_str().unwrap_or(""))
+                })
                 .count();
             others < group.data["max_concurrency"].as_u64().unwrap_or(1) as usize
         } else {
@@ -180,7 +183,7 @@ pub(crate) fn step_actions_with_facts(
         WorkflowActionEligibility::blocked("execution_state", "此步骤不能技术重试")
     } else if active_execution(state, execution) {
         WorkflowActionEligibility::blocked("execution_stop", "请先停止原执行者并核对副作用")
-    } else if execution.sequence > step.budget.retry_limit {
+    } else if crate::workflow_failure::retry_count(state, execution) >= step.budget.retry_limit {
         WorkflowActionEligibility::blocked("retry_budget", "已达到重试上限")
     } else {
         WorkflowActionEligibility::ready()

@@ -89,3 +89,7 @@ Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.bindin
 ## 共同动作资格
 
 `workflow.inspect` 的每步 `actions.dispatch/accept/retry` 返回 allowed、稳定的阻塞 code 和 reason；dispatchable 与同一派发资格一致。foreach 槽位不足、暂停、输入缺失、完成/人工门禁和真实执行者尚未停止分别表达。Rust、经理和 UI 使用相同事实；提交仍在事务内核对计划、控制身份和当前资格。Rust 在有界 tick 内跳过受阻或陈旧候选，继续处理其他合法工作，不能通过增加额度或绕过门禁推进。
+
+技术重试按当前业务轮次中的执行历史计算次数，与补充输入的 sequence 分开；每次新执行以 sequence=1 开始，retry_of 关联旧执行，原冻结输入和最近补充指令继续传给后继任务。步骤 retry_limit 与 Rust 策略 max_retries 共同限制重试，重启不重置次数，业务返工另起 round。自动重试只消费可信端口明确给出的 technical/not_applied 失败及所选错误码；模型文字、未知副作用、规范拒绝和未停止 writer 都不能触发自动重试。失败保存结构化 code、kind、effect 和实际来源引用，原意图终态不接受迟到结果改写。
+
+结果未知的执行继续保留根 worker 和 foreach 槽位，核对前不能把它视为空闲容量。

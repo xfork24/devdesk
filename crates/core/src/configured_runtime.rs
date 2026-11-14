@@ -1394,6 +1394,8 @@ impl Engine {
                     step: step.key.clone(),
                     round: 1,
                     sequence: 1,
+                    failure: None,
+                    retry_of: None,
                     status: StepExecutionStatus::Queued,
                     input_digest: String::new(),
                     budget_wait_started: None,
@@ -1743,7 +1745,9 @@ impl Engine {
                                 current.workflow_revision_id = instance.workflow_ref.clone();
                                 current.node_id = definition.node_id.clone();
                                 current.contract_digest = configuration_hash(definition);
-                                current.inputs.clear();
+                                if rework {
+                                    current.inputs.clear();
+                                }
                                 current.rework_workspace = checkpoint.clone();
                                 if rework {
                                     let outputs = if current.outputs.is_empty() {
@@ -1768,7 +1772,7 @@ impl Engine {
                                         current.outputs.clone()
                                     };
                                     current.rework = Some(StepReworkContext {
-                                        previous_execution_id,
+                                        previous_execution_id: previous_execution_id.clone(),
                                         reason: p["reason"]
                                             .as_str()
                                             .unwrap_or("workflow.step.rework")
@@ -1777,10 +1781,21 @@ impl Engine {
                                     });
                                 }
 
-                                current.input_digest.clear();
+                                if rework {
+                                    current.input_digest.clear();
+                                } else {
+                                    current.inputs = execution.inputs.clone();
+                                    current.input_digest = execution.input_digest.clone();
+                                }
+                                current.failure = None;
+                                current.retry_of = if rework {
+                                    None
+                                } else {
+                                    Some(previous_execution_id.clone())
+                                };
                                 current.agent_revision_id = None;
                                 current.round += u64::from(rework);
-                                current.sequence = if rework { 1 } else { current.sequence + 1 };
+                                current.sequence = 1;
                                 current.status = StepExecutionStatus::Queued;
                                 current.session_id = None;
                                 current.turn_id = None;
@@ -1844,6 +1859,7 @@ impl Engine {
                 ) {
                     execution.status = StepExecutionStatus::Running;
                     execution.reason.clear();
+                    execution.failure = None;
                     execution.finished = None;
                     data.status = StepExecutionStatus::Running;
                     update_record(
@@ -1978,7 +1994,10 @@ impl Engine {
                             .flatten()
                             .filter_map(|id| id.as_str())
                             .filter_map(|id| state.configuration(id).ok())
-                            .filter(|r| r.data["status"] == "running")
+                            .filter(|r| {
+                                ["running", "needs_reconciliation"]
+                                    .contains(&r.data["status"].as_str().unwrap_or(""))
+                            })
                             .count();
                         if active as u64 >= group.data["max_concurrency"].as_u64().unwrap_or(1) {
                             continue;
@@ -2000,8 +2019,30 @@ impl Engine {
                             .find(|e| e.step == step.key)
                             .unwrap();
                         execution.status = StepExecutionStatus::Failed;
+                        execution.failure = Some(WorkflowFailure::from_error(
+                            &error,
+                            execution.id.clone(),
+                            ExecutionFailureKind::Business,
+                        ));
                         execution.reason = format!("{}: {}", error.code, error.message);
                         execution.finished = Some(now());
+                    }
+                }
+                for execution in &mut instance.steps {
+                    if matches!(
+                        execution.status,
+                        StepExecutionStatus::Failed | StepExecutionStatus::NeedsReconciliation
+                    ) {
+                        if execution.failure.is_none() {
+                            execution.failure =
+                                Some(crate::workflow_failure::observed_failure(state, execution));
+                        }
+                        if execution.failure.as_ref().is_some_and(|f| {
+                            f.kind == ExecutionFailureKind::Technical
+                                && f.effect == ExecutionFailureEffect::Unknown
+                        }) {
+                            execution.status = StepExecutionStatus::NeedsReconciliation;
+                        }
                     }
                 }
                 let current_facts = facts(state, &instance)?;
@@ -2149,7 +2190,14 @@ impl Engine {
                 instance.steps[index] = execution;
                 return Ok(());
             }
-            execution.inputs = material_inputs(step, &current_facts)?;
+            if execution.input_digest.is_empty() {
+                execution.inputs = material_inputs(step, &current_facts)?;
+            } else {
+                require(
+                    configuration_hash(&execution.inputs) == execution.input_digest,
+                    "重试冻结输入摘要不一致",
+                )?;
+            }
             if let Some(name) = &step.access.workspace_input {
                 if let Some(value) = execution.inputs.get(name).cloned() {
                     execution
@@ -2402,6 +2450,8 @@ impl Engine {
                                 step: step.key.clone(),
                                 round: execution.round,
                                 sequence: 1,
+                                failure: None,
+                                retry_of: None,
                                 status: StepExecutionStatus::Queued,
                                 input_digest: String::new(),
                                 budget_wait_started: None,
@@ -2549,10 +2599,10 @@ impl Engine {
             if let Some(request) = request {
                 if request.data["status"] == "failed" {
                     execution.status = StepExecutionStatus::Failed;
-                    execution.reason = request.data["error"]
-                        .as_str()
-                        .unwrap_or("工具准备失败")
-                        .into();
+                    execution.reason = crate::workflow_failure::failure_message(
+                        &request.data["error"],
+                        "工具准备失败",
+                    );
                 } else if let Some(call_id) = request.data["result"]["id"].as_str() {
                     execution.tool_call_id = Some(call_id.into());
                     let call = state.configuration(call_id)?;
@@ -2616,15 +2666,18 @@ impl Engine {
                 if let Some(result) = result {
                     if result.data["status"] == "failed" {
                         execution.status = StepExecutionStatus::Failed;
-                        execution.reason = result.data["error"]
-                            .as_str()
-                            .unwrap_or("会话建立失败")
-                            .into();
+                        execution.reason = crate::workflow_failure::failure_message(
+                            &result.data["error"],
+                            "会话建立失败",
+                        );
                     } else if let Some(session) = result.data["result"]["id"].as_str() {
                         execution.session_id = Some(session.into());
                         execution.runtime_context =
                             crate::workflow_runtime_facts::context(state, &execution);
-                        let input = task_input(&instance, step, &execution, None)?;
+                        let supplemental =
+                            crate::workflow_failure::retry_supplemental_input(state, &execution)?;
+                        let input =
+                            task_input(&instance, step, &execution, supplemental.as_deref())?;
                         intent(
                             state,
                             &execution,
@@ -2645,10 +2698,10 @@ impl Engine {
                             == format!("{}:{}", execution.id, execution.sequence)
                 }) {
                     execution.status = StepExecutionStatus::Failed;
-                    execution.reason = failed.data["error"]
-                        .as_str()
-                        .unwrap_or("轮次派发失败")
-                        .into();
+                    execution.reason = crate::workflow_failure::failure_message(
+                        &failed.data["error"],
+                        "轮次派发失败",
+                    );
                     execution.finished = Some(now());
                     instance.steps[index] = execution;
                     return Ok(());
@@ -2762,6 +2815,13 @@ impl Engine {
             instance.steps[index].status = StepExecutionStatus::Failed;
             instance.steps[index].reason =
                 "超过配置的执行时限，已请求停止；重试前须核对原执行者".into();
+            instance.steps[index].failure = Some(WorkflowFailure {
+                code: "execution_timeout".into(),
+                message: instance.steps[index].reason.clone(),
+                source_ref: instance.steps[index].id.clone(),
+                kind: ExecutionFailureKind::Technical,
+                effect: ExecutionFailureEffect::Unknown,
+            });
         }
         Ok(())
     }

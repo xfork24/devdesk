@@ -286,7 +286,7 @@ impl Engine {
                 content: vec![json!({"type":"text","text":error.message})],
                 structured_content: None,
                 remote_effect: "not_applied".into(),
-                error: Some(json!({"code":error.code})),
+                error: Some(json!(error)),
                 origin: Origin::External,
             };
             let mut r = record(
@@ -633,7 +633,7 @@ impl Engine {
                         content: vec![json!({"type":"text","text":error.message})],
                         structured_content: None,
                         remote_effect: "not_applied".into(),
-                        error: Some(json!({"code":error.code})),
+                        error: Some(json!(error)),
                         origin: Origin::External,
                     };
                     self.accept_tool_receipt(&r.id, &receipt)?;

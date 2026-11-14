@@ -806,6 +806,10 @@ pub struct StepExecution {
     pub step: String,
     pub round: u64,
     pub sequence: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<WorkflowFailure>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_of: Option<Id>,
     pub status: StepExecutionStatus,
     pub input_digest: String,
     #[serde(default)]
