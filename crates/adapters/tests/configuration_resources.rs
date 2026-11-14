@@ -488,7 +488,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
     }
     for kind in ["feature", "task"] {
         let workflow = state
-            .configuration(&format!("builtin-workflow-{kind}-sol-high:6"))
+            .configuration(&format!("builtin-workflow-{kind}-sol-high:7"))
             .unwrap();
         let plan = e
             .compile_configured_workflow(&state, workflow, &Scope::global(), None)
@@ -522,7 +522,7 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
         }
     }
     let mut forged = state
-        .configuration("builtin-workflow-task-sol-high:6")
+        .configuration("builtin-workflow-task-sol-high:7")
         .unwrap()
         .data
         .clone();
@@ -762,4 +762,96 @@ fn project_usage_follows_flattened_agent_and_capability_references() {
             "missed transitive use of {reference}"
         );
     }
+}
+
+#[test]
+fn default_document_structure_and_review_locations_are_real_configuration_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let state = e.store.snapshot().unwrap();
+    let defaults = e.configuration_defaults(None).unwrap();
+    let workflow: WorkflowDefinition = state
+        .configuration(defaults["workflow_ref"].as_str().unwrap())
+        .unwrap()
+        .decode()
+        .unwrap();
+    for key in ["requirements", "design"] {
+        let step = workflow.steps.iter().find(|s| s.key == key).unwrap();
+        let reference = &step.outputs["result"].delivery_ref;
+        let delivery = state.configuration(reference).unwrap();
+        let spec: ConfiguredSpecification = state
+            .configuration(
+                reference_list(&delivery.refs, "spec_refs")
+                    .unwrap()
+                    .first()
+                    .unwrap(),
+            )
+            .unwrap()
+            .decode()
+            .unwrap();
+        let headings = spec
+            .checks
+            .iter()
+            .find_map(|c| match &c.assertion {
+                Some(MachineAssertion::RequiredSections { headings }) => Some(headings),
+                _ => None,
+            })
+            .unwrap();
+        let valid = headings
+            .iter()
+            .map(|h| format!("## {h}\nConcrete scope and evidence\n"))
+            .collect::<String>();
+        let report = e
+            .specification_lint(&json!({"delivery_ref":reference,"value":valid}))
+            .unwrap();
+        assert_eq!(report["structure_valid"], true);
+        assert_eq!(report["semantic_quality"], "requires_judgment");
+        assert!(
+            report["checks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|check| check["status"] == "requires_judgment")
+        );
+        let missing = valid.replace(
+            &format!("## {}", headings[0]),
+            "plain text cannot replace a heading",
+        );
+        assert_eq!(
+            e.specification_lint(&json!({"delivery_ref":reference,"value":missing}))
+                .unwrap()["structure_valid"],
+            false
+        );
+    }
+    for workflow_ref in ["workflow_ref", "task_workflow_ref"] {
+        let doc: WorkflowDefinition = state
+            .configuration(defaults[workflow_ref].as_str().unwrap())
+            .unwrap()
+            .decode()
+            .unwrap();
+        for step in doc
+            .steps
+            .iter()
+            .filter(|s| s.outputs.values().any(|p| p.content_checks))
+        {
+            for reference in &step.spec_refs {
+                let spec: ConfiguredSpecification =
+                    state.configuration(reference).unwrap().decode().unwrap();
+                assert!(!spec.checks.is_empty());
+                assert!(
+                    spec.checks
+                        .iter()
+                        .all(|c| c.evidence_required || c.assertion.is_some()),
+                    "{}",
+                    step.key
+                );
+            }
+        }
+    }
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_confirmation" || r.r#type == "workflow_output")
+    );
 }

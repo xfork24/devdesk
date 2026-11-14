@@ -1,10 +1,10 @@
 {
   "type": "agent",
   "identity": "builtin-agent-sol-high-architect",
-  "revision": 4,
+  "revision": 5,
   "name": "架构师 · Sol High / Codex",
   "scope": "global",
-  "capability_ref": "builtin-capability-architect-codex:3",
+  "capability_ref": "builtin-capability-architect-codex:4",
   "role_ref": "builtin-role-architect:1",
   "data": {}
 }

@@ -167,7 +167,7 @@ test("重置失败可重试，确认前并发修改要求重新预览", async ({
   await expect(dialog.getByRole("button", { name: "确认重置", exact: true })).toBeEnabled();
   await rpc(page, appUrl, "delivery_type.create", {
     command_id: crypto.randomUUID(),
-    payload: {spec_refs: ["builtin-spec-stage-prd:1"],
+    payload: {spec_refs: ["builtin-spec-stage-prd:2"],
       name: "Concurrent delivery",
       data: {format: "markdown",body: "concurrent"},
     },

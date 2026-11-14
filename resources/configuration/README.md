@@ -23,7 +23,7 @@
 
 Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` 引用 Markdown。文本归其源修订所有，不向 Agent、Delivery 或执行配置复制。
 
-当前发布 21 种 Delivery。Review Report、Task Doc、Test Doc、Execution Report、Task Report 分别用于评审、任务规划、测试设计、逐次执行和任务汇总；工作区、任务创建、测试回执、候选、接纳、发布、交接及完成记录使用具体类型，不再使用通用“结构化材料”。每种 Delivery 关联非空正文及具体检查项的内容 Spec。
+当前发布 22 种 Delivery。Review Report、Task Doc、Test Doc、Execution Report、Task Report 分别用于评审、任务规划、测试设计、逐次执行和任务汇总；工作区、任务创建、测试回执、候选、接纳、发布、交接及完成记录使用具体类型，不再使用通用“结构化材料”。每种 Delivery 关联非空正文及具体检查项的内容 Spec。
 
 平台产出的 `producer` 声明允许的工具处理器，运行时核对真实调用、当前步骤和输出映射；名称及自述状态不作为来源证明。快照和候选的 Diff 通过独立输出端口传递，保留比较端点、平台操作、内容摘要与 Artifact。Test Doc 的可执行部分位于 `recipe`，测试工具显式消费该字段。
 
@@ -46,3 +46,7 @@ Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` �
 默认 Feature 仍有 22 个步骤，Task 仍有 20 个步骤。目录自洽（manifest ↔ 文件 ↔ defaults 引用 ↔ 正文归属）由 `scripts/py/check-defaults.py` 把关；结构校验在构建期，交叉引用与能力组合校验在测试期 materialize 完成。
 
 源与运行时记录统一使用 `type` 判别类型；`scope` 为 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。Capability 的 `harness_ref/model_ref/skills/tools`、Agent 的 `role_ref/capability_ref`、Delivery 的 `spec_refs`、Harness 的 `model_providers/model_catalog_ref`、PermissionContext 的 `sandbox_ref`、Standard 的 `root_workflow_refs` 位于根级，其余载荷保留在 `data`。能力标签和嵌套引用保持原位。内容摘要同时覆盖引用与载荷。只支持当前协议的新数据集。
+
+## 默认交付自检
+
+Codex 的六类业务 Agent Capability 包含 spec.lint 与“交付草稿自检与冻结证据定位” Skill；对应 16 个 Agent 步骤通过 Permission Context 显式授权该只读工具。它只检查当前步骤冻结的输入/输出 Delivery 与内容，不获得经理配置写权限。默认 PRD/Design Spec 检查实际必需章节，默认关键评审要求冻结输入的精确位置；语义质量、真实测试、独立评审和最终接纳仍按原流程判定。所有依赖通过后继精确引用发布，旧工作继续使用已冻结修订。

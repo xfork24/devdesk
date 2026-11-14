@@ -23,3 +23,11 @@ C1 验证：编排 37 项通过，Schema 14 项通过，domain/core 单元通过
 正向边界覆盖 core Session 创建失败、补充 Turn 派发失败、Tool 准备失败及原生端口明确拒绝；保留停止证明、旧失败事件与新执行关联。业务拒绝即使命中错误码也不自动重试；未知副作用不重试、不释放预留额度；重启不增加次数。测试端口不冒充真实供应商。
 
 验证：编排 40 项和 Schema 15 项通过，domain/core 27 项通过，另新增未知结果占用额度的定向复验通过；生产输入/输出回归首轮 41 项中 40 通过，失败为结构化意图错误仍被旧文本读取器吞掉消息，修正读取器后该项通过。补充输入、原生拒绝/停止与业务拒绝三个定向测试通过；原生测试初版把初始化 Human start 也误计入业务调度，收窄断言至 dispatch/accept/retry/complete 后通过，原日志保留。全套统一复验留到 C4。架构、出厂目录、格式和 diff 检查通过。日志均在 stages/c2-*，尚未开始最终 main 实机验收。
+
+## C3 实施与阶段验收
+
+普通 Workflow Tool 和原生 Agent 的 spec.lint 已接入同一个纯检查器，只允许当前冻结步骤声明的输入/输出类型，不扩大经理或配置写权限。自检不会封存输出；报告自检另返回与实际接纳相同的 content_report_valid/错误，精确核对冻结证据摘要和位置。未经授权和其他交付类型均实际拒绝。
+
+出厂配置按依赖闭包发布 25 个现有源后继和一个自检 Skill：PRD/Design 使用实际必需章节，关键评审要求真实位置；六个 Codex 业务职责通过 Capability 与 Permission Context 明确授权。Feature/Task 新选择为 revision 7，Standard 4，Permission Context 5，原 schema_version、并发及默认零重试不变；历史任务不升级。没有增加长度阈值、另一套 DSL 或账号等外围功能。
+
+验证：domain/core 27 项通过；configuration_changes 7、configuration_resources 15、configured_workflows 46、manager_workspace 8、schema_contracts 15、standard_snapshots 5 项全部通过。新增普通 Tool、原生 Agent、越范围/未授权、草稿不封存、报告伪造位置与实际默认章节测试通过。架构、出厂目录、格式检查通过。原生拒绝测试初版误期待被提前拒绝的调用仍有工具回执，修正断言以核对实际边界；失败日志保留。后继生成脚本和精确引用映射保存在 stages，未放入产品配置存储。仍未以测试端口结果冒充真实模型/Git/Docker 验收。

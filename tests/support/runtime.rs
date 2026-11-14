@@ -57,7 +57,7 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
             s.sessions.push(Session {
                 id: sid.clone(),
                 owner_id: project.into(),
-                agent: "builtin-agent-sol-high-analyst:4".into(),
+                agent: "builtin-agent-sol-high-analyst:5".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "fixture-docker".into(),
                 snapshot_id: None,

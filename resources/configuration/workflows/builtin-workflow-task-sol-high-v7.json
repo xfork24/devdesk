@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-task-sol-high",
-  "revision": 6,
+  "revision": 7,
   "name": "默认 Task 开发流程",
   "scope": "global",
   "data": {
@@ -48,7 +48,7 @@
         "delivery_ref": "builtin-delivery-task-record:1"
       },
       "design": {
-        "delivery_ref": "builtin-delivery-design:2"
+        "delivery_ref": "builtin-delivery-design:3"
       }
     },
     "steps": [
@@ -135,7 +135,7 @@
           "builtin-skill-test-design:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-implementation:1"
+          "builtin-spec-stage-implementation:2"
         ],
         "tags": [
           "tests"
@@ -254,7 +254,7 @@
           "builtin-skill-tdd-implementation:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-implementation:1"
+          "builtin-spec-stage-implementation:2"
         ],
         "tags": [
           "implementation"
@@ -468,7 +468,7 @@
           "builtin-skill-tdd-implementation:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-implementation:1"
+          "builtin-spec-stage-implementation:2"
         ],
         "tags": [
           "implementation"
@@ -674,7 +674,7 @@
           "builtin-skill-tdd-implementation:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-implementation:1"
+          "builtin-spec-stage-implementation:2"
         ],
         "tags": [
           "documentation"
@@ -993,7 +993,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-implementation:1"
+          "builtin-spec-stage-implementation:2"
         ],
         "tags": [
           "review"
@@ -1037,7 +1037,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-release:1"
+          "builtin-spec-stage-release:2"
         ],
         "inputs": {
           "candidate": {

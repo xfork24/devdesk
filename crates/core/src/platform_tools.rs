@@ -73,7 +73,7 @@ pub struct AgentPlatformCaller {
     pub tool_ref: Id,
 }
 impl PlatformToolRequest {
-    fn step_execution_id(&self) -> &str {
+    pub(crate) fn step_execution_id(&self) -> &str {
         self.caller
             .as_ref()
             .map_or(&self.execution_id, |caller| &caller.execution_id)
@@ -258,6 +258,7 @@ impl Engine {
                     "Permission 未允许该平台工具",
                 )?;
                 if ![
+                    "spec.lint",
                     "workspace.current",
                     "materials.capture",
                     "tests.run",
@@ -616,6 +617,7 @@ impl Engine {
     ) -> Result<Option<Value>> {
         let p = &request.arguments;
         match request.definition.qualified_name.as_str() {
+            "spec.lint" => self.lint_workflow_value(state, request).map(Some),
             "workflow.outputs.read" => {
                 let instance: ConfiguredWorkflowInstance =
                     state.configuration(&request.instance_id)?.decode()?;

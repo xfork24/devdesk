@@ -1,0 +1,11 @@
+{
+  "type": "skill",
+  "identity": "builtin-skill-delivery-self-check",
+  "revision": 1,
+  "name": "交付草稿自检与冻结证据定位",
+  "scope": "global",
+  "data": {
+    "rules": [],
+    "body_file": "delivery-self-check.md"
+  }
+}

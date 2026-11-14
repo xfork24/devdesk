@@ -477,16 +477,7 @@ pub fn task_input(
     supplemental: Option<&str>,
 ) -> Result<String> {
     let definitions = &instance.plan.definitions;
-    let checks = step
-        .spec_refs
-        .iter()
-        .filter_map(|id| definitions.get(id))
-        .filter(|r| r.decode::<ConfiguredSpecification>().is_ok())
-        .map(|r| r.decode::<ConfiguredSpecification>().map(|s| s.checks))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+    let checks = crate::spec_lint::step_content_checks(instance, step)?;
     let port_schemas:BTreeMap<_,_>=step.outputs.iter().map(|(name,port)| {
         let definition:DeliveryTypeDefinition=definitions.get(&port.delivery_ref).ok_or_else(||err("configuration_required","交付类型不在配置闭包中"))?.decode()?;
         let mut constraints=vec![];
@@ -2875,24 +2866,7 @@ impl Engine {
                 self.enforce_delivery_value(state, delivery, value)?;
                 output_provenance(state, row, step, execution, name, delivery, value)?;
                 if port.content_checks {
-                    let expected = step
-                        .spec_refs
-                        .iter()
-                        .map(|id| {
-                            instance.plan.definitions[id]
-                                .decode::<ConfiguredSpecification>()
-                                .map(|s| s.checks)
-                        })
-                        .collect::<Result<Vec<_>>>()?
-                        .into_iter()
-                        .flatten()
-                        .collect::<Vec<_>>();
-                    serde_json::from_value::<ContentCheckReport>(value.clone())
-                        .map_err(|e| err("output_invalid", e.to_string()))?
-                        .validate_evidence(
-                            &expected,
-                            &self.input_evidence_targets(state, execution)?,
-                        )?;
+                    self.validate_content_report(state, &instance, step, execution, value)?;
                 }
             }
         }

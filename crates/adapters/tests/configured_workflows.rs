@@ -1643,7 +1643,7 @@ fn invalid_child_dispatch_is_rejected_without_blocking_independent_work() {
     let engine = engine(dir.path());
     let child = publish(
         &engine,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd:2"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
+        json!({"schema_version":6,"stages":[{"key":"work","name":"检查"}],"inputs":{"material":{"delivery_ref":"builtin-delivery-prd:3"}},"steps":[{"key":"finish","name":"完成","stage":"work","executor":{"type":"control"}}]}),
     );
     let parent = publish(
         &engine,
@@ -2720,6 +2720,9 @@ fn failed_child_send_is_reported_and_retry_resumes_the_parent_invocation() {
 struct PlatformCallingAgent {
     base: RecordingAgent,
     replies: Mutex<Vec<ToolReceipt>>,
+    call_tool: Option<String>,
+    call_arguments: Option<Value>,
+    final_outputs: Option<Value>,
 }
 impl ports::Harness for PlatformCallingAgent {
     fn open_session(&self, request: &ports::SessionStart) -> Result<ports::SessionReceipt> {
@@ -2746,8 +2749,14 @@ impl ports::Harness for PlatformCallingAgent {
                     thread: format!("fixture-{}", request.session.id),
                     external_turn: format!("fixture-{}", request.turn.id),
                     call: "native-call-47".into(),
-                    tool: "devdesk_materials_capture".into(),
-                    arguments: json!({"note":"可复核的实际输入"}),
+                    tool: self
+                        .call_tool
+                        .clone()
+                        .unwrap_or_else(|| "devdesk_materials_capture".into()),
+                    arguments: self
+                        .call_arguments
+                        .clone()
+                        .unwrap_or_else(|| json!({"note":"可复核的实际输入"})),
                     worktree: String::new(),
                 },
             ],
@@ -2771,7 +2780,7 @@ impl ports::Harness for PlatformCallingAgent {
                     turn: turn.id.clone(),
                     key: "native-final".into(),
                     content:
-                        json!({"status":"completed","summary":"已收到实际平台回执","outputs":{}})
+                        json!({"status":"completed","summary":"已收到实际平台回执","outputs":self.final_outputs.clone().unwrap_or_else(||json!({}))})
                             .to_string(),
                     kind: ConversationEventKind::Assistant,
                     mode: MessageMode::Full,
@@ -3676,4 +3685,229 @@ fn business_rejection_is_not_automatically_retried_by_a_matching_error_policy() 
             .any(|r| r.r#type == "workflow_execution_history")
     );
     assert_eq!(state.sessions.len(), 1);
+}
+
+#[test]
+fn a_workflow_tool_lints_only_its_frozen_input_delivery_with_the_shared_checker() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let spec=command(&e,"spec.create",None,json!({"name":"Text sections","data":{"schema_version":300,"body":"Check actual headings","checks":[{"key":"sections","name":"Sections","instructions":"Use actual headings","assertion":{"type":"required_sections","headings":["Conclusion","Evidence"]}}]}})).unwrap();
+    let delivery = command(
+        &e,
+        "delivery_type.create",
+        None,
+        json!({"name":"Text","spec_refs":[spec["id"]],"data":{"format":"markdown"}}),
+    )
+    .unwrap();
+    let text = "# Conclusion\nActual result\n# Evidence\nOriginal source";
+    let doc = publish(
+        &e,
+        json!({"schema_version":909,"stages":[{"key":"work","name":"work"}],"inputs":{"draft":{"delivery_ref":delivery["id"]}},"steps":[{"key":"lint","name":"lint assigned material","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-spec-lint:1","arguments":{"delivery_ref":{"type":"constant","value":delivery["id"]},"value":{"type":"source","source":{"step":"$input","port":"draft"}}}},"outputs":{"report":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let project = command(&e, "project.create", None, json!({"title":"Scoped lint"})).unwrap();
+    let run = command(
+        &e,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":doc["id"],"role_agent_bindings":{},"inputs":{"draft":text}}),
+    )
+    .unwrap();
+    drive(&e, 6);
+    let runtime = instance(&e, &run["id"]);
+    assert_eq!(runtime["status"], "completed");
+    let state = e.store.snapshot().unwrap();
+    let output = state
+        .configuration(runtime["steps"][0]["outputs"]["report"].as_str().unwrap())
+        .unwrap();
+    let lint = e
+        .specification_lint(&json!({"delivery_ref":delivery["id"],"value":text}))
+        .unwrap();
+    assert_eq!(output.data["value"], lint);
+    assert_eq!(lint["semantic_quality"], "requires_judgment");
+}
+
+fn fixture_binding_for_platform_agent(e: &Engine, c: &Command) -> RuntimeBinding {
+    let configured = e.configured_agent_request(c).unwrap().unwrap();
+    let state = e.store.snapshot().unwrap();
+    let selected = state
+        .configuration(c.payload["agent"].as_str().unwrap())
+        .unwrap();
+    let composition = state.resolve_agent(&selected.id).unwrap();
+    let mut binding = fixture_binding();
+    binding.agent_configuration = Some(AgentExecutionConfiguration {
+        integration_lock: Some(configured.integration_lock),
+        agent_instance_id: "fixture-scoped-lint".into(),
+        agent_revision_id: selected.id.clone(),
+        composition_hash: selected.content_hash.clone(),
+        model_revision_id: composition.model_ref,
+        harness_revision_id: composition.harness_ref,
+        model_provider: "openai".into(),
+        model_parameters: Default::default(),
+        tool_revisions: composition.tools,
+    });
+    binding.permissions = Some(
+        devdesk_adapters::permission_profiles::compile_permission_profiles(
+            &state,
+            &configured.permissions,
+            Some(ExecutionScope {
+                work_type: WorkType::Workflow,
+                writable_paths: vec![],
+                read_only_paths: vec![],
+            }),
+        )
+        .unwrap(),
+    );
+    binding
+}
+#[test]
+fn ordinary_agents_lint_drafts_without_sealing_them_or_querying_other_deliveries() {
+    for mode in ["assigned", "other_delivery", "not_granted"] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut e = engine(dir.path());
+        let spec=command(&e,"spec.create",None,json!({"name":"Scoped content","data":{"schema_version":77,"body":"Actual title","checks":[{"key":"section","name":"Section","instructions":"Require actual heading","assertion":{"type":"required_sections","headings":["Conclusion"]}}]}})).unwrap();
+        let delivery = command(
+            &e,
+            "delivery_type.create",
+            None,
+            json!({"name":"Assigned text","spec_refs":[spec["id"]],"data":{"format":"markdown"}}),
+        )
+        .unwrap();
+        let other = command(
+            &e,
+            "delivery_type.create",
+            None,
+            json!({"name":"Other text","spec_refs":[spec["id"]],"data":{"format":"markdown"}}),
+        )
+        .unwrap();
+        let valid = "# Conclusion\nAn actual corrected output";
+        let harness = Arc::new(PlatformCallingAgent {
+            call_tool: Some("devdesk_spec_lint".into()),
+            call_arguments: Some(
+                json!({"delivery_ref":if mode=="other_delivery" {&other["id"]}else{&delivery["id"]},"value":"# Wrong heading\nUnaccepted draft"}),
+            ),
+            final_outputs: Some(json!({"draft":valid})),
+            ..Default::default()
+        });
+        e.harness = harness.clone();
+        let role = command(
+            &e,
+            "role.create",
+            None,
+            json!({"name":"Author","data":{"instructions":"Draft only assigned outputs"}}),
+        )
+        .unwrap();
+        let capability=command(&e,"capability.create",None,json!({"name":"Lint ability","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,"builtin-tool-spec-lint:1"],"data":{}})).unwrap();
+        let agent=command(&e,"agent.create",None,json!({"name":"Scoped author","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
+        let run = launch(
+            &e,
+            &role,
+            &agent,
+            json!({"access":{"tool_refs":if mode=="not_granted" {json!([])} else {json!(["builtin-tool-spec-lint:1"])}},"outputs":{"draft":{"delivery_ref":delivery["id"]}}}),
+        );
+        drive_platform_fixture(&e, 12);
+        let receipts = harness.replies.lock().unwrap();
+        if mode == "not_granted" {
+            assert!(receipts.is_empty());
+            let state = e.store.snapshot().unwrap();
+            assert!(
+                !state
+                    .governance
+                    .iter()
+                    .any(|r| r.r#type == "platform_call" || r.r#type == "workflow_output")
+            );
+            assert!(
+                state
+                    .turns
+                    .iter()
+                    .any(|t| t.status == TurnStatus::NeedsReconciliation)
+            );
+            continue;
+        }
+        assert_eq!(receipts.len(), 1, "{mode}");
+        assert_eq!(receipts[0].success, mode == "assigned", "{mode}");
+        if mode == "assigned" {
+            assert_eq!(
+                receipts[0].structured_content.as_ref().unwrap()["structure_valid"],
+                false
+            );
+        }
+        let state = e.store.snapshot().unwrap();
+        let outputs: Vec<_> = state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_output")
+            .collect();
+        assert_eq!(outputs.len(), 1, "lint must not seal the invalid draft");
+        assert_eq!(outputs[0].data["value"], valid);
+        assert_eq!(outputs[0].data["spec_validation"]["structure_valid"], true);
+        assert_eq!(instance(&e, &run["id"])["status"], "completed");
+    }
+}
+
+fn drive_platform_fixture(e: &Engine, rounds: usize) {
+    for _ in 0..rounds {
+        control_fixture::evaluate(&e).unwrap();
+        for intent in e.pending_workflow_intents().unwrap() {
+            let method = intent.data["method"].as_str().unwrap();
+            let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let result = if method == "session.open" {
+                c.payload["binding"] = json!(fixture_binding_for_platform_agent(&e, &c));
+                e.execute(method, c)
+            } else if method == "workflow.tool.execute" {
+                let request = e.configured_platform_request(&c).unwrap().unwrap();
+                e.enqueue_platform_tool(&c, &request)
+            } else {
+                e.execute(method, c)
+            };
+            e.observe_workflow_intent(&intent.id, &result).unwrap();
+            result.unwrap();
+        }
+        e.drive_platform_tools().unwrap();
+        e.tick_conversations(4).unwrap();
+    }
+}
+
+#[test]
+fn worker_self_lint_checks_the_same_frozen_report_locations_as_admission() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = engine(dir.path());
+    let spec=command(&e,"spec.create",None,json!({"name":"Exact input","data":{"schema_version":1,"body":"Cite the actual assigned input","checks":[{"key":"source","name":"Source","instructions":"Review actual input","evidence_required":true}]}})).unwrap();
+    let forged = json!({"approve":true,"summary":"claimed","checks":[{"key":"source","passed":true,"evidence":"invented","locations":[{"source_ref":"not-the-frozen-input","value_digest":configuration_hash(&json!("original")),"locator":{"type":"lines","start":1,"end":1}}]}]});
+    let harness = Arc::new(PlatformCallingAgent {
+        call_tool: Some("devdesk_spec_lint".into()),
+        call_arguments: Some(json!({"delivery_ref":"fixture-delivery-object:1","value":forged})),
+        ..Default::default()
+    });
+    e.harness = harness.clone();
+    let role = command(
+        &e,
+        "role.create",
+        None,
+        json!({"name":"Reviewer","data":{"instructions":"Use exact assigned evidence"}}),
+    )
+    .unwrap();
+    let capability=command(&e,"capability.create",None,json!({"name":"Lint report","model_ref":DEFAULT_MODEL_ID,"harness_ref":DEFAULT_HARNESS_ID,"skills":[],"tools":[DEFAULT_NATIVE_TOOL_ID,"builtin-tool-spec-lint:1"],"data":{}})).unwrap();
+    let agent=command(&e,"agent.create",None,json!({"name":"Report drafter","role_ref":role["id"],"capability_ref":capability["id"],"data":{}})).unwrap();
+    let _run = launch(
+        &e,
+        &role,
+        &agent,
+        json!({"spec_refs":[spec["id"]],"inputs":{"document":{"type":"constant","value":"original"}},"access":{"tool_refs":["builtin-tool-spec-lint:1"]},"outputs":{"draft":{"delivery_ref":"fixture-delivery-object:1","content_checks":true,"required":false}}}),
+    );
+    drive_platform_fixture(&e, 10);
+    let receipts = harness.replies.lock().unwrap();
+    assert_eq!(receipts.len(), 1);
+    assert!(receipts[0].success);
+    let report = receipts[0].structured_content.as_ref().unwrap();
+    assert_eq!(report["structure_valid"], true);
+    assert_eq!(report["content_report_valid"], false);
+    assert!(report["content_report_error"].is_object());
+    assert!(
+        !e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_output")
+    );
 }

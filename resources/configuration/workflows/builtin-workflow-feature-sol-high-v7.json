@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-feature-sol-high",
-  "revision": 6,
+  "revision": 7,
   "name": "默认 Feature 开发流程",
   "scope": "global",
   "data": {
@@ -52,7 +52,7 @@
         "inputs": {},
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-prd:2"
+            "delivery_ref": "builtin-delivery-prd:3"
           }
         },
         "budget": {
@@ -69,7 +69,7 @@
           "builtin-skill-prd:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-prd:1"
+          "builtin-spec-stage-prd:2"
         ],
         "tags": [
           "requirements"
@@ -112,7 +112,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-prd:1"
+          "builtin-spec-stage-prd:2"
         ],
         "tags": [
           "requirements_review"
@@ -282,7 +282,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-design:2"
+            "delivery_ref": "builtin-delivery-design:3"
           }
         },
         "budget": {
@@ -299,7 +299,7 @@
           "builtin-skill-architecture:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-architecture:1"
+          "builtin-spec-stage-architecture:2"
         ],
         "tags": [
           "design"
@@ -361,7 +361,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-architecture:1"
+          "builtin-spec-stage-architecture:2"
         ],
         "tags": [
           "design_review"
@@ -421,7 +421,7 @@
         },
         "outputs": {
           "result": {
-            "delivery_ref": "builtin-delivery-task-plan:2"
+            "delivery_ref": "builtin-delivery-task-plan:3"
           }
         },
         "budget": {
@@ -438,7 +438,7 @@
           "builtin-skill-project-planning:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-project-planning:2"
+          "builtin-spec-stage-project-planning:3"
         ],
         "tags": [
           "planning"
@@ -505,7 +505,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-project-planning:2"
+          "builtin-spec-stage-project-planning:3"
         ],
         "tags": [
           "plan_review"
@@ -593,7 +593,7 @@
         },
         "executor": {
           "type": "workflow",
-          "workflow_ref": "builtin-workflow-task-sol-high:6",
+          "workflow_ref": "builtin-workflow-task-sol-high:7",
           "foreach": {
             "source": {
               "step": "tasks",
@@ -703,7 +703,7 @@
           "builtin-skill-test-design:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-closure:1"
+          "builtin-spec-stage-closure:2"
         ],
         "tags": [
           "release_recipe"
@@ -903,7 +903,7 @@
           "builtin-skill-release-verification:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-closure:1"
+          "builtin-spec-stage-closure:2"
         ],
         "tags": [
           "closure"
@@ -1141,7 +1141,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-closure:1"
+          "builtin-spec-stage-closure:2"
         ],
         "tags": [
           "closure_review"
@@ -1185,7 +1185,7 @@
           "builtin-skill-independent-review:2"
         ],
         "spec_refs": [
-          "builtin-spec-stage-release:1"
+          "builtin-spec-stage-release:2"
         ],
         "inputs": {
           "candidate": {

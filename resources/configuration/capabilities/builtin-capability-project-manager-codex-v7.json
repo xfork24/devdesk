@@ -1,7 +1,7 @@
 {
   "type": "capability",
   "identity": "builtin-capability-project-manager-codex",
-  "revision": 6,
+  "revision": 7,
   "name": "项目经理能力 · Sol High / Codex",
   "scope": "global",
   "harness_ref": "builtin-harness-codex-managed:1",
@@ -10,7 +10,8 @@
     "builtin-skill-engineering-context:2",
     "builtin-skill-project-planning:2",
     "builtin-skill-workflow-orchestration:2",
-    "builtin-skill-project-workbench:1"
+    "builtin-skill-project-workbench:1",
+    "builtin-skill-delivery-self-check:1"
   ],
   "tools": [
     "builtin-tool-codex-native:1",

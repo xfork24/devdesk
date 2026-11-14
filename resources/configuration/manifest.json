@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.13-source-flat-v1",
+  "bundle_version": "2026.11.14-core-workflow-v1",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -21,15 +21,16 @@
       "skills/builtin-skill-release-verification-v2.json",
       "skills/builtin-skill-independent-review-v2.json",
       "skills/builtin-skill-workflow-orchestration-v2.json",
-      "skills/builtin-skill-project-workbench-v1.json"
+      "skills/builtin-skill-project-workbench-v1.json",
+      "skills/builtin-skill-delivery-self-check-v1.json"
     ],
     "spec": [
-      "specs/builtin-spec-stage-prd-v1.json",
-      "specs/builtin-spec-stage-architecture-v1.json",
-      "specs/builtin-spec-stage-implementation-v1.json",
-      "specs/builtin-spec-stage-closure-v1.json",
-      "specs/builtin-spec-stage-release-v1.json",
-      "specs/builtin-spec-stage-project-planning-v2.json",
+      "specs/builtin-spec-stage-prd-v2.json",
+      "specs/builtin-spec-stage-architecture-v2.json",
+      "specs/builtin-spec-stage-implementation-v2.json",
+      "specs/builtin-spec-stage-closure-v2.json",
+      "specs/builtin-spec-stage-release-v2.json",
+      "specs/builtin-spec-stage-project-planning-v3.json",
       "specs/builtin-spec-stage-test-design-v2.json",
       "specs/builtin-spec-delivery-review-v1.json",
       "specs/builtin-spec-delivery-execution-evidence-v1.json",
@@ -52,16 +53,16 @@
       "specs/builtin-spec-located-review-v1.json"
     ],
     "standard": [
-      "standards/builtin-standard-engineering-v3.json"
+      "standards/builtin-standard-engineering-v4.json"
     ],
     "workflow": [
-      "workflows/builtin-workflow-task-sol-high-v6.json",
-      "workflows/builtin-workflow-feature-sol-high-v6.json"
+      "workflows/builtin-workflow-task-sol-high-v7.json",
+      "workflows/builtin-workflow-feature-sol-high-v7.json"
     ],
     "delivery_type": [
-      "deliveries/builtin-delivery-prd-v2.json",
-      "deliveries/builtin-delivery-design-v2.json",
-      "deliveries/builtin-delivery-task-plan-v2.json",
+      "deliveries/builtin-delivery-prd-v3.json",
+      "deliveries/builtin-delivery-design-v3.json",
+      "deliveries/builtin-delivery-task-plan-v3.json",
       "deliveries/builtin-delivery-test-recipe-v2.json",
       "deliveries/builtin-delivery-review-v2.json",
       "deliveries/builtin-delivery-execution-evidence-v2.json",
@@ -84,12 +85,12 @@
     ],
     "capability": [
       "capabilities/builtin-capability-sol-high-codex-v3.json",
-      "capabilities/builtin-capability-analyst-codex-v3.json",
-      "capabilities/builtin-capability-architect-codex-v3.json",
-      "capabilities/builtin-capability-project-manager-codex-v6.json",
-      "capabilities/builtin-capability-developer-codex-v3.json",
-      "capabilities/builtin-capability-tester-codex-v3.json",
-      "capabilities/builtin-capability-reviewer-codex-v3.json",
+      "capabilities/builtin-capability-analyst-codex-v4.json",
+      "capabilities/builtin-capability-architect-codex-v4.json",
+      "capabilities/builtin-capability-project-manager-codex-v7.json",
+      "capabilities/builtin-capability-developer-codex-v4.json",
+      "capabilities/builtin-capability-tester-codex-v4.json",
+      "capabilities/builtin-capability-reviewer-codex-v4.json",
       "capabilities/builtin-capability-minimax-dsh-v1.json",
       "capabilities/builtin-capability-glm-dsh-v1.json",
       "capabilities/builtin-capability-analyst-minimax-dsh-v1.json",
@@ -106,12 +107,12 @@
       "capabilities/builtin-capability-reviewer-glm-dsh-v1.json"
     ],
     "agent": [
-      "agents/builtin-agent-sol-high-analyst-v4.json",
-      "agents/builtin-agent-sol-high-architect-v4.json",
-      "agents/builtin-agent-sol-high-project-manager-v7.json",
-      "agents/builtin-agent-sol-high-developer-v4.json",
-      "agents/builtin-agent-sol-high-tester-v4.json",
-      "agents/builtin-agent-sol-high-reviewer-v4.json",
+      "agents/builtin-agent-sol-high-analyst-v5.json",
+      "agents/builtin-agent-sol-high-architect-v5.json",
+      "agents/builtin-agent-sol-high-project-manager-v8.json",
+      "agents/builtin-agent-sol-high-developer-v5.json",
+      "agents/builtin-agent-sol-high-tester-v5.json",
+      "agents/builtin-agent-sol-high-reviewer-v5.json",
       "agents/builtin-agent-minimax-analyst-v1.json",
       "agents/builtin-agent-minimax-architect-v1.json",
       "agents/builtin-agent-minimax-project-manager-v1.json",
@@ -192,7 +193,7 @@
       "permissions/profiles/builtin-permission-sandbox-full-access-v1.json"
     ],
     "permission_context": [
-      "permissions/bindings/builtin-permission-context-engineering-v4.json"
+      "permissions/bindings/builtin-permission-context-engineering-v5.json"
     ],
     "model_provider": [
       "model-providers/builtin-model-provider-openai-v1.json",

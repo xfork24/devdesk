@@ -190,3 +190,5 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `workflow.inspect` 每步附 `actions`，其 dispatch/accept/retry 使用 RPC `$defs/WorkflowActionEligibility`；`allowed_actions` 仅包含当前业务条件成立的动作，具体身份授权和 CAS 仍在命令入口检查。`query.workflow_driver.waiting` 返回相同动作资格与等待原因，查询不会派发或接纳。
 
 StepExecution 可带 failure（WorkflowFailure）和 retry_of；workflow.inspect 的 retry_count 从同一实例、节点和 round 的历史执行推导。可信端口错误可附 ExecutionFailureDisposition，缺失分类时不推测为可自动重试。旧的文本意图错误只保留原文；新观察保存结构化错误，已记录终态只能幂等重报。
+
+普通 Workflow Tool/Agent 的 spec.lint 仅接受 delivery_ref/value，目标必须是当前冻结步骤声明的输入或输出 Delivery；任意 specification/delivery 草稿参数只属于已授权经理预演入口。未授予该工具的业务步骤不能调用。输出为内容报告时，附 content_report_valid/content_report_error，复用接纳时的检查集合与冻结输入证据校验；草稿检查不生成 workflow_output 或人工决定。
