@@ -287,9 +287,67 @@ impl Engine {
         let root = instance.data["root_instance_id"]
             .as_str()
             .unwrap_or(&instance.id);
-        let waiting:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_instance" && r.data["root_instance_id"]==root)
-            .flat_map(|r|r.data["steps"].as_array().into_iter().flatten().filter(|e|["waiting_input","waiting_confirmation","failed","needs_reconciliation"].contains(&e["status"].as_str().unwrap_or("")))
-                .map(|e|json!({"instance_id":r.id,"execution_id":e["id"],"step":e["step"],"status":e["status"],"reason":e["reason"]}))).collect();
+        let mut waiting = vec![];
+        for row in s.governance.iter().filter(|r| {
+            r.r#type == "workflow_instance" && (r.id == root || r.data["root_instance_id"] == root)
+        }) {
+            let instance: ConfiguredWorkflowInstance = row.decode()?;
+            let facts = crate::configured_runtime::facts(&s, &instance)?;
+            for execution in &instance.steps {
+                let mut gates = vec![];
+                if execution.status == StepExecutionStatus::AwaitingAcceptance {
+                    let step = instance
+                        .plan
+                        .document
+                        .steps
+                        .iter()
+                        .find(|step| step.node_id == execution.node_id)
+                        .ok_or_else(|| err("storage", "执行合同不存在"))?;
+                    let overridden = s.governance.iter().any(|r| {
+                        r.r#type == "workflow_confirmation"
+                            && r.definition_id == execution.id
+                            && r.data["override_completion"] == true
+                            && r.data["input_digest"] == execution.input_digest
+                            && r.data["outputs"] == json!(execution.outputs)
+                    });
+                    if !overridden
+                        && !crate::orchestration::rule_satisfied(
+                            &s,
+                            &instance,
+                            &step.node_id,
+                            &step.completion,
+                            &facts,
+                        )
+                    {
+                        gates.push("completion");
+                    }
+                    if step.confirmation == ConfirmationPolicy::Human
+                        && !facts.approvals.contains(&step.key)
+                        && !crate::orchestration::waiver(
+                            &s,
+                            &instance,
+                            &step.node_id,
+                            "confirmation",
+                        )
+                    {
+                        gates.push("human_confirmation");
+                    }
+                }
+                if !gates.is_empty()
+                    || matches!(
+                        execution.status,
+                        StepExecutionStatus::WaitingInput
+                            | StepExecutionStatus::WaitingConfirmation
+                            | StepExecutionStatus::Failed
+                            | StepExecutionStatus::NeedsReconciliation
+                    )
+                {
+                    waiting.push(json!({"instance_id":row.id,"execution_id":execution.id,
+                        "step":execution.step,"path":execution.path,"status":execution.status,
+                        "reason":execution.reason,"waiting_for":gates}));
+                }
+            }
+        }
         Ok(
             json!({"waiting":waiting,"driver":driver(&s,root),"root_instance_id":root,"children_inherit":true}),
         )

@@ -75,6 +75,7 @@ export function AgentTaskView({ value }: { value: Row }) {
               role_ref: value.role_ref,
               inputs: content.inputs || value.inputs,
               input_sources: content.input_sources,
+              runtime_context: content.runtime_context,
               outputs: content.outputs || value.outputs,
               completion: content.completion || value.completion,
               authorization: content.authorization || value.access,

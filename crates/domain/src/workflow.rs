@@ -817,6 +817,9 @@ pub struct StepExecution {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rework: Option<StepReworkContext>,
     pub inputs: BTreeMap<String, Value>,
+    /// Whitelisted runtime facts frozen with the actual Agent task, separate from model output.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub runtime_context: Value,
     pub outputs: BTreeMap<String, Id>,
     pub agent_revision_id: Option<Id>,
     pub session_id: Option<Id>,

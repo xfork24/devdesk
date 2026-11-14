@@ -506,6 +506,11 @@ pub fn task_input(
         let source_output_id=match binding {InputBinding::Source{source} if source.step!="$input"=>instance.steps.iter().find(|step|step.step==source.step).and_then(|step|step.outputs.get(&source.port)),_=>None};
         (name.clone(),json!({"binding":match binding {InputBinding::Source{source}=>json!({"type":"source","source":source}),InputBinding::Constant{..}=>json!({"type":"constant"}),InputBinding::Material{material_ref}=>json!({"type":"material","material_ref":material_ref})},"source_output_id":source_output_id,"evidence_source_ref":format!("execution-input:{}:{}",execution.id,name),"value_digest":execution.inputs.get(name).map(configuration_hash)}))
     }).collect();
+    for (name, source) in &mut input_sources {
+        if let Some(runs) = execution.runtime_context["inputs"][name].get("runtime_executions") {
+            source["runtime_executions"] = runs.clone();
+        }
+    }
     if let Some(checkpoint) = &execution.rework_workspace {
         if let Some(name) = &step.access.workspace_input {
             if execution.inputs.get(name) == Some(&checkpoint.workspace) {
@@ -580,6 +585,9 @@ pub fn task_input(
             "instructions":"Use the supplied input values and provenance. Request missing information only when required by this step. Return one JSON object. Output keys must be declared ports. Values must match their declared delivery schemas. Platform receipts are references, never model-generated evidence."}});
     if execution.rework.is_none() {
         input.as_object_mut().unwrap().remove("rework");
+    }
+    if !execution.runtime_context.is_null() {
+        input["runtime_context"] = execution.runtime_context.clone();
     }
     let input = serde_json::to_string(&input).map_err(|e| err("serialization", e.to_string()))?;
     require(
@@ -693,6 +701,10 @@ fn output_provenance(
             )?;
             provenance["kind"] = json!("agent");
             provenance["turn_id"] = json!(execution.turn_id);
+            if let Some(turn) = &execution.turn_id {
+                provenance["runtime_executions"] =
+                    json!(crate::workflow_runtime_facts::observed(state, turn));
+            }
         }
         StepExecutor::Workflow { foreach, .. } => {
             provenance["kind"] = json!("workflow");
@@ -1389,6 +1401,7 @@ impl Engine {
                     rework_workspace: None,
                     rework: None,
                     inputs: BTreeMap::new(),
+                    runtime_context: Value::Null,
                     outputs: BTreeMap::new(),
                     agent_revision_id: None,
                     session_id: None,
@@ -2393,6 +2406,7 @@ impl Engine {
                                 rework_workspace: None,
                                 rework: None,
                                 inputs: BTreeMap::new(),
+                                runtime_context: Value::Null,
                                 outputs: BTreeMap::new(),
                                 agent_revision_id: None,
                                 session_id: None,
@@ -2605,6 +2619,8 @@ impl Engine {
                             .into();
                     } else if let Some(session) = result.data["result"]["id"].as_str() {
                         execution.session_id = Some(session.into());
+                        execution.runtime_context =
+                            crate::workflow_runtime_facts::context(state, &execution);
                         let input = task_input(&instance, step, &execution, None)?;
                         intent(
                             state,

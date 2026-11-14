@@ -94,6 +94,7 @@ impl Engine {
             "后继会话的任务来源不匹配",
         )?;
         execution.session_id = Some(next.into());
+        execution.runtime_context = crate::workflow_runtime_facts::context(state, execution);
         update_record(
             state
                 .governance

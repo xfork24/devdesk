@@ -73,6 +73,7 @@ pub mod ports;
 mod proposals;
 mod repositories;
 mod workflow_runtime;
+mod workflow_runtime_facts;
 // Shared domain types and execution ports.
 use devdesk_domain::*;
 pub use ports::{Git as GitPort, Harness as HarnessPort, TestRequest, Tests as TestRunnerPort};

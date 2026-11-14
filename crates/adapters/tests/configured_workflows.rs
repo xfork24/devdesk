@@ -1008,6 +1008,14 @@ fn automatic_review_blocks_rejection_and_advances_after_rework_without_confirmat
     drive(&engine, 12);
     let rejected = instance(&engine, &run["id"]);
     assert_eq!(rejected["steps"][0]["status"], "awaiting_acceptance");
+    let waiting = engine
+        .workflow_driver_query(&json!({"id":run["id"]}))
+        .unwrap();
+    assert_eq!(
+        waiting["waiting"][0]["execution_id"],
+        rejected["steps"][0]["id"]
+    );
+    assert_eq!(waiting["waiting"][0]["waiting_for"], json!(["completion"]));
     let report = rejected["steps"][0]["outputs"]["report"]
         .as_str()
         .unwrap()
@@ -1397,6 +1405,27 @@ fn persisted_evidence_case(large: bool) {
     );
     let calls = recorder.calls.lock().unwrap();
     let inspect: Value = serde_json::from_str(&calls[1].turn.input).unwrap();
+    let producer: Value = serde_json::from_str(&calls[0].turn.input).unwrap();
+    let expected_image = fixture_binding().installation.artifact;
+    assert_eq!(
+        producer["runtime_context"]["binding"]["artifact"],
+        json!(expected_image)
+    );
+    let binding = producer["runtime_context"]["binding"].as_object().unwrap();
+    assert!(!binding.contains_key("credential_ref"));
+    assert!(!binding.contains_key("model_connection"));
+    assert!(!binding.contains_key("model_parameters"));
+    let observed = &inspect["input_sources"]["evidence"]["runtime_executions"];
+    assert_eq!(observed, &output.data["provenance"]["runtime_executions"]);
+    let observed = observed.as_array().unwrap();
+    assert_eq!(observed.len(), 1);
+    assert_eq!(observed[0]["turn_id"], calls[0].turn.id);
+    assert_eq!(
+        observed[0]["image_digest"],
+        producer["runtime_context"]["binding"]["artifact"]["image_id"]
+    );
+    assert_eq!(observed[0]["writer_revoked"], true);
+    assert!(evidence["runs"][0]["environment"].get("image").is_none());
     if large {
         assert_eq!(inspect["inputs"]["evidence"]["complete"], false);
         assert_eq!(inspect["inputs"]["evidence"]["source_output_id"], output_id);

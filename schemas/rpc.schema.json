@@ -4911,6 +4911,9 @@
             "outputs"
           ],
           "additionalProperties": false
+        },
+        "runtime_context": {
+          "$ref": "#/$defs/WorkflowRuntimeContext"
         }
       },
       "required": [
@@ -5759,6 +5762,169 @@
           "maxLength": 4096
         }
       },
+      "additionalProperties": false
+    },
+    "WorkflowRuntimeContext": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "session_id": {
+              "type": "string"
+            },
+            "installation_id": {
+              "type": "string"
+            },
+            "runtime_key": {
+              "$ref": "#/$defs/RuntimeKey"
+            },
+            "artifact": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "docker_image"
+                    },
+                    "image_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "image_id"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "oci_image"
+                    },
+                    "reference": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "reference"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "executable"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "sha256"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "recipe_digest": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "adapter_version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_id",
+            "installation_id",
+            "runtime_key",
+            "artifact",
+            "recipe_digest",
+            "adapter_version"
+          ],
+          "additionalProperties": false
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "source_output_id": {
+                "type": "string"
+              },
+              "runtime_executions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "execution_id": {
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "turn_id": {
+                      "type": "string"
+                    },
+                    "operation_id": {
+                      "type": "string"
+                    },
+                    "image_digest": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "writer_revoked": {
+                      "const": true
+                    },
+                    "protocol_artifact": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "execution_id",
+                    "session_id",
+                    "turn_id",
+                    "operation_id",
+                    "image_digest",
+                    "scope",
+                    "writer_revoked",
+                    "protocol_artifact"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "source_output_id",
+              "runtime_executions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "instructions": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding",
+        "inputs",
+        "instructions"
+      ],
       "additionalProperties": false
     }
   },

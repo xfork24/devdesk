@@ -1006,6 +1006,7 @@ impl Engine {
                     budget_wait_started: None,
                     budget_waited_ms: 0,
                     inputs: BTreeMap::new(),
+                    runtime_context: Value::Null,
                     outputs: BTreeMap::new(),
                     agent_revision_id: None,
                     session_id: None,

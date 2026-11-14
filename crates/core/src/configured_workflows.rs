@@ -564,6 +564,7 @@ impl Engine {
                             )
                         })
                         .collect(),
+                    runtime_context: Value::Null,
                     outputs: BTreeMap::new(),
                     agent_revision_id: selected_agent,
                     session_id: None,

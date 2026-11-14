@@ -75,3 +75,7 @@ ChangeSet 提供 12 类类型化操作（增删改步骤、绕过阶段、改依
 根实例的 `workflow_driver` 保存策略快照、来源和 epoch；子实例继承该控制归属。`workflow.driver.select` 是人类入口，使用根实例 revision CAS；切换撤销原经理控制代次、未派发控制意图和委托，不停止业务 worker。已有运行 worker/结果继续通过实际回执接纳。Rust tick 从分页的共同 inspect/ready 投影稳定选择动作，事务内保存决定及外部 worker 意图；外部效果由现有 intent/receipt 管线执行。每项逻辑动作有幂等键，计划和代次变化后旧动作不能生效。
 
 `query.workflow_driver` 展示模式、精确策略、epoch 和等待事项。项目管理可选择未来默认模式，流程的经理协作面可切换当前根实例。没有选择驱动的已有实例维持明确的人工控制行为。经理工作台查询/配置创作与根实例调度授权分别处理。
+
+Agent 的实际任务包含冻结的 `runtime_context`：`binding` 是本次 Session 选择的运行资源身份；`input_sources.<input>.runtime_executions` 则来自对应上游 Turn 的真实 Harness 执行和停止证明，包含镜像、operation 与执行身份。前者是选择，后者是已观察到的外层执行事实，均不能证明任意嵌套或远程程序的环境。该投影排除凭据、模型连接、模型参数与宿主可执行路径；不会从模型自述推导环境事实。旧任务仍按实际发送的历史合同读取。
+
+完成规则为 false 的 `awaiting_acceptance` 步骤同样出现在驱动等待事项中，标明 `completion` 或 `human_confirmation` 门禁及父子实例路径。诊断不会批准报告、改写完成规则或自动补入缺失证据。
