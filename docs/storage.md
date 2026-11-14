@@ -13,26 +13,29 @@
 ├── projects/<project-id>/
 │   ├── engineering.sqlite3             # 该项目的工程数据、事件与幂等记录
 │   ├── artifacts/                      # 该项目的封存产物（SHA-256、fsync、拒 symlink）
-│   ├── execution/                      # sessions/ tests/ git-operations/ tool-executions/（意图文件与运行目录）
-│   └── repository/                     # 克隆与 worktree（主干/Feature/Task/Candidate）
-└── credentials/                        # Codex OAuth 等本机凭据文件（数据集作用域）
+│   ├── execution/                      # 会话、测试、工具、Git 意图及 worktrees/ 工作副本
+│   └── repository/                     # 受管理的 GitHub 仓库克隆
+├── runtimes/                           # 共享运行组件与构建工作目录
+├── packaged-permission-presets/        # 内嵌权限预设的内容寻址缓存
+└── credentials/                        # Codex OAuth 本机凭据文件（数据集作用域）
 ```
 
 ## 三库分工
 
-- **全局配置库**：共享配置、项目索引、活动选择、全局并发额度、运行时安装登记、权限预设目录与经验目录投影。只能写治理/权限/定义类记录，不得写工程数据。
+- **全局配置库**：共享源配置、项目索引、活动选择、全局并发额度、运行时安装、准备/验证记录和权限预设来源；不保存项目工程执行数据。经验目录从各库只读汇总，不保存第二份工程事实。
 - **每项目工程库**：该项目的全部工程事实。项目选择把每个请求钉到一个 Engine/一个数据库；显式 `project_id` 过期返回 `project_changed`，查询不会隐式切换项目。历史记录与工具调用按"当前项目 / Global"两个范围读取，互不泄漏。
 - **全局讨论库**：scope=global 的会话单独存储，不创建占位项目。
 
 ## 配置的唯一存储
 
-配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。**没有** definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌完整对象压缩为 `$source` 引用，读取时从源闭包还原——存储与内存永不漂移。
+配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 18 / project 48。
 
 ## 事实表族（速览）
 
 | 表族 | 内容 |
 |---|---|
-| events / governance_records | 项目事件日志；不可变治理账本（配置修订、Controller、计划采用、变更、决定、工具意图与回执、模板目录状态） |
+| source_definitions | 不可变配置源修订及根级引用；执行视图按原引用恢复 |
+| events / governance_records | 项目事件日志；Controller、驱动、计划采用、变更、决定、工具意图与回执、模板目录状态 |
 | operations | 幂等操作记录：相同 command_id + 参数指纹重放首次结果 |
 | sessions / turns / conversation_events / interactions / proposals | 会话域：绑定、轮次（单活跃约束）、append-only 事件、人工交互、讨论提案 |
 | executions | 真实执行事实（容器、镜像摘要、writer 撤销、冻结权限） |
@@ -60,4 +63,10 @@
 
 ## 配置发布恢复
 
-`configuration_transfer` 保存跨库候选及 prepared/applying/completed/failed/cancelled 状态；暂存正文不是 source_definitions 中的可用源。项目原子提交源副本、选择和 configuration_transfer_receipt；共享库随后发布相同源并标记完成。重启从 applying 与项目幂等回执继续，不重复创建选择。相同源引用的内容必须一致；本协议未增加投影表或改动 SQL 基线。
+`configuration_transfer` 保存跨库候选及 prepared/applying/completed/failed/cancelled 状态；暂存正文不是 source_definitions 中的可用源。项目原子提交源副本、选择和 configuration_transfer_receipt；共享库随后发布相同源并标记完成。重启从 applying 与项目幂等回执继续，不重复创建选择。相同源引用的内容必须一致。
+
+## 证据归档
+
+`tests/live/export_evidence.py` 使用 SQLite backup 生成一致快照，关闭快照后计算摘要，按项目登记核验 Artifact 的路径与实际内容，再生成逐文件 SHA-256 清单。记录投影遮蔽已知凭据字段；全局认证文件、进程环境和私有 worker 状态不导出。归档保留实际失败、未运行项、运行资源及原始来源，不用模型摘要替代证据。
+
+实现依据：[全局 SQL](../sql/global/schema.sql)、[项目 SQL](../sql/project/schema.sql)、[数据集与项目库](../crates/adapters/src/lib.rs)、[Git 目录](../crates/adapters/src/git.rs)、[证据导出](../tests/live/export_evidence.py)。

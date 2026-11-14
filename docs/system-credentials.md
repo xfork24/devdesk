@@ -1,6 +1,6 @@
 # Web Host 的系统凭据
 
-macOS 与 Linux 使用相同 Web/Rust 工程接口；没有依赖 macOS 原生客户端。秘密不写入 SQLite、命令参数、报告或浏览器持久存储；工程库只保存数据集范围的不透明引用。
+macOS 与 Linux 使用相同 Web/Rust 工程接口；没有依赖 macOS 原生客户端。API key 和接入 token 存入系统凭据库，SQLite 只保存数据集与服务商范围的不透明引用。Codex OAuth 使用数据集私有认证文件；实际 worker 按冻结引用取得所需凭据。秘密不写入命令参数、报告或浏览器持久存储，普通查询不返回密钥值。
 
 ## Permission 与凭据信任范围
 
@@ -27,7 +27,7 @@ Host 在调用前检查助手归属、权限、内容和同证书签名；助手
 
 开发和发行 Host 使用稳定 identifier `dev.devdesk.host`；助手使用 `dev.devdesk.credentials`，并验证调用者证书。脚本仅生成/导入 `DevDesk Local Development` 开发证书，信任限定为用户域 code signing，私钥只授权 codesign。证书材料在 `~/Library/Application Support/DevDesk/signing/`（目录 0700、私钥 0600），不在源码或发行包中。这不是 Developer ID 发行签名或公证。
 
-也可通过 `DEVDESK_CODESIGN_IDENTITY` 指定已有身份；必要时用 `DEVDESK_CODESIGN_CERTIFICATE_SHA1` 指定对应证书指纹。`scripts/dev/dev.sh` 与 `scripts/dev/build.sh` 以 `--ensure` 检查助手，并为 Host 签名。已有助手的协议、内容与同证书签名通过时，即使源码或依赖身份变化也继续复用，不阻塞普通启动。启用需要新版助手的功能时显式运行安装器 `--update`；该变化可能需要一次新的助手授权，不静默覆盖已授权安装。
+也可通过 `DEVDESK_CODESIGN_IDENTITY` 指定已有身份；必要时用 `DEVDESK_CODESIGN_CERTIFICATE_SHA1` 指定对应证书指纹。`scripts/dev/dev.sh` 与 `scripts/dev/build.sh` 以 `--ensure` 检查助手，并为 Host 签名。当前必须通过协议 2、内容与同证书签名检查；兼容的已安装助手即使源码或依赖身份变化也继续复用。不兼容安装需要显式 `--update` 或修复，更新后可能需要一次新的助手授权，不静默覆盖已授权安装。
 
 ## Ubuntu / Linux
 
@@ -41,10 +41,12 @@ sudo apt-get install libsecret-tools gnome-keyring
 
 Codex 仍使用数据集专属官方 OAuth 文件和受控 Session 凭据。平台和绝对数据目录变化会改变系统凭据命名空间；换机器后重新配置本机凭据，不能把 macOS 引用当作 Linux 上的秘密。
 
-macOS 开发入口 `scripts/dev/dev.sh` 通过 `scripts/dev/run-host.py` 从私有临时目录中的签名副本运行 Host，退出后清理；程序旁的凭据助手和权限预设也随副本保留。后续 Cargo 构建、签名不会覆盖运行中的程序，因此不会使凭据助手的调用方核验失效。也可用 `python3 scripts/dev/run-host.py target/release/devdesk-host --data /absolute/path/to/data` 启动已构建的版本。
+macOS 开发入口 `scripts/dev/dev.sh` 通过 `scripts/dev/run-host.py` 从私有临时目录中的签名副本运行 Host，退出后清理；程序旁存在的 `credential-helper/` 和 `permissions/` 目录随副本复制。内嵌权限预设仍可物化到数据集缓存。后续 Cargo 构建、签名不会覆盖运行中的程序，因此不会使凭据助手的调用方核验失效。也可用 `python3 scripts/dev/run-host.py target/release/devdesk-host --data /absolute/path/to/data` 启动已构建的版本。
 
 直接运行 `target/debug/devdesk-host` 后再覆盖其二进制，仍会使旧进程的签名核验失败。遇到“无法核验当前 Host 签名”时，停止该旧进程并通过上述入口启动；不需要重新授权助手或重新保存 key。
 
 ## DSH 多服务商凭据
 
 DeepSeek、`zai-coding-cn`、`minimax-cn` 使用独立账号命名空间和当前引用，读取时校验数据集及服务商。DeepSeek 使用显式 UUID 凭据引用，未配置时不探测旧固定账号；换 key 不覆盖已冻结执行的引用。Ollama 本地服务免密，不创建 vault 条目。macOS 只接受协议版本 2 的助手，升级步骤见 [模型服务商](model-providers.md)；打包仅构建随包助手，不修改本机共享安装。
+
+实现依据：[凭据库](../crates/adapters/src/credentials.rs)、[macOS 助手校验](../crates/adapters/src/credentials_macos.rs)、[助手程序](../crates/credential-helper/src/main.rs)、[稳定运行副本](../scripts/dev/run-host.py)。

@@ -4,7 +4,7 @@
 
 ## 会话范围与工作类型
 
-会话有四种范围：Global（跨项目）、Project、Feature、Task。Agent 会话按工作类型分三类：**Workflow**（业务步骤执行）、**Discussion**（自由讨论）、**Orchestration**（编排控制）。会话创建时冻结 RuntimeBinding（模型连接与参数、Agent 配置、权限锁、运行时安装、接入锁、适配器版本），后续重建的同身份会话优先复用；适配器升级或权限变化会要求显式后继会话。
+会话有四种范围：Global（跨项目）、Project、Feature、Task。Agent 会话按工作类型分三类：**Workflow**（业务步骤执行）、**Discussion**（自由讨论）、**Orchestration**（编排或经理工作台）。会话创建时冻结 RuntimeBinding（模型连接与参数、Agent 配置、权限锁、运行时安装、接入锁和适配器内容身份）。配置源后继不会改写旧绑定；冻结环境失效时必须核对或创建后继会话，不能按显示版本标签自动换环境。
 
 Agent 身份用 AgentID（Agent 实例）表达：全局身份可跨项目积累经验，项目身份不能用于全局讨论。切换身份立即清空旧会话列表并作废在途请求。
 
@@ -50,3 +50,7 @@ Agent 身份用 AgentID（Agent 实例）表达：全局身份可跨项目积累
 `configuration.*` 复用 UI 的精确源变更集。预演权限绑定到 Controller/会话/epoch，允许同一会话后续 Turn 使用预演，实际应用仍记录确切 Turn/调用。默认授权允许项目配置创作；共享目录修改另需冻结策略的 `configuration.global.write`。共享发布+项目采用走 `configuration.transfer.stage/apply/status/cancel`，沿用跨库恢复管线并保留原 Actor。停用共享定义前核对全部项目快照。
 
 配置修订和实例 create/rebind/remove、权限绑定、Skill 包导入可组合预演/应用。后继修订、未来采用与当前运行变更分别明确处理；历史和其他消费者保留原引用。经理不能换绑当前会话的 Harness/Sandbox 权限目标。自身实例换绑/移除后先交付工具回执，再撤销旧会话；后继组合由人类入口重新采用。新权限/Capability 源不会改变本次调用的冻结权限。
+
+项目重新采用经理 Agent 或 Permission Context 时，先保存接续意图并停止、核对旧 writer，再以快照创建后继。旧 Controller、会话和工具回执保留，不靠重新打开工作台掩盖未知执行。工作台已有但尚未消费的用户输入按原身份处理，不把空闲工作台变成自动根调度器。
+
+实现依据：[会话与轮次](../crates/domain/src/conversation.rs)、[会话装配](../crates/core/src/session_assembly.rs)、[权限切换](../crates/core/src/permission_switch.rs)、[编排与后继](../crates/core/src/controllers.rs)、[经理资料与工具](../crates/core/src/manager_workspace.rs)。

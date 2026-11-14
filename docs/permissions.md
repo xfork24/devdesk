@@ -33,9 +33,9 @@ Profile schema v2 强制：Harness profile 必须含 filesystem / network / tool
 
 ## 授权叠加：step_grants
 
-存储态 Workflow 只描述任务上下文（工作空间输入、工作目录）；读写目录与工具授权全部放在 Permission Context 的 `step_grants`：按 `workflow_ref + step key` 精确声明可写目录、只读目录与工具修订。加载执行视图时由同一解析器叠加到匹配步骤——授权是"目录 ∩ 工具"的交集，只能收窄。
+存储态 Workflow 只描述任务上下文（工作空间输入、工作目录）；读写目录与工具授权全部放在 Permission Context 的 `step_grants`：按 `workflow_ref + step key` 精确声明可写目录、只读目录与工具修订。加载执行视图时由同一解析器叠加到匹配步骤，实际访问同时受文件范围、工具白名单和双端 Profile 限制。
 
-默认工程上下文（`builtin-permission-context-engineering:3`）的示例：Task 的 `tests` 步骤只可写 `tests/`；`red_baseline` 与 `implementation` 可写全仓但 tests 只读（保护独立断言不被实现改写）；`documentation` 全仓只读；评审步骤无文件授权，只携带 outputs-read 工具。
+默认工程上下文（`builtin-permission-context-engineering:4`）显式收紧 16 个步骤：Task 的 `tests` 步骤只可写 `tests/`；`red_baseline` 与 `implementation` 可写全仓但 tests 只读，保护独立断言不被实现改写；`documentation` 全仓只读且只提供 outputs-read 工具。Task 的 `review` / `candidate_review` 及 Feature 的 `candidate_review` 没有文件授权，工具白名单包含所选原生工具与 outputs-read；其余只读评审按各自 grant 执行。工具能力仍须由 Capability 提供。
 
 ## 执行冻结与切换
 
@@ -52,3 +52,7 @@ Profile schema v2 强制：Harness profile 必须含 filesystem / network / tool
 ## Controller 操作策略
 
 Permission Context 内嵌 WorkflowControlPolicy：允许的编排操作集合、必须留给人类的操作、可豁免的要求类别（完成/确认/测试/独立性/覆盖）、是否允许修订任务、唤醒预算（轮次/每轮工具调用/超时）。Controller 的每个控制工具调用都经过策略、epoch、租约与预算围栏；留给人类的操作必须持有逐参数匹配的人工决定。
+
+同一策略还约束 Rust 驱动及经理工作台的项目读取、配置预演/应用；共享目录写入另需 `configuration.global.write`。当前默认策略不授予该共享写权限，也不允许修订 Task 业务范围。默认业务步骤均为 automatic，普通推进不需要人类签署；明确配置的 human 门禁仍须逐项核对。
+
+实现依据：[权限源类型](../crates/domain/src/source.rs)、[默认步骤授权](../resources/configuration/permissions/bindings/builtin-permission-context-engineering-v4.json)、[权限编译](../crates/adapters/src/permissions.rs)、[权限切换](../crates/core/src/permission_switch.rs)。

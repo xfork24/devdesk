@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前数据结构基线为 global 17 / project 48。Workflow 使用 v6，Spec 使用 v3，Standard 使用 v4，Agent 任务使用 `agent-task/v6`，普通 Proposal 使用 v2。只支持当前合同；只接受扁平源协议 和新数据集；不升级旧数据。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
+当前 SQLite 基线为 global 18 / project 48。出厂 Workflow、Spec、Standard 的 schema_version 分别记录为 6、3、4，Agent 任务记录 `agent-task/v6`，普通 Proposal 记录 v2；这些记录标签不代替结构与业务校验。只接受当前扁平源结构，不升级旧数据集。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [工作流与编排](workflow-orchestration.md)。
 
 ## 配置概念
 
@@ -32,6 +32,8 @@ Step 的执行方式仅为 Agent、工具、子流程、控制。Agent Step 必�
 | Task | Feature 下的实际任务、完整业务元数据和依赖 DAG。由明确的创建命令或平台工具产生。 |
 | RepositoryWorktree | 已登记的实际仓库工作副本、owner、分支、路径、基线与操作来源。 |
 | WorkflowController | 一个根实例的编排 Role、确切 Agent、控制策略、持续 Session、epoch 和预算。 |
+| WorkflowDriver | 根实例的 manual / rust / agent 调度选择；Rust 模式固定策略源、epoch、动作预算与租约。 |
+| RuntimeResource | 运行资源的不可变配方或 OCI 镜像摘要、版本标签、许可证及本机登录组件下载件；不表示已经安装或验证。 |
 | WorkflowPlanRevision | 不可变源修订选择及输入、角色绑定、父修订和变更原因；实例只切换活动引用。 |
 | WorkflowChangeSet | 类型化操作、基准计划、影响、预演哈希和 quiesce/apply 状态。 |
 | WorkflowDecision / Waiver | 真实 actor 对确切执行、产物和要求的处置；与原报告分开。 |
@@ -51,11 +53,11 @@ Task 工作副本在依赖完成后才冻结当时的 Feature 代码基线。并
 
 ## 输入、判断与完成
 
-端口使用常量或明确的生产步骤、输出名和 JSON Pointer。编译检查依赖、类型修订、子流程闭包与有界规则；实际接纳再次校验值和来源。禁止远程 Schema、任意脚本或模板求值。
+输入绑定使用常量、封存的 TypedMaterial，或明确的生产步骤（含 `$input`）、端口和 JSON Pointer。编译检查依赖、类型修订、子流程闭包与有界规则；实际接纳再次校验值和来源。禁止远程 Schema、任意脚本或模板求值。
 
 模型返回统一封套：`status`、`summary`、`outputs`。完成时必须提供必需端口；`needs_input` 和 `blocked` 可以没有产物。内容报告的检查 key 和数量严格来自当前 Spec，模型拒绝保留原报告。
 
-完成规则只读取有界事实：全部/任一、存在、值相等、集合覆盖、先后、不同执行身份、可信结果与人工决定。模型报告、实际工具回执及人类决定分别保存。普通确认遵守配置的覆盖策略；人类也可对等待确认的结果显式执行手动 Approve，必须填写理由并绑定当前执行 ID、输入摘要和确切产物。人工例外独立留痕，不改写原报告、测试回执或冻结配置，不适用于执行失败、产物结构无效或结果未知的步骤。
+完成规则只读取有界事实：全部/任一、存在、值相等、集合覆盖、先后、不同执行身份、可信结果与人工决定。模型报告、实际工具回执及人类决定分别保存。普通确认遵守配置的覆盖策略；人类也可对 waiting_confirmation / awaiting_acceptance 的结果显式执行手动 Approve，必须填写理由并绑定当前执行 ID、输入摘要和确切产物。人工例外独立留痕，不改写原报告、测试回执或冻结配置，不适用于执行失败、产物结构无效或结果未知的步骤。
 
 跨步骤材料只通过 Workflow 声明的输入端口传递。每个 source 绑定确切上游输出，任务保留 source_output_id 与 value_digest；未引用的输出不会自动加入任务。原始日志和源码快照必须作为 delivery 内容交付并密封持久化，临时路径或单个摘要不能代替内容。默认 Task 的实现步骤提供必需 evidence 输出，文档、实现评审、候选评审及 Task 交接分别显式引用，不开放任意历史目录。
 
@@ -71,7 +73,7 @@ Permission 使用完整 v2 profile、确切目标绑定和 `follow_target` / `pi
 
 ## 存储与经验
 
-全局目录和共享配置位于 `global.sqlite3`；每个项目使用独立 `engineering.sqlite3` 与 Artifact 根。配置使用类型化 `governance_records`，数据库和领域规则共同保护不可变修订、请求及终态回执。具体结构见 [SQL 说明](../sql/README.md)。
+全局目录和共享配置位于 `global.sqlite3`；每个项目使用独立 `engineering.sqlite3` 与 Artifact 根。配置的唯一存储为 `source_definitions`，内存中解析为 `ConfigurationRecord`；`governance_records` 保存计划采用、控制、变更、决定、意图和回执等事实。数据库和领域规则共同保护不可变修订、请求及终态回执。具体结构见 [SQL 说明](../sql/README.md)。
 
 全局讨论单独保存于 `conversations/global/engineering.sqlite3`，不创建占位 Project。经验是带来源的只读历史材料，跨项目读取不切换活动工程、不启动源 worker，也不覆盖当前代码、配置或产物。
 
@@ -83,7 +85,9 @@ Project、Feature、Task 不保存空的执行绑定；执行来源由 Workflow 
 
 core 观察实际事实。queued 节点只在 workflow.step.dispatch 后执行，产物变为 awaiting_acceptance 后由 workflow.step.accept 接纳；子实例及根实例分别通过 workflow.complete 完成。人类确认和业务接纳分开，模型不能伪造人的决定。用户可人工接管、停止并核对旧执行，然后恢复带 Snapshot 的后继会话。
 
-WorkflowPlanRevision 保存不可变闭包；StepExecution 保存当时计划、稳定 node_id、输入和合同摘要。ChangeSet 先 preview，再等待受影响执行者停止并原子 apply。依赖、端口和规则引用共同构成影响图；未受影响的结果以 carry-forward 复用。已完成根实例保持终态。
+上述命令也由 Rust 驱动在冻结策略内调用，并非必须经过经理模型。项目级经理工作台通过 `manager.open` 创建不附属业务步骤的会话，用于资料查询和配置创作；它与某个根实例的控制授权分别校验。
+
+WorkflowPlanRevision 保存不可变源选择和采用关系，展开闭包在读取时重建；StepExecution 保存当时计划引用、稳定 node_id、输入和合同摘要。ChangeSet 先 preview，再等待受影响执行者停止并原子 apply。依赖、端口和规则引用共同构成影响图；未受影响的结果以 carry-forward 复用。已完成根实例保持终态。
 
 TypedMaterial 是有来源的封存材料；bypass、waiver、原评审和实际运行事实分别记录。绕过仍供应下游的阶段必须显式替换材料；最终端口缺失时拒绝变更。Git 的业务测试或确认要求可以在授权内豁免，真实候选、作用域和 CAS 不可伪造。
 
@@ -96,3 +100,5 @@ Standard v4 只保存 `root_workflow_refs`，沿不可变确切源引用恢复 W
 Project 默认、Feature 和 Task 通过通用采用关系引用它。同一 Feature 下的不同 Task 可以使用不同 Standard。Workflow 的显式 `work_binding` 从真实工作引用解析其采用配置，逐成员固定 Standard 和入口；外部端口合同必须与父调用兼容。普通静态子流程不会被项目默认值替换。
 
 运行计划固定当时的 Standard。规范变更通过同一 ChangeSet 预演并原子切换，旧执行、输入、产物、计划及原生任务仍引用原 Standard。快照相同只表示定义相同，实际检查、豁免、测试和 Git 回执继续作为运行事实记录。
+
+实现依据：[Workflow 与检查报告](../crates/domain/src/workflow.rs)、[源定义](../crates/domain/src/source.rs)、[Standard](../crates/domain/src/standards.rs)、[调度策略](../crates/domain/src/workflow_driver.rs)、[编排身份](../crates/domain/src/orchestration.rs)。

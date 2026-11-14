@@ -18,7 +18,7 @@
 
 本轮完整检查入口为 `./scripts/check/check.sh`，先构建 Web，再测试和构建 host，干净检出无需预先生成 `web/dist`。新增 HTTP 检查覆盖会话鉴权、Host/Origin、JS/CSS 实际读取、平台能力、中文及空格 data 路径、跨进程单写锁、幂等、Artifact 未知 ID/未鉴权访问、SSE 连接下退出与重启持久化。真实 Artifact 内容由 Web E2E 打开并断言来源标记，文件哈希与 symlink 边界由 Rust 测试验证。
 
-浏览器使用真实 Rust API、SQLite 和本地文件，没有假后端。主流程与异常回路均断言无 pageerror。Web 截图：[原 Linux](../../assets/workbench.png)、[本轮 macOS](../../assets/workbench-macos.png)。作者验证与独立运行的范围分别保存在 [macOS 执行报告](macos-validation.md) 和 [独立评审](macos-independent-review.md)。
+浏览器使用真实 Rust API、SQLite 和本地文件，没有假后端。主流程与异常回路均断言无 pageerror。Web 截图：原 Linux（历史截图已移除）、本轮 macOS（历史截图已移除）。作者验证与独立运行的范围分别保存在 [macOS 执行报告](macos-validation.md) 和 [独立评审](macos-independent-review.md)。
 
 ## 原计划验收矩阵
 

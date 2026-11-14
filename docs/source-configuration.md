@@ -12,7 +12,7 @@ Agent 仅组合 Role 与 Capability。Capability 选择模型、Harness、方法
 
 Permission Profile 保存底层策略，Permission Context 选择 Sandbox、绑定方式、步骤授权和 Controller 操作策略。项目保存确切 `permission_context_ref`。Harness/Sandbox 的绑定修订独立发布；运行开始记录实际采用的绑定引用，后续重试或恢复不追随新的活动分配。
 
-默认步骤原有可写目录、只读目录和工具范围移至 Permission Context。Workflow 保留工作空间输入、工作目录、任务、预算、依赖及业务门禁。人类确认条件仍由 Workflow 描述；操作授权由 Permission 管理。Agent 和 Capability 都不含权限字段。
+存储态 Workflow 的 access 只描述工作空间输入和工作目录；可写目录、只读目录和工具范围由 Permission Context 提供。内存执行视图仍使用 StepAccess 承载叠加后的授权，不能将它当作源定义的第二份权限配置。确认条件由 Workflow 描述；操作授权由 Permission 管理。Agent 和 Capability 都不含权限字段。
 
 ## 解析与恢复
 
@@ -63,9 +63,11 @@ Standard 不是持久化的展开投影，它是持有确切 Workflow 根引用�
 
 ## 运行资源源修订
 
-`runtime_resource` 保存驱动、显示标签、许可证、不可变 OCI digest 或有界构建文件，以及按平台校验的登录下载件。Harness 用根级 `runtime_resource_ref` 选择精确修订；旧不可变出厂 Harness 的 `data.recipe_digest` 作为有类型内容地址边解析到该资源，不能用任意版本字符串查找安装。配置发布/预演不构建或执行这些资产。默认发行版只在资源包数据中指定。
+`runtime_resource` 保存驱动、版本标签、许可证、不可变 OCI digest 或有界构建文件，以及按平台校验的登录下载件。Harness 用根级 `runtime_resource_ref` 选择精确修订，也支持将 `data.recipe_digest` 作为有类型内容地址边解析到同驱动的资源；当前出厂 Harness 使用后一种形式。不能用任意版本字符串查找安装。配置发布/预演不构建或执行资产，默认发行版在资源包数据中指定。
 
-安装以独立 `recipe_digest` 保存来源，版本仅为标签。同一驱动允许多个不同配方。`runtime.prepare_harness` 构建/拉取后核验实际镜像，再进行不调用模型的初始化/会话/动态工具注册探针；报告绑定 image、driver 和权限资产。报告明确 `inference_verified=false`、`tool_execution_verified=false`，真实会话仍必须完成权限、认证及执行边界验证。准备意图可通过 `runtime.preparation_status` 查询，取消在外部调用返回后的检查点生效，未知结果须 `runtime.preparation_reconcile` 后重试。
+安装以独立 `recipe_digest` 保存来源，版本仅为标签。同一驱动允许多个不同配方。`runtime.prepare_harness` 构建/拉取后核验实际镜像：Codex 探测 initialize、thread/start 与动态工具注册，DSH 探测 initialize，均不调用模型。报告绑定实际产物、driver 和权限资产，明确 `inference_verified=false`、`tool_execution_verified=false`。准备完成不证明推理或工具执行成功；真实会话另做权限、认证及执行边界验证。准备意图可通过 `runtime.preparation_status` 查询，`runtime.preparation_cancel` 在检查点生效，未知结果须先 `runtime.preparation_reconcile`。
+
+准备器把实际镜像额外标记为 `devdesk/prepared-<provider>:<image-digest>`，再登记安装和协议验证。该内容标签保护已经冻结的 OCI 产物，不能仅凭另一个数据集重建后的 managed 标签判断旧运行使用的镜像。
 
 配置变更集补充 `manage_instance`（create/rebind/remove）、`permission_bindings`、`import_skill`，与源修订、项目/工作选择使用同一候选状态和依赖诊断。实例换绑创建后继引用，移除记录停用事实，旧会话/实例修订仍可读；预演中的身份由逻辑操作稳定生成。权限绑定通过注入的后端纯可行性校验，Skill 包路径/引用按既有约束验证，预演不执行包或外部工具。
 
@@ -78,3 +80,5 @@ Standard 不是持久化的展开投影，它是持有确切 Workflow 根引用�
 派发时保存 `workflow_input_manifest`，记录冻结输入摘要及实际源产物链。评审通过 `input_sources.evidence_source_ref` 和 value_digest 声明 `locations`，定位方式是 JSON Pointer、1 起始的闭区间行范围，或 0 起始/末端排除的 Unicode 字符范围；可选 quote 必须与该范围完全相同。外部输入、错误摘要、越界/悬空位置和伪造引用被拒绝。既有纯语义 Spec 的文字依据继续按其声明解释，不能冒充定位证明；可逐个发布后继 Spec 加强要求。
 
 检查器有内容/数量/深度/工作量边界；JSON Schema 只接受有界的非递归本地引用展开，pattern 使用线性 regex 引擎及编译内存边界，不支持回溯式反向引用。规范不会执行任意命令；测试/Git/发布事实继续走实际平台用例和回执。
+
+实现依据：[源协议与引用白名单](../crates/domain/src/source.rs)、[运行资源](../crates/domain/src/runtime_resource.rs)、[配置变更](../crates/core/src/configuration_changes.rs)、[冻结视图](../crates/core/src/frozen_views.rs)、[准备与内容标签](../crates/adapters/src/runtime_preparation.rs)、[机器检查](../crates/domain/src/spec_checks.rs)。

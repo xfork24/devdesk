@@ -1,6 +1,6 @@
 # 架构与设计决策
 
-当前基线为 global 17 / project 48（扁平源协议）、Workflow v6。业务配置与执行边界见 [领域规范](domain.md) 和 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。历史实施过程保存在 `docs/plans/`；本页描述当前系统。
+当前 SQLite 基线为 global 18 / project 48，配置使用扁平源修订。业务配置与执行边界见 [领域规范](domain.md) 和 [工作流与编排](workflow-orchestration.md)。`docs/plans/` 保存历史实施与验收记录，不作为当前接口合同。
 
 ## 模块与事实源
 
@@ -50,7 +50,7 @@ flowchart LR
 
 切换项目不终止其他项目执行；共享调度器管理全局额度。启动遍历项目索引核对原执行者，不把未知工作重新派发。全局讨论有独立命名空间，不创建假项目。
 
-当前版本直接使用 SQL 基线初始化。过时结构明确拒绝，不自动删除、不转换，也不保留双版本执行器；此次未上线开发数据的清理由用户明确授权后单独执行。
+当前版本直接使用 SQL 基线初始化。过时结构明确拒绝，不自动删除、不转换，也不保留双版本执行器；验证使用独立空目录。
 
 ## 代码、测试与发布
 
@@ -62,7 +62,9 @@ flowchart LR
 
 ## 权限、运行时与供应商
 
-RuntimeInstallation 独立于 Agent、Session 和 RuntimeExecution；同平台同版本共享固定镜像，原生线程、容器和私有状态仍隔离。运行绑定冻结实际 Model、Harness、参数、连接、权限和资产；客户端不能提交解析后的运行 binding。
+RuntimeInstallation 独立于 Agent、Session 和 RuntimeExecution；安装按驱动、平台及配方内容摘要复用，版本只作标签，原生线程、容器和私有状态仍隔离。`runtime_resource` 源修订保存不可变镜像或构建文件；Harness 通过确切引用或配方摘要选择资源。运行绑定冻结实际 Model、Harness、参数、连接、权限和资产；客户端不能提交解析后的运行 binding。
+
+根实例可选择 manual、rust 或 agent 驱动，全部复用 core 的派发、接纳与完成命令。Rust 驱动固定 `orchestration_policy` 源、epoch 和租约，按有界动作推进；Agent 驱动由真实 WorkflowController 调用原生控制工具。项目经理工作台独立于根实例调度，提供项目知识读取和受限配置创作，没有根控制权时不能调度该实例。
 
 Permission profile 与目标绑定分别版本化。两层权限、Scope、工具授权及操作系统隔离取交集，无法落实的策略明确拒绝。共享安装不因角色或权限复制。模型连接、工具网络、审批、隔离和资源额度分别表达。具体能力与限制见 [权限说明](../permissions/README.md) 和 [适配器合同](real-adapter-contract.md)。
 
@@ -72,6 +74,8 @@ Permission profile 与目标绑定分别版本化。两层权限、Scope、工�
 
 React Web 在 Rust 构建时嵌入，发布程序不依赖源码或宿主 Node。配置两列编辑器、通用阶段/步骤视图、确切任务预览、材料与确认都读取同一后端事实。讨论与经验按 AgentID 归属，选择变化使旧异步响应失效。
 
-验证覆盖 Rust、HTTP、debug / release Chromium、真实 Git / Docker、原生模型和独立包。真实模型、SDK 本地夹具和接口替身分别报告；Linux worker 不能代替 Ubuntu 宿主验收。当前证据及限制见 [执行记录](plans/workflow-business-configuration/EXECUTION.md)。
+验证覆盖 Rust、HTTP、debug / release Chromium、真实 Git / Docker、原生模型和独立包。真实模型、SDK 本地夹具和接口替身分别报告；Linux worker 不能代替 Linux 宿主验收。验证入口及外部依赖见 [真实工程接入](real-engineering.md)；历史报告只证明其记录的版本和范围。
 
 运行计划修订按新图实际引用的角色、资源和权限/集成锁计算影响；子流程重新编译时移除未使用的父级闭包资源，不会使已完成前缀失效。`workflow.change.preview/apply` 支持单独的 `revert_change {change_id}`：只可回退本实例最近应用的纯 `upsert_step` 变更，且全部受影响的替代执行仍未启动，不包含子流程调用。core 校验原冻结计划、输入和不可变执行历史，创建新的计划修订并逐字复用原回执；原始拒绝、原变更和被撤回的 queued 执行均保留。已启动、跨实例、混合操作或存在新外部作用时拒绝回退。
+
+实现依据：[应用端口](../crates/core/src/ports.rs)、[根实例驱动](../crates/core/src/workflow_driver.rs)、[经理工作台](../crates/core/src/manager_workspace.rs)、[运行资源物化](../crates/core/src/resource_receipts.rs)、[存储编解码](../crates/adapters/src/source_store.rs)。

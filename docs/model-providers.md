@@ -1,6 +1,6 @@
-# DeepSeek Harness 模型服务商
+# 模型服务商与 Harness
 
-DevDesk 通过同一个 DeepSeek Harness 接入 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅和本机 Ollama。Model 的服务商与 Harness 类型分开选择；新增服务商仍使用 `dsh`，完整 Model、Harness、Capability 和 Agent 组合决定实际执行配置。
+DevDesk 当前发布 OpenAI/Codex 及 DeepSeek Harness（DSH）的模型配置。Codex 使用官方 OAuth 与 app-server；DSH 的出厂服务商包括 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅和本机 Ollama。服务商、端点和容量目录来自 `model_provider` / `model_catalog` 源，Harness 通过精确引用采用它们；Model 的服务商与 Harness 驱动分开选择，完整 Model、Harness、Capability 和 Agent 组合决定实际执行配置。
 
 ## 配置步骤
 
@@ -17,10 +17,10 @@ DevDesk 通过同一个 DeepSeek Harness 接入 DeepSeek、智谱国内编程订
 |---|---|---|
 | `deepseek` | DSH 原生 `deepseek-official` 路由 | 保留既有 DeepSeek 官方 key 及预算规则 |
 | `zai-coding-cn` | OpenAI Chat Completions，`https://open.bigmodel.cn/api/coding/paas/v4` | 使用国内编程订阅 key，不回退普通按量端点 |
-| `minimax-cn` | Anthropic Messages，`https://api.minimax.cn/anthropic` | 使用国内订阅 Key；显式覆盖固定 DSH 目录中的旧默认域名 |
+| `minimax-cn` | Anthropic Messages，`https://api.minimax.cn/anthropic` | 使用国内订阅 Key；端点来自所采用的服务商源 |
 | `ollama` | 本机服务的 OpenAI Chat Completions，默认 `http://127.0.0.1:11434/v1` | 填写服务端实际可用的模型及容量；客户端仅使用非秘密占位值 |
 
-云服务商端点固定，不支持通过 Model 覆盖到任意网关。不同订阅的 key、支持模型和额度按供应商账号配置处理。端点依据 [智谱官方说明](https://docs.bigmodel.cn/cn/coding-plan/quick-start)、[MiniMax 官方说明](https://platform.minimax.cn/docs/m-plan/other-tools)和 [Ollama 官方兼容接口](https://docs.ollama.com/api/openai-compatibility)。
+上表是当前出厂源的值；云订阅的端点由所选服务商源固定，Model 不能覆盖为任意网关。修改服务商须发布并明确采用新源修订，实际协议仍需已安装驱动支持。不同账号的密钥、可用模型和额度分别配置；保存定义不证明远端可用。
 
 ## Ollama 本机与容器地址
 
@@ -32,18 +32,20 @@ DevDesk 通过同一个 DeepSeek Harness 接入 DeepSeek、智谱国内编程订
 
 ## macOS 凭据助手升级
 
-DeepSeek 继续兼容旧助手及旧 vault 引用。智谱和 MiniMax 需要支持多服务商账号格式的助手。源码安装使用 `scripts/platform/macos/install-macos-credential-helper.sh --update`；含新版助手的独立运行包使用以下命令显式升级：
+当前 macOS 凭据访问统一要求协议 2 的固定签名助手，包含 DeepSeek、智谱、MiniMax 和接入工具凭据；安装目录名 `v1` 不表示助手协议版本。源码安装使用 `scripts/platform/macos/install-macos-credential-helper.sh --update`；含对应助手的独立运行包提供显式更新入口：
 
 ```bash
 ./devdesk-host --update-credential-helper
 ```
 
-升级验证 Host 与助手的签名和内容，不读取 Keychain。之后首次使用新助手如需系统授权，在设置中选择对应服务商，再执行“授权已保存的钥匙串凭据”。普通启动和构建使用 `--ensure`，校验通过的兼容旧助手可以继续复用；只有新服务商凭据功能要求显式升级，启动和打包不会自动替换已授权助手。Linux 继续使用 Secret Service，Ollama 不要求任何系统凭据库。
+升级验证 Host 与助手的签名和内容，不读取 Keychain。之后首次使用新助手如需系统授权，在设置中选择对应服务商，再执行“授权已保存的钥匙串凭据”。普通构建的 `--ensure` 复用通过当前协议、内容和同证书签名检查的已安装助手；不兼容安装须显式修复。打包仅构建随包助手，不替换本机共享安装。Linux 使用 Secret Service，Ollama 不要求系统凭据库。
 
-## 历史与验证范围
+## 冻结与验证范围
 
 新 key 产生新的不透明引用，已有 Session 和技术重试保留原引用；旧引用不可读时明确失败，不自动换 key。Model 或 Harness 新修订不修改既有 Capability、Agent、Feature 或 Session。更新配置后通过新的完整组合及后继 Session 使用新连接。
 
-当前服务商目录和路由适配以 DSH `0.2.2-rc.1` 为基线。模型目录嵌入运行包，未知模型可通过明确容量声明使用；不读取用户全局 DSH 设置。变更适配器后，原会话按既有版本校验要求创建后继，不能在旧运行上偷偷替换代码。
+当前出厂 DSH 资源标签为 `0.2.2-rc.1`，发行文件与构建 pin 保存在运行资源源中。模型容量目录通过配方摘要绑定 Harness，执行检查冻结连接和生成 profile 的内容摘要，不把版本字符串作为兼容门槛。未知模型需要明确容量声明；不读取用户全局 DSH 设置。原会话保留实际安装、连接与适配器身份，不能在旧运行上替换代码或密钥。
 
-本轮真实模型验收仅使用 Codex。DSH 的三条新路由以固定镜像、禁外网容器和模拟流式服务验证；Ollama 模型目录使用本地模拟服务检查，不代表已验证容器连通性或某个真实订阅。阶段结果见 [实施记录](plans/dsh-model-providers/EXECUTION.md)。
+`models.list` 的目录读取、运行资源协议探针和真实推理是不同检查。DSH 路由的本地流式夹具不证明某个真实订阅可用；Ollama 宿主目录读取不证明容器连通或推理成功。当前验收入口见 [真实工程接入](real-engineering.md)，历史结果按对应报告的版本和范围解释。
+
+实现依据：[服务商领域规则](../crates/domain/src/model_provider.rs)、[出厂服务商](../resources/configuration/model-providers/)、[目录查询](../crates/host/src/model_providers.rs)、[DSH 连接与 profile](../crates/adapters/src/model_providers.rs)、[凭据助手检查](../crates/adapters/src/credentials_macos.rs)。

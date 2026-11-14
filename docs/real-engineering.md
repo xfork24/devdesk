@@ -1,14 +1,14 @@
 # 工程接入与通用流程
 
-DevDesk 使用 Workflow v6 驱动工作。Role 是业务身份，Agent 加载自己的 Skill 和能力，Step 的 `task_instructions` 指定本次任务。运行语义见 [工作流与编排](workflow-orchestration.md)，出厂配置见 [默认目录](../resources/configuration/README.md)；历史改造合同存档于 [Harness 执行合同](plans/harness-workflow-orchestration/CONTRACT.md)。
+DevDesk 使用配置驱动的 Workflow 执行工程工作。Role 是业务身份，Agent 组合 Role 与 Capability，后者选择 Model、Harness、Skill 和 Tool；Step 的 `task_instructions` 指定本次任务。运行语义见 [工作流与编排](workflow-orchestration.md)，出厂配置见 [默认目录](../resources/configuration/README.md)。
 
 ## 操作流程
 
 1. 工程项目通过“打开 GitHub 项目”接入 `owner/repo` 与主分支，后台验证、克隆并登记受管理工作空间。实际 GitHub 操作需要 Git 和已授权的 GitHub CLI。仓库操作失败保留原操作 ID，供核对。
 2. 在设置中完成所用供应商授权并确认 Docker 可用。运行环境在实际调用时准备；读取配置不安装运行时或调用模型。供应商与凭据边界见 [模型接入](model-providers.md) 和 [系统凭据](system-credentials.md)。
 3. 在“流程与规范”编辑 Workflow：Stage 提供背景和可选默认 Role，Agent Step 可覆盖 Role，添加任务指令、必需 Skill、规范、输入输出、访问范围及预算。工具 Step 和子流程调用使用精确修订。保存草稿允许未完成引用，发布必须校验完整闭包。
-4. 在“项目管理”选择 Workflow，将所有需要的 Role 身份绑定到相应 Agent，可选 Standard。新建 Feature 时冻结完整配置、权限和接入绑定；后续修改不替换已有运行。
-5. 在“执行与交付”与项目经理对话，通过 Harness 原生工具明确派发、接纳和完成根/子实例；工作台直接操作使用相同领域命令。查看真实 Stage/Step、输出和等待状态，运行计划修改先预演再应用。补充输入通过当前 Step 提交；确认绑定当前输入摘要及输出 ID。技术重试保留输入并创建新执行，返工沿实际消费关系失效后继结果。未知副作用先核对。
+4. 在“项目管理”选择 Workflow，将所有需要的 Role 身份绑定到相应 Agent，选择或生成 Standard，明确采用 Permission Context 和 manual/rust/agent 驱动；Rust 模式另选确切策略。项目经理独立工作台可以先查询资料和创作配置，它不自动取得根实例控制权。新建 Feature 时冻结完整配置、权限和接入绑定。
+5. 在“执行与交付”查看 Stage/Step、输出和等待事项：人工逐步操作，或由所选 Rust/Agent 驱动派发、接纳和完成根/子实例。Agent 控制目前需要 Codex 原生工具桥。运行计划修改先预演再应用；补充输入经当前 Step 提交。默认步骤为 automatic，配置了 human 门禁时确认才绑定当前输入摘要及输出 ID。技术重试保留输入并创建新执行，返工沿实际消费关系失效后继结果。未知副作用先核对。
 
 普通分析流程可通过 API 在 Project 上启动，不需要 Task、Git 候选或固定文档类型。执行视图支持 Project 直属运行。材料采用类型、修订与显式输入引用，讨论提案采纳只建立材料，不隐式生成 Feature 或 Task。
 
@@ -28,12 +28,16 @@ Git 候选以预期目标为父提交。默认接纳要求确切候选的真实�
 
 `./scripts/check/check.sh` 验证 Rust、HTTP、安全、SQLite、模板重置及 debug/release Chromium。真实 Docker 验证可使用 `scripts/check/check-live.sh --groups git,docker,permissions`，不调用模型。真实模型与 GitHub 发布须使用专用数据集和测试仓库；历史版本的验收报告不代表新执行器已完成相同实机验收。
 
-当前配置使用扁平源协议，数据库基线为 global 17 / project 48。仅支持新数据集，不提供旧协议转换或升级；验证使用独立空目录。既有目录会被明确拒绝且不改写。
+当前配置使用扁平源协议，数据库基线为 global 18 / project 48。不提供旧协议转换或升级；验证使用独立空目录。不兼容的既有目录会被明确拒绝，兼容数据集可正常重开，不通过删库恢复。
 
-合并后的完整 Feature 验收还核对 Task documentation/review/candidate_review 和 Feature closure_review/candidate_review 的实际渲染任务封套：原始逐增量 TDD evidence 必须完整到达，输入来源必须指向相应的密封输出。默认 automatic 数据集中出现 Human 确认、人工批准、旁路或豁免即判失败；不允许通过手动 approve 完成探针。运行计划原始合同通过不可变修订祖先核对，不能将修订后的图当作自身验收基线。
+完整默认工程验收应核对 Task documentation/review/candidate_review 和 Feature closure_review/candidate_review 的实际渲染任务封套：逐增量 TDD evidence 必须完整到达，输入来源指向相应密封输出，并区分模型记录与 core 观察的运行事实。默认 automatic 探针要求零 Human 确认、人工批准、旁路和豁免，不用手动 approve 完成验收。运行计划原合同通过不可变修订祖先核对，不能把修订后的图当作自身基线。
 
 ## 本地验收证据保留
 
 `tests/live/probe_default_engineering_workflow.py` 在独立数据目录运行真实默认 Feature/Task 图，默认保留数据、原生日志、冻结工作实例、回执及 report.md；只有明确调用才产生模型调用和测试仓库变化。`--dedicated-repository` 用于调用者明确指定、名称不含 test 的专用仓库；它不自动授权其他仓库。中断后的 `--resume` 保留历史并核对原执行者，已完成实例只复核证据，不重新派发或发布。
 
 `tests/live/export_evidence.py` 保存一致的项目 SQLite 快照、按登记摘要核验的产物、遮蔽凭据字段的记录投影、实际运行资源事实和逐文件 SHA256 清单。它不复制全局凭据设置、认证文件、worker 状态或进程环境。导出到新的本地私有目录；保留失败/未运行项，不能仅凭模型回复宣布验收通过。证据导出本身失败也必须报告。
+
+验收保留实际使用的 Host 与各辅助脚本的内容身份，历史执行不从当前 PATH 或当前源码补推。`runtime_context.binding` 表示运行选择，`runtime_context.inputs` 关联上游真实 Turn 的外层镜像和停止证明；它们不证明任意嵌套或远程命令的环境。
+
+实现依据：[工作流运行](../crates/core/src/workflow_runtime.rs)、[根驱动](../crates/core/src/workflow_driver.rs)、[平台动作](../crates/core/src/platform_tools.rs)、[工程探针](../tests/live/probe_default_engineering_workflow.py)、[证据导出](../tests/live/export_evidence.py)。

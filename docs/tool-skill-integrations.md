@@ -20,7 +20,7 @@ OAuth 支持公共客户端的授权码 + PKCE S256、同账户刷新和撤销�
 
 macOS 新的接入凭据账户需要新版签名助手。原有 Host 和已有 Codex/DSH 登录无需重置；源码开发者显式执行 `./scripts/platform/macos/install-macos-credential-helper.sh --update`，或在包含新版助手的运行包设置中升级。正常构建不会替换已授权的共享助手。首次访问新凭据可能需要系统授权。Linux 使用已解锁的 Secret Service。
 
-工具 HTTP/MCP 客户端在固定 Docker 镜像中运行；只获得当前运行允许的文件挂载、网络、工具与账户。源地址、解析后的私网地址和重定向受绑定检查；本机/内网服务需要明确允许。自定义 Harness 文件规则若无法由首版外部执行器完整执行，会明确拒绝。
+工具 HTTP/MCP 客户端在固定 Docker 镜像中运行；只获得当前运行允许的文件挂载、网络、工具与账户。源地址、解析后的私网地址和重定向受绑定检查；本机/内网服务需要明确允许。自定义 Harness 文件规则若无法由当前外部执行器完整执行，会明确拒绝。
 
 ## 支持范围
 
@@ -39,4 +39,6 @@ macOS 新的接入凭据账户需要新版签名助手。原有 Host 和已有 C
 DEVDESK_TOOL_TEST_IMAGE=sha256:<固定镜像完整摘要> cargo test --locked -p devdesk-adapters --test tool_integrations docker_ -- --ignored --nocapture
 ```
 
-真实模型验收只使用 Codex，见 [分阶段记录](plans/tool-skill-integrations/EXECUTION.md)。OAuth 协议夹具使用内存凭据替身，不代表已完成真实第三方账户或本机 Keychain 的交互授权。
+HTTP/MCP/OAuth 的本地协议夹具与真实模型、第三方账户验收分别报告。OAuth 夹具使用内存凭据替身，不代表真实第三方账户或本机 Keychain 已授权。Codex 动态平台工具、经理工具与根控制工具按实际驱动能力注册；DSH 当前没有该桥，不能仅靠配置声明获得支持。
+
+实现依据：[接入执行器](../crates/adapters/src/integrations.rs)、[OAuth](../crates/adapters/src/integration_oauth.rs)、[平台工具注册表](../crates/core/src/platform_tools.rs)、[经理工具](../crates/core/src/manager_workspace.rs)、[原生驱动](../crates/adapters/src/harness.rs)。

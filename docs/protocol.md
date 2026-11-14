@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 18 / project 48；Workflow v6、Spec v3 / Standard v4、Proposal v2 和 `agent-task/v6`。精确字段及参数限制见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。仅执行当前合同，不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 18 / project 48；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 ## HTTP 与命令
 
@@ -11,14 +11,14 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前数据基线 global 18 / project 48；
 | POST /rpc | JSON-RPC 2.0，要求 request id，不支持 batch 或 notification。 |
 | GET /events?project_id=ID&cursor=N | 固定项目的 SSE；事件 ID 为 `ID:cursor`，支持同项目 Last-Event-ID。 |
 | GET /artifacts/{id}?project_id=ID | 按活动数据库 ID 读取并校验 SHA-256，客户端不能指定宿主路径。 |
-| GET /capabilities | 协议、版本、供应商、Docker 和平台能力。 |
+| GET /capabilities | 协议、版本、setup_required、供应商及平台能力声明；不代替 Docker 连通或真实推理验证。 |
 | POST /setup | 打开数据集；非空非 DevDesk 目录拒绝，打开后不能热切换。 |
 | POST /shutdown | 可信人类会话退出 Host。 |
 
 命令参数包含 `command_id`、`target`、`expected_revision`、`payload`；有版本的目标要求确切修订。相同 ID 与相同参数重放首次结果，检查早于版本冲突；不同参数复用 ID 拒绝。客户端不提交 actor 或已解析执行 binding。工程请求携带 `project_id` 固定请求作用域，过期选择返回 `project_changed`，查询不会隐式切换项目。
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"workflow.start","params":{"command_id":"uuid","target":"project-id","expected_revision":1,"payload":{"workflow_ref":"published-workflow-revision","role_agent_bindings":{}}}}
+{"jsonrpc":"2.0","id":1,"method":"query.workspace","params":{}}
 ```
 
 `query.workspace` 返回项目目录及活动工程，`query.history` / `query.events` / `query.artifact` 读取对应事实。分页参数有界；SSE 只通知变化，客户端重新查询权威状态。没有通用 `set_status`。
@@ -45,7 +45,7 @@ canonical `agent-task/v6` 包含 Stage 背景、Step 任务、职责、能力、
 
 `workflow.pause/resume/cancel` 控制实例。`workflow.step.input` 补充本次任务输入；`workflow.step.confirm` 提交确切 input_digest、outputs 及理由；`workflow.step.retry`、`workflow.step.rework`、`workflow.step.reconcile` 分别处理技术重试、业务返工和未知结果。所有命令都经过当前状态与来源校验。
 
-模型内容报告使用 Spec 当前的任意 key：`approve`、`summary`、`checks[{key,passed,evidence}]`。拒绝保留原报告；普通 confirm 覆盖完成条件仍要求 Step 明确允许。独立的 `workflow.step.approve` 是显式人工例外入口，payload 必须提供 step、execution_id、input_digest、outputs 和非空 reason；仅允许 waiting_confirmation 且未请求停止的流程，保存 manual_approval 与 override_completion，绑定确切输入输出，不改写原结论或冻结配置。没有隐藏的固定四项检查。
+模型内容报告使用 Spec 当前的任意 key：`approve`、`summary`、`checks[{key,passed,evidence,locations?}]`。拒绝保留原报告；普通 confirm 覆盖完成条件仍要求 Step 明确允许。独立的 `workflow.step.approve` 是显式人工例外入口，payload 必须提供 step、execution_id、input_digest、outputs 和非空 reason；允许 waiting_confirmation 或 awaiting_acceptance 且未请求停止的流程，保存 manual_approval 与 override_completion，绑定确切输入输出，不改写原结论或冻结配置。没有隐藏的固定四项检查。
 
 默认 Task 的 implementation.evidence 使用 Execution Report delivery：runs 包含执行序号、阶段、命令、目录、起止时间、退出码、stdout/stderr，以及对应测试和源码的 path、sha256、content。缺少必需证据或仅提供临时路径会被输出 Schema 拒绝。后续 documentation、review、candidate_review 的 inputs.evidence 和 handoff 工具参数显式绑定此端口；原始内容沿现有 workflow_output / Artifact 存储，来源及 value_digest 进入规范任务。此交付是 Agent 记录，不能冒充 Test Report 的平台测试回执。
 
@@ -57,7 +57,7 @@ canonical `agent-task/v6` 包含 Stage 背景、Step 任务、职责、能力、
 
 独立 Tool Step 通过冻结的工具定义、参数映射和执行身份调用。HTTP / MCP 工具使用明确接入及项目账户绑定。Codex Agent 平台工具还要求当前 Workflow、Capability、Step 与 Permission 的共同授权，绑定真实 Session / Turn / worker / 原生调用 ID；普通讨论不提供这些平台工具。
 
-平台处理器为 workspace.current、workspace.snapshot、materials.capture、tasks.create、tasks.complete、tests.run、git.candidate、git.advance、git.publish。函数桥使用可移植的 `devdesk_` 名称映射，处理器标识不变。DSH 不支持动态平台工具桥，配置时拒绝。需要批准的平台写入使用显式 Tool Step 和确认门禁。
+平台处理器包括 workspace.current/snapshot、materials.capture、tasks.create/complete、tests.run、git.candidate/advance/publish，以及受管 `project.*`、`configuration.*`、`spec.lint` 和 `workflow.*` 工具；完整注册表在 core/platform_tools。函数桥使用可移植的 `devdesk_` 名称映射，处理器标识不变。业务步骤、经理工作台和根控制会话按各自归属与冻结授权调用。DSH 当前不支持动态平台工具桥；配置声明不能绕过驱动能力校验。
 
 `query.tool_calls` 同时返回实际外部调用与平台调用，保留真实 caller 和平台回执；按 Session、Turn、AgentID 等来源筛选。平台请求和终态回执不可改写，原生回复交付另存记录。`tool.call.cancel` 请求停止尚未结束的调用，未知副作用仍需核对。
 
@@ -67,7 +67,9 @@ canonical `agent-task/v6` 包含 Stage 背景、Step 任务、职责、能力、
 
 Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和 title，再次可指定项目 target；接入意图、克隆及回执异步完成。`project.open` 切换已登记项目，`project.create` 保留为后端元数据入口。仓库实际就绪前不能启动工程执行。
 
-`runtime.prepare` / `runtime.prepare_harness` 可以显式预热固定环境，正常会话按所选 Harness 延迟准备。`runtime.preparation_status` 返回 preparing / ready / failed；构建在事务外进行，失败不登记成功安装。运行和重试沿用原冻结安装。
+`runtime.prepare({provider})` 准备当前默认运行资源；`runtime.prepare_harness({id,project_id?})` 的 id 是确切 Harness 源引用，正常会话也可按需物化。构建/拉取在事务外执行，核验实际镜像后保存 prepared 内容标签、安装和协议报告。`runtime.preparation_status` 同时返回当前准备状态及持久化 intents；`runtime.preparation_cancel({recipe_digest})` 在检查点生效，`runtime.preparation_reconcile({recipe_digest})` 核对未知准备结果。运行和重试不按新标签替换原冻结安装。
+
+协议探针只验证初始化及当前驱动实际支持的会话/动态工具注册，返回 `inference_verified:false`、`tool_execution_verified:false`，不证明模型、账户或工具调用已经成功。
 
 `codex.auth.start/status/models/cancel` 管理本机登录与目录组件。`credentials.status/check/authorize` 只返回元数据、不透明引用及可用性，不读取显示秘密。系统凭据授权通过专用助手或宿主 Secret Service 完成，详见 [凭据说明](system-credentials.md)。
 
@@ -118,15 +120,15 @@ query.project_configuration 附带 pinned_records 与 uses_archived_templates，
 
 RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。所选服务商需要的连接快照不完整时拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。
 
-`query.runtime_options` 只读取安装、受支持配方和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和基础组件 Harness 的安装列表仅展示项目执行用的 Linux Docker 安装；本机 Codex 登录与模型目录组件保留内部登记，不显示为项目安装。旧偏好的 `use_system_default` 仅跟随 Harness 名称，默认后端改变后须重新明确安装及模型。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务；智谱与 MiniMax 返回固定 DSH 版本支持的目录，并在 `source` 中区分。读取目录不执行推理。
+`query.runtime_options` 只读取安装、运行资源和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和 Harness 的安装列表只展示项目执行用安装；登录/模型目录组件内部登记。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务，智谱与 MiniMax 使用所采用目录的容量数据，结果标明 `source` 和未验证的推理状态。
 
-项目只绑定 Workflow 与完整 Agent，不另设项目或角色运行时偏好。模型、连接、容量与参数来自绑定 Agent 的 Model 修订，Harness 按固定配方物化。有效参数冻结在 RuntimeBinding；每个 Workflow Step 使用独立 Session，补充输入沿用该 Step 的冻结运行锁。
+项目配置选择 Workflow、Standard、Role→Agent、Permission Context 和编排配置，不另设项目或角色运行时偏好。模型、连接、容量与参数来自绑定 Agent 的 Model 修订，Harness 按所选资源配方物化。有效参数冻结在 RuntimeBinding；每个 Agent Step 使用独立 Session，补充输入沿用该 Step 的冻结运行锁。
 
 `integration.delete` 将接入源及所属工具、绑定从后续选择中删除，或单独删除已发布工具。操作原子检查在用引用，拒绝仍被 Capability、Agent、Skill 或项目配置使用的资源；修订和历史调用保留，紧急停用另由 `integration.disable` 处理。
 
 全局角色讨论使用 `scope: "global"`，`session.open` 的目标为 `global`，不得同时提供 `project_id`。数据单独保存在 `conversations/global/engineering.sqlite3`；不创建 Project。Session 的 `scope` 为 `global`，其 `project_id` 列保留固定的执行命名空间 `00000000-0000-4000-8000-000000000000`，用于容器归属和 Session/Turn 外键；它不属于项目目录。全局 Session 仅接受全局 AgentID，消息、快照及经验仍按该身份保存。全局讨论中的方案须切换到具体项目后再进入工程采纳流程。
 
-权限合同 v2 绑定权限语义、受支持运行版本与实际策略资产；普通 UI、模型目录及非权限 schema 更新不改变权限合同。适配器精确构建在运行绑定中独立冻结。Feature 冻结确切权限闭包，不再生成旧默认权限转换或 feature_permission_renewal 记录。
+权限合同 v2 绑定权限语义、实际运行配方与策略资产；普通 UI、模型目录及非权限 schema 更新不等于权限语义变化。适配器内容身份在运行绑定中独立冻结，Feature 冻结确切权限闭包，不生成旧权限转换记录。
 
 `feature.create.predecessor` 只记录同项目 Feature 的前后关联，代码仍从项目主干基线建立。界面枚举同项目所有 Feature，并明确显示这一语义。
 
@@ -136,13 +138,27 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ## 编排与运行计划
 
+项目和工作选择中的 `orchestration` 为 `{mode:"manual"|"rust"|"agent",policy_ref?}`；rust 模式必须提供确切 `orchestration_policy` 源。`workflow.driver.select` 是人类命令，target 为根实例，expected_revision 为其当前修订，payload 为上述选择。它撤销旧控制代次/未派发控制意图，不停止正在运行的业务 worker。`query.workflow_driver({id,project_id})` 返回实际驱动、策略、epoch 与等待门禁；不能从经理会话是否存在推断驱动模式。
+
 `orchestration.open/input/takeover/resume` 管理项目经理及后继会话；`query.orchestration` 返回对话、实际控制调用和待人类决定请求。输入是用户自然语言，只有冻结 Capability/Permission 允许的原生工具调用才产生控制效果。
 
 控制工具：`workflow.inspect/events.read/outputs.read/execution.inspect`，`step.dispatch/accept/input/retry/rework`，`execution.stop/reconcile`，`pause/resume/cancel/complete`，`change.preview/apply`，`materials.import`，`decision.request` 和 `segment.dispatch`（均带 workflow 前缀）。人类通过 `workflow.decision.resolve` 签署确切请求。写入绑定活动 plan_revision_id；接纳还绑定 execution_id、input_digest 及输出 ID，变更绑定预演哈希。
 
+控制工具还包括 `workflow.start`。根/子实例派发和完成、Rust tick、人工直接命令遵守同一业务规则；有界 segment 不是独立根驱动。默认流程 automatic 确认不产生 Human 签署，显式 human 门禁、人工例外和授权内 waiver 分别记录。
+
 `schemas/orchestration.schema.json` 定义类型化 ChangeSet。新增/修改步骤、依赖、输入、角色绑定及整体计划通过预演编译；应用期间根范围禁止新的写入派发，继续收集原运行事实。旧合同和结果保存只读历史。已派发 segment 只推进确切授权节点，遇到人工等待、评审拒绝、异常、预算或计划修改立即停止，不自动完成根实例。
 
 编排封套 `orchestration-task/v2` 携带当前实例摘要、用户指令、策略及待决定项；持久化唤醒、消费游标、lease 和原生调用回执支持重启恢复。业务 `agent-task/v6` 携带计划修订、node_id 和 contract_digest。
+
+业务任务的 `runtime_context.binding` 是当前 Session 的冻结资源选择，`runtime_context.inputs.<input>.runtime_executions` 是绑定上游真实 Turn 和停止证明的外层执行事实。渲染器也将同一执行事实附到 `input_sources.<input>.runtime_executions`，与该输入的来源引用/摘要一同提供。冻结选择不等于实际运行观察；公开运行投影不含凭据、模型连接参数或宿主可执行路径。
+
+## 独立经理工作台
+
+`manager.open` 的 target 是项目 ID，payload 可指定精确 `agent_ref` 与 `permission_context_ref`；它可以在没有 Feature 或使用 Rust 根驱动时建立工作台。`query.orchestration({owner_id:project_id,workspace_only:true,project_id})` 读取工作台；已建立 Controller 的输入、接管与恢复沿用 `orchestration.input/takeover/resume`。
+
+经理原生工具包括 `project.overview/records.list/record.read/artifact.read/resources`、`configuration.catalog/read/usage/change.preview/change.apply/transfer.stage/transfer.apply/transfer.cancel/transfer.status` 和 `spec.lint`。概览只给摘要；列表与正文提供有界分页/分块、value_digest、next_offset。工具绑定固定项目，不接受任意 RPC、SQL、文件路径或改项目参数。已知凭据字段遮蔽；共享配置写入另需 `configuration.global.write`。
+
+工作台没有根控制授权时不能派发根步骤。自身实例换绑/停用先交付回执、再撤销旧会话；人类采用后继配置时核对并停止旧 writer，不覆写原会话的授权。
 
 源配置、权限归属及无持久化投影的存储规则见[源配置与执行解析](source-configuration.md)。
 
@@ -168,3 +184,5 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 操作结构见 rpc.schema.json 的 ConfigurationChangeSet/ConfigurationOperation。同一变更集允许先写消费者再写依赖；修订和停用均要求预期 revision。停用多对象时整体检查候选，不把正文中的引用样例作为依赖。目录暂存期间限制冲突配置写入，不能通过修改候选授权自己。
 
 `query.spec_lint` 是只读结构预览；原生 `spec.lint` 受工作台的配置预演权限约束。新增 MachineAssertion/EvidenceLocation 契约见 RPC `$defs`；位置证明针对本次冻结输入，`workflow_output.spec_validation` 是内核生成的检查事实，模型不能通过输出同名字段替代它。
+
+实现依据：[HTTP 与认证](../crates/host/src/main.rs)、[项目及运行时路由](../crates/host/src/workspace.rs)、[配置路由](../crates/host/src/governance.rs)、[RPC Schema](../schemas/rpc.schema.json)、[控制工具](../crates/core/src/controllers.rs)、[经理工具](../crates/core/src/manager_workspace.rs)。
