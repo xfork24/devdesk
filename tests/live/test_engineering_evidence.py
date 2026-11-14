@@ -70,6 +70,46 @@ class ChunkReadTests(unittest.TestCase):
         self.assertEqual(len(proof['chunks']), 2)
         self.assertEqual(sum(chunk['utf8_bytes'] for chunk in proof['chunks']), self.reference['total_bytes'])
 
+    def test_requested_offset_inside_utf8_character_uses_returned_boundary(self):
+        self.calls[-1]['request']['arguments']['offset'] += 1
+        self.wire[-1]['item']['arguments']['offset'] += 1
+        self.assertTrue(self.verify()['native_delivery_verified'])
+
+    def test_normalized_offset_must_match_the_actual_utf8_boundary(self):
+        self.calls[-1]['request']['arguments']['offset'] += 4
+        self.wire[-1]['item']['arguments']['offset'] += 4
+        with self.assertRaisesRegex(AssertionError, 'UTF-8 boundary'):
+            self.verify()
+
+    def rejected_read(self, code='schema_validation'):
+        arguments = {'ids': ['output'], 'max_bytes': 1000, 'offset': 0, 'pointer': ''}
+        error = {'code': code, 'message': 'invalid read argument'}
+        caller = {**self.calls[0]['request']['caller'], 'call_id': 'rejected'}
+        self.calls.insert(0, {'status': 'failed', 'error': error, 'request': {
+            'caller': caller, 'arguments': arguments,
+            'definition': {'qualified_name': 'workflow.outputs.read'}}})
+        self.wire.insert(0, {'journal': 'native.jsonl', 'item': {
+            'id': 'rejected', 'type': 'dynamicToolCall', 'tool': 'devdesk_workflow_outputs_read',
+            'status': 'failed', 'success': False, 'arguments': copy.deepcopy(arguments),
+            'contentItems': [{'type': 'inputText', 'text': json.dumps(error)}]}})
+
+    def test_rejected_schema_read_is_preserved_before_complete_successful_reads(self):
+        self.rejected_read()
+        proof = self.verify()
+        self.assertTrue(proof['native_delivery_verified'])
+        self.assertEqual(proof['rejected_reads'][0]['error']['code'], 'schema_validation')
+
+    def test_unknown_read_failure_cannot_be_ignored(self):
+        self.rejected_read('provider_timeout')
+        with self.assertRaises(AssertionError):
+            self.verify()
+
+    def test_rejected_read_also_requires_its_native_reply(self):
+        self.rejected_read()
+        self.wire.pop(0)
+        with self.assertRaisesRegex(AssertionError, 'absent from native journal'):
+            self.verify()
+
     def test_missing_chunk_is_rejected(self):
         self.calls.pop()
         with self.assertRaisesRegex(AssertionError, 'missing chunk'):

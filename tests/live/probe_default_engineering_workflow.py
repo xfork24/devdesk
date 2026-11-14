@@ -23,7 +23,6 @@ parser.add_argument('--timeout-seconds',type=int,default=10800)
 parser.add_argument('--manager-context-source',type=Path,help='Explicit immutable Permission Context source to adopt during stopped-controller recovery')
 args=parser.parse_args()
 assert args.driver!='rust' or args.policy_ref, '--driver rust requires --policy-ref'
-assert not (args.resume and args.driver=='rust'), 'Rust recovery must preserve and explicitly reconcile the existing scene'
 assert args.manager_context_source is None or args.resume, 'manager context adoption is a resume operation'
 assert args.timeout_seconds>0
 assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset'
@@ -44,6 +43,15 @@ else:
 attempt=OUT/'attempts'/str(time.time_ns());attempt.mkdir(parents=True)
 for name in [Path(__file__).name,'client.py','engineering_evidence.py','export_evidence.py','summarize_engineering_scene.py']:shutil.copy2(Path(__file__).parent/name,attempt/name)
 (attempt/'ATTEMPT.json').write_text(json.dumps({'resume':args.resume,'unattended':args.unattended,'timeout_seconds':args.timeout_seconds,'binary_sha256':binary_digest,'binary_archive':str(binary_archive.relative_to(OUT)),'guidance':args.guidance,'driver':args.driver},ensure_ascii=False,indent=2))
+def verify_rust_actor(project):
+ import sqlite3
+ with sqlite3.connect(OUT/'data/projects'/project/'engineering.sqlite3') as db:
+  assert db.execute("SELECT count(*) FROM governance_records WHERE type='workflow_controller'").fetchone()[0]==0
+  decisions=[json.loads(row[0]) for row in db.execute("SELECT data FROM governance_records WHERE type='workflow_decision'")]
+  actual=[d for d in decisions if d['operation'] in ['dispatch','accept','complete']]
+  assert actual and all(d['actor']['kind']=='driver' for d in actual), 'Business advancement did not belong to the Rust driver'
+ (OUT/'driver-actor-validation.json').write_text(json.dumps({'passed':True,'workflow_controller_count':0,'business_actions':len(actual),'actor_kind':'driver'},indent=2)+'\n')
+
 if (OUT/'host.log').exists():(OUT/'host.log').rename(OUT/('host-before-launch-'+str(time.time_ns())+'.log'))
 child=subprocess.Popen([str(private_binary),'--data',str(OUT/'data'),'--port','0'],stdout=(OUT/'host.log').open('w'),stderr=subprocess.STDOUT)
 try:
@@ -58,21 +66,28 @@ try:
  c=Client(urls[0]);auth=OUT/'data/credentials/codex/auth.json';auth.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(args.codex_auth_source.resolve(),auth);auth.chmod(0o600)
  failure_observed={}
  if args.resume:
-  context=json.loads((OUT/'context.json').read_text());project=context['project'];feature=context['feature'];goal=context['goal'];c.open(project)
-  context.setdefault('initially_unattended',context.get('unattended',False));context['unattended']=False
-  context.setdefault('resumptions',[]).append({'time_ns':time.time_ns(),'binary_sha256':hashlib.sha256(private_binary.read_bytes()).hexdigest(),'classification':'same-dataset recovery; not an uninterrupted unattended run'})
-  (OUT/'context.json').write_text(json.dumps(context,ensure_ascii=False,indent=2))
-  root_view=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=root_view['record']['id'];manager=c.rpc('query.orchestration',{'root_instance_id':root_id})['record']['id']
+  context=json.loads((OUT/'context.json').read_text());project=context['project'];feature=context['feature'];goal=context['goal'];c.project=project
+  assert context.get('driver',args.driver)==args.driver, 'Select the driver recorded by the preserved scene'
+  root_view=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=root_view['record']['id']
   if root_view['runtime']['status']=='completed':
-   # A verifier correction must not take over or reopen a successfully finished
-   # controller, dispatch new work, or repeat a real publication.
+   # Completed scenes are evidence-only. No controller lookup/takeover, model
+   # dispatch, plan edit, result acceptance or publication is performed here.
    completed=c.rpc('query.workspace',{'feature_id':feature})
    assert completed['detail']['feature']['status']=='completed' and len(completed['detail']['tasks'])==1 and completed['detail']['tasks'][0]['status']=='completed'
    rows=[r for r in completed['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id]
    publications=verify_evidence(c,rows,OUT)
-   (OUT/'report.md').write_text('# Native default engineering Workflow\n\nPassed actual Codex, managed Git, Docker Red/Green, independent reviews, the frozen confirmation policy and explicit completion. Both GitHub PRs merged at their exact tested candidate SHA. Completed-instance resume only revalidated saved facts; it did not take over, dispatch or republish. The documented same-dataset failures and resumptions remain preserved.\n\nRoot: '+root_id+'\nFeature: '+feature+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n')
+   if args.driver=='rust':verify_rust_actor(project)
+   context.setdefault('evidence_revalidations',[]).append({'time_ns':time.time_ns(),'binary_sha256':binary_digest,'classification':'completed scene; evidence-only revalidation; no business resumption'})
+   (OUT/'context.json').write_text(json.dumps(context,ensure_ascii=False,indent=2))
+   (OUT/'report.md').write_text('# Native default engineering Workflow\n\nPassed actual Codex, managed Git, Docker Red/Green, independent reviews, the frozen confirmation policy and explicit completion. Both GitHub PRs merged at their exact tested candidate SHA. This completed-scene invocation only revalidated preserved facts; it did not take over, dispatch, accept or republish. Original verifier failures remain preserved.\n\nDriver: '+args.driver+'\nRoot: '+root_id+'\nFeature: '+feature+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n')
    print('PASS completed native default engineering Workflow evidence; no takeover or redispatch',flush=True)
    sys.exit(0)
+  assert args.driver=='agent', 'Interrupted Rust recovery requires explicit effect reconciliation; --resume only revalidates a completed Rust scene'
+  c.open(project)
+  context.setdefault('initially_unattended',context.get('unattended',False));context['unattended']=False
+  context.setdefault('resumptions',[]).append({'time_ns':time.time_ns(),'binary_sha256':binary_digest,'classification':'same-dataset recovery; not an uninterrupted unattended run'})
+  (OUT/'context.json').write_text(json.dumps(context,ensure_ascii=False,indent=2))
+  manager=c.rpc('query.orchestration',{'root_instance_id':root_id})['record']['id']
   # This continuation is limited to stopped, interrupted Agent executions. No business
   # rejection, test result, output or external effect is rewritten by the probe.
   manager_row=c.rpc('query.orchestration',{'id':manager})['record']
@@ -203,12 +218,7 @@ try:
    settled=c.wait(lambda:c.rpc('query.orchestration',{'id':manager}),lambda state:state['record']['data']['status']=='closed',120) if manager else c.rpc('query.workflow_driver',{'id':root_id})
    (OUT/'settled-manager.json').write_text(json.dumps(settled,ensure_ascii=False,indent=2))
    publications=verify_evidence(c,rows,OUT)
-   if not manager:
-    import sqlite3
-    with sqlite3.connect(OUT/'data/projects'/project/'engineering.sqlite3') as db:
-     assert db.execute("SELECT count(*) FROM governance_records WHERE type='workflow_controller'").fetchone()[0]==0
-     decisions=[json.loads(row[0]) for row in db.execute("SELECT data FROM governance_records WHERE type='workflow_decision'")]
-     assert decisions and all(d['actor']['kind']=='driver' for d in decisions if d['operation'] in ['dispatch','accept','complete']), 'Business advancement did not belong to the Rust driver'
+   if not manager:verify_rust_actor(project)
    print('PASS native default engineering Workflow',root['id'],flush=True)
    (OUT/'report.md').write_text('# Native default engineering Workflow\n\nPassed through actual Codex, managed Git, Docker Red/Green and candidate tests; both GitHub PRs merged at their exact candidate SHA.\n\nRoot: '+root['id']+'\nFeature: '+feature+'\nNew confirmations in this invocation: '+str(len(confirmed))+'\nPRs: '+', '.join(str(publication['pull_request']['number']) for publication in publications)+'\n');break
   time.sleep(5)
@@ -218,7 +228,8 @@ except SystemExit:
 except BaseException as error:
  (OUT/'failure.txt').write_text(str(error));raise
 finally:
- prior_error=sys.exc_info()[0] is not None
+ active_error=sys.exc_info()[1]
+ prior_error=active_error is not None and not (isinstance(active_error,SystemExit) and active_error.code in (None,0))
  if child.poll() is None:child.send_signal(signal.SIGINT);child.wait(timeout=30)
  shutil.rmtree(OUT/'data/credentials',ignore_errors=True)
  for private_auth in (OUT/'data').rglob('auth.json'):private_auth.unlink(missing_ok=True)
