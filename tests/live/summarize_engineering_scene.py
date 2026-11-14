@@ -85,14 +85,47 @@ def summarize(archive, scene):
         data = instance['data']
         lines.append(f"| {instance['id']} | {data['owner_id']} | {data['workflow_ref']} | {data['status']} |")
     lines += ['', '## 每步实际实施与控制', '',
-              '| 路径 / 执行 | 状态 | 实施者 / 模型 | 控制 Actor | 产出端口 |', '|---|---|---|---|---|']
+              '当前执行与历史分别标记。启动前替换的 queued 历史没有实际实施者或产出；历史行数不表示失败或重试次数。', '',
+              '| 类型 | 路径 / 执行 | 状态 | 实施者 / 模型 | 控制 Actor | 产出端口 |', '|---|---|---|---|---|---|']
     for item in steps:
         step = item['step']
         actor = item['implementer']
         executor = (item['definition'] or {}).get('executor', {})
         performer = actor['agent_ref'] or executor.get('tool_ref') or executor.get('type', 'unknown')
         controls = ', '.join(f"{row['data']['operation']}:{row['data']['actor']['kind']}" for row in item['decisions'])
-        lines.append(f"| {step['path']} / {item['execution_id']} | {step['status']} | {performer} / {actor['model_ref'] or '—'} | {controls} | {', '.join(step.get('outputs', {}))} |")
+        category = '当前' if item['current'] else '历史'
+        if not item['current'] and step['status'] == 'queued' and not step.get('started'):
+            performer = '未实施'
+        lines.append(f"| {category} | {step['path']} / {item['execution_id']} | {step['status']} | {performer} / {actor['model_ref'] or '—'} | {controls} | {', '.join(step.get('outputs', {}))} |")
+    lines += ['', '## 当前步骤的决策与交付索引', '',
+              '以下理由和身份直接来自原始记录；完整交付内容位于 step-ledger.json 的 output_records，注册文件可用 Artifact ID 追至一致快照。', '']
+    for item in steps:
+        if not item['current']:
+            continue
+        step = item['step']
+        actor = item['implementer']
+        lines += [f"### {item['instance_id']} · {step['path']}", '',
+                  f"执行：`{item['execution_id']}`；计划：`{step.get('plan_revision_id')}`；输入摘要：`{step.get('input_digest')}`。", '',
+                  f"执行器：`{json.dumps(actor['executor'], ensure_ascii=False, sort_keys=True)}`。", '',
+                  f"Agent：`{actor['agent_ref'] or '—'}`；模型：`{actor['model_ref'] or '—'}`；Session：`{step.get('session_id') or '—'}`；Turn：`{step.get('turn_id') or '—'}`。", '']
+        for row in item['decisions']:
+            decision = row['data']
+            control = decision['actor']
+            if control['kind'] == 'segment':
+                authorization = by_id.get(control.get('authorization_id'), {})
+                control = {'segment_actor': control, 'authorizing_actor': authorization.get('data', {}).get('actor')}
+            lines += [f"- 决策 `{row['id']}`：`{decision['operation']}`；Actor：`{json.dumps(control, ensure_ascii=False, sort_keys=True)}`。", '',
+                      '```text', decision.get('reason') or '（未记录理由）', '```', '']
+        for port, output in item['output_records'].items():
+            metadata = {key: output[key] for key in ('id', 'content_hash', 'artifact_id', 'delivery_ref', 'value_digest') if key in output}
+            output_id = step.get('outputs', {}).get(port)
+            metadata['id'] = output_id
+            record = by_id.get(output_id, {})
+            if record.get('content_hash'):
+                metadata['content_hash'] = record['content_hash']
+            data = output.get('data', {})
+            metadata.update({key: data[key] for key in ('artifact_id', 'delivery_ref', 'value_digest') if key in data})
+            lines += [f"- 产出端口 `{port}`：`{json.dumps(metadata, ensure_ascii=False, sort_keys=True)}`。", '']
     lines += ['', '## 核验入口', '',
               '- `attempts/`：实际测试脚本、输入绑定与驱动选择回执；`binaries/`：按 SHA256 保留的实际 Host。',
               '- `data/projects/*/execution/sessions/*/coordinator/*.jsonl`：原生模型请求、工具动作及真实观察。',
