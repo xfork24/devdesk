@@ -45,3 +45,11 @@ C1 验证：编排 37 项通过，Schema 14 项通过，domain/core 单元通过
 C4 预合入收口：完整 Rust workspace 290 项通过（17 项按现有配置忽略），HTTP/认证连接、模板重置、数据集及运行准备入口通过。debug 浏览器已通过相关布局/运行计划及部分接入用例；在进入 main 构建前主动结束本轮浏览器进程，避免共享 target 的运行二进制被覆盖，不把预合入 check.sh 记为完整通过。完整 debug/release check.sh 留在 main 执行。
 
 第三次真实小图已通过实际 Codex 经理、运行时 preview/apply、业务 Agent 的平台工具调用和精确结果接纳、暂停/人类接管/Host 重启/新控制会话继续，原执行与输出保持不变，完整原生回复均单 content item。根为 a0b4953a-3045-436f-97a1-f854772bcbe3。停止后已保存一致 project-evidence-final、5 个当前/历史执行的 ledger 与现场报告，Artifact 摘要核验通过。本次核心完整 Feature/Task 的最终双驱动验收仍以 main 的新场景为准。
+
+## main 最终验收进行中
+
+已将实施分支快进合入 main 3324d1e。该 main 实际构建并签名的 release Host 已冻结，SHA256 为 fb25758349a079724e82f90fafa98b694c6833553c1f71d8f5da1d85fd97513f；源码、脚本和 BUILD.json 保存在 main/package。完整 check.sh 已在 main 返回 0：Rust 290 项（17 项按原配置忽略），debug/release 浏览器各 57 项，以及 HTTP、连接、模板、数据集和运行准备入口通过。真实 Codex/命令/Docker 定向 10 项通过。实际用于回归的 debug/release 二进制与工程场景冻结二进制分别保存，内容身份不混记。
+
+真实 Rust Default Feature/Task 已通过新 PRD/Design 结构和精确评审位置、实际自检、Task 20 节点、8 条独立测试的真实 Red 到 Green，以及候选评审和 Task 发布；Feature 发布链仍在执行，完整双驱动及最终证据核验尚未关闭。
+
+现场报告关联核对发现 Agent 的原生平台调用以 caller.turn_id 标识来源，不直接用步骤 ID 作 definition_id；索引器已通过真实停止后快照验证并在 11de0de 合入 main，关联原生平台回执与会话事件，不改变运行内核。补充同根三 Task 回归：B 在成员数组最前且依赖 A，A 等待精确 Human 门禁，foreach=2、根 worker=1 时独立 C 完成、B 保持 queued；通过测试 Human 入口签署 A 后 A/B/父流程全部完成。该公开命令/SQLite/测试端口用例不冒充真实模型或真实用户对工程产物的签收。初版 JSON 宏括号编译错误及修正后通过日志保留。

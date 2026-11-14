@@ -2989,3 +2989,148 @@ fn task_dependencies_block_dispatch_without_starving_independent_tasks() {
             .all(|t| t.status == Status::Completed)
     );
 }
+
+#[test]
+fn one_root_schedules_three_bound_tasks_without_a_dependent_member_taking_a_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let anchor = start(&e, document());
+    let project = runtime(&e, &anchor)["runtime"]["project_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let feature = id();
+    let tasks = [id(), id(), id()];
+    e.store
+        .transact(None, &mut |state| {
+            state.features.push(Feature {
+                id: feature.clone(),
+                project_id: project.clone(),
+                title: "bound tasks".into(),
+                status: Status::Draft,
+                revision: 1,
+                input_version: 1,
+                predecessor: None,
+                source_materials: vec![],
+            });
+            for (index, task) in tasks.iter().enumerate() {
+                state.tasks.push(Task {
+                    id: task.clone(),
+                    feature_id: feature.clone(),
+                    title: format!("Task {index}"),
+                    status: Status::Draft,
+                    revision: 1,
+                    inherited_snapshot: None,
+                    dependencies: if index == 1 {
+                        vec![tasks[0].clone()]
+                    } else {
+                        vec![]
+                    },
+                    worktree: String::new(),
+                    scope: TaskScope::default(),
+                });
+            }
+            Ok(Value::Null)
+        })
+        .unwrap();
+    let item=cmd(&e,"delivery_type.create",None,json!({"name":"bound item","spec_refs":["fixture-spec:1"],"data":{"format":"json","content_schema":{"type":"object"}}})).unwrap();
+    let items=cmd(&e,"delivery_type.create",None,json!({"name":"bound items","spec_refs":["fixture-spec:1"],"data":{"format":"json","content_schema":{"type":"array","items":{"type":"object"}}}})).unwrap();
+    let draft=cmd(&e,"workflow.create",None,json!({"name":"bound child","document":{"schema_version":900,"stages":[{"key":"work","name":"work"}],"inputs":{"item":{"delivery_ref":item["id"]}},"steps":[
+        {"key":"gate","name":"A waits for a Human","stage":"work","executor":{"type":"control"},"condition":{"op":"equals","source":{"step":"$input","port":"item","pointer":"/key"},"value":"A"},"confirmation":"human"},
+        {"key":"finish","name":"complete Task","stage":"work","dependencies":["gate"],"executor":{"type":"tool","tool_ref":"builtin-tool-tasks-complete:1","arguments":{"task_id":{"type":"source","source":{"step":"$input","port":"item","pointer":"/id"}}}}}
+    ]}})).unwrap();
+    let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let draft=cmd(&e,"workflow.create",None,json!({"name":"three bound Tasks","document":{"schema_version":901,"stages":[{"key":"work","name":"work"}],"inputs":{"items":{"delivery_ref":items["id"]}},"steps":[{"key":"members","name":"members","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"],"work_binding":{"input":"item","pointer":"/work_ref"},"foreach":{"source":{"step":"$input","port":"items"},"item_input":"item","max_concurrency":2,"min_items":3}}}]}})).unwrap();
+    let parent = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let members:Vec<_>=[1,0,2].into_iter().map(|index|json!({"key":(["A","B","C"][index]),"id":tasks[index],"work_ref":{"kind":"task","id":tasks[index]}})).collect();
+    let root=e.execute("workflow.start",Command {command_id:id(),target:Some(feature.clone()),expected_revision:Some(1),payload:json!({"workflow_ref":parent["id"],"role_agent_bindings":{},"inputs":{"items":members}})}).unwrap()["id"].as_str().unwrap().to_owned();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"members"}),
+    )
+    .unwrap();
+    e.evaluate_workflows().unwrap();
+    let state = e.store.snapshot().unwrap();
+    let children: Vec<_> = tasks
+        .iter()
+        .map(|task| {
+            state
+                .governance
+                .iter()
+                .find(|row| {
+                    row.r#type == "workflow_instance"
+                        && row.data["root_instance_id"] == root
+                        && row.data["owner_id"] == *task
+                })
+                .unwrap()
+                .id
+                .clone()
+        })
+        .collect();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&children[0]),
+        json!({"step":"gate"}),
+    )
+    .unwrap();
+    e.evaluate_workflows().unwrap();
+    let policy=cmd(&e,"orchestration_policy.create",None,json!({"name":"one worker two invocation slots","scope":"global","data":{"max_concurrency":1,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy["id"]}),
+    )
+    .unwrap();
+    let tick = || {
+        e.drive_rust_workflows().unwrap();
+        for intent in e.pending_workflow_intents().unwrap() {
+            let command: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+            let request = e.configured_platform_request(&command).unwrap().unwrap();
+            let result = e.enqueue_platform_tool(&command, &request);
+            e.observe_workflow_intent(&intent.id, &result).unwrap();
+        }
+        e.drive_platform_tools().unwrap();
+        e.evaluate_workflows().unwrap();
+    };
+    for _ in 0..12 {
+        tick();
+    }
+    assert_eq!(
+        runtime(&e, &children[0])["runtime"]["steps"][0]["status"],
+        "waiting_confirmation"
+    );
+    assert_eq!(
+        runtime(&e, &children[1])["steps"][0]["actions"]["dispatch"]["code"],
+        "task_dependencies"
+    );
+    assert_eq!(runtime(&e, &children[2])["runtime"]["status"], "completed");
+    assert!(
+        runtime(&e, &children[1])["runtime"]["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|step| step["status"] == "queued")
+    );
+    let view = runtime(&e, &children[0]);
+    let gate = &view["runtime"]["steps"][0];
+    cmd(&e,"workflow.step.confirm",Some(&children[0]),json!({"step":"gate","input_digest":gate["input_digest"],"outputs":gate["outputs"],"reason":"Fixture Human signs the exact waiting gate; no completion override"})).unwrap();
+    for _ in 0..20 {
+        tick();
+    }
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+    for child in &children {
+        assert_eq!(runtime(&e, child)["runtime"]["status"], "completed");
+    }
+    assert!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .tasks
+            .iter()
+            .all(|task| task.status == Status::Completed)
+    );
+}
