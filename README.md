@@ -70,6 +70,7 @@ npm --prefix web ci
 
 | 主题 | 文档 |
 |---|---|
+| 代码阅读 | [crates 总览与文件索引](docs/crates/overview.md)、[完整执行链](docs/crates/execution-flows.md) |
 | 概念与结构 | [领域规范](docs/domain.md)、[结构合同](docs/contracts.md)、[架构设计](docs/design.md) |
 | 流程与规范 | [工作流与编排](docs/workflow-orchestration.md)、[源配置与执行解析](docs/source-configuration.md) |
 | 操作与会话 | [Web 工作台](docs/web-workbench.md)、[讨论与经验](docs/conversations.md)、[真实工程接入](docs/real-engineering.md) |
