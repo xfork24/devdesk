@@ -682,29 +682,7 @@ impl Engine {
             return Ok(Some(out));
         }
         if method == "workflow.complete" {
-            require(
-                instance.steps.iter().all(|e| {
-                    matches!(
-                        e.status,
-                        StepExecutionStatus::Completed | StepExecutionStatus::Skipped
-                    )
-                }),
-                "仍有未处置的步骤",
-            )?;
-            let current = facts(state, &instance)?;
-            require(
-                rule_satisfied(
-                    state,
-                    &instance,
-                    "$workflow",
-                    &instance.plan.document.completion,
-                    &current,
-                ) || waiver(state, &instance, "$workflow", "completion"),
-                "整体完成条件未满足",
-            )?;
-            for source in instance.plan.document.outputs.values() {
-                require(current.value(source).is_some(), "缺少最终交付输出")?;
-            }
+            crate::workflow_eligibility::completion_action(state, &row.id, &instance)?.require()?;
             let d = decision(state, &row, &instance, None, actor, "complete", &reason);
             state.governance.push(record(
                 "workflow_completion",
@@ -754,47 +732,11 @@ impl Engine {
             .clone();
         match method {
             "workflow.step.dispatch" => {
-                require(
-                    !crate::workflow_changes::change_pending(state, &row.id),
-                    "计划变更正在停止受影响执行者",
-                )?;
-                require(!state.workflow_instance_suspended(&row.id), "流程暂停中")?;
-                require(
-                    execution.status == StepExecutionStatus::Queued,
-                    "步骤已派发或已结束",
-                )?;
-                require(
-                    step.dependencies.iter().all(|k| {
-                        instance.steps.iter().any(|e| {
-                            &e.step == k
-                                && matches!(
-                                    e.status,
-                                    StepExecutionStatus::Completed | StepExecutionStatus::Skipped
-                                )
-                        })
-                    }),
-                    "依赖尚未接纳",
-                )?;
-                if let Some(parent) = &instance.parent_execution_id {
-                    let group = state
-                        .governance
-                        .iter()
-                        .find(|r| r.r#type == "workflow_children" && r.definition_id == *parent)
-                        .ok_or_else(|| err("invalid_workflow", "子流程来源缺失"))?;
-                    let others = group.data["children"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .filter(|id| *id != row.id)
-                        .filter_map(|id| state.configuration(id).ok())
-                        .filter(|r| r.data["status"] == "running")
-                        .count();
-                    require(
-                        others < (group.data["max_concurrency"].as_u64().unwrap_or(1) as usize),
-                        "子流程并发已满",
-                    )?;
-                }
+                crate::workflow_eligibility::step_actions(
+                    state, &row.id, &instance, &step, &execution,
+                )?
+                .dispatch
+                .require()?;
                 let d = decision(
                     state,
                     &row,
@@ -821,40 +763,16 @@ impl Engine {
                 )?;
             }
             "workflow.step.accept" => {
-                require(
-                    matches!(
-                        execution.status,
-                        StepExecutionStatus::AwaitingAcceptance
-                            | StepExecutionStatus::WaitingConfirmation
-                    ),
-                    "步骤没有可接纳的结果",
-                )?;
-                require(!active_execution(state, &execution), "执行者尚未停止")?;
+                crate::workflow_eligibility::step_actions(
+                    state, &row.id, &instance, &step, &execution,
+                )?
+                .accept
+                .require()?;
                 require(
                     c.payload["execution_id"] == execution.id
                         && c.payload["input_digest"] == execution.input_digest
                         && c.payload["outputs"] == json!(execution.outputs),
                     "接纳结果版本不匹配",
-                )?;
-                let current = facts(state, &instance)?;
-                let overridden = state.governance.iter().any(|r| {
-                    r.r#type == "workflow_confirmation"
-                        && r.definition_id == execution.id
-                        && r.data["override_completion"] == true
-                        && r.data["input_digest"] == execution.input_digest
-                        && r.data["outputs"] == json!(execution.outputs)
-                });
-                require(
-                    rule_satisfied(state, &instance, &step.node_id, &step.completion, &current)
-                        || overridden
-                        || waiver(state, &instance, &step.node_id, "completion"),
-                    "完成条件未满足",
-                )?;
-                require(
-                    step.confirmation != ConfirmationPolicy::Human
-                        || current.approvals.contains(&execution.step)
-                        || waiver(state, &instance, &step.node_id, "confirmation"),
-                    "等待人类决定",
                 )?;
                 decision(
                     state,
@@ -1137,8 +1055,9 @@ impl Engine {
                 let e=instance.steps.iter().find(|e|e.step==step.key).unwrap();
                 let dependencies=step.dependencies.iter().all(|k|instance.steps.iter().any(|e|&e.step==k&&matches!(e.status,StepExecutionStatus::Completed|StepExecutionStatus::Skipped)));
                 let inputs=if e.status==StepExecutionStatus::Queued&&dependencies&&step.condition.evaluate(&current){crate::configured_runtime::material_inputs(step,&current).map(|_|()).map_err(|e|e.message)}else{Ok(())};
-                json!({"step":step.key,"node_id":step.node_id,"execution":e,"dispatchable":!terminal&&!pending&&inputs.is_ok()&&e.status==StepExecutionStatus::Queued&&dependencies&&!s.workflow_instance_suspended(&row.id),"input_gap":inputs.err(),"completion_satisfied":rule_satisfied(&s,&instance,&step.node_id,&step.completion,&current),"completion_overridden":s.governance.iter().any(|r|r.r#type=="workflow_confirmation"&&r.definition_id==e.id&&r.data["override_completion"]==true&&r.data["input_digest"]==e.input_digest&&r.data["outputs"]==json!(e.outputs)),"human_satisfied":step.confirmation!=ConfirmationPolicy::Human||current.approvals.contains(&step.key)||waiver(&s,&instance,&step.node_id,"confirmation")})
-            }).collect::<Vec<_>>();
+                let actions=crate::workflow_eligibility::step_actions_with_facts(&s,&row.id,&instance,step,e,&current)?;
+                Ok(json!({"step":step.key,"node_id":step.node_id,"execution":e,"dispatchable":actions.dispatch.allowed,"actions":actions,"input_gap":inputs.err(),"completion_satisfied":rule_satisfied(&s,&instance,&step.node_id,&step.completion,&current),"completion_overridden":s.governance.iter().any(|r|r.r#type=="workflow_confirmation"&&r.definition_id==e.id&&r.data["override_completion"]==true&&r.data["input_digest"]==e.input_digest&&r.data["outputs"]==json!(e.outputs)),"human_satisfied":step.confirmation!=ConfirmationPolicy::Human||current.approvals.contains(&step.key)||waiver(&s,&instance,&step.node_id,"confirmation")}))
+            }).collect::<Result<Vec<_>>>()?;
             let mut allowed = vec!["inspect"];
             if !terminal {
                 allowed.extend(["preview", "apply", "stop", "cancel"]);
@@ -1146,23 +1065,13 @@ impl Engine {
                 if !pending && steps.iter().any(|s| s["dispatchable"] == true) {
                     allowed.push("dispatch");
                 }
-                if !pending
-                    && instance.steps.iter().any(|e| {
-                        matches!(
-                            e.status,
-                            StepExecutionStatus::AwaitingAcceptance
-                                | StepExecutionStatus::WaitingConfirmation
-                        )
-                    })
+                if steps
+                    .iter()
+                    .any(|step| step["actions"]["accept"]["allowed"] == true)
                 {
                     allowed.push("accept");
                 }
-                if instance.steps.iter().all(|e| {
-                    matches!(
-                        e.status,
-                        StepExecutionStatus::Completed | StepExecutionStatus::Skipped
-                    )
-                }) {
+                if crate::workflow_eligibility::completion_action(&s, &row.id, &instance)?.allowed {
                     allowed.push("complete");
                 }
             }

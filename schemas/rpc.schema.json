@@ -5926,6 +5926,48 @@
         "instructions"
       ],
       "additionalProperties": false
+    },
+    "WorkflowActionEligibility": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable business gate identifier; ready when allowed."
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed",
+        "code",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowStepActions": {
+      "type": "object",
+      "properties": {
+        "dispatch": {
+          "$ref": "#/$defs/WorkflowActionEligibility"
+        },
+        "accept": {
+          "$ref": "#/$defs/WorkflowActionEligibility"
+        },
+        "retry": {
+          "$ref": "#/$defs/WorkflowActionEligibility"
+        }
+      },
+      "required": [
+        "dispatch",
+        "accept",
+        "retry"
+      ],
+      "additionalProperties": false
     }
   },
   "allOf": [

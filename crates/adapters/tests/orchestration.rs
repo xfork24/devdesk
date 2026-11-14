@@ -2474,3 +2474,188 @@ fn switching_agent_to_rust_rejects_already_prepared_native_calls() {
         2
     );
 }
+
+#[test]
+fn foreach_capacity_is_shared_by_inspection_admission_and_rust_selection() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let item = cmd(
+        &e,
+        "delivery_type.create",
+        None,
+        json!({"name":"item","spec_refs":["fixture-spec:1"],"data":{"format":"text"}}),
+    )
+    .unwrap();
+    let items = cmd(&e, "delivery_type.create", None, json!({"name":"items","spec_refs":["fixture-spec:1"],"data":{"format":"json","content_schema":{"type":"array","items":{"type":"string"}}}})).unwrap();
+    let mut child_doc = document();
+    child_doc["inputs"] = json!({"item":{"delivery_ref":item["id"]}});
+    let draft = cmd(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"child","document":child_doc}),
+    )
+    .unwrap();
+    let child = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let parent = json!({"schema_version":6,"stages":[{"key":"work","name":"work"}],"inputs":{"items":{"delivery_ref":items["id"]}},"steps":[{"key":"members","name":"members","stage":"work","executor":{"type":"workflow","workflow_ref":child["id"],"foreach":{"source":{"step":"$input","port":"items"},"item_input":"item","max_concurrency":1,"min_items":2}}}]});
+    let project = cmd(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"capacity","workspace":"/tmp/fixture"}),
+    )
+    .unwrap();
+    let draft = cmd(
+        &e,
+        "workflow.create",
+        None,
+        json!({"name":"parent","document":parent}),
+    )
+    .unwrap();
+    let workflow = cmd(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let root = cmd(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{},"inputs":{"items":["A","B"]}})).unwrap()["id"].as_str().unwrap().to_owned();
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(&root),
+        json!({"step":"members"}),
+    )
+    .unwrap();
+    e.evaluate_workflows().unwrap();
+    let state = e.store.snapshot().unwrap();
+    let mut children: Vec<_> = state
+        .governance
+        .iter()
+        .filter(|r| {
+            r.r#type == "workflow_instance" && r.id != root && r.data["root_instance_id"] == root
+        })
+        .map(|r| r.id.clone())
+        .collect();
+    children.sort();
+    assert_eq!(children.len(), 2);
+    let blocked = &children[0];
+    let running = &children[1];
+    cmd(
+        &e,
+        "workflow.step.dispatch",
+        Some(running),
+        json!({"step":"one"}),
+    )
+    .unwrap();
+    e.evaluate_workflows().unwrap();
+    let observed = runtime(&e, blocked);
+    assert_eq!(observed["steps"][0]["dispatchable"], false);
+    assert_eq!(
+        observed["steps"][0]["actions"]["dispatch"]["code"],
+        "foreach_capacity"
+    );
+    assert!(
+        !observed["allowed_actions"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("dispatch"))
+    );
+    assert_eq!(
+        cmd(
+            &e,
+            "workflow.step.dispatch",
+            Some(blocked),
+            json!({"step":"one"})
+        )
+        .unwrap_err()
+        .code,
+        "blocked"
+    );
+    let policy = rust_policy(&e, 16);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    for _ in 0..24 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    assert_eq!(runtime(&e, &root)["runtime"]["status"], "completed");
+    for child in &children {
+        assert_eq!(runtime(&e, child)["runtime"]["status"], "completed");
+    }
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_dispatch")
+            .count(),
+        5
+    );
+    drop(e);
+    let e = engine(dir.path());
+    e.drive_rust_workflows().unwrap();
+    assert_eq!(
+        e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_dispatch")
+            .count(),
+        5
+    );
+}
+
+#[test]
+fn an_independent_result_progresses_while_another_step_waits_for_a_human() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let mut doc = document();
+    doc["steps"][0]["confirmation"] = json!("human");
+    doc["steps"][1]["dependencies"] = json!([]);
+    let root = start(&e, doc);
+    let policy = rust_policy(&e, 16);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    let view = runtime(&e, &root);
+    assert_ne!(view["runtime"]["steps"][0]["status"], "completed");
+    assert_eq!(view["runtime"]["steps"][1]["status"], "completed");
+    assert_eq!(
+        view["steps"][0]["actions"]["accept"]["code"],
+        "human_confirmation"
+    );
+    let state = e.store.snapshot().unwrap();
+    assert!(
+        !state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_confirmation")
+    );
+    let before = state
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "workflow_dispatch" || r.r#type == "workflow_decision")
+        .count();
+    for _ in 0..3 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(
+        before,
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "workflow_dispatch" || r.r#type == "workflow_decision")
+            .count()
+    );
+}

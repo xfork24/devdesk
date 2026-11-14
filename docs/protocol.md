@@ -186,3 +186,5 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `query.spec_lint` 是只读结构预览；原生 `spec.lint` 受工作台的配置预演权限约束。新增 MachineAssertion/EvidenceLocation 契约见 RPC `$defs`；位置证明针对本次冻结输入，`workflow_output.spec_validation` 是内核生成的检查事实，模型不能通过输出同名字段替代它。
 
 实现依据：[HTTP 与认证](../crates/host/src/main.rs)、[项目及运行时路由](../crates/host/src/workspace.rs)、[配置路由](../crates/host/src/governance.rs)、[RPC Schema](../schemas/rpc.schema.json)、[控制工具](../crates/core/src/controllers.rs)、[经理工具](../crates/core/src/manager_workspace.rs)。
+
+`workflow.inspect` 每步附 `actions`，其 dispatch/accept/retry 使用 RPC `$defs/WorkflowActionEligibility`；`allowed_actions` 仅包含当前业务条件成立的动作，具体身份授权和 CAS 仍在命令入口检查。`query.workflow_driver.waiting` 返回相同动作资格与等待原因，查询不会派发或接纳。

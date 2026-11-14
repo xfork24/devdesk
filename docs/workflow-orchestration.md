@@ -85,3 +85,7 @@ Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.bindin
 完成规则为 false 的 `awaiting_acceptance` 步骤同样出现在驱动等待事项中，标明 `completion` 或 `human_confirmation` 门禁及父子实例路径。诊断不会批准报告、改写完成规则或自动补入缺失证据。
 
 实现依据：[领域原语](../crates/domain/src/workflow.rs)、[变更操作](../crates/domain/src/workflow_change.rs)、[Rust 驱动](../crates/core/src/workflow_driver.rs)、[控制工具](../crates/core/src/controllers.rs)、[公开运行事实](../crates/core/src/workflow_runtime_facts.rs)、[出厂流程](../resources/configuration/workflows/)。
+
+## 共同动作资格
+
+`workflow.inspect` 的每步 `actions.dispatch/accept/retry` 返回 allowed、稳定的阻塞 code 和 reason；dispatchable 与同一派发资格一致。foreach 槽位不足、暂停、输入缺失、完成/人工门禁和真实执行者尚未停止分别表达。Rust、经理和 UI 使用相同事实；提交仍在事务内核对计划、控制身份和当前资格。Rust 在有界 tick 内跳过受阻或陈旧候选，继续处理其他合法工作，不能通过增加额度或绕过门禁推进。

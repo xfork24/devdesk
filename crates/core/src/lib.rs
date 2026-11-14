@@ -26,8 +26,10 @@ mod orchestration;
 mod platform_tools;
 mod standards;
 mod workflow_driver;
+mod workflow_eligibility;
 pub use controllers::CONTROL_TOOLS;
 pub use standards::{compare_work_standards, work_standard_choices, work_standard_selection};
+pub use workflow_eligibility::{WorkflowActionEligibility, WorkflowStepActions};
 mod workflow_changes;
 pub use configured_runtime::task_input as render_source_task;
 pub use configured_runtime::{

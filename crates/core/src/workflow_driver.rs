@@ -294,44 +294,31 @@ impl Engine {
             let instance: ConfiguredWorkflowInstance = row.decode()?;
             let facts = crate::configured_runtime::facts(&s, &instance)?;
             for execution in &instance.steps {
+                let step = instance
+                    .plan
+                    .document
+                    .steps
+                    .iter()
+                    .find(|step| step.node_id == execution.node_id)
+                    .ok_or_else(|| err("storage", "执行合同不存在"))?;
+                let actions = crate::workflow_eligibility::step_actions_with_facts(
+                    &s, &row.id, &instance, step, execution, &facts,
+                )?;
                 let mut gates = vec![];
-                if execution.status == StepExecutionStatus::AwaitingAcceptance {
-                    let step = instance
-                        .plan
-                        .document
-                        .steps
-                        .iter()
-                        .find(|step| step.node_id == execution.node_id)
-                        .ok_or_else(|| err("storage", "执行合同不存在"))?;
-                    let overridden = s.governance.iter().any(|r| {
-                        r.r#type == "workflow_confirmation"
-                            && r.definition_id == execution.id
-                            && r.data["override_completion"] == true
-                            && r.data["input_digest"] == execution.input_digest
-                            && r.data["outputs"] == json!(execution.outputs)
-                    });
-                    if !overridden
-                        && !crate::orchestration::rule_satisfied(
-                            &s,
-                            &instance,
-                            &step.node_id,
-                            &step.completion,
-                            &facts,
-                        )
-                    {
-                        gates.push("completion");
-                    }
-                    if step.confirmation == ConfirmationPolicy::Human
-                        && !facts.approvals.contains(&step.key)
-                        && !crate::orchestration::waiver(
-                            &s,
-                            &instance,
-                            &step.node_id,
-                            "confirmation",
-                        )
-                    {
-                        gates.push("human_confirmation");
-                    }
+                if matches!(
+                    execution.status,
+                    StepExecutionStatus::AwaitingAcceptance
+                        | StepExecutionStatus::WaitingConfirmation
+                ) && !actions.accept.allowed
+                {
+                    gates.push(actions.accept.code);
+                }
+                if execution.status == StepExecutionStatus::Queued
+                    && !actions.dispatch.allowed
+                    && !["dependencies", "execution_state", "terminal"]
+                        .contains(&actions.dispatch.code)
+                {
+                    gates.push(actions.dispatch.code);
                 }
                 if !gates.is_empty()
                     || matches!(
@@ -342,9 +329,7 @@ impl Engine {
                             | StepExecutionStatus::NeedsReconciliation
                     )
                 {
-                    waiting.push(json!({"instance_id":row.id,"execution_id":execution.id,
-                        "step":execution.step,"path":execution.path,"status":execution.status,
-                        "reason":execution.reason,"waiting_for":gates}));
+                    waiting.push(json!({"instance_id":row.id,"execution_id":execution.id,"step":execution.step,"path":execution.path,"status":execution.status,"reason":execution.reason,"waiting_for":gates,"actions":actions}));
                 }
             }
         }
@@ -384,6 +369,7 @@ impl Engine {
                     Ok(Value::Null)
                 })?;
             }
+            let mut rejected = std::collections::BTreeSet::<(String, String, u64)>::new();
             for _ in 0..policy.max_actions_per_tick {
                 let s = self.store.snapshot()?;
                 let driver = s.configuration(&id)?;
@@ -477,6 +463,13 @@ impl Engine {
                             p.allowed_operations.contains(op) && !p.human_operations.contains(op)
                         })
                     };
+                    let candidate_available = |method: &str, execution: &Value| {
+                        !rejected.contains(&(
+                            method.to_owned(),
+                            execution["id"].as_str().unwrap_or("").to_owned(),
+                            instance.data["control_version"].as_u64().unwrap_or(0),
+                        ))
+                    };
                     let mut selected = None;
                     for step in ready["steps"].as_array().into_iter().flatten() {
                         let status = step["execution"]["status"].as_str().unwrap_or("");
@@ -487,6 +480,8 @@ impl Engine {
                             .and_then(|r| r.data["error"]["code"].as_str());
                         if status == "failed"
                             && permits("retry")
+                            && candidate_available("workflow.step.retry", execution)
+                            && step["actions"]["retry"]["allowed"] == true
                             && execution["sequence"].as_u64().unwrap_or(1) <= policy.max_retries
                             && retry_code.is_some_and(|code| {
                                 code != "needs_reconciliation"
@@ -497,15 +492,16 @@ impl Engine {
                             break;
                         }
                         if permits("accept")
-                            && ["awaiting_acceptance", "waiting_confirmation"].contains(&status)
-                            && step["human_satisfied"] == true
-                            && (step["completion_satisfied"] == true
-                                || step["completion_overridden"] == true)
+                            && candidate_available("workflow.step.accept", execution)
+                            && step["actions"]["accept"]["allowed"] == true
                         {
                             selected = Some(("workflow.step.accept", step.clone()));
                             break;
                         }
-                        if permits("dispatch") && step["dispatchable"] == true {
+                        if permits("dispatch")
+                            && step["dispatchable"] == true
+                            && candidate_available("workflow.step.dispatch", execution)
+                        {
                             let contract = instance.data["plan"]["document"]["steps"]
                                 .as_array()
                                 .and_then(|a| a.iter().find(|d| d["key"] == step["step"]));
@@ -540,6 +536,11 @@ impl Engine {
                         break;
                     }
                     if permits("complete")
+                        && !rejected.contains(&(
+                            "workflow.complete".into(),
+                            instance.id.clone(),
+                            instance.data["control_version"].as_u64().unwrap_or(0),
+                        ))
                         && ready["allowed_actions"]
                             .as_array()
                             .is_some_and(|v| v.contains(&json!("complete")))
@@ -570,9 +571,28 @@ impl Engine {
                     s.projects.first().map(|p| p.id.clone()),
                 );
                 // This transaction persists the decision and any worker intent before external I/O.
+                let candidate = (
+                    method.to_owned(),
+                    c.payload["execution_id"]
+                        .as_str()
+                        .or(c.target.as_deref())
+                        .unwrap_or("")
+                        .to_owned(),
+                    c.payload["control_version"]
+                        .as_u64()
+                        .or_else(|| {
+                            s.configuration(c.target.as_deref().unwrap_or(""))
+                                .ok()
+                                .and_then(|r| r.data["control_version"].as_u64())
+                        })
+                        .unwrap_or(0),
+                );
                 match self.execute_in_context(method, c, &context) {
                     Ok(_) => {}
                     Err(error) => {
+                        let stale_or_waiting = ["blocked", "revision_conflict", "change_pending"]
+                            .contains(&error.code.as_str());
+                        rejected.insert(candidate);
                         self.store.transact(None, &mut |state| {
                             let old = state.configuration(&id)?.clone();
                             let mut data = old.data.clone();
@@ -586,7 +606,9 @@ impl Engine {
                             }
                             Ok(Value::Null)
                         })?;
-                        break;
+                        if !stale_or_waiting {
+                            break;
+                        }
                     }
                 }
             }

@@ -1668,10 +1668,13 @@ impl Engine {
                                 ),
                             "此步骤不能技术重试",
                         )?;
-                        require(
-                            rework || execution.sequence <= step.budget.retry_limit,
-                            "已达到重试上限",
-                        )?;
+                        if !rework {
+                            crate::workflow_eligibility::step_actions(
+                                state, &row.id, &instance, &step, &execution,
+                            )?
+                            .retry
+                            .require()?;
+                        }
                         let invalidated = instance
                             .plan
                             .document

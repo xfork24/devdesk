@@ -570,3 +570,26 @@ fn configuration_change_contracts_cover_sources_operations_and_precise_edges() {
             .is_valid(&json!({"operations":[]}))
     );
 }
+
+#[test]
+fn workflow_action_eligibility_has_a_published_bounded_shape() {
+    let ready = devdesk_core::WorkflowActionEligibility {
+        allowed: true,
+        code: "ready",
+        reason: String::new(),
+    };
+    let blocked = devdesk_core::WorkflowActionEligibility {
+        allowed: false,
+        code: "foreach_capacity",
+        reason: "子流程并发已满".into(),
+    };
+    SCHEMAS.assert_valid(&definition("WorkflowActionEligibility"), &json!(ready));
+    SCHEMAS.assert_valid(
+        &definition("WorkflowStepActions"),
+        &json!(devdesk_core::WorkflowStepActions {
+            dispatch: blocked,
+            accept: ready.clone(),
+            retry: ready
+        }),
+    );
+}

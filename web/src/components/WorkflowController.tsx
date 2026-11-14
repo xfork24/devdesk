@@ -55,6 +55,7 @@ export function WorkflowController({
       setData({
         ...next,
         driver: driver.driver,
+        driverWaiting: driver.waiting || [],
       });
   }, [request, instance.id, projectId, workspaceOnly]);
   useEffect(() => {
@@ -285,6 +286,20 @@ export function WorkflowController({
                 ? data.driver.data.reason
                 : data.driver.data.reason.message}
             </p>
+          )}
+          {data?.driverWaiting?.length > 0 && (
+            <ul aria-label="调度等待条件">
+              {(data?.driverWaiting || []).slice(0, 12).map((item: Row) => {
+                const gate = Object.values(item.actions || {}).find(
+                  (action: any) => item.waiting_for?.includes(action.code),
+                ) as Row | undefined;
+                return (
+                  <li key={item.execution_id}>
+                    {item.path || item.step}：{gate?.reason || item.reason || item.status}
+                  </li>
+                );
+              })}
+            </ul>
           )}
           <label>
             切换调度模式
