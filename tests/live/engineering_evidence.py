@@ -13,48 +13,68 @@ def frozen_document(connection, frozen):
  return json.loads(source[0])
 
 def verify_chunk_reads(reference, expected, output_id, current, calls, wire_items):
- """Reconstruct a large input from receipts delivered to this exact native turn."""
+ """Reconstruct bytes actually delivered to this turn, including UTF-8 alignment."""
  assert reference['read_tool']=='devdesk_workflow_outputs_read' and reference['complete'] is False
  assert reference['source_output_id']==output_id and reference['pointer']==''
  assert reference['arguments']=={'ids':[output_id],'max_bytes':32768,'offset':0,'pointer':''}
- total=reference['total_bytes'];digest=reference['value_digest'];chunks={}
+ total=reference['total_bytes'];digest=reference['value_digest'];chunks={};requests=[];rejected=[]
  assert total>32768 and re.fullmatch('[0-9a-f]{64}',digest)
  for call in calls:
   request=call['request'];caller=request.get('caller') or {};arguments=request.get('arguments',{})
   if (caller.get('turn_id'),caller.get('session_id'),caller.get('execution_id'))!=(current['turn_id'],current['session_id'],current['id']):continue
   if request.get('definition',{}).get('qualified_name')!='workflow.outputs.read' or arguments.get('ids')!=[output_id] or arguments.get('pointer','')!='':continue
-  assert call['status']=='succeeded','Large input read did not succeed'
-  receipt=call['receipt'];observed=None
+  schema_rejection=call['status']=='failed' and call.get('error',{}).get('code')=='schema_validation'
+  assert call['status']=='succeeded' or schema_rejection,'Large input read did not succeed'
+  observed=None
   for wire in wire_items:
    item=wire['item']
    if item.get('id')!=caller['call_id']:continue
-   assert item['type']=='dynamicToolCall' and item['tool']==reference['read_tool'] and item['status']=='completed' and item['success'] is True
+   assert item['type']=='dynamicToolCall' and item['tool']==reference['read_tool']
+   assert item['status']==('failed' if schema_rejection else 'completed') and item['success'] is (not schema_rejection)
    assert item['arguments']==arguments,'Native read arguments differ from durable request'
    bodies=[]
    for part in item.get('contentItems') or []:
     if part.get('type')!='inputText':continue
     try:bodies.append(json.loads(part['text']))
     except (ValueError,KeyError):continue
-   assert receipt in bodies,'Complete read receipt absent from actual native tool response'
+   actual=call['error'] if schema_rejection else call['receipt']
+   assert actual in bodies,'Complete read receipt absent from actual native tool response'
    observed=wire;break
   assert observed is not None,'Large input read absent from native journal'
-  assert len(receipt['outputs'])==1
+  if schema_rejection:
+   rejected.append({'call_id':caller['call_id'],'journal':observed['journal'],'arguments':arguments,'error':call['error']})
+   continue
+  receipt=call['receipt'];assert len(receipt['outputs'])==1
   chunk=receipt['outputs'][0];offset=chunk['offset'];body=chunk['value_chunk']
-  assert chunk['id']==output_id and chunk['total_bytes']==total and offset==arguments.get('offset',0)
+  assert chunk['id']==output_id and chunk['total_bytes']==total
   assert chunk['data']['provenance']['value_digest']==digest,'Input provenance digest differs'
   end=offset+len(body.encode())
   assert body and 0<=offset<end<=total
   assert chunk['next_offset']==(end if end<total else None),'Invalid next chunk boundary'
-  if offset in chunks:assert chunks[offset]['body']==body,'Repeated read changed its content'
-  chunks[offset]={'body':body,'proof':{'offset':offset,'next_offset':chunk['next_offset'],'utf8_bytes':len(body.encode()),'call_id':caller['call_id'],'journal':observed['journal']}}
- offset=0;parts=[];proof=[]
- while offset<total:
-  assert offset in chunks,'Large input read has a missing chunk at '+str(offset)
-  chunk=chunks[offset];parts.append(chunk['body']);proof.append(chunk['proof']);offset+=chunk['proof']['utf8_bytes']
- body=''.join(parts)
- assert len(body.encode())==total and hashlib.sha256(body.encode()).hexdigest()==digest,'Large input content digest differs'
- assert json.loads(body)==expected,'Read input differs from sealed handoff'
- return {'execution':current['id'],'turn':current['turn_id'],'session':current['session_id'],'source_output_id':output_id,'total_bytes':total,'value_digest':digest,'chunks':proof,'native_delivery_verified':True}
+  key=(offset,end)
+  if key in chunks:assert chunks[key]['body']==body,'Repeated read changed its content'
+  chunks[key]={'body':body,'proof':{'offset':offset,'next_offset':chunk['next_offset'],'utf8_bytes':len(body.encode()),'call_id':caller['call_id'],'journal':observed['journal']}}
+  requests.append((arguments,offset,end))
+ # Overlapping or differently sized reads are valid only when every byte agrees.
+ content=bytearray(total);covered=bytearray(total);proof=[]
+ for (offset,end),chunk in sorted(chunks.items()):
+  for index,value in enumerate(chunk['body'].encode(),offset):
+   if covered[index]:assert content[index]==value,'Overlapping read changed its content'
+   content[index]=value;covered[index]=1
+  proof.append(chunk['proof'])
+ assert all(covered),'Large input read has a missing chunk at '+str(covered.find(0))
+ encoded=bytes(content)
+ assert hashlib.sha256(encoded).hexdigest()==digest,'Large input content digest differs'
+ assert json.loads(encoded)==expected,'Read input differs from sealed handoff'
+ def boundary(position):
+  position=min(position,total)
+  while position<total and encoded[position]&0xc0==0x80:position-=1
+  return position
+ for arguments,offset,end in requests:
+  assert offset==boundary(arguments.get('offset',0)),'Returned offset differs from the requested UTF-8 boundary'
+  budget=max(1024,min(65536,arguments.get('max_bytes',16384)))
+  assert end==boundary(offset+budget),'Returned end differs from the requested UTF-8 boundary'
+ return {'execution':current['id'],'turn':current['turn_id'],'session':current['session_id'],'source_output_id':output_id,'total_bytes':total,'value_digest':digest,'chunks':proof,'rejected_reads':rejected,'native_delivery_verified':True}
 
 def verify_evidence(client, rows, output):
  views={row['id']:client.rpc('query.workflow_instance',{'id':row['id']}) for row in rows}
