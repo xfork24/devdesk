@@ -91,9 +91,9 @@ jobs:
           python3 tests/entrypoints/runtime_preparation.py target/release/devdesk-host
           npm --prefix web run test:e2e
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: e2e-failure-${{ github.event.workflow_run.head_sha }}
+          name: e2e-evidence-${{ github.event.workflow_run.head_sha }}
           path: |
             web/test-results/
             /tmp/devdesk-native-acceptance/

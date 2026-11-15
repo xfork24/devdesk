@@ -43,7 +43,7 @@ GitHub 使用专用仓库既有 PR #41，先读回执，再两次按原 marker �
 
 ## CI 与边界
 
-E2E 在精确提交的 Rust/Web 前置门禁成功后，先加载已有命名 Linux 沙箱策略，再执行 `native_acceptance.py --docker-only --prepare` 的 16 项，随后执行 debug/release HTTP 与浏览器回归；失败时上传原始 native 日志。GitHub 第 17 项保留需要专用仓库认证的显式入口，不向普通 CI 添加业务凭据。17 项的默认 `#[ignore]` 保留外部资源分层，专用入口按实际执行数量失败即停。
+E2E 在精确提交的 Rust/Web 前置门禁成功后，先加载已有命名 Linux 沙箱策略，再执行 `native_acceptance.py --docker-only --prepare` 的 16 项，随后执行 debug/release HTTP 与浏览器回归；成功与失败均归档原始 native 日志、源内容摘要和镜像身份，供远端逐项核对。GitHub 第 17 项保留需要专用仓库认证的显式入口，不向普通 CI 添加业务凭据。17 项的默认 `#[ignore]` 保留外部资源分层，专用入口按实际执行数量失败即停。
 
 Vite 仍提示入口分块约 503.86 kB，属于构建体积提示，未通过提高阈值隐藏；它不属于本次 75 条 ESLint 警告。当前 Vite 未启用 React Refresh 插件，模块边界合格不等于已经验收 Fast Refresh 状态保留。RPC 的动态 any 边界也仍存在，不能将零警告写成完全强类型。
 
