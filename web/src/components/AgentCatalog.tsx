@@ -37,6 +37,7 @@ const labels: Record<string, string> = {
   agent: "Agent",
   model: "Model",
   harness: "Harness",
+  sandbox: "Sandbox",
   runtime_resource: "运行资源",
   orchestration_policy: "调度策略",
   tool: "Tool",
@@ -100,6 +101,13 @@ function initial(kind: string): Row {
         runtime_version: "",
         capabilities: [],
         model_providers: [],
+      };
+    case "sandbox":
+      return {
+        provider: "docker",
+        runtime_version: "1",
+        enforcement: "docker-worker/v1",
+        platforms: ["linux/aarch64", "linux/x86_64"],
       };
     case "tool":
       return {
@@ -194,6 +202,7 @@ export function ResourceEditor({
   installations,
   revision,
   additionalEditor,
+  detailFooter,
 }: {
   kind: string;
   request: Request;
@@ -201,6 +210,7 @@ export function ResourceEditor({
   installations: Row[];
   revision: number;
   additionalEditor?: { label: string; content: ReactNode };
+  detailFooter?: (record: Row | undefined) => ReactNode;
 }) {
   const [showAdditionalEditor, setShowAdditionalEditor] = useState(false);
   const {
@@ -228,7 +238,11 @@ export function ResourceEditor({
   const load = useCallback(async () => {
     const [records, modelProviders, integrationResources, runtimeOptions] =
       await Promise.all([
-        loadCatalog(request, project?.id),
+        loadCatalog(
+          request,
+          project?.id,
+          ["harness", "sandbox"].includes(kind),
+        ),
         request("query.model_providers"),
         ["capability", "agent", "skill"].includes(kind)
           ? loadIntegrationRecords(request, project?.id)
@@ -527,6 +541,20 @@ export function ResourceEditor({
           }}
         >
           <div className="form-grid">
+            {old && ["harness", "sandbox"].includes(kind) && (
+              <RevisionSelect
+                label={`${labels[kind]} 修订`}
+                records={records.filter(
+                  (r) =>
+                    r.type === kind && r.definition_id === old.definition_id,
+                )}
+                value={old.id}
+                onChange={(id) => {
+                  const record = records.find((r) => r.id === id);
+                  if (record) choose(record);
+                }}
+              />
+            )}
             <label>
               名称
               <input
@@ -743,6 +771,42 @@ export function ResourceEditor({
                     />
                   </label>
                 )}
+              </>
+            )}
+            {kind === "sandbox" && (
+              <>
+                <label>
+                  Sandbox 后端
+                  <ActionSelect
+                    aria-label="Sandbox 后端"
+                    value={data.provider}
+                    onChange={(e) => patch({ provider: e.target.value })}
+                  >
+                    <option value="docker">Docker</option>
+                  </ActionSelect>
+                </label>
+                {field("Sandbox 运行版本", "runtime_version", true)}
+                {field("Sandbox 执行合同", "enforcement", true)}
+                <label>
+                  支持平台
+                  <ActionSelect
+                    aria-label="支持平台"
+                    multiple
+                    required
+                    value={data.platforms || []}
+                    onChange={(e) =>
+                      patch({
+                        platforms: Array.from(
+                          e.target.selectedOptions,
+                          (option) => option.value,
+                        ),
+                      })
+                    }
+                  >
+                    <option value="linux/aarch64">linux/aarch64</option>
+                    <option value="linux/x86_64">linux/x86_64</option>
+                  </ActionSelect>
+                </label>
               </>
             )}
             {kind === "harness" && (
@@ -1132,6 +1196,9 @@ export function ResourceEditor({
             </>
           </div>
         </ActionForm>
+        {detailFooter && (
+          <div className="resource-detail-footer">{detailFooter(old)}</div>
+        )}
       </div>
       {error && (
         <p role="alert" className="error">

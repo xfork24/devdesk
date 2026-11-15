@@ -210,12 +210,61 @@ impl Workspace {
             };
             match method {
                 "query.permission_resources" => {
+                    let scope = params["project_id"]
+                        .as_str()
+                        .map_or_else(Scope::global, Scope::project);
+                    let exact = |key: &str, kinds: &[&str]| -> Result<Option<Id>> {
+                        let Some(value) = params.get(key).filter(|v| !v.is_null()) else {
+                            return Ok(None);
+                        };
+                        let reference = value
+                            .as_str()
+                            .ok_or_else(|| err("invalid_params", "权限资源引用必须是字符串"))?;
+                        let record = s.configuration(reference)?;
+                        require(
+                            record.immutable && kinds.contains(&record.r#type.as_str()),
+                            "权限资源引用类型无效",
+                        )?;
+                        require(
+                            record.scope.visible_from(&scope),
+                            "权限资源修订不属于当前作用域",
+                        )?;
+                        Ok(Some(record.id.clone()))
+                    };
+                    let target_ref = exact("target_ref", &["harness", "sandbox"])?;
+                    let profile_ref = exact("profile_ref", &["permission_profile"])?;
+                    // Exact target readers retain the profiles needed to explain old bindings.
+                    let mut historical_profiles: Vec<Id> = s
+                        .governance
+                        .iter()
+                        .filter(|r| {
+                            r.r#type == "permission_binding"
+                                && Some(r.data["target"]["revision_id"].as_str().unwrap_or(""))
+                                    == target_ref.as_deref()
+                        })
+                        .filter_map(|r| r.data["permission_revision_id"].as_str())
+                        .filter_map(|id| s.configuration(id).ok().map(|p| p.definition_id.clone()))
+                        .collect();
+                    if let Some(profile_ref) = &profile_ref {
+                        historical_profiles
+                            .push(s.configuration(profile_ref)?.definition_id.clone());
+                    }
+                    let profile_visible = |r: &ConfigurationRecord| {
+                        r.scope.visible_from(&scope)
+                            && (template_record_current(&s, r)
+                                || historical_profiles.contains(&r.definition_id))
+                    };
                     let installations = self.global.runtime_installations()?;
-                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.r#type.as_str()) && r.immutable && template_record_current(&s,r))
+                    let targets:Vec<_>=s.governance.iter().filter(|r|["harness","sandbox"].contains(&r.r#type.as_str()) && r.immutable && r.scope.visible_from(&scope) && (template_record_current(&s,r) || target_ref.as_deref() == Some(r.id.as_str())))
                         .filter_map(|r| {
                             let kind=if r.r#type=="harness" {PermissionTargetKind::Harness}else{PermissionTargetKind::Sandbox};
-                            let target=permission_target(&s,kind,&r.id).ok()?;
-                            let contract=permission_contract(&s,&target);
+                            let resolved=permission_target(&s,kind,&r.id);
+                            let target=match &resolved {
+                                Ok(target)=>target.clone(),
+                                Err(_) if target_ref.as_deref()==Some(r.id.as_str())=>PermissionTargetRef {kind,revision_id:r.id.clone(),content_hash:r.content_hash.clone()},
+                                Err(_)=>return None,
+                            };
+                            let contract=resolved.and_then(|target| permission_contract(&s,&target));
                             let active=active_permission_binding(&s,&target);
                             let registered: Vec<_> = installations.iter().filter(|installation| {
                                 r.r#type == "harness"
@@ -225,7 +274,7 @@ impl Workspace {
                                     })
                             }).collect();
                             let materializations:Vec<_>=s.governance.iter().filter(|m|m.r#type=="harness_materialization" && m.definition_id==r.id).map(|m|&m.data).collect();
-                            let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.r#type=="permission_profile" && template_record_current(&s,p))
+                            let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.r#type=="permission_profile" && profile_visible(p))
                                 .filter_map(|p|p.permission_profile().ok().filter(|profile|preflight_profile(&s,&target,profile).is_ok()).map(|profile|profile.id)).collect();
                             Some(json!({"target":target,"name":r.name,"version":r.version,"provider":r.data["provider"],"runtime_version":r.data["runtime_version"],
                                 "platforms":if r.r#type=="sandbox" {r.data["platforms"].clone()}else{json!(["linux/aarch64","linux/x86_64"])},"recipe_digest":r.data["recipe_digest"],"registered_installations":registered,"materializations":materializations,
@@ -235,7 +284,11 @@ impl Workspace {
                     let records = |kind: &str| {
                         s.governance
                             .iter()
-                            .filter(|r| r.r#type == kind && template_record_current(&s, r))
+                            .filter(|r| {
+                                r.r#type == kind
+                                    && r.scope.visible_from(&scope)
+                                    && (kind != "permission_profile" || profile_visible(r))
+                            })
                             .collect::<Vec<_>>()
                     };
                     Ok(
@@ -413,6 +466,104 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_permission_readers_keep_archived_targets_profiles_and_binding_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let sandbox = w.dispatch("sandbox.create", json!({"command_id":id(),"payload":{"name":"Historical sandbox","scope":"global","data":{"provider":"docker","runtime_version":"1","enforcement":"docker-worker/v1","platforms":["linux/aarch64"]}}})).unwrap();
+        let profile = w.dispatch("permission.profile.create", json!({"command_id":id(),"payload":{"identity":"historical-sandbox-policy","name":"Historical policy","target_kind":"sandbox","policy":{"filesystem":{"mode":"read_only"},"network":{"mode":"enabled"}}}})).unwrap();
+        let profile_ref = format!(
+            "{}:{}",
+            profile["identity"].as_str().unwrap(),
+            profile["revision"].as_u64().unwrap()
+        );
+        let target = permission_target(
+            &w.global.snapshot().unwrap(),
+            PermissionTargetKind::Sandbox,
+            sandbox["id"].as_str().unwrap(),
+        )
+        .unwrap();
+        w.dispatch("permission.bindings.apply", json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":profile_ref,"expected_revision":0}]}})).unwrap();
+        let preview = w
+            .dispatch("query.template_reset_preview", json!({}))
+            .unwrap();
+        w.dispatch("configuration.templates.reset", json!({"command_id":id(),"payload":{"expected_catalog_generation":preview["generation"],"catalog_fingerprint":preview["catalog_fingerprint"],"bundle_hash":preview["bundle_hash"]}})).unwrap();
+        let current = w.dispatch("query.permission_resources", json!({})).unwrap();
+        assert!(
+            !current["targets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t["target"]["revision_id"] == sandbox["id"])
+        );
+        assert!(
+            !current["profiles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["identity"] == profile["identity"])
+        );
+        let historical = w
+            .dispatch(
+                "query.permission_resources",
+                json!({"target_ref":sandbox["id"]}),
+            )
+            .unwrap();
+        let selected = historical["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["target"]["revision_id"] == sandbox["id"])
+            .unwrap();
+        assert_eq!(selected["active"]["revision"], 1);
+        assert!(
+            historical["bindings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|b| b["data"]["target"]["revision_id"] == sandbox["id"]
+                    && b["data"]["permission_revision_id"] == profile_ref)
+        );
+        assert!(
+            historical["profiles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["identity"] == profile["identity"])
+        );
+        let linked = w
+            .dispatch(
+                "query.permission_resources",
+                json!({"profile_ref":profile_ref}),
+            )
+            .unwrap();
+        assert!(
+            linked["profiles"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["identity"] == profile["identity"])
+        );
+        assert!(
+            linked["origins"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|o| o["definition_id"] == profile_ref)
+        );
+        assert!(
+            w.dispatch(
+                "query.permission_resources",
+                json!({"target_ref":profile_ref})
+            )
+            .is_err()
+        );
+        assert!(
+            w.dispatch("query.permission_resources", json!({"profile_ref":false}))
+                .is_err()
+        );
+    }
 
     #[test]
     fn preset_folder_browsing_selection_and_builtin_recovery_survive_restart() {
@@ -665,6 +816,10 @@ mod tests {
             .unwrap()
             .to_owned();
         let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":format!("project:{project}"),"model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}}})).unwrap();
+        assert!(
+            w.dispatch("query.permission_resources", json!({"target_ref":h["id"]}))
+                .is_err()
+        );
         let catalog = w
             .dispatch("query.permission_resources", json!({"project_id":project}))
             .unwrap();

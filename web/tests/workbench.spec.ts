@@ -524,11 +524,18 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("设置只提供版本化权限并拒绝旧权限接口", async ({ page }) => {
+test("设置移除权限编辑，基础组件提供版本化权限且拒绝旧接口", async ({
+  page,
+}) => {
   await ensureSetup(page);
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Permission 定义与版本绑定" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "基础组件", exact: true }).click();
+  await page.getByRole("tab", { name: "Permission", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Permission 定义", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("旧权限配置兼容入口", { exact: true }),

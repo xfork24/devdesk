@@ -647,6 +647,8 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
   ).toHaveText([
     "Model",
     "Harness",
+    "Sandbox",
+    "Permission",
     "运行资源",
     "调度策略",
     "MCP",

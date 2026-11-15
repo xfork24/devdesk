@@ -3,6 +3,8 @@ import { ResourceEditor } from "./AgentCatalog";
 import { Integrations } from "./Integrations";
 import { StandardManager } from "./StandardManager";
 import { WorkflowManager } from "./WorkflowManager";
+import { PermissionResources } from "./PermissionResources";
+import { PermissionTargetBinding } from "./PermissionTargetBinding";
 import { useGroupTab } from "./configuration-state";
 import { type Request, type Row } from "./rpc-types";
 
@@ -21,6 +23,8 @@ const processTabs = [
 const foundationTabs = [
   ["model", "Model"],
   ["harness", "Harness"],
+  ["sandbox", "Sandbox"],
+  ["permission", "Permission"],
   ["runtime_resource", "运行资源"],
   ["orchestration_policy", "调度策略"],
   ["mcp", "MCP"],
@@ -77,9 +81,28 @@ export function ConfigurationPage({
         />
       ) : tab === "standard" ? (
         <StandardManager request={props.request} project={props.project} />
+      ) : tab === "permission" ? (
+        <>
+          <PermissionResources
+            request={props.request}
+            projectId={props.project?.id}
+            refresh={props.refresh}
+          />
+          <details className="panel permission-context-editor">
+            <summary>执行授权（Permission Context）</summary>
+            <ResourceEditor
+              kind="permission_context"
+              request={props.request}
+              project={props.project}
+              installations={props.installations}
+              revision={0}
+            />
+          </details>
+        </>
       ) : [
           "model",
           "harness",
+          "sandbox",
           "runtime_resource",
           "orchestration_policy",
           "spec",
@@ -92,6 +115,23 @@ export function ConfigurationPage({
           project={props.project}
           installations={props.installations}
           revision={0}
+          detailFooter={
+            tab === "harness" || tab === "sandbox"
+              ? (record) =>
+                  record ? (
+                    <PermissionTargetBinding
+                      request={props.request}
+                      projectId={props.project?.id}
+                      kind={tab}
+                      targetRef={record.id}
+                    />
+                  ) : (
+                    <p className="muted">
+                      保存此组件后，可为确切修订绑定 Permission。
+                    </p>
+                  )
+              : undefined
+          }
         />
       ) : (
         <Integrations

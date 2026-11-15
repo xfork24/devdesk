@@ -16,7 +16,7 @@ Web 是构建后嵌入 Host 的 React 单页应用：默认打开 `http://127.0.
 | 项目管理 | 项目列表与 GitHub 接入；基础 Standard、项目规范覆盖、来源差异预览和项目专属快照；Role→Agent、执行授权、项目经理编排 Agent 与默认驱动；项目接入账户。只保存配置，不启动经理会话或流程 |
 | 流程与规范 | Workflow 编辑器、Delivery、Spec 与结构 lint、Standard 快照/比较/采用；配置依赖与精确修订选择 |
 | 角色与 Agent | Role 职责编辑；Capability（Model+Harness+Tools+Skills）；Agent（仅 Role+Capability 精确组合） |
-| 基础组件 | Model、Harness、MCP、Skills、HTTP 工具、Harness 原生工具（见 [工具与技能接入](tool-skill-integrations.md)） |
+| 基础组件 | Model、Harness、Sandbox、Permission、运行资源、调度策略、MCP、Skills、HTTP 工具、Harness 原生工具；Harness/Sandbox 按确切修订绑定权限，Permission 管理定义、执行授权与预设来源（见 [运行时权限](permissions.md)） |
 | 历史记录 | 当前项目或 Global 的事件与工具调用统一时间线；审批/取消/核对入口；文件结果下载 |
 | 设置 | 内核连接、数据路径、仓库接入状态、权限定义与绑定、模板重置、运行时与凭据、全局并发、退出内核 |
 
@@ -36,10 +36,15 @@ SSE `/events` 通知变化后全量刷新工作区快照；会话详情（1 秒�
 4. **调整**：运行计划变化时在"调整当前运行计划"编辑变更（改任务/增删/绕过/豁免），先预演受影响范围再应用；Agent 提出的受保护流程变更须等人类批准确切请求，静止等待后原子切换。
 5. **发布**：integration 阶段的候选、候选测试与接纳在页面逐步确认；发布报告与 PR 链接显示在产物与历史中。
 
+## 基础组件中的权限配置
+
+基础组件按 Model → Harness → Sandbox → Permission → 运行资源 → 调度策略 → MCP → Skills → Tools → Harness 原生工具排列。Harness 与 Sandbox 的详情页为所选确切修订管理权限绑定、兼容性预检、构建/平台/安装信息、双层实际执行范围预览及绑定和权限来源历史。新修订不会继承其他目标修订的活动绑定；可通过修订选择器返回旧版本查看历史。
+
+Permission 页面集中提供 Harness/Sandbox 两类权限定义的新建、修订、导入、导出、预设目录选择与重新加载，以及权限修订来源历史；“执行授权（Permission Context）”独立分区管理 Sandbox、双层选择、步骤授权和编排控制策略。实际范围预览基于已应用的双层绑定；尚未应用的权限选择只参与目标兼容性预检。保存权限、导入和重载预设不会自动改绑目标，已有工作继续保留冻结权限。设置页不再提供权限编辑、版本绑定、范围预览或预设来源入口。
+
 ## 设置页导览
 
 - **仓库接入**：GitHub 仓库状态、未完成操作核对、worktree 列表。
-- **权限**：权限定义（JSON 文本域，创建/修订/导入/导出）、目标版本绑定（预检后应用）、预设目录选择与重载（见 [运行时权限](permissions.md)）。
 - **模板**：目录指纹与重置预览/确认（自建定义退出当前目录，绑定与运行保留，见 [存储与数据布局](storage.md)）。
 - **运行时与凭据**：默认 Harness 切换、Codex OAuth 登录、DSH 各服务商 key（写入系统凭据库）、共享安装列表（见 [模型接入](model-providers.md) 与 [系统凭据](system-credentials.md)）。
 - **并发与退出**：全局并发额度（1–32）、项目编辑、退出内核（优雅停机）。

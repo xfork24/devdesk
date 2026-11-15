@@ -10,7 +10,7 @@ import { basename, join } from "node:path";
 
 const ref = (p: any) => `${p.identity}:${p.revision}`;
 
-test("统一权限文件与 UI 修订在运行时绑定确切目标版本", async ({
+test("权限定义迁入基础组件，目标绑定与来源历史按组件管理", async ({
   page,
 }, testInfo) => {
   const consoleErrors: string[] = [];
@@ -35,7 +35,9 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Permission 定义与版本绑定" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByLabel("统一权限 JSON")).toHaveCount(0);
+  await expect(page.getByLabel("执行授权配置")).toHaveCount(0);
   await expect(
     page.getByText("旧权限配置兼容入口", { exact: true }),
   ).toHaveCount(0);
@@ -43,9 +45,23 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   const target = catalog.targets.find(
     (t: any) => t.provider === "codex" && t.supported,
   );
-  await page
-    .getByLabel("权限目标版本", { exact: true })
-    .selectOption(target.target.revision_id);
+  async function openHarness() {
+    await page.goto(
+      `/?tab=components&config_tab=harness&config_object=${encodeURIComponent(target.target.revision_id)}`,
+    );
+    await expect(
+      page.getByRole("region", { name: "Harness 权限绑定" }),
+    ).toBeVisible();
+  }
+  async function openPermissions(profileId?: string) {
+    await page.goto("/?tab=components&config_tab=permission");
+    await expect(
+      page.getByRole("region", { name: "Permission 定义", exact: true }),
+    ).toBeVisible();
+    if (profileId)
+      await page.getByLabel("版本化权限修订").selectOption(profileId);
+  }
+  await openHarness();
   await page.getByText("构建、平台与安装登记", { exact: true }).click();
   await expect(
     page
@@ -55,6 +71,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
       })
       .locator("pre"),
   ).toContainText("linux/aarch64");
+  await openPermissions();
   await page.getByRole("button", { name: "新建权限草稿" }).click();
   const identity = `web-${crypto.randomUUID()}`;
   const policy = {
@@ -100,6 +117,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   const first = (await rpc("query.permission_resources")).profiles.find(
     (p: any) => p.identity === identity,
   );
+  await openHarness();
   await page
     .getByLabel("目标资源权限", { exact: true })
     .selectOption(ref(first));
@@ -129,6 +147,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
       (t: any) => t.target.revision_id === target.target.revision_id,
     ).active;
   const bound = await active();
+  await openPermissions(ref(first));
   await page.getByLabel("统一权限 JSON").fill(
     JSON.stringify({
       ...first,
@@ -153,6 +172,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   const second = (await rpc("query.permission_resources")).profiles.find(
     (p: any) => p.identity === identity && p.revision === 2,
   );
+  await openHarness();
   await page
     .getByLabel("目标资源权限", { exact: true })
     .selectOption(ref(second));
@@ -161,13 +181,9 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
     .poll(async () => (await active()).revision)
     .toBe(bound.revision + 1);
   await page.reload();
-  await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page
-    .getByLabel("权限目标版本", { exact: true })
-    .selectOption(target.target.revision_id);
-  await page
-    .getByLabel("版本化权限修订", { exact: true })
-    .selectOption(ref(first));
+  await expect(
+    page.getByRole("region", { name: "Harness 权限绑定" }),
+  ).toBeVisible();
   await page
     .getByLabel("目标资源权限", { exact: true })
     .selectOption(ref(first));
@@ -175,6 +191,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   await expect
     .poll(async () => (await active()).revision)
     .toBe(bound.revision + 2);
+  await openPermissions(ref(first));
   const dataDirectory = (await rpc("permission.source.browse")).path;
   const source = mkdtempSync(join(dataDirectory, "团队 预设-"));
   const file = {
@@ -227,7 +244,7 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
   expect((await active()).revision).toBe(bound.revision + 2);
   // Selection survives a fresh settings view; cancelling leaves it untouched.
   await page.reload();
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await openPermissions(ref(first));
   await page.getByText("预定义来源与历史", { exact: true }).click();
   await expect(page.getByLabel("当前预设目录")).toHaveText(
     realpathSync(source),
@@ -264,4 +281,174 @@ test("统一权限文件与 UI 修订在运行时绑定确切目标版本", asyn
     page.getByText("权限已导入，尚未改变活动绑定。", { exact: true }),
   ).toBeVisible();
   expect(consoleErrors).toEqual([]);
+  await expect(
+    page.getByRole("heading", { name: "目标版本绑定", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByText("执行授权（Permission Context）", { exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "执行授权 管理", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "执行授权配置", exact: true }),
+  ).toBeVisible();
+});
+
+test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查看旧版本", async ({
+  page,
+}, info) => {
+  await page.goto("/");
+  if (
+    (await page.request.get("/capabilities").then((r) => r.json()))
+      .setup_required
+  ) {
+    await page
+      .getByLabel("数据目录")
+      .fill(mkdtempSync(join(tmpdir(), "devdesk-sandbox-web-")));
+    await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+  }
+  const rpc = async (method: string, params: any = {}) => {
+    const result = await page.request
+      .post("/rpc", { data: { jsonrpc: "2.0", id: 1, method, params } })
+      .then((r) => r.json());
+    expect(result.error, JSON.stringify(result)).toBeUndefined();
+    return result.result;
+  };
+  await page.goto("/?tab=components&config_tab=sandbox");
+  await expect(
+    page.getByRole("tablist", { name: "配置类别" }).getByRole("tab"),
+  ).toHaveText([
+    "Model",
+    "Harness",
+    "Sandbox",
+    "Permission",
+    "运行资源",
+    "调度策略",
+    "MCP",
+    "Skills",
+    "Tools",
+    "Harness原生工具",
+  ]);
+  const editor = page.getByRole("region", {
+    name: "Sandbox 管理",
+    exact: true,
+  });
+  await editor
+    .getByLabel("名称", { exact: true })
+    .fill("浏览器 Sandbox 独立版本");
+  await expect(
+    editor.getByRole("button", { name: "应用到该目标版本" }),
+  ).toHaveCount(0);
+  await editor
+    .getByRole("button", { name: "创建 Sandbox", exact: true })
+    .click();
+  const panel = editor.getByRole("region", { name: "Sandbox 权限绑定" });
+  await expect(panel).toBeVisible();
+  const original = new URL(page.url()).searchParams.get("config_object")!;
+  const available = await rpc("query.permission_resources", {
+    target_ref: original,
+  });
+  const compatible = await panel
+    .getByLabel("目标资源权限")
+    .locator("option")
+    .evaluateAll((nodes) =>
+      nodes.map((n) => (n as HTMLOptionElement).value).filter(Boolean),
+    );
+  expect(compatible.length).toBeGreaterThan(0);
+  expect(
+    available.profiles
+      .filter((p: any) => compatible.includes(ref(p)))
+      .every((p: any) => p.data.target_kind === "sandbox"),
+  ).toBe(true);
+  await panel
+    .getByLabel("目标资源权限")
+    .selectOption("builtin-permission-sandbox-full-access:1");
+  await panel
+    .getByRole("button", { name: "预检目标绑定", exact: true })
+    .click();
+  await expect(
+    panel.getByText("目标兼容性预检通过，仍需实际执行范围校验。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await panel
+    .getByRole("button", { name: "应用到该目标版本", exact: true })
+    .click();
+  await expect(panel.getByText(/活动绑定已更新/)).toBeVisible();
+  const before = (
+    await rpc("query.permission_resources", { target_ref: original })
+  ).targets.find((t: any) => t.target.revision_id === original).active;
+  await panel.getByText("实际执行范围预览", { exact: true }).click();
+  const harness = available.targets.find(
+    (t: any) =>
+      t.target.kind === "harness" && t.provider === "codex" && t.supported,
+  );
+  await panel
+    .getByLabel("Harness 组合目标")
+    .selectOption(harness.target.revision_id);
+  const preview = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/rpc") &&
+      request.postDataJSON()?.method === "permission.binding.preflight" &&
+      !!request.postDataJSON().params.selection,
+  );
+  await panel.getByRole("button", { name: "预览两层实际权限" }).click();
+  expect((await preview).postDataJSON().params).toMatchObject({
+    harness_ref: harness.target.revision_id,
+    selection: { sandbox_ref: original },
+  });
+  await expect(
+    panel.getByText("完整范围预览通过；正式执行仍由协调器核验并冻结。", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await panel.getByText("目标绑定历史", { exact: true }).click();
+  await expect(
+    panel.getByText("绑定 v1 · 当前", { exact: true }),
+  ).toBeVisible();
+  await panel.getByText("权限修订与来源历史", { exact: true }).click();
+  await panel.getByText("权限解析结果", { exact: true }).click();
+  await page.screenshot({
+    path: info.outputPath("sandbox-permission-binding.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 600, height: 900 });
+  await panel.screenshot({
+    path: info.outputPath("sandbox-permission-binding-mobile.png"),
+  });
+  expect(
+    (await panel.boundingBox())!.x + (await panel.boundingBox())!.width,
+  ).toBeLessThanOrEqual(600);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await editor
+    .getByLabel("名称", { exact: true })
+    .fill("浏览器 Sandbox 后继版本");
+  await editor
+    .getByRole("button", { name: "保存 Sandbox 新版本", exact: true })
+    .click();
+  await expect(editor.getByLabel("Sandbox 修订")).not.toHaveValue(original);
+  await expect(panel.getByText(/当前绑定：尚未分配/)).toBeVisible();
+  await expect(panel.getByLabel("目标资源权限")).toHaveValue("");
+  await editor.getByLabel("Sandbox 修订").selectOption(original);
+  await expect(panel.getByText(/当前绑定：.*revision 1/)).toBeVisible();
+  expect(
+    (
+      await rpc("query.permission_resources", { target_ref: original })
+    ).targets.find((t: any) => t.target.revision_id === original).active,
+  ).toEqual(before);
+  await page.reload();
+  await expect(editor.getByLabel("Sandbox 修订")).toHaveValue(original);
+  await expect(panel.getByText(/当前绑定：.*revision 1/)).toBeVisible();
+  await panel.getByRole("link", { name: "查看 Permission 定义与来源" }).click();
+  await expect(page.getByLabel("权限类型", { exact: true })).toHaveValue(
+    "sandbox",
+  );
+  await expect(page.getByLabel("版本化权限修订")).toHaveValue(
+    "builtin-permission-sandbox-full-access:1",
+  );
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: /权限绑定|Permission 定义/ }),
+  ).toHaveCount(0);
 });

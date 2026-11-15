@@ -58,7 +58,6 @@ import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
 import { WorkflowMaterials } from "./components/WorkflowMaterials";
 import { RepositorySettings } from "./components/RepositorySettings";
 import { RoleConversation } from "./components/RoleConversation";
-import { PermissionSettings } from "./components/PermissionSettings";
 import { RuntimeSettings } from "./components/RuntimeSettings";
 import { RuntimePreparationStatus } from "./components/RuntimePreparationStatus";
 import {
@@ -246,6 +245,7 @@ function App() {
       "config_object",
       "workflow_id",
       "standard_id",
+      "permission_ref",
     ]) {
       const value = new URLSearchParams(location.search).get(key);
       if (value) params.set(key, value);
@@ -1586,12 +1586,6 @@ function App() {
                     refresh={load}
                   />
                 )}
-                <PermissionSettings
-                  key={`permission-settings:${catalogGeneration}`}
-                  request={rpc}
-                  project={project ?? undefined}
-                  refresh={load}
-                />
                 <TemplateSettings request={rpc} refresh={load} />
                 <RuntimeSettings
                   provider={data.default_harness || "codex"}

@@ -2397,6 +2397,55 @@ pre {
   max-width: 100%;
 }
 
+/* Permission details follow the selected resource revision in the editor. */
+.resource-detail-footer {
+  grid-column: 2;
+  min-width: 0;
+}
+.permission-target-binding {
+  border-top: 1px solid #e2e7ef;
+  padding-top: 18px;
+  overflow-wrap: anywhere;
+}
+.permission-target-binding pre,
+.permission-definitions pre {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.permission-target-binding fieldset {
+  min-width: 0;
+}
+.permission-target-binding label {
+  display: block;
+  margin: 10px 0;
+}
+.permission-target-binding details,
+.permission-definitions details {
+  margin: 14px 0;
+}
+.permission-history-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 10px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf0f5;
+}
+.permission-history-entry pre {
+  flex-basis: 100%;
+}
+.permission-context-editor > summary {
+  padding: 18px 21px;
+}
+@media (max-width: 760px) {
+  .resource-detail-footer {
+    grid-column: 1;
+  }
+}
+
 /* Native select sizing includes every option, rather than only the selection. */
 :root label:has(> select) {
   display: inline-flex;

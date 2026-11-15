@@ -1,78 +1,24 @@
 import { ActionButton, ActionSelect, ActionInput } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { useEffect, useState } from "react";
-import { ResourceEditor } from "./AgentCatalog";
+import { useEffect, useRef, useState } from "react";
 import { DirectoryPicker } from "./DirectoryPicker";
-import { type Request, type Row } from "./rpc-types";
+import { type Request } from "./rpc-types";
+import { PermissionProfileHistory } from "./PermissionProfileHistory";
+import {
+  profileView,
+  profileSource,
+  usePermissionResources,
+  type PermissionProfile as Profile,
+  type PermissionKind,
+} from "./permission-resources-state";
 
-type Profile = {
-  schema_version: number;
-  scope: string;
-  id: string;
-  identity: string;
-  name: string;
-  version: number;
-  target_kind: "harness" | "sandbox";
-  policy: Record<string, unknown>;
-};
-const profileView = (source: Row): Profile => ({
-  ...source.data,
-  scope: source.scope,
-  identity: source.identity,
-  version: source.revision,
-  name: source.name,
-  id: `${source.identity}:${source.revision}`,
-});
-const profileSource = (p: Profile) => ({
-  type: "permission_profile",
-  identity: p.identity,
-  revision: p.version,
-  name: p.name,
-  scope: p.scope,
-  data: { schema_version: 2, target_kind: p.target_kind, policy: p.policy },
-});
-const catalogView = (source: Catalog): Catalog => ({
-  ...source,
-  profiles: source.profiles.map(profileView),
-});
-type Target = {
-  target: {
-    kind: "harness" | "sandbox";
-    revision_id: string;
-    content_hash: string;
-  };
-  name: string;
-  version: number;
-  provider: string;
-  runtime_version: string;
-  supported: boolean;
-  allowed_permission_ids?: string[];
-  unsupported_reason?: string;
-  platforms: string[];
-  recipe_digest?: string;
-  enforcement_contract?: string;
-  registered_installations: unknown[];
-  materializations: unknown[];
-  active?: { revision: number; binding_revision_id: string };
-};
-type Catalog = {
-  profiles: Profile[];
-  targets: Target[];
-  bindings: unknown[];
-  source: { path: string; builtin_path: string; is_builtin: boolean };
-  origins: unknown[];
-  default_sandbox_ref: string;
-};
-
-export function PermissionResources({
-  request,
-  refresh,
-  projectId,
-}: {
+type Props = {
   request: Request;
   refresh: () => Promise<void>;
   projectId?: string;
-}) {
+};
+
+export function PermissionResources({ request, refresh, projectId }: Props) {
   const {
     message,
     setMessage,
@@ -81,77 +27,37 @@ export function PermissionResources({
     endFeedback,
   } = useActionFeedback();
 
-  const [catalog, setCatalog] = useState<Catalog>();
-  const [selected, setSelected] = useState("");
-  const [targetId, setTargetId] = useState("");
-  const [bindingProfileId, setBindingProfileId] = useState("");
+  const [linkedProfile] = useState(
+    () => new URLSearchParams(location.search).get("permission_ref") || "",
+  );
+  const hydrated = useRef(false);
+  const {
+    catalog,
+    error,
+    reload: loadCatalog,
+  } = usePermissionResources(
+    request,
+    projectId,
+    undefined,
+    linkedProfile || undefined,
+  );
+  const [selected, setSelected] = useState(linkedProfile);
+  const [kind, setKind] = useState<PermissionKind>("harness");
   const [draft, setDraft] = useState("");
-
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<unknown>();
   const [choosingSource, setChoosingSource] = useState(false);
-  const [scope, setScope] = useState(
-    '{"work_type":"discussion","writable_paths":[],"read_only_paths":[]}',
-  );
-  const [harnessId, setHarnessId] = useState("");
-  const [sandboxId, setSandboxId] = useState("");
-  useEffect(() => {
-    let active = true;
-    request("query.permission_resources", { project_id: projectId })
-      .then((value: Catalog) => {
-        if (active) setCatalog(catalogView(value));
-      })
-      .catch((e: Error) => {
-        if (active) setMessage(e.message);
-      });
-    return () => {
-      active = false;
-    };
-  }, [request, projectId, setMessage]);
   const profile = catalog?.profiles.find((p) => p.id === selected);
-  const target = catalog?.targets.find(
-    (t) => t.target.revision_id === targetId,
-  );
-  const bindingProfiles = (catalog?.profiles || []).filter(
-    (p) =>
-      target &&
-      p.target_kind === target.target.kind &&
-      (!target.allowed_permission_ids ||
-        target.allowed_permission_ids.includes(p.id)),
-  );
-  const bindingProfile = bindingProfiles.find((p) => p.id === bindingProfileId);
   useEffect(() => {
-    if (!target || !catalog) {
-      setBindingProfileId("");
-      return;
+    if (hydrated.current || !linkedProfile || !catalog) return;
+    const profile = catalog.profiles.find((p) => p.id === linkedProfile);
+    if (profile) {
+      setKind(profile.target_kind);
+      setDraft(JSON.stringify(profileSource(profile), null, 2));
+      hydrated.current = true;
     }
-    const bindingProfiles = (catalog?.profiles || []).filter(
-      (p) =>
-        target &&
-        p.target_kind === target.target.kind &&
-        (!target.allowed_permission_ids ||
-          target.allowed_permission_ids.includes(p.id)),
-    );
-    const active = (catalog.bindings as Row[]).find(
-      (row) => row.id === target.active?.binding_revision_id,
-    );
-    const activeProfile = active?.data?.permission_revision_id;
-    setBindingProfileId((previous) =>
-      bindingProfiles.some((p) => p.id === previous)
-        ? previous
-        : bindingProfiles.some((p) => p.id === activeProfile)
-          ? activeProfile
-          : "",
-    );
-  }, [target, catalog]);
+  }, [catalog, linkedProfile]);
   async function reload() {
-    captureFeedback();
-
-    setCatalog(
-      catalogView(
-        await request("query.permission_resources", { project_id: projectId }),
-      ),
-    );
+    await loadCatalog();
     await refresh();
   }
   async function action(work: () => Promise<void>) {
@@ -198,13 +104,17 @@ export function PermissionResources({
   }
   function edit(p: Profile) {
     setSelected(p.id);
+    setKind(p.target_kind);
     setDraft(JSON.stringify(profileSource(p), null, 2));
-    setPreview(undefined);
+    const params = new URLSearchParams(location.search);
+    params.set("permission_ref", p.id);
+    history.replaceState(null, "", `?${params}`);
   }
   function fresh() {
-    const kind = target?.target.kind || "harness";
     setSelected("");
-    setPreview(undefined);
+    const params = new URLSearchParams(location.search);
+    params.delete("permission_ref");
+    history.replaceState(null, "", `?${params}`);
     setDraft(
       JSON.stringify(
         {
@@ -233,26 +143,42 @@ export function PermissionResources({
   if (!catalog)
     return (
       <section>
-        <p role="status">{message || "正在读取版本化权限…"}</p>
+        <p role="status">{error || message || "正在读取版本化权限…"}</p>
       </section>
     );
   return (
     <>
-      <ResourceEditor
-        kind="permission_context"
-        request={request}
-        project={projectId ? { id: projectId } : undefined}
-        installations={[]}
-        revision={0}
-      />
-      <section className="setting-row">
-        <div>
-          <h3>Permission 定义与版本绑定</h3>
+      <section
+        className="panel permission-definitions"
+        aria-label="Permission 定义"
+      >
+        <div className="integration-content">
+          <h3>Permission 定义</h3>
           <p className="muted">
             保存产生独立修订。应用后，追随目标的新讨论采用新权限，已有讨论在下一轮切换；工程冻结与固定选择保留原版本。
           </p>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
           <fieldset disabled={busy}>
             <legend>权限定义</legend>
+            <label>
+              权限类型
+              <ActionSelect
+                aria-label="权限类型"
+                value={kind}
+                onChange={(e) => {
+                  setKind(e.target.value as PermissionKind);
+                  setSelected("");
+                  setDraft("");
+                }}
+              >
+                <option value="harness">Harness</option>
+                <option value="sandbox">Sandbox</option>
+              </ActionSelect>
+            </label>
             <label>
               权限修订
               <ActionSelect
@@ -268,11 +194,13 @@ export function PermissionResources({
                 }}
               >
                 <option value="">选择权限</option>
-                {catalog.profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {p.target_kind} · v{p.version}
-                  </option>
-                ))}
+                {catalog.profiles
+                  .filter((p) => p.target_kind === kind)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {p.target_kind} · v{p.version}
+                    </option>
+                  ))}
               </ActionSelect>
             </label>
             <ActionButton type="button" onClick={fresh}>
@@ -391,224 +319,12 @@ export function PermissionResources({
               />
             </label>
           </fieldset>
-          <fieldset disabled={busy}>
-            <legend>目标版本绑定</legend>
-            <label>
-              目标资源修订
-              <ActionSelect
-                aria-label="权限目标版本"
-                value={targetId}
-                onChange={(e) => {
-                  captureFeedback();
-
-                  setTargetId(e.target.value);
-                  setPreview(undefined);
-                }}
-              >
-                <option value="">选择 Harness 或 Sandbox 版本</option>
-                {catalog.targets.map((t) => (
-                  <option
-                    key={t.target.revision_id}
-                    value={t.target.revision_id}
-                  >
-                    {t.name} · {t.target.kind} · v{t.version} · {t.provider}{" "}
-                    {t.runtime_version}
-                  </option>
-                ))}
-              </ActionSelect>
-            </label>
-            {target ? (
-              <>
-                <label>
-                  应用到目标的权限
-                  <ActionSelect
-                    aria-label="目标资源权限"
-                    value={bindingProfileId}
-                    onChange={(event) => {
-                      setBindingProfileId(event.target.value);
-                      setPreview(undefined);
-                    }}
-                    required
-                  >
-                    <option value="" disabled>
-                      {bindingProfiles.length
-                        ? "请选择可应用的权限修订"
-                        : "此目标没有兼容的权限修订"}
-                    </option>
-                    {bindingProfiles.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} · v{p.version} · {p.target_kind}
-                      </option>
-                    ))}
-                  </ActionSelect>
-                </label>
-                <p className="muted">
-                  仅列出与目标类型及执行能力兼容的权限。此选择独立于上方的权限编辑器。
-                </p>
-                <p>
-                  当前绑定：{target.active?.binding_revision_id || "尚未分配"} ·
-                  revision {target.active?.revision || 0}
-                  {!target.supported ? ` · ${target.unsupported_reason}` : ""}
-                </p>
-                <details>
-                  <summary>构建、平台与安装登记</summary>
-                  <p className="muted">
-                    安装登记仍需在执行前核验。目标兼容性预检不会下载或安装运行环境。
-                  </p>
-                  <pre>
-                    {JSON.stringify(
-                      {
-                        target: target.target,
-                        platforms: target.platforms,
-                        recipe_digest: target.recipe_digest,
-                        enforcement_contract: target.enforcement_contract,
-                        registered_installations:
-                          target.registered_installations,
-                        materializations: target.materializations,
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </details>
-              </>
-            ) : null}
-            <div className="actions">
-              <ActionButton
-                type="button"
-                disabled={!bindingProfile || !target}
-                onClick={() => {
-                  captureFeedback();
-                  return action(async () => {
-                    setPreview(
-                      await request("permission.binding.preflight", {
-                        project_id: projectId,
-                        target: target!.target,
-                        permission_revision_id: bindingProfile!.id,
-                      }),
-                    );
-                    setMessage("目标兼容性预检通过，仍需实际执行范围校验。");
-                  });
-                }}
-              >
-                预检目标绑定
-              </ActionButton>
-              <ActionButton
-                type="button"
-                disabled={!bindingProfile || !target || !target.supported}
-                onClick={() => {
-                  captureFeedback();
-                  return action(async () => {
-                    await command("permission.bindings.apply", {
-                      bindings: [
-                        {
-                          target: target!.target,
-                          permission_revision_id: bindingProfile!.id,
-                          expected_revision: target!.active?.revision || 0,
-                        },
-                      ],
-                    });
-                    await reload();
-                    setMessage(
-                      "活动绑定已更新；已有工作保留冻结权限，追随目标的讨论将在下一轮切换。",
-                    );
-                  });
-                }}
-              >
-                应用到该目标版本
-              </ActionButton>
-            </div>
-          </fieldset>
-          <details>
-            <summary>实际执行范围预览</summary>
-            <label>
-              Harness 组合目标
-              <ActionSelect
-                value={harnessId}
-                onChange={(e) => {
-                  captureFeedback();
-                  return setHarnessId(e.target.value);
-                }}
-              >
-                <option value="">选择 Harness 修订</option>
-                {catalog.targets
-                  .filter((t) => t.target.kind === "harness")
-                  .map((t) => (
-                    <option
-                      key={t.target.revision_id}
-                      value={t.target.revision_id}
-                    >
-                      {t.name} · v{t.version}
-                    </option>
-                  ))}
-              </ActionSelect>
-            </label>
-            <label>
-              Sandbox 组合目标
-              <ActionSelect
-                value={sandboxId}
-                onChange={(e) => {
-                  captureFeedback();
-                  return setSandboxId(e.target.value);
-                }}
-              >
-                <option value="">选择 Sandbox 修订</option>
-                {catalog.targets
-                  .filter((t) => t.target.kind === "sandbox")
-                  .map((t) => (
-                    <option
-                      key={t.target.revision_id}
-                      value={t.target.revision_id}
-                    >
-                      {t.name} · v{t.version}
-                    </option>
-                  ))}
-              </ActionSelect>
-            </label>
-            <label>
-              ExecutionScope JSON
-              <textarea
-                value={scope}
-                onChange={(e) => {
-                  captureFeedback();
-                  return setScope(e.target.value);
-                }}
-                rows={5}
-              />
-            </label>
-            <ActionButton
-              type="button"
-              disabled={busy || !harnessId || !sandboxId}
-              onClick={() => {
-                captureFeedback();
-                return action(async () => {
-                  setPreview(
-                    await request("permission.binding.preflight", {
-                      project_id: projectId,
-                      harness_ref: harnessId,
-                      selection: {
-                        sandbox_ref: sandboxId,
-                        harness: { mode: "follow_target" },
-                        sandbox: { mode: "follow_target" },
-                      },
-                      scope: JSON.parse(scope),
-                    }),
-                  );
-                  setMessage(
-                    "完整范围预览通过；正式执行仍由协调器核验并冻结。",
-                  );
-                });
-              }}
-            >
-              预览两层实际权限
-            </ActionButton>
-          </details>
-          {preview !== undefined ? (
-            <details open>
-              <summary>权限解析结果</summary>
-              <pre>{JSON.stringify(preview, null, 2)}</pre>
-            </details>
-          ) : null}
+          <PermissionProfileHistory
+            catalog={catalog}
+            profileId={selected}
+            onSelect={edit}
+            disabled={busy}
+          />
           <details>
             <summary>预定义来源与历史</summary>
             <p>
@@ -686,7 +402,11 @@ export function PermissionResources({
             ) : null}
             <pre>
               {JSON.stringify(
-                { bindings: catalog.bindings, origins: catalog.origins },
+                {
+                  origins: catalog.origins.filter(
+                    (origin) => !selected || origin.definition_id === selected,
+                  ),
+                },
                 null,
                 2,
               )}

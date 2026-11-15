@@ -92,7 +92,7 @@ Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和
 
 ## Permission 运行时资源
 
-`query.permission_resources` 返回 v2 profiles、绑定修订、确切目标版本、活动分配与来源。可携带 project_id 读取当前项目可见资源；省略时只读取全局目录。v1 权限接口、预设与覆盖字段均已移除。
+`query.permission_resources` 返回 v2 profiles、绑定修订、确切目标版本、活动分配与来源。可携带 project_id 读取当前项目可见资源；省略时只读取全局目录。可选 target_ref 精确定位 Harness/Sandbox 修订，在当前目录外仍保留该目标及其绑定所需的权限修订历史；profile_ref 定位 Permission 修订并保留同一逻辑定义的修订来源，供历史链接查看。两者校验源类型、不可变修订与作用域；已停用目标仅返回不可应用的历史视图。v1 权限接口、预设与覆盖字段均已移除。
 
 新增命令均使用 Command：`permission.profile.create/revise` 的 payload 为 identity（创建时）、name、target_kind、policy；revise 的 target 是原修订 ID，expected_revision 为原版本。`permission.profile.import` 接受 payload.profiles，批次原子；`permission.profile.reload` 只读取当前唯一预设目录，payload.builtin=true 时读取内置目录并在成功后恢复内置来源，失败不切换。`permission.source.select` 接受 payload.path，必须为存在的普通绝对目录；选择替换当前来源并持久化，需显式重新加载。`permission.source.browse({path?})` 返回 path、parent、directories 和 locations，仅列出普通子目录，省略 path 从数据目录开始，供文件夹选择窗口使用。`query.permission_resources` 的 source 返回 path、builtin_path、is_builtin；不再返回多来源列表或支持追加登记。
 
