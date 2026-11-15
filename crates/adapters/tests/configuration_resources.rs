@@ -486,10 +486,12 @@ fn delivery_catalog_has_content_standards_and_real_diff_ports() {
     ] {
         assert!(command(&e, method, None, json!({"name":"Invalid", "data":data})).is_err());
     }
-    for kind in ["feature", "task"] {
-        let workflow = state
-            .configuration(&format!("builtin-workflow-{kind}-sol-high:7"))
-            .unwrap();
+    let defaults = e.configuration_defaults(None).unwrap();
+    for (kind, reference) in [
+        ("feature", &defaults["workflow_ref"]),
+        ("task", &defaults["task_workflow_ref"]),
+    ] {
+        let workflow = state.configuration(reference.as_str().unwrap()).unwrap();
         let plan = e
             .compile_configured_workflow(&state, workflow, &Scope::global(), None)
             .unwrap();
