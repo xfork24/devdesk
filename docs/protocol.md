@@ -43,6 +43,8 @@ canonical `agent-task/v6` 包含 Stage 背景、Step 任务、职责、能力、
 
 `workflow.start` 固定 owner、输入、配置闭包和绑定；`query.workflow_instance` 返回 record、runtime、plan、outputs、children，以及按执行 ID 索引的 completion_status（satisfied、当前确切版本的 confirmation）。调用路径、Step key、执行 ID、round 和 sequence 分别表示不同身份。
 
+`query.workflow_materials` 在项目内只读汇总当前工作的交付物，必填 `owner_id`（Project、Feature 或 Task），可传 `project_id` 核对项目。Feature 包含所属 Task 的当前工作流，当前执行指向的嵌套子流程一并读取；历史轮次输出不会冒充当前产物。列表支持 `search`、`offset`、`limit`（默认 20、最多 100），仅返回交付类型、所属工作、流程/步骤、端口及执行状态等索引，不返回正文。传 `output_id` 按需读取同一范围内的单份封存产物和该生产执行计划冻结的 Delivery/Spec 定义。查询不写 Document、Artifact 或工作流状态，不重新验收交付物。
+
 `workflow.pause/resume/cancel` 控制实例。`workflow.step.input` 补充本次任务输入；`workflow.step.confirm` 提交确切 input_digest、outputs 及理由；`workflow.step.retry`、`workflow.step.rework`、`workflow.step.reconcile` 分别处理技术重试、业务返工和未知结果。所有命令都经过当前状态与来源校验。
 
 模型内容报告使用 Spec 当前的任意 key：`approve`、`summary`、`checks[{key,passed,evidence,locations?}]`。拒绝保留原报告；普通 confirm 覆盖完成条件仍要求 Step 明确允许。独立的 `workflow.step.approve` 是显式人工例外入口，payload 必须提供 step、execution_id、input_digest、outputs 和非空 reason；允许 waiting_confirmation 或 awaiting_acceptance 且未请求停止的流程，保存 manual_approval 与 override_completion，绑定确切输入输出，不改写原结论或冻结配置。没有隐藏的固定四项检查。

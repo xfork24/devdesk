@@ -53,6 +53,10 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 - `workflow.change.apply` 校验哈希后：请求受影响执行者停止 → 全部静止 → 受影响执行写入不可变 workflow_execution_history（原始合同与迟到观察保留）→ 后代子实例取消 → 未受影响步骤按 node_id 保留 → 冻结新计划修订。
 - 回退（revert）受限：仅限最近一次应用的纯 UpsertStep 变更，且受影响执行从未启动。
 
+## 材料集中查看
+
+执行与交付的「材料」页集中展示当前 Feature、所属 Task 及嵌套流程的产物，可按交付类型、步骤或工作名称搜索。列表分页读取索引，展开后加载原始封存正文，使用生产执行冻结的 Delivery/Spec 渲染；每项标明所属工作、步骤、端口和接纳状态。步骤内原产出入口继续保留，手工材料修订也仍可独立查看和创建。集中展示不复制文档、不改变接纳事实；旧轮次的来源仍从原工作流历史追溯。
+
 ## TDD 证据链与平台动作门禁
 
 测试与候选的事实只能来自真实回执：`tests.run` 按冻结配方（固定镜像 SHA、文件清单、超时）在无网只读容器执行，区分断言失败与环境失败；`git.candidate` 产出单父提交与确切 diff；`git.advance` 必须持有 WorkflowActionPermit——按计划的 action_requirements 核对与候选匹配的成功测试回执；`git.publish` 用精确租约推送并创建 GitHub PR（平台不合入）。

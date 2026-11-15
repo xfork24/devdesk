@@ -58,6 +58,7 @@ import { CallHistory } from "./components/Integrations";
 import { AgentCatalog } from "./components/AgentCatalog";
 import { WorkStandard } from "./components/WorkStandard";
 import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
+import { WorkflowMaterials } from "./components/WorkflowMaterials";
 import { RepositorySettings } from "./components/RepositorySettings";
 import { RoleConversation } from "./components/RoleConversation";
 import { PermissionSettings } from "./components/PermissionSettings";
@@ -1231,6 +1232,13 @@ function App() {
                 )}
                 {executionTab === "documents" && (
                   <>
+                    <WorkflowMaterials
+                      key={`${projectId}:${f.id}`}
+                      projectId={projectId}
+                      ownerId={f.id}
+                      request={rpc}
+                    />
+                    <h3>材料修订</h3>
                     <ActionButton
                       onClick={() =>
                         show({
