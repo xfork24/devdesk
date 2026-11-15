@@ -59,7 +59,11 @@ jobs:
       # The Host embeds web/dist at compile time, including in debug builds.
       - run: npm --prefix web run build
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
       - run: cargo build --locked -p devdesk-host
       - run: npx playwright install --with-deps chromium
         working-directory: web

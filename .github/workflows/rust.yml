@@ -38,7 +38,11 @@ jobs:
       - run: npm --prefix web ci
       - run: npm --prefix web run build
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked

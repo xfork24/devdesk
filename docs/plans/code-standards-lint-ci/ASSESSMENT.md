@@ -65,6 +65,8 @@ MCP 用例实际测试 stdio 发现、精确工具授权、容器调用回执和
 5. **fork 注释错误**：workflow_run 使用默认分支定义，不等于自动排除 fork。增加显式源仓库 guard；前置检查读取默认分支门禁脚本，测试 checkout 禁止持久化凭据，测试步骤不继承 GH_TOKEN。事件语义依据 [GitHub workflow_run 文档](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)，查询过滤依据 [workflow runs REST API](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow)。
 6. **CI 验收覆盖不足**：原 e2e 只跑 debug 浏览器，缺 HTTP/数据集/运行准备和 release。补齐 debug/release 的真实 Host 边界与 Chromium，并保存失败产物。
 
+7. **首轮远端绿色仍有缓存收尾错误**：完整日志显示 setup-rust-toolchain 默认自带 Swatinem 缓存，原方案又显式运行了一次 rust-cache；两个 post 步骤重复清理 cargo/bin，Linux 后执行者报找不到 cargo，却仍返回成功。根据 [setup-rust-toolchain 的 action.yml](https://github.com/actions-rust-lang/setup-rust-toolchain/blob/v1/action.yml) 核对默认值后，关闭其内置缓存，仅保留显式 rust-cache；本项目不 cargo install 工具，另外关闭 cargo/bin 缓存，避免处理 rustup 管理的代理。以实际 post 日志复验，不只看 workflow conclusion。
+
 ## 交付判断边界
 
 原有机械修改的抽查与逐类 diff 核对未发现需要回滚的业务变化；最终是否可交付，以修复后完整 Rust、HTTP、debug/release 浏览器和远端 CI 结果为依据。格式化成功、旧基线同样失败、单个用例重跑成功，均不单独作为整批改动正确的证明。详细结果和实际 CI 链接统一记录在 [ACCEPTANCE.md](ACCEPTANCE.md)。

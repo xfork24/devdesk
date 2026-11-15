@@ -1,6 +1,6 @@
 # main 补充执行与验收
 
-2026-11-15：main 上的补充实施与本地完整验收已完成。独立判断、原报告中不准确的结论及修复理由见 [ASSESSMENT.md](ASSESSMENT.md)。本文件记录推送前已完成的验证；精确提交的远端 GitHub CI run 链接与结果以最终交付消息为准。
+2026-11-15：main 上的补充实施与本地完整验收已完成。独立判断、原报告中不准确的结论及修复理由见 [ASSESSMENT.md](ASSESSMENT.md)。本文件记录本地验证与首轮远端观察；精确提交的远端 GitHub CI run 链接与结果以最终交付消息为准。
 
 ## 本地结果
 
@@ -47,6 +47,12 @@
 - `permission-schema.log`、`role-without-docker.log`、`ci-gate.log`、`npm-ci-final.log`、`typecheck-final.log`、`format-final.log`：补充边界与类型验证。
 
 HTTP 运行准备专项使用明确的 Docker CLI 协议夹具；MCP 浏览器专项实际使用 Docker。默认测试未调用付费模型或真实业务 GitHub 仓库，也没有把上述结果写成全部原生工程能力已经验收。
+
+## 首轮远端观察与补充修复
+
+提交 `1e634db` 的 [Rust](https://github.com/xfork24/devdesk/actions/runs/43686769199)、[Web](https://github.com/xfork24/devdesk/actions/runs/43686769208)、[实际 e2e](https://github.com/xfork24/devdesk/actions/runs/43687740806) 均成功：Ubuntu Rust 290 / macOS Rust 291 项通过；浏览器 debug 57 项（6.7 分钟）、release 57 项（2.2 分钟）通过，HTTP/数据协议/环境准备全部通过。较早的 [e2e](https://github.com/xfork24/devdesk/actions/runs/43686867520) 仅检查前置并跳过浏览器，未计入通过证据。
+
+继续审读完整日志发现：setup-rust-toolchain 内置缓存和显式 rust-cache 重复执行，Linux post 清理报 `Unable to locate executable file: cargo`，但 action 没有将其传播为失败。补充配置在两个 Rust 工作流中关闭内置缓存，并设置显式缓存 `cache-bin: false`；只缓存构建/依赖，不处理 rustup 的代理。该项以补充提交重新运行后的实际 post 日志为准。原日志保存在 `rust-ci.log` 与 `e2e-ci.log`。
 
 ## 远端 CI 验收合同
 
