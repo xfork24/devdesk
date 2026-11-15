@@ -62,7 +62,7 @@ npm --prefix web ci
 ./scripts/check/check.sh
 ```
 
-检查入口执行权限资产、出厂目录、架构、Web 构建、Rust、HTTP/数据集合同及 debug/release Chromium。默认回归不调用真实付费模型或 GitHub。真实 Git/Docker、模型工程和 Standard 验收使用各自专用入口、独立数据集及明确指定的仓库，见 [测试索引](tests/README.md) 和 [真实工程接入](docs/real-engineering.md)。
+检查入口执行权限资产、出厂目录、架构、风格门禁（rustfmt、clippy、ESLint、Prettier）、Web 构建、Rust、HTTP/数据集合同及 debug/release Chromium。默认回归不调用真实付费模型或 GitHub。真实 Git/Docker、模型工程和 Standard 验收使用各自专用入口、独立数据集及明确指定的仓库，见 [测试索引](tests/README.md) 和 [真实工程接入](docs/real-engineering.md)。
 
 仓库职责与改动约束见 [AGENT.md](AGENT.md)，构建/检查/打包命令见 [脚本索引](scripts/README.md)。
 
@@ -70,6 +70,7 @@ npm --prefix web ci
 
 | 主题 | 文档 |
 |---|---|
+| 代码规范 | [Rust 代码规范](docs/code-standards-rust.md)、[Web 代码规范](docs/code-standards-web.md) |
 | 代码阅读 | [crates 总览与文件索引](docs/crates/overview.md)、[完整执行链](docs/crates/execution-flows.md) |
 | 概念与结构 | [领域规范](docs/domain.md)、[结构合同](docs/contracts.md)、[架构设计](docs/design.md) |
 | 流程与规范 | [工作流与编排](docs/workflow-orchestration.md)、[源配置与执行解析](docs/source-configuration.md) |

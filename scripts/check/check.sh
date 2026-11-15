@@ -5,6 +5,7 @@ cd "$(dirname "$0")/../.."
 ./scripts/check/check-permissions.sh
 ./scripts/check/check-defaults.sh
 ./scripts/check/check-architecture.sh
+./scripts/check/check-style.sh
 npm --prefix web run build
 cargo test --workspace --locked
 cargo build --locked -p devdesk-host

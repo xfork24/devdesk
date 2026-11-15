@@ -59,13 +59,13 @@ npm --prefix web ci
 ./scripts/check/check.sh
 ```
 
-该入口检查权限资产、出厂目录、架构、Web、Rust、HTTP/数据集与 debug/release Chromium。按实际改动选择必要检查：纯文档改动核对代码事实、链接和示例即可；协议、状态、持久化和权限改动要覆盖对应边界。Rust 测试位于模块及 `crates/adapters/tests/`，浏览器测试在 `web/tests/`，跨进程检查在 `tests/entrypoints/`。默认回归不调用付费模型或真实 GitHub。
+该入口检查权限资产、出厂目录、架构、风格门禁（`scripts/check/check-style.sh`：rustfmt、clippy `-D warnings`、ESLint、Prettier）、Web、Rust、HTTP/数据集与 debug/release Chromium。按实际改动选择必要检查：纯文档改动核对代码事实、链接和示例即可；协议、状态、持久化和权限改动要覆盖对应边界。Rust 测试位于模块及 `crates/adapters/tests/`，浏览器测试在 `web/tests/`，跨进程检查在 `tests/entrypoints/`。默认回归不调用付费模型或真实 GitHub。
 
 真实 Git/Docker 可用 `scripts/check/check-live.sh --groups git,docker,permissions`。模型/GitHub 工程及 Standard 探针须使用任务已授权的专用认证、数据集和仓库；接口替身、禁外网协议夹具和真实服务验收分别报告。保存实际 Host/脚本内容身份、原始日志、输入产物及失败项，不能靠模型摘要宣布通过。
 
 ## 风格、文档与交付
 
-Rust 使用 rustfmt 与 snake_case/PascalCase；前端保持现有 TypeScript/React 风格，常规 2 空格缩进。参数和状态规则优先使用明确领域类型，保持命令幂等、项目隔离、源修订不可变、历史恢复与迟到回执围栏。
+代码风格以工具链门禁为准：Rust 遵循 rustfmt 默认与 clippy `clippy::all`，Web 遵循 ESLint（typescript-eslint recommended + react-hooks）与 Prettier 默认值；成文规范、豁免协议与警告策略见 [docs/code-standards-rust.md](docs/code-standards-rust.md) 与 [docs/code-standards-web.md](docs/code-standards-web.md)，提交前跑 `./scripts/check/check-style.sh`。参数和状态规则优先使用明确领域类型，保持命令幂等、项目隔离、源修订不可变、历史恢复与迟到回执围栏。
 
 系统行为变更同步更新对应 `docs/*.md`、必要 Schema 和 README 入口。字段和数值从代码/配置验证；展示标签、源修订、SQL 版本、驱动能力和实机验证不能混用。现行文档中给出实现依据，历史验收只描述当时执行。
 
