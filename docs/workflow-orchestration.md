@@ -22,6 +22,14 @@ Workflow 是可发布的流程文档，当前出厂定义记录 schema_version=6
 
 无论哪种模式，**core 都是权威终态裁判**：完成规则求值、证据核验、人工确认语义、权限门禁全部在 Rust 内核；Agent 与前端只能提议，不能裁定。
 
+## 初始需求与人工决策
+
+`feature.create.initial_requirement` 保存用户自然语言描述，并以 `user_request` 冻结到 Workflow 和实际 Agent 任务，子流程继承。它独立于流程声明的类型化 `workflow_inputs`；默认 Feature 无外部输入，无须 JSON。创建表单仅在流程声明了输入时在高级选项显示 JSON 及输入名称、交付类型和必填要求。
+
+需求 Agent 依据本步骤要求的 Spec 判断是否需要澄清；信息充分即可提交，缺少必要事实时返回 needs_input，summary 说明问题。包含人工确认节点的流程启用持久的 human_governance，子流程继承。等待输入只能由人类经步骤或步骤会话回答，Controller、Rust Driver 和 Segment 均不能代答。
+
+受保护流程的计划、范围、验收标准、关键方案和输入变更必须先 preview，再通过 decision.request 请求确切的 workflow.change.apply；人类批准后，Controller 携相同参数和 decision_ref 应用。内核独立于 Controller 策略校验实例、活动计划、完整参数与预演哈希；拒绝、旧版本或其他实例的决定不能使用。Agent 不能自行移除或绕过确认节点、豁免要求，亦不能切换后继工作配置或重启另一流程以规避已确认计划。人类仍可显式调整计划。默认 Controller 不授予豁免能力，计划应用要求人类决定；Task 范围修订也经过同一决定链。源修订显式升级后才影响后续 Feature，既有冻结流程保持原选择。
+
 ## 步骤生命周期与产物接纳
 
 StepExecution 有 10 种状态（queued → running → waiting_input / waiting_confirmation / awaiting_acceptance → completed / failed / cancelled / skipped / needs_reconciliation）。执行完不等于被接纳：
@@ -78,12 +86,12 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 
 ## 默认流程概览
 
-默认入口为 `builtin-workflow-feature-sol-high:6`（7 阶段 22 步）与 `builtin-workflow-task-sol-high:6`（7 阶段 20 步）：
+默认入口为 `builtin-workflow-feature-sol-high:8`（7 阶段 22 步）与 `builtin-workflow-task-sol-high:7`（7 阶段 20 步）：
 
 - **Feature 流程**：requirements（PRD + 独立评审）→ design（基线快照、工程约束、Design Doc + 评审）→ planning（Task Plan + 评审 + tasks.create）→ implementation（foreach 对每个 Task 运行 Task 子流程）→ verification（回归测试配方、版本冻结、真实执行）→ delivery（Feature 报告 + 评审）→ integration（候选、候选测试、候选评审、接纳、发布）。
 - **Task 流程**：tests（读取工作空间、编写独立测试）→ red（测试快照、最小可调用基线、Red 快照、真实 Red）→ implementation（实现、实现快照、Green）→ documentation（只读交付说明、复验）→ review（独立实现评审）→ integration（目标、候选、候选测试、候选评审、接纳、发布）→ handoff（证据封存、完成）。Red 必须是预期失败的真实断言，模块加载或环境错误不能包装为 Red。规则强制 Red 先于实现，测试/实现/评审身份独立，并核对确切代码版本。
 
-两条默认流程的步骤确认均为 automatic。模型产出、独立评审、真实测试、步骤接纳和 Git 门禁仍分别执行；automatic 不代表跳过完成规则。显式选用 human 策略或人工例外时，才产生对应人类决定。
+默认 Feature 的 requirements_review、design_review、plan_review 使用 human 确认：独立 Agent 按 Spec 验收通过后，人类确认本轮确切输入和产物，才能接纳并派发后继步骤。其他 Feature 步骤及默认 Task 步骤保持 automatic。返工会重置受影响执行，原确认不得用于新产物；模型评审不能代替人类确认。
 
 步骤的读写与工具授权不在 Workflow 中，由 Permission Context 的步骤授权叠加（见 [运行时权限](permissions.md)）；Feature/Task 各自可采用的规范见 Standard 快照与工作采用（见 [领域规范](domain.md)）。
 

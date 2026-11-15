@@ -218,6 +218,7 @@ impl Engine {
         c: &Command,
         actor: &WorkflowActor,
     ) -> Result<()> {
+        crate::human_governance::authorize(s, method, c, actor)?;
         if !method.starts_with("workflow.") {
             return Ok(());
         }

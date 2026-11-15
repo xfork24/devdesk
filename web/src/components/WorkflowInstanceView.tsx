@@ -306,6 +306,9 @@ export function WorkflowInstanceView({
                   const completion = data?.completion_status?.[execution.id];
                   const unmet = completion?.satisfied === false;
                   const confirmation = completion?.confirmation;
+                  const humanSatisfied =
+                    completion?.human_satisfied ??
+                    (definition.confirmation !== "human" || !!confirmation);
                   const stepKey = `step:${execution.id}`;
                   const stepOpen = !!open[stepKey];
                   const children = (data?.children || []).filter(
@@ -339,6 +342,46 @@ export function WorkflowInstanceView({
                       </p>
                       {stepOpen ? (
                         <div className="workflow-step-body">
+                          {definition.confirmation === "human" &&
+                            completion &&
+                            execution.status === "waiting_confirmation" &&
+                            !humanSatisfied && (
+                              <div role="status">
+                                <p>
+                                  {unmet
+                                    ? "本步骤验收未通过，需要先返工。"
+                                    : "本步骤验收已通过，请核对产物并确认此版本，后续步骤将等待你的确认。"}
+                                </p>
+                                <div className="reading-links">
+                                  {Object.entries(definition.inputs || {}).map(
+                                    ([name, binding]) => {
+                                      const source = (binding as Row).source;
+                                      const producer =
+                                        source &&
+                                        runtime.steps?.find(
+                                          (s: Row) => s.step === source.step,
+                                        );
+                                      const outputId =
+                                        producer?.outputs?.[source?.port];
+                                      return outputId ? (
+                                        <ReadingLink
+                                          key={name}
+                                          detail="documents"
+                                          projectId={projectId}
+                                          ownerId={runtime.owner_id}
+                                          target={{ output_id: outputId }}
+                                        >
+                                          核对产物 ·{" "}
+                                          {plan.steps.find(
+                                            (s: Row) => s.key === source.step,
+                                          )?.name || name}
+                                        </ReadingLink>
+                                      ) : null;
+                                    },
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           <div className="actions">
                             {execution.status === "queued" && (
                               <ActionButton
@@ -359,7 +402,7 @@ export function WorkflowInstanceView({
                             ].includes(execution.status) && (
                               <ActionButton
                                 type="button"
-                                disabled={busy}
+                                disabled={busy || !humanSatisfied}
                                 onClick={() =>
                                   void act("workflow.step.accept", {
                                     step: execution.step,

@@ -9,6 +9,12 @@ pub(crate) fn freeze_plan(
     scope: &Scope,
     reason: &str,
 ) -> Result<Id> {
+    instance.human_governance |= instance
+        .plan
+        .document
+        .steps
+        .iter()
+        .any(|step| step.confirmation == ConfirmationPolicy::Human);
     instance
         .plan
         .document
@@ -96,7 +102,7 @@ pub(crate) fn freeze_plan(
         reason.into(),
         1,
         None,
-        json!({"owner_id":instance.owner_id,"standard_ref":instance.plan.standard_ref,"workflow_ref":instance.plan.workflow_revision_id,"work_configuration_ref":instance.plan.work_configuration_ref,"instance_id":instance.steps.first().map(|e|&e.workflow_instance_id),"plan":instance.plan,"inputs":instance.inputs,"role_agent_bindings":instance.role_agent_bindings,
+        json!({"owner_id":instance.owner_id,"user_request":instance.user_request,"human_governance":instance.human_governance,"standard_ref":instance.plan.standard_ref,"workflow_ref":instance.plan.workflow_revision_id,"work_configuration_ref":instance.plan.work_configuration_ref,"instance_id":instance.steps.first().map(|e|&e.workflow_instance_id),"plan":instance.plan,"inputs":instance.inputs,"role_agent_bindings":instance.role_agent_bindings,
             "parent_revision_id":if instance.active_plan_revision_id.is_empty(){None}else{Some(&instance.active_plan_revision_id)},"reason":reason}),
         true,
     );
@@ -379,6 +385,10 @@ impl Engine {
         actor: &WorkflowActor,
     ) -> Result<Option<Value>> {
         if method == "workflow.decision.resolve" {
+            require(
+                matches!(actor, WorkflowActor::Human),
+                "只有人类可以签署决定",
+            )?;
             let row = state
                 .configuration(c.target.as_deref().unwrap_or(""))?
                 .clone();

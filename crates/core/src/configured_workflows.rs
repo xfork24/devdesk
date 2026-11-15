@@ -582,6 +582,12 @@ impl Engine {
                     owner_id: "preview".into(),
                     workflow_ref: row.id.clone(),
                     project_id: scope.project_id().unwrap_or("").into(),
+                    user_request: Value::Null,
+                    human_governance: plan
+                        .document
+                        .steps
+                        .iter()
+                        .any(|s| s.confirmation == ConfirmationPolicy::Human),
                     plan,
                     role_agent_bindings: BTreeMap::new(),
                     inputs: BTreeMap::new(),

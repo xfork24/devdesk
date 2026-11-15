@@ -76,6 +76,7 @@ type Field = {
   options?: { value: string; label: string }[];
   optional?: boolean;
   description?: string;
+  advanced?: boolean;
 };
 type DialogSpec = {
   title: string;
@@ -625,6 +626,16 @@ function App() {
     const target = currentActionTarget();
     const generation = projectGeneration.current;
     try {
+      const configuration = data?.configurations
+        ?.filter((r: Row) => r.type === "project_configuration")
+        .sort((a: Row, b: Row) => b.version - a.version)[0];
+      const workflow = configuration?.data?.workflow_ref
+        ? await rpc("query.workflow", {
+            id: configuration.data.workflow_ref,
+            project_id: project?.id,
+          })
+        : undefined;
+      const declaredInputs = Object.entries(workflow?.data?.inputs || {});
       const choices: Row[] = [];
       for (let offset = 0; ;) {
         const page = await rpc("query.workspace", {
@@ -644,19 +655,30 @@ function App() {
         payload: {
           project_id: project?.id,
           require_configuration: true,
-          configuration_revision_id: data?.configurations
-            ?.filter((r: Row) => r.type === "project_configuration")
-            .sort((a: Row, b: Row) => b.version - a.version)[0]?.id,
+          configuration_revision_id: configuration?.id,
         },
         fields: [
           { key: "title", label: "Feature 名称" },
           {
-            key: "workflow_inputs",
-            label: "流程输入（JSON）",
-            type: "json",
-            value: "{}",
-            optional: true,
+            key: "initial_requirement",
+            label: "初始需求",
+            type: "textarea",
+            description:
+              "用自然语言描述你想解决的问题和期望结果。Agent 会按 Spec 判断是否需要进一步澄清。",
           },
+          ...(declaredInputs.length
+            ? [
+                {
+                  key: "workflow_inputs",
+                  label: "流程输入（JSON）",
+                  type: "json" as const,
+                  value: "{}",
+                  optional: true,
+                  advanced: true,
+                  description: `此流程声明的输入：${declaredInputs.map(([name, port]) => `${name}（${(port as Row).required === false ? "可选" : "必填"}，${(port as Row).delivery_ref}）`).join("；")}。各字段值须符合对应交付类型。`,
+                },
+              ]
+            : []),
           {
             key: "predecessor",
             label: "关联前序 Feature（可选）",
@@ -1799,6 +1821,51 @@ function CommandDialog({
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, [close, busy]);
+  const renderField = (f: Field, i: number) =>
+    f.type === "markdown" ? (
+      <MarkdownField
+        key={f.key}
+        label={f.label}
+        value={values[f.key]}
+        required={!f.optional}
+        onChange={(value) => setValues({ ...values, [f.key]: value })}
+      />
+    ) : (
+      <label key={f.key}>
+        {f.label}
+        {f.type === "textarea" || f.type === "json" ? (
+          <textarea
+            aria-label={f.label}
+            autoFocus={i === 0 && !f.advanced}
+            required={!f.optional}
+            value={values[f.key]}
+            onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+          />
+        ) : f.type === "select" ? (
+          <ActionSelect
+            aria-label={f.label}
+            value={values[f.key]}
+            onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+          >
+            {f.options?.map((o) => (
+              <option value={o.value} key={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </ActionSelect>
+        ) : (
+          <input
+            aria-label={f.label}
+            autoFocus={i === 0 && !f.advanced}
+            required={!f.optional}
+            type={f.type === "number" ? "number" : "text"}
+            value={values[f.key]}
+            onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+          />
+        )}
+        {f.description && <span className="muted">{f.description}</span>}
+      </label>
+    );
   return (
     <div className="modal-backdrop">
       <ActionForm
@@ -1828,55 +1895,12 @@ function CommandDialog({
         {spec.fields.length === 0 && (
           <p className="muted">确认执行此领域操作。结果将保存到工程历史。</p>
         )}
-        {spec.fields.map((f, i) =>
-          f.type === "markdown" ? (
-            <MarkdownField
-              key={f.key}
-              label={f.label}
-              value={values[f.key]}
-              required={!f.optional}
-              onChange={(value) => setValues({ ...values, [f.key]: value })}
-            />
-          ) : (
-            <label key={f.key}>
-              {f.label}
-              {f.type === "textarea" || f.type === "json" ? (
-                <textarea
-                  autoFocus={i === 0}
-                  required={!f.optional}
-                  value={values[f.key]}
-                  onChange={(e) =>
-                    setValues({ ...values, [f.key]: e.target.value })
-                  }
-                />
-              ) : f.type === "select" ? (
-                <ActionSelect
-                  aria-label={f.label}
-                  value={values[f.key]}
-                  onChange={(e) =>
-                    setValues({ ...values, [f.key]: e.target.value })
-                  }
-                >
-                  {f.options?.map((o) => (
-                    <option value={o.value} key={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </ActionSelect>
-              ) : (
-                <input
-                  autoFocus={i === 0}
-                  required={!f.optional}
-                  type={f.type === "number" ? "number" : "text"}
-                  value={values[f.key]}
-                  onChange={(e) =>
-                    setValues({ ...values, [f.key]: e.target.value })
-                  }
-                />
-              )}
-              {f.description && <span className="muted">{f.description}</span>}
-            </label>
-          ),
+        {spec.fields.filter((f) => !f.advanced).map(renderField)}
+        {spec.fields.some((f) => f.advanced) && (
+          <details>
+            <summary>高级选项</summary>
+            {spec.fields.filter((f) => f.advanced).map(renderField)}
+          </details>
         )}
         <div className="modal-actions">
           <ActionButton type="button" disabled={busy} onClick={close}>

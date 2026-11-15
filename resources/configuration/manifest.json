@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.14-core-workflow-v1",
+  "bundle_version": "2026.11.15-human-checkpoints-v1",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -53,11 +53,11 @@
       "specs/builtin-spec-located-review-v1.json"
     ],
     "standard": [
-      "standards/builtin-standard-engineering-v4.json"
+      "standards/builtin-standard-engineering-v5.json"
     ],
     "workflow": [
       "workflows/builtin-workflow-task-sol-high-v7.json",
-      "workflows/builtin-workflow-feature-sol-high-v7.json"
+      "workflows/builtin-workflow-feature-sol-high-v8.json"
     ],
     "delivery_type": [
       "deliveries/builtin-delivery-prd-v3.json",
@@ -193,7 +193,7 @@
       "permissions/profiles/builtin-permission-sandbox-full-access-v1.json"
     ],
     "permission_context": [
-      "permissions/bindings/builtin-permission-context-engineering-v5.json"
+      "permissions/bindings/builtin-permission-context-engineering-v6.json"
     ],
     "model_provider": [
       "model-providers/builtin-model-provider-openai-v1.json",

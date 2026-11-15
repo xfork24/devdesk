@@ -2264,6 +2264,96 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
 fn rust_policy(e: &Engine, max_actions: usize) -> String {
     cmd(e,"orchestration_policy.create",None,json!({"name":"Bounded driver","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":max_actions,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}})).unwrap()["id"].as_str().unwrap().into()
 }
+
+#[test]
+fn three_business_checkpoints_block_successors_and_rework_requires_a_new_confirmation() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let keys = ["prd_review", "design_review", "tasks_review", "implement"];
+    let steps: Vec<_> = keys
+        .iter()
+        .enumerate()
+        .map(|(index, key)| {
+            json!({"key":key,"name":key,"stage":"work","executor":{"type":"control"},
+            "dependencies":if index == 0 {vec![]} else {vec![keys[index-1]]},
+            "confirmation":if index < 3 {"human"} else {"automatic"}})
+        })
+        .collect();
+    let root = start(
+        &e,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"关键业务阶段"}],"steps":steps}),
+    );
+    let policy = rust_policy(&e, 16);
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust","policy_ref":policy}),
+    )
+    .unwrap();
+    let mut first_confirmation = Value::Null;
+    for (index, key) in keys[..3].iter().enumerate() {
+        for _ in 0..5 {
+            e.drive_rust_workflows().unwrap();
+            e.evaluate_workflows().unwrap();
+        }
+        let view = runtime(&e, &root);
+        let execution = &view["runtime"]["steps"][index];
+        assert_eq!(execution["status"], "waiting_confirmation");
+        assert_eq!(view["runtime"]["steps"][index + 1]["status"], "queued");
+        let args = json!({"step":key,"execution_id":execution["id"],"input_digest":execution["input_digest"],"outputs":execution["outputs"]});
+        assert!(cmd(&e, "workflow.step.accept", Some(&root), args.clone()).is_err());
+        cmd(&e, "workflow.step.confirm", Some(&root), args.clone()).unwrap();
+        if index == 0 {
+            first_confirmation = args;
+        }
+    }
+    // Before implementation is dispatched, rework the PRD and invalidate all later decisions.
+    cmd(
+        &e,
+        "workflow.step.rework",
+        Some(&root),
+        json!({"step":keys[0]}),
+    )
+    .unwrap();
+    for _ in 0..5 {
+        e.drive_rust_workflows().unwrap();
+        e.evaluate_workflows().unwrap();
+    }
+    let view = runtime(&e, &root);
+    assert_eq!(
+        view["runtime"]["steps"][0]["status"],
+        "waiting_confirmation"
+    );
+    assert_ne!(
+        view["runtime"]["steps"][0]["id"],
+        first_confirmation["execution_id"]
+    );
+    assert_eq!(view["steps"][0]["human_satisfied"], false);
+    assert!(
+        view["runtime"]["steps"].as_array().unwrap()[1..]
+            .iter()
+            .all(|step| step["status"] == "queued")
+    );
+    assert!(
+        cmd(
+            &e,
+            "workflow.step.confirm",
+            Some(&root),
+            first_confirmation.clone()
+        )
+        .is_err()
+    );
+    assert!(cmd(&e, "workflow.step.accept", Some(&root), first_confirmation).is_err());
+    // The guard survives reopening the actual SQLite dataset.
+    drop(e);
+    let e = engine(directory.path());
+    e.drive_rust_workflows().unwrap();
+    assert_eq!(
+        runtime(&e, &root)["runtime"]["steps"][0]["status"],
+        "waiting_confirmation"
+    );
+}
 #[test]
 fn rust_driver_completes_control_graph_and_idle_ticks_have_no_business_writes() {
     let d = tempfile::tempdir().unwrap();

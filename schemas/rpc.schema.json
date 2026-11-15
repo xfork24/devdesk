@@ -5073,6 +5073,21 @@
           "type": "object",
           "additionalProperties": {}
         },
+        "user_request": {
+          "type": "object",
+          "properties": {
+            "feature_id": { "type": "string" },
+            "title": { "type": "string" },
+            "initial_requirement": { "type": "string" }
+          },
+          "required": ["feature_id", "title", "initial_requirement"],
+          "additionalProperties": false
+        },
+        "human_governance": {
+          "type": "boolean",
+          "default": false,
+          "description": "Sticky human ownership of clarification answers and business plan changes; inherited by child workflows."
+        },
         "steps": {
           "type": "array",
           "items": {

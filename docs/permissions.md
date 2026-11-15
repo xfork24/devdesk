@@ -53,6 +53,6 @@ Profile schema v2 强制：Harness profile 必须含 filesystem / network / tool
 
 Permission Context 内嵌 WorkflowControlPolicy：允许的编排操作集合、必须留给人类的操作、可豁免的要求类别（完成/确认/测试/独立性/覆盖）、是否允许修订任务、唤醒预算（轮次/每轮工具调用/超时）。Controller 的每个控制工具调用都经过策略、epoch、租约与预算围栏；留给人类的操作必须持有逐参数匹配的人工决定。
 
-同一策略还约束 Rust 驱动及经理工作台的项目读取、配置预演/应用；共享目录写入另需 `configuration.global.write`。当前默认策略不授予该共享写权限，也不允许修订 Task 业务范围。默认业务步骤均为 automatic，普通推进不需要人类签署；明确配置的 human 门禁仍须逐项核对。
+同一策略还约束 Rust 驱动及经理工作台的项目读取、配置预演/应用；共享目录写入另需 `configuration.global.write`。当前默认策略不授予共享写权限或任何豁免能力。计划应用（含 Task 范围修订）要求绑定确切参数的人类决定；受保护流程的澄清输入必须由人类提供。默认 Feature 的 PRD、Design、Tasks 独立评审后须人类确认，其他步骤按原门禁自动推进。内核的人工决策保护独立于 Controller 策略，宽松策略也不能授权 Agent 代答或自行改写受保护计划。
 
-实现依据：[权限源类型](../crates/domain/src/source.rs)、[默认步骤授权](../resources/configuration/permissions/bindings/builtin-permission-context-engineering-v4.json)、[权限编译](../crates/adapters/src/permissions.rs)、[权限切换](../crates/core/src/permission_switch.rs)。
+实现依据：[权限源类型](../crates/domain/src/source.rs)、[默认步骤授权](../resources/configuration/permissions/bindings/builtin-permission-context-engineering-v6.json)、[权限编译](../crates/adapters/src/permissions.rs)、[权限切换](../crates/core/src/permission_switch.rs)。

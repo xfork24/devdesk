@@ -1,7 +1,7 @@
 {
   "type": "workflow",
   "identity": "builtin-workflow-feature-sol-high",
-  "revision": 7,
+  "revision": 8,
   "name": "默认 Feature 开发流程",
   "scope": "global",
   "data": {
@@ -64,7 +64,7 @@
           "type": "agent",
           "role_ref": "builtin-role-analyst:1"
         },
-        "task_instructions": "使用 PRD Skill 与用户澄清本次 Feature 的目标、范围和验收。信息不足时返回 needs_input 并提出明确问题；充分后提交需求文档。",
+        "task_instructions": "基于 user_request 中用户以自然语言提供的初始需求，使用 PRD Skill 与所要求的 Spec 澄清本次 Feature 的目标、范围和验收。自行依据 Spec 判断是否缺少必要信息；需要澄清时返回 needs_input，在 summary 中提出明确问题并等待用户实际回答。信息充分时提交需求文档，不为提问而提问。不得自行编造用户需求或代替用户确认；独立 Spec 验收通过后仍须等待用户确认。",
         "required_skill_refs": [
           "builtin-skill-prd:2"
         ],
@@ -77,7 +77,7 @@
       },
       {
         "key": "requirements_review",
-        "name": "独立核对 · prd",
+        "name": "PRD 验收与人工确认",
         "stage": "requirements",
         "dependencies": [
           "requirements"
@@ -135,7 +135,8 @@
               "reviewer": "requirements_review"
             }
           ]
-        }
+        },
+        "confirmation": "human"
       },
       {
         "key": "source_workspace",
@@ -310,7 +311,7 @@
       },
       {
         "key": "design_review",
-        "name": "独立核对 · architecture",
+        "name": "Design 验收与人工确认",
         "stage": "design",
         "dependencies": [
           "design"
@@ -384,7 +385,8 @@
               "reviewer": "design_review"
             }
           ]
-        }
+        },
+        "confirmation": "human"
       },
       {
         "key": "planning",
@@ -446,7 +448,7 @@
       },
       {
         "key": "plan_review",
-        "name": "独立核对 · project-planning",
+        "name": "Tasks 验收与人工确认",
         "stage": "planning",
         "dependencies": [
           "planning"
@@ -529,7 +531,7 @@
             }
           ]
         },
-        "confirmation": "automatic"
+        "confirmation": "human"
       },
       {
         "key": "tasks",
