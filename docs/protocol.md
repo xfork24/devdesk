@@ -41,9 +41,16 @@ canonical `agent-task/v6` 包含 Stage 背景、Step 任务、职责、能力、
 
 ## 运行与交互
 
-`workflow.start` 固定 owner、输入、配置闭包和绑定；`query.workflow_instance` 返回 record、runtime、plan、outputs、children，以及按执行 ID 索引的 completion_status（satisfied、当前确切版本的 confirmation）。调用路径、Step key、执行 ID、round 和 sequence 分别表示不同身份。
+`workflow.start` 固定 owner、输入、配置闭包和绑定；`query.workflow_instance` 返回 record、runtime、plan、outputs、children，实际执行者的展示索引 actors，以及按执行 ID 索引的 completion_status（satisfied、当前确切版本的 confirmation）。调用路径、Step key、执行 ID、round 和 sequence 分别表示不同身份。
 
-`query.workflow_materials` 在项目内只读汇总当前工作的交付物，必填 `owner_id`（Project、Feature 或 Task），可传 `project_id` 核对项目。Feature 包含所属 Task 的当前工作流，当前执行指向的嵌套子流程一并读取；历史轮次输出不会冒充当前产物。列表支持 `search`、`offset`、`limit`（默认 20、最多 100），仅返回交付类型、所属工作、流程/步骤、端口及执行状态等索引，不返回正文。传 `output_id` 按需读取同一范围内的单份封存产物和该生产执行计划冻结的 Delivery/Spec 定义。查询不写 Document、Artifact 或工作流状态，不重新验收交付物。
+`query.workflow_materials` 在项目内只读汇总当前工作的交付物，必填 `owner_id`（Project、Feature 或 Task），可传 `project_id` 核对项目。Feature 包含所属 Task 的当前工作流，当前执行指向的嵌套子流程一并读取；历史轮次输出不会冒充当前产物。列表支持 `search`、`offset`、`limit`（默认 20、最多 100），仅返回交付类型、所属工作、流程/步骤、端口及执行状态等索引，不返回正文。列表可用 `execution_id` 限定来源执行；传 `output_id` 独立于搜索和分页读取同一范围内的单份封存产物和该生产执行计划冻结的 Delivery/Spec 定义。查询不写 Document、Artifact 或工作流状态，不重新验收交付物。同范围手工材料的 ID 返回 `{document}`。
+
+`query.workflow_contexts({owner_id,project_id?,instance_id?,agent_instance_id?})` 返回 `{agents}`，按实际 Agent 实例组织当前工作根、Task 根和嵌套流程中的会话/任务轮次索引；不返回全部冻结任务正文。同名实例不合并；缺少身份的会话单独成组。每项保留 instance/execution/session/turn、归档/历史及正文可用标记。传 `session_id,snapshot_id` 只读取属于此范围会话的继承快照。
+
+`query.workflow_executions({owner_id,project_id?,instance_id?,execution_id?})` 列表返回执行元数据及关联材料索引；指定 `execution_id` 返回确切执行、元数据与实际关联的决定、确认、派发意图和公开工具回执。历史执行只在当前选定流程的历史范围内读取。`query.workflow_record({owner_id,project_id?,record_id})` 读取同范围的计划/变更或关联事实；工具调用仅返回 `public_execution_receipt` 表示的公开回执，不返回内部运行时/权限请求。上述查询均只读，不建立业务状态投影。
+
+`query.session({id,project_id?,event_id})` 返回属于指定 Session 的单条原始事件；其余参数沿用会话分页协议。`query.execution_task` 在提供 `project_id` 时核对冻结任务范围。原始 JSON 阅读窗口由 Web 的 `read` 路由按这些来源 ID 读取，不启动工作台轮询或执行命令。
+
 
 `workflow.pause/resume/cancel` 控制实例。`workflow.step.input` 补充本次任务输入；`workflow.step.confirm` 提交确切 input_digest、outputs 及理由；`workflow.step.retry`、`workflow.step.rework`、`workflow.step.reconcile` 分别处理技术重试、业务返工和未知结果。所有命令都经过当前状态与来源校验。
 

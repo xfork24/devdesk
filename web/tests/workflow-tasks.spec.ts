@@ -108,6 +108,7 @@ test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Sp
   await expect(
     preview.getByRole("heading", { name: "可编辑任务正文", exact: true }),
   ).toBeVisible();
+  await preview.getByText("职责、方法与规范", { exact: true }).click();
   await expect(preview.getByRole("group", { name: /Role 职责/ })).toBeVisible();
   await expect(preview.getByRole("group", { name: /Skill ·/ })).toHaveCount(1);
   await expect(preview.getByRole("group", { name: /Spec ·/ })).toHaveCount(1);

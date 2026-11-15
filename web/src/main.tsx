@@ -1,3 +1,4 @@
+import { WorkflowExecutionRecords } from "./components/WorkflowExecutionRecords";
 import { WorkflowContexts } from "./components/WorkflowContexts";
 import { RawJsonReader, readingKeys } from "./components/reading";
 import {
@@ -217,20 +218,55 @@ function App() {
   }>();
   const [setupPath, setSetupPath] = useState("./data");
   const [roleRevision, setRoleRevision] = useState(0);
-  const [focusedSession, setFocusedSession] = useState<RecordData | undefined>(() => route.get("session_id") && route.get("tab") === "discussion" ? {id:route.get("session_id"),owner_id:route.get("task_id") || route.get("feature_id") || route.get("project_id"),project_id:route.get("project_id")} : undefined);
+  const [focusedSession, setFocusedSession] = useState<RecordData | undefined>(
+    () =>
+      route.get("session_id") && route.get("tab") === "discussion"
+        ? {
+            id: route.get("session_id"),
+            owner_id:
+              route.get("task_id") ||
+              route.get("feature_id") ||
+              route.get("project_id"),
+            project_id: route.get("project_id"),
+          }
+        : undefined,
+  );
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
-  const [readingTarget, setReadingTarget] = useState<RecordData>(() => Object.fromEntries(readingKeys.map(key => [key, route.get(key) || ""])));
+  const [readingTarget, setReadingTarget] = useState<RecordData>(() => ({
+    ...Object.fromEntries(
+      readingKeys.map((key) => [key, route.get(key) || ""]),
+    ),
+    _project: route.get("project_id") || "",
+    _feature: route.get("feature_id") || "",
+  }));
   const [executionTab, setExecutionTab] = useState(
     route.get("detail") ||
       (route.get("tab") === "documents" ? "documents" : "overview"),
   );
+  const activeReadingTarget =
+    readingTarget._project === projectId && readingTarget._feature === featureId
+      ? readingTarget
+      : {};
   const [workFilter, setWorkFilter] = useState(route.get("filter") || "");
   const routeApplied = useRef(false);
   useEffect(() => {
     const params = new URLSearchParams();
-    for (const key of ["config_tab", "config_object", "workflow_id", "standard_id", ...readingKeys]) {
+    for (const key of [
+      "config_tab",
+      "config_object",
+      "workflow_id",
+      "standard_id",
+    ]) {
       const value = new URLSearchParams(location.search).get(key);
       if (value) params.set(key, value);
+    }
+    if (
+      !projectId ||
+      (readingTarget._project === projectId &&
+        readingTarget._feature === featureId)
+    ) {
+      for (const key of readingKeys)
+        if (readingTarget[key]) params.set(key, readingTarget[key]);
     }
     params.set("tab", tab);
     if (projectId) params.set("project_id", projectId);
@@ -241,7 +277,15 @@ function App() {
     if (workFilter) params.set("filter", workFilter);
     if (featurePage) params.set("page", String(featurePage));
     const url = `?${params}`;
-    if (location.search !== url) window.history.pushState(null, "", url);
+    if (location.search !== url) {
+      const previous = new URLSearchParams(location.search),
+        canonical = new URLSearchParams(params);
+      previous.sort();
+      canonical.sort();
+      if (previous.toString() === canonical.toString())
+        window.history.replaceState(null, "", url);
+      else window.history.pushState(null, "", url);
+    }
   }, [
     tab,
     projectId,
@@ -278,8 +322,19 @@ function App() {
       setFeatureId(p.get("feature_id") || "");
       setTaskFilter(p.get("task_id") || "");
       setExecutionTab(p.get("detail") || "overview");
-      setReadingTarget(Object.fromEntries(readingKeys.map(key => [key, p.get(key) || ""])));
-      if (p.get("tab") === "discussion" && p.get("session_id")) setFocusedSession({id: p.get("session_id"), owner_id: p.get("task_id") || p.get("feature_id") || pid, project_id: pid});
+      setReadingTarget({
+        ...Object.fromEntries(
+          readingKeys.map((key) => [key, p.get(key) || ""]),
+        ),
+        _project: p.get("project_id") || "",
+        _feature: p.get("feature_id") || "",
+      });
+      if (p.get("tab") === "discussion" && p.get("session_id"))
+        setFocusedSession({
+          id: p.get("session_id"),
+          owner_id: p.get("task_id") || p.get("feature_id") || pid,
+          project_id: pid,
+        });
       setWorkFilter(p.get("filter") || "");
       setFeaturePage(Number(p.get("page") || 0));
     };
@@ -1178,6 +1233,7 @@ function App() {
                     ["overview", "工作流程"],
                     ["documents", "材料"],
                     ["context", "上下文"],
+                    ["records", "执行记录"],
                   ].map(([key, label]) => (
                     <ActionButton
                       key={key}
@@ -1225,11 +1281,14 @@ function App() {
                           request={rpc}
                           projectId={projectId}
                           owner={task}
-                          instance={data?.configurations?.filter(
-                            (r: RecordData) =>
-                              r.type === "workflow_instance" && r.work_root !== false &&
-                              r.data.owner_id === task.id,
-                          ).at(-1)}
+                          instance={data?.configurations
+                            ?.filter(
+                              (r: RecordData) =>
+                                r.type === "workflow_instance" &&
+                                r.work_root !== false &&
+                                r.data.owner_id === task.id,
+                            )
+                            .at(-1)}
                           refresh={load}
                         />
                       </article>
@@ -1243,7 +1302,7 @@ function App() {
                       projectId={projectId}
                       ownerId={f.id}
                       request={rpc}
-                      target={readingTarget}
+                      target={activeReadingTarget}
                       documents={detail.documents}
                     />
                     <h3>材料修订</h3>
@@ -1276,12 +1335,93 @@ function App() {
                     {pager("documents")}
                   </>
                 )}
-                {executionTab === "context" && <WorkflowContexts key={`${projectId}:${f.id}`} projectId={projectId} ownerId={f.id} request={rpc} target={readingTarget} contexts={detail.contexts} onEditContext={context=>show({title:"更新上下文",method:"context.update",target:context.id,fields:[{key:"content",label:"内容",type:"markdown",value:context.content}]})}/>}
-
+                {executionTab === "context" && (
+                  <WorkflowContexts
+                    key={`${projectId}:${f.id}`}
+                    projectId={projectId}
+                    ownerId={f.id}
+                    request={rpc}
+                    target={activeReadingTarget}
+                    contexts={detail.contexts}
+                    onEditContext={(context) =>
+                      show({
+                        title: "更新上下文",
+                        method: "context.update",
+                        target: context.id,
+                        fields: [
+                          {
+                            key: "content",
+                            label: "内容",
+                            type: "markdown",
+                            value: context.content,
+                          },
+                        ],
+                      })
+                    }
+                  />
+                )}
+                {executionTab === "records" && (
+                  <WorkflowExecutionRecords
+                    key={`${projectId}:${f.id}`}
+                    projectId={projectId}
+                    ownerId={f.id}
+                    request={rpc}
+                    target={activeReadingTarget}
+                  />
+                )}
               </section>
             </>
           )}
+          {tab === "execution" && !f && projectId && (
+            <section className="panel">
+              <div className="detail-tabs" role="tablist" aria-label="执行详情">
+                {[
+                  ["overview", "工作流程"],
+                  ["documents", "材料"],
+                  ["context", "上下文"],
+                  ["records", "执行记录"],
+                ].map(([key, label]) => (
+                  <ActionButton
+                    key={key}
+                    role="tab"
+                    aria-selected={executionTab === key}
+                    onClick={() => setExecutionTab(key)}
+                  >
+                    {label}
+                  </ActionButton>
+                ))}
+              </div>
+              {executionTab === "documents" && (
+                <WorkflowMaterials
+                  key={projectId}
+                  projectId={projectId}
+                  ownerId={projectId}
+                  request={rpc}
+                  target={activeReadingTarget}
+                />
+              )}
+              {executionTab === "context" && (
+                <WorkflowContexts
+                  key={projectId}
+                  projectId={projectId}
+                  ownerId={projectId}
+                  request={rpc}
+                  target={activeReadingTarget}
+                />
+              )}
+              {executionTab === "records" && (
+                <WorkflowExecutionRecords
+                  key={projectId}
+                  projectId={projectId}
+                  ownerId={projectId}
+                  request={rpc}
+                  target={activeReadingTarget}
+                />
+              )}
+            </section>
+          )}
           {tab === "execution" &&
+            executionTab === "overview" &&
             !f &&
             data?.configurations
               ?.filter(
@@ -1307,7 +1447,7 @@ function App() {
                   }}
                 />
               ))}
-          {tab === "execution" && !f && (
+          {tab === "execution" && !f && executionTab === "overview" && (
             <section className="panel">
               <h2>Feature 工作队列{workFilter ? ` · ${workFilter}` : ""}</h2>
               {features.map((feature) => (

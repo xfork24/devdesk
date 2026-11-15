@@ -3013,8 +3013,30 @@ impl Engine {
             let frozen_step=if r.r#type=="workflow_execution_history" {state.configuration(r.data["plan_revision_id"].as_str().unwrap_or("")).ok().and_then(|p|p.data["plan"]["document"]["steps"].as_array()).and_then(|steps|steps.iter().find(|s|s["node_id"]==r.data["node_id"]))} else {None};
             json!({"id":r.id,"type":r.r#type,"name":r.name,"data":data,"frozen_step":frozen_step})
         }).collect::<Vec<_>>();
+        let actors: BTreeMap<_, _> = row.data["steps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|execution| {
+                let step = row.data["plan"]["document"]["steps"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|step| step["node_id"] == execution["node_id"])
+                    .unwrap_or(&Value::Null);
+                (
+                    execution["id"].as_str().unwrap_or(""),
+                    crate::workflow_reading::execution_actor(
+                        &state,
+                        execution,
+                        step,
+                        &row.data["plan"]["definitions"],
+                    ),
+                )
+            })
+            .collect();
         Some(Ok(
-            json!({"record":row,"runtime":row.data,"plan":row.data["plan"]["document"],"outputs":outputs,"children":children,"completion_status":completion_status,"history":history}),
+            json!({"record":row,"runtime":row.data,"plan":row.data["plan"]["document"],"outputs":outputs,"children":children,"completion_status":completion_status,"history":history,"actors":actors}),
         ))
     }
 }

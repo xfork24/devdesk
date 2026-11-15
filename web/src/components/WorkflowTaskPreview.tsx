@@ -5,41 +5,203 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
-import { RawJsonLink, ReadableValue, ReadingLink } from "./reading";
+import {
+  LazyDetails,
+  RawJsonLink,
+  ReadableValue,
+  ReadingLink,
+} from "./reading";
 
-export function AgentTaskView({ value, compact = false, projectId, ownerId }: { value: Row; compact?: boolean; projectId?: string; ownerId?: string }) {
+export function AgentTaskView({
+  value,
+  compact = false,
+  projectId,
+  ownerId,
+}: {
+  value: Row;
+  compact?: boolean;
+  projectId?: string;
+  ownerId?: string;
+}) {
   let content = value;
-  for (let level = 0; level < 4 && content.task && typeof content.task === "object" && !content.task_instructions; level++) content = content.task;
+  for (
+    let level = 0;
+    level < 4 &&
+    content.task &&
+    typeof content.task === "object" &&
+    !content.task_instructions;
+    level++
+  )
+    content = content.task;
   const frozen = value.task?.rendered_input ? value.task : value;
-  const instructions = content.task_instructions || (typeof value.task === "string" ? value.task : "");
-  if (!instructions) return <p className="muted">此轮没有 Workflow 步骤冻结任务。</p>;
+  const instructions =
+    content.task_instructions ||
+    (typeof value.task === "string" ? value.task : "");
+  if (!instructions)
+    return <p className="muted">此轮没有 Workflow 步骤冻结任务。</p>;
   const inputSources = content.input_sources || {};
-  return <section aria-label="Agent 任务与上下文" className="reading-body">
-    <h4>任务请求</h4><MarkdownPreview text={compact ? instructions.slice(0, 600) : instructions}/>
-    {compact && instructions.length > 600 && <p className="muted">此处为任务摘要；完整指令在上下文页阅读。</p>}
-    {compact && projectId && ownerId && value.turn_id && <ReadingLink detail="context" projectId={projectId} ownerId={ownerId} target={{turn_id:value.turn_id}}>查看此轮完整上下文</ReadingLink>}
-    {!compact && <>
-      {content.supplemental_input && <><h4>补充请求</h4><MarkdownPreview text={content.supplemental_input}/></>}
-      {content.stage?.description && <><h4>工作背景</h4><MarkdownPreview text={content.stage.description}/></>}
-      <h4>输入材料</h4>
-      {Object.keys(inputSources).length ? Object.entries(inputSources).map(([key, source]) => {
-        const origin=source as Row;
-        return <section key={key}><strong>{key}</strong>{origin.source_output_id && projectId && ownerId ? <p><ReadingLink detail="documents" projectId={projectId} ownerId={ownerId} target={{output_id:origin.source_output_id}}>查看输入材料 · {key}</ReadingLink></p> : <p className="muted">{origin.binding?.type === "constant" ? "冻结常量" : "工作范围输入"}</p>}<details><summary>该输入的来源依据</summary><ReadableValue value={origin}/></details></section>;
-      }) : <p className="muted">未记录独立的输入来源索引。</p>}
-      <details><summary>冻结输入内容</summary><ReadableValue value={content.inputs || value.inputs}/></details>
-      <h4>输出要求</h4>{Object.entries(content.outputs || value.outputs || {}).map(([port, requirement])=>{const r=requirement as Row;return <section key={port}><strong>{r.definition?.name || port}</strong><p>{port} · {r.required ? "必需" : "可选"}{r.content_checks ? " · 需要内容检查" : ""}</p><details><summary>交付规范与检查要求</summary><ReadableValue value={r}/></details></section>;})}
-      <details><summary>职责、方法与规范</summary>
-        {content.role?.role?.data?.instructions && <><h4>Role · {content.role.name}</h4><MarkdownPreview text={content.role.role.data.instructions}/></>}
-        {(content.required_skills || []).map((skill: Row) => <section key={skill.id}><h4>Skill · {skill.name}</h4><MarkdownPreview text={skill.data?.body || skill.body || ""}/></section>)}
-        {[...(content.specifications || []), ...(content.document_specifications || [])].map((spec: Row) => <section key={spec.id}><h4>Spec · {spec.name}</h4><MarkdownPreview text={spec.data?.body || spec.body || ""}/></section>)}
-      </details>
-      <details><summary>完成条件与授权依据</summary><ReadableValue value={{completion:content.completion || value.completion, authorization:content.authorization || value.access}}/></details>
-      {frozen.rendered_input && <details><summary>实际发送的完整输入</summary><pre>{frozen.rendered_input}</pre></details>}
-      <details><summary>冻结来源与运行环境</summary><ReadableValue value={{source:content.source || value.source, runtime_context:content.runtime_context}}/></details>
-    </>}
-    {(value.diagnostics || []).map((line: string) => <p key={line} className="muted">{line}</p>)}
-    {projectId && value.turn_id && <RawJsonLink source="task" params={{project_id:projectId,turn_id:value.turn_id}}/>}
-  </section>;
+  return (
+    <section aria-label="Agent 任务与上下文" className="reading-body">
+      <h4>任务请求</h4>
+      <MarkdownPreview
+        text={compact ? instructions.slice(0, 600) : instructions}
+      />
+      {compact && instructions.length > 600 && (
+        <p className="muted">此处为任务摘要；完整指令在上下文页阅读。</p>
+      )}
+      {compact && projectId && ownerId && value.turn_id && (
+        <ReadingLink
+          detail="context"
+          projectId={projectId}
+          ownerId={ownerId}
+          target={{ turn_id: value.turn_id }}
+        >
+          查看此轮完整上下文
+        </ReadingLink>
+      )}
+      {!compact && (
+        <>
+          {content.supplemental_input && (
+            <>
+              <h4>补充请求</h4>
+              <MarkdownPreview text={content.supplemental_input} />
+            </>
+          )}
+          {content.stage?.description && (
+            <>
+              <h4>工作背景</h4>
+              <MarkdownPreview text={content.stage.description} />
+            </>
+          )}
+          <h4>输入材料</h4>
+          {Object.keys(inputSources).length ? (
+            Object.entries(inputSources).map(([key, source]) => {
+              const origin = source as Row;
+              return (
+                <section key={key}>
+                  <strong>{key}</strong>
+                  {origin.source_output_id && projectId && ownerId ? (
+                    <p>
+                      <ReadingLink
+                        detail="documents"
+                        projectId={projectId}
+                        ownerId={ownerId}
+                        target={{ output_id: origin.source_output_id }}
+                      >
+                        查看输入材料 · {key}
+                      </ReadingLink>
+                    </p>
+                  ) : (
+                    <p className="muted">
+                      {origin.binding?.type === "constant"
+                        ? "冻结常量"
+                        : "工作范围输入"}
+                    </p>
+                  )}
+                  {!origin.source_output_id && (
+                    <ReadableValue value={content.inputs?.[key]} />
+                  )}
+                  <LazyDetails summary="该输入的来源依据">
+                    <ReadableValue value={origin} />
+                  </LazyDetails>
+                </section>
+              );
+            })
+          ) : (
+            <p className="muted">未记录独立的输入来源索引。</p>
+          )}
+          <LazyDetails summary="冻结输入内容">
+            <ReadableValue value={content.inputs || value.inputs} />
+          </LazyDetails>
+          <h4>输出要求</h4>
+          {Object.entries(content.outputs || value.outputs || {}).map(
+            ([port, requirement]) => {
+              const r = requirement as Row;
+              return (
+                <section key={port}>
+                  <strong>{r.definition?.name || port}</strong>
+                  <p>
+                    {port} · {r.required ? "必需" : "可选"}
+                    {r.content_checks ? " · 需要内容检查" : ""}
+                  </p>
+                  <LazyDetails summary="交付规范与检查要求">
+                    <ReadableValue value={r} />
+                  </LazyDetails>
+                </section>
+              );
+            },
+          )}
+          <LazyDetails summary="职责、方法与规范">
+            {content.role?.role?.data?.instructions && (
+              <section
+                role="group"
+                aria-label={`Role 职责 · ${content.role.name}`}
+              >
+                <h4>Role · {content.role.name}</h4>
+                <MarkdownPreview text={content.role.role.data.instructions} />
+              </section>
+            )}
+            {(content.required_skills || []).map((skill: Row) => (
+              <section
+                key={skill.id}
+                role="group"
+                aria-label={`Skill · ${skill.name}`}
+              >
+                <h4>Skill · {skill.name}</h4>
+                <MarkdownPreview text={skill.data?.body || skill.body || ""} />
+              </section>
+            ))}
+            {[
+              ...(content.specifications || []),
+              ...(content.document_specifications || []),
+            ].map((spec: Row) => (
+              <section
+                key={spec.id}
+                role="group"
+                aria-label={`Spec · ${spec.name}`}
+              >
+                <h4>Spec · {spec.name}</h4>
+                <MarkdownPreview text={spec.data?.body || spec.body || ""} />
+              </section>
+            ))}
+          </LazyDetails>
+          <LazyDetails summary="完成条件与授权依据">
+            <ReadableValue
+              value={{
+                completion: content.completion || value.completion,
+                authorization: content.authorization || value.access,
+              }}
+            />
+          </LazyDetails>
+          {frozen.rendered_input && (
+            <LazyDetails summary="实际发送的完整输入">
+              <pre>{frozen.rendered_input}</pre>
+            </LazyDetails>
+          )}
+          <LazyDetails summary="冻结来源与运行环境">
+            <ReadableValue
+              value={{
+                source: content.source || value.source,
+                runtime_context: content.runtime_context,
+              }}
+            />
+          </LazyDetails>
+        </>
+      )}
+      {(value.diagnostics || []).map((line: string) => (
+        <p key={line} className="muted">
+          {line}
+        </p>
+      ))}
+      {projectId && value.turn_id && (
+        <RawJsonLink
+          source="task"
+          title="查看冻结任务 JSON"
+          params={{ project_id: projectId, turn_id: value.turn_id }}
+        />
+      )}
+    </section>
+  );
 }
 
 export function WorkflowTaskPreview({
@@ -211,7 +373,12 @@ export function ExecutionTaskDetails({
       </ActionButton>
       {error ? <p role="alert">{error}</p> : null}
       {value && loadedTurn === selected ? (
-        <AgentTaskView value={value} compact projectId={projectId} ownerId={value.task?.task?.owner_id || value.task?.owner_id || ""} />
+        <AgentTaskView
+          value={value}
+          compact
+          projectId={projectId}
+          ownerId={value.task?.task?.owner_id || value.task?.owner_id || ""}
+        />
       ) : null}
     </details>
   );

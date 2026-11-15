@@ -1393,3 +1393,8 @@ pre { overflow: auto; max-width: 100%; }
 .raw-json-link { font-size:.88em; display:inline-block; margin:8px 0; }
 .reading-links { display:flex; flex-wrap:wrap; gap:14px; margin:10px 0; }
 @media(max-width:850px) { .reading-layout { grid-template-columns:1fr; } .reading-directory { max-height:32vh; } }
+.workflow-step-summary { margin:4px 14px 8px 36px; font-size:.86rem; color:var(--muted, #687083); overflow-wrap:anywhere; }
+.execution-fact { border-top:1px solid rgba(128,128,128,.2); padding:12px 0; }
+.reading-directory section { min-width:0; }
+.reading-directory small { overflow-wrap:anywhere; }
+.reading-body select { max-width:100%; }

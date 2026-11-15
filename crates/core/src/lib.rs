@@ -744,6 +744,12 @@ impl Engine {
         self.drive_controllers()
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if method == "query.workflow_executions" {
+            return self.workflow_executions(p);
+        }
+        if method == "query.workflow_record" {
+            return self.workflow_record(p);
+        }
         if method == "query.workflow_contexts" {
             return self.workflow_contexts(p);
         }

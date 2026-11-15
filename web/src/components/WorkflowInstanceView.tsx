@@ -3,8 +3,8 @@ import { WorkflowController, WorkflowPlanChanges } from "./WorkflowController";
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { ActionButton, useActionFeedback } from "./ActionFeedback";
-import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
-import { DeliveryOutput } from "./DeliveryContent";
+import { type Request, type Row } from "./configuration-ui";
+import { ReadingLink, RawJsonLink } from "./reading";
 
 type Props = {
   nested?: boolean;
@@ -231,48 +231,31 @@ export function WorkflowInstanceView({
         )}
       {!!data?.history?.length && (
         <details className="panel">
-          <summary>计划与执行历史</summary>
+          <summary>计划与执行历史 · {data.history.length} 条</summary>
           {data.history.map((r: Row) => (
-            <article key={r.id}>
-              <p>
-                {r.name} · {r.type} · {r.id}
-              </p>
-              {r.type === "workflow_plan_revision" && (
-                <p>来源计划：{r.data.parent_revision_id || "初始计划"}</p>
+            <p key={r.id}>
+              {r.name} ·{" "}
+              {r.type === "workflow_execution_history" ? (
+                <ReadingLink
+                  detail="records"
+                  projectId={projectId}
+                  ownerId={runtime.owner_id}
+                  target={{ instance_id: current.id, execution_id: r.data.id }}
+                >
+                  查看历史执行
+                </ReadingLink>
+              ) : (
+                <RawJsonLink
+                  source="record"
+                  params={{
+                    project_id: projectId,
+                    owner_id: runtime.owner_id,
+                    record_id: r.id,
+                  }}
+                  title="查看计划/变更原始记录"
+                />
               )}
-              {r.type === "workflow_execution_history" && (
-                <details>
-                  <summary>
-                    {r.data.step} ·{" "}
-                    {stateLabels[r.data.status] || r.data.status} · 原合同{" "}
-                    {r.data.contract_digest}
-                  </summary>
-                  <MarkdownPreview
-                    text={
-                      r.frozen_step?.task_instructions ||
-                      `执行方式：${r.frozen_step?.executor?.type || "未知"}`
-                    }
-                  />
-                  <p>当时输入与交付引用</p>
-                  <pre>
-                    {JSON.stringify(
-                      { inputs: r.data.inputs, outputs: r.data.outputs },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                  {r.data.session_id && (
-                    <ActionButton
-                      onClick={() =>
-                        onDiscussion(r.data.session_id, runtime.owner_id)
-                      }
-                    >
-                      查看原会话与产物
-                    </ActionButton>
-                  )}
-                </details>
-              )}
-            </article>
+            </p>
           ))}
         </details>
       )}
@@ -314,7 +297,10 @@ export function WorkflowInstanceView({
             {stageOpen ? (
               <div className="workflow-stage-body">
                 {stage.description ? (
-                  <MarkdownPreview text={stage.description} />
+                  <p className="muted">
+                    {stage.description.slice(0, 180)}
+                    {stage.description.length > 180 ? "…" : ""}
+                  </p>
                 ) : null}
                 {executions.map(({ definition, execution }: Row) => {
                   const completion = data?.completion_status?.[execution.id];
@@ -344,11 +330,15 @@ export function WorkflowInstanceView({
                           {stateLabels[execution.status] || execution.status}
                         </span>
                       </ActionButton>
+                      <p className="workflow-step-summary">
+                        {data?.actors?.[execution.id]?.name ||
+                          definition.executor?.type ||
+                          "执行方式未记录"}{" "}
+                        · 第 {execution.round} 轮
+                        {execution.reason ? ` · ${execution.reason}` : ""}
+                      </p>
                       {stepOpen ? (
                         <div className="workflow-step-body">
-                          {execution.reason ? (
-                            <p>{execution.reason}</p>
-                          ) : null}
                           <div className="actions">
                             {execution.status === "queued" && (
                               <ActionButton
@@ -449,9 +439,7 @@ export function WorkflowInstanceView({
                               <label>
                                 补充本次任务
                                 <textarea
-                                  value={
-                                    selected === execution.id ? input : ""
-                                  }
+                                  value={selected === execution.id ? input : ""}
                                   onFocus={() => setSelected(execution.id)}
                                   onChange={(event) =>
                                     setInput(event.target.value)
@@ -539,31 +527,55 @@ export function WorkflowInstanceView({
                                 : ""}
                             </p>
                           ) : null}
-                          {Object.entries(execution.outputs || {}).map(
-                            ([port, id]) => {
-                              const output = data?.outputs?.[id as string];
-                              return output ? (
-                                <details key={port}>
-                                  <summary>产物 · {port}</summary>
-                                  <DeliveryOutput
-                                    output={output}
-                                    definitions={
-                                      runtime.plan?.definitions || {}
-                                    }
-                                  />
-                                </details>
-                              ) : null;
-                            },
-                          )}
-                          {definition.task_instructions ? (
-                            <MarkdownPreview
-                              text={definition.task_instructions}
-                            />
-                          ) : null}
-                          <details>
-                            <summary>本轮任务来源与执行记录</summary>
-                            <pre>{JSON.stringify(execution, null, 2)}</pre>
-                          </details>
+                          <div className="reading-links">
+                            {Object.keys(execution.outputs || {}).length >
+                              0 && (
+                              <ReadingLink
+                                detail="documents"
+                                projectId={projectId}
+                                ownerId={runtime.owner_id}
+                                target={{
+                                  execution_id: execution.id,
+                                  ...(Object.values(execution.outputs)
+                                    .length === 1
+                                    ? {
+                                        output_id: Object.values(
+                                          execution.outputs,
+                                        )[0],
+                                      }
+                                    : {}),
+                                }}
+                              >
+                                查看材料 ·{" "}
+                                {Object.keys(execution.outputs).length} 项
+                              </ReadingLink>
+                            )}
+                            {execution.session_id && (
+                              <ReadingLink
+                                detail="context"
+                                projectId={projectId}
+                                ownerId={runtime.owner_id}
+                                target={{
+                                  execution_id: execution.id,
+                                  turn_id: execution.turn_id,
+                                  session_id: execution.session_id,
+                                }}
+                              >
+                                查看执行者上下文
+                              </ReadingLink>
+                            )}
+                            <ReadingLink
+                              detail="records"
+                              projectId={projectId}
+                              ownerId={runtime.owner_id}
+                              target={{
+                                instance_id: current.id,
+                                execution_id: execution.id,
+                              }}
+                            >
+                              查看执行记录
+                            </ReadingLink>
+                          </div>
                           {children.map((child: Row) => (
                             <div className="workflow-child" key={child.id}>
                               <ActionButton

@@ -1,3 +1,4 @@
+import { ReadableValue } from "./reading";
 import { ConversationContent } from "./ConversationContent";
 import {
   ActionButton,
@@ -96,17 +97,17 @@ export function RoleConversation({
       : owner === feature?.id
         ? feature
         : tasks.find((t) => t.id === owner);
-  const workLock = configurations.filter(
-    (r) =>
-      r.type === "work_configuration" &&
-      r.definition_id === owner,
-  ).at(-1);
-  const runtime = configurations.filter(
-    (r) =>
-      r.type === "workflow_instance" &&
-      r.data.owner_id === owner &&
-      r.work_root !== false,
-  ).at(-1);
+  const workLock = configurations
+    .filter((r) => r.type === "work_configuration" && r.definition_id === owner)
+    .at(-1);
+  const runtime = configurations
+    .filter(
+      (r) =>
+        r.type === "workflow_instance" &&
+        r.data.owner_id === owner &&
+        r.work_root !== false,
+    )
+    .at(-1);
   const plan = runtime?.data.plan.document;
   const recommendedExecution = runtime?.data.steps.find(
     (s: Row) =>
@@ -118,8 +119,14 @@ export function RoleConversation({
     (s: Row) => s.key === recommendedExecution?.step,
   );
   const boundAgents = runtime?.data.plan?.definitions
-    ? Object.values(runtime.data.plan.definitions as Row).filter((row:any) => row.type === "agent").map((row:any) => row.id as string)
-    : Object.values(runtime?.data.role_agent_bindings || workLock?.data.role_agent_bindings || {}) as string[];
+    ? Object.values(runtime.data.plan.definitions as Row)
+        .filter((row: any) => row.type === "agent")
+        .map((row: any) => row.id as string)
+    : (Object.values(
+        runtime?.data.role_agent_bindings ||
+          workLock?.data.role_agent_bindings ||
+          {},
+      ) as string[]);
   const composite = catalog.find((r) => r.id === agent && r.type === "agent");
   // Agent instances pin the exact revision they were created with; a Role
   // selection offers the latest revision of that definition. Match instances
@@ -144,19 +151,21 @@ export function RoleConversation({
   const running = catalog.find(
     (r) => r.id === (pinnedRevision || agent) && r.type === "agent",
   );
-  const capability = catalog.find(
-    (r) => r.id === running?.capability_ref,
-  );
+  const capability = catalog.find((r) => r.id === running?.capability_ref);
 
   useEffect(() => {
     if (!workLock || owner === project.id || global || sessionId) return;
-    if (
-      !boundAgents.includes(agent)
-    ) {
+    if (!boundAgents.includes(agent)) {
       setAgent(recommendation || "");
       setInstanceId("");
     }
-  }, [workLock?.id, runtime?.data.active_plan_revision_id, owner, recommendation, sessionId]);
+  }, [
+    workLock?.id,
+    runtime?.data.active_plan_revision_id,
+    owner,
+    recommendation,
+    sessionId,
+  ]);
   useEffect(() => {
     let current = true;
     if (!agent || catalog.some((r) => r.id === agent)) return;
@@ -190,8 +199,7 @@ export function RoleConversation({
       .map((r) => ({
         ...r,
         agent_profile: {
-          role: catalog.find((role) => role.id === r.role_ref)
-            ?.definition_id,
+          role: catalog.find((role) => role.id === r.role_ref)?.definition_id,
         },
       })),
   ];
@@ -202,9 +210,7 @@ export function RoleConversation({
         detail?.session.agent === a.id) &&
       (detail?.session.agent === a.id ||
         (workLock && owner !== project.id && !global
-          ? boundAgents.includes(
-              a.id,
-            )
+          ? boundAgents.includes(a.id)
           : !choices.some((d) => d.supersedes === a.id))),
   );
   useEffect(() => {
@@ -215,9 +221,7 @@ export function RoleConversation({
         (!workLock ||
           owner === project.id ||
           global ||
-          boundAgents.includes(
-            r.id,
-          )),
+          boundAgents.includes(r.id)),
     );
     const selected =
       candidates.find((r) => r.id === recommendation) ||
@@ -230,7 +234,15 @@ export function RoleConversation({
           ? current
           : selected.id,
       );
-  }, [catalog, owner, runtime?.data.active_plan_revision_id, workLock?.id, recommendation, sessionId, composite?.id]);
+  }, [
+    catalog,
+    owner,
+    runtime?.data.active_plan_revision_id,
+    workLock?.id,
+    recommendation,
+    sessionId,
+    composite?.id,
+  ]);
   useEffect(() => {
     if (!sessionId && !instances.some((r) => r.id === instanceId))
       setInstanceId(instances[0]?.id || "");
@@ -581,9 +593,7 @@ export function RoleConversation({
                         boundAgents.includes(composite.id)
                           ? { frozen_work_id: owner }
                           : {}),
-                        scope: global
-                          ? "global"
-                          : `project:${project.id}`,
+                        scope: global ? "global" : `project:${project.id}`,
                       },
                     });
                     clearSelectedSession();
@@ -605,8 +615,7 @@ export function RoleConversation({
             {instanceId && (
               <p className="muted">
                 该 Agent 的经验范围：
-                {instances.find((r) => r.id === instanceId)?.scope ===
-                "global"
+                {instances.find((r) => r.id === instanceId)?.scope === "global"
                   ? "全局 / 跨项目"
                   : "当前项目"}
                 ；已有工作按此身份保留。
@@ -821,7 +830,7 @@ export function RoleConversation({
               </div>
             ) : null}
             {currentBinding.permissions ? (
-              <pre>{JSON.stringify(currentBinding.permissions, null, 2)}</pre>
+              <ReadableValue value={currentBinding.permissions} />
             ) : (
               <p>
                 当前会话缺少版本化 Permission
@@ -863,8 +872,13 @@ export function RoleConversation({
           )}
           <div role="log" aria-label="讨论记录" className="conversation-log">
             {projected.map((e) => (
-              <ConversationContent key={e.id} event={e} projectId={global ? undefined : project.id} sessionId={sessionId} ownerId={owner}/>
-
+              <ConversationContent
+                key={e.id}
+                event={e}
+                projectId={global ? undefined : project.id}
+                sessionId={sessionId}
+                ownerId={owner}
+              />
             ))}
           </div>
           {active && (

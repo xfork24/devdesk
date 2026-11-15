@@ -256,12 +256,18 @@ impl Engine {
             let group = groups
                 .entry(key.clone())
                 .or_insert_with(|| json!({"id":key,"actor":actor,"entries":[]}));
+            let latest_turn = state
+                .turns
+                .iter()
+                .rev()
+                .find(|turn| turn.session_id == session.id)
+                .map(|turn| turn.id.as_str());
             for turn in state
                 .turns
                 .iter()
                 .filter(|turn| turn.session_id == session.id)
             {
-                group["entries"].as_array_mut().unwrap().push(json!({"kind":"controller","instance_id":controller.data["root_instance_id"],"step_name":"编排控制","owner_id":session.owner_id,"round":0,"session_id":session.id,"snapshot_id":session.snapshot_id,"turn_id":turn.id,"status":turn.status,"actor":actor,"historical":false,"task_available":false,"started":turn.started}));
+                group["entries"].as_array_mut().unwrap().push(json!({"kind":"controller","instance_id":controller.data["root_instance_id"],"step_name":"编排控制","owner_id":session.owner_id,"round":0,"session_id":session.id,"snapshot_id":session.snapshot_id,"turn_id":turn.id,"status":turn.status,"actor":actor,"historical":Some(turn.id.as_str()) != latest_turn,"task_available":false,"started":turn.started}));
             }
         }
         for group in groups.values_mut() {
@@ -293,5 +299,134 @@ impl Engine {
             return Ok(json!({"snapshot":snapshot}));
         }
         Ok(json!({"agents":groups.into_values().collect::<Vec<_>>() }))
+    }
+}
+
+pub(crate) fn execution_actor(
+    state: &EngineeringState,
+    execution: &Value,
+    step: &Value,
+    definitions: &Value,
+) -> Value {
+    if let Some(session) = state
+        .sessions
+        .iter()
+        .find(|session| Some(session.id.as_str()) == execution["session_id"].as_str())
+    {
+        let mut actor = session_actor(state, session);
+        actor["kind"] = json!("agent");
+        return actor;
+    }
+    let kind = step["executor"]["type"].as_str().unwrap_or("unknown");
+    let tool_ref = step["executor"]["tool_ref"].as_str().unwrap_or("");
+    let name = definitions[tool_ref]["name"]
+        .as_str()
+        .unwrap_or(match kind {
+            "agent" => "尚无实际 Agent 会话",
+            "workflow" => "子流程",
+            "control" => "流程控制",
+            "tool" => tool_ref,
+            _ => "未记录执行方式",
+        });
+    json!({"kind":kind,"name":name,"assigned_agent_ref":execution["agent_revision_id"],"role_ref":step["executor"]["role_ref"]})
+}
+fn execution_metadata(
+    state: &EngineeringState,
+    scope: &WorkflowReadScope,
+    entry: &ReadExecution,
+) -> Result<Value> {
+    let (plan, step) = frozen_step(state, entry)?;
+    let e = entry.execution;
+    let outputs: Vec<_> = e["outputs"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(port, id)| {
+            let reference = step["outputs"][port]["delivery_ref"].as_str().unwrap_or("");
+            json!({"id":id,"port":port,"name":plan["definitions"][reference]["name"]})
+        })
+        .collect();
+    Ok(
+        json!({"id":e["id"],"instance_id":entry.instance.id,"instance_name":entry.instance.name,"owner_id":entry.instance.data["owner_id"],"owner_title":entry.instance.data["owner_id"].as_str().and_then(|id|scope.owners.get(id)).map(|owner|&owner.1),"step_name":step["name"],"round":e["round"],"status":e["status"],"reason":e["reason"],"started":e["started"],"finished":e["finished"],"historical":entry.historical,"session_id":e["session_id"],"turn_id":e["turn_id"],"actor":execution_actor(state,e,step,&plan["definitions"]),"outputs":outputs}),
+    )
+}
+fn execution_related(record: &ConfigurationRecord, entry: &ReadExecution) -> bool {
+    let e = entry.execution;
+    match record.r#type.as_str() {
+        "workflow_decision" => {
+            record.data["instance_id"] == entry.instance.id
+                && record.data["execution_id"] == e["id"]
+        }
+        "workflow_confirmation" | "workflow_dispatch" | "workflow_intent" => {
+            Some(record.definition_id.as_str()) == e["id"].as_str()
+        }
+        "platform_call" | "tool_call" => {
+            Some(record.id.as_str()) == e["tool_call_id"].as_str()
+                || (record.data["request"]["instance_id"] == entry.instance.id
+                    && record.data["request"]["caller"]["execution_id"] == e["id"])
+        }
+        _ => false,
+    }
+}
+impl Engine {
+    pub(crate) fn workflow_executions(&self, p: &Value) -> Result<Value> {
+        let state = self.store.snapshot()?;
+        let scope = workflow_read_scope(&state, p)?;
+        let entries: Vec<_> = read_executions(&state, &scope)
+            .into_iter()
+            .filter(|entry| {
+                p["instance_id"]
+                    .as_str()
+                    .is_none_or(|id| entry.instance.id == id)
+            })
+            .collect();
+        if let Some(id) = p["execution_id"].as_str() {
+            let entry = entries
+                .iter()
+                .find(|entry| entry.execution["id"] == id)
+                .ok_or_else(|| err("not_found", "执行不属于当前工作范围或尚未记录"))?;
+            let records:Vec<_>=state.governance.iter().filter(|record|record.scope.project_id()==Some(scope.project.as_str()) && execution_related(record,entry)).map(|record|json!({"id":record.id,"type":record.r#type,"name":record.name,"created_at":record.created_at,"data":if ["platform_call","tool_call"].contains(&record.r#type.as_str()){json!({"status":record.data["status"],"receipt":record.data["receipt"],"error":record.data["error"]})} else {record.data.clone()}})).collect();
+            return Ok(
+                json!({"record":execution_metadata(&state,&scope,entry)?,"execution":entry.execution,"facts":records}),
+            );
+        }
+        let mut records = entries
+            .iter()
+            .map(|entry| execution_metadata(&state, &scope, entry))
+            .collect::<Result<Vec<_>>>()?;
+        records.sort_by(|a, b| {
+            a["historical"]
+                .as_bool()
+                .cmp(&b["historical"].as_bool())
+                .then_with(|| a["instance_id"].as_str().cmp(&b["instance_id"].as_str()))
+                .then_with(|| a["started"].as_u64().cmp(&b["started"].as_u64()))
+        });
+        Ok(json!({"records":records}))
+    }
+    pub(crate) fn workflow_record(&self, p: &Value) -> Result<Value> {
+        let state = self.store.snapshot()?;
+        let scope = workflow_read_scope(&state, p)?;
+        let record = state.configuration(&text(p, "record_id")?)?;
+        require(
+            record.scope.project_id() == Some(scope.project.as_str()),
+            "记录跨项目",
+        )?;
+        let allowed = match record.r#type.as_str() {
+            "workflow_plan_revision" => record.data["instance_id"]
+                .as_str()
+                .is_some_and(|id| scope.instances.contains(id)),
+            "workflow_change" => scope.instances.contains(&record.definition_id),
+            _ => read_executions(&state, &scope)
+                .iter()
+                .any(|entry| execution_related(record, entry)),
+        };
+        require(allowed, "记录不属于当前流程")?;
+        if ["platform_call", "tool_call"].contains(&record.r#type.as_str()) {
+            // Match the public execution reader: expose receipts, never raw runtime/permission requests.
+            return Ok(
+                json!({"representation":"public_execution_receipt","record":{"id":record.id,"type":record.r#type,"name":record.name,"created_at":record.created_at,"data":{"status":record.data["status"],"receipt":record.data["receipt"],"error":record.data["error"]}}}),
+            );
+        }
+        Ok(json!({"record":record}))
     }
 }
