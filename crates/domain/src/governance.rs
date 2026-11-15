@@ -91,7 +91,7 @@ pub type References = BTreeMap<String, Value>;
 /// Root-level reference keys owned by each definition type; unlisted types carry none.
 pub fn reference_fields(kind: &str) -> &'static [&'static str] {
     match kind {
-        "capability" => &["harness_ref", "model_ref", "skills", "tools"],
+        "capability" => &["harness_ref", "model_ref", "skills", "tools", "spec_refs"],
         "agent" => &["role_ref", "capability_ref"],
         "delivery_type" => &["spec_refs"],
         "harness" => &[
@@ -289,6 +289,8 @@ pub struct AgentComposition {
     pub skills: Vec<Id>,
     #[serde(default)]
     pub tools: Vec<Id>,
+    #[serde(default)]
+    pub spec_refs: Vec<Id>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -307,6 +309,8 @@ pub struct AgentInstance {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentExecutionConfiguration {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_protocol: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub integration_lock: Option<IntegrationLock>,
     pub agent_instance_id: Id,

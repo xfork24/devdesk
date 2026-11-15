@@ -53,14 +53,25 @@ pub fn adapters() -> ports::ExecutionAdapters {
 }
 /// Explicit queued conversation facts for scheduler/quota tests, without the Host credential preflight.
 pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
+    queue_conversation_with(e, project, |_, _| Ok(()))
+}
+pub fn queue_conversation_with(
+    e: &Engine,
+    project: &str,
+    configure: impl Fn(&EngineeringState, &mut RuntimeBinding) -> Result<()>,
+) -> (Id, Id) {
     let sid = id();
     let tid = id();
     e.store
         .transact(None, &mut |s| {
-            s.sessions.push(Session {
+            let mut session = Session {
                 id: sid.clone(),
-                owner_id: project.into(),
-                agent: "builtin-agent-sol-high-analyst:5".into(),
+                owner_id: if project == GLOBAL_DISCUSSION_NAMESPACE {
+                    "global".into()
+                } else {
+                    project.into()
+                },
+                agent: "builtin-agent-sol-high-analyst:6".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "fixture-docker".into(),
                 snapshot_id: None,
@@ -69,7 +80,11 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
                 project_id: Some(project.into()),
                 feature_id: None,
                 task_id: None,
-                scope: Some(SessionScope::Project),
+                scope: Some(if project == GLOBAL_DISCUSSION_NAMESPACE {
+                    SessionScope::Global
+                } else {
+                    SessionScope::Project
+                }),
                 lifecycle: Some(SessionLifecycle::Prepared),
                 runtime_binding: Some(RuntimeBinding {
                     model_connection: None,
@@ -104,7 +119,9 @@ pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
                 external_session: None,
                 predecessor: None,
                 revision: 1,
-            });
+            };
+            configure(s, session.runtime_binding.as_mut().unwrap())?;
+            s.sessions.push(session);
             s.turns.push(ConversationTurn {
                 id: tid.clone(),
                 project_id: project.into(),

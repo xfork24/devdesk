@@ -579,7 +579,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
             "project-manager",
         ] {
             let composition = state
-                .resolve_agent(&format!("builtin-agent-{vendor}-{role}:1"))
+                .resolve_agent(&format!("builtin-agent-{vendor}-{role}:2"))
                 .unwrap();
             assert_eq!(
                 composition.harness_ref,
@@ -588,7 +588,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
             assert_eq!(
                 composition.tools,
                 vec!["builtin-tool-dsh-native:1".to_string()],
-                "{vendor}/{role} must stay native-only until the tool bridge lands"
+                "{vendor}/{role} declares native business tools alongside the common context protocol"
             );
             compositions.push((vendor, role, composition));
         }
@@ -598,7 +598,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
             "builtin-model-glm-5-3-flash:1"
         };
         let default = state
-            .configuration(&format!("builtin-capability-{vendor}-dsh:1"))
+            .configuration(&format!("builtin-capability-{vendor}-dsh:2"))
             .unwrap();
         assert_eq!(default.refs["model_ref"], json!(model_id));
     }
@@ -607,7 +607,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
         assert!(
             composition
                 .skills
-                .contains(&"builtin-skill-engineering-context:2".to_string()),
+                .contains(&"builtin-skill-engineering-context:3".to_string()),
             "{vendor}/{role}"
         );
     }
@@ -788,7 +788,7 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
     let defaults = e.configuration_defaults(Some(project_id)).unwrap();
     // Binding the PM role to a dsh agent while designating it the orchestrator is rejected.
     let mut bindings = defaults["role_agent_bindings"].clone();
-    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:1");
+    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:2");
     let error = command(
         &e,
         "project.configuration.update",
@@ -809,7 +809,7 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
     // factory selection either — dsh agents serve standalone conversations until the tool
     // bridge (dsh-tool-bridge plan) lands.
     let mut workers = defaults["role_agent_bindings"].clone();
-    workers["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:1");
+    workers["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:2");
     let boundary = command(
         &e,
         "project.configuration.update",
@@ -858,7 +858,7 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
     // platform-tool grants; the factory flows are the codex-bound ones, not the mechanism.
     let mut bindings =
         e.configuration_defaults(Some(project_id)).unwrap()["role_agent_bindings"].clone();
-    bindings["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:1");
+    bindings["builtin-role-analyst:1"] = json!("builtin-agent-glm-analyst:2");
     let saved = command(
         &e,
         "project.configuration.update",
@@ -872,7 +872,7 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
     .unwrap();
     assert_eq!(
         saved["data"]["role_agent_bindings"]["builtin-role-analyst:1"],
-        json!("builtin-agent-glm-analyst:1")
+        json!("builtin-agent-glm-analyst:2")
     );
 }
 

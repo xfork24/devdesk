@@ -110,7 +110,22 @@ impl GlobalStore {
             }
             HarnessProvider::Dsh => {
                 wire.rpc2();
-                wire.request("initialize",json!({"cwd":"/tmp","provider":"deepseek","model":"probe-no-inference","maxTokens":1024,
+                let state = self.snapshot()?;
+                let route = state
+                    .governance
+                    .iter()
+                    .filter(|r| r.r#type == "model_provider")
+                    .filter_map(|r| r.decode::<ProviderFacts>().ok())
+                    .find(|facts| {
+                        facts.harness == installation.key.provider.as_str() && facts.native
+                    })
+                    .ok_or_else(|| {
+                        err(
+                            "configuration_required",
+                            "协议验证需要已声明的原生服务商路由",
+                        )
+                    })?;
+                wire.request("initialize",json!({"cwd":"/tmp","provider":route.route,"model":"probe-no-inference","maxTokens":route.min_output_request,
                     "approvalRequests":true,"capabilities":{"userQuestions":true}}))?;
                 vec!["initialize"]
             }

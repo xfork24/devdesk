@@ -48,6 +48,15 @@ impl Engine {
                 let mut expected = b.clone();
                 expected.permissions = new_binding.permissions.clone();
                 expected.configuration_digest = new_binding.configuration_digest.clone();
+                if let (Some(old), Some(next)) = (
+                    &mut expected.agent_configuration,
+                    &new_binding.agent_configuration,
+                ) {
+                    old.integration_lock = next.integration_lock.clone();
+                    if next.context_protocol.as_deref() == Some(AGENT_CONTEXT_PROTOCOL) {
+                        old.context_protocol = next.context_protocol.clone();
+                    }
+                }
                 [
                     WorkType::Discussion,
                     WorkType::Workflow,
@@ -58,7 +67,7 @@ impl Engine {
             }) {
                 return Err(err(
                     "permission_conflict",
-                    "仅允许相同 Agent 与运行时的讨论切换",
+                    "Agent 身份或运行环境已变化，需要显式采用对应运行配置",
                 ));
             }
             if s.turns
@@ -225,6 +234,8 @@ impl Engine {
         self.store.transact(Some((&c.command_id,&fp)),&mut |s|{
         let turn=s.turns.iter().find(|t|t.session_id==next&&json!(t.client_message_id)==c.payload["client_message_id"]).ok_or_else(||err("needs_reconciliation","切换输入记录缺失"))?;
         require(json!(turn.input)==c.payload["input"],"客户端消息 ID 被不同输入复用")?;
+        let references=s.governance.iter().find(|r|r.r#type=="conversation_context"&&r.definition_id==turn.id).map(|r|r.data["experience_refs"].clone()).unwrap_or(json!([]));
+        require(references==c.payload.get("experience_refs").cloned().unwrap_or(json!([])),"客户端消息 ID 被不同经验引用复用")?;
         Ok(json!({"id":turn.id,"operation_id":turn.id,"replayed":true,"effective_session_id":next}))
     })
     }

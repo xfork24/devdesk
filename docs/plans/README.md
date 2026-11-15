@@ -4,7 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [Agent 完整能力与自由讨论及经验访问](agent-capabilities-discussion-experience/PLAN.md) | 待实施 | 统一 Agent 完整能力装配；Workflow 只负责调度；支持无项目对话及 Agent 在当前对话中读取现有经验，修复工具裁剪引发的权限冲突 |
+| [Agent 完整能力与自由讨论及经验访问](agent-capabilities-discussion-experience/PLAN.md) | [实施验收](agent-capabilities-discussion-experience/EXECUTION.md)、[合并回归](agent-capabilities-discussion-experience/MERGE.md) | 已合并本地 main，合并回归通过；统一 Agent 完整能力装配；Workflow 只负责调度；支持无项目对话及 Agent 在当前对话中读取现有经验，修复工具裁剪引发的权限冲突 |
 | [代码规范、Lint 体系与 CI 建设](code-standards-lint-ci/PLAN.md) | [独立评估](code-standards-lint-ci/ASSESSMENT.md)、[补充验收](code-standards-lint-ci/ACCEPTANCE.md)、[原执行报告](code-standards-lint-ci/EXECUTION.md)、[原问题记录](code-standards-lint-ci/ISSUES.md) | main 补充实施完成；Rust 291 项、debug/release 浏览器各 57 项通过；已修正原问题分类、门禁缺口与 CI 依赖判断 |
 | [源配置信封扁平化](source-envelope-flattening/PLAN.md) | [评审](source-envelope-flattening/REVIEW.md)、[实施与验收](source-envelope-flattening/EXECUTION.md)、[验证报告](source-envelope-flattening/VALIDATION.md) | 已完成；151 源、Rust 236 项、浏览器 debug/release 各 51 项通过；真实 Codex Feature 42 节点完成，两次精确发布，证据复核与现场封存完成 |
 | [合同版本去硬编码](contract-version-decoupling/PLAN.md) | [实施与验收](contract-version-decoupling/EXECUTION.md) | 部分实施（2026-11-12）；W01-W05+W08+W09 完成：结构识别、白名单枚举化、读取机制外置、normalize-plan 删除、check-defaults 脚本；W06 大文件重构等后续工作保留；W07 展示过滤与残留版本门禁已在源信封扁平化中清理 |

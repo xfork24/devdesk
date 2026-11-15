@@ -11,6 +11,7 @@ type Props = {
   owner: Row;
   onRestored: (id: string) => void;
   onLocate?: (entry: Row) => void;
+  onReference?: (entry: Row) => void;
 };
 export function AgentExperience({
   request,
@@ -20,6 +21,7 @@ export function AgentExperience({
   owner,
   onRestored,
   onLocate,
+  onReference,
 }: Props) {
   const {
     error,
@@ -31,6 +33,7 @@ export function AgentExperience({
 
   const [project, setProject] = useState(""),
     [feature, setFeature] = useState(""),
+    [workflow, setWorkflow] = useState(""),
     [from, setFrom] = useState(""),
     [to, setTo] = useState(""),
     [page, setPage] = useState(0),
@@ -53,6 +56,7 @@ export function AgentExperience({
       agent_instance_id: instanceId,
       project_name: project,
       feature_name: feature,
+      workflow_instance_id: workflow || undefined,
       from: from ? new Date(from).getTime() : undefined,
       to: to ? new Date(to).getTime() : undefined,
       offset: page * 20,
@@ -73,6 +77,7 @@ export function AgentExperience({
     instanceId,
     project,
     feature,
+    workflow,
     from,
     to,
     page,
@@ -102,6 +107,17 @@ export function AgentExperience({
             captureFeedback();
 
             setFeature(e.target.value);
+            setPage(0);
+          }}
+        />
+      </label>
+      <label>
+        工作流实例
+        <input
+          value={workflow}
+          onChange={(e) => {
+            captureFeedback();
+            setWorkflow(e.target.value);
             setPage(0);
           }}
         />
@@ -158,6 +174,11 @@ export function AgentExperience({
                   : "Feature"}
               </p>
               <div className="actions">
+                {onReference && (
+                  <ActionButton onClick={() => onReference(entry)}>
+                    引用到当前讨论
+                  </ActionButton>
+                )}
                 <ActionButton
                   onClick={async () => {
                     captureFeedback();
@@ -223,6 +244,9 @@ export function AgentExperience({
             <article className="notice">
               <h3>{detail.entry.feature_name} · 快照摘要</h3>
               <p>
+                {detail.entry.workflow_name
+                  ? `工作流 ${detail.entry.workflow_name} · `
+                  : ""}
                 Model {detail.entry.binding?.model} · Harness{" "}
                 {detail.entry.binding?.installation?.key.provider} · 完整性{" "}
                 {detail.integrity}

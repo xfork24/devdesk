@@ -223,7 +223,10 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             .publish_project(&e.store.snapshot().unwrap().projects[0])
             .unwrap();
         if index == 0 {
-            local_instance=command(&e,"agent.instance.create",None,json!({"name":"Project experience","agent_revision_id":agent,"scope":format!("project:{pid}")})).unwrap()["id"].as_str().unwrap().to_owned();
+            let state = e.store.snapshot().unwrap();
+            let original = state.configuration(&agent).unwrap();
+            let private=command(&e,"agent.create",None,json!({"name":"Project private Agent","scope":format!("project:{pid}"),"role_ref":original.refs["role_ref"],"capability_ref":original.refs["capability_ref"],"data":{}})).unwrap();
+            local_instance=command(&e,"agent.instance.create",None,json!({"name":"Project experience","agent_revision_id":private["id"],"scope":format!("project:{pid}")})).unwrap()["id"].as_str().unwrap().to_owned();
         }
         let snapshot = command(&e, "snapshot.save", Some(&pid), json!({})).unwrap()["id"]
             .as_str()
@@ -301,6 +304,86 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
     .unwrap();
     assert_eq!(filtered["total"], 1);
     let sid = filtered["records"][0]["snapshot_id"].as_str().unwrap();
+    let reader = experience::Reader::new(root.path().into());
+    let context = devdesk_core::ports::AgentContextReader::experience(
+        &reader,
+        &instance,
+        None,
+        &json!({"project_id":projects[0],"limit":1}),
+    )
+    .unwrap();
+    assert_eq!(context["total"], 1);
+    assert_eq!(context["records"][0]["snapshot_id"], sid);
+    let mut offset = 0;
+    let mut text = String::new();
+    let mut digest = None;
+    loop {
+        let part=devdesk_core::ports::AgentContextReader::experience(&reader,&instance,None,&json!({"source_project_id":projects[0],"snapshot_id":sid,"offset":offset,"max_bytes":1024})).unwrap();
+        if let Some(digest) = &digest {
+            assert_eq!(&part["content_digest"], digest);
+        } else {
+            digest = Some(part["content_digest"].clone());
+        }
+        text.push_str(part["content_chunk"].as_str().unwrap());
+        match part["next_offset"].as_u64() {
+            Some(next) => {
+                assert!(next > offset);
+                offset = next;
+            }
+            None => break,
+        }
+    }
+    let from_agent: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        from_agent,
+        lookup(
+            &projects[0],
+            &instance,
+            json!({"snapshot_id":sid,"source_project_id":projects[0]})
+        )
+        .unwrap()
+    );
+    assert!(
+        devdesk_core::ports::AgentContextReader::experience(
+            &reader,
+            &other,
+            None,
+            &json!({"source_project_id":projects[0],"snapshot_id":sid})
+        )
+        .is_err()
+    );
+    let catalog = experience::discussion_catalog(root.path()).unwrap();
+    let detached_path = SqliteStore::global_discussion_path(root.path()).unwrap();
+    let detached = Engine::new(
+        Arc::new(SqliteStore::open(&detached_path).unwrap()),
+        Arc::new(FileArtifacts::new(detached_path)),
+        runtime::adapters(),
+    );
+    detached.bootstrap().unwrap();
+    runtime::bind_default_permissions(&detached);
+    detached
+        .import_discussion_agent(&catalog, &local_instance)
+        .unwrap();
+    let mut open = Command {
+        command_id: id(),
+        target: Some("global".into()),
+        expected_revision: Some(0),
+        payload: json!({"agent_instance_id":local_instance}),
+    };
+    detached
+        .resolve_session_composition(
+            &runtime::ResourceFixture {
+                store: detached.store.as_ref(),
+            },
+            &mut open,
+        )
+        .unwrap();
+    assert_eq!(open.payload["agent_instance_id"], local_instance);
+    assert_eq!(
+        open.payload["agent_configuration"]["context_protocol"],
+        AGENT_CONTEXT_PROTOCOL
+    );
+    assert!(detached.store.snapshot().unwrap().projects.is_empty());
     assert_eq!(
         lookup(
             &projects[0],
@@ -311,6 +394,25 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         "verified"
     );
     let (pid, a) = artifact.unwrap();
+    let evidence = devdesk_core::ports::AgentContextReader::experience(
+        &reader,
+        &instance,
+        None,
+        &json!({"source_project_id":pid,"snapshot_id":sid,"artifact_id":a.id,"max_bytes":65536}),
+    )
+    .unwrap();
+    let original: Value =
+        serde_json::from_str(evidence["content_chunk"].as_str().unwrap()).unwrap();
+    assert_eq!(original["artifact"]["sha256"], a.sha256);
+    assert!(
+        devdesk_core::ports::AgentContextReader::experience(
+            &reader,
+            &instance,
+            None,
+            &json!({"source_project_id":pid,"snapshot_id":sid,"artifact_id":"unrelated-evidence"})
+        )
+        .is_err()
+    );
     std::fs::write(
         SqliteStore::project_path(root.path(), &pid)
             .unwrap()

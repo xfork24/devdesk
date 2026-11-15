@@ -46,7 +46,7 @@ fn initialize(e: &Engine) -> (Id, Id, Id) {
             s.sessions.push(Session {
                 id: sid.clone(),
                 owner_id: pid.clone(),
-                agent: "builtin-agent-sol-high-analyst:5".into(),
+                agent: "builtin-agent-sol-high-analyst:6".into(),
                 harness: "fixture-runtime".into(),
                 sandbox: "docker-fixture".into(),
                 snapshot_id: None,
@@ -482,11 +482,20 @@ fn conversation_commands_are_idempotent_and_switching_creates_a_snapshot_success
             .unwrap(),
         reused
     );
-    let payload =
-        json!({"input":"Discuss acceptance criteria","client_message_id":"frontend-message"});
+    let payload = json!({"input":"Discuss acceptance criteria","client_message_id":"frontend-message","experience_refs":[{"source_project_id":pid,"snapshot_id":"historical-snapshot"}]});
     let submitted = call("conversation.send", &sid, 1, payload.clone()).unwrap();
-    let replay = call("conversation.send", &sid, 1, payload).unwrap();
+    let replay = call("conversation.send", &sid, 1, payload.clone()).unwrap();
     assert_eq!(submitted["id"], replay["id"]);
+    let state = e.store.snapshot().unwrap();
+    let context = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "conversation_context" && r.definition_id == submitted["id"])
+        .unwrap();
+    assert_eq!(context.data["experience_refs"], payload["experience_refs"]);
+    let mut changed_references = payload;
+    changed_references["experience_refs"] = json!([]);
+    assert!(call("conversation.send", &sid, 1, changed_references).is_err());
     assert!(
         call(
             "conversation.send",
@@ -804,7 +813,7 @@ fn coordinator_never_resends_unknown_input_or_finishes_without_stop_and_export()
                 command_id: id(),
                 target: Some(pid),
                 expected_revision: Some(1),
-                payload: json!({"agent":"builtin-agent-sol-high-analyst:5","binding":binding}),
+                payload: json!({"agent":"builtin-agent-sol-high-analyst:6","binding":binding}),
             },
         )
         .unwrap();

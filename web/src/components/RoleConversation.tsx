@@ -63,6 +63,7 @@ export function RoleConversation({
     detail?.current_runtime_binding || detail?.session.runtime_binding;
   const [events, setEvents] = useState<Row[]>([]);
   const [input, setInput] = useState("");
+  const [experienceRefs, setExperienceRefs] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
 
   const [proposalJson, setProposalJson] = useState("");
@@ -81,6 +82,7 @@ export function RoleConversation({
     setDetail(undefined);
     setEvents([]);
     setInput("");
+    setExperienceRefs([]);
     cursor.current = 0;
   }
   const generation = useRef(0);
@@ -153,10 +155,9 @@ export function RoleConversation({
       catalog.filter(
         (r) =>
           r.type === "agent_instance" &&
-          definitionOf(r.data.agent_revision_id) === selectedDefinition &&
-          (!global || r.scope === "global"),
+          definitionOf(r.data.agent_revision_id) === selectedDefinition,
       ),
-    [catalog, definitionOf, selectedDefinition, global],
+    [catalog, definitionOf, selectedDefinition],
   );
   const pinnedRevision = instances.find((r) => r.id === instanceId)?.data
     .agent_revision_id;
@@ -275,7 +276,23 @@ export function RoleConversation({
   }, [instances, sessionId, instanceId]);
   useEffect(() => {
     let current = true;
-    loadCatalog(request, global ? undefined : project?.id)
+    (async () => {
+      const rows = await loadCatalog(request, global ? undefined : project?.id);
+      if (global) {
+        let offset = 0;
+        for (;;) {
+          const page = await request("query.discussion_agents", {
+            offset,
+            limit: 100,
+          });
+          for (const row of page.records)
+            if (!rows.some((r) => r.id === row.id)) rows.push(row);
+          offset += page.records.length;
+          if (offset >= page.total || !page.records.length) break;
+        }
+      }
+      return rows;
+    })()
       .then((rows) => {
         if (current) setCatalog(rows);
       })
@@ -372,6 +389,7 @@ export function RoleConversation({
     setDetail(undefined);
     setSessions([]);
     setEvents([]);
+    setExperienceRefs([]);
     cursor.current = 0;
   }, [scopedRequest, owner, initialOwner, initialSession]);
   useEffect(() => {
@@ -503,6 +521,14 @@ export function RoleConversation({
         {
           client_message_id: crypto.randomUUID(),
           input,
+          ...(experienceRefs.length
+            ? {
+                experience_refs: experienceRefs.map((entry) => ({
+                  source_project_id: entry.project_id,
+                  snapshot_id: entry.snapshot_id,
+                })),
+              }
+            : {}),
         },
       );
       if (
@@ -513,6 +539,7 @@ export function RoleConversation({
         setSessionId(result.effective_session_id);
       }
       setInput("");
+      setExperienceRefs([]);
     });
   }
   const projected: Row[] = [];
@@ -621,12 +648,8 @@ export function RoleConversation({
                 {instances.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name.replace(/\s*·\s*(?:项目|全局)讨论\s*\d+$/u, "")} ·{" "}
-                    {r.scope
-                      .split(":")
-                      .map((part: string, index: number) =>
-                        index === 0 ? part : part.slice(0, 8),
-                      )
-                      .join(":")}{" "}
+                    {r.origin_project_name ||
+                      (r.scope === "global" ? "全局身份" : "项目身份")}{" "}
                     · v
                     {
                       catalog.find((c) => c.id === r.data.agent_revision_id)
@@ -648,7 +671,8 @@ export function RoleConversation({
                 该 Agent 的经验范围：
                 {instances.find((r) => r.id === instanceId)?.scope === "global"
                   ? "全局 / 跨项目"
-                  : "当前项目"}
+                  : instances.find((r) => r.id === instanceId)
+                      ?.origin_project_name || "来源项目"}
                 ；已有工作按此身份保留。
               </p>
             )}
@@ -668,6 +692,40 @@ export function RoleConversation({
               }{" "}
               · Agent v{running?.version ?? composite.version}
             </p>
+            <details className="agent-capabilities">
+              <summary>Agent 完整能力</summary>
+              <div className="agent-capability-lists">
+                {(
+                  [
+                    ["skills", "Skills"],
+                    ["tools", "Tools"],
+                    ["spec_refs", "Agent Specs"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key}>
+                    <strong>{label}</strong>
+                    <ul>
+                      {(capability?.[key] || []).map((id: string) => (
+                        <li key={id}>
+                          {catalog.find((row) => row.id === id)?.name || id}
+                          {currentBinding?.agent_configuration?.integration_lock
+                            ?.unbound_reasons?.[id] && (
+                            <span>
+                              {" · "}
+                              {
+                                currentBinding.agent_configuration
+                                  .integration_lock.unbound_reasons[id]
+                              }
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <p>Agent 经验：检索与读取，可在当前讨论中按需使用。</p>
+            </details>
             <details>
               <summary>Role / Capability 及定义 Scope</summary>
               <pre>{JSON.stringify(running || composite, null, 2)}</pre>
@@ -714,6 +772,20 @@ export function RoleConversation({
           ""
         }
         owner={selectedOwner || project}
+        onReference={
+          formalOutput
+            ? undefined
+            : (entry) =>
+                setExperienceRefs((old) =>
+                  old.some(
+                    (r) =>
+                      r.snapshot_id === entry.snapshot_id &&
+                      r.project_id === entry.project_id,
+                  )
+                    ? old
+                    : [...old, entry],
+                )
+        }
         onRestored={(id) => {
           manualSession.current = true;
           void loadSessions();
@@ -734,6 +806,37 @@ export function RoleConversation({
           } else onLocateExperience?.(entry);
         }}
       />
+      {experienceRefs.length > 0 && (
+        <div className="notice" aria-label="当前讨论引用的经验">
+          {experienceRefs.map((entry) => (
+            <p key={`${entry.project_id}:${entry.snapshot_id}`}>
+              {entry.project_name} / {entry.feature_name || "讨论"}
+            </p>
+          ))}
+          <ActionButton onClick={() => setExperienceRefs([])}>
+            清除经验引用
+          </ActionButton>
+        </div>
+      )}
+      {detail?.experience_reads?.length > 0 && (
+        <details>
+          <summary>Agent 在本次讨论中读取的经验</summary>
+          {(detail?.experience_reads || []).map((entry: Row) => (
+            <p key={entry.id}>
+              {entry.source
+                ? `${entry.source.project_name} / ${entry.source.feature_name || "讨论"}`
+                : "检索历史经验"}
+              {" · "}
+              {entry.status === "succeeded"
+                ? "已读取"
+                : entry.status === "prepared"
+                  ? "读取中"
+                  : "读取失败"}
+              {entry.error?.message ? `：${entry.error.message}` : ""}
+            </p>
+          ))}
+        </details>
+      )}
       <label>
         已有会话
         <ActionSelect

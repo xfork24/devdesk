@@ -24,7 +24,17 @@ impl Workspace {
             } else {
                 params
             };
-            let detail = experience::query(&root, &pid, p)?;
+            let mut read_pid = pid.clone();
+            if params["scope"] == "global"
+                && let Some(instance) = p["agent_instance_id"].as_str()
+                && let Some(origin) = experience::discussion_catalog(&root)?
+                    .iter()
+                    .find(|r| r.id == instance && r.r#type == "agent_instance")
+                    .and_then(|r| r.scope.project_id())
+            {
+                read_pid = origin.to_owned();
+            }
+            let detail = experience::query(&root, &read_pid, p)?;
             if method == "query.agent_experience" {
                 return Ok(detail);
             }
@@ -622,10 +632,14 @@ mod standard_comparison_tests {
             .dispatch("query.standard", json!({"id":defaults["standard_ref"]}))
             .unwrap();
         let project = create(&w, "Default entry metadata");
+        let mut previous = w.dispatch("standard.capture", json!({"project_id":project,"command_id":id(),"payload":{
+            "name":"Project standard baseline","root_workflow_refs":base["root_workflow_refs"],"default_workflow_ref":defaults["workflow_ref"]
+        }})).unwrap();
         for entry in [Value::Null, defaults["task_workflow_ref"].clone()] {
-            let copy = w.dispatch("standard.capture", json!({"project_id":project,"command_id":id(),"payload":{
+            let copy = w.dispatch("standard.capture", json!({"project_id":project,"command_id":id(),"target":previous["id"],"expected_revision":previous["revision"],"payload":{
                 "name":"Same project standard","root_workflow_refs":base["root_workflow_refs"],"default_workflow_ref":entry
             }})).unwrap();
+            previous = copy.clone();
             assert_ne!(copy["default_workflow_ref"], defaults["workflow_ref"]);
             let diff = w
                 .dispatch(

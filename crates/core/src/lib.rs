@@ -22,7 +22,7 @@ mod configured_workflows;
 mod controllers;
 mod manager_workspace;
 mod spec_lint;
-pub use manager_workspace::{MANAGER_TOOLS, ManagerServices};
+pub use manager_workspace::{MANAGER_TOOLS, ManagerServices, read_project_knowledge};
 mod human_governance;
 mod orchestration;
 mod platform_tools;
@@ -66,7 +66,11 @@ mod conversation_runtime;
 mod conversations;
 mod history;
 mod integrations;
-pub use integrations::{freeze_integrations, integration_deletion_targets};
+pub use integrations::{
+    freeze_discussion_integrations, freeze_integrations, integration_deletion_targets,
+};
+mod agent_context;
+pub use orchestration::read_workflow_outputs;
 mod governance;
 mod live_runs;
 mod permission_resources;
@@ -102,6 +106,7 @@ pub fn command_fingerprint(method: &str, c: &Command) -> String {
     serde_json::to_string(&(method, &c.target, &c.expected_revision, &c.payload)).unwrap()
 }
 pub struct Engine {
+    pub context_reader: Option<Arc<dyn ports::AgentContextReader>>,
     pub manager_services: Option<ManagerServices>,
     pub configuration_backend: Option<Arc<dyn ports::ConfigurationBackend>>,
     pub tool_executor: Option<Arc<dyn ports::ToolExecutor>>,
@@ -301,6 +306,7 @@ impl Engine {
         adapters: ports::ExecutionAdapters,
     ) -> Self {
         Self {
+            context_reader: None,
             manager_services: None,
             configuration_backend: None,
             tool_executor: None,
@@ -314,6 +320,10 @@ impl Engine {
     }
     pub fn with_manager_services(mut self, services: ManagerServices) -> Self {
         self.manager_services = Some(services);
+        self
+    }
+    pub fn with_context_reader(mut self, reader: Arc<dyn ports::AgentContextReader>) -> Self {
+        self.context_reader = Some(reader);
         self
     }
     pub fn with_configuration_backend(

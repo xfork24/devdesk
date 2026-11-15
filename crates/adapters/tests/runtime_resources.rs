@@ -56,7 +56,7 @@ fn two_external_recipes_are_valid_and_forged_driver_capability_is_rejected() {
         )
         .unwrap();
     }
-    let bad=e.execute("harness.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"forged","model_providers":[],"data":{"provider":"dsh","runtime_version":"any-label","capabilities":["dynamic-tools"]}})});
+    let bad=e.execute("harness.create",Command{command_id:id(),target:None,expected_revision:None,payload:json!({"name":"forged","model_providers":[],"data":{"provider":"dsh","runtime_version":"any-label","capabilities":["orchestration"]}})});
     assert!(bad.is_err());
 }
 #[test]

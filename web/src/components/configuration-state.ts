@@ -179,7 +179,7 @@ export function useGroupTab(group: string, allowed: string[]) {
 }
 // References are edited with payload fields, and written directly on the source envelope.
 const sourceReferenceFields: Record<string, string[]> = {
-  capability: ["harness_ref", "model_ref", "skills", "tools"],
+  capability: ["harness_ref", "model_ref", "skills", "tools", "spec_refs"],
   agent: ["role_ref", "capability_ref"],
   delivery_type: ["spec_refs"],
   harness: ["model_providers", "model_catalog_ref", "runtime_resource_ref"],

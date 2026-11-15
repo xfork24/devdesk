@@ -592,16 +592,7 @@ impl Engine {
             &agent.harness_ref,
             &permission_selection_from_context(&s, &controller.permission_context_ref)?,
         )?;
-        let mut lock = freeze_integrations(&s, &agent, Some(&controller.project_id))?;
-        lock.platform_tools.retain(|r| {
-            r.data["qualified_name"].as_str().is_some_and(|n| {
-                if controller.workspace_only {
-                    MANAGER_TOOLS.contains(&n)
-                } else {
-                    CONTROL_TOOLS.contains(&n) || MANAGER_TOOLS.contains(&n)
-                }
-            })
-        });
+        let lock = freeze_integrations(&s, &agent, Some(&controller.project_id))?;
         require(
             !lock.platform_tools.is_empty(),
             "编排 Agent 的 Capability 缺少控制工具",

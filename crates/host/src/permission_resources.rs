@@ -85,7 +85,7 @@ impl Workspace {
                 .and_then(|c| c.integration_lock.clone())
                 .ok_or_else(|| err("configuration_required", "步骤会话接入锁缺失"))?
         } else {
-            devdesk_core::freeze_integrations(&s, &a, session.project_id.as_deref())?
+            devdesk_core::freeze_discussion_integrations(&s, &a, session.project_id.as_deref())?
         };
         let integrations_unchanged = binding
             .agent_configuration
@@ -98,7 +98,12 @@ impl Workspace {
                     .as_ref()
                     .and_then(|c| c.integration_lock.as_ref())
                     .is_none());
+        let context_unchanged = binding
+            .agent_configuration
+            .as_ref()
+            .is_none_or(|a| a.context_protocol.as_deref() == Some(AGENT_CONTEXT_PROTOCOL));
         if integrations_unchanged
+            && context_unchanged
             && Some(&lock)
                 == binding
                     .permissions
@@ -120,6 +125,7 @@ impl Workspace {
         next.permissions = Some(permissions);
         if let Some(config) = &mut next.agent_configuration {
             config.integration_lock = Some(integrations);
+            config.context_protocol = Some(AGENT_CONTEXT_PROTOCOL.into());
         }
         next.configuration_digest = Self::permission_runtime_digest(
             s.definitions

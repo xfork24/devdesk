@@ -333,14 +333,16 @@ fn standard_comparison_ignores_missing_and_different_default_entries() {
         "root_workflow_refs",
     )
     .unwrap();
+    let mut previous = base.to_owned();
     for entry in [Value::Null, defaults["task_workflow_ref"].clone()] {
         let after = cmd(
             &e,
             "standard.capture",
-            None,
+            Some(&previous),
             json!({"name":"Different default", "root_workflow_refs":roots, "default_workflow_ref":entry}),
         )
         .unwrap();
+        previous = after["id"].as_str().unwrap().to_owned();
         assert_ne!(after["default_workflow_ref"], defaults["workflow_ref"]);
         for (before, after) in [
             (json!(base), after["id"].clone()),

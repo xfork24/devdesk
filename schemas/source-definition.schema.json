@@ -172,11 +172,6 @@
             },
             {
               "required": [
-                "spec_refs"
-              ]
-            },
-            {
-              "required": [
                 "runtime_resource_ref"
               ]
             }

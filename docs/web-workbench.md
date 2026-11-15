@@ -54,3 +54,7 @@ Permission 页面集中提供 Harness/Sandbox 两类权限定义的新建、修�
 经理状态与资源目录分开加载，目录错误不会把活动 Agent 或 Rust 调度误显示为人工模式。大产物通过摘要和分块读取展示；任务预览只做配置解析，实际执行任务另含冻结输入及 core 提供的运行事实，预览不能证明已经执行。
 
 实现依据：[路由与导航](../web/src/App.tsx)、[项目管理](../web/src/components/ProjectManager.tsx)、[经理与驱动面板](../web/src/components/WorkflowController.tsx)、[规范 lint](../web/src/components/SpecLint.tsx)、[目录与草稿](../web/src/components/configuration-state.ts)。
+
+## 无项目讨论与 Agent 经验
+
+角色讨论允许当前上下文为空，并可选择原有项目实例；实例来源项目与当前活动项目分别显示。Agent 详情展示完整 Skills、Tools、Agent Spec 与通用经验入口。经验面板支持来源工作流过滤及“引用到当前讨论”，不要求先恢复成另一会话；讨论中可查看 Agent 实际读取的历史来源。

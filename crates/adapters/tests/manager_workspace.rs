@@ -254,6 +254,7 @@ fn drive(e: &Engine, rounds: usize) {
                         .unwrap(),
                     ),
                     agent_configuration: Some(AgentExecutionConfiguration {
+                        context_protocol: None,
                         integration_lock: Some(selected.integration_lock),
                         agent_instance_id: "fixture-manager-instance".into(),
                         agent_revision_id: agent.id.clone(),
@@ -503,7 +504,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
                     expected_revision: None,
                     payload: json!({
                         "role_ref": "builtin-role-analyst:1",
-                        "agent_ref": "builtin-agent-sol-high-analyst:5",
+                        "agent_ref": "builtin-agent-sol-high-analyst:6",
                     }),
                 },
             )
@@ -520,7 +521,7 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
                 command_id: id(),
                 target: Some(project.clone()),
                 expected_revision: None,
-                payload: json!({"agent_ref":"builtin-agent-sol-high-analyst:5"}),
+                payload: json!({"agent_ref":"builtin-agent-sol-high-analyst:6"}),
             },
         )
         .unwrap_err();

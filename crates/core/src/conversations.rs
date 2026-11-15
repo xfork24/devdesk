@@ -334,6 +334,19 @@ impl Engine {
                     .find(|t| t.session_id == session.id && t.client_message_id == client)
                 {
                     require(previous.input == input, "客户端消息 ID 被不同输入复用")?;
+                    let old_refs = s
+                        .governance
+                        .iter()
+                        .find(|r| {
+                            r.r#type == "conversation_context" && r.definition_id == previous.id
+                        })
+                        .map(|r| r.data["experience_refs"].clone())
+                        .unwrap_or(json!([]));
+                    require(
+                        old_refs == p.get("experience_refs").cloned().unwrap_or(json!([])),
+                        "客户端消息 ID 被不同经验引用复用",
+                    )?;
+
                     return Ok(Some(
                         json!({"id":previous.id,"operation_id":previous.id,"replayed":true}),
                     ));
@@ -361,6 +374,33 @@ impl Engine {
                 let source_revision = revision(s, &session.owner_id);
                 let code_view = self.discussion_code_view(s, &session)?;
                 let tid = id();
+                if let Some(references) = p.get("experience_refs") {
+                    let refs = references
+                        .as_array()
+                        .ok_or_else(|| err("invalid_params", "experience_refs 必须为列表"))?;
+                    require(
+                        refs.len() <= 20 && !configured_step,
+                        "正式步骤不能附加自由讨论经验引用，一次讨论最多引用 20 条经验",
+                    )?;
+                    for reference in refs {
+                        text(reference, "source_project_id")?;
+                        text(reference, "snapshot_id")?;
+                    }
+                    s.governance.push(crate::governance::record(
+                        "conversation_context",
+                        tid.clone(),
+                        if session.scope == Some(SessionScope::Global) {
+                            Scope::global()
+                        } else {
+                            Scope::project(session.project_id.clone().unwrap())
+                        },
+                        "讨论引用的 Agent 经验".into(),
+                        1,
+                        None,
+                        json!({"session_id":session.id,"experience_refs":refs}),
+                        true,
+                    ));
+                }
                 let sequence = s
                     .conversation_events
                     .iter()
@@ -561,7 +601,7 @@ impl Engine {
             messages.remove(0);
         }
         let content =
-            serde_json::to_string(&json!({"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
+            serde_json::to_string(&json!({"source_session":session.id,"inherited_context_excerpt":session.snapshot_id.as_ref().and_then(|id|s.snapshots.iter().find(|snap|&snap.id==id)).map(|snap|json!({"snapshot_id":snap.id,"kind":snap.kind,"content_excerpt":snap.content.chars().take(16384).collect::<String>()})),"messages":messages,"context_references":s.governance.iter().filter(|r|r.r#type=="conversation_context" && r.data["session_id"]==session.id).rev().take(50).map(|r|json!({"turn_id":r.definition_id,"experience_refs":r.data["experience_refs"]})).collect::<Vec<_>>(),"context_reads":s.governance.iter().filter(|r|r.r#type=="agent_context_call" && r.data["invocation"]["session_id"]==session.id && r.data["status"]=="succeeded").rev().take(100).map(|r|json!({"call_id":r.id,"turn_id":r.data["invocation"]["turn_id"],"source":r.data["result"]["entry"],"content_digest":r.data["result"]["content_digest"]})).collect::<Vec<_>>(),"turns":s.turns.iter().filter(|t|t.session_id==session.id).rev().take(50).map(|t|json!({"id":t.id,"status":t.status,"consumed":t.consumed,"cancel_requested":t.cancel_requested})).collect::<Vec<_>>()}))
                 .map_err(|e| err("serialization", e.to_string()))?;
         let mut documents = match &owner {
             MaterialOwner::Global => s
@@ -738,7 +778,7 @@ impl Engine {
                 || crate::controllers::binding(&s, sid).is_some();
             let output_contract: Option<Value> = None;
             Ok(
-                json!({"session":session,"current_runtime_binding":session.runtime_binding,"workflow_context":crate::agent_tasks::session_workflow_context(&s, sid),"formal_execution":formal_execution,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
+                json!({"session":session,"current_runtime_binding":session.runtime_binding,"workflow_context":crate::agent_tasks::session_workflow_context(&s, sid),"formal_execution":formal_execution,"output_contract":output_contract,"agent_instance_id":session_instance(&s,session),"experience_reads":crate::agent_context::experience_read_history(&s,sid),"turns":turns.iter().rev().skip(offset).take(limit).collect::<Vec<_>>(),"total_turns":turns.len(),"events":events,"next_cursor":next,"interactions":s.interactions.iter().filter(|i|i.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"proposals":s.proposals.iter().filter(|v|v.session_id==sid).rev().take(limit).collect::<Vec<_>>(),"executions":s.executions.iter().filter(|e|e.session_id==sid).rev().take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

@@ -2985,6 +2985,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
                 let composition = state.resolve_agent(&selected.id).unwrap();
                 let mut binding = fixture_binding();
                 binding.agent_configuration = Some(AgentExecutionConfiguration {
+                    context_protocol: None,
                     integration_lock: Some(configured.integration_lock),
                     agent_instance_id: "actual-fixture-agent-instance".into(),
                     agent_revision_id: selected.id.clone(),
@@ -3871,6 +3872,7 @@ fn fixture_binding_for_platform_agent(e: &Engine, c: &Command) -> RuntimeBinding
     let composition = state.resolve_agent(&selected.id).unwrap();
     let mut binding = fixture_binding();
     binding.agent_configuration = Some(AgentExecutionConfiguration {
+        context_protocol: None,
         integration_lock: Some(configured.integration_lock),
         agent_instance_id: "fixture-scoped-lint".into(),
         agent_revision_id: selected.id.clone(),

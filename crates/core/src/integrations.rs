@@ -29,7 +29,29 @@ pub fn freeze_integrations(
     a: &AgentComposition,
     project: Option<&str>,
 ) -> Result<IntegrationLock> {
-    let scope = project.map(Scope::project).unwrap_or(Scope::global());
+    freeze_agent_integrations(s, a, project, false)
+}
+pub fn freeze_discussion_integrations(
+    s: &EngineeringState,
+    a: &AgentComposition,
+    project: Option<&str>,
+) -> Result<IntegrationLock> {
+    freeze_agent_integrations(s, a, project, true)
+}
+fn freeze_agent_integrations(
+    s: &EngineeringState,
+    a: &AgentComposition,
+    project: Option<&str>,
+    deferred: bool,
+) -> Result<IntegrationLock> {
+    let project = project.filter(|id| *id != GLOBAL_DISCUSSION_NAMESPACE);
+    let scope = project.map(Scope::project).unwrap_or_else(|| {
+        a.capability_ref
+            .as_ref()
+            .and_then(|id| s.configuration(id).ok())
+            .map(|r| r.scope.clone())
+            .unwrap_or_default()
+    });
     let mapping = project
         .and_then(|p| {
             latest(
@@ -41,12 +63,17 @@ pub fn freeze_integrations(
         .map(|r| r.data.clone())
         .unwrap_or(json!({}));
     let mut lock = IntegrationLock::default();
-    let mut names = BTreeSet::new();
+    let mut names: BTreeSet<_> = agent_context_tools()
+        .iter()
+        .map(ToolDefinition::call_name)
+        .collect();
     let mut sources = BTreeMap::new();
     for key in &a.tools {
         let r = s.configuration(key)?;
         if r.data["implementation"] == "platform" {
-            live(s, r)?;
+            if !deferred {
+                live(s, r)?;
+            }
             let definition: ToolDefinition = r.decode()?;
             require(names.insert(definition.call_name()), "工具名称冲突")?;
             lock.platform_tools.push(r.clone());
@@ -57,9 +84,7 @@ pub fn freeze_integrations(
         }
         let tool: ExternalTool = r.decode()?;
         tool.validate()?;
-        live(s, r)?;
         let source = reference(s, &tool.integration_ref, "integration", &scope)?;
-        live(s, source)?;
         require(names.insert(tool.qualified_name.clone()), "工具名称冲突")?;
         require(
             sources
@@ -67,41 +92,53 @@ pub fn freeze_integrations(
                 .is_none_or(|id| id == source.id),
             "同一接入源不能混用目录修订",
         )?;
-        let binding_id = mapping[&source.id].as_str().ok_or_else(|| {
-            err(
-                "integration_binding_required",
-                format!("请为 {} 选择项目接入绑定", source.name),
-            )
-        })?;
-        let binding = reference(s, binding_id, "integration_binding", &scope)?;
-        live(s, binding)?;
-        let b: IntegrationBinding = binding.decode()?;
-        require(
-            !matches!(b.auth, IntegrationAuth::OAuthPending { .. }),
-            "接入 OAuth 授权尚未完成",
-        )?;
-        require(
-            tool.required_auth
-                .as_ref()
-                .is_none_or(|auth| auth.satisfied_by(&b.auth)),
-            "绑定认证不满足工具所需方案或 scope",
-        )?;
-        require(
-            b.integration_ref == source.id
-                && b.harness_ref == a.harness_ref
-                && b.allowed_tools.contains(&r.id),
-            "接入绑定不适用于该工具或 Harness",
-        )?;
-        lock.tools.push(BoundTool {
-            revision_id: r.id.clone(),
-            content_hash: r.content_hash.clone(),
-            definition: tool,
-            integration: source.decode()?,
-            integration_hash: source.content_hash.clone(),
-            binding_ref: binding.id.clone(),
-            binding: b,
-            binding_hash: binding.content_hash.clone(),
-        });
+        let resolved = (|| -> Result<BoundTool> {
+            live(s, r)?;
+            live(s, source)?;
+            let binding_id = mapping[&source.id].as_str().ok_or_else(|| {
+                err(
+                    "integration_binding_required",
+                    format!("请为 {} 选择项目接入绑定", source.name),
+                )
+            })?;
+            let binding = reference(s, binding_id, "integration_binding", &scope)?;
+            live(s, binding)?;
+            let b: IntegrationBinding = binding.decode()?;
+            require(
+                !matches!(b.auth, IntegrationAuth::OAuthPending { .. }),
+                "接入 OAuth 授权尚未完成",
+            )?;
+            require(
+                tool.required_auth
+                    .as_ref()
+                    .is_none_or(|auth| auth.satisfied_by(&b.auth)),
+                "绑定认证不满足工具所需方案或 scope",
+            )?;
+            require(
+                b.integration_ref == source.id
+                    && b.harness_ref == a.harness_ref
+                    && b.allowed_tools.contains(&r.id),
+                "接入绑定不适用于该工具或 Harness",
+            )?;
+            Ok(BoundTool {
+                revision_id: r.id.clone(),
+                content_hash: r.content_hash.clone(),
+                definition: tool,
+                integration: source.decode()?,
+                integration_hash: source.content_hash.clone(),
+                binding_ref: binding.id.clone(),
+                binding: b,
+                binding_hash: binding.content_hash.clone(),
+            })
+        })();
+        match resolved {
+            Ok(bound) => lock.tools.push(bound),
+            Err(error) if deferred => {
+                lock.unbound_tools.push(r.clone());
+                lock.unbound_reasons.insert(r.id.clone(), error.message);
+            }
+            Err(error) => return Err(error),
+        }
     }
     for id in &a.skills {
         if let Some(r) = s
@@ -204,17 +241,36 @@ impl Engine {
             .iter()
             .find(|t| t.id == tid)
             .ok_or_else(|| err("not_found", "Turn 不存在"))?;
+        let b = s.turn_runtime_binding(t)?;
+        let native_input = if b.installation.key.provider == HarnessProvider::Dsh {
+            &t.external_message
+        } else {
+            &t.external_turn
+        };
         require(
             turn == tid
                 && session.external_session.as_ref() == Some(thread)
-                && t.external_turn.as_ref() == Some(external_turn),
+                && native_input.as_ref() == Some(external_turn),
             "工具调用线程或轮次归属不符",
         )?;
-        let b = s.turn_runtime_binding(t)?;
         let config = b
             .agent_configuration
             .as_ref()
             .ok_or_else(|| err("invalid_configuration", "缺少 Agent 工具锁"))?;
+        if config.context_protocol.as_deref() == Some(AGENT_CONTEXT_PROTOCOL)
+            && let Some(definition) = agent_context_tools()
+                .into_iter()
+                .find(|definition| definition.call_name() == *tool)
+        {
+            return self.project_context_call(
+                s,
+                session,
+                tid,
+                observation,
+                (AGENT_CONTEXT_PROTOCOL, definition),
+                None,
+            );
+        }
         if let Some(definition) = config.integration_lock.as_ref().and_then(|lock| {
             lock.platform_tools.iter().find(|definition| {
                 definition
@@ -222,12 +278,66 @@ impl Engine {
                     .is_ok_and(|definition| definition.call_name() == *tool)
             })
         }) {
-            return self.project_agent_platform_call(
+            let definition = definition.clone();
+            let parsed: ToolDefinition = definition.decode()?;
+            if crate::agent_tasks::session_binding(s, &session.id).is_none()
+                && crate::controllers::binding(s, &session.id).is_none()
+            {
+                return self.project_context_call(
+                    s,
+                    session,
+                    tid,
+                    observation,
+                    (&definition.id, parsed),
+                    None,
+                );
+            }
+            let checkpoint = s.clone();
+            let result =
+                self.project_agent_platform_call(s, session, tid, observation, definition.clone());
+            if let Err(error) = result {
+                *s = checkpoint;
+                return self.project_context_call(
+                    s,
+                    session,
+                    tid,
+                    observation,
+                    (&definition.id, parsed),
+                    Some(error),
+                );
+            }
+            return result;
+        }
+        if let Some(definition) = config.integration_lock.as_ref().and_then(|lock| {
+            lock.unbound_tools
+                .iter()
+                .find(|r| r.data["qualified_name"] == *tool)
+        }) {
+            let definition = definition.clone();
+            let parsed = ToolDefinition {
+                runtime: None,
+                harness_provider: None,
+                qualified_name: tool.clone(),
+                implementation: "unbound".into(),
+                input_schema: definition.data["input_schema"].clone(),
+                output_schema: json!({"type":"object"}),
+                capabilities: vec![],
+            };
+            return self.project_context_call(
                 s,
                 session,
                 tid,
                 observation,
-                definition.clone(),
+                (&definition.id, parsed),
+                Some(err(
+                    "integration_binding_required",
+                    config
+                        .integration_lock
+                        .as_ref()
+                        .and_then(|lock| lock.unbound_reasons.get(&definition.id))
+                        .cloned()
+                        .unwrap_or_else(|| "请为此工具明确选择接入绑定，当前对话可以继续".into()),
+                )),
             );
         }
         let bound = config
@@ -1277,7 +1387,9 @@ pub(crate) fn integration_records(
     s.governance
         .iter()
         .filter(|r| match method {
-            "query.tool_calls" => ["tool_call", "platform_call"].contains(&r.r#type.as_str()),
+            "query.tool_calls" => {
+                ["tool_call", "platform_call", "agent_context_call"].contains(&r.r#type.as_str())
+            }
             "query.integration_bindings" => {
                 ["integration_binding", "integration_project_configuration"]
                     .contains(&r.r#type.as_str())

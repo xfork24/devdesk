@@ -392,11 +392,9 @@ pub fn dsh_profile(p: &ExecutionPermissions, instructions: &str, cwd: &str) -> R
         "- id: agent-instructions\n  disabled: true\n- id: session-telemetry-otel\n  disabled: true\n- id: session-log-deepseek\n  disabled: true\n- id: system-prompt\n  config:\n    personaPrefix: {persona}\n- id: sandbox-policy\n  config:\n    mode: {mode}\n    workspaceRoot: {cwd_yaml}\n    additionalWritableRoots: {}\n- id: approval\n  config:\n    policy: {approval}\n- id: permission\n  config:\n    defaultPreset: devdesk\n    presets:\n      devdesk:\n        sandbox: {mode}\n        approval: {approval}\n",
         serde_json::to_string(&roots).map_err(storage)?
     );
-    if matches!(p.harness.policy.tools, ToolPermission::Restricted { .. }) {
-        patch.push_str(
-            "- insert:\n  - id: devdesk-tool-boundary\n    name: /run/devdesk/tool-policy.mjs\n",
-        );
-    }
+    patch.push_str(
+        "- insert:\n  - id: devdesk-tool-boundary\n    name: /run/devdesk/tool-policy.mjs\n",
+    );
     if p.harness.policy.network == NetworkPermission::Disabled {
         patch.push_str("- id: sandbox\n  config:\n    runnerCommand: [/bin/bash, /run/devdesk/runner]\n    runnerFailureSignatures: ['bwrap:']\n");
     }

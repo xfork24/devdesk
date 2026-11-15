@@ -934,67 +934,7 @@ impl Engine {
                 return Ok(out);
             }
             if method == "workflow.outputs.read" {
-                let ids: Vec<String> =
-                    serde_json::from_value(p.get("ids").cloned().unwrap_or(json!([])))
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                require(ids.len() <= 100, "最多读取 100 项产物")?;
-                let mut out = vec![];
-                let count = ids.len().max(1);
-                for id in ids {
-                    let r = s.configuration(&id)?;
-                    let same_root = if r.r#type == "typed_material" {
-                        r.data["root_instance_id"] == instance.root_instance_id
-                    } else {
-                        s.governance.iter().any(|owner| {
-                            owner.r#type == "workflow_instance"
-                                && owner.data["root_instance_id"] == instance.root_instance_id
-                                && owner.data["steps"].as_array().is_some_and(|steps| {
-                                    steps.iter().any(|e| e["id"] == r.data["execution_id"])
-                                })
-                        }) || s.governance.iter().any(|e| {
-                            e.r#type == "workflow_execution_history"
-                                && e.data["id"] == r.data["execution_id"]
-                                && s.configuration(
-                                    e.data["workflow_instance_id"].as_str().unwrap_or(""),
-                                )
-                                .is_ok_and(|owner| {
-                                    owner.data["root_instance_id"] == instance.root_instance_id
-                                })
-                        })
-                    };
-                    require(
-                        r.scope.project_id() == Some(instance.project_id.as_str())
-                            && same_root
-                            && ["workflow_output", "typed_material"].contains(&r.r#type.as_str()),
-                        "产物不属于当前流程",
-                    )?;
-                    let value = r.data["value"]
-                        .pointer(p["pointer"].as_str().unwrap_or(""))
-                        .ok_or_else(|| err("invalid_params", "产物字段不存在"))?;
-                    let serialized = serde_json::to_string(value).unwrap();
-                    let budget = p["max_bytes"].as_u64().unwrap_or(16384).clamp(1024, 65536)
-                        as usize
-                        / count;
-                    let mut offset =
-                        (p["offset"].as_u64().unwrap_or(0) as usize).min(serialized.len());
-                    while !serialized.is_char_boundary(offset) {
-                        offset -= 1;
-                    }
-                    if serialized.len() > budget || offset > 0 {
-                        let mut end = (offset + budget).min(serialized.len());
-                        while !serialized.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        let mut data = r.data.clone();
-                        data.as_object_mut().unwrap().remove("value");
-                        out.push(json!({"id":r.id,"data":data,"value_chunk":&serialized[offset..end],"offset":offset,"next_offset":if end<serialized.len(){Some(end)}else{None},"total_bytes":serialized.len()}));
-                    } else {
-                        let mut scoped = json!(r);
-                        scoped["data"]["value"] = value.clone();
-                        out.push(scoped);
-                    }
-                }
-                return Ok(json!({"outputs":out}));
+                return read_workflow_outputs(&s, &instance, p);
             }
             if method == "workflow.events.read" {
                 let cursor = p["cursor"].as_u64().unwrap_or(0);
@@ -1118,4 +1058,67 @@ impl Engine {
             )
         })())
     }
+}
+
+/// Read exact immutable outputs within a Workflow root without activating it.
+pub fn read_workflow_outputs(
+    s: &EngineeringState,
+    instance: &ConfiguredWorkflowInstance,
+    p: &Value,
+) -> Result<Value> {
+    let ids: Vec<String> = serde_json::from_value(p.get("ids").cloned().unwrap_or(json!([])))
+        .map_err(|e| err("invalid_params", e.to_string()))?;
+    require(ids.len() <= 100, "最多读取 100 项产物")?;
+    let mut out = vec![];
+    let count = ids.len().max(1);
+    for id in ids {
+        let r = s.configuration(&id)?;
+        let same_root = if r.r#type == "typed_material" {
+            r.data["root_instance_id"] == instance.root_instance_id
+        } else {
+            s.governance.iter().any(|owner| {
+                owner.r#type == "workflow_instance"
+                    && owner.data["root_instance_id"] == instance.root_instance_id
+                    && owner.data["steps"].as_array().is_some_and(|steps| {
+                        steps.iter().any(|e| e["id"] == r.data["execution_id"])
+                    })
+            }) || s.governance.iter().any(|e| {
+                e.r#type == "workflow_execution_history"
+                    && e.data["id"] == r.data["execution_id"]
+                    && s.configuration(e.data["workflow_instance_id"].as_str().unwrap_or(""))
+                        .is_ok_and(|owner| {
+                            owner.data["root_instance_id"] == instance.root_instance_id
+                        })
+            })
+        };
+        require(
+            r.scope.project_id() == Some(instance.project_id.as_str())
+                && same_root
+                && ["workflow_output", "typed_material"].contains(&r.r#type.as_str()),
+            "产物不属于当前流程",
+        )?;
+        let value = r.data["value"]
+            .pointer(p["pointer"].as_str().unwrap_or(""))
+            .ok_or_else(|| err("invalid_params", "产物字段不存在"))?;
+        let serialized = serde_json::to_string(value).unwrap();
+        let budget = p["max_bytes"].as_u64().unwrap_or(16384).clamp(1024, 65536) as usize / count;
+        let mut offset = (p["offset"].as_u64().unwrap_or(0) as usize).min(serialized.len());
+        while !serialized.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        if serialized.len() > budget || offset > 0 {
+            let mut end = (offset + budget).min(serialized.len());
+            while !serialized.is_char_boundary(end) {
+                end -= 1;
+            }
+            let mut data = r.data.clone();
+            data.as_object_mut().unwrap().remove("value");
+            out.push(json!({"id":r.id,"data":data,"value_chunk":&serialized[offset..end],"offset":offset,"next_offset":if end<serialized.len(){Some(end)}else{None},"total_bytes":serialized.len()}));
+        } else {
+            let mut scoped = json!(r);
+            scoped["data"]["value"] = value.clone();
+            out.push(scoped);
+        }
+    }
+    Ok(json!({"outputs":out}))
 }

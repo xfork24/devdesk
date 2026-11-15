@@ -200,14 +200,23 @@ test("Standard 内容相同时，默认启动入口未声明或不同均显示�
   const defaults = await rpc(page, "query.configuration_defaults");
   const base = await rpc(page, "query.standard", { id: defaults.standard_ref });
   const copies = [];
+  let previous = base.record;
   for (const entry of [null, defaults.task_workflow_ref]) {
-    copies.push(
-      await command(page, "standard.capture", undefined, undefined, undefined, {
+    const copy = await command(
+      page,
+      "standard.capture",
+      undefined,
+      previous.id,
+      previous.revision,
+      {
         name: "相同规范的入口元数据 " + crypto.randomUUID().slice(0, 6),
         root_workflow_refs: base.root_workflow_refs,
         default_workflow_ref: entry,
-      }),
+      },
     );
+    expect(copy.default_workflow_ref ?? null).toBe(entry);
+    copies.push(copy);
+    previous = copy;
   }
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await page.getByRole("tab", { name: "Standard", exact: true }).click();

@@ -71,7 +71,13 @@ function initial(kind: string): Row {
         },
       };
     case "capability":
-      return { model_ref: "", harness_ref: "", tools: [], skills: [] };
+      return {
+        model_ref: "",
+        harness_ref: "",
+        tools: [],
+        skills: [],
+        spec_refs: [],
+      };
     case "model":
       return {
         provider: "openai",
@@ -372,10 +378,6 @@ export function ResourceEditor({
       const payload = structuredClone(data);
       if (kind === "model" && !payload.model)
         throw new Error("请先从模型目录中选择模型标识");
-      if (kind === "capability")
-        payload.tools = (payload.tools || []).filter((id: string) =>
-          options("tool").some((row) => row.id === id),
-        );
       if (kind === "agent" && !payload.instructions)
         delete payload.instructions;
       if (
@@ -621,13 +623,9 @@ export function ResourceEditor({
                     · Harness：
                     {records.find((r) => r.id === capability.harness_ref)
                       ?.name || "固定修订"}{" "}
-                    · Tools{" "}
-                    {
-                      capability.tools.filter((id: string) =>
-                        options("tool").some((row) => row.id === id),
-                      ).length
-                    }{" "}
-                    · Skills {capability.skills.length}
+                    · Tools {capability.tools.length} · Skills{" "}
+                    {capability.skills.length} · Specs{" "}
+                    {capability.spec_refs?.length || 0}
                   </div>
                 )}
                 <p className="muted full-width">
@@ -648,6 +646,7 @@ export function ResourceEditor({
                 )}
                 {select("Tools", "tool", "tools", true, true)}
                 {select("Skills", "skill", "skills", true)}
+                {select("Agent Specs", "spec", "spec_refs", true)}
                 {(data.skills || []).map((id: string) => {
                   const pkg = integrations.find(
                     (r) => r.type === "skill_package" && r.definition_id === id,
