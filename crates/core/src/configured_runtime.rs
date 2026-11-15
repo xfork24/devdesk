@@ -883,18 +883,12 @@ impl Engine {
             .find(|s| s.key == execution.step)
             .unwrap();
         workspace_view(&state, &instance, execution, step)?;
-        let mut integration_lock = instance
+        let integration_lock = instance
             .plan
             .integration_locks
             .get(execution.agent_revision_id.as_ref().unwrap())
             .ok_or_else(|| err("configuration_required", "Agent 接入未冻结"))?
             .clone();
-        integration_lock
-            .tools
-            .retain(|tool| step.access.tool_refs.contains(&tool.revision_id));
-        integration_lock
-            .platform_tools
-            .retain(|tool| step.access.tool_refs.contains(&tool.id));
         Ok(Some(ConfiguredAgentRequest {
             integration_lock,
             access: step.access.clone(),
@@ -1088,7 +1082,7 @@ impl Engine {
             "Agent 会话与步骤执行归属或状态不符",
         )?;
         state.governance.push(record("configured_session",session_id,row.scope,"步骤任务来源".into(),1,None,
-            json!({"execution_id":execution_id,"instance_id":row.id,"workflow_revision_id":instance.workflow_ref,"step":execution.step}),true));
+            json!({"execution_id":execution_id,"instance_id":row.id,"plan_revision_id":execution.plan_revision_id,"workflow_revision_id":instance.workflow_ref,"step":execution.step}),true));
         Ok(())
     }
 

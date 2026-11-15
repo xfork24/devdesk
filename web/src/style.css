@@ -2366,3 +2366,11 @@ pre {
 .reading-body select {
   max-width: 100%;
 }
+.agent-capabilities {
+  flex-basis: 100%;
+}
+.agent-capability-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}

@@ -39,6 +39,16 @@ JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.me
 
 canonical `agent-task/v6` 包含 Stage 背景、Step 任务、职责、能力、确切输入、绑定来源和值摘要、逐端口输出 Schema、动态检查、授权及预算。文本端口值是字符串；JSON 端口按声明 Schema 校验。封套为 `status`、`summary`、`outputs`，只有 completed 必须提供全部必需输出。
 
+## Agent 能力与经验上下文
+
+`query.discussion_agents({offset,limit})` 返回可用于无项目讨论的原 Agent 实例及确切配置依赖，读取不切换项目。全局讨论用 `scope:"global"`，不同时携带当前 `project_id`；项目实例保持原来源与经验范围。
+
+Capability 可通过根级 `spec_refs` 引用 Agent 自身规范，业务能力从确切 Agent 配置装配。RuntimeBinding 中 AgentExecutionConfiguration 的 `context_protocol` 固定通用上下文协议；`devdesk-agent-context/v1` 提供 `agent.experience.list` 与 `agent.experience.read`。工具调用中的实例由真实 Session 和 worker 确定，参数不能改为其他实例。
+
+列表按来源项目、工作流、Feature、Task、时间和关键字过滤，返回 `{records,total,next_offset,unavailable}`。读取传入 `source_project_id` 与 `snapshot_id`，可指定索引中的 `document_id` 或 `artifact_id`；返回 `{entry,integrity,content_digest,content_chunk,offset,next_offset,total_bytes}`。分块位置按 UTF-8 边界处理。来源引用可通过 `conversation.send.payload.experience_refs` 附加到本轮，正式步骤仍按原冻结任务提交输入。
+
+`query.session.experience_reads` 返回本次讨论的经验读取来源、状态与内容摘要。上下文调用保存为 `agent_context_call`，可通过 `query.tool_calls` 读取（无项目讨论传 `scope:"global"`）；失败回执不使自由讨论丢失工具能力。缺少必要操作对象返回 `context_required`，外部工具未绑定账户返回 `integration_binding_required`，权限拒绝保留具体原因。
+
 ## 运行与交互
 
 `feature.create` 可通过 initial_requirement 提供自然语言初始需求，保存不可变 feature_request；工作流将其以 user_request 冻结到实际任务，独立于声明的 workflow_inputs。`workflow.start` 固定 owner、输入、配置闭包和绑定；`query.workflow_instance` 返回 record、runtime、plan、outputs、children，实际执行者的展示索引 actors，以及按执行 ID 索引的 completion_status（satisfied、human_satisfied、当前确切版本的 confirmation）。调用路径、Step key、执行 ID、round 和 sequence 分别表示不同身份。

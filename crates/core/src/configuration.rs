@@ -69,6 +69,13 @@ pub(crate) fn validate_capability(
     let tools = reference_list(refs, "tools")?;
     let model_ref = reference_id(refs, "model_ref")?;
     let harness_ref = reference_id(refs, "harness_ref")?;
+    if refs.contains_key("spec_refs") {
+        for spec in reference_list(refs, "spec_refs")? {
+            reference(s, &spec, "spec", scope)?
+                .decode::<ConfiguredSpecification>()?
+                .validate()?;
+        }
+    }
     for skill in &skills {
         if let Some(r) = s
             .governance

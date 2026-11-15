@@ -84,7 +84,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   ).toBeVisible();
   const defaults = await rpc(page, "query.configuration_defaults");
   expect(Object.keys(defaults.role_agent_bindings)).toHaveLength(6);
-  expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex:3");
+  expect(defaults.capability_ref).toBe("builtin-capability-sol-high-codex:4");
   const tools = await rpc(page, "query.configurations", {
     kind: "tool",
     include_history: true,
@@ -221,6 +221,9 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
     .getByLabel("Tools", { exact: true })
     .selectOption("builtin-tool-codex-native:1");
   const capName = "Browser capability " + crypto.randomUUID().slice(0, 5);
+  await page
+    .getByLabel("Agent Specs", { exact: true })
+    .selectOption("builtin-spec-stage-prd:2");
   await page.getByLabel("名称", { exact: true }).fill(capName);
   await page
     .getByRole("button", { name: "创建 Capability", exact: true })
@@ -234,6 +237,8 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   });
   const cap = catalog.records.find((r: any) => r.name === capName);
   expect(cap).toBeTruthy();
+  expect(cap.spec_refs).toEqual(["builtin-spec-stage-prd:2"]);
+  expect(cap.data).toEqual({});
   await page.getByRole("tab", { name: "Agent", exact: true }).click();
   const agentName = "Browser analyst " + crypto.randomUUID().slice(0, 5);
   await page.getByLabel("名称", { exact: true }).fill(agentName);

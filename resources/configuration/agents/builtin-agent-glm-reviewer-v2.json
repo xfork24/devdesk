@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "builtin-agent-glm-reviewer",
+  "revision": 2,
+  "name": "评审 · GLM 5.3 Flash / DSH",
+  "scope": "global",
+  "capability_ref": "builtin-capability-reviewer-glm-dsh:2",
+  "role_ref": "builtin-role-reviewer:1",
+  "data": {}
+}

@@ -1059,7 +1059,15 @@ impl Engine {
         Ok(receipt)
     }
     pub fn drive_platform_tools(&self) -> Result<()> {
-        let snapshot = self.store.snapshot()?;
+        let mut snapshot = self.store.snapshot()?;
+        if snapshot
+            .governance
+            .iter()
+            .any(|r| r.r#type == "agent_context_call" && r.data["reply_sent"] != true)
+        {
+            self.drive_agent_context_calls(&snapshot)?;
+            snapshot = self.store.snapshot()?;
+        }
         for row in snapshot.governance.iter().filter(|r| {
             r.r#type == "platform_call"
                 && ["prepared", "running"].contains(&r.data["status"].as_str().unwrap_or(""))

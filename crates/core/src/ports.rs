@@ -80,8 +80,35 @@ pub trait Harness: Send + Sync {
 }
 
 pub type CodeView = devdesk_domain::FrozenCode;
+/// Read historical sources without activating their project or execution.
+pub trait AgentContextReader: Send + Sync {
+    fn project_knowledge(
+        &self,
+        _instance: &str,
+        _origin_project: Option<&str>,
+        _target_project: Option<&str>,
+        _method: &str,
+        _params: &Value,
+    ) -> Result<Value> {
+        Err(err("context_required", "读取项目资料需要明确的项目上下文"))
+    }
+    fn experience(
+        &self,
+        instance: &str,
+        origin_project: Option<&str>,
+        params: &Value,
+    ) -> Result<Value>;
+    fn workflow_outputs(
+        &self,
+        instance: &str,
+        origin_project: Option<&str>,
+        params: &Value,
+    ) -> Result<Value>;
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionStart {
+    #[serde(default)]
+    pub specifications: Vec<devdesk_domain::ConfigurationRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configured_task: Option<devdesk_domain::ConfiguredAgentTask>,
     #[serde(default)]
@@ -105,6 +132,8 @@ pub struct SessionReceipt {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnDispatch {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_references: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configured_task: Option<devdesk_domain::ConfiguredAgentTask>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

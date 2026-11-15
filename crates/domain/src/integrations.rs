@@ -296,6 +296,10 @@ pub struct BoundTool {
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IntegrationLock {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unbound_reasons: BTreeMap<Id, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unbound_tools: Vec<ConfigurationRecord>,
     #[serde(default)]
     pub tools: Vec<BoundTool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

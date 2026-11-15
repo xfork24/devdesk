@@ -254,6 +254,7 @@ fn drive(e: &Engine, rounds: usize) {
                         .unwrap(),
                     ),
                     agent_configuration: Some(AgentExecutionConfiguration {
+                        context_protocol: None,
                         integration_lock: Some(selected.integration_lock),
                         agent_instance_id: "fixture-manager-instance".into(),
                         agent_revision_id: agent.id.clone(),

@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "builtin-agent-sol-high-developer",
+  "revision": 6,
+  "name": "开发 · Sol High / Codex",
+  "scope": "global",
+  "capability_ref": "builtin-capability-developer-codex:5",
+  "role_ref": "builtin-role-developer:1",
+  "data": {}
+}

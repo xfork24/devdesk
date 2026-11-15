@@ -38,6 +38,8 @@ mod model_provider;
 pub use model_provider::*;
 mod agents;
 pub use agents::*;
+mod agent_context;
+pub use agent_context::*;
 mod conversation;
 pub use conversation::*;
 mod governance;

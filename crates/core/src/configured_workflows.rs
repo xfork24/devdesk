@@ -711,6 +711,7 @@ pub fn compile_workflow_sources(
                         .chain(std::iter::once(&composition.harness_ref))
                         .chain(composition.skills.iter())
                         .chain(composition.tools.iter())
+                        .chain(composition.spec_refs.iter())
                     {
                         if let Ok(definition) = state.configuration(id) {
                             plan.definitions.insert(id.clone(), definition.clone());

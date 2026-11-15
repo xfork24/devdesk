@@ -151,7 +151,7 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
     if value.get("agent_revision_id").is_some() && value.get("composition_hash").is_some() {
         return Ok(Some(
             json!({"$source":"agent_execution","agent_ref":value["agent_revision_id"],"instance_ref":value["agent_instance_id"],
-                "integration_lock":pack(state,&value["integration_lock"])?}),
+                "integration_lock":pack(state,&value["integration_lock"])?,"context_protocol":value["context_protocol"]}),
         ));
     }
     if value["binding_lock"].is_object()
@@ -452,6 +452,7 @@ fn restore_reference(
             let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
             let lock = restore_with(state, &value["integration_lock"], memo)?;
             Ok(json!(AgentExecutionConfiguration {
+                context_protocol: value["context_protocol"].as_str().map(str::to_owned),
                 agent_instance_id: value["instance_ref"].as_str().unwrap_or("").into(),
                 agent_revision_id: reference.into(),
                 composition_hash: state.configuration(reference)?.content_hash.clone(),

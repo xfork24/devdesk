@@ -41,6 +41,12 @@ pub struct Workspace {
     runtime_setup: session_resources::RuntimePreparation,
 }
 fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters) -> Arc<Engine> {
+    let root = PathBuf::from(store.root());
+    let data_root = root
+        .ancestors()
+        .find(|p| p.join("global.sqlite3").is_file())
+        .unwrap_or(&root)
+        .to_owned();
     let artifacts = Arc::new(FileArtifacts::new(PathBuf::from(store.root())));
     let tools = Arc::new(
         devdesk_adapters::integrations::NativeTools::new(store.root())
@@ -48,6 +54,7 @@ fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters)
     );
     Arc::new(
         Engine::new(store, artifacts, adapters.clone())
+            .with_context_reader(Arc::new(experience::Reader::new(data_root)))
             .with_tool_executor(tools)
             .with_configuration_backend(Arc::new(devdesk_adapters::ConfigurationBackend)),
     )
@@ -214,6 +221,12 @@ impl Workspace {
             e
         };
         self.sync_configuration(&e)?;
+        if (method == "session.open" || method == "experience.restore")
+            && let Some(instance) = params["payload"]["agent_instance_id"].as_str()
+        {
+            let sources = experience::discussion_catalog(Path::new(&self.global.root()))?;
+            e.import_discussion_agent(&sources, instance)?;
+        }
         if let Some(result) = self.experience_dispatch(method, &params, &e) {
             return result;
         }
@@ -326,6 +339,29 @@ impl Workspace {
         Ok(result)
     }
     fn dispatch_inner(&self, method: &str, params: Value) -> Result<Value> {
+        if method == "query.discussion_agents" {
+            let records = experience::discussion_catalog(Path::new(&self.global.root()))?;
+            let offset = params["offset"].as_u64().unwrap_or(0) as usize;
+            let limit = params["limit"].as_u64().unwrap_or(100).clamp(1, 100) as usize;
+            let page = records
+                .iter()
+                .skip(offset)
+                .take(limit)
+                .map(|r| {
+                    let mut row = json!(r);
+                    if r.r#type == "agent_instance"
+                        && let Some(project) = r
+                            .scope
+                            .project_id()
+                            .and_then(|pid| self.global.project(pid).ok().flatten())
+                    {
+                        row["origin_project_name"] = json!(project.title);
+                    }
+                    row
+                })
+                .collect::<Vec<_>>();
+            return Ok(json!({"records":page,"total":records.len()}));
+        }
         if [
             "query.permissions",
             "permission.create",
@@ -349,6 +385,7 @@ impl Workspace {
                 "session.read",
                 "query.sessions",
                 "query.session",
+                "query.tool_calls",
                 "conversation.send",
                 "conversation.cancel",
                 "execution.retry_cleanup",

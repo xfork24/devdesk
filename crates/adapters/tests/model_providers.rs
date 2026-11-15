@@ -7,6 +7,64 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[test]
+#[ignore = "requires an explicitly selected DSH Docker image"]
+fn docker_dsh_agent_context_bridge_reads_detached_history_with_real_sdk() {
+    let image =
+        std::env::var("DEVDESK_DSH_TEST_IMAGE").expect("select an immutable DSH image digest");
+    assert!(image.starts_with("sha256:") && image.len() == 71);
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let permission = directory.path().join("permission.json");
+    std::fs::write(
+        &permission,
+        json!({"harness":{"policy":{"tools":{"mode":"all_available"}}},"approval":"never"})
+            .to_string(),
+    )
+    .unwrap();
+    let output = Command::new("docker")
+        .args(["run", "--rm", "--network", "none", "--entrypoint", "node"])
+        .args([
+            "--mount",
+            &format!(
+                "type=bind,source={},target=/fixture.mjs,readonly",
+                root.join("tests/fixtures/protocols/dsh-agent-context.mjs")
+                    .display()
+            ),
+        ])
+        .args([
+            "--mount",
+            &format!(
+                "type=bind,source={},target=/run/devdesk/tool-policy.mjs,readonly",
+                root.join("permissions/backends/dsh/tool-policy.mjs")
+                    .display()
+            ),
+        ])
+        .args([
+            "--mount",
+            &format!(
+                "type=bind,source={},target=/run/devdesk/permission,readonly",
+                permission.display()
+            ),
+        ])
+        .args([&image, "/fixture.mjs"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["sdk"], "real");
+    assert_eq!(report["inference"], "mock_only");
+    assert_eq!(report["contextCalls"], 2);
+    assert_eq!(report["detached_history_read"], true);
+}
+
 /// The published provider facts, mirrored from resources/configuration sources.
 fn facts(provider: &str) -> ProviderFacts {
     let (kind, endpoint, route, protocol, api_key_env, key, native, min, max, account) =

@@ -267,6 +267,12 @@ impl EngineeringState {
             harness_ref: reference_id(&capability.refs, "harness_ref")?,
             skills: reference_list(&capability.refs, "skills")?,
             tools: reference_list(&capability.refs, "tools")?,
+            spec_refs: capability
+                .refs
+                .get("spec_refs")
+                .map(|_| reference_list(&capability.refs, "spec_refs"))
+                .transpose()?
+                .unwrap_or_default(),
         })
     }
 

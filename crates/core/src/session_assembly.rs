@@ -1,6 +1,59 @@
 //! Application assembly of immutable Agent/Session choices. Environment facts arrive via ports.
 use crate::*;
 impl Engine {
+    /// Import only the selected identity and exact source closure for detached discussion.
+    pub fn import_discussion_agent(
+        &self,
+        records: &[ConfigurationRecord],
+        instance: &str,
+    ) -> Result<()> {
+        let selected = records
+            .iter()
+            .find(|r| r.r#type == "agent_instance" && r.id == instance)
+            .ok_or_else(|| err("not_found", "Agent 实例不存在"))?;
+        self.store.transact(None, &mut |state| {
+            require(state.projects.is_empty(), "独立讨论只能装配到讨论命名空间")?;
+            let mut pending = vec![
+                selected.id.clone(),
+                text(&selected.data, "agent_revision_id")?,
+            ];
+            let mut visited = std::collections::BTreeSet::new();
+            while let Some(id) = pending.pop() {
+                if !visited.insert(id.clone()) {
+                    continue;
+                }
+                let source = records
+                    .iter()
+                    .find(|r| r.id == id)
+                    .ok_or_else(|| err("invalid_configuration", format!("实例依赖缺失: {id}")))?;
+                require(
+                    source.is_definition() || source.r#type == "agent_instance",
+                    "讨论只能导入身份及配置源",
+                )?;
+                for edge in configuration_edges(source)? {
+                    if edge.relation != "content_digest" {
+                        pending.push(edge.to);
+                    }
+                }
+                for package in records
+                    .iter()
+                    .filter(|r| r.r#type == "skill_package" && r.definition_id == source.id)
+                {
+                    if !state.governance.iter().any(|r| r.id == package.id) {
+                        state.governance.push(package.clone());
+                    }
+                }
+                if let Some(old) = state.governance.iter().find(|r| r.id == source.id) {
+                    require(old.content_hash == source.content_hash, "实例依赖内容冲突")?;
+                } else {
+                    state.governance.push(source.clone());
+                }
+            }
+            state.refresh_configuration_views()?;
+            Ok(Value::Null)
+        })?;
+        Ok(())
+    }
     pub fn resolve_session_composition(
         &self,
         resources: &dyn ports::SessionResources,
@@ -57,7 +110,11 @@ impl Engine {
                     && configuration_visible(
                         &state,
                         record,
-                        state.projects.first().map(|p| p.id.as_str()),
+                        selected
+                            .as_ref()
+                            .and_then(|id| state.configuration(id).ok())
+                            .and_then(|r| r.scope.project_id())
+                            .or_else(|| state.projects.first().map(|p| p.id.as_str())),
                     )),
             "Agent 及其 Role/Capability 不适用于此项目，已有 Feature 保留冻结配置",
         )?;
@@ -93,7 +150,15 @@ impl Engine {
             project.is_some() || owner == "global",
             "Agent 执行需要项目或全局讨论范围",
         )?;
-        let scope = project.map_or(Scope::global(), |p| Scope::project(p.id.clone()));
+        let scope = if owner == "global" {
+            selected
+                .as_ref()
+                .and_then(|id| state.configuration(id).ok())
+                .map(|r| r.scope.clone())
+                .unwrap_or_default()
+        } else {
+            project.map_or(Scope::global(), |p| Scope::project(p.id.clone()))
+        };
         let title = project.map_or("全局 / 跨项目", |p| p.title.as_str());
         let instance = if let Some(instance) = selected {
             let r = state.configuration(&instance)?;
@@ -120,18 +185,14 @@ impl Engine {
         command.payload["installation_id"] = json!(materialized.id);
         let integration_lock = match configured {
             Some(configured) => configured.integration_lock,
-            None => {
-                let mut lock = freeze_integrations(
-                    &state,
-                    &agent,
-                    state.projects.first().map(|p| p.id.as_str()),
-                )?;
-                // Managed platform operations require a frozen Workflow caller and scope.
-                lock.platform_tools.clear();
-                lock
-            }
+            None => freeze_discussion_integrations(
+                &state,
+                &agent,
+                state.projects.first().map(|p| p.id.as_str()),
+            )?,
         };
         command.payload["agent_configuration"] = json!(AgentExecutionConfiguration {
+            context_protocol: Some(AGENT_CONTEXT_PROTOCOL.into()),
             integration_lock: Some(integration_lock),
             agent_instance_id: instance.clone(),
             agent_revision_id: agent_id.clone(),

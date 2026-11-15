@@ -33,15 +33,17 @@ Profile schema v2 强制：Harness profile 必须含 filesystem / network / tool
 
 ## 授权叠加：step_grants
 
-存储态 Workflow 只描述任务上下文（工作空间输入、工作目录）；读写目录与工具授权全部放在 Permission Context 的 `step_grants`：按 `workflow_ref + step key` 精确声明可写目录、只读目录与工具修订。加载执行视图时由同一解析器叠加到匹配步骤，实际访问同时受文件范围、工具白名单和双端 Profile 限制。
+存储态 Workflow 只描述任务上下文（工作空间输入、工作目录）；读写目录与工具授权全部放在 Permission Context 的 `step_grants`：按 `workflow_ref + step key` 精确声明可写目录、只读目录与工具修订。加载执行视图时由同一解析器叠加到匹配步骤，实际访问同时受文件范围、工具白名单和双端 Profile 限制。完整 Agent 工具清单保持不变，步骤工具范围在调用时校验；需要工作流控制权的操作仍检查 Controller 身份与策略。
 
-默认工程上下文（`builtin-permission-context-engineering:4`）显式收紧 16 个步骤：Task 的 `tests` 步骤只可写 `tests/`；`red_baseline` 与 `implementation` 可写全仓但 tests 只读，保护独立断言不被实现改写；`documentation` 全仓只读且只提供 outputs-read 工具。Task 的 `review` / `candidate_review` 及 Feature 的 `candidate_review` 没有文件授权，工具白名单包含所选原生工具与 outputs-read；其余只读评审按各自 grant 执行。工具能力仍须由 Capability 提供。
+默认工程上下文（`builtin-permission-context-engineering:6`）显式收紧 16 个步骤：Task 的 `tests` 步骤只可写 `tests/`；`red_baseline` 与 `implementation` 可写全仓但 tests 只读，保护独立断言不被实现改写；`documentation` 全仓只读且只提供 outputs-read 工具。Task 的 `review` / `candidate_review` 及 Feature 的 `candidate_review` 没有文件授权，工具白名单包含所选原生工具与 outputs-read；其余只读评审按各自 grant 执行。工具能力仍须由 Capability 提供。
 
 ## 执行冻结与切换
 
 运行开始时解析双端（Harness/Sandbox）锁并冻结进 RuntimeBinding；**重试与恢复不追随新的活动分配**——绑定变更不改变已冻结执行。
 
 权限切换等价于**后继会话**，三段式完成：静止校验 → 逐执行取得停止与写撤销证明（首停时导出协议日志）→ 会话快照 + 强制新建后继 Session（继承 Agent 实例）。全过程 durable intent，任意崩溃点重试收敛；原会话与输入保留历史，不被改写。
+
+权限、实际接入绑定和通用上下文协议变化通过同一后继机制核对；Agent 身份、模型、Harness 与运行环境变化分别验证。创建、发送和恢复使用一致能力解析，工具集合不会因入口过滤产生伪切换。
 
 讨论会话发送消息时自动检测改绑：锁未变直接执行；变化则走上述切换。`permission_status` 状态机为 unconfigured / pending / ready_to_switch / adopted / needs_reconciliation，待恢复时可用 pending_command 原样重试。
 

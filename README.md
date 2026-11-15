@@ -37,7 +37,7 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 
 默认 Feature 为 7 阶段 22 步，Task 为 7 阶段 20 步，覆盖需求、设计、任务规划、独立测试、Red/Green、实现、文档、评审、候选与发布。默认 Feature 的 PRD、Design 和 Tasks 在独立 Spec 验收后分别等待人类确认；其他步骤自动推进，仍须满足业务门禁。澄清回答、后续范围/验收/关键方案变化由人类决定，Agent 不得代答或自行绕过。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
 
-项目经理独立工作台可在创建 Feature 前查询资料、预演和创作配置；它与根实例调度权分开。当前 Codex 提供平台/编排原生工具桥，DSH 不提供该桥。DSH 可按源配置连接 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅及本机 Ollama；目录结果不代表真实推理已验证。
+项目经理独立工作台可在创建 Feature 前查询资料、预演和创作配置；它与根实例调度权分开。Codex 与 DSH 提供动态工具和 Agent 经验访问桥；当前根编排驱动支持 Codex。DSH 可按源配置连接 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅及本机 Ollama；目录结果不代表真实推理已验证。
 
 ## 数据与执行边界
 

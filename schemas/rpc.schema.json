@@ -1483,6 +1483,14 @@
         "capability_ref": {
           "type": "string",
           "pattern": "^.+:[1-9][0-9]*$"
+        },
+        "spec_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
         }
       },
       "required": [
@@ -1684,11 +1692,6 @@
                 {
                   "required": [
                     "sandbox_ref"
-                  ]
-                },
-                {
-                  "required": [
-                    "spec_refs"
                   ]
                 }
               ]
@@ -2237,6 +2240,12 @@
               "type": "null"
             }
           ]
+        },
+        "context_protocol": {
+          "enum": [
+            "devdesk-agent-context/v1",
+            null
+          ]
         }
       },
       "required": [
@@ -2708,6 +2717,14 @@
           "uniqueItems": true
         },
         "skills": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "spec_refs": {
           "type": "array",
           "items": {
             "type": "string",
@@ -3424,6 +3441,18 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/ConfigurationRecord"
+          }
+        },
+        "unbound_tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigurationRecord"
+          }
+        },
+        "unbound_reasons": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
           }
         }
       },
@@ -5076,11 +5105,21 @@
         "user_request": {
           "type": "object",
           "properties": {
-            "feature_id": { "type": "string" },
-            "title": { "type": "string" },
-            "initial_requirement": { "type": "string" }
+            "feature_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "initial_requirement": {
+              "type": "string"
+            }
           },
-          "required": ["feature_id", "title", "initial_requirement"],
+          "required": [
+            "feature_id",
+            "title",
+            "initial_requirement"
+          ],
           "additionalProperties": false
         },
         "human_governance": {

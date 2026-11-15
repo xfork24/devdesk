@@ -479,10 +479,10 @@ fn input_and_agent_binding_changes_preserve_the_normative_snapshot() {
         json!({"title":"同一规范下的执行选择"}),
     )
     .unwrap();
-    let root=command(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow,"role_agent_bindings":{"builtin-role-analyst:1":"builtin-agent-sol-high-analyst:5"},"inputs":{"data":{"value":"before"}}})).unwrap()["id"].as_str().unwrap().to_owned();
+    let root=command(&e,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow,"role_agent_bindings":{"builtin-role-analyst:1":"builtin-agent-sol-high-analyst:6"},"inputs":{"data":{"value":"before"}}})).unwrap()["id"].as_str().unwrap().to_owned();
     let initial = row(&e, &root);
     let standard = initial.data["plan"]["standard_ref"].clone();
-    let source_record = row(&e, "builtin-agent-sol-high-analyst:5");
+    let source_record = row(&e, "builtin-agent-sol-high-analyst:6");
     let mut payload =
         json!({"name":"同职责的另一执行者","scope":"global","data":source_record.data});
     for (key, value) in &source_record.refs {

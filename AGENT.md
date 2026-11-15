@@ -29,7 +29,7 @@
 - 配置为不可变源修订，引用使用 `identity:revision`；根级引用由源类型白名单限定，摘要覆盖引用与 data。`source_definitions` 是唯一配置存储，不增加展开配置投影表。冻结任务按原引用重建，不读取当前默认替换历史依据。
 - Role 管职责，Skill 管方法，Step 管任务，Spec 管内容检查，Delivery 管结构及来源，Standard 固定闭包。新增业务流程使用这些原语；业务 key、标题或角色名不选择执行器。
 - Agent 只引用 Role 与 Capability；Capability 表示技术能力，Permission Context/Profile 表示执行授权。存储态 Workflow 不包含写路径/工具授权，内存 StepAccess 可承载解析后的 grant。无法落实的后端策略明确拒绝。
-- `runtime_resource` 保存不可变配方/OCI digest 和下载摘要。发行标签不是兼容门槛；核对实际 recipe/image/driver/权限资产与协议报告。Codex 当前提供动态平台/编排桥，DSH 不提供，配置声明不能绕过驱动能力。
+- `runtime_resource` 保存不可变配方/OCI digest 和下载摘要。发行标签不是兼容门槛；核对实际 recipe/image/driver/权限资产与协议报告。Codex 与 DSH 当前提供动态工具及经验访问桥；根编排能力按实际驱动声明校验，配置不能绕过驱动能力。
 - manual/rust/agent 根驱动使用相同派发、接纳和完成规则。经理工作台与根调度授权分别校验；Human 决定不能由 Agent 冒充。默认 automatic 不产生人类确认，仍要求真实测试和独立评审等业务条件。
 - 所有外部副作用遵循“持久化意图 → 事务外执行 → 核对接纳回执”。未知结果先 reconcile，不盲重发；取消取得实际停止/写撤销证明。模型记录、平台回执、人类决定分别保存。
 - Git 核对实际候选、父提交/diff、本地 CAS 和远端精确 lease；平台只创建 PR，不执行远端合入。运行计划修改必须 preview/quiesce/apply，旧执行与原始拒绝保留。

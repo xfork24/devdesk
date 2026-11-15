@@ -1,0 +1,10 @@
+{
+  "type": "agent",
+  "identity": "builtin-agent-minimax-tester",
+  "revision": 2,
+  "name": "测试 · MiniMax M3.1 Flash / DSH",
+  "scope": "global",
+  "capability_ref": "builtin-capability-tester-minimax-dsh:2",
+  "role_ref": "builtin-role-tester:1",
+  "data": {}
+}

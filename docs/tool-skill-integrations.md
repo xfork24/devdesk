@@ -10,6 +10,8 @@
 4. 在 Capability 选择具体 Tool/Skill，再组合 Agent。在项目管理页面为该 Agent 所需的来源选择绑定，也可在接入页面将绑定用于当前项目。
 5. 准备工具执行环境并显式发起测试。到调用记录查看终态、来源、远端副作用、参数、审批/取消及文件结果。保存定义、凭据可用、镜像就绪、测试通过和 Agent 获得授权分别判断。
 
+Agent 的完整工具、Skill 和自身规范不按讨论、步骤或控制器类型裁剪。自由讨论允许外部工具尚未绑定账户，保留工具描述并在调用时返回 `integration_binding_required`；已具备的能力与实际授权分开表达。
+
 已有 Feature 冻结接入、工具、绑定及 Skill 材料。项目改绑不会改写 Feature；讨论在下一次静止边界创建后继 Session。普通停用拒绝新的选择并检查引用；紧急停用阻止后续派发，进行中的副作用仍需按回执核对。
 
 ## 认证与隔离
@@ -39,6 +41,6 @@ macOS 新的接入凭据账户需要新版签名助手。原有 Host 和已有 C
 DEVDESK_TOOL_TEST_IMAGE=sha256:<固定镜像完整摘要> cargo test --locked -p devdesk-adapters --test tool_integrations docker_ -- --ignored --nocapture
 ```
 
-HTTP/MCP/OAuth 的本地协议夹具与真实模型、第三方账户验收分别报告。OAuth 夹具使用内存凭据替身，不代表真实第三方账户或本机 Keychain 已授权。Codex 动态平台工具、经理工具与根控制工具按实际驱动能力注册；DSH 当前没有该桥，不能仅靠配置声明获得支持。
+HTTP/MCP/OAuth 的本地协议夹具与真实模型、第三方账户验收分别报告。OAuth 夹具使用内存凭据替身，不代表真实第三方账户或本机 Keychain 已授权。Codex 与 DSH 均通过真实驱动注册动态工具和通用经验读取接口。DSH 使用受管 SDK 扩展转交 `devdesk/tool/call`，Host 校验当前实例、轮次、工具及权限并回传结果；根编排能力仍由各驱动的实际声明决定。
 
 实现依据：[接入执行器](../crates/adapters/src/integrations.rs)、[OAuth](../crates/adapters/src/integration_oauth.rs)、[平台工具注册表](../crates/core/src/platform_tools.rs)、[经理工具](../crates/core/src/manager_workspace.rs)、[原生驱动](../crates/adapters/src/harness.rs)。

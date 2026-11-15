@@ -24,7 +24,17 @@ impl Workspace {
             } else {
                 params
             };
-            let detail = experience::query(&root, &pid, p)?;
+            let mut read_pid = pid.clone();
+            if params["scope"] == "global"
+                && let Some(instance) = p["agent_instance_id"].as_str()
+                && let Some(origin) = experience::discussion_catalog(&root)?
+                    .iter()
+                    .find(|r| r.id == instance && r.r#type == "agent_instance")
+                    .and_then(|r| r.scope.project_id())
+            {
+                read_pid = origin.to_owned();
+            }
+            let detail = experience::query(&root, &read_pid, p)?;
             if method == "query.agent_experience" {
                 return Ok(detail);
             }

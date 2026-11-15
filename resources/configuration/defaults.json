@@ -4,15 +4,15 @@
   "model_ref": "builtin-model-gpt-6-1-sol-high:1",
   "harness_ref": "builtin-harness-codex-managed:1",
   "sandbox_ref": "builtin-sandbox-docker:1",
-  "capability_ref": "builtin-capability-sol-high-codex:3",
+  "capability_ref": "builtin-capability-sol-high-codex:4",
   "standard_ref": "builtin-standard-engineering:5",
   "role_agent_bindings": {
-    "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:5",
-    "builtin-role-architect:1": "builtin-agent-sol-high-architect:5",
-    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:8",
-    "builtin-role-developer:1": "builtin-agent-sol-high-developer:5",
-    "builtin-role-tester:1": "builtin-agent-sol-high-tester:5",
-    "builtin-role-reviewer:1": "builtin-agent-sol-high-reviewer:5"
+    "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:6",
+    "builtin-role-architect:1": "builtin-agent-sol-high-architect:6",
+    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:9",
+    "builtin-role-developer:1": "builtin-agent-sol-high-developer:6",
+    "builtin-role-tester:1": "builtin-agent-sol-high-tester:6",
+    "builtin-role-reviewer:1": "builtin-agent-sol-high-reviewer:6"
   },
   "harness_permission_ref": "builtin-permission-harness-full-access:1",
   "sandbox_permission_ref": "builtin-permission-sandbox-full-access:1",

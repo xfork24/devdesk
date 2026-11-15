@@ -280,7 +280,14 @@ pub(crate) fn validate_composition(
                 && reference_value(&cap.refs, "harness_ref").as_str()
                     == Some(a.harness_ref.as_str())
                 && cap_tools == a.tools
-                && cap_skills == a.skills,
+                && cap_skills == a.skills
+                && cap
+                    .refs
+                    .get("spec_refs")
+                    .map(|_| reference_list(&cap.refs, "spec_refs"))
+                    .transpose()?
+                    .unwrap_or_default()
+                    == a.spec_refs,
             "Agent 执行字段与 Capability 修订不一致",
         )?;
     }
@@ -303,6 +310,7 @@ pub(crate) fn validate_composition(
             ("harness_ref".to_string(), json!(a.harness_ref)),
             ("tools".to_string(), json!(a.tools)),
             ("skills".to_string(), json!(a.skills)),
+            ("spec_refs".to_string(), json!(a.spec_refs)),
         ]),
         scope,
     )
@@ -395,7 +403,10 @@ impl Engine {
                     .rev()
                     .find(|t| t.session_id == *session_id)
                     .and_then(|t| t.finished.or(t.started));
-                s.governance.push(record("experience",snapshot_id.into(),if pid==GLOBAL_DISCUSSION_NAMESPACE {Scope::global()}else{Scope::project(pid.clone())},feature_name.clone().unwrap_or(project_title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
+                let workflow = crate::agent_tasks::session_binding(s, session_id)
+                    .map(|r| r.data.clone())
+                    .unwrap_or(Value::Null);
+                s.governance.push(record("experience",snapshot_id.into(),if pid==GLOBAL_DISCUSSION_NAMESPACE {Scope::global()}else{Scope::project(pid.clone())},feature_name.clone().unwrap_or(project_title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(&snap),"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
             }
         }
         Ok(())
@@ -428,9 +439,10 @@ impl Engine {
                     .clone()
                     .ok_or_else(|| err("invalid_scope", "Session 缺少项目"))?;
                 require(
-                    instance
-                        .scope
-                        .visible_from(&if session.scope == Some(SessionScope::Global) {
+                    session.scope == Some(SessionScope::Global)
+                        || instance.scope.visible_from(&if session.scope
+                            == Some(SessionScope::Global)
+                        {
                             Scope::global()
                         } else {
                             Scope::project(project.clone())

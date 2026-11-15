@@ -170,108 +170,18 @@ impl Engine {
     pub fn manager_knowledge(&self, method: &str, project: &str, p: &Value) -> Result<Value> {
         let s = self.store.snapshot()?;
         self.manager_project(&s, project, p)?;
-        match method {
-            "project.overview" => {
-                let counts = record_kinds()
-                    .iter()
-                    .map(|kind| Ok((kind.to_string(), json!(rows(&s, kind, project)?.len()))))
-                    .collect::<Result<serde_json::Map<String, Value>>>()?;
-                Ok(
-                    json!({"project":s.projects[0],"counts":counts,"record_kinds":record_kinds(),"overview_only":true,
-                    "continuation":{"list":"project.records.list","read":"project.record.read","artifact":"project.artifact.read"},"snapshot_digest":configuration_hash(&counts)}),
-                )
-            }
-            "project.records.list" | "configuration.catalog" => {
-                let kind = if method == "configuration.catalog" {
-                    "governance"
-                } else {
-                    p["kind"].as_str().unwrap_or("")
-                };
-                let mut records = rows(&s, kind, project)?;
-                if method == "configuration.catalog" {
-                    records.retain(|v| {
-                        serde_json::from_value::<ConfigurationRecord>(v.clone())
-                            .is_ok_and(|r| r.is_definition() || r.r#type == "agent_instance")
-                    });
-                }
-                if let Some(family) = p["type"].as_str() {
-                    records.retain(|r| r["type"] == family);
-                }
-                if let Some(search) = p["search"].as_str() {
-                    require(search.len() <= 1024, "搜索过长")?;
-                    records.retain(|r| r.to_string().contains(search));
-                }
-                records.sort_by_key(|r| r["id"].to_string());
-                let digest = configuration_hash(&records);
-                require(
-                    p["snapshot_digest"].as_str().is_none_or(|d| d == digest),
-                    "列表已变化，请重新分页",
-                )?;
-                let offset = p["offset"].as_u64().unwrap_or(0) as usize;
-                let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 100) as usize;
-                Ok(
-                    json!({"kind":kind,"records":records.iter().skip(offset).take(limit).map(summary).collect::<Vec<_>>(),"total":records.len(),"offset":offset,"next_offset":if offset+limit<records.len(){Some(offset+limit)}else{None},"snapshot_digest":digest,"complete":offset+limit>=records.len()}),
-                )
-            }
-            "project.record.read" | "configuration.read" => {
-                let kind = if method == "configuration.read" {
-                    "governance"
-                } else {
-                    p["kind"].as_str().unwrap_or("")
-                };
-                let id = text(p, "id")?;
-                let records = rows(&s, kind, project)?;
-                let record = records
-                    .iter()
-                    .find(|r| {
-                        r["id"]
-                            .as_str()
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| r["id"].to_string())
-                            == id
-                    })
-                    .ok_or_else(|| err("not_found", "项目记录不存在或不可见"))?;
-                let pointer = p["pointer"].as_str().unwrap_or("");
-                let value = record
-                    .pointer(pointer)
-                    .ok_or_else(|| err("not_found", "记录字段不存在"))?;
-                let mut result = chunk(value, p)?;
-                result["record_ref"] = json!({"kind":kind,"id":id,"revision":record["revision"],"content_hash":record["content_hash"],"pointer":pointer});
-                Ok(result)
-            }
-            "project.artifact.read" => {
-                let id = text(p, "id")?;
-                let artifact = s
-                    .artifacts
-                    .iter()
-                    .find(|a| a.id == id)
-                    .ok_or_else(|| err("not_found", "项目没有此产物引用"))?;
-                let body = self.artifacts.read(artifact)?;
-                require(body.len() <= 8 * 1024 * 1024, "产物超过经理分块读取上限")?;
-                let text = String::from_utf8(body)
-                    .map_err(|_| err("unsupported", "二进制产物需要专用查看器"))?;
-                let mut result = chunk(&json!(text), p)?;
-                result["artifact_ref"] = json!({"id":artifact.id,"sha256":artifact.sha256});
-                Ok(result)
-            }
-            "project.resources" => {
-                let actual = self
-                    .manager_services
-                    .as_ref()
-                    .map(|v| v.inventory.runtime_facts())
-                    .transpose()?
-                    .unwrap_or(json!({"available":false}));
-                chunk(
-                    &json!({"drivers":driver_capabilities(),"runtime_facts":actual,"configurations":s.governance.iter().filter(|r|["harness","sandbox","model","model_provider","runtime_resource","permission_binding","permission_context"].contains(&r.r#type.as_str())).map(|r|json!({"reference":r.id,"type":r.r#type,"content_hash":r.content_hash})).collect::<Vec<_>>()}),
-                    p,
-                )
-            }
-            "configuration.usage" => Ok(
-                json!({"reference":text(p,"id")?,"users":configuration_usage(&s,&text(p,"id")?)?,"identity_users":configuration_identity_usage(&s,&text(p,"id")?)?}),
-            ),
-            _ => Err(err("method_not_found", "未知经理查询")),
-        }
+        let actual = if method == "project.resources" {
+            self.manager_services
+                .as_ref()
+                .map(|v| v.inventory.runtime_facts())
+                .transpose()?
+                .unwrap_or(json!({"available":false}))
+        } else {
+            json!({"available":false})
+        };
+        read_project_knowledge(&s, self.artifacts.as_ref(), actual, method, project, p)
     }
+
     fn manager_live(
         &self,
         s: &EngineeringState,
@@ -556,5 +466,116 @@ impl Engine {
                     .record(s, method, &c)?;
                 Ok(result)
             })
+    }
+}
+
+/// Common, redacted read-only project context for any authorized Agent caller.
+pub fn read_project_knowledge(
+    s: &EngineeringState,
+    artifacts: &dyn ArtifactStore,
+    runtime_facts: Value,
+    method: &str,
+    project: &str,
+    p: &Value,
+) -> Result<Value> {
+    require(
+        s.projects.len() == 1 && s.projects[0].id == project,
+        "项目资料来源不匹配",
+    )?;
+    match method {
+        "project.overview" => {
+            let counts = record_kinds()
+                .iter()
+                .map(|kind| Ok((kind.to_string(), json!(rows(s, kind, project)?.len()))))
+                .collect::<Result<serde_json::Map<String, Value>>>()?;
+            Ok(
+                json!({"project":s.projects[0],"counts":counts,"record_kinds":record_kinds(),"overview_only":true,
+                    "continuation":{"list":"project.records.list","read":"project.record.read","artifact":"project.artifact.read"},"snapshot_digest":configuration_hash(&counts)}),
+            )
+        }
+        "project.records.list" | "configuration.catalog" => {
+            let kind = if method == "configuration.catalog" {
+                "governance"
+            } else {
+                p["kind"].as_str().unwrap_or("")
+            };
+            let mut records = rows(s, kind, project)?;
+            if method == "configuration.catalog" {
+                records.retain(|v| {
+                    serde_json::from_value::<ConfigurationRecord>(v.clone())
+                        .is_ok_and(|r| r.is_definition() || r.r#type == "agent_instance")
+                });
+            }
+            if let Some(family) = p["type"].as_str() {
+                records.retain(|r| r["type"] == family);
+            }
+            if let Some(search) = p["search"].as_str() {
+                require(search.len() <= 1024, "搜索过长")?;
+                records.retain(|r| r.to_string().contains(search));
+            }
+            records.sort_by_key(|r| r["id"].to_string());
+            let digest = configuration_hash(&records);
+            require(
+                p["snapshot_digest"].as_str().is_none_or(|d| d == digest),
+                "列表已变化，请重新分页",
+            )?;
+            let offset = p["offset"].as_u64().unwrap_or(0) as usize;
+            let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 100) as usize;
+            Ok(
+                json!({"kind":kind,"records":records.iter().skip(offset).take(limit).map(summary).collect::<Vec<_>>(),"total":records.len(),"offset":offset,"next_offset":if offset+limit<records.len(){Some(offset+limit)}else{None},"snapshot_digest":digest,"complete":offset+limit>=records.len()}),
+            )
+        }
+        "project.record.read" | "configuration.read" => {
+            let kind = if method == "configuration.read" {
+                "governance"
+            } else {
+                p["kind"].as_str().unwrap_or("")
+            };
+            let id = text(p, "id")?;
+            let records = rows(s, kind, project)?;
+            let record = records
+                .iter()
+                .find(|r| {
+                    r["id"]
+                        .as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| r["id"].to_string())
+                        == id
+                })
+                .ok_or_else(|| err("not_found", "项目记录不存在或不可见"))?;
+            let pointer = p["pointer"].as_str().unwrap_or("");
+            let value = record
+                .pointer(pointer)
+                .ok_or_else(|| err("not_found", "记录字段不存在"))?;
+            let mut result = chunk(value, p)?;
+            result["record_ref"] = json!({"kind":kind,"id":id,"revision":record["revision"],"content_hash":record["content_hash"],"pointer":pointer});
+            Ok(result)
+        }
+        "project.artifact.read" => {
+            let id = text(p, "id")?;
+            let artifact = s
+                .artifacts
+                .iter()
+                .find(|a| a.id == id)
+                .ok_or_else(|| err("not_found", "项目没有此产物引用"))?;
+            let body = artifacts.read(artifact)?;
+            require(body.len() <= 8 * 1024 * 1024, "产物超过经理分块读取上限")?;
+            let text = String::from_utf8(body)
+                .map_err(|_| err("unsupported", "二进制产物需要专用查看器"))?;
+            let mut result = chunk(&json!(text), p)?;
+            result["artifact_ref"] = json!({"id":artifact.id,"sha256":artifact.sha256});
+            Ok(result)
+        }
+        "project.resources" => {
+            let actual = runtime_facts;
+            chunk(
+                &json!({"drivers":driver_capabilities(),"runtime_facts":actual,"configurations":s.governance.iter().filter(|r|["harness","sandbox","model","model_provider","runtime_resource","permission_binding","permission_context"].contains(&r.r#type.as_str())).map(|r|json!({"reference":r.id,"type":r.r#type,"content_hash":r.content_hash})).collect::<Vec<_>>()}),
+                p,
+            )
+        }
+        "configuration.usage" => Ok(
+            json!({"reference":text(p,"id")?,"users":configuration_usage(s,&text(p,"id")?)?,"identity_users":configuration_identity_usage(s,&text(p,"id")?)?}),
+        ),
+        _ => Err(err("method_not_found", "未知经理查询")),
     }
 }

@@ -6,7 +6,7 @@
 
 Scope 使用 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。引用白名单按类型定义，Capability/Agent 的组合引用、Delivery 的 `spec_refs`、Harness 的供应商/目录引用、Permission Context 的 `sandbox_ref` 和 Standard 的 `root_workflow_refs` 位于信封根级；其余内容及嵌套引用仍在 `data`。内容摘要覆盖根级引用与 `data`。
 
-Agent 仅组合 Role 与 Capability。Capability 选择模型、Harness、方法及工具。技术能力、任务要求和执行授权分别表达：要求某 Skill/Tool 不会自动给 Agent 增加能力；具备 Tool 也不会自动获得本次调用权限。
+Agent 仅组合 Role 与 Capability。Capability 选择模型、Harness、方法、工具及自身规范的 `spec_refs`。完整能力随 Agent 身份装配，讨论、工作流、经理与编排入口保持一致；Workflow 只负责调度。技术能力、任务要求和执行授权分别表达：要求某 Skill/Tool 不会自动给 Agent 增加能力；具备 Tool 也不会自动获得本次调用权限。
 
 ## 独立授权
 

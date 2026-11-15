@@ -7,9 +7,9 @@
 | 对象 | 职责与引用 |
 |---|---|
 | Role | 用户定义的稳定业务身份、职责正文和可见范围；修订不能改变身份。角色名称不决定权限、工作类型或输出。 |
-| Capability | 精确 Model、Harness、Skills 与 Tools 的能力组合。 |
+| Capability | 精确 Model、Harness、Skills、Tools 与可选 Agent Spec 的能力组合。 |
 | Agent | 仅 Role 与 Capability 的确切源引用。 |
-| AgentID | 某个 Agent 修订的工作身份与经验范围。全局身份可跨项目积累经验，项目身份不能用于全局讨论。 |
+| AgentID | 某个 Agent 修订的工作身份与经验范围。全局身份可跨项目积累经验；项目身份可以进入无项目讨论，保留来源项目的配置可见性与经验范围。 |
 | Skill | 可复用方法、材料及工具依赖。正文和包资源保留确切来源，不自动产生执行权限。 |
 | Delivery 类型 | 格式、离线 JSON Schema 和 Spec 源引用；规范正文由 Spec 唯一拥有。 |
 | Spec | 唯一规范正文及任意内容检查项。 |
