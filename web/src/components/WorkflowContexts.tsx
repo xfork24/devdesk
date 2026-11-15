@@ -1,15 +1,13 @@
-import { type Request, type Row } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 import { AgentTaskView } from "./WorkflowTaskPreview";
 import {
   RawJsonLink,
   DiscussionLink,
   ReadingLink,
   ReadState,
-  useReading,
-  navigateReading,
-  executionUrl,
   ReadableValue,
 } from "./reading";
+import { useReading, navigateReading, executionUrl } from "./reading-state";
 import { useState } from "react";
 
 function FrozenContext({

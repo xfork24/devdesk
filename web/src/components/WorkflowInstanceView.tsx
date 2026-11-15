@@ -1,9 +1,10 @@
 import { WorkStandard } from "./WorkStandard";
 import { WorkflowController, WorkflowPlanChanges } from "./WorkflowController";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { ActionButton, useActionFeedback } from "./ActionFeedback";
-import { type Request, type Row } from "./configuration-ui";
+import { ActionButton } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { type Request, type Row } from "./rpc-types";
 import { ReadingLink, RawJsonLink } from "./reading";
 
 type Props = {
@@ -73,20 +74,23 @@ export function WorkflowInstanceView({
     }
   });
   const epoch = useRef(0);
-  async function load() {
+  const invalidate = useCallback(() => {
+    epoch.current += 1;
+  }, []);
+  const load = useCallback(async () => {
     const current = ++epoch.current;
     const result = await request("query.workflow_instance", {
       id: record.id,
       project_id: projectId,
     });
     if (epoch.current === current) setData(result);
-  }
+  }, [request, record.id, projectId]);
   useEffect(() => {
     void load().catch((error) => setError(String(error)));
     return () => {
-      epoch.current++;
+      invalidate();
     };
-  }, [record, projectId, request]);
+  }, [record, projectId, request, load, setError, invalidate]);
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(open));

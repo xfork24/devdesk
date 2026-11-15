@@ -79,7 +79,7 @@ for (const test of cases) {
   await writeFile(`${home}/patch.yaml`, patch + (test.persona ? `\n- id: system-prompt\n  config:\n    personaPrefix: ${JSON.stringify(test.persona)}\n` : ""));
   let serial = 0, pending = new Map(), events = [];
   const launch = () => {
-    child = spawn("dsh", ["--profile", "sdk", "--patch", `${home}/patch.yaml`], { env: { ...process.env, DSH_HOME: home, [test.env]: test.provider === "ollama" ? "ollama" : "FAKE_DSH_TEST_VALUE" }, stdio: ["pipe", "pipe", "pipe"] });
+    child = spawn("dsh", ["--profile", "sdk", "--patch", `${home}/patch.yaml`], { env: { ...process.env, DSH_HOME: home, ...(test.env ? { [test.env]: "FAKE_DSH_TEST_VALUE" } : {}) }, stdio: ["pipe", "pipe", "pipe"] });
     child.stderr.resume();
     const lines = createInterface({ input: child.stdout });
     lines.on("line", line => {

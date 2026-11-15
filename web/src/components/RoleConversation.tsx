@@ -1,20 +1,20 @@
 import { ReadableValue } from "./reading";
 import { ConversationContent } from "./ConversationContent";
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { ExecutionTaskDetails } from "./WorkflowTaskPreview";
-import {
-  loadCatalog,
-  MarkdownField,
-  type Request,
-  type Row,
-} from "./configuration-ui";
+import { loadCatalog } from "./configuration-state";
+import { MarkdownField } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 import { AgentExperience } from "./AgentExperience";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type Props = {
   project?: Row;
@@ -115,32 +115,47 @@ export function RoleConversation({
   const recommended = plan?.steps.find(
     (s: Row) => s.key === recommendedExecution?.step,
   );
-  const boundAgents = runtime?.data.plan?.definitions
-    ? Object.values(runtime.data.plan.definitions as Row)
-        .filter((row: Row) => row.type === "agent")
-        .map((row: Row) => row.id as string)
-    : (Object.values(
-        runtime?.data.role_agent_bindings ||
-          workLock?.data.role_agent_bindings ||
-          {},
-      ) as string[]);
+  const boundAgents = useMemo(
+    () =>
+      runtime?.data.plan?.definitions
+        ? Object.values(runtime.data.plan.definitions as Row)
+            .filter((row: Row) => row.type === "agent")
+            .map((row: Row) => row.id as string)
+        : (Object.values(
+            runtime?.data.role_agent_bindings ||
+              workLock?.data.role_agent_bindings ||
+              {},
+          ) as string[]),
+    [
+      runtime?.data.plan?.definitions,
+      runtime?.data.role_agent_bindings,
+      workLock?.data.role_agent_bindings,
+    ],
+  );
   const composite = catalog.find((r) => r.id === agent && r.type === "agent");
   // Agent instances pin the exact revision they were created with; a Role
   // selection offers the latest revision of that definition. Match instances
   // by agent definition so superseded revisions still load their instances.
-  const definitionOf = (id: string | undefined) => {
-    if (!id) return "";
-    return (
-      catalog.find((r) => r.id === id && r.type === "agent")?.definition_id ||
-      id.slice(0, id.lastIndexOf(":"))
-    );
-  };
+  const definitionOf = useCallback(
+    (id: string | undefined) => {
+      if (!id) return "";
+      return (
+        catalog.find((r) => r.id === id && r.type === "agent")?.definition_id ||
+        id.slice(0, id.lastIndexOf(":"))
+      );
+    },
+    [catalog],
+  );
   const selectedDefinition = definitionOf(agent);
-  const instances = catalog.filter(
-    (r) =>
-      r.type === "agent_instance" &&
-      definitionOf(r.data.agent_revision_id) === selectedDefinition &&
-      (!global || r.scope === "global"),
+  const instances = useMemo(
+    () =>
+      catalog.filter(
+        (r) =>
+          r.type === "agent_instance" &&
+          definitionOf(r.data.agent_revision_id) === selectedDefinition &&
+          (!global || r.scope === "global"),
+      ),
+    [catalog, definitionOf, selectedDefinition, global],
   );
   const pinnedRevision = instances.find((r) => r.id === instanceId)?.data
     .agent_revision_id;
@@ -157,11 +172,15 @@ export function RoleConversation({
       setInstanceId("");
     }
   }, [
-    workLock?.id,
+    workLock,
     runtime?.data.active_plan_revision_id,
     owner,
     recommendation,
     sessionId,
+    project.id,
+    global,
+    boundAgents,
+    agent,
   ]);
   useEffect(() => {
     let current = true;
@@ -177,7 +196,7 @@ export function RoleConversation({
     return () => {
       current = false;
     };
-  }, [agent, request, project.id]);
+  }, [agent, request, project.id, catalog]);
   useEffect(() => {
     if (detail?.session.id && detailGeneration.current === generation.current) {
       setAgent(detail.session.agent);
@@ -187,7 +206,12 @@ export function RoleConversation({
           "",
       );
     }
-  }, [detail?.session.id]);
+  }, [
+    currentBinding?.agent_configuration?.agent_instance_id,
+    detail?.agent_instance_id,
+    detail?.session.agent,
+    detail?.session.id,
+  ]);
 
   const choices: Row[] = [
     ...agents,
@@ -238,15 +262,19 @@ export function RoleConversation({
     workLock?.id,
     recommendation,
     sessionId,
-    composite?.id,
+    composite,
+    workLock,
+    project.id,
+    global,
+    boundAgents,
   ]);
   useEffect(() => {
     if (!sessionId && !instances.some((r) => r.id === instanceId))
       setInstanceId(instances[0]?.id || "");
-  }, [catalog, agent, global, sessionId, instanceId]);
+  }, [instances, sessionId, instanceId]);
   useEffect(() => {
     let current = true;
-    loadCatalog(request, global ? undefined : project)
+    loadCatalog(request, global ? undefined : project?.id)
       .then((rows) => {
         if (current) setCatalog(rows);
       })
@@ -256,13 +284,13 @@ export function RoleConversation({
     return () => {
       current = false;
     };
-  }, [request, project.id, global]);
+  }, [request, project?.id, global, setError]);
   useEffect(() => {
     if (recommendation && !sessionId) {
       setAgent(recommendation);
       setInstanceId("");
     }
-  }, [recommendation, owner]);
+  }, [recommendation, owner, sessionId]);
   const active = detail?.turns.find(
     (t: Row) => !["completed", "failed", "cancelled"].includes(t.status),
   );
@@ -347,7 +375,7 @@ export function RoleConversation({
   }, [scopedRequest, owner, initialOwner, initialSession]);
   useEffect(() => {
     void loadSessions().catch((e) => setError(String(e)));
-  }, [loadSessions]);
+  }, [loadSessions, setError]);
   useEffect(() => {
     const current = ++generation.current;
     cursor.current = 0;
@@ -393,7 +421,7 @@ export function RoleConversation({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [sessionId, scopedRequest]);
+  }, [sessionId, scopedRequest, captureFeedback, setError]);
   async function action(work: () => Promise<void>) {
     captureFeedback();
 
@@ -597,7 +625,10 @@ export function RoleConversation({
                     });
                     clearSelectedSession();
                     setCatalog(
-                      await loadCatalog(request, global ? undefined : project),
+                      await loadCatalog(
+                        request,
+                        global ? undefined : project?.id,
+                      ),
                     );
                     setInstanceId(created.id);
                   })

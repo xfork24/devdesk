@@ -1,11 +1,9 @@
-import { ActionButton, useActionFeedback } from "./ActionFeedback";
+import { ActionButton } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { useCallback, useEffect, useState } from "react";
-import {
-  latest,
-  RevisionSelect,
-  type Request,
-  type Row,
-} from "./configuration-ui";
+import { latest } from "./configuration-state";
+import { RevisionSelect } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 export function ProjectIntegrationBindings({
   request,
   project,
@@ -58,7 +56,7 @@ export function ProjectIntegrationBindings({
   }, [request, project.id]);
   useEffect(() => {
     void load().catch((e) => setError(String(e)));
-  }, [load]);
+  }, [load, setError]);
   const required = new Set<string>();
   for (const id of agents) {
     const agent = catalog.find((r) => r.id === id);

@@ -1,19 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import {
-  ActionButton,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
-import {
-  latest,
-  loadCatalog,
-  MarkdownField,
-  RevisionSelect,
-  useDraft,
-  type Request,
-  type Row,
-} from "./configuration-ui";
+import { ActionButton, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { latest, loadCatalog, useDraft } from "./configuration-state";
+import { MarkdownField, RevisionSelect } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 import {
   JsonField,
   SourceSelect,
@@ -103,15 +94,18 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   const editorRef = useRef<HTMLElement>(null);
   const epoch = useRef(0),
     routeSelected = useRef(false);
+  const invalidate = useCallback(() => {
+    epoch.current += 1;
+  }, []);
   const load = useCallback(async () => {
     const current = ++epoch.current;
     const [catalog, workflows, defaults] = await Promise.all([
-      loadCatalog(request, project),
+      loadCatalog(request, project?.id),
       (async () => {
         const records: Row[] = [];
         for (let offset = 0; ;) {
           const page = await request("query.workflows", {
-            local: !!project,
+            local: !!project?.id,
             project_id: project?.id,
             offset,
             limit: 100,
@@ -132,15 +126,14 @@ export function WorkflowManager({ request, project, refresh }: Props) {
   useEffect(() => {
     void load().catch((error) => setError(String(error)));
     return () => {
-      epoch.current++;
+      invalidate();
     };
-  }, [load]);
+  }, [invalidate, load, setError]);
   const choose = useCallback(
     (row: Row) => {
       const document =
         row.type === "workflow_draft" ? row.data.document : row.data;
       setDraft({
-        ...draft,
         selected: row.id,
         revision: row.revision,
         name: row.name,
@@ -156,7 +149,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
       params.set("workflow_id", row.id);
       history.replaceState(null, "", `?${params}`);
     },
-    [draft, setDraft, setError],
+    [setDraft],
   );
   useEffect(() => {
     if (!rows.length || routeSelected.current) return;

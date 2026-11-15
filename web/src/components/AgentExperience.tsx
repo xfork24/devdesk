@@ -1,6 +1,8 @@
-import { ActionButton, useActionFeedback } from "./ActionFeedback";
-import { useEffect, useRef, useState } from "react";
-import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
+import { ActionButton } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { MarkdownPreview } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 type Props = {
   revision?: string;
   request: Request;
@@ -36,6 +38,9 @@ export function AgentExperience({
     [detail, setDetail] = useState<Row>(),
     [busy, setBusy] = useState(false);
   const generation = useRef(0);
+  const invalidate = useCallback(() => {
+    generation.current += 1;
+  }, []);
   useEffect(() => {
     if (!instanceId) return;
     const g = ++generation.current;
@@ -60,7 +65,7 @@ export function AgentExperience({
         if (g === generation.current) setError(String(e));
       });
     return () => {
-      ++generation.current;
+      invalidate();
     };
   }, [
     request,
@@ -72,6 +77,8 @@ export function AgentExperience({
     to,
     page,
     revision,
+    setError,
+    invalidate,
   ]);
   const filters = (
     <div className="form-grid">

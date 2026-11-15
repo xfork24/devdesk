@@ -1,17 +1,9 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  latest,
-  MarkdownField,
-  useDraft,
-  type Row,
-  type Request,
-} from "./configuration-ui";
+import { latest, useDraft } from "./configuration-state";
+import { MarkdownField } from "./configuration-ui";
+import { type Row, type Request } from "./rpc-types";
 export function RoleManager({
   request,
   project,
@@ -47,7 +39,7 @@ export function RoleManager({
   const load = useCallback(async () => {
     const [roles, workspace] = await Promise.all([
       request("query.roles", {
-        local: !!project,
+        local: !!project?.id,
         project_id: project?.id,
         limit: 100,
         include_history: true,
@@ -73,25 +65,28 @@ export function RoleManager({
     return () => {
       active = false;
     };
-  }, [load]);
-  const choose = (row: Row) => {
-    setDraft({
-      selected: row.id,
-      name: row.name,
-      instructions: row.data.instructions,
-      visibility: {
-        kind:
-          row.data.visibility?.kind ||
-          (row.scope === "global" ? "global" : "projects"),
-        project_ids:
-          row.data.visibility?.project_ids ||
-          [row.scope.split(":")[1]].filter(Boolean),
-      },
-    });
-    const params = new URLSearchParams(location.search);
-    params.set("config_object", row.id);
-    history.replaceState(null, "", `?${params}`);
-  };
+  }, [load, setError]);
+  const choose = useCallback(
+    (row: Row) => {
+      setDraft({
+        selected: row.id,
+        name: row.name,
+        instructions: row.data.instructions,
+        visibility: {
+          kind:
+            row.data.visibility?.kind ||
+            (row.scope === "global" ? "global" : "projects"),
+          project_ids:
+            row.data.visibility?.project_ids ||
+            [row.scope.split(":")[1]].filter(Boolean),
+        },
+      });
+      const params = new URLSearchParams(location.search);
+      params.set("config_object", row.id);
+      history.replaceState(null, "", `?${params}`);
+    },
+    [setDraft],
+  );
   const routeConsumed = useRef(false);
   useEffect(() => {
     if (routeConsumed.current || !rows.length) return;
@@ -101,7 +96,7 @@ export function RoleManager({
       routeConsumed.current = true;
       if (draft.selected !== row.id) choose(row);
     }
-  }, [rows]);
+  }, [choose, draft.selected, rows]);
   const old = rows.find((r) => r.id === draft.selected);
   async function save(remove = false) {
     captureFeedback();

@@ -2,13 +2,9 @@ import { ReadableValue } from "./reading";
 import { StandardDiff } from "./StandardManager";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
-import {
-  MarkdownPreview,
-  loadCatalog,
-  RevisionSelect,
-  type Request,
-  type Row,
-} from "./configuration-ui";
+import { MarkdownPreview, RevisionSelect } from "./configuration-ui";
+import { loadCatalog } from "./configuration-state";
+import { type Request, type Row } from "./rpc-types";
 
 type Props = {
   request: Request;
@@ -36,6 +32,9 @@ export function WorkflowController({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const epoch = useRef(0);
+  const invalidate = useCallback(() => {
+    epoch.current += 1;
+  }, []);
   const load = useCallback(async () => {
     const ticket = ++epoch.current;
     const [next, driver] = await Promise.all([
@@ -77,14 +76,14 @@ export function WorkflowController({
     return () => {
       active = false;
       clearTimeout(timer);
-      epoch.current++;
+      invalidate();
     };
-  }, [load]);
+  }, [invalidate, load]);
   useEffect(() => {
     let active = true;
     setCatalog([]);
     setCatalogError("");
-    void loadCatalog(request, { id: projectId })
+    void loadCatalog(request, projectId)
       .then((records) => {
         if (active) setCatalog(records);
       })

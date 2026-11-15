@@ -30,6 +30,8 @@ DevDesk 当前发布 OpenAI/Codex 及 DeepSeek Harness（DSH）的模型配置�
 
 地址只接受合法 HTTP/HTTPS API 根路径，默认或省略路径使用 `/v1`；禁止嵌入凭据、query 和 fragment。Sandbox 禁网会阻塞模型连接；独立测试容器不会获得模型 key 或新增宿主地址映射。
 
+需要密钥的自定义本地服务仍保留其非空密钥引用，不覆盖为占位头。DSH 的无密钥本地连接不生成 `apiKeyEnv`；OpenAI 兼容客户端所需的认证头使用公开占位值 `Bearer ollama`，不读取系统凭据。云服务商仍使用其冻结的非空密钥引用。生成 profile 的摘要包含这些实际配置；使用旧错误 profile 冻结的 Ollama 会话需要重新创建绑定/会话，不能在旧摘要下静默替换配置。
+
 ## macOS 凭据助手升级
 
 当前 macOS 凭据访问统一要求协议 2 的固定签名助手，包含 DeepSeek、智谱、MiniMax 和接入工具凭据；安装目录名 `v1` 不表示助手协议版本。源码安装使用 `scripts/platform/macos/install-macos-credential-helper.sh --update`；含对应助手的独立运行包提供显式更新入口：

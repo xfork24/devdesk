@@ -1,6 +1,7 @@
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { JsonField } from "./WorkflowDeliveries";
-import { MarkdownField, type Row } from "./configuration-ui";
+import { MarkdownField } from "./configuration-ui";
+import { type Row } from "./rpc-types";
 
 export function WorkflowSpecifications({
   kind,

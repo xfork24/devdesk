@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
-import { sourcePayload, type Request, type Row } from "./configuration-ui";
+import { sourcePayload } from "./configuration-state";
+import { type Request, type Row } from "./rpc-types";
 
 export function SpecLint({
   request,

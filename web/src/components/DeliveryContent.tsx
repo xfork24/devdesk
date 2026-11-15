@@ -1,4 +1,5 @@
-import { MarkdownPreview, type Row } from "./configuration-ui";
+import { MarkdownPreview } from "./configuration-ui";
+import { type Row } from "./rpc-types";
 import { LazyDetails, ReadableValue } from "./reading";
 
 export function DeliverySpecPreview({

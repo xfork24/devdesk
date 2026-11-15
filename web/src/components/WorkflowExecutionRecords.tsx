@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { type Request, type Row } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 import {
   DiscussionLink,
   RawJsonLink,
   ReadableValue,
   ReadingLink,
   ReadState,
-  useReading,
-  navigateReading,
-  executionUrl,
 } from "./reading";
+import { useReading, navigateReading, executionUrl } from "./reading-state";
 const labels: Record<string, string> = {
   completed: "已完成",
   running: "执行中",

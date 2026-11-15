@@ -3,7 +3,8 @@ import { ResourceEditor } from "./AgentCatalog";
 import { Integrations } from "./Integrations";
 import { StandardManager } from "./StandardManager";
 import { WorkflowManager } from "./WorkflowManager";
-import { useGroupTab, type Request, type Row } from "./configuration-ui";
+import { useGroupTab } from "./configuration-state";
+import { type Request, type Row } from "./rpc-types";
 
 type Props = {
   request: Request;

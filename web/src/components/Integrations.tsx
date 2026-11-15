@@ -3,21 +3,22 @@ import {
   ActionForm,
   ActionSelect,
   ActionInput,
-  useActionFeedback,
 } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ResourceEditor } from "./AgentCatalog";
 import {
   latest,
   loadCatalog,
+  useDraft,
+  useGroupTab,
+} from "./configuration-state";
+import {
   MarkdownField,
   MarkdownPreview,
   RevisionSelect,
-  useDraft,
-  useGroupTab,
-  type Request,
-  type Row,
 } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 const tabs = ["http", "mcp", "skills", "native", "calls"];
 const names: Record<string, string> = {
   http: "HTTP API",
@@ -46,20 +47,20 @@ const command = (
   target?: Row,
 ) =>
   request(method, {
-    local: !!project,
+    local: !!project?.id,
     project_id: project?.id,
     command_id: crypto.randomUUID(),
     target: target?.id,
     expected_revision: target?.revision,
     payload,
   });
-async function records(request: Request, method: string, project?: Row) {
+async function records(request: Request, method: string, projectId?: string) {
   const rows: Row[] = [];
   let offset = 0;
   for (;;) {
     const page = await request(method, {
-      local: !!project,
-      project_id: project?.id,
+      local: !!projectId,
+      project_id: projectId,
       offset,
       limit: 100,
       include_history: true,
@@ -186,7 +187,7 @@ function NativeCatalog({
   const [rows, setRows] = useState<Row[]>([]);
   useEffect(() => {
     let active = true;
-    void loadCatalog(request, project)
+    void loadCatalog(request, project?.id)
       .then((rows) => {
         if (active) setRows(rows);
       })
@@ -196,7 +197,7 @@ function NativeCatalog({
     return () => {
       active = false;
     };
-  }, [request, project?.id]);
+  }, [request, project?.id, setError]);
   return (
     <section className="panel" aria-label="原生工具目录">
       <div className="panel-heading">
@@ -293,8 +294,8 @@ function SourceManager({
     [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
     const [source, catalog] = await Promise.all([
-      records(request, "query.integrations", project),
-      loadCatalog(request, project),
+      records(request, "query.integrations", project?.id),
+      loadCatalog(request, project?.id),
     ]);
     setSources(source);
     setCatalog(catalog);
@@ -303,7 +304,7 @@ function SourceManager({
     void load()
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [load]);
+  }, [load, setError]);
   const [deletedSource, setDeletedSource] = useState<Row>();
   const sourceKind = kind === "http" ? "http_api" : "mcp";
   const selected =
@@ -314,30 +315,33 @@ function SourceManager({
         r.data.source.kind === sourceKind,
     ) || deletedSource;
   const missingSource = !loading && !!draft.selected && !selected;
-  const choose = (r: Row) => {
-    setDeletedSource(undefined);
-    const params = new URLSearchParams(location.search);
-    params.set("config_object", r.id);
-    history.replaceState(null, "", `?${params}`);
-    const s = r.data.source;
-    setDraft({
-      selected: r.id,
-      name: r.name,
-      scope: r.scope === "global" ? "global" : "project",
-      description: r.data.description || "",
-      base_url: s.base_url || "",
-      transport: s.transport || "streamable_http",
-      url: s.url || "",
-      protocol_version: s.protocol_version || "2026-07-28",
-      command: JSON.stringify(s.command || [], null, 2),
-      oauth_enabled: !!r.data.oauth,
-      client_id: r.data.oauth?.client_id || "",
-      authorization_url: r.data.oauth?.authorization_url || "",
-      token_url: r.data.oauth?.token_url || "",
-      revocation_url: r.data.oauth?.revocation_url || "",
-      oauth_scopes: (r.data.oauth?.scopes || []).join("\n"),
-    });
-  };
+  const choose = useCallback(
+    (r: Row) => {
+      setDeletedSource(undefined);
+      const params = new URLSearchParams(location.search);
+      params.set("config_object", r.id);
+      history.replaceState(null, "", `?${params}`);
+      const s = r.data.source;
+      setDraft({
+        selected: r.id,
+        name: r.name,
+        scope: r.scope === "global" ? "global" : "project",
+        description: r.data.description || "",
+        base_url: s.base_url || "",
+        transport: s.transport || "streamable_http",
+        url: s.url || "",
+        protocol_version: s.protocol_version || "2026-07-28",
+        command: JSON.stringify(s.command || [], null, 2),
+        oauth_enabled: !!r.data.oauth,
+        client_id: r.data.oauth?.client_id || "",
+        authorization_url: r.data.oauth?.authorization_url || "",
+        token_url: r.data.oauth?.token_url || "",
+        revocation_url: r.data.oauth?.revocation_url || "",
+        oauth_scopes: (r.data.oauth?.scopes || []).join("\n"),
+      });
+    },
+    [setDraft],
+  );
   const routeConsumed = useRef(false);
   useEffect(() => {
     if (routeConsumed.current || !sources.length) return;
@@ -353,7 +357,7 @@ function SourceManager({
       routeConsumed.current = true;
       choose(row);
     }
-  }, [sources, catalog]);
+  }, [sources, catalog, sourceKind, choose]);
   const startNew = (copy = false) => {
     routeConsumed.current = true;
     setDeletedSource(undefined);
@@ -977,7 +981,7 @@ function BindingManager({
     return () => {
       current = false;
     };
-  }, [request]);
+  }, [request, setDraft, setError]);
   const bindings = latest(
     sources.filter(
       (r) =>
@@ -1568,7 +1572,7 @@ function BindingManager({
                       const rows = await records(
                         request,
                         "query.integration_bindings",
-                        project,
+                        project.id,
                       );
                       const current =
                         latest(
@@ -2439,10 +2443,10 @@ function SkillImport({
     [requires, setRequires] = useState<string[]>([]),
     [catalog, setCatalog] = useState<Row[]>([]);
   useEffect(() => {
-    void loadCatalog(request, project)
+    void loadCatalog(request, project?.id)
       .then(setCatalog)
       .catch((e) => setError(String(e)));
-  }, [request, project?.id]);
+  }, [request, project?.id, setError]);
   return (
     <section className="panel" aria-label="Skill 包导入">
       <div className="panel-heading">
@@ -2478,7 +2482,7 @@ function SkillImport({
             setBody("");
             setZip("");
             setSourceRevision("");
-            setCatalog(await loadCatalog(request, project));
+            setCatalog(await loadCatalog(request, project?.id));
             onImported();
           } catch (e) {
             setError(String(e));
@@ -2669,7 +2673,7 @@ export function CallHistory({
     }
     const version = ++requestVersion.current;
     const query: Row = {
-      local: !!project,
+      local: !!project?.id,
       project_id: project?.id,
       offset,
       limit: 50,
@@ -2721,7 +2725,7 @@ export function CallHistory({
       requestVersion.current += 1;
       clearTimeout(timer);
     };
-  }, [load]);
+  }, [load, setError]);
   const act = async (method: string, row: Row, payload: Row) => {
     captureFeedback();
 

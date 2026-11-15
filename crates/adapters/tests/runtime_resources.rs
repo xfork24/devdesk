@@ -5,6 +5,7 @@ use serde_json::json;
 use std::sync::Arc;
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
+mod support;
 fn setup(path: &std::path::Path) -> (Arc<GlobalStore>, Engine) {
     let store = Arc::new(GlobalStore::open(path).unwrap());
     let e = Engine::new(
@@ -64,10 +65,24 @@ fn real_two_recipes_probe_without_inference() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = setup(dir.path());
     let mut installations = Vec::new();
+    let image = support::image("codex");
+    // BuildKit resolves FROM by a local tag rather than a bare image ID. Give
+    // the inspected content its own deterministic tag, independent of releases.
+    let base = format!(
+        "devdesk/acceptance-base:{}",
+        image.trim_start_matches("sha256:")
+    );
+    assert!(
+        std::process::Command::new("docker")
+            .args(["tag", &image, &base])
+            .status()
+            .unwrap()
+            .success()
+    );
     for label in ["alpha", "beta"] {
         let record = source(
             label,
-            &format!("FROM devdesk/codex:0.167.0\nLABEL devdesk.acceptance={label}\n"),
+            &format!("FROM {base}\nLABEL devdesk.acceptance={label}\n"),
         );
         let i = store.prepare_runtime_resource(&record, |_| {}).unwrap();
         let report = store.runtime_verification(&i).unwrap().unwrap();
@@ -99,13 +114,26 @@ fn real_prepared_image_survives_other_dataset_rebuild() {
     let second = tempfile::tempdir().unwrap();
     let (a, _) = setup(first.path());
     let (b, _) = setup(second.path());
-    let source = a.default_runtime_resource(HarnessProvider::Codex).unwrap();
-    let old = a.prepare_runtime_resource(&source, |_| {}).unwrap();
-    let new = b.prepare_runtime_resource(&source, |_| {}).unwrap();
+    let original = a.default_runtime_resource(HarnessProvider::Codex).unwrap();
+    let old = a.prepare_runtime_resource(&original, |_| {}).unwrap();
+    let RuntimeArtifact::DockerImage { image_id } = &old.artifact else {
+        panic!()
+    };
+    // A cache hit yielding the same image cannot prove that retaining an old
+    // installation survives another dataset producing a different image.
+    let other = source(
+        "other-dataset",
+        &format!(
+            "FROM devdesk/prepared-codex:{}\nLABEL devdesk.acceptance=other-dataset\n",
+            image_id.trim_start_matches("sha256:")
+        ),
+    );
+    let new = b.prepare_runtime_resource(&other, |_| {}).unwrap();
+    assert_ne!(old.artifact, new.artifact);
     a.require_runtime_verification(&old).unwrap();
     b.require_runtime_verification(&new).unwrap();
     assert_eq!(
-        a.prepare_runtime_resource(&source, |_| {})
+        a.prepare_runtime_resource(&original, |_| {})
             .unwrap()
             .artifact,
         old.artifact

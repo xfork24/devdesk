@@ -1,16 +1,9 @@
 import { useEffect, useState } from "react";
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
-import {
-  loadCatalog,
-  RevisionSelect,
-  type Request,
-  type Row,
-} from "./configuration-ui";
+import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { loadCatalog } from "./configuration-state";
+import { RevisionSelect } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 
 export function AgentInstances({
   request,
@@ -29,7 +22,7 @@ export function AgentInstances({
     useActionFeedback();
   useEffect(() => {
     let current = true;
-    loadCatalog(request, project)
+    loadCatalog(request, project?.id)
       .then((rows) => {
         if (current) setRecords(rows);
       })
@@ -39,7 +32,7 @@ export function AgentInstances({
     return () => {
       current = false;
     };
-  }, [request, project?.id, revision]);
+  }, [request, project?.id, revision, setError]);
   const definitions = records.filter(
     (r) => r.type === "agent" && (scope !== "global" || r.scope === "global"),
   );

@@ -1,14 +1,10 @@
 import { useEffect, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
 import { DeliveryOutput } from "./DeliveryContent";
-import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
-import {
-  RawJsonLink,
-  ReadState,
-  useReading,
-  navigateReading,
-  executionUrl,
-} from "./reading";
+import { MarkdownPreview } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
+import { RawJsonLink, ReadState } from "./reading";
+import { useReading, navigateReading, executionUrl } from "./reading-state";
 
 function MaterialReader({
   projectId,

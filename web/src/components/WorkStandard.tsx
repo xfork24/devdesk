@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
-import {
-  loadCatalog,
-  RevisionSelect,
-  type Request,
-  type Row,
-} from "./configuration-ui";
+import { loadCatalog } from "./configuration-state";
+import { RevisionSelect } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 import { StandardDiff } from "./StandardManager";
 
 /** One consumer UI for every work kind; the Standard itself has no work owner. */
@@ -51,6 +48,7 @@ export function WorkStandard({
     instance?.data.active_plan_revision_id,
     selectionVersion,
   ]);
+  const instanceBindings = JSON.stringify(instance?.data.role_agent_bindings);
   const runtime = instance?.data;
   const activeStandard =
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
@@ -58,7 +56,7 @@ export function WorkStandard({
     let active = true;
     setHistoryLoading(true);
     setPreview(undefined);
-    void loadCatalog(request, { id: projectId }, true)
+    void loadCatalog(request, projectId, true)
       .then((rows) => {
         if (active) setRecords(rows);
       })
@@ -96,7 +94,7 @@ export function WorkStandard({
               "",
           );
           setBindings(
-            instance?.data.role_agent_bindings ||
+            (instanceBindings ? JSON.parse(instanceBindings) : undefined) ||
               data.configuration?.data.role_agent_bindings ||
               defaults.configuration?.data.role_agent_bindings ||
               {},
@@ -122,6 +120,10 @@ export function WorkStandard({
     owner.revision,
     instance?.data.active_plan_revision_id,
     selectionVersion,
+    instance?.data.plan.standard_ref,
+    instance?.data.plan.permission_context_ref,
+    instance?.data.workflow_ref,
+    instanceBindings,
   ]);
   useEffect(() => {
     let active = true;

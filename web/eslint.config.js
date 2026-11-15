@@ -20,7 +20,7 @@ export default tseslint.config(
     },
     rules: {
       // Warnings stay visible in every run; the single sanctioned `any`
-      // escape hatch is the Row alias in src/components/configuration-ui.tsx.
+      // escape hatch is the Row alias in src/components/rpc-types.ts.
       "@typescript-eslint/no-explicit-any": "error",
       "no-sequences": ["error", { allowInParentheses: false }],
       // Leading-underscore names document intentionally unused bindings.

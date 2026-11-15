@@ -1,19 +1,11 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { WorkflowController } from "./WorkflowController";
 import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
 import { useCallback, useEffect, useState } from "react";
-import {
-  loadCatalog,
-  RevisionSelect,
-  useDraft,
-  type Row,
-  type Request,
-} from "./configuration-ui";
+import { loadCatalog, useDraft } from "./configuration-state";
+import { RevisionSelect } from "./configuration-ui";
+import { type Row, type Request } from "./rpc-types";
 export function ProjectManager({
   request,
   project,
@@ -60,9 +52,9 @@ export function ProjectManager({
   const load = useCallback(async () => {
     const [workspace, records, configuration, preset] = await Promise.all([
       request("query.workspace", { limit: 100 }),
-      loadCatalog(request, project),
-      project
-        ? request("query.project_configuration", { project_id: project.id })
+      loadCatalog(request, project?.id),
+      project?.id
+        ? request("query.project_configuration", { project_id: project?.id })
         : Promise.resolve({}),
       request("query.configuration_defaults", {
         project_id: project?.id,
@@ -118,7 +110,7 @@ export function ProjectManager({
               source_configuration_id: "",
             },
       );
-  }, [request, project?.id, project?.revision]);
+  }, [request, project?.id, setDraft]);
   useEffect(() => {
     let active = true;
     void load().catch((e) => {
@@ -127,11 +119,11 @@ export function ProjectManager({
     return () => {
       active = false;
     };
-  }, [load]);
+  }, [load, project?.revision, setError]);
   useEffect(() => {
     let active = true;
     setRequirements(undefined);
-    if (!project || !draft.workflow_ref) return;
+    if (!project?.id || !draft.workflow_ref) return;
     void request("query.workflow_requirements", {
       id: draft.workflow_ref,
       project_id: project.id,
@@ -149,7 +141,7 @@ export function ProjectManager({
     return () => {
       active = false;
     };
-  }, [request, project?.id, draft.workflow_ref, draft.standard_ref]);
+  }, [request, project?.id, draft.workflow_ref, draft.standard_ref, setError]);
   const workflows = records.filter((r) => r.type === "workflow");
   const standards = records.filter(
     (r) => r.type === "standard" && Array.isArray(r.root_workflow_refs),

@@ -43,6 +43,19 @@ DEVDESK_E2E_PORT=4329 npm --prefix web run test:e2e
 
 真实 Docker 用例要求预先存在固定镜像，验证 Node Red/Green、环境故障、停止/清理、资源归属、嵌套权限和私有状态。Git 用例创建真实临时仓库，验证单父候选、CAS、过期目标、幂等与恢复；不需要 GitHub。
 
+完整 Docker 外部验收包含 16 项原本 `#[ignore]` 的测试：命令 Red/Green、Delivery、Docker 资源、DSH 服务商、权限、运行资源、HTTP/MCP/OAuth。它们保留显式入口以免便携单元测试隐含要求 Docker；E2E CI 实际执行这些测试，不只编译或列出它们。
+
+```bash
+# AppArmor Linux 宿主先加载已有的命名策略，不修改 docker-default 或全局限制。
+sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
+# 从 manifest 选定的不可变出厂资源准备镜像，检查并冻结本平台 image ID。
+python3 tests/entrypoints/native_acceptance.py --docker-only --prepare --reports /tmp/devdesk-native
+# 全部 17 项：恢复专用仓库的既有 PR；request 为 PullRequestRequest JSON。
+python3 tests/entrypoints/native_acceptance.py --prepare --github-request /专用/pr-request.json --github-repo owner/dedicated-test-repo --reports /tmp/devdesk-native-all
+```
+
+GitHub request 的 repository/number 必须指定已存在的验收 PR；测试先读取它，再按原 marker 两次恢复同一回执，并核对 number/head/marker/merged。此项需要本机 `gh` 授权，只访问专用仓库；不要用业务仓库或凭据文件代替 request。入口按测试二进制核对实际执行数量，失败不会被 skip 或重试掩盖，日志、镜像身份与源内容摘要写入指定临时证据目录；执行期间源码输入改变也会使验收失败。已有准备好的镜像时可省略 `--prepare`，但必须提供 `DEVDESK_TEST_CODEX_IMAGE`、`DEVDESK_TEST_DSH_IMAGE`、`DEVDESK_DSH_MOCK_IMAGE`、`DEVDESK_TOOL_TEST_IMAGE`、`DEVDESK_ACCEPTANCE_NODE_IMAGE` 五个确切 `sha256:` ID。外部服务与模型响应使用明确的协议夹具；这不等于通过真实付费模型的工程验收。
+
 DSH 原生 SDK 夹具使用不可变镜像和禁外网容器内的本地端点，不调用真实模型：
 
 ```bash

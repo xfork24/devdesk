@@ -1,5 +1,6 @@
-import { ActionButton, useActionFeedback } from "./ActionFeedback";
-import { type Request, type Row } from "./configuration-ui";
+import { ActionButton } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { type Request, type Row } from "./rpc-types";
 import { useEffect, useState } from "react";
 const operationLabels: Record<string, string> = {
   prepared: "等待接入",
@@ -70,7 +71,7 @@ export function RepositorySettings({
       active = false;
       clearTimeout(timer);
     };
-  }, [project.id, ready, request, refresh]);
+  }, [project.id, ready, request, refresh, captureFeedback, setError]);
   return (
     <section className="panel repository-settings" aria-label="GitHub 仓库状态">
       <div className="panel-heading">

@@ -257,49 +257,42 @@ fn wait_receipt(executor: &NativeTools, i: &ToolInvocation) -> ToolReceipt {
 #[ignore = "requires real Docker and DEVDESK_TOOL_TEST_IMAGE; no model call"]
 fn docker_http_executor_validates_real_results_and_blocks_private_network_without_grant() {
     use devdesk_core::ports::ToolExecutor;
-    use std::io::{Read, Write};
-    let server = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
-    server.set_nonblocking(true).unwrap();
-    let port = server.local_addr().unwrap().port();
-    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let done = stop.clone();
-    let requests = count.clone();
-    let handle = std::thread::spawn(move || {
-        while !done.load(std::sync::atomic::Ordering::SeqCst) {
-            match server.accept() {
-                Ok((mut stream, _)) => {
-                    stream
-                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
-                        .unwrap();
-                    let mut bytes = [0; 8192];
-                    let mut n = 0;
-                    while n < bytes.len() {
-                        let size = stream.read(&mut bytes[n..]).unwrap_or(0);
-                        if size == 0 {
-                            break;
-                        }
-                        n += size;
-                        if bytes[..n].windows(4).any(|w| w == b"\r\n\r\n") {
-                            break;
-                        }
-                    }
-                    if n == 0 {
-                        continue;
-                    }
-                    requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let body = r#"{"ok":true,"count":1}"#;
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        body.len(),
-                        body
-                    );
-                    stream.write_all(response.as_bytes()).unwrap();
-                }
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(20)),
-            }
+    use std::io::{BufRead, Write};
+    struct Service {
+        child: std::process::Child,
+        output: std::io::BufReader<std::process::ChildStdout>,
+    }
+    impl Service {
+        fn read(&mut self) -> Value {
+            let mut line = String::new();
+            assert!(
+                self.output.read_line(&mut line).unwrap() > 0,
+                "HTTP fixture exited"
+            );
+            serde_json::from_str(&line).unwrap()
         }
-    });
+        fn count(&mut self) -> u64 {
+            writeln!(self.child.stdin.as_mut().unwrap(), "count").unwrap();
+            self.read()["count"].as_u64().unwrap()
+        }
+    }
+    impl Drop for Service {
+        fn drop(&mut self) {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/tool-integrations/http-lookup.mjs");
+    let mut child = std::process::Command::new("node")
+        .arg(fixture)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let output = std::io::BufReader::new(child.stdout.take().unwrap());
+    let mut service = Service { child, output };
+    let port = service.read()["port"].as_u64().unwrap() as u16;
     let root = tempfile::tempdir().unwrap();
     let executor = NativeTools::new(root.path()).unwrap();
     let mut i = invocation(root.path(), port);
@@ -308,16 +301,16 @@ fn docker_http_executor_validates_real_results_and_blocks_private_network_withou
     );
     executor.start(&i).unwrap();
     let r = wait_receipt(&executor, &i);
-    assert!(r.success, "{r:?}");
+    assert!(
+        r.success,
+        "{r:?}; fixture port={port}, requests={}",
+        service.count()
+    );
     assert_eq!(r.structured_content.as_ref().unwrap()["ok"], true);
     assert_eq!(r.origin, Origin::External);
     executor.start(&i).unwrap();
     assert!(wait_receipt(&executor, &i).success);
-    assert_eq!(
-        count.load(std::sync::atomic::Ordering::SeqCst),
-        1,
-        "same operation must not dispatch twice"
-    );
+    assert_eq!(service.count(), 1, "same operation must not dispatch twice");
     let restored = NativeTools::new(root.path()).unwrap();
     restored.start(&i).unwrap();
     assert!(wait_receipt(&restored, &i).success);
@@ -325,13 +318,22 @@ fn docker_http_executor_validates_real_results_and_blocks_private_network_withou
     conflict.arguments = json!({"id":"different"});
     conflict.input_hash = configuration_hash(&conflict.arguments);
     assert!(restored.start(&conflict).is_err());
-    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(service.count(), 1);
     let mut denied = i.clone();
     denied.id = id();
+    // A literal private address makes the negative assertion independent of
+    // host.docker.internal DNS (absent on Linux without a host-gateway grant).
+    let private_origin = format!("http://127.0.0.1:{port}");
+    denied.tool.integration.source = IntegrationSource::HttpApi {
+        base_url: private_origin.clone(),
+    };
+    denied.tool.binding.allowed_origins = vec![private_origin];
     denied.tool.binding.allow_private_network = false;
     executor.start(&denied).unwrap();
-    assert!(!wait_receipt(&executor, &denied).success);
-    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let refused = wait_receipt(&executor, &denied);
+    assert!(!refused.success);
+    assert_eq!(refused.error.unwrap()["code"], "endpoint_denied");
+    assert_eq!(service.count(), 1);
     let mut invalid = i.clone();
     invalid.id = id();
     invalid.tool.definition.output_schema = Some(json!({"type":"array"}));
@@ -339,8 +341,7 @@ fn docker_http_executor_validates_real_results_and_blocks_private_network_withou
     let result = wait_receipt(&executor, &invalid);
     assert!(!result.success);
     assert_eq!(result.error.unwrap()["code"], "output_schema");
-    stop.store(true, std::sync::atomic::Ordering::SeqCst);
-    handle.join().unwrap();
+    assert_eq!(service.count(), 2);
 }
 
 #[test]

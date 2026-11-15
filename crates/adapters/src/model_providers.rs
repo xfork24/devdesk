@@ -39,9 +39,18 @@ pub fn dsh_model_patch(connection: &ModelConnection, model: &str) -> Result<Stri
     if connection.native {
         return Ok("\n- id: llm-pi-ai\n  disabled: true\n".into());
     }
-    let mut route = json!({"apiKeyEnv":connection.api_key_env,"api":connection.protocol,"baseURL":connection.worker_endpoint,
+    let mut route = json!({"api":connection.protocol,"baseURL":connection.worker_endpoint,
         "models":[{"id":model,"contextWindow":connection.context_window,"maxTokens":connection.max_output_tokens}]});
+    if !connection.api_key_env.is_empty() {
+        route["apiKeyEnv"] = json!(connection.api_key_env);
+    }
     if connection.kind == ProviderKind::LocalServer {
+        // The OpenAI-compatible client requires an auth header even for an
+        // unauthenticated local server. This is a public placeholder, not a
+        // credential reference (an empty apiKeyEnv prevents DSH registration).
+        if connection.api_key_env.is_empty() {
+            route["headers"] = json!({"Authorization":"Bearer ollama"});
+        }
         route["compat"] = json!({"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","supportsStrictMode":false});
         route["models"][0]["reasoningEfforts"] = json!(false);
     }

@@ -84,13 +84,28 @@ fn generated_profiles_select_only_the_frozen_route_without_secret_values() {
         let c = connection(provider);
         let patch = dsh_model_patch(&c, "devdesk-mock-model").unwrap();
         if !c.native {
-            assert!(patch.contains(&c.api_key_env));
+            if c.kind == ProviderKind::LocalServer {
+                assert!(!patch.contains("apiKeyEnv"));
+                assert!(patch.contains("Bearer ollama"));
+            } else {
+                assert!(patch.contains(&c.api_key_env));
+            }
             assert!(patch.contains(&c.worker_endpoint));
             assert!(patch.contains("llm-deepseek\n  disabled: true"));
         }
         assert_eq!(configuration_digest(&json!(patch)).unwrap().len(), 64);
         assert!(!patch.contains("FAKE_DSH_TEST_VALUE"));
     }
+}
+
+#[test]
+fn authenticated_local_routes_keep_their_credential_reference_without_placeholder_headers() {
+    let mut connection = connection("ollama");
+    connection.api_key_env = "LOCAL_MODEL_KEY".into();
+    connection.credential_account = "local-model-key-".into();
+    let patch = dsh_model_patch(&connection, "devdesk-mock-model").unwrap();
+    assert!(patch.contains("LOCAL_MODEL_KEY"));
+    assert!(!patch.contains("Bearer ollama"));
 }
 
 #[test]
@@ -143,10 +158,18 @@ fn pinned_dsh_uses_local_fixture_streams_tools_and_native_resume() {
     let image =
         std::env::var("DEVDESK_DSH_MOCK_IMAGE").expect("set immutable DEVDESK_DSH_MOCK_IMAGE");
     assert!(image.starts_with("sha256:") && image.len() == 71);
-    let cases: Vec<_> = ["zai-coding-cn","minimax-cn","ollama"].into_iter().map(|p| {
+    let mut cases: Vec<_> = ["zai-coding-cn","minimax-cn","ollama"].into_iter().map(|p| {
         let c=connection(p);
         json!({"provider":p,"patch":dsh_model_patch(&c,"devdesk-mock-model").unwrap(),"endpoint":c.worker_endpoint,"env":c.api_key_env})
     }).collect();
+    // A custom authenticated local server must resolve its key through DSH,
+    // rather than receiving the public placeholder for a keyless server.
+    let mut keyed = connection("ollama");
+    keyed.provider = "local-keyed".into();
+    keyed.route = "local-keyed".into();
+    keyed.api_key_env = "LOCAL_MODEL_KEY".into();
+    keyed.credential_account = "local-model-key-".into();
+    cases.push(json!({"provider":keyed.route,"patch":dsh_model_patch(&keyed,"devdesk-mock-model").unwrap(),"endpoint":keyed.worker_endpoint,"env":keyed.api_key_env}));
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/protocols/dsh-model-providers.mjs")
         .canonicalize()
@@ -188,6 +211,6 @@ fn pinned_dsh_uses_local_fixture_streams_tools_and_native_resume() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["reports"].as_array().unwrap().len(), 3);
+    assert_eq!(report["reports"].as_array().unwrap().len(), 4);
     println!("{report}");
 }

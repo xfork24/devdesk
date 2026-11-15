@@ -1,10 +1,8 @@
 import { useState } from "react";
-import {
-  ActionButton,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
-import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
+import { ActionButton, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { MarkdownPreview } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 import {
   LazyDetails,
   RawJsonLink,

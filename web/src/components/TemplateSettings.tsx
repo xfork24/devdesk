@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "./ActionFeedback";
-import type { Request, Row } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 import { observeCatalogGeneration } from "../template-catalog";
 
 const names: Record<string, string> = {

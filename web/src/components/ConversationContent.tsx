@@ -1,4 +1,5 @@
-import { MarkdownPreview, type Row } from "./configuration-ui";
+import { MarkdownPreview } from "./configuration-ui";
+import { type Row } from "./rpc-types";
 import { CompactValue, RawJsonLink, ReadableValue } from "./reading";
 import { ReportBody } from "./DeliveryContent";
 import { AgentTaskView } from "./WorkflowTaskPreview";

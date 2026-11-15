@@ -1,9 +1,6 @@
-import {
-  ActionButton,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
-import type { Request } from "./configuration-ui";
+import { ActionButton, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { type Request } from "./rpc-types";
 import { useState } from "react";
 import { DshProviderSettings } from "./DshProviderSettings";
 import { isProjectRuntimeInstallation } from "./runtime-installations";

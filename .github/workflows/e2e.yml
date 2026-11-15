@@ -67,6 +67,10 @@ jobs:
       - run: cargo build --locked -p devdesk-host
       - run: npx playwright install --with-deps chromium
         working-directory: web
+      - name: Install the named Linux nested sandbox policy
+        run: sudo ./scripts/platform/linux/install-linux-sandbox-policy.sh --install
+      - name: Docker native acceptance (16 external tests, no paid models)
+        run: python3 tests/entrypoints/native_acceptance.py --docker-only --prepare --reports /tmp/devdesk-native-acceptance
       - name: Prepare the selected browser Docker runtime
         run: python3 tests/entrypoints/prepare_browser_runtime.py
       - name: Debug HTTP and browser acceptance
@@ -90,5 +94,7 @@ jobs:
         if: failure()
         with:
           name: e2e-failure-${{ github.event.workflow_run.head_sha }}
-          path: web/test-results/
+          path: |
+            web/test-results/
+            /tmp/devdesk-native-acceptance/
           retention-days: 7

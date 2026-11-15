@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
-import { RevisionSelect, type Row } from "./configuration-ui";
+import { RevisionSelect } from "./configuration-ui";
+import { type Row } from "./rpc-types";
 import { DeliverySpecPreview } from "./DeliveryContent";
 
 export function JsonField({

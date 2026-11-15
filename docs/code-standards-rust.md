@@ -23,7 +23,7 @@
 - 模块与文件 `snake_case`，类型与 trait `CamelCase`，常量 `SCREAMING_SNAKE_CASE`，函数与字段 `snake_case`；执行动作的函数优先用动词，查询和字段按含义命名
 - 端口 trait 以能力命名（`Harness`、`Git`、`EngineeringStore`），一律 `Send + Sync`
 - 测试函数名陈述被验证的不变量，不加 `test_` 前缀：`revision_conflicts_and_pagination_are_enforced`、`artifact_symlinks_cannot_escape_dataset`
-- 跳过真实环境测试用带理由的 `#[ignore = "explicit local Docker protocol acceptance; no model input"]`
+- 真实环境测试在默认便携测试集用带理由的 `#[ignore = "explicit local Docker protocol acceptance; no model input"]`
 
 ## 语言分工（本仓库最重要的约定）
 
@@ -73,3 +73,5 @@ cargo test --workspace --locked
 ```
 
 或直接 `./scripts/check/check-style.sh`（见 [脚本索引](../scripts/README.md)）。
+
+Docker 外部验收由 `tests/entrypoints/native_acceptance.py --docker-only --prepare` 显式执行当前 16 项，缺少镜像或断言失败会使入口失败；E2E CI 使用同一入口并加载已有的命名 Linux 沙箱策略。再传入 `--github-request` 与 `--github-repo`（替换 `--docker-only`）会执行全部 17 项，GitHub 项要求专用仓库的既有 PR 与授权凭据，不由默认 CI 令牌替代。具体参数和证据边界见 [测试索引](../tests/README.md)。

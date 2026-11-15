@@ -236,7 +236,7 @@ test("创建 Feature 提供全部同项目的前序选项，并说明关联语�
   ).toBeVisible();
 });
 
-test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page }) => {
+test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async ({ page }) => {
   await setup(page);
   const firstCreated = await createGlobalAgent(
     page,
@@ -257,6 +257,7 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
   const agent = firstCreated.agent;
   const requests: any[] = [];
   const sessions: any[] = [];
+  let currentInstance: string | undefined;
   let holdSecondList = true;
   let releaseSecondList!: () => void;
   const secondListReady = new Promise<void>((resolve) => {
@@ -311,6 +312,14 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
       const session = sessions.find((s) => s.id === c.params.id);
       result = {
         session,
+        ...(currentInstance
+          ? {
+              current_runtime_binding: {
+                ...session.runtime_binding,
+                agent_configuration: { agent_instance_id: currentInstance },
+              },
+            }
+          : {}),
         events: c.params.cursor
           ? []
           : [
@@ -355,6 +364,16 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
     latestSession,
   );
   expect(sessions).toHaveLength(2);
+  // The session ID stays fixed while a newer authoritative binding arrives.
+  // Depending only on detail.session.id leaves the displayed Agent stale.
+  currentInstance = secondCreated.instance;
+  await expect(identity).toHaveValue(secondCreated.instance);
+  await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
+    latestSession,
+  );
+  currentInstance = first;
+  await expect(identity).toHaveValue(first);
+  currentInstance = undefined;
   await identity.selectOption(secondCreated.instance);
   await expect(
     page
@@ -387,4 +406,33 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
       .agent_instance_id,
   ).toBe(second);
   await expect(identity).toHaveValue(second);
+});
+
+test("配置路由和浏览器前进后退保留未保存的 Role 草稿", async ({ page }) => {
+  await setup(page);
+  await page.getByRole("button", { name: "角色与 Agent", exact: true }).click();
+  await page.getByRole("tab", { name: "Role", exact: true }).click();
+  const list = page.locator(".configuration-list");
+  await list.getByRole("button").nth(1).click();
+  const selected = new URL(page.url()).searchParams.get("config_object");
+  expect(selected).toBeTruthy();
+  const name = page.getByLabel("Role 名称", { exact: true });
+  const draft = `尚未保存 ${crypto.randomUUID()}`;
+  await name.fill(draft);
+  await page.getByRole("tab", { name: "Capability", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "Capability", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.goBack();
+  await expect(
+    page.getByRole("tab", { name: "Role", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(name).toHaveValue(draft);
+  expect(new URL(page.url()).searchParams.get("config_object")).toBe(selected);
+  await page.goForward();
+  await expect(
+    page.getByRole("tab", { name: "Capability", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "Role", exact: true }).click();
+  await expect(name).toHaveValue(draft);
 });

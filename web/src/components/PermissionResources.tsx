@@ -1,13 +1,9 @@
-import {
-  ActionButton,
-  ActionSelect,
-  ActionInput,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, ActionSelect, ActionInput } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { useEffect, useState } from "react";
 import { ResourceEditor } from "./AgentCatalog";
 import { DirectoryPicker } from "./DirectoryPicker";
-import { type Request, type Row } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 
 type Profile = {
   schema_version: number;
@@ -111,7 +107,7 @@ export function PermissionResources({
     return () => {
       active = false;
     };
-  }, [request, projectId]);
+  }, [request, projectId, setMessage]);
   const profile = catalog?.profiles.find((p) => p.id === selected);
   const target = catalog?.targets.find(
     (t) => t.target.revision_id === targetId,
@@ -129,6 +125,13 @@ export function PermissionResources({
       setBindingProfileId("");
       return;
     }
+    const bindingProfiles = (catalog?.profiles || []).filter(
+      (p) =>
+        target &&
+        p.target_kind === target.target.kind &&
+        (!target.allowed_permission_ids ||
+          target.allowed_permission_ids.includes(p.id)),
+    );
     const active = (catalog.bindings as Row[]).find(
       (row) => row.id === target.active?.binding_revision_id,
     );
@@ -140,7 +143,7 @@ export function PermissionResources({
           ? activeProfile
           : "",
     );
-  }, [targetId, catalog]);
+  }, [target, catalog]);
   async function reload() {
     captureFeedback();
 

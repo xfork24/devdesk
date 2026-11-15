@@ -1,4 +1,4 @@
-import type { Request } from "./configuration-ui";
+import { type Request } from "./rpc-types";
 import { PermissionResources } from "./PermissionResources";
 
 type Props = {

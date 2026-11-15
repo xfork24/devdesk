@@ -1,9 +1,5 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { ModelFields, type ModelProvider } from "./DshProviderSettings";
 import {
   useCallback,
@@ -26,14 +22,15 @@ import {
   loadCatalog,
   templateSourceLabel,
   loadIntegrationRecords,
+  useDraft,
+  useGroupTab,
+} from "./configuration-state";
+import {
   MarkdownField,
   MarkdownPreview,
   RevisionSelect,
-  useDraft,
-  useGroupTab,
-  type Row,
-  type Request,
 } from "./configuration-ui";
+import { type Row, type Request } from "./rpc-types";
 const labels: Record<string, string> = {
   role: "Role",
   capability: "Capability",
@@ -231,10 +228,10 @@ export function ResourceEditor({
   const load = useCallback(async () => {
     const [records, modelProviders, integrationResources, runtimeOptions] =
       await Promise.all([
-        loadCatalog(request, project),
+        loadCatalog(request, project?.id),
         request("query.model_providers"),
         ["capability", "agent", "skill"].includes(kind)
-          ? loadIntegrationRecords(request, project)
+          ? loadIntegrationRecords(request, project?.id)
           : Promise.resolve([]),
         request("query.runtime_options"),
       ]);
@@ -248,7 +245,7 @@ export function ResourceEditor({
           ? { selected: "", name: "", scope: "global", data: initial(kind) }
           : current,
       );
-  }, [request, project?.id, revision]);
+  }, [request, project?.id, kind, setDraft]);
   useEffect(() => {
     let active = true;
     void load().catch((e) => {
@@ -257,7 +254,7 @@ export function ResourceEditor({
     return () => {
       active = false;
     };
-  }, [load]);
+  }, [load, revision, setError]);
   const old = records.find((r) => r.id === draft.selected),
     data = draft.data;
   const projectInstallations = installations.filter(
@@ -309,26 +306,29 @@ export function ResourceEditor({
       />
     </label>
   );
-  const choose = (row: Row) => {
-    setShowAdditionalEditor(false);
-    let value = sourceContent(row);
-    if (kind === "agent") {
-      value = {
-        role_ref: value.role_ref || "",
-        capability_ref: value.capability_ref || "",
-      };
-    }
-    setDraft({
-      selected: row.id,
-      name: row.name,
-      scope: row.scope === "global" ? "global" : "project",
-      data: value,
-    });
-    const params = new URLSearchParams(location.search);
-    params.set("config_object", row.id);
-    history.replaceState(null, "", `?${params}`);
-    setMessage("");
-  };
+  const choose = useCallback(
+    (row: Row) => {
+      setShowAdditionalEditor(false);
+      let value = sourceContent(row);
+      if (kind === "agent") {
+        value = {
+          role_ref: value.role_ref || "",
+          capability_ref: value.capability_ref || "",
+        };
+      }
+      setDraft({
+        selected: row.id,
+        name: row.name,
+        scope: row.scope === "global" ? "global" : "project",
+        data: value,
+      });
+      const params = new URLSearchParams(location.search);
+      params.set("config_object", row.id);
+      history.replaceState(null, "", `?${params}`);
+      setMessage("");
+    },
+    [kind, setDraft, setMessage],
+  );
   const routeConsumed = useRef(false);
   useEffect(() => {
     if (routeConsumed.current || !records.length) return;
@@ -347,7 +347,7 @@ export function ResourceEditor({
         if (draft.selected !== row.id) choose(row);
       }
     }
-  }, [records, kind]);
+  }, [records, kind, draft.selected, choose]);
   async function save(remove = false) {
     captureFeedback();
 

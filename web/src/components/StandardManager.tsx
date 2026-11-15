@@ -1,12 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { ActionButton, useActionFeedback } from "./ActionFeedback";
-import {
-  loadCatalog,
-  MarkdownPreview,
-  RevisionSelect,
-  type Request,
-  type Row,
-} from "./configuration-ui";
+import { useEffect, useState } from "react";
+import { ActionButton } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
+import { loadCatalog } from "./configuration-state";
+import { MarkdownPreview, RevisionSelect } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 
 export function StandardDiff({ diff }: { diff: Row }) {
   return (
@@ -231,13 +228,13 @@ export function StandardManager({
   const [diff, setDiff] = useState<Row>();
   const [busy, setBusy] = useState(false);
   const { error, setError, message, setMessage } = useActionFeedback();
-  const epoch = useRef(0);
+
   async function load() {
-    setRecords(await loadCatalog(request, project, true));
+    setRecords(await loadCatalog(request, project?.id, true));
   }
   useEffect(() => {
     let active = true;
-    void loadCatalog(request, project, true)
+    void loadCatalog(request, project?.id, true)
       .then((rows) => {
         if (active) setRecords(rows);
       })
@@ -247,7 +244,7 @@ export function StandardManager({
     return () => {
       active = false;
     };
-  }, [request, project?.id]);
+  }, [request, project?.id, setError]);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (selected) params.set("standard_id", selected);
@@ -255,7 +252,7 @@ export function StandardManager({
     history.replaceState(null, "", `?${params}`);
   }, [selected]);
   useEffect(() => {
-    const current = ++epoch.current;
+    let active = true;
     setSnapshot(undefined);
     setUsage(undefined);
     setDiff(undefined);
@@ -272,18 +269,18 @@ export function StandardManager({
       }),
     ])
       .then(([value, uses]) => {
-        if (epoch.current === current) {
+        if (active) {
           setSnapshot(value);
           setUsage(uses);
         }
       })
       .catch((e) => {
-        if (epoch.current === current) setError(String(e));
+        if (active) setError(String(e));
       });
     return () => {
-      epoch.current++;
+      active = false;
     };
-  }, [selected, project?.id, request]);
+  }, [selected, project?.id, request, setError]);
   async function act(action: () => Promise<void>) {
     setBusy(true);
     setError("");

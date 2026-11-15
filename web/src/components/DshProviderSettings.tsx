@@ -1,11 +1,7 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
+import { useActionFeedback } from "./action-feedback";
 import { useEffect, useState, type FormEvent } from "react";
-import type { Request, Row } from "./configuration-ui";
+import { type Request, type Row } from "./rpc-types";
 
 export type ModelProvider = {
   id: string;
@@ -55,7 +51,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
     return () => {
       active = false;
     };
-  }, [request]);
+  }, [request, setMessage]);
   useEffect(() => {
     let active = true;
     setStatus(undefined);
@@ -69,7 +65,7 @@ export function DshProviderSettings({ request }: { request: Request }) {
     return () => {
       active = false;
     };
-  }, [request, provider]);
+  }, [request, provider, setMessage]);
   async function save(event: FormEvent) {
     captureFeedback();
 
