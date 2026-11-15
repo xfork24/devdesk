@@ -1034,7 +1034,7 @@ impl ports::Git for CliGit {
                 let policy = crate::github::GitHubPullRequests.diagnose(repository, mainline)?;
                 require(
                     policy.compatible,
-                    &format!(
+                    format!(
                         "GitHub 仓库暂不可接入：{}",
                         policy.blocked_reasons.join("；")
                     ),

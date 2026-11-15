@@ -12,9 +12,7 @@ impl Engine {
         let s = self.store.snapshot()?;
         let mut defaults = current_template_defaults(&s)
             .ok_or_else(|| err("configuration_required", "模板目录尚未初始化"))?;
-        let scope = project
-            .map(|id| Scope::project(id))
-            .unwrap_or(Scope::global());
+        let scope = project.map(Scope::project).unwrap_or(Scope::global());
         for agent in defaults["role_agent_bindings"]
             .as_object()
             .ok_or_else(|| err("configuration_required", "默认角色绑定缺失"))?

@@ -78,6 +78,8 @@ pub fn read_flow(root: &Path, id: &str) -> Result<OAuthFlow> {
     )
     .map_err(storage)
 }
+// Flow start mirrors the provider protocol fields one-to-one.
+#[allow(clippy::too_many_arguments)]
 pub fn start(
     root: &Path,
     config: &OAuthConfig,

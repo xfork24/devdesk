@@ -1,3 +1,5 @@
+//! Pure domain rules, source contracts and validation. No I/O, no unsafe.
+#![forbid(unsafe_code)]
 mod standards;
 pub use standards::*;
 mod source;

@@ -93,54 +93,6 @@ impl ContainerReceipt {
     }
 }
 
-#[cfg(test)]
-mod clock_tests {
-    use super::*;
-
-    #[test]
-    fn delayed_observation_keeps_actual_runtime_and_exposes_real_overruns() {
-        let mut receipt = ContainerReceipt {
-            name: "fixture".into(),
-            id: "fixture".into(),
-            image: "fixture".into(),
-            running: false,
-            status: "exited".into(),
-            exit_code: 0,
-            specification_digest: "fixture".into(),
-            started_at: Some(1_000),
-            finished_at: Some(1_212),
-        };
-        assert_eq!(receipt.runtime_millis(120_000).unwrap(), 212);
-        receipt.finished_at = Some(62_000);
-        assert!(receipt.runtime_millis(120_000).unwrap() > 60_000);
-        receipt.running = true;
-        assert_eq!(receipt.runtime_millis(61_001).unwrap(), 60_001);
-        receipt.started_at = None;
-        assert!(receipt.runtime_millis(120_000).is_err());
-        receipt.running = false;
-        receipt.started_at = Some(2_000);
-        receipt.finished_at = Some(1_000);
-        assert!(receipt.runtime_millis(120_000).is_err());
-    }
-
-    #[test]
-    fn docker_nanosecond_clocks_preserve_execution_time_and_unset_values() {
-        let start = container_timestamp(&json!("2026-11-11T00:02:02.615626166Z"))
-            .unwrap()
-            .unwrap();
-        let end = container_timestamp(&json!("2026-11-11T00:02:02.827730541Z"))
-            .unwrap()
-            .unwrap();
-        assert_eq!(end - start, 212);
-        assert_eq!(
-            container_timestamp(&json!("0001-01-01T00:00:00Z")).unwrap(),
-            None
-        );
-        assert_eq!(container_timestamp(&Value::Null).unwrap(), None);
-        assert!(container_timestamp(&json!("not a timestamp")).is_err());
-    }
-}
-
 pub struct DockerSandbox {
     root: PathBuf,
     user: String,
@@ -558,7 +510,7 @@ impl DockerSandbox {
         if let Some((policy, tool)) = policy_files {
             for (path, target) in [
                 (policy, "/run/devdesk/permission"),
-                (tool, "/run/devdesk/tool-policy.mjs".into()),
+                (tool, "/run/devdesk/tool-policy.mjs"),
             ] {
                 args.extend([
                     "--mount".into(),
@@ -867,5 +819,53 @@ impl DockerSandbox {
             result.code == 0 && self.inspect(operation_id)?.is_none(),
             "容器清理尚未确认",
         )
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    #[test]
+    fn delayed_observation_keeps_actual_runtime_and_exposes_real_overruns() {
+        let mut receipt = ContainerReceipt {
+            name: "fixture".into(),
+            id: "fixture".into(),
+            image: "fixture".into(),
+            running: false,
+            status: "exited".into(),
+            exit_code: 0,
+            specification_digest: "fixture".into(),
+            started_at: Some(1_000),
+            finished_at: Some(1_212),
+        };
+        assert_eq!(receipt.runtime_millis(120_000).unwrap(), 212);
+        receipt.finished_at = Some(62_000);
+        assert!(receipt.runtime_millis(120_000).unwrap() > 60_000);
+        receipt.running = true;
+        assert_eq!(receipt.runtime_millis(61_001).unwrap(), 60_001);
+        receipt.started_at = None;
+        assert!(receipt.runtime_millis(120_000).is_err());
+        receipt.running = false;
+        receipt.started_at = Some(2_000);
+        receipt.finished_at = Some(1_000);
+        assert!(receipt.runtime_millis(120_000).is_err());
+    }
+
+    #[test]
+    fn docker_nanosecond_clocks_preserve_execution_time_and_unset_values() {
+        let start = container_timestamp(&json!("2026-11-11T00:02:02.615626166Z"))
+            .unwrap()
+            .unwrap();
+        let end = container_timestamp(&json!("2026-11-11T00:02:02.827730541Z"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(end - start, 212);
+        assert_eq!(
+            container_timestamp(&json!("0001-01-01T00:00:00Z")).unwrap(),
+            None
+        );
+        assert_eq!(container_timestamp(&Value::Null).unwrap(), None);
+        assert!(container_timestamp(&json!("not a timestamp")).is_err());
     }
 }

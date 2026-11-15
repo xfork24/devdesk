@@ -16,6 +16,8 @@ fn owner(s: &Session) -> MaterialOwner {
         },
     }
 }
+// Event fields map one-to-one onto the persisted conversation row.
+#[allow(clippy::too_many_arguments)]
 fn append(
     s: &mut EngineeringState,
     session: &Session,
@@ -210,18 +212,17 @@ impl Engine {
                 .iter()
                 .rev()
                 .find(|t| t.session_id == execution.session_id && t.code_view.is_some())
+                && snapshot.turn_runtime_binding(turn)?.tool_policy != ToolPolicy::ReadOnly
             {
-                if snapshot.turn_runtime_binding(turn)?.tool_policy != ToolPolicy::ReadOnly {
-                    writers.insert(
-                        turn.code_view
-                            .as_ref()
-                            .unwrap()
-                            .context
-                            .source
-                            .worktree
-                            .clone(),
-                    );
-                }
+                writers.insert(
+                    turn.code_view
+                        .as_ref()
+                        .unwrap()
+                        .context
+                        .source
+                        .worktree
+                        .clone(),
+                );
             }
         }
         for turn in snapshot

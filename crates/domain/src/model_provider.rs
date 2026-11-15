@@ -555,7 +555,7 @@ mod tests {
                 .unwrap();
             assert_eq!(c.route, "zai-coding-cn");
             assert_eq!(c.worker_endpoint, f.endpoint);
-            assert_eq!(c.host_gateway, false);
+            assert!(!c.host_gateway);
             assert_eq!(c.api_key_env.is_empty(), !requires_key);
             c.validate("test-model", &model("zai-coding-cn").parameters)
                 .unwrap();

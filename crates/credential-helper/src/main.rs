@@ -1,15 +1,21 @@
 //! Immutable per-user Keychain principal. Host rebuilds do not rebuild this installation.
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::io::{Read, Write};
+#[cfg(target_os = "macos")]
+use std::io::Read;
+use std::io::Write;
+// The non-macOS build rejects the request before parsing; tests exercise
+// validation on every platform, so only the macOS runtime path constructs it.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 struct Request {
     operation: String,
     service: String,
     account: String,
     secret: Option<String>,
 }
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn valid_account(account: &str) -> bool {
     [
         "deepseek-api-key-",
@@ -31,6 +37,7 @@ fn valid_account(account: &str) -> bool {
         })
     })
 }
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn validate(r: &Request) -> bool {
     r.service.strip_prefix("devdesk.").is_some_and(|s| {
         s.len() == 64

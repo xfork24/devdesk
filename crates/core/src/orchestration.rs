@@ -102,18 +102,17 @@ pub(crate) fn freeze_plan(
     );
     instance.active_plan_revision_id = plan.id.clone();
     for execution in &mut instance.steps {
-        if execution.plan_revision_id.is_empty() {
-            if let Some(step) = instance
+        if execution.plan_revision_id.is_empty()
+            && let Some(step) = instance
                 .plan
                 .document
                 .steps
                 .iter()
                 .find(|s| s.key == execution.step)
-            {
-                execution.plan_revision_id = plan.id.clone();
-                execution.node_id = step.node_id.clone();
-                execution.contract_digest = configuration_hash(step);
-            }
+        {
+            execution.plan_revision_id = plan.id.clone();
+            execution.node_id = step.node_id.clone();
+            execution.contract_digest = configuration_hash(step);
         }
     }
     let id = plan.id.clone();
@@ -696,15 +695,14 @@ impl Engine {
             ));
             instance.status = StepExecutionStatus::Completed;
             instance.control_version += 1;
-            if instance.parent_execution_id.is_none() {
-                if let Some(f) = state
+            if instance.parent_execution_id.is_none()
+                && let Some(f) = state
                     .features
                     .iter_mut()
                     .find(|f| f.id == instance.owner_id)
-                {
-                    f.status = Status::Completed;
-                    f.revision += 1;
-                }
+            {
+                f.status = Status::Completed;
+                f.revision += 1;
             }
             update_instance(state, &row, &instance);
             return Ok(Some(json!({"completed":true,"decision_id":d})));
@@ -842,14 +840,12 @@ impl Engine {
                     .tool_call_id
                     .as_ref()
                     .and_then(|id| state.governance.iter_mut().find(|r| r.id == *id))
-                {
-                    if !["succeeded", "failed", "cancelled"]
+                    && !["succeeded", "failed", "cancelled"]
                         .contains(&call.data["status"].as_str().unwrap_or(""))
-                    {
-                        let mut data = call.data.clone();
-                        data["cancel_requested"] = json!(true);
-                        update_record(call, data);
-                    }
+                {
+                    let mut data = call.data.clone();
+                    data["cancel_requested"] = json!(true);
+                    update_record(call, data);
                 }
                 if !active_execution(state, &execution)
                     && !matches!(
@@ -906,26 +902,26 @@ impl Engine {
             if let Some(pid) = p["project_id"].as_str() {
                 require(instance.project_id == pid, "项目不匹配")?;
             }
-            if method == "workflow.inspect" {
-                if let Some(id) = p["decision_ref"].as_str() {
-                    let decision = s.configuration(id)?;
-                    let pending = if decision.r#type == "workflow_human_decision" {
-                        s.configuration(&decision.definition_id)?
-                    } else {
-                        decision
-                    };
-                    require(
-                        pending.r#type == "workflow_pending_decision"
-                            && s.configuration(&pending.definition_id)?.data["root_instance_id"]
-                                == instance.root_instance_id,
-                        "决定不属于当前根实例",
-                    )?;
-                    let mut out = read_chunk(&decision.data["request"], p)?;
-                    out["decision_ref"] = json!(decision.id);
-                    out["status"] = pending.data["status"].clone();
-                    out["approved"] = decision.data["approved"].clone();
-                    return Ok(out);
-                }
+            if method == "workflow.inspect"
+                && let Some(id) = p["decision_ref"].as_str()
+            {
+                let decision = s.configuration(id)?;
+                let pending = if decision.r#type == "workflow_human_decision" {
+                    s.configuration(&decision.definition_id)?
+                } else {
+                    decision
+                };
+                require(
+                    pending.r#type == "workflow_pending_decision"
+                        && s.configuration(&pending.definition_id)?.data["root_instance_id"]
+                            == instance.root_instance_id,
+                    "决定不属于当前根实例",
+                )?;
+                let mut out = read_chunk(&decision.data["request"], p)?;
+                out["decision_ref"] = json!(decision.id);
+                out["status"] = pending.data["status"].clone();
+                out["approved"] = decision.data["approved"].clone();
+                return Ok(out);
             }
             if method == "workflow.outputs.read" {
                 let ids: Vec<String> =

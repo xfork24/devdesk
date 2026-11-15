@@ -155,7 +155,7 @@ pub(crate) fn step_actions_with_facts(
         };
         if !slot {
             WorkflowActionEligibility::blocked("foreach_capacity", "子流程并发已满")
-        } else if step.condition.evaluate(&current) {
+        } else if step.condition.evaluate(current) {
             match material_inputs(step, current) {
                 Ok(_) => WorkflowActionEligibility::ready(),
                 Err(error) => WorkflowActionEligibility::blocked("inputs", error.message),

@@ -29,9 +29,7 @@ pub fn freeze_integrations(
     a: &AgentComposition,
     project: Option<&str>,
 ) -> Result<IntegrationLock> {
-    let scope = project
-        .map(|p| Scope::project(p))
-        .unwrap_or(Scope::global());
+    let scope = project.map(Scope::project).unwrap_or(Scope::global());
     let mapping = project
         .and_then(|p| {
             latest(
@@ -460,7 +458,7 @@ impl Engine {
                 c.command_id.clone(),
                 self.store
                     .project_id()
-                    .map(|project_id| Scope::project(project_id))
+                    .map(Scope::project)
                     .unwrap_or(Scope::global()),
                 method.into(),
                 1,
@@ -513,10 +511,10 @@ impl Engine {
             .filter(|r| r.r#type == "tool_call" && r.data["status"] == "needs_reconciliation")
         {
             let i: ToolInvocation = decode(&r.data["invocation"])?;
-            if let Ok(Some(receipt)) = executor.poll(&i) {
-                if r.data["receipt"] != json!(receipt) {
-                    self.accept_tool_receipt(&r.id, &receipt)?;
-                }
+            if let Ok(Some(receipt)) = executor.poll(&i)
+                && r.data["receipt"] != json!(receipt)
+            {
+                self.accept_tool_receipt(&r.id, &receipt)?;
             }
         }
         Ok(())
@@ -554,35 +552,34 @@ impl Engine {
                 .contains(&r.data["status"].as_str().unwrap_or(""))
                 || (r.data["status"] == "needs_reconciliation" && r.data["receipt"].is_object())
             {
-                if r.data["reply_sent"] != true {
-                    if let (Some(sid), Some(request)) =
+                if r.data["reply_sent"] != true
+                    && let (Some(sid), Some(request)) =
                         (&invocation.session_id, &invocation.request_id)
+                {
+                    let state = self.store.snapshot()?;
+                    let session = state
+                        .sessions
+                        .iter()
+                        .find(|s| &s.id == sid)
+                        .ok_or_else(|| err("not_found", "调用 Session 缺失"))?;
+                    let receipt: ToolReceipt = decode(&r.data["receipt"])?;
+                    let active = state
+                        .executions
+                        .iter()
+                        .any(|e| e.session_id == *sid && !e.writer_revoked);
+                    if !active {
+                        self.tool_record_update(&r.id, |d| {
+                            d["reply_sent"] = json!(true);
+                            d["reply_status"] = json!("worker_unavailable");
+                        })?;
+                    } else if self
+                        .harness
+                        .answer_tool_call(session, request, &receipt)
+                        .is_ok()
                     {
-                        let state = self.store.snapshot()?;
-                        let session = state
-                            .sessions
-                            .iter()
-                            .find(|s| &s.id == sid)
-                            .ok_or_else(|| err("not_found", "调用 Session 缺失"))?;
-                        let receipt: ToolReceipt = decode(&r.data["receipt"])?;
-                        let active = state
-                            .executions
-                            .iter()
-                            .any(|e| e.session_id == *sid && !e.writer_revoked);
-                        if !active {
-                            self.tool_record_update(&r.id, |d| {
-                                d["reply_sent"] = json!(true);
-                                d["reply_status"] = json!("worker_unavailable");
-                            })?;
-                        } else if self
-                            .harness
-                            .answer_tool_call(session, request, &receipt)
-                            .is_ok()
-                        {
-                            self.tool_record_update(&r.id, |d| {
-                                d["reply_sent"] = json!(true);
-                            })?;
-                        }
+                        self.tool_record_update(&r.id, |d| {
+                            d["reply_sent"] = json!(true);
+                        })?;
                     }
                 }
                 continue;

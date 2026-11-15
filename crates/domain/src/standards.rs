@@ -98,10 +98,9 @@ pub fn canonical_standard_content(value: &Value) -> Value {
                     "root_workflow_refs",
                 ]
                 .contains(&key.as_str())
+                    && let Some(items) = value.as_array_mut()
                 {
-                    if let Some(items) = value.as_array_mut() {
-                        items.sort_by_key(Value::to_string);
-                    }
+                    items.sort_by_key(Value::to_string);
                 }
                 result.insert(key.clone(), value);
             }
@@ -349,13 +348,12 @@ pub fn diff_standard_snapshots(left: &StandardSnapshot, right: &StandardSnapshot
             .unwrap_or(reference)
     }
     fn workflow_content(node: &StandardNode) -> Value {
-        if node.kind == "workflow" {
-            if let Ok(mut workflow) =
+        if node.kind == "workflow"
+            && let Ok(mut workflow) =
                 serde_json::from_value::<WorkflowDefinition>(node.content.clone())
-            {
-                workflow.assign_node_ids(&node.reference);
-                return canonical_standard_content(&json!(workflow));
-            }
+        {
+            workflow.assign_node_ids(&node.reference);
+            return canonical_standard_content(&json!(workflow));
         }
         node.content.clone()
     }
@@ -387,38 +385,41 @@ pub fn diff_standard_snapshots(left: &StandardSnapshot, right: &StandardSnapshot
                 let map = pairs.iter().cloned().collect::<BTreeMap<_, _>>();
                 (map.len() == pairs.len()).then_some(map)
             }
-            if (!a.is_empty() || !b.is_empty()) && a.iter().chain(b).all(Value::is_object) {
-                if let (Some(left), Some(right)) = (keyed(a), keyed(b)) {
-                    fn order(items: &[Value]) -> Vec<&str> {
-                        items
-                            .iter()
-                            .map(|item| {
-                                item["key"]
-                                    .as_str()
-                                    .or_else(|| item["node_id"].as_str())
-                                    .unwrap_or("")
-                            })
-                            .collect::<Vec<_>>()
-                    }
-                    if order(a) != order(b) {
-                        out.push(json!({"path":format!("{path}/$order"),"before":order(a),"after":order(b)}));
-                    }
-                    for key in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
-                        let old = left.get(key).copied().unwrap_or(&Value::Null);
-                        let new = right.get(key).copied().unwrap_or(&Value::Null);
-                        let label = old["key"]
-                            .as_str()
-                            .or_else(|| new["key"].as_str())
-                            .unwrap_or(key);
-                        fields(
-                            &format!("{path}/{}", label.replace('~', "~0").replace('/', "~1")),
-                            old,
-                            new,
-                            out,
-                        );
-                    }
-                    return;
+            if (!a.is_empty() || !b.is_empty())
+                && a.iter().chain(b).all(Value::is_object)
+                && let (Some(left), Some(right)) = (keyed(a), keyed(b))
+            {
+                fn order(items: &[Value]) -> Vec<&str> {
+                    items
+                        .iter()
+                        .map(|item| {
+                            item["key"]
+                                .as_str()
+                                .or_else(|| item["node_id"].as_str())
+                                .unwrap_or("")
+                        })
+                        .collect::<Vec<_>>()
                 }
+                if order(a) != order(b) {
+                    out.push(
+                        json!({"path":format!("{path}/$order"),"before":order(a),"after":order(b)}),
+                    );
+                }
+                for key in left.keys().chain(right.keys()).collect::<BTreeSet<_>>() {
+                    let old = left.get(key).copied().unwrap_or(&Value::Null);
+                    let new = right.get(key).copied().unwrap_or(&Value::Null);
+                    let label = old["key"]
+                        .as_str()
+                        .or_else(|| new["key"].as_str())
+                        .unwrap_or(key);
+                    fields(
+                        &format!("{path}/{}", label.replace('~', "~0").replace('/', "~1")),
+                        old,
+                        new,
+                        out,
+                    );
+                }
+                return;
             }
         }
         if let (Some(a), Some(b)) = (a.as_object(), b.as_object()) {

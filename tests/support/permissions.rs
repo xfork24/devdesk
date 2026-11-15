@@ -1,7 +1,10 @@
 //! Complete v2 grants for offline contract tests; no v1 defaults or override chain.
 #![allow(dead_code)]
 use devdesk_domain::*;
+// Support files stay standalone: every includer may pull this in again as its
+// own root fixture, so the same file legitimately loads once per module.
 #[path = "defaults.rs"]
+#[allow(clippy::duplicate_mod)]
 mod defaults;
 use defaults::*;
 use serde_json::json;

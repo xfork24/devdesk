@@ -104,9 +104,9 @@ impl CredentialVault {
             let output =
                 crate::process::capture_command(command, std::time::Duration::from_secs(20), None)?;
             require(output.code == 0, "接入凭据不可用")?;
-            return String::from_utf8(output.stdout)
+            String::from_utf8(output.stdout)
                 .map(|s| s.trim_end_matches('\n').to_owned())
-                .map_err(storage);
+                .map_err(storage)
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {

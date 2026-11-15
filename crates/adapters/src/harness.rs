@@ -296,10 +296,10 @@ impl RuntimeWorkers {
             None
         };
         let mut role_context = serde_json::to_value(&r.agent.agent_profile).map_err(storage)?;
-        if binding.permissions.is_some() {
-            if let Some(role) = role_context.as_object_mut() {
-                role.remove("tool_policy");
-            }
+        if binding.permissions.is_some()
+            && let Some(role) = role_context.as_object_mut()
+        {
+            role.remove("tool_policy");
         }
         let p = binding
             .permissions
@@ -626,10 +626,9 @@ impl RuntimeWorkers {
                         .agent_configuration
                         .as_ref()
                         .and_then(|a| a.integration_lock.as_ref())
+                        && (!lock.tools.is_empty() || !lock.platform_tools.is_empty())
                     {
-                        if !lock.tools.is_empty() || !lock.platform_tools.is_empty() {
-                            args["dynamicTools"]=json!(lock.tools.iter().map(|t|json!({"type":"function","name":t.definition.qualified_name,"description":t.definition.description,"inputSchema":t.definition.input_schema})).chain(lock.platform_tools.iter().map(|tool|json!({"type":"function","name":tool.decode::<ToolDefinition>().map(|definition|definition.call_name()).unwrap_or_default(),"description":tool.name,"inputSchema":tool.data["input_schema"]}))).collect::<Vec<_>>());
-                        }
+                        args["dynamicTools"]=json!(lock.tools.iter().map(|t|json!({"type":"function","name":t.definition.qualified_name,"description":t.definition.description,"inputSchema":t.definition.input_schema})).chain(lock.platform_tools.iter().map(|tool|json!({"type":"function","name":tool.decode::<ToolDefinition>().map(|definition|definition.call_name()).unwrap_or_default(),"description":tool.name,"inputSchema":tool.data["input_schema"]}))).collect::<Vec<_>>());
                     }
                     let method = if let Some(sid) = &r.session.external_session {
                         args["threadId"] = json!(sid);
@@ -1511,6 +1510,40 @@ impl ports::Harness for RoutingHarness {
     }
 }
 
+/// Facts about the actual compiled wire adapters; configuration cannot add implementations.
+pub fn driver_capability_registry()
+-> std::collections::BTreeMap<String, devdesk_core::DriverCapabilities> {
+    HARNESS_PROVIDERS
+        .iter()
+        .map(|provider| {
+            let mut features: std::collections::BTreeSet<String> =
+                ["structured-output", "tool-calling", "cancel", "poll"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+            if *provider == HarnessProvider::Codex {
+                features.extend(
+                    [
+                        "dynamic-tools",
+                        "external-tools",
+                        "platform-tools",
+                        "orchestration",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned),
+                );
+            }
+            (
+                provider.as_str().into(),
+                devdesk_core::DriverCapabilities {
+                    implementation_id: managed_adapter_identity(*provider),
+                    features,
+                },
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod protocol_tests {
     use super::*;
@@ -1651,38 +1684,4 @@ mod protocol_tests {
         worker.activity = Some(activity);
         assert_eq!(worker.poll().unwrap_err().code, "provider_timeout");
     }
-}
-
-/// Facts about the actual compiled wire adapters; configuration cannot add implementations.
-pub fn driver_capability_registry()
--> std::collections::BTreeMap<String, devdesk_core::DriverCapabilities> {
-    HARNESS_PROVIDERS
-        .iter()
-        .map(|provider| {
-            let mut features: std::collections::BTreeSet<String> =
-                ["structured-output", "tool-calling", "cancel", "poll"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect();
-            if *provider == HarnessProvider::Codex {
-                features.extend(
-                    [
-                        "dynamic-tools",
-                        "external-tools",
-                        "platform-tools",
-                        "orchestration",
-                    ]
-                    .into_iter()
-                    .map(str::to_owned),
-                );
-            }
-            (
-                provider.as_str().into(),
-                devdesk_core::DriverCapabilities {
-                    implementation_id: managed_adapter_identity(*provider),
-                    features,
-                },
-            )
-        })
-        .collect()
 }

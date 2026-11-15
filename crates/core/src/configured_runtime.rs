@@ -502,40 +502,38 @@ pub fn task_input(
             source["runtime_executions"] = runs.clone();
         }
     }
-    if let Some(checkpoint) = &execution.rework_workspace {
-        if let Some(name) = &step.access.workspace_input {
-            if execution.inputs.get(name) == Some(&checkpoint.workspace) {
-                let source = input_sources.get_mut(name).unwrap();
-                source["original_source_output_id"] = source["source_output_id"].clone();
-                source["source_output_id"] = json!(checkpoint.output_id);
-                source["rework_checkpoint"] = json!(checkpoint);
-            }
-        }
+    if let Some(checkpoint) = &execution.rework_workspace
+        && let Some(name) = &step.access.workspace_input
+        && execution.inputs.get(name) == Some(&checkpoint.workspace)
+    {
+        let source = input_sources.get_mut(name).unwrap();
+        source["original_source_output_id"] = source["source_output_id"].clone();
+        source["source_output_id"] = json!(checkpoint.output_id);
+        source["rework_checkpoint"] = json!(checkpoint);
     }
     let mut rendered_inputs = execution.inputs.clone();
     for (name, value) in &execution.inputs {
         let bytes = serde_json::to_vec(value).map_err(|e| err("serialization", e.to_string()))?;
-        if bytes.len() > 32768 {
-            if let Some(id) = input_sources
+        if bytes.len() > 32768
+            && let Some(id) = input_sources
                 .get(name)
                 .and_then(|source| source["source_output_id"].as_str())
-            {
-                let pointer = match &step.inputs[name] {
-                    _ if input_sources[name].get("rework_checkpoint").is_some() => "",
-                    InputBinding::Source { source } => source.pointer.as_str(),
-                    _ => "",
-                };
-                let reader = instance.plan.definitions.values().find(|r| {
-                    r.r#type == "tool"
-                        && r.data["qualified_name"] == "workflow.outputs.read"
-                        && step.access.tool_refs.contains(&r.id)
-                });
-                require(
-                    reader.is_some(),
-                    "大产物需要当前步骤授权的 workflow.outputs.read 完整读取能力",
-                )?;
-                rendered_inputs.insert(name.clone(), json!({"complete":false,"source_output_id":id,"pointer":pointer,"value_digest":configuration_hash(value),"total_bytes":bytes.len(),"read_tool":OUTPUT_READ_CALL_NAME,"arguments":{"ids":[id],"pointer":pointer,"offset":0,"max_bytes":OUTPUT_READ_PAGE_BYTES},"instructions":"Read every chunk through next_offset before judging this input. The reference is not the content."}));
-            }
+        {
+            let pointer = match &step.inputs[name] {
+                _ if input_sources[name].get("rework_checkpoint").is_some() => "",
+                InputBinding::Source { source } => source.pointer.as_str(),
+                _ => "",
+            };
+            let reader = instance.plan.definitions.values().find(|r| {
+                r.r#type == "tool"
+                    && r.data["qualified_name"] == "workflow.outputs.read"
+                    && step.access.tool_refs.contains(&r.id)
+            });
+            require(
+                reader.is_some(),
+                "大产物需要当前步骤授权的 workflow.outputs.read 完整读取能力",
+            )?;
+            rendered_inputs.insert(name.clone(), json!({"complete":false,"source_output_id":id,"pointer":pointer,"value_digest":configuration_hash(value),"total_bytes":bytes.len(),"read_tool":OUTPUT_READ_CALL_NAME,"arguments":{"ids":[id],"pointer":pointer,"offset":0,"max_bytes":OUTPUT_READ_PAGE_BYTES},"instructions":"Read every chunk through next_offset before judging this input. The reference is not the content."}));
         }
     }
     let input_deliveries = step.inputs.values().filter_map(|binding| match binding {
@@ -557,7 +555,7 @@ pub fn task_input(
         .chain(input_deliveries)
         .filter_map(|port| definitions.get(&port.delivery_ref))
         .filter_map(|r| reference_list(&r.refs, "spec_refs").ok())
-        .flat_map(|refs| refs)
+        .flatten()
         .filter(|reference| !step.spec_refs.contains(reference))
         .collect();
     let mut input = json!({"renderer_version":AGENT_TASK_RENDERER,"source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
@@ -1363,11 +1361,11 @@ impl Engine {
                     .all(|key| plan.document.inputs.contains_key(key)),
                 "流程包含未声明输入",
             )?;
-            if let Some(feature) = state.features.iter_mut().find(|f| f.id == target) {
-                if feature.status != Status::Running {
-                    feature.status = Status::Running;
-                    feature.revision += 1;
-                }
+            if let Some(feature) = state.features.iter_mut().find(|f| f.id == target)
+                && feature.status != Status::Running
+            {
+                feature.status = Status::Running;
+                feature.revision += 1;
             }
             let instance_id = id();
             let steps = plan
@@ -1912,14 +1910,12 @@ impl Engine {
                             .tool_call_id
                             .as_ref()
                             .and_then(|id| state.governance.iter_mut().find(|r| r.id == *id))
-                        {
-                            if !["succeeded", "failed", "cancelled"]
+                            && !["succeeded", "failed", "cancelled"]
                                 .contains(&call.data["status"].as_str().unwrap_or(""))
-                            {
-                                let mut data = call.data.clone();
-                                data["cancel_requested"] = json!(true);
-                                update_record(call, data);
-                            }
+                        {
+                            let mut data = call.data.clone();
+                            data["cancel_requested"] = json!(true);
+                            update_record(call, data);
                         }
                         let writer = state.executions.iter().any(|e| {
                             Some(&e.session_id) == execution.session_id.as_ref()
@@ -2069,21 +2065,20 @@ impl Engine {
                         StepExecutionStatus::Queued
                     };
                 let data = json!(instance);
-                if instance.parent_execution_id.is_none() {
-                    if let Some(feature) = state
+                if instance.parent_execution_id.is_none()
+                    && let Some(feature) = state
                         .features
                         .iter_mut()
                         .find(|f| f.id == instance.owner_id)
-                    {
-                        let status = if instance.status == StepExecutionStatus::Completed {
-                            Status::Completed
-                        } else {
-                            Status::Running
-                        };
-                        if feature.status != status {
-                            feature.status = status;
-                            feature.revision += 1;
-                        }
+                {
+                    let status = if instance.status == StepExecutionStatus::Completed {
+                        Status::Completed
+                    } else {
+                        Status::Running
+                    };
+                    if feature.status != status {
+                        feature.status = status;
+                        feature.revision += 1;
                     }
                 }
                 if row.data != data {
@@ -2148,7 +2143,7 @@ impl Engine {
         ) {
             return Ok(());
         }
-        let current_facts = facts(state, &instance)?;
+        let current_facts = facts(state, instance)?;
         if matches!(
             execution.status,
             StepExecutionStatus::WaitingConfirmation | StepExecutionStatus::AwaitingAcceptance
@@ -2189,12 +2184,12 @@ impl Engine {
                     "重试冻结输入摘要不一致",
                 )?;
             }
-            if let Some(name) = &step.access.workspace_input {
-                if let Some(value) = execution.inputs.get(name).cloned() {
-                    execution
-                        .inputs
-                        .insert(name.clone(), checkpoint_workspace(&execution, &value));
-                }
+            if let Some(name) = &step.access.workspace_input
+                && let Some(value) = execution.inputs.get(name).cloned()
+            {
+                execution
+                    .inputs
+                    .insert(name.clone(), checkpoint_workspace(&execution, &value));
             }
             execution.input_digest = configuration_hash(&execution.inputs);
             self.freeze_input_evidence(state, row, instance, step, &execution)?;
@@ -2572,7 +2567,7 @@ impl Engine {
                 }
                 if let Err(error) = self.accept_configured_outputs(
                     state,
-                    &row,
+                    row,
                     step,
                     &mut execution,
                     &json!({"status":"completed","summary":"子流程实际完成","outputs":outputs}),
@@ -2600,7 +2595,7 @@ impl Engine {
                     if call.r#type == "platform_call" {
                         if call.data["status"] == "succeeded" {
                             let outputs = mapped_tool_outputs(step, &call.data["receipt"])?;
-                            if let Err(error)=self.accept_configured_outputs(state,&row,step,&mut execution,&json!({"status":"completed","summary":"平台工具实际完成","outputs":outputs})) {execution.status=StepExecutionStatus::Failed;execution.reason=error.message;}
+                            if let Err(error)=self.accept_configured_outputs(state,row,step,&mut execution,&json!({"status":"completed","summary":"平台工具实际完成","outputs":outputs})) {execution.status=StepExecutionStatus::Failed;execution.reason=error.message;}
                         } else if call.data["status"] == "needs_reconciliation" {
                             execution.status = StepExecutionStatus::NeedsReconciliation;
                             execution.reason = "平台操作副作用需要核对".into();
@@ -2633,7 +2628,7 @@ impl Engine {
                             let value =
                                 receipt.structured_content.unwrap_or(json!(receipt.content));
                             let outputs = mapped_tool_outputs(step, &value)?;
-                            if let Err(error)=self.accept_configured_outputs(state,&row,step,&mut execution,&json!({"status":"completed","summary":"工具执行完成","outputs":outputs})) {
+                            if let Err(error)=self.accept_configured_outputs(state,row,step,&mut execution,&json!({"status":"completed","summary":"工具执行完成","outputs":outputs})) {
                                             execution.status=StepExecutionStatus::Failed;execution.reason=error.message;
                                         }
                         } else {
@@ -2668,7 +2663,7 @@ impl Engine {
                         let supplemental =
                             crate::workflow_failure::retry_supplemental_input(state, &execution)?;
                         let input =
-                            task_input(&instance, step, &execution, supplemental.as_deref())?;
+                            task_input(instance, step, &execution, supplemental.as_deref())?;
                         intent(
                             state,
                             &execution,
@@ -2715,7 +2710,7 @@ impl Engine {
                 match execution_result(state, &execution) {
                     Ok(Some(result)) => match self.accept_configured_outputs(
                         state,
-                        &row,
+                        row,
                         step,
                         &mut execution,
                         &result,
@@ -2952,10 +2947,10 @@ impl Engine {
                 .as_str()
                 .and_then(|owner| crate::standards::current_work_instance(&state, owner))
         }?;
-        if let Some(project) = p["project_id"].as_str() {
-            if row.scope.project_id() != Some(project) {
-                return Some(Err(err("scope_violation", "工作流不属于当前项目")));
-            }
+        if let Some(project) = p["project_id"].as_str()
+            && row.scope.project_id() != Some(project)
+        {
+            return Some(Err(err("scope_violation", "工作流不属于当前项目")));
         }
         let output_ids: BTreeSet<_> = row.data["steps"]
             .as_array()

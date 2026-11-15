@@ -340,28 +340,28 @@ impl Engine {
                         })
                         .collect();
                     let substitute = |binding: &mut InputBinding| -> Result<()> {
-                        if let InputBinding::Source { source } = binding {
-                            if members.contains(&source.step) {
-                                let key = format!("{}.{}", source.step, source.port);
-                                let replacement = substitutions.get(&key).ok_or_else(|| {
-                                    err(
-                                        "missing_material",
-                                        format!("跳过阶段后缺少 {key} 的替代输入"),
-                                    )
-                                })?;
-                                if let InputBinding::Material { material_ref } = replacement {
-                                    let material = state.configuration(material_ref)?;
-                                    require(
-                                        material.data["delivery_ref"] == output_types[&key],
-                                        "替代材料的交付类型修订不匹配",
-                                    )?;
-                                }
+                        if let InputBinding::Source { source } = binding
+                            && members.contains(&source.step)
+                        {
+                            let key = format!("{}.{}", source.step, source.port);
+                            let replacement = substitutions.get(&key).ok_or_else(|| {
+                                err(
+                                    "missing_material",
+                                    format!("跳过阶段后缺少 {key} 的替代输入"),
+                                )
+                            })?;
+                            if let InputBinding::Material { material_ref } = replacement {
+                                let material = state.configuration(material_ref)?;
                                 require(
-                                    source.pointer.is_empty(),
-                                    "含 JSON Pointer 的来源请先显式重绑为精确替代值",
+                                    material.data["delivery_ref"] == output_types[&key],
+                                    "替代材料的交付类型修订不匹配",
                                 )?;
-                                *binding = replacement.clone();
                             }
+                            require(
+                                source.pointer.is_empty(),
+                                "含 JSON Pointer 的来源请先显式重绑为精确替代值",
+                            )?;
+                            *binding = replacement.clone();
                         }
                         Ok(())
                     };
@@ -829,14 +829,12 @@ impl Engine {
                     .tool_call_id
                     .as_ref()
                     .and_then(|id| state.governance.iter_mut().find(|r| r.id == *id))
-                {
-                    if !["succeeded", "failed", "cancelled"]
+                    && !["succeeded", "failed", "cancelled"]
                         .contains(&call.data["status"].as_str().unwrap_or(""))
-                    {
-                        let mut data = call.data.clone();
-                        data["cancel_requested"] = json!(true);
-                        update_record(call, data);
-                    }
+                {
+                    let mut data = call.data.clone();
+                    data["cancel_requested"] = json!(true);
+                    update_record(call, data);
                 }
             }
             let mut data = change.data.clone();
@@ -943,13 +941,11 @@ impl Engine {
                 })
                 .and_then(|r| r.data["inputs"]["item"]["id"].as_str())
                 .map(str::to_owned)
+                && let Some(task) = state.tasks.iter_mut().find(|t| t.id == task_id)
+                && task.status == Status::Completed
             {
-                if let Some(task) = state.tasks.iter_mut().find(|t| t.id == task_id) {
-                    if task.status == Status::Completed {
-                        task.status = Status::Draft;
-                        task.revision += 1;
-                    }
-                }
+                task.status = Status::Draft;
+                task.revision += 1;
             }
         }
         let old_steps = instance.steps.clone();
@@ -969,10 +965,10 @@ impl Engine {
                 {
                     return e.clone();
                 }
-                if !preview.affected.contains(&step.key) {
-                    if let Some(e) = old_steps.iter().find(|e| e.node_id == step.node_id) {
-                        return e.clone();
-                    }
+                if !preview.affected.contains(&step.key)
+                    && let Some(e) = old_steps.iter().find(|e| e.node_id == step.node_id)
+                {
+                    return e.clone();
                 }
                 StepExecution {
                     plan_revision_id: String::new(),

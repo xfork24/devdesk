@@ -8,8 +8,7 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
         version: match provider {
             HarnessProvider::Codex => runtime_preparation::default_version(HarnessProvider::Codex),
             HarnessProvider::Dsh => runtime_preparation::default_version(HarnessProvider::Dsh),
-        }
-        .into(),
+        },
         recipe_digest: match provider {
             HarnessProvider::Codex => runtime_preparation::default_codex_recipe_digest(),
             HarnessProvider::Dsh => runtime_preparation::default_dsh_recipe_digest(),
@@ -235,48 +234,48 @@ pub fn validate_execution_permissions(
         }
         _ => {}
     }
-    if provider == HarnessProvider::Dsh {
-        if let FilesystemPermission::Scoped { rules } = &p.harness.policy.filesystem {
-            // DSH's immutable session cwd always grants the whole workspace in
-            // workspace-write mode. Additional roots cannot narrow that grant.
-            // Accept only restrictions already enforced by the outer scope mounts.
-            let absolute = |path: &str| {
-                if path == "." {
-                    "/work".to_string()
-                } else {
-                    format!("/work/{path}")
-                }
-            };
-            let within = |path: &str, parent: &str| {
-                path == parent
-                    || path
-                        .strip_prefix(parent)
-                        .is_some_and(|s| s.starts_with('/'))
-            };
-            let writable: Vec<_> = p.scope.writable_paths.iter().map(|v| absolute(v)).collect();
-            let readonly: Vec<_> = p
-                .scope
-                .read_only_paths
-                .iter()
-                .map(|v| absolute(v))
-                .collect();
-            let enforced = p.harness.policy.file_access("/") == FileAccess::Read
-                && writable
-                    .iter()
-                    .all(|v| p.harness.policy.file_access(v) == FileAccess::ReadWrite)
-                && rules
-                    .iter()
-                    .filter(|r| r.access == FileAccess::Read)
-                    .all(|r| {
-                        !writable.iter().any(|v| within(&r.path, v))
-                            || readonly.iter().any(|v| within(&r.path, v))
-                    });
-            if !enforced {
-                return Err(err(
-                    "permission_unsupported",
-                    "DSH 原生 workspace-write 不能缩小会话 cwd；scoped 限制须由冻结 ExecutionScope 挂载落实",
-                ));
+    if provider == HarnessProvider::Dsh
+        && let FilesystemPermission::Scoped { rules } = &p.harness.policy.filesystem
+    {
+        // DSH's immutable session cwd always grants the whole workspace in
+        // workspace-write mode. Additional roots cannot narrow that grant.
+        // Accept only restrictions already enforced by the outer scope mounts.
+        let absolute = |path: &str| {
+            if path == "." {
+                "/work".to_string()
+            } else {
+                format!("/work/{path}")
             }
+        };
+        let within = |path: &str, parent: &str| {
+            path == parent
+                || path
+                    .strip_prefix(parent)
+                    .is_some_and(|s| s.starts_with('/'))
+        };
+        let writable: Vec<_> = p.scope.writable_paths.iter().map(|v| absolute(v)).collect();
+        let readonly: Vec<_> = p
+            .scope
+            .read_only_paths
+            .iter()
+            .map(|v| absolute(v))
+            .collect();
+        let enforced = p.harness.policy.file_access("/") == FileAccess::Read
+            && writable
+                .iter()
+                .all(|v| p.harness.policy.file_access(v) == FileAccess::ReadWrite)
+            && rules
+                .iter()
+                .filter(|r| r.access == FileAccess::Read)
+                .all(|r| {
+                    !writable.iter().any(|v| within(&r.path, v))
+                        || readonly.iter().any(|v| within(&r.path, v))
+                });
+        if !enforced {
+            return Err(err(
+                "permission_unsupported",
+                "DSH 原生 workspace-write 不能缩小会话 cwd；scoped 限制须由冻结 ExecutionScope 挂载落实",
+            ));
         }
     }
     if !p.scope.writable_paths.is_empty()

@@ -455,12 +455,11 @@ impl Engine {
                 true,
             )
         } else {
-            match params["id"]
-                .as_str()
-                .and_then(|id| state.configuration(id).ok())
             {
-                Some(row) => row.clone(),
-                None => return None,
+                let row = params["id"]
+                    .as_str()
+                    .and_then(|id| state.configuration(id).ok())?;
+                row.clone()
             }
         };
         if row.r#type == "workflow_draft" {
@@ -472,7 +471,7 @@ impl Engine {
         Some((|| {
             let scope = params["project_id"]
                 .as_str()
-                .map(|id| Scope::project(id))
+                .map(Scope::project)
                 .unwrap_or(Scope::global());
             let bindings: Option<BTreeMap<Id, Id>> = params
                 .get("role_agent_bindings")
@@ -620,6 +619,9 @@ pub fn compile_workflow_sources(
     scope: &Scope,
     bindings: Option<&BTreeMap<Id, Id>>,
 ) -> Result<ConfiguredWorkflowPlan> {
+    // Recursive visitor threading one accumulator per recursion level; the
+    // parameter list is the explicit traversal contract.
+    #[allow(clippy::too_many_arguments)]
     fn visit(
         validator: Option<&dyn ports::ToolExecutor>,
         state: &EngineeringState,
@@ -781,10 +783,10 @@ pub fn compile_workflow_sources(
                         }
                     }
                 }
-                if let Some(schema) = &definition.content_schema {
-                    if let Some(validator) = validator {
-                        validator.validate_schema(schema)?;
-                    }
+                if let Some(schema) = &definition.content_schema
+                    && let Some(validator) = validator
+                {
+                    validator.validate_schema(schema)?;
                 }
                 require(!name.is_empty(), "端口名称不能为空")?;
                 plan.definitions.insert(output.id.clone(), output.clone());

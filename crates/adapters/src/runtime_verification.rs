@@ -41,10 +41,10 @@ impl GlobalStore {
             self.runtime_integrity(&installation.id)?.verified,
             "镜像不可用",
         )?;
-        if let Some(report) = self.runtime_verification(installation)? {
-            if report["status"] == "verified" {
-                return Ok(report);
-            }
+        if let Some(report) = self.runtime_verification(installation)?
+            && report["status"] == "verified"
+        {
+            return Ok(report);
         }
         let RuntimeArtifact::DockerImage { image_id } = &installation.artifact else {
             unreachable!()
@@ -172,15 +172,16 @@ impl GlobalStore {
     ) -> Result<()> {
         let conn = self.connection.lock().map_err(storage)?;
         let key = format!("runtime.preparation.{digest}");
-        if status == "preparing" && result.is_none() {
-            if let Some(previous) = catalog::setting(&conn, &key)? {
-                // On restart the result of the old build is unknown. A recovery request
-                // inspects its content-addressed tag before deciding whether to rebuild.
-                require(
-                    previous["status"] != "preparing",
-                    "准备结果未知；先核对原意图，不能直接重发构建",
-                )?;
-            }
+        if status == "preparing"
+            && result.is_none()
+            && let Some(previous) = catalog::setting(&conn, &key)?
+        {
+            // On restart the result of the old build is unknown. A recovery request
+            // inspects its content-addressed tag before deciding whether to rebuild.
+            require(
+                previous["status"] != "preparing",
+                "准备结果未知；先核对原意图，不能直接重发构建",
+            )?;
         }
         catalog::put_setting(
             &conn,

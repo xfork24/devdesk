@@ -216,14 +216,13 @@ impl Engine {
             "模型 ID 无效",
         )?;
         let policy = if let Some(configured) = &configured {
-            let requested = if configured.access.writable_paths.is_empty() {
+            if configured.access.writable_paths.is_empty() {
                 ToolPolicy::ReadOnly
             } else if configured.access.writable_paths == ["."] {
                 ToolPolicy::WorkspaceWrite
             } else {
                 ToolPolicy::ScopedWrite
-            };
-            requested
+            }
         } else {
             ToolPolicy::ReadOnly
         };

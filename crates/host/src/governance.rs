@@ -267,7 +267,7 @@ impl Workspace {
                                 params[project_key]
                                     .as_str()
                                     .is_none_or(|id| project.id == id)
-                                    && work_reference(state, &owner).is_ok()
+                                    && work_reference(state, owner).is_ok()
                             })
                             .map(|(_, state)| state)
                             .ok_or_else(|| err("not_found", "工作不在可访问的项目中"))
@@ -286,21 +286,21 @@ impl Workspace {
                         let (state, scope) = if let Some((project, state)) =
                             states.iter().find(|(project, state)| {
                                 params[project_key].as_str() == Some(project.id.as_str())
-                                    && state.configuration(&reference).is_ok()
+                                    && state.configuration(reference).is_ok()
                             }) {
                             (state, Scope::project(project.id.clone()))
                         } else if params[project_key].is_string() {
                             return Err(err("not_found", "规范不在指定项目中"));
-                        } else if global.configuration(&reference).is_ok() {
+                        } else if global.configuration(reference).is_ok() {
                             (&global, Scope::global())
                         } else {
                             let (project, state) = states
                                 .iter()
-                                .find(|(_, state)| state.configuration(&reference).is_ok())
+                                .find(|(_, state)| state.configuration(reference).is_ok())
                                 .ok_or_else(|| err("not_found", "规范不在可访问的项目中"))?;
                             (state, Scope::project(project.id.clone()))
                         };
-                        let snapshot = standard_snapshot(state, &reference, &scope)?;
+                        let snapshot = standard_snapshot(state, reference, &scope)?;
                         if let Some(entry) = params[entry_key].as_str() {
                             standard_entry_snapshot(&snapshot, entry)
                         } else {
@@ -383,10 +383,10 @@ impl Workspace {
                 self.configuration.clone()
             };
             if ["role.create", "role.revise"].contains(&method) {
-                if let Some(scope) = params["payload"]["scope"].as_str() {
-                    if let Some(owner) = scope.strip_prefix("project:") {
-                        require(self.global.project(owner)?.is_some(), "Role 所属项目不存在")?;
-                    }
+                if let Some(scope) = params["payload"]["scope"].as_str()
+                    && let Some(owner) = scope.strip_prefix("project:")
+                {
+                    require(self.global.project(owner)?.is_some(), "Role 所属项目不存在")?;
                 }
                 if let Some(value) = params["payload"]["data"].get("visibility") {
                     let visibility: DefinitionVisibility = serde_json::from_value(value.clone())
@@ -430,28 +430,27 @@ impl Workspace {
                     }
                 }
             }
-            if ["role.delete", "configuration.retire"].contains(&method) {
-                if let Some(target) = target {
-                    let source = engine.store.snapshot()?.configuration(target)?.clone();
-                    let mut offset = 0;
-                    loop {
-                        let (projects, total) = self.global.projects(offset, 100)?;
-                        for project in &projects {
-                            let state = SqliteStore::read_project_snapshot(
-                                Path::new(&self.global.root()),
-                                &project.id,
-                            )?;
-                            let refs =
-                                devdesk_core::project_configuration_references(&state, &source);
-                            require(
-                                refs.is_empty(),
-                                format!("项目 {} 仍引用此定义，请先换绑", project.title),
-                            )?;
-                        }
-                        offset += projects.len();
-                        if offset >= total || projects.is_empty() {
-                            break;
-                        }
+            if ["role.delete", "configuration.retire"].contains(&method)
+                && let Some(target) = target
+            {
+                let source = engine.store.snapshot()?.configuration(target)?.clone();
+                let mut offset = 0;
+                loop {
+                    let (projects, total) = self.global.projects(offset, 100)?;
+                    for project in &projects {
+                        let state = SqliteStore::read_project_snapshot(
+                            Path::new(&self.global.root()),
+                            &project.id,
+                        )?;
+                        let refs = devdesk_core::project_configuration_references(&state, &source);
+                        require(
+                            refs.is_empty(),
+                            format!("项目 {} 仍引用此定义，请先换绑", project.title),
+                        )?;
+                    }
+                    offset += projects.len();
+                    if offset >= total || projects.is_empty() {
+                        break;
                     }
                 }
             }

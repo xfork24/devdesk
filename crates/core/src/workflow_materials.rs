@@ -15,8 +15,8 @@ impl Engine {
         let project = scope.project.as_str();
         let owners = &scope.owners;
         let selected = &scope.instances;
-        if let Some(id) = p["output_id"].as_str() {
-            if let Some(document) = state.documents.iter().find(|document| {
+        if let Some(id) = p["output_id"].as_str()
+            && let Some(document) = state.documents.iter().find(|document| {
                 document.id == id
                     && owners.contains_key(
                         document
@@ -26,9 +26,9 @@ impl Engine {
                             .or(document.project_id.as_deref())
                             .unwrap_or(""),
                     )
-            }) {
-                return Ok(json!({"document":document}));
-            }
+            })
+        {
+            return Ok(json!({"document":document}));
         }
         let mut materials = Vec::new();
         let mut seen = BTreeSet::new();

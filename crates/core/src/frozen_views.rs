@@ -120,7 +120,7 @@ pub fn restore_task(state: &EngineeringState, value: &Value, plan: Value) -> Res
     let mut input: Value = serde_json::from_str(&input).map_err(storage)?;
     input["source"] = source.clone();
     input["input_sources"] = value["input_sources"].clone();
-    return Ok(input);
+    Ok(input)
 }
 pub fn restore_plan(
     state: &EngineeringState,
@@ -152,7 +152,7 @@ pub fn restore_plan(
     );
     let scope = value["project_id"]
         .as_str()
-        .map(|id| Scope::project(id))
+        .map(Scope::project)
         .unwrap_or(Scope::global());
     let mut policy = ConfigurationRecord {
         id: "resolver-context".into(),
@@ -239,5 +239,5 @@ pub fn restore_plan(
     }
     let plan = json!(plan);
     memo.insert(cache_key, plan.clone());
-    return Ok(plan);
+    Ok(plan)
 }

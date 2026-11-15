@@ -177,15 +177,12 @@ fn discussion_before_feature_survives_restart_without_fabricating_runs() {
     assert_ne!(
         roles
             .iter()
-            .find(
-                |d| d.agent_profile.as_ref().unwrap().role == String::from("builtin-role-reviewer")
-            )
+            .find(|d| d.agent_profile.as_ref().unwrap().role == "builtin-role-reviewer")
             .unwrap()
             .id,
         roles
             .iter()
-            .find(|d| d.agent_profile.as_ref().unwrap().role
-                == String::from("builtin-role-developer"))
+            .find(|d| d.agent_profile.as_ref().unwrap().role == "builtin-role-developer")
             .unwrap()
             .id
     );
@@ -956,8 +953,7 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
                 provider: HarnessProvider::Codex,
                 version: devdesk_adapters::runtime_preparation::default_version(
                     HarnessProvider::Codex,
-                )
-                .into(),
+                ),
                 os: "linux".into(),
                 arch: "aarch64".into(),
             },

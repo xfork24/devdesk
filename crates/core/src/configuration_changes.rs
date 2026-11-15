@@ -547,7 +547,7 @@ impl Engine {
                 let id = text(p, "id")?;
                 let record = s.configuration(&id)?;
                 Ok(
-                    json!({"record":record,"edges":configuration_edges(record)?,"usage":configuration_usage(&s,&id)?,"diagnostics":self.configuration_diagnostics(&s,&[record.clone()])}),
+                    json!({"record":record,"edges":configuration_edges(record)?,"usage":configuration_usage(&s,&id)?,"diagnostics":self.configuration_diagnostics(&s,std::slice::from_ref(record))}),
                 )
             })()),
             _ => None,

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 pub(crate) fn source_scope(scope: &Scope) -> Scope {
     scope
         .project_id()
-        .map(|p| Scope::project(p))
+        .map(Scope::project)
         .unwrap_or(Scope::global())
 }
 
@@ -136,10 +136,10 @@ pub(crate) fn select_work_configuration(
         .unwrap_or(json!({"mode":"manual"}));
     crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
     let selection = json!({"orchestration":orchestration,"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"permission_context_ref":context,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
-    if let Some(old) = &old {
-        if old.data == selection {
-            return Ok(old.clone());
-        }
+    if let Some(old) = &old
+        && old.data == selection
+    {
+        return Ok(old.clone());
     }
     let mut row = record(
         "work_configuration",
@@ -332,7 +332,7 @@ impl Engine {
                 .store
                 .project_id()
                 .or_else(|| p["project_id"].as_str().map(str::to_owned))
-                .map(|p| Scope::project(p))
+                .map(Scope::project)
                 .unwrap_or(Scope::global());
             let limit = p["limit"].as_u64().unwrap_or(100).clamp(1, 1000) as usize;
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
@@ -561,7 +561,7 @@ pub fn work_standard_selection(
     } else {
         vec![]
     };
-    let history=state.governance.iter().filter(|r|is_work_plan(&state,r,&owner))
+    let history=state.governance.iter().filter(|r|is_work_plan(state,r,owner))
         .map(|r|json!({"plan_revision_id":r.id,"standard_ref":r.data["standard_ref"],"workflow_ref":r.data["workflow_ref"],"reason":r.data["reason"]})).collect::<Vec<_>>();
     let exceptions = state
         .governance

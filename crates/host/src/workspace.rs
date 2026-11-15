@@ -120,10 +120,10 @@ impl Workspace {
     }
     pub fn active_engine(&self, expected: Option<&str>) -> Result<Arc<Engine>> {
         let active = self.active.read().unwrap();
-        if let Some(expected) = expected {
-            if active.as_ref().is_none_or(|(id, _)| id != expected) {
-                return Err(err("project_changed", "活动项目已改变，请刷新后重试"));
-            }
+        if let Some(expected) = expected
+            && active.as_ref().is_none_or(|(id, _)| id != expected)
+        {
+            return Err(err("project_changed", "活动项目已改变，请刷新后重试"));
         }
         active
             .as_ref()
@@ -238,10 +238,10 @@ impl Workspace {
                 _ => method,
             };
             let mut result = e.query(name, &params, self.global.concurrency()?)?;
-            if name == "query.session" {
-                if let Some(id) = params["id"].as_str() {
-                    result["permission_status"] = self.permission_session_status(&e, id)?;
-                }
+            if name == "query.session"
+                && let Some(id) = params["id"].as_str()
+            {
+                result["permission_status"] = self.permission_session_status(&e, id)?;
             }
             return Ok(result);
         }
@@ -281,19 +281,18 @@ impl Workspace {
                 if let Some(saved) = self.global.replay(&command.command_id, &fingerprint)? {
                     return Ok(saved);
                 }
-                if let Ok(engine) = self.active_engine(params["project_id"].as_str()) {
-                    if let Some(saved) = engine.store.replay(&command.command_id, &fingerprint)? {
-                        return Ok(saved);
-                    }
+                if let Ok(engine) = self.active_engine(params["project_id"].as_str())
+                    && let Some(saved) = engine.store.replay(&command.command_id, &fingerprint)?
+                {
+                    return Ok(saved);
                 }
             }
             let generation = template_catalog_generation(&self.global.snapshot()?);
-            if params.get("expected_catalog_generation").is_some()
-                || generation > TEMPLATE_INITIAL_GENERATION
+            if (params.get("expected_catalog_generation").is_some()
+                || generation > TEMPLATE_INITIAL_GENERATION)
+                && params["expected_catalog_generation"].as_u64() != Some(generation)
             {
-                if params["expected_catalog_generation"].as_u64() != Some(generation) {
-                    return Err(err("catalog_changed", "模板目录已重置，请重新载入后再编辑"));
-                }
+                return Err(err("catalog_changed", "模板目录已重置，请重新载入后再编辑"));
             }
         }
         let params_for_sources = params.clone();
@@ -678,20 +677,20 @@ impl Workspace {
                 &params,
                 self.project_limit(&e, self.global.concurrency()?)?,
             )?;
-            if method == "session.read" {
-                if let Some(sid) = params["id"].as_str() {
-                    result["permission_status"] = self.permission_session_status(&e, sid)?;
-                }
+            if method == "session.read"
+                && let Some(sid) = params["id"].as_str()
+            {
+                result["permission_status"] = self.permission_session_status(&e, sid)?;
             }
             return Ok(result);
         }
         let global_limit = self.global.concurrency()?;
         if method.starts_with("query.") {
             let mut result = e.query(method, &params, self.project_limit(&e, global_limit)?)?;
-            if method == "query.session" {
-                if let Some(sid) = params["id"].as_str() {
-                    result["permission_status"] = self.permission_session_status(&e, sid)?;
-                }
+            if method == "query.session"
+                && let Some(sid) = params["id"].as_str()
+            {
+                result["permission_status"] = self.permission_session_status(&e, sid)?;
             }
             if method == "query.workspace" {
                 let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;

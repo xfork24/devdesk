@@ -133,9 +133,10 @@ impl IntegrationBinding {
         Ok(())
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum IntegrationAuth {
+    #[default]
     None,
     #[serde(rename = "oauth_pending")]
     OAuthPending {
@@ -155,11 +156,6 @@ pub enum IntegrationAuth {
         account: String,
         scopes: Vec<String>,
     },
-}
-impl Default for IntegrationAuth {
-    fn default() -> Self {
-        Self::None
-    }
 }
 impl IntegrationAuth {
     pub fn credential_ref(&self) -> Option<&str> {

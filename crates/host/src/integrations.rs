@@ -367,23 +367,23 @@ impl Workspace {
                 .map_err(|_| err("invalid_params", "operations 无效"))?;
                 let state = e.store.snapshot()?;
                 let definition: IntegrationDefinition = state.configuration(&source)?.decode()?;
-                if let Some(servers) = document["servers"].as_array() {
-                    if !servers.is_empty() {
-                        let server = c.payload["server_index"].as_u64().unwrap_or(0) as usize;
-                        let chosen = servers
-                            .get(server)
-                            .ok_or_else(|| err("invalid_params", "所选 server 不存在"))?;
-                        let IntegrationSource::HttpApi { base_url } = &definition.source else {
-                            return Err(err("invalid_configuration", "OpenAPI 需要 HTTP 接入源"));
-                        };
-                        require(
-                            chosen.get("variables").is_none()
-                                && chosen["url"].as_str().is_some_and(|url| {
-                                    url.trim_end_matches('/') == base_url.trim_end_matches('/')
-                                }),
-                            "所选 OpenAPI server 必须与当前接入源 Base URL 一致；变量需先展开",
-                        )?;
-                    }
+                if let Some(servers) = document["servers"].as_array()
+                    && !servers.is_empty()
+                {
+                    let server = c.payload["server_index"].as_u64().unwrap_or(0) as usize;
+                    let chosen = servers
+                        .get(server)
+                        .ok_or_else(|| err("invalid_params", "所选 server 不存在"))?;
+                    let IntegrationSource::HttpApi { base_url } = &definition.source else {
+                        return Err(err("invalid_configuration", "OpenAPI 需要 HTTP 接入源"));
+                    };
+                    require(
+                        chosen.get("variables").is_none()
+                            && chosen["url"].as_str().is_some_and(|url| {
+                                url.trim_end_matches('/') == base_url.trim_end_matches('/')
+                            }),
+                        "所选 OpenAPI server 必须与当前接入源 Base URL 一致；变量需先展开",
+                    )?;
                 }
                 let mut tools = import_openapi_with_auth(
                     &document,
@@ -443,17 +443,17 @@ impl Workspace {
                             scripts_disabled: false,
                         }
                     };
-                    if c.payload["markdown"].is_string() {
-                        if let Some(previous) = c.payload["source_revision_id"].as_str() {
-                            if let Some(old) = e.store.snapshot()?.governance.iter().find(|r| {
+                    if c.payload["markdown"].is_string()
+                        && let Some(previous) = c.payload["source_revision_id"].as_str()
+                        && let Some(old) =
+                            e.store.snapshot()?.governance.iter().find(|r| {
                                 r.r#type == "skill_package" && r.definition_id == previous
-                            }) {
-                                let original: SkillPackage = old.decode()?;
-                                package.files = original.files;
-                                package.scripts_disabled = original.scripts_disabled;
-                                package.source = format!("edited:{}", original.source);
-                            }
-                        }
+                            })
+                    {
+                        let original: SkillPackage = old.decode()?;
+                        package.files = original.files;
+                        package.scripts_disabled = original.scripts_disabled;
+                        package.source = format!("edited:{}", original.source);
                     }
                     if let Some(dependencies) = c.payload.get("requires_tools") {
                         package.requires_tools = serde_json::from_value(dependencies.clone())

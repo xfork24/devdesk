@@ -61,9 +61,7 @@ pub fn evaluate(e: &Engine) -> Result<()> {
                 .unwrap()
                 .iter()
                 .all(|e| ["completed", "skipped"].contains(&e["status"].as_str().unwrap_or("")))
-            {
-                if e.execute("workflow.complete",Command{command_id:id(),target:Some(row.id.clone()),expected_revision:Some(record.revision),payload:json!({"plan_revision_id":record.data["active_plan_revision_id"],"reason":"explicit test coordinator completion"})}).is_ok(){progress=true;}
-            }
+                && e.execute("workflow.complete",Command{command_id:id(),target:Some(row.id.clone()),expected_revision:Some(record.revision),payload:json!({"plan_revision_id":record.data["active_plan_revision_id"],"reason":"explicit test coordinator completion"})}).is_ok(){progress=true;}
         }
         if !progress {
             break;

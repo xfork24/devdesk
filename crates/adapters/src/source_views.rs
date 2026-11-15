@@ -23,7 +23,8 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
             return Ok(json!(format!("{SOURCE_TEXT}{}", json!({"literal":text}))));
         }
         if let Ok(parsed) = serde_json::from_str::<Value>(text) {
-            if parsed.to_string() == *text {
+            let rendered = parsed.to_string();
+            if rendered == *text {
                 let encoded = pack(state, &parsed)?;
                 if encoded != parsed && restore(state, &encoded)? == parsed {
                     return Ok(json!(format!("{SOURCE_TEXT}{}", encoded)));
@@ -89,15 +90,14 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
     if value.get("identity").is_some()
         && value.get("revision").is_some()
         && value.get("type").is_some()
+        && let Ok(source) = serde_json::from_value::<SourceDefinition>(value.clone())
     {
-        if let Ok(source) = serde_json::from_value::<SourceDefinition>(value.clone()) {
-            let reference = source_reference(&source.identity, source.revision)?;
-            if state
-                .configuration(&reference)
-                .is_ok_and(|r| r.source() == source)
-            {
-                return Ok(Some(json!({"$source":"source_definition","ref":reference})));
-            }
+        let reference = source_reference(&source.identity, source.revision)?;
+        if state
+            .configuration(&reference)
+            .is_ok_and(|r| r.source() == source)
+        {
+            return Ok(Some(json!({"$source":"source_definition","ref":reference})));
         }
     }
     // Task shape is recognized structurally — a task-source fingerprint plus a live
@@ -166,14 +166,12 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
     if value.get("files").is_some()
         && value.get("requires_tools").is_some()
         && value.get("body").is_some()
-    {
-        if let Some(package) = state
+        && let Some(package) = state
             .governance
             .iter()
             .find(|r| r.r#type == "skill_package" && r.data == *value)
-        {
-            return Ok(Some(json!({"$source":"skill_package","ref":package.id})));
-        }
+    {
+        return Ok(Some(json!({"$source":"skill_package","ref":package.id})));
     }
     if value.get("workflow_revision_id").is_some() && value.get("specification_view").is_some() {
         let plan: ConfiguredWorkflowPlan =
@@ -222,15 +220,14 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
         ));
     }
     // Copies embedded in receipts/tasks are regenerated from their owning source.
-    if value.get("definition_id").is_some() && value.get("content_hash").is_some() {
-        if let Some(id) = value["id"].as_str() {
-            if state
-                .configuration(id)
-                .is_ok_and(|r| source_store::is_source(r) && json!(r) == *value)
-            {
-                return Ok(Some(json!({"$source":"source","ref":id})));
-            }
-        }
+    if value.get("definition_id").is_some()
+        && value.get("content_hash").is_some()
+        && let Some(id) = value["id"].as_str()
+        && state
+            .configuration(id)
+            .is_ok_and(|r| source_store::is_source(r) && json!(r) == *value)
+    {
+        return Ok(Some(json!({"$source":"source","ref":id})));
     }
     if value.get("binding_revision_id").is_some()
         && value.get("profile_hash").is_some()
@@ -262,14 +259,14 @@ pub(super) fn restore_with(
     value: &Value,
     memo: &mut BTreeMap<String, Value>,
 ) -> Result<Value> {
-    if let Value::String(text) = value {
-        if let Some(encoded) = text.strip_prefix(SOURCE_TEXT) {
-            let encoded: Value = serde_json::from_str(encoded).map_err(storage)?;
-            if let Some(literal) = encoded["literal"].as_str() {
-                return Ok(json!(literal));
-            }
-            return Ok(json!(restore_with(state, &encoded, memo)?.to_string()));
+    if let Value::String(text) = value
+        && let Some(encoded) = text.strip_prefix(SOURCE_TEXT)
+    {
+        let encoded: Value = serde_json::from_str(encoded).map_err(storage)?;
+        if let Some(literal) = encoded["literal"].as_str() {
+            return Ok(json!(literal));
         }
+        return Ok(json!(restore_with(state, &encoded, memo)?.to_string()));
     }
     if value["$source"].is_string() {
         return restore_reference(state, value, memo);
@@ -319,14 +316,12 @@ fn restore_reference(
     memo: &mut BTreeMap<String, Value>,
 ) -> Result<Value> {
     match value["$source"].as_str() {
-        Some("literal") => return Ok(value["value"].clone()),
-        Some("source_definition") => {
-            return Ok(json!(
-                state
-                    .configuration(value["ref"].as_str().unwrap_or(""))?
-                    .source()
-            ));
-        }
+        Some("literal") => Ok(value["value"].clone()),
+        Some("source_definition") => Ok(json!(
+            state
+                .configuration(value["ref"].as_str().unwrap_or(""))?
+                .source()
+        )),
         Some("task") => {
             // A delivered task is an immutable execution fact, including its actual
             // protocol contract. Re-rendering it with today's kernel rewrites history.
@@ -372,7 +367,7 @@ fn restore_reference(
             let plan_record =
                 state.configuration(source["plan_revision_id"].as_str().unwrap_or(""))?;
             let plan = restore_with(state, &plan_record.data["plan"], memo)?;
-            return devdesk_core::frozen_views::restore_task(state, value, plan);
+            devdesk_core::frozen_views::restore_task(state, value, plan)
         }
         Some("control_policy") => {
             let policy: WorkflowControlPolicy = serde_json::from_value(
@@ -382,7 +377,7 @@ fn restore_reference(
                     .clone(),
             )
             .map_err(storage)?;
-            return Ok(json!(policy));
+            Ok(json!(policy))
         }
         Some("runtime_binding") => {
             let configuration: AgentExecutionConfiguration =
@@ -449,14 +444,14 @@ fn restore_reference(
                 })
                 .ok_or_else(|| err("storage", "Agent 源视图缺失"))?;
             binding.configuration_digest = runtime_digest(agent, &binding)?;
-            return Ok(json!(binding));
+            Ok(json!(binding))
         }
         Some("agent_execution") => {
             let reference = value["agent_ref"].as_str().unwrap_or("");
             let agent = state.resolve_agent(reference)?;
             let model: ModelDefinition = state.configuration(&agent.model_ref)?.decode()?;
             let lock = restore_with(state, &value["integration_lock"], memo)?;
-            return Ok(json!(AgentExecutionConfiguration {
+            Ok(json!(AgentExecutionConfiguration {
                 agent_instance_id: value["instance_ref"].as_str().unwrap_or("").into(),
                 agent_revision_id: reference.into(),
                 composition_hash: state.configuration(reference)?.content_hash.clone(),
@@ -466,7 +461,7 @@ fn restore_reference(
                 model_parameters: model.parameters,
                 tool_revisions: agent.tools,
                 integration_lock: serde_json::from_value(lock).map_err(storage)?
-            }));
+            }))
         }
         Some("execution_permissions") => {
             let lock = VersionedPermissionLock {
@@ -480,35 +475,29 @@ fn restore_reference(
                 )?,
             };
             let scope = serde_json::from_value(value["scope"].clone()).map_err(storage)?;
-            return Ok(json!(permission_profiles::compile_permission_profiles(
+            Ok(json!(permission_profiles::compile_permission_profiles(
                 state,
                 &lock,
                 Some(scope)
-            )?));
+            )?))
         }
-        Some("skill_package") => {
-            return Ok(state
-                .configuration(value["ref"].as_str().unwrap_or(""))?
-                .data
-                .clone());
-        }
-        Some("source") => {
-            return Ok(json!(
-                state.configuration(value["ref"].as_str().unwrap_or(""))?
-            ));
-        }
-        Some("bound_permission") => {
-            return Ok(json!(bound_permission(
-                state,
-                value["binding_ref"].as_str().unwrap_or("")
-            )?));
-        }
+        Some("skill_package") => Ok(state
+            .configuration(value["ref"].as_str().unwrap_or(""))?
+            .data
+            .clone()),
+        Some("source") => Ok(json!(
+            state.configuration(value["ref"].as_str().unwrap_or(""))?
+        )),
+        Some("bound_permission") => Ok(json!(bound_permission(
+            state,
+            value["binding_ref"].as_str().unwrap_or("")
+        )?)),
         Some("bound_tool") => {
             let tool = state.configuration(value["tool_ref"].as_str().unwrap_or(""))?;
             let binding = state.configuration(value["binding_ref"].as_str().unwrap_or(""))?;
             let definition: ExternalTool = tool.decode()?;
             let integration = state.configuration(&definition.integration_ref)?;
-            return Ok(json!(BoundTool {
+            Ok(json!(BoundTool {
                 revision_id: tool.id.clone(),
                 content_hash: tool.content_hash.clone(),
                 definition,
@@ -517,13 +506,11 @@ fn restore_reference(
                 binding_ref: binding.id.clone(),
                 binding: binding.decode()?,
                 binding_hash: binding.content_hash.clone()
-            }));
+            }))
         }
-        Some("workflow_plan") => {
-            return devdesk_core::frozen_views::restore_plan(state, value, memo);
-        }
-        Some(_) => return Err(err("storage", "未知源视图类型")),
-        None => return Err(err("storage", "源视图标记缺失")),
+        Some("workflow_plan") => devdesk_core::frozen_views::restore_plan(state, value, memo),
+        Some(_) => Err(err("storage", "未知源视图类型")),
+        None => Err(err("storage", "源视图标记缺失")),
     }
 }
 

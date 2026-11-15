@@ -428,10 +428,10 @@ impl Engine {
         };
         let fingerprint = configuration_hash(&(method, p, &actor));
         // An already committed write is reconciled even if the initiating session has since ended.
-        if method == "configuration.change.apply" {
-            if let Some(result) = target.store.replay(&action_id, &fingerprint)? {
-                return Ok(result);
-            }
+        if method == "configuration.change.apply"
+            && let Some(result) = target.store.replay(&action_id, &fingerprint)?
+        {
+            return Ok(result);
         }
         self.manager_live(&snapshot, controller, call)?;
         controller.policy.permits(manager_operation(method))?;

@@ -9,13 +9,13 @@ pub(crate) fn validate_source_payload(
     scope: &Scope,
     old: Option<&ConfigurationRecord>,
 ) -> Result<()> {
-    validate_source_data(family, &refs, &data)?;
+    validate_source_data(family, refs, data)?;
     if family == "agent" {
-        crate::configuration::normalize_agent(s, &refs, &scope)?;
+        crate::configuration::normalize_agent(s, refs, scope)?;
     }
     match family {
         "sandbox" => {
-            let sandbox: SandboxDefinition = decode(&data)?;
+            let sandbox: SandboxDefinition = decode(data)?;
             require(
                 sandbox.provider == "docker"
                     && !sandbox.runtime_version.is_empty()
@@ -29,7 +29,7 @@ pub(crate) fn validate_source_payload(
             )?;
         }
         "role" => {
-            let role: RoleDefinition = decode(&data)?;
+            let role: RoleDefinition = decode(data)?;
             require(
                 !role.instructions.trim().is_empty(),
                 "Role 职责说明不能为空",
@@ -39,9 +39,9 @@ pub(crate) fn validate_source_payload(
             }
         }
         "permission_context" => {
-            validate_source_data("permission_context", &refs, &data)?;
-            let context: PermissionContextDefinition = decode(&data)?;
-            reference(s, &reference_id(&refs, "sandbox_ref")?, "sandbox", &scope)?;
+            validate_source_data("permission_context", refs, data)?;
+            let context: PermissionContextDefinition = decode(data)?;
+            reference(s, &reference_id(refs, "sandbox_ref")?, "sandbox", scope)?;
             for (selection, kind) in [
                 (&context.harness, PermissionTargetKind::Harness),
                 (&context.sandbox, PermissionTargetKind::Sandbox),
@@ -51,46 +51,45 @@ pub(crate) fn validate_source_payload(
                 } = selection
                 {
                     let binding: VersionedPermissionBinding =
-                        reference(s, binding_revision_id, "permission_binding", &scope)?
-                            .decode()?;
+                        reference(s, binding_revision_id, "permission_binding", scope)?.decode()?;
                     require(binding.target.kind == kind, "授权绑定层不匹配")?;
                 }
             }
             for grant in context.step_grants {
                 let workflow: WorkflowDefinition =
-                    reference(s, &grant.workflow_ref, "workflow", &scope)?.decode()?;
+                    reference(s, &grant.workflow_ref, "workflow", scope)?.decode()?;
                 require(
                     workflow.steps.iter().any(|step| step.key == grant.step),
                     "授权引用了不存在的步骤",
                 )?;
                 for tool in grant.tool_refs {
-                    reference(s, &tool, "tool", &scope)?;
+                    reference(s, &tool, "tool", scope)?;
                 }
             }
         }
         "delivery_type" => {
-            let delivery: DeliveryTypeDefinition = decode(&data)?;
-            s.validate_delivery_specs(&refs, &delivery, &scope)?;
-            for spec in reference_list(&refs, "spec_refs")? {
-                reference(s, &spec, "spec", &scope)?
+            let delivery: DeliveryTypeDefinition = decode(data)?;
+            s.validate_delivery_specs(refs, &delivery, scope)?;
+            for spec in reference_list(refs, "spec_refs")? {
+                reference(s, &spec, "spec", scope)?
                     .decode::<ConfiguredSpecification>()?
                     .validate()?;
             }
         }
-        "capability" => crate::configuration::validate_capability(s, &refs, &scope)?,
+        "capability" => crate::configuration::validate_capability(s, refs, scope)?,
         "model" => {
-            let m: ModelDefinition = decode(&data)?;
+            let m: ModelDefinition = decode(data)?;
             validate_model_definition(&m, &s.provider_facts_any(&m.provider)?)?;
         }
         "model_provider" => crate::configuration::validate_model_provider(
             s,
-            &data,
+            data,
             old.as_ref().map(|r| r.definition_id.as_str()),
         )?,
-        "model_catalog" => crate::configuration::validate_model_catalog(s, &data, &scope)?,
-        "harness" => crate::configuration::validate_harness(s, &refs, &data, &scope)?,
+        "model_catalog" => crate::configuration::validate_model_catalog(s, data, scope)?,
+        "harness" => crate::configuration::validate_harness(s, refs, data, scope)?,
         "tool" => {
-            let t: ToolDefinition = decode(&data)?;
+            let t: ToolDefinition = decode(data)?;
             require(
                 match t.implementation.as_str() {
                     "platform" => crate::platform_tools::PLATFORM_HANDLERS
@@ -118,18 +117,20 @@ pub(crate) fn validate_source_payload(
             )?;
         }
         "agent" => {
-            reference(s, &reference_id(&refs, "role_ref")?, "role", &scope)?;
+            reference(s, &reference_id(refs, "role_ref")?, "role", scope)?;
             reference(
                 s,
-                &reference_id(&refs, "capability_ref")?,
+                &reference_id(refs, "capability_ref")?,
                 "capability",
-                &scope,
+                scope,
             )?;
         }
         _ => {}
     }
     Ok(())
 }
+// Record fields map one-to-one onto the persisted governance row.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn record(
     kind: &str,
     definition_id: Id,
@@ -152,6 +153,8 @@ pub(crate) fn record(
         immutable,
     )
 }
+// Same row mapping as `record` plus explicit source references.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn record_with_refs(
     kind: &str,
     definition_id: Id,
@@ -379,20 +382,20 @@ impl Engine {
                 .iter()
                 .find(|r| r.r#type == "agent_session" && r.definition_id == *session_id)
                 .cloned();
-            if let Some(link) = link {
-                if !s.governance.iter().any(|r| {
+            if let Some(link) = link
+                && !s.governance.iter().any(|r| {
                     r.r#type == "experience"
                         && r.definition_id == snapshot_id
                         && r.data["session_id"] == *session_id
-                }) {
-                    let work = s
-                        .turns
-                        .iter()
-                        .rev()
-                        .find(|t| t.session_id == *session_id)
-                        .and_then(|t| t.finished.or(t.started));
-                    s.governance.push(record("experience",snapshot_id.into(),if pid==GLOBAL_DISCUSSION_NAMESPACE {Scope::global()}else{Scope::project(pid.clone())},feature_name.clone().unwrap_or(project_title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
-                }
+                })
+            {
+                let work = s
+                    .turns
+                    .iter()
+                    .rev()
+                    .find(|t| t.session_id == *session_id)
+                    .and_then(|t| t.finished.or(t.started));
+                s.governance.push(record("experience",snapshot_id.into(),if pid==GLOBAL_DISCUSSION_NAMESPACE {Scope::global()}else{Scope::project(pid.clone())},feature_name.clone().unwrap_or(project_title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
             }
         }
         Ok(())
@@ -619,27 +622,27 @@ impl Engine {
             if family == "delivery_type" {
                 r.decode::<DeliveryTypeDefinition>()?.validate()?;
             }
-            if family == "skill" {
-                if let Some(previous) = r.supersedes.as_ref().and_then(|key| {
+            if family == "skill"
+                && let Some(previous) = r.supersedes.as_ref().and_then(|key| {
                     s.governance
                         .iter()
                         .find(|p| p.r#type == "skill_package" && p.definition_id == *key)
-                }) {
-                    let mut package: SkillPackage = previous.decode()?;
-                    package.body = r.data["body"].as_str().unwrap_or("").into();
-                    package.source = format!("edited:{}", package.source);
-                    package.validate()?;
-                    s.governance.push(record(
-                        "skill_package",
-                        r.id.clone(),
-                        r.scope.clone(),
-                        r.name.clone(),
-                        1,
-                        None,
-                        json!(package),
-                        true,
-                    ));
-                }
+                })
+            {
+                let mut package: SkillPackage = previous.decode()?;
+                package.body = r.data["body"].as_str().unwrap_or("").into();
+                package.source = format!("edited:{}", package.source);
+                package.validate()?;
+                s.governance.push(record(
+                    "skill_package",
+                    r.id.clone(),
+                    r.scope.clone(),
+                    r.name.clone(),
+                    1,
+                    None,
+                    json!(package),
+                    true,
+                ));
             }
             require(
                 !["spec", "standard"].contains(&family),

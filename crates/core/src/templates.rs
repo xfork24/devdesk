@@ -42,6 +42,8 @@ pub fn template_bundle_info() -> Result<Value> {
         json!({"bundle_version":b.bundle_version,"bundle_hash":b.hash,"types":b.types.iter().map(|(k,v)|(k.clone(),json!(v.len()))).collect::<serde_json::Map<String,Value>>()}),
     )
 }
+// Single materialization site: state plus catalog summary plus origins.
+#[allow(clippy::type_complexity)]
 fn materialize(
     _generation: Option<u64>,
 ) -> Result<(EngineeringState, Value, Vec<(String, String)>)> {

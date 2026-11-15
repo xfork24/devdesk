@@ -105,43 +105,6 @@ impl GitHubPullRequests {
         })
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn fixture() -> Value {
-        json!({"id":"fixture-repo","nameWithOwner":"owner/repo","viewerPermission":"ADMIN","ref":{"target":{"oid":"a".repeat(40)}},"branchProtectionRules":{"totalCount":0,"pageInfo":{"hasNextPage":false}},"rulesets":{"nodes":[],"pageInfo":{"hasNextPage":false}}})
-    }
-    #[test]
-    fn never_treat_admin_or_incomplete_rules_as_permission_to_bypass() {
-        let mut value = fixture();
-        assert!(
-            GitHubPullRequests::policy("owner/repo", "main", &value)
-                .unwrap()
-                .compatible
-        );
-        value["rulesets"]["nodes"] =
-            json!([{"name":"required CI","enforcement":"ACTIVE","target":"BRANCH"}]);
-        assert!(
-            !GitHubPullRequests::policy("owner/repo", "main", &value)
-                .unwrap()
-                .compatible
-        );
-        value = fixture();
-        value["branchProtectionRules"]["totalCount"] = json!(1);
-        assert!(
-            !GitHubPullRequests::policy("owner/repo", "main", &value)
-                .unwrap()
-                .compatible
-        );
-        value = fixture();
-        value["rulesets"]["pageInfo"]["hasNextPage"] = json!(true);
-        assert!(
-            !GitHubPullRequests::policy("owner/repo", "main", &value)
-                .unwrap()
-                .compatible
-        );
-    }
-}
 
 impl GitHubPullRequests {
     fn api(&self, endpoint: &str, input: Option<Value>) -> Result<Value> {
@@ -263,5 +226,42 @@ impl ports::PullRequests for GitHubPullRequests {
             r,
             &self.api(&format!("repos/{}/pulls/{number}", r.repository), None)?,
         )
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn fixture() -> Value {
+        json!({"id":"fixture-repo","nameWithOwner":"owner/repo","viewerPermission":"ADMIN","ref":{"target":{"oid":"a".repeat(40)}},"branchProtectionRules":{"totalCount":0,"pageInfo":{"hasNextPage":false}},"rulesets":{"nodes":[],"pageInfo":{"hasNextPage":false}}})
+    }
+    #[test]
+    fn never_treat_admin_or_incomplete_rules_as_permission_to_bypass() {
+        let mut value = fixture();
+        assert!(
+            GitHubPullRequests::policy("owner/repo", "main", &value)
+                .unwrap()
+                .compatible
+        );
+        value["rulesets"]["nodes"] =
+            json!([{"name":"required CI","enforcement":"ACTIVE","target":"BRANCH"}]);
+        assert!(
+            !GitHubPullRequests::policy("owner/repo", "main", &value)
+                .unwrap()
+                .compatible
+        );
+        value = fixture();
+        value["branchProtectionRules"]["totalCount"] = json!(1);
+        assert!(
+            !GitHubPullRequests::policy("owner/repo", "main", &value)
+                .unwrap()
+                .compatible
+        );
+        value = fixture();
+        value["rulesets"]["pageInfo"]["hasNextPage"] = json!(true);
+        assert!(
+            !GitHubPullRequests::policy("owner/repo", "main", &value)
+                .unwrap()
+                .compatible
+        );
     }
 }

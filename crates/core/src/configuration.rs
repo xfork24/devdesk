@@ -33,15 +33,15 @@ pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&s
         return false;
     }
     if r.r#type == "agent" {
-        if let Some(key) = reference_value(&r.refs, "role_ref").as_str() {
-            if !role_record(s, key).is_ok_and(|r| visible(s, r, project)) {
-                return false;
-            }
+        if let Some(key) = reference_value(&r.refs, "role_ref").as_str()
+            && !role_record(s, key).is_ok_and(|r| visible(s, r, project))
+        {
+            return false;
         }
-        if let Some(key) = reference_value(&r.refs, "capability_ref").as_str() {
-            if !s.configuration(key).is_ok_and(|r| visible(s, r, project)) {
-                return false;
-            }
+        if let Some(key) = reference_value(&r.refs, "capability_ref").as_str()
+            && !s.configuration(key).is_ok_and(|r| visible(s, r, project))
+        {
+            return false;
         }
     }
     true

@@ -322,12 +322,10 @@ impl ports::Harness for RecordingAgent {
             .unwrap()
             .tool_policy
             == ToolPolicy::WorkspaceWrite
-        {
-            if let (Some(git), Some(view)) =
+            && let (Some(git), Some(view)) =
                 (&*self.view_validator.lock().unwrap(), &request.code_view)
-            {
-                git.validate_view(&view.context, &view.revision)?;
-            }
+        {
+            git.validate_view(&view.context, &view.revision)?;
         }
         assert!(request.documents.is_empty());
         Ok(ports::SessionReceipt {
@@ -602,7 +600,7 @@ fn fixture_binding() -> RuntimeBinding {
 }
 fn drive(engine: &Engine, rounds: usize) {
     for _ in 0..rounds {
-        control_fixture::evaluate(&engine).unwrap();
+        control_fixture::evaluate(engine).unwrap();
         for row in engine.pending_workflow_intents().unwrap() {
             let method = row.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(row.data["command"].clone()).unwrap();
@@ -3846,12 +3844,12 @@ fn ordinary_agents_lint_drafts_without_sealing_them_or_querying_other_deliveries
 
 fn drive_platform_fixture(e: &Engine, rounds: usize) {
     for _ in 0..rounds {
-        control_fixture::evaluate(&e).unwrap();
+        control_fixture::evaluate(e).unwrap();
         for intent in e.pending_workflow_intents().unwrap() {
             let method = intent.data["method"].as_str().unwrap();
             let mut c: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
             let result = if method == "session.open" {
-                c.payload["binding"] = json!(fixture_binding_for_platform_agent(&e, &c));
+                c.payload["binding"] = json!(fixture_binding_for_platform_agent(e, &c));
                 e.execute(method, c)
             } else if method == "workflow.tool.execute" {
                 let request = e.configured_platform_request(&c).unwrap().unwrap();

@@ -64,19 +64,19 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
             data
         })
         .collect();
-    if i.scope == Scope::global() {
-        if let Ok(s) = SqliteStore::read_global_discussion_snapshot(root) {
-            rows.extend(
-                s.governance
-                    .into_iter()
-                    .filter(|r| r.r#type == "experience" && r.data["agent_instance_id"] == id)
-                    .map(|r| {
-                        let mut data = r.data;
-                        data["availability"] = json!("available");
-                        data
-                    }),
-            );
-        }
+    if i.scope == Scope::global()
+        && let Ok(s) = SqliteStore::read_global_discussion_snapshot(root)
+    {
+        rows.extend(
+            s.governance
+                .into_iter()
+                .filter(|r| r.r#type == "experience" && r.data["agent_instance_id"] == id)
+                .map(|r| {
+                    let mut data = r.data;
+                    data["availability"] = json!("available");
+                    data
+                }),
+        );
     }
     let mut unavailable = vec![];
     for project in projects(root)? {
@@ -156,14 +156,13 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
         for a in s.artifacts.iter().filter(|a| {
             a.relative_path.contains("/snapshots/") && a.feature_id == snapshot.feature_id
         }) {
-            if let Ok(body) = files.read(a) {
-                if serde_json::from_slice::<Value>(&body)
+            if let Ok(body) = files.read(a)
+                && serde_json::from_slice::<Value>(&body)
                     .ok()
                     .is_some_and(|v| v["snapshot"]["id"] == snapshot_id || v["id"] == snapshot_id)
-                {
-                    integrity = true;
-                    break;
-                }
+            {
+                integrity = true;
+                break;
             }
         }
         require(integrity, "快照密封清单缺失或哈希验证失败")?;

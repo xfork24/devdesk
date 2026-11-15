@@ -1,7 +1,10 @@
 //! Test-only native port doubles. They never run Git, Docker, a model or a network request.
 #![allow(dead_code)]
 use devdesk_core::id;
+// Support files stay standalone: every includer may pull this in again as its
+// own root fixture, so the same file legitimately loads once per module.
 #[path = "defaults.rs"]
+#[allow(clippy::duplicate_mod)]
 mod defaults;
 use defaults::*;
 use devdesk_core::{Command, Engine, ports};

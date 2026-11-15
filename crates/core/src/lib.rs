@@ -1,4 +1,5 @@
 //! Application use cases and ports. Adapters cannot advance domain state.
+#![forbid(unsafe_code)]
 mod agent_tasks;
 mod invocation;
 pub use invocation::InvocationContext;
@@ -148,7 +149,7 @@ fn document_ids(s: &EngineeringState, fid: &str, tid: Option<&str>) -> Vec<Id> {
     s.documents
         .iter()
         .filter(|d| {
-            s.document_in_feature(d, &fid)
+            s.document_in_feature(d, fid)
                 && (d.task_id.is_none() || d.task_id.as_deref() == tid)
                 && !s
                     .documents
@@ -467,13 +468,13 @@ impl Engine {
             .unwrap_or_else(|| command_fingerprint(method, &c));
         let mut action = |s: &mut EngineeringState| {
             configuration_transfers::configuration_transfer_guard(s, method)?;
-            if template_definition_write(method) {
-                if let Some(target) = c.target.as_deref().and_then(|id| s.configuration(id).ok()) {
-                    require(
-                        template_record_current(s, target),
-                        "模板目录已重置，请重新载入后再编辑",
-                    )?;
-                }
+            if template_definition_write(method)
+                && let Some(target) = c.target.as_deref().and_then(|id| s.configuration(id).ok())
+            {
+                require(
+                    template_record_current(s, target),
+                    "模板目录已重置，请重新载入后再编辑",
+                )?;
             }
 
             let result = self.apply_command(method, &c, s, context.actor())?;
@@ -511,17 +512,15 @@ impl Engine {
             return Ok(result);
         }
 
-        if let Some(target) = &c.target {
-            if let Some(actual) = revision(s, target) {
-                if c.expected_revision != Some(actual)
-                    && !(method == "conversation.send" && crate::controllers::authorized_send(s, c))
-                {
-                    return Err(err(
-                        "revision_conflict",
-                        format!("当前 revision={actual}，请刷新后重试"),
-                    ));
-                }
-            }
+        if let Some(target) = &c.target
+            && let Some(actual) = revision(s, target)
+            && c.expected_revision != Some(actual)
+            && !(method == "conversation.send" && crate::controllers::authorized_send(s, c))
+        {
+            return Err(err(
+                "revision_conflict",
+                format!("当前 revision={actual}，请刷新后重试"),
+            ));
         }
         let target = c.target.as_deref().unwrap_or("");
         require(
@@ -548,7 +547,7 @@ impl Engine {
             event(s, target, method, &format!("command_id={}", c.command_id));
             return Ok(result);
         }
-        if let Some(result) = self.conversation_command(method, &c, s)? {
+        if let Some(result) = self.conversation_command(method, c, s)? {
             event(s, target, method, &format!("command_id={}", c.command_id));
             return Ok(result);
         }

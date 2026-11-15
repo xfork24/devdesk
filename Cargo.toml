@@ -10,6 +10,14 @@ serde_json = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
 
+# Style baseline: rustfmt defaults plus clippy::all at warn level. Local builds
+# surface findings; CI and scripts/check/check-style.sh deny warnings outright.
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.lints.rust]
+unused = { level = "warn", priority = -1 }
+
 # Runtime binaries are hundreds of MB; debug hashing must remain interactive too.
 [profile.dev.package.sha2]
 opt-level = 3

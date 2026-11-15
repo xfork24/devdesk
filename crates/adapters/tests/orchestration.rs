@@ -20,28 +20,28 @@ fn engine(path: &std::path::Path) -> Engine {
     e
 }
 fn cmd(e: &Engine, method: &str, target: Option<&str>, mut p: Value) -> Result<Value> {
-    if method == "orchestration.open" {
-        if let Some(policy) = p.as_object_mut().and_then(|v| v.remove("policy")) {
-            let state = e.store.snapshot()?;
-            let source = permission_context(&state).unwrap().clone();
-            let mut data = source.data.clone();
-            data["control_policy"] = policy;
-            let mut payload =
-                json!({"name":"Fixture controller authorization","scope":"global","data":data});
-            for (key, value) in &source.refs {
-                payload[key] = value.clone();
-            }
-            let context = e.execute(
-                "permission_context.create",
-                Command {
-                    command_id: id(),
-                    target: None,
-                    expected_revision: None,
-                    payload,
-                },
-            )?;
-            p["permission_context_ref"] = context["id"].clone();
+    if method == "orchestration.open"
+        && let Some(policy) = p.as_object_mut().and_then(|v| v.remove("policy"))
+    {
+        let state = e.store.snapshot()?;
+        let source = permission_context(&state).unwrap().clone();
+        let mut data = source.data.clone();
+        data["control_policy"] = policy;
+        let mut payload =
+            json!({"name":"Fixture controller authorization","scope":"global","data":data});
+        for (key, value) in &source.refs {
+            payload[key] = value.clone();
         }
+        let context = e.execute(
+            "permission_context.create",
+            Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload,
+            },
+        )?;
+        p["permission_context_ref"] = context["id"].clone();
     }
     let s = e.store.snapshot()?;
     let r = target.and_then(|id| {

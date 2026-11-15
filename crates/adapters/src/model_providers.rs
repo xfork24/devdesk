@@ -15,7 +15,7 @@ pub fn binding_model_connection(binding: &RuntimeBinding) -> Result<ModelConnect
             "DSH 绑定缺少冻结模型连接；请通过 Agent 配置重新解析",
         ));
     };
-    connection.validate(&binding.model, &parameters)?;
+    connection.validate(&binding.model, parameters)?;
     require(
         binding.model_profile_digest.as_deref()
             == Some(

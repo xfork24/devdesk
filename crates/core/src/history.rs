@@ -2,6 +2,8 @@ use crate::*;
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+// Rendered per response; the record is serialized once and dropped.
+#[allow(clippy::large_enum_variant)]
 enum HistoryRecord<'a> {
     Event {
         time: u64,

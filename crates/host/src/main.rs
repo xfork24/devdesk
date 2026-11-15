@@ -1,3 +1,5 @@
+//! HTTP assembly root: routing, auth and port wiring. No unsafe.
+#![forbid(unsafe_code)]
 #[cfg(test)]
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
@@ -75,10 +77,11 @@ async fn guard(State(app): State<Arc<App>>, request: Request, next: Next) -> Res
     if host != app.authority {
         return (StatusCode::FORBIDDEN, "Host rejected").into_response();
     }
-    if let Some(origin) = request.headers().get(header::ORIGIN) {
-        if !discovery && origin.to_str().unwrap_or("") != app.origin {
-            return (StatusCode::FORBIDDEN, "Origin rejected").into_response();
-        }
+    if let Some(origin) = request.headers().get(header::ORIGIN)
+        && !discovery
+        && origin.to_str().unwrap_or("") != app.origin
+    {
+        return (StatusCode::FORBIDDEN, "Origin rejected").into_response();
     }
     let protected = path == "/rpc"
         || path == "/events"

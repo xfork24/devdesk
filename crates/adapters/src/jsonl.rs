@@ -187,13 +187,12 @@ impl AgentMessageBatch {
             let same_item = ["threadId", "turnId", "itemId"]
                 .iter()
                 .all(|key| pending["params"][key] == frame["params"][key]);
-            if same_item {
-                if let Value::String(text) = &mut pending["params"]["delta"] {
-                    if text.len() + delta.len() <= 4096 {
-                        text.push_str(delta);
-                        return vec![];
-                    }
-                }
+            if same_item
+                && let Value::String(text) = &mut pending["params"]["delta"]
+                && text.len() + delta.len() <= 4096
+            {
+                text.push_str(delta);
+                return vec![];
             }
         }
         let mut ready: Vec<_> = self.pending.take().into_iter().collect();
@@ -383,10 +382,10 @@ impl JsonlProcess {
                     frame
                 };
                 if resume_reply {
-                    if let Some(id) = frame["id"].as_u64() {
-                        if let Ok(mut ids) = expected_resumes.lock() {
-                            ids.remove(&id);
-                        }
+                    if let Some(id) = frame["id"].as_u64()
+                        && let Ok(mut ids) = expected_resumes.lock()
+                    {
+                        ids.remove(&id);
                     }
                     // The provider restores its history itself. Our caller needs
                     // thread metadata, not another queued copy of every old turn.
@@ -408,10 +407,10 @@ impl JsonlProcess {
                     }
                 }
             }
-            if !signal.load(Ordering::Acquire) {
-                if let Some(frame) = batch.finish() {
-                    enqueue(frame);
-                }
+            if !signal.load(Ordering::Acquire)
+                && let Some(frame) = batch.finish()
+            {
+                enqueue(frame);
             }
         });
         Ok(Self {
@@ -500,13 +499,13 @@ impl JsonlProcess {
                     )
                 })?;
             self.queued.fetch_sub(cost, Ordering::AcqRel);
-            if frame["method"] == "account/login/completed" {
-                if let (Some(login), Some(success)) = (
+            if frame["method"] == "account/login/completed"
+                && let (Some(login), Some(success)) = (
                     frame["params"]["loginId"].as_str(),
                     frame["params"]["success"].as_bool(),
-                ) {
-                    self.login_completed = Some((login.into(), success));
-                }
+                )
+            {
+                self.login_completed = Some((login.into(), success));
             }
             if frame["id"] == id && frame.get("method").is_none() {
                 if frame.get("error").is_some() {

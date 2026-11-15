@@ -4,6 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+// Serialized change payloads, not hot-path values; boxing the large variants
+// would churn every construction site for no measured benefit.
+#[allow(clippy::large_enum_variant)]
 pub enum WorkflowChangeOperation {
     AdoptStandard {
         standard_ref: Id,

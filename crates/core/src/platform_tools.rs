@@ -1181,18 +1181,15 @@ impl Engine {
                                 .ok_or_else(|| err("configuration_required", "代码头未登记"))?;
                             head.revision = text(&receipt, "revision")?;
                         }
-                        if request.definition.qualified_name == "tasks.complete" {
-                            if let Some(task) = state
+                        if request.definition.qualified_name == "tasks.complete"
+                            && let Some(task) = state
                                 .tasks
                                 .iter_mut()
                                 .find(|task| receipt["task_id"] == task.id)
-                            {
-                                if task.status != Status::Completed {
+                                && task.status != Status::Completed {
                                     task.status = Status::Completed;
                                     task.revision += 1;
                                 }
-                            }
-                        }
                         self.tool_executor
                             .as_ref()
                             .ok_or_else(|| err("unsupported", "缺少结构校验器"))?

@@ -297,6 +297,8 @@ impl NativeTools {
         }
         vault.read_integration(key).map(Some)
     }
+    // Execution context passthrough; each argument binds one sandbox fact.
+    #[allow(clippy::too_many_arguments)]
     fn run(
         &self,
         id: &str,
@@ -487,24 +489,24 @@ impl NativeTools {
         )?;
         let mut receipt: ToolReceipt =
             serde_json::from_value(value).map_err(|_| err("tool_protocol", "工具回执格式不符"))?;
-        if receipt.success {
-            if let Some(schema) = &i.tool.definition.output_schema {
-                let result = receipt
-                    .structured_content
-                    .as_ref()
-                    .ok_or_else(|| err("output_schema", "输出契约需要结构化结果"));
-                if result
-                    .and_then(|v| self.validate_arguments(schema, v))
-                    .is_err()
-                {
-                    receipt.success = false;
-                    receipt.error = Some(
-                        json!({"code":"output_schema","message":"远端动作已返回，但结果不符合声明契约"}),
-                    );
-                    receipt.content = vec![
-                        json!({"type":"text","text":"Tool output failed schema validation. Do not automatically retry a side effect."}),
-                    ];
-                }
+        if receipt.success
+            && let Some(schema) = &i.tool.definition.output_schema
+        {
+            let result = receipt
+                .structured_content
+                .as_ref()
+                .ok_or_else(|| err("output_schema", "输出契约需要结构化结果"));
+            if result
+                .and_then(|v| self.validate_arguments(schema, v))
+                .is_err()
+            {
+                receipt.success = false;
+                receipt.error = Some(
+                    json!({"code":"output_schema","message":"远端动作已返回，但结果不符合声明契约"}),
+                );
+                receipt.content = vec![
+                    json!({"type":"text","text":"Tool output failed schema validation. Do not automatically retry a side effect."}),
+                ];
             }
         }
         for content in &mut receipt.content {
@@ -735,10 +737,10 @@ pub fn import_openapi_with_auth(
     fn rewrite(v: &mut Value) {
         match v {
             Value::Object(m) => {
-                if let Some(Value::String(r)) = m.get_mut("$ref") {
-                    if r.starts_with("#/components/schemas/") {
-                        *r = r.replacen("#/components/schemas/", "#/$defs/", 1);
-                    }
+                if let Some(Value::String(r)) = m.get_mut("$ref")
+                    && r.starts_with("#/components/schemas/")
+                {
+                    *r = r.replacen("#/components/schemas/", "#/$defs/", 1);
                 }
                 for value in m.values_mut() {
                     rewrite(value);
@@ -774,12 +776,11 @@ pub fn import_openapi_with_auth(
                     let scheme = requirement
                         .as_object()
                         .ok_or_else(|| err("openapi_security", "无效 Security Requirement"))?;
-                    if let Some(selected) = security_scheme {
-                        if !(scheme.contains_key(selected)
+                    if let Some(selected) = security_scheme
+                        && !(scheme.contains_key(selected)
                             || (scheme.is_empty() && selected == "none"))
-                        {
-                            continue;
-                        }
+                    {
+                        continue;
                     }
                     require(
                         scheme.len() <= 1,
@@ -917,16 +918,16 @@ pub fn import_openapi_with_auth(
             let mut outputs = vec![];
             if let Some(responses) = op["responses"].as_object() {
                 for (status, r) in responses {
-                    if status.starts_with('2') {
-                        if let Some(schema) = r.pointer("/content/application~1json/schema") {
-                            let mut schema = schema.clone();
-                            if let Some(m) = schema.as_object_mut() {
-                                m.insert("$defs".into(), schemas.clone());
-                            }
-                            rewrite(&mut schema);
-                            validator(&schema)?;
-                            outputs.push(schema);
+                    if status.starts_with('2')
+                        && let Some(schema) = r.pointer("/content/application~1json/schema")
+                    {
+                        let mut schema = schema.clone();
+                        if let Some(m) = schema.as_object_mut() {
+                            m.insert("$defs".into(), schemas.clone());
                         }
+                        rewrite(&mut schema);
+                        validator(&schema)?;
+                        outputs.push(schema);
                     }
                 }
             }

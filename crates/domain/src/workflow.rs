@@ -519,10 +519,10 @@ impl WorkflowDefinition {
         let mut found = BTreeSet::new();
         let mut queue: Vec<&str> = step.dependencies.iter().map(String::as_str).collect();
         while let Some(key) = queue.pop() {
-            if found.insert(key) {
-                if let Some(parent) = self.steps.iter().find(|s| s.key == key) {
-                    queue.extend(parent.dependencies.iter().map(String::as_str));
-                }
+            if found.insert(key)
+                && let Some(parent) = self.steps.iter().find(|s| s.key == key)
+            {
+                queue.extend(parent.dependencies.iter().map(String::as_str));
             }
         }
         found
@@ -863,114 +863,6 @@ impl ConfiguredAgentTask {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn workflow() -> WorkflowDefinition {
-        serde_json::from_value(json!({"schema_version":6,"stages":[{"key":"investigate","name":"安全调查","default_role_ref":"custom-researcher"}],
-            "steps":[{"key":"discover","name":"发现风险","stage":"investigate","executor":{"type":"agent"},
-            "task_instructions":"使用当前调研 Skill 分析输入并提交风险。","outputs":{"risks":{"delivery_ref":"custom-risk-json"}}},
-            {"key":"inspect","name":"核对风险","stage":"investigate","executor":{"type":"agent","role_ref":"custom-auditor"},
-            "task_instructions":"按当前 Spec 核对输入的风险。","dependencies":["discover"],
-            "inputs":{"risks":{"type":"source","source":{"step":"discover","port":"risks"}}}}]})).unwrap()
-    }
-
-    #[test]
-    fn arbitrary_business_steps_inherit_roles_without_named_actions() {
-        let doc = workflow();
-        assert_eq!(doc.validate().unwrap(), ["discover", "inspect"]);
-        assert_eq!(doc.role(&doc.steps[0]), Some("custom-researcher"));
-        assert_eq!(doc.role(&doc.steps[1]), Some("custom-auditor"));
-        assert!(
-            serde_json::to_value(&doc).unwrap()["steps"][0]
-                .get("kind")
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn ports_dependencies_tasks_and_resource_ranges_are_real_constraints() {
-        let mut doc = workflow();
-        doc.steps[1].dependencies.clear();
-        assert!(doc.validate().is_err());
-        let mut doc = workflow();
-        doc.steps[0].task_instructions = Some(" ".into());
-        assert!(doc.validate().is_err());
-        let mut doc = workflow();
-        doc.steps[0].access.writable_paths = vec!["../outside".into()];
-        assert!(doc.validate().is_err());
-        let mut doc = workflow();
-        doc.steps[0].executor = StepExecutor::Control;
-        assert!(doc.validate().is_err());
-        let mut doc = workflow();
-        doc.steps[0].dependencies.push("inspect".into());
-        assert!(doc.validate().is_err());
-    }
-
-    #[test]
-    fn completion_rules_use_actual_identity_and_order_not_business_labels() {
-        let doc = workflow();
-        let rule: CompletionRule = serde_json::from_value(json!({"op":"all","rules":[
-            {"op":"before","first":"discover","second":"inspect"},
-            {"op":"independent","author":"discover","reviewer":"inspect"},
-            {"op":"approved","step":"inspect"}]}))
-        .unwrap();
-        rule.validate(&doc, &doc.steps.iter().map(|s| s.key.as_str()).collect(), 0)
-            .unwrap();
-        let fact = |identity: &str, started, finished| ExecutionFact {
-            operation_id: "test-operation".into(),
-            input_digest: "digest".into(),
-            identity_root: Some(identity.into()),
-            started,
-            finished,
-            outcome: "succeeded".into(),
-        };
-        let mut facts = WorkflowFacts::default();
-        facts
-            .executions
-            .insert("discover".into(), fact("same-agent", 1, 2));
-        facts
-            .executions
-            .insert("inspect".into(), fact("same-agent", 3, 4));
-        facts.approvals.insert("inspect".into());
-        assert!(!rule.evaluate(&facts));
-        facts.executions.get_mut("inspect").unwrap().identity_root =
-            Some("independent-agent".into());
-        assert!(rule.evaluate(&facts));
-        facts.executions.get_mut("inspect").unwrap().started = 1;
-        assert!(!rule.evaluate(&facts));
-    }
-
-    #[test]
-    fn missing_values_never_satisfy_equality_or_coverage() {
-        let source = PortSource {
-            step: "work".into(),
-            port: "result".into(),
-            pointer: "/items".into(),
-        };
-        let mut facts = WorkflowFacts::default();
-        let rule = CompletionRule::Same {
-            left: source.clone(),
-            right: source.clone(),
-        };
-        assert!(!rule.evaluate(&facts));
-        facts.values.insert(
-            ("work".into(), "result".into()),
-            json!({"items":["security","performance"]}),
-        );
-        assert!(rule.evaluate(&facts));
-        assert!(
-            CompletionRule::Equals {
-                source,
-                value: json!(["security", "performance"])
-            }
-            .evaluate(&facts)
-        );
-    }
-}
-
 impl EngineeringState {
     pub fn validate_configured_tasks(&self, before: &Self) -> Result<()> {
         // An immutable source plan is shared by many executions. Parse and hash
@@ -1076,26 +968,25 @@ impl EngineeringState {
                     .find(|r| r.id == record.id)
                     .and_then(|r| r.data["steps"].as_array())
                     .and_then(|a| a.iter().find(|e| e["id"] == step.id))
+                    && !previous["started"].is_null()
                 {
-                    if !previous["started"].is_null() {
-                        let current = serde_json::to_value(&step)
-                            .map_err(|e| err("invalid_workflow", e.to_string()))?;
-                        for key in [
-                            "inputs",
-                            "rework_workspace",
-                            "rework",
-                            "input_digest",
-                            "plan_revision_id",
-                            "node_id",
-                            "contract_digest",
-                            "path",
-                            "workflow_revision_id",
-                        ] {
-                            require(
-                                current[key] == previous[key],
-                                format!("已派发执行的 {key} 不可修改"),
-                            )?;
-                        }
+                    let current = serde_json::to_value(&step)
+                        .map_err(|e| err("invalid_workflow", e.to_string()))?;
+                    for key in [
+                        "inputs",
+                        "rework_workspace",
+                        "rework",
+                        "input_digest",
+                        "plan_revision_id",
+                        "node_id",
+                        "contract_digest",
+                        "path",
+                        "workflow_revision_id",
+                    ] {
+                        require(
+                            current[key] == previous[key],
+                            format!("已派发执行的 {key} 不可修改"),
+                        )?;
                     }
                 }
                 let source_plan = self.configuration(&step.plan_revision_id)?;
@@ -1300,5 +1191,113 @@ impl EngineeringState {
                 .map(|r| r.id.as_str());
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn workflow() -> WorkflowDefinition {
+        serde_json::from_value(json!({"schema_version":6,"stages":[{"key":"investigate","name":"安全调查","default_role_ref":"custom-researcher"}],
+            "steps":[{"key":"discover","name":"发现风险","stage":"investigate","executor":{"type":"agent"},
+            "task_instructions":"使用当前调研 Skill 分析输入并提交风险。","outputs":{"risks":{"delivery_ref":"custom-risk-json"}}},
+            {"key":"inspect","name":"核对风险","stage":"investigate","executor":{"type":"agent","role_ref":"custom-auditor"},
+            "task_instructions":"按当前 Spec 核对输入的风险。","dependencies":["discover"],
+            "inputs":{"risks":{"type":"source","source":{"step":"discover","port":"risks"}}}}]})).unwrap()
+    }
+
+    #[test]
+    fn arbitrary_business_steps_inherit_roles_without_named_actions() {
+        let doc = workflow();
+        assert_eq!(doc.validate().unwrap(), ["discover", "inspect"]);
+        assert_eq!(doc.role(&doc.steps[0]), Some("custom-researcher"));
+        assert_eq!(doc.role(&doc.steps[1]), Some("custom-auditor"));
+        assert!(
+            serde_json::to_value(&doc).unwrap()["steps"][0]
+                .get("kind")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn ports_dependencies_tasks_and_resource_ranges_are_real_constraints() {
+        let mut doc = workflow();
+        doc.steps[1].dependencies.clear();
+        assert!(doc.validate().is_err());
+        let mut doc = workflow();
+        doc.steps[0].task_instructions = Some(" ".into());
+        assert!(doc.validate().is_err());
+        let mut doc = workflow();
+        doc.steps[0].access.writable_paths = vec!["../outside".into()];
+        assert!(doc.validate().is_err());
+        let mut doc = workflow();
+        doc.steps[0].executor = StepExecutor::Control;
+        assert!(doc.validate().is_err());
+        let mut doc = workflow();
+        doc.steps[0].dependencies.push("inspect".into());
+        assert!(doc.validate().is_err());
+    }
+
+    #[test]
+    fn completion_rules_use_actual_identity_and_order_not_business_labels() {
+        let doc = workflow();
+        let rule: CompletionRule = serde_json::from_value(json!({"op":"all","rules":[
+            {"op":"before","first":"discover","second":"inspect"},
+            {"op":"independent","author":"discover","reviewer":"inspect"},
+            {"op":"approved","step":"inspect"}]}))
+        .unwrap();
+        rule.validate(&doc, &doc.steps.iter().map(|s| s.key.as_str()).collect(), 0)
+            .unwrap();
+        let fact = |identity: &str, started, finished| ExecutionFact {
+            operation_id: "test-operation".into(),
+            input_digest: "digest".into(),
+            identity_root: Some(identity.into()),
+            started,
+            finished,
+            outcome: "succeeded".into(),
+        };
+        let mut facts = WorkflowFacts::default();
+        facts
+            .executions
+            .insert("discover".into(), fact("same-agent", 1, 2));
+        facts
+            .executions
+            .insert("inspect".into(), fact("same-agent", 3, 4));
+        facts.approvals.insert("inspect".into());
+        assert!(!rule.evaluate(&facts));
+        facts.executions.get_mut("inspect").unwrap().identity_root =
+            Some("independent-agent".into());
+        assert!(rule.evaluate(&facts));
+        facts.executions.get_mut("inspect").unwrap().started = 1;
+        assert!(!rule.evaluate(&facts));
+    }
+
+    #[test]
+    fn missing_values_never_satisfy_equality_or_coverage() {
+        let source = PortSource {
+            step: "work".into(),
+            port: "result".into(),
+            pointer: "/items".into(),
+        };
+        let mut facts = WorkflowFacts::default();
+        let rule = CompletionRule::Same {
+            left: source.clone(),
+            right: source.clone(),
+        };
+        assert!(!rule.evaluate(&facts));
+        facts.values.insert(
+            ("work".into(), "result".into()),
+            json!({"items":["security","performance"]}),
+        );
+        assert!(rule.evaluate(&facts));
+        assert!(
+            CompletionRule::Equals {
+                source,
+                value: json!(["security", "performance"])
+            }
+            .evaluate(&facts)
+        );
     }
 }

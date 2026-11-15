@@ -400,24 +400,24 @@ impl Engine {
                     data["reason"] = json!("人类采用后继经理");
                     update_record(segment, data);
                 }
-                if !workspace_only {
-                    if let Some(driver) = s.governance.iter_mut().find(|r| {
+                if !workspace_only
+                    && let Some(driver) = s.governance.iter_mut().find(|r| {
                         r.r#type == "workflow_driver"
                             && Some(r.definition_id.as_str())
                                 == controller.root_instance_id.as_deref()
                             && r.data["mode"] == "agent"
-                    }) {
-                        require(
-                            driver.data["controller_id"] == previous
-                                || driver.data["controller_id"].is_null(),
-                            "根控制权已经改变",
-                        )?;
-                        let mut data = driver.data.clone();
-                        data["controller_id"] = json!(successor);
-                        data["epoch"] = json!(data["epoch"].as_u64().unwrap_or(0) + 1);
-                        data["expires_at"] = json!(now() + 60_000);
-                        update_record(driver, data);
-                    }
+                    })
+                {
+                    require(
+                        driver.data["controller_id"] == previous
+                            || driver.data["controller_id"].is_null(),
+                        "根控制权已经改变",
+                    )?;
+                    let mut data = driver.data.clone();
+                    data["controller_id"] = json!(successor);
+                    data["epoch"] = json!(data["epoch"].as_u64().unwrap_or(0) + 1);
+                    data["expires_at"] = json!(now() + 60_000);
+                    update_record(driver, data);
                 }
                 s.governance.push(record("controller_selection",successor.clone(),Scope::project(controller.project_id.clone()),"人类采用后继经理".into(),1,None,json!({"predecessor_controller_id":previous,"successor_controller_id":successor,"agent_ref":controller.agent_revision_id,"context_ref":controller.permission_context_ref}),true));
             }
@@ -738,7 +738,7 @@ impl Engine {
                 }
                 let sid=controller.session_id.clone().unwrap();
                 if let Some(turn)=s.turns.iter().find(|t|t.session_id==sid&&t.status.active()).cloned(){
-                    if let Some(lease)=s.orchestration_leases.iter_mut().find(|l|l.controller_id==row.id&&l.epoch==controller.epoch){if lease.expires_at<now()+controller.policy.timeout_seconds*500 {lease.expires_at=now()+controller.policy.timeout_seconds*1000;}}
+                    if let Some(lease)=s.orchestration_leases.iter_mut().find(|l|l.controller_id==row.id&&l.epoch==controller.epoch)&& lease.expires_at<now()+controller.policy.timeout_seconds*500 {lease.expires_at=now()+controller.policy.timeout_seconds*1000;}
 
                     if turn.status==TurnStatus::NeedsReconciliation {controller.status="needs_reconciliation".into();controller.reason="编排执行结果未知，请停止并核对后恢复".into();}
                     else if turn.started.is_some_and(|started|now().saturating_sub(started)>controller.policy.timeout_seconds*1000){let t=s.turns.iter_mut().find(|t|t.id==turn.id).unwrap();t.cancel_requested=true;t.revision+=1;controller.status="budget_exhausted".into();controller.reason="编排 Turn 超时，已请求停止".into();}

@@ -69,6 +69,9 @@ pub struct GitHubRepositoryPolicy {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+// Receipt records are persisted and reported, not matched on hot paths; the
+// size spread between variants is not worth boxing every construction site.
+#[allow(clippy::large_enum_variant)]
 pub enum RepositoryReceipt {
     MainlineRefreshed {
         previous: String,

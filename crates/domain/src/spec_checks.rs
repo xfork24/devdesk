@@ -101,7 +101,7 @@ fn valid_pointer(pointer: &str) -> bool {
         && pointer
             .as_bytes()
             .windows(2)
-            .all(|w| w[0] != b'~' || [b'0', b'1'].contains(&w[1]))
+            .all(|w| w[0] != b'~' || b"01".contains(&w[1]))
         && !pointer.ends_with('~')
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

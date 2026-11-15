@@ -156,6 +156,9 @@ impl SqliteStore {
         }
         Self::load_with(conn, &mut memo)
     }
+    // Table loads interleave with view refreshes: later tables restore against
+    // views rebuilt from earlier fields, so a struct literal is not equivalent.
+    #[allow(clippy::field_reassign_with_default)]
     fn load_with(
         conn: &Connection,
         memo: &mut std::collections::BTreeMap<String, Value>,
