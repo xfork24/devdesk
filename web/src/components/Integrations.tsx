@@ -428,6 +428,7 @@ function SourceManager({
             ))}
           </div>
           <ActionForm
+            className="form-grid"
             onSubmit={(e) => {
               captureFeedback();
 
@@ -1069,6 +1070,7 @@ function BindingManager({
           ))}
         </div>
         <ActionForm
+          className="form-grid"
           onSubmit={(e) => {
             captureFeedback();
 
@@ -1884,6 +1886,7 @@ function HttpToolEditor({
           ))}
         </div>
         <ActionForm
+          className="form-grid"
           onSubmit={(e) => {
             captureFeedback();
 

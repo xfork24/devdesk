@@ -86,7 +86,10 @@ textarea {
   resize: vertical;
 }
 label {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
   font-weight: 500;
   font-size: 13px;
   color: #5b657a;
@@ -94,7 +97,10 @@ label {
 label > input,
 label > textarea,
 label > select {
-  margin-top: 7px;
+  margin-top: 0;
+}
+fieldset {
+  min-width: 0;
 }
 p {
   margin: 5px 0 12px;
@@ -337,9 +343,13 @@ main {
   gap: 7px;
   flex-wrap: wrap;
 }
+.actions:has(> label),
+.toolbar:has(> label) {
+  align-items: flex-end;
+}
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 17px;
   margin-bottom: 24px;
 }
@@ -578,7 +588,7 @@ main {
 .feature-picker {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   gap: 18px;
   margin-bottom: 21px;
 }
@@ -855,6 +865,11 @@ main {
 .setting-row p {
   margin: 5px 0 0;
 }
+.setting-row > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .action-feedback {
   display: block;
   flex: 0 0 100%;
@@ -1115,6 +1130,9 @@ footer {
   .metrics {
     grid-template-columns: repeat(2, 1fr);
   }
+  .metrics > .action-control:last-child:nth-child(odd) > .metric {
+    grid-column: 1 / -1;
+  }
   .run-deps {
     display: none;
   }
@@ -1236,6 +1254,26 @@ footer {
   display: grid;
   gap: 6px;
   margin: 12px 0;
+}
+.conversation-panel > .actions > :is(p, details) {
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.model-selection-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 20px;
+}
+.model-selection-row button {
+  min-height: 41px;
+}
+.model-fields > p {
+  margin: 8px 0;
+}
+.delivery-requirements > label {
+  margin: 10px 0;
 }
 .conversation-panel textarea {
   width: 100%;
@@ -1418,12 +1456,19 @@ select[multiple] {
   gap: 10px 20px;
   margin: 12px 0;
 }
-.form-grid > label {
+.form-grid > label,
+.form-grid > .integration-fields > label {
   flex: 1 1 220px;
 }
-.form-grid > :not(label):not(.action-control) {
+.form-grid > :not(label):not(.action-control),
+.form-grid > .integration-fields > :not(label):not(.action-control) {
   flex-basis: 100%;
   min-width: 0;
+}
+.form-grid > label:has(> textarea),
+.form-grid > .integration-fields > label:has(> textarea),
+.form-grid > .integration-fields > .inline-control {
+  flex-basis: 100%;
 }
 .project-configuration-form {
   padding: 0 21px 21px;
@@ -1668,6 +1713,9 @@ pre {
 .configuration-layout form {
   min-width: 0;
 }
+.configuration-layout .form-grid {
+  margin-top: 0;
+}
 .configuration-layout label,
 .panel > form > label {
   display: flex;
@@ -1865,12 +1913,6 @@ pre {
   color: #6c7890;
   font-size: 11px;
 }
-.workflow-editor-v2 .workflow-step-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 12px 0;
-}
 .workflow-editor-v2 .workflow-step-form fieldset {
   min-width: 0;
   border: 1px solid #dde4ee;
@@ -1954,6 +1996,17 @@ pre {
   flex-wrap: wrap;
 }
 /* Execution runtime: stages, steps and sub-flows collapse into a tree. */
+.workflow-instance > .panel {
+  margin: 12px 20px 14px;
+  padding: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workflow-instance > .work-standard {
+  margin: 12px 20px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .workflow-instance > .workflow-stage-row {
   margin: 12px 20px 14px;
 }
@@ -2418,7 +2471,7 @@ pre {
   min-width: 0;
 }
 .permission-target-binding label {
-  display: block;
+  display: flex;
   margin: 10px 0;
 }
 .permission-target-binding details,
@@ -2446,8 +2499,11 @@ pre {
   }
 }
 
-/* Native select sizing includes every option, rather than only the selection. */
-:root label:has(> select) {
+/* Fit single-line fields to their contents and wrap the whole labelled field. */
+:root
+  label:has(
+    > :is(select, input:not([type="checkbox"], [type="radio"], [type="file"]))
+  ) {
   display: inline-flex;
   vertical-align: top;
   flex-direction: column;
@@ -2462,11 +2518,53 @@ pre {
 :root
   :is(
     .form-grid,
+    .integration-fields,
     .project-configuration-row,
     .actions,
     .toolbar,
-    .feature-picker
+    .feature-picker,
+    .model-selection-row
   )
-  > label:has(> select) {
+  > label:has(
+    > :is(select, input:not([type="checkbox"], [type="radio"], [type="file"]))
+  ) {
+  flex: 0 1 auto;
   margin: 0;
+}
+
+/* Keep field captions and controls on shared horizontal lines in wrapped rows. */
+:root .form-grid label {
+  gap: 7px;
+  margin: 0;
+}
+.form-grid label > :is(input, select, textarea) {
+  margin-top: 0;
+}
+:root
+  input:not([type="checkbox"], [type="radio"], [type="file"], [type="hidden"]) {
+  field-sizing: content;
+  width: auto;
+  min-width: min(100%, calc(32ch + 24px));
+  max-width: 100%;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+:root label:has(> input:not([type="checkbox"], [type="radio"], [type="file"])) {
+  min-width: min(100%, calc(32ch + 24px));
+}
+:root label > input:not([type="checkbox"], [type="radio"]),
+:root label > select:not([multiple]) {
+  min-height: 41px;
+}
+:root
+  label:has(> input:is([type="checkbox"], [type="radio"])):not(
+    .model-provider-choice
+  ) {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+:root input:is([type="checkbox"], [type="radio"]) {
+  width: auto;
+  flex: none;
 }

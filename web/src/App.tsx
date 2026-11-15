@@ -706,7 +706,7 @@ function App() {
     ["discussion", "角色讨论", FileText],
     ["projects", "项目管理", Layers3],
     ["workflows", "流程与规范", Workflow],
-    ["actors", "角色与 Agent", Library],
+    ["actors", "角色与Agent", Library],
     ["components", "基础组件", Settings],
     ["history", "历史记录", History],
     ["settings", "设置", Settings],

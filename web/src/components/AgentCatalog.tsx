@@ -150,7 +150,7 @@ export function AgentCatalog({
         <div className="panel-heading">
           <h2>
             {group === "actors"
-              ? "角色与 Agent"
+              ? "角色与Agent"
               : group === "foundations"
                 ? "基础组件"
                 : "规范"}
@@ -729,48 +729,55 @@ export function ResourceEditor({
                   data={{ ...data, provider: String(data.provider) }}
                   patch={patch}
                   providers={providers}
+                  parameters={
+                    data.provider === "openai" ? (
+                      <label>
+                        推理强度
+                        <ActionSelect
+                          value={data.parameters?.reasoning_effort || ""}
+                          onChange={(e) => {
+                            captureFeedback();
+                            return patch({
+                              parameters: e.target.value
+                                ? { reasoning_effort: e.target.value }
+                                : {},
+                            });
+                          }}
+                        >
+                          <option value="">模型默认</option>
+                          {[
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                          ].map((v) => (
+                            <option key={v}>{v}</option>
+                          ))}
+                        </ActionSelect>
+                      </label>
+                    ) : (
+                      <label>
+                        最大输出 Tokens
+                        <input
+                          type="number"
+                          min={data.provider === "deepseek" ? 1024 : 1}
+                          max={data.max_output_tokens || 1000000}
+                          value={data.parameters?.max_tokens || ""}
+                          onChange={(e) => {
+                            captureFeedback();
+                            return patch({
+                              parameters: e.target.value
+                                ? { max_tokens: Number(e.target.value) }
+                                : {},
+                            });
+                          }}
+                        />
+                      </label>
+                    )
+                  }
                 />
-                {data.provider === "openai" ? (
-                  <label>
-                    推理强度
-                    <ActionSelect
-                      value={data.parameters?.reasoning_effort || ""}
-                      onChange={(e) => {
-                        captureFeedback();
-                        return patch({
-                          parameters: e.target.value
-                            ? { reasoning_effort: e.target.value }
-                            : {},
-                        });
-                      }}
-                    >
-                      <option value="">模型默认</option>
-                      {["minimal", "low", "medium", "high", "xhigh", "max"].map(
-                        (v) => (
-                          <option key={v}>{v}</option>
-                        ),
-                      )}
-                    </ActionSelect>
-                  </label>
-                ) : (
-                  <label>
-                    最大输出 Tokens
-                    <input
-                      type="number"
-                      min={data.provider === "deepseek" ? 1024 : 1}
-                      max={data.max_output_tokens || 1000000}
-                      value={data.parameters?.max_tokens || ""}
-                      onChange={(e) => {
-                        captureFeedback();
-                        return patch({
-                          parameters: e.target.value
-                            ? { max_tokens: Number(e.target.value) }
-                            : {},
-                        });
-                      }}
-                    />
-                  </label>
-                )}
               </>
             )}
             {kind === "sandbox" && (
@@ -1065,28 +1072,6 @@ export function ResourceEditor({
             )}
             {kind === "delivery_type" && (
               <>
-                <p className="muted full-width">
-                  每种交付必须关联内容 Spec，定义应交付内容、来源和验收标准。
-                </p>
-                <RevisionSelect
-                  label="内容规范"
-                  multiple
-                  records={records.filter((r) => r.type === "spec")}
-                  value={data.spec_refs || []}
-                  onChange={(spec_refs) => patch({ spec_refs })}
-                />
-                <DeliverySpecPreview
-                  references={data.spec_refs || []}
-                  records={records}
-                />
-                {data.producer ? (
-                  <p>
-                    产出来源：{data.producer.type}
-                    {data.producer.tools
-                      ? ` · ${data.producer.tools.join("、")}`
-                      : ""}
-                  </p>
-                ) : null}
                 <label>
                   交付物格式
                   <ActionSelect
@@ -1100,6 +1085,45 @@ export function ResourceEditor({
                     <option value="text">文本</option>
                   </ActionSelect>
                 </label>
+                <fieldset className="full-width delivery-requirements">
+                  <legend>内容与验收</legend>
+                  <p className="muted">
+                    每种交付必须关联内容 Spec，定义应交付内容、来源和验收标准。
+                  </p>
+                  <RevisionSelect
+                    label="内容规范"
+                    multiple
+                    records={records.filter((r) => r.type === "spec")}
+                    value={data.spec_refs || []}
+                    onChange={(spec_refs) => patch({ spec_refs })}
+                  />
+                  <DeliverySpecPreview
+                    references={data.spec_refs || []}
+                    records={records}
+                  />
+                </fieldset>
+                <fieldset className="full-width">
+                  <legend>结构与来源</legend>
+                  {data.producer ? (
+                    <p>
+                      产出来源：
+                      {{
+                        agent: "Agent",
+                        platform: "平台工具",
+                        workflow: "Workflow",
+                      }[data.producer.kind as string] || data.producer.kind}
+                      {data.producer.tools
+                        ? ` · ${data.producer.tools.join("、")}`
+                        : ""}
+                    </p>
+                  ) : null}
+                  <WorkflowSpecifications
+                    kind={kind}
+                    data={data}
+                    records={records}
+                    onChange={patch}
+                  />
+                </fieldset>
               </>
             )}
             {["skill", "spec"].includes(kind) && (
@@ -1114,7 +1138,7 @@ export function ResourceEditor({
                 }}
               />
             )}
-            {["spec", "delivery_type"].includes(kind) ? (
+            {kind === "spec" ? (
               <WorkflowSpecifications
                 kind={kind}
                 data={data}

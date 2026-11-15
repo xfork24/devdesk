@@ -659,7 +659,7 @@ export function WorkflowManager({ request, project, refresh }: Props) {
               ) : null}
             </aside>
             <div className="workflow-step-form">
-              <fieldset disabled={!draft.editing || busy}>
+              <fieldset className="form-grid" disabled={!draft.editing || busy}>
                 {draft.node === "workflow" ? (
                   <>
                     <legend>流程配置</legend>

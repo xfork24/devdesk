@@ -15,14 +15,16 @@ Web 是构建后嵌入 Host 的 React 单页应用：默认打开 `http://127.0.
 | 角色讨论 | 与 Agent 会话、工具审批与澄清、结构化提案、经验与快照（见 [讨论与经验](conversations.md)） |
 | 项目管理 | 项目列表与 GitHub 接入；基础 Standard、项目规范覆盖、来源差异预览和项目专属快照；Role→Agent、执行授权、项目经理编排 Agent 与默认驱动；项目接入账户。只保存配置，不启动经理会话或流程 |
 | 流程与规范 | Workflow 编辑器、Delivery、Spec 与结构 lint、Standard 快照/比较/采用；配置依赖与精确修订选择 |
-| 角色与 Agent | Role 职责编辑；Capability（Model+Harness+Tools+Skills）；Agent（仅 Role+Capability 精确组合） |
+| 角色与Agent | Role 职责编辑；Capability（Model+Harness+Tools+Skills）；Agent（仅 Role+Capability 精确组合） |
 | 基础组件 | Model、Harness、Sandbox、Permission、运行资源、调度策略、MCP、Skills、HTTP 工具、Harness 原生工具；Harness/Sandbox 按确切修订绑定权限，Permission 管理定义、执行授权与预设来源（见 [运行时权限](permissions.md)） |
 | 历史记录 | 当前项目或 Global 的事件与工具调用统一时间线；审批/取消/核对入口；文件结果下载 |
-| 设置 | 内核连接、数据路径、仓库接入状态、权限定义与绑定、模板重置、运行时与凭据、全局并发、退出内核 |
+| 设置 | 内核连接、数据路径、仓库接入状态、模板重置、运行时与凭据、全局并发、退出内核 |
 
 页面路由写入 URL（tab/project/feature/子页/所选对象），重开时按当前可访问对象恢复。使用草稿持久化组件的编辑器将草稿保存在本机；这些草稿不等于已发布源修订，旧目录代次或失效引用仍需重新核对。连接密钥不进入 URL 或草稿存储。
 
 各页面的单选下拉框和多选列表按最长选项确定宽度，并为文字、箭头和留白预留空间；宽度随当前选项列表更新，不随选中值缩短。相邻选择项横向排列，空间不足时自然换行，各字段名称在上、列表在下；窄屏下控件最大宽度受所在容器限制。
+
+普通单行输入框按当前文字确定宽度，至少保留约 32 字符的空间，空间不足时受容器宽度限制；多行正文编辑保留完整编辑区域。Model 的模型标识、刷新目录和推理参数排列在同一行并自动换行。Delivery 将名称、范围和格式放在首行，内容规范、结构与来源分别分组展示。
 
 ## 刷新模型
 

@@ -594,7 +594,7 @@ export function RoleConversation({
           <p className="notice">
             {detail?.session
               ? "历史会话保留原运行绑定；请选择完整 Agent 组合开启新会话。"
-              : "请先在基础组件中准备资源，并在角色与 Agent 中组合所需能力，再选择讨论实例。"}
+              : "请先在基础组件中准备资源，并在角色与Agent中组合所需能力，再选择讨论实例。"}
           </p>
         )}
         {composite && (

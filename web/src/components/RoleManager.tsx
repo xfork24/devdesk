@@ -193,6 +193,7 @@ export function RoleManager({
           ))}
         </div>
         <ActionForm
+          className="form-grid"
           onSubmit={(e) => {
             captureFeedback();
 

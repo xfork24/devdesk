@@ -1,6 +1,6 @@
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { type Request, type Row } from "./rpc-types";
 
 export type ModelProvider = {
@@ -246,6 +246,7 @@ export function ModelFields({
   data,
   patch,
   providers,
+  parameters,
 }: {
   request: Request;
   data: {
@@ -257,6 +258,7 @@ export function ModelFields({
   };
   patch: (value: Record<string, unknown>) => void;
   providers: ModelProvider[];
+  parameters: ReactNode;
 }) {
   type Candidate = ModelProvider["models"][number] & { displayName?: string };
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -347,62 +349,65 @@ export function ModelFields({
           />
         </label>
       )}
-      <label>
-        模型标识
-        <ActionSelect
-          aria-label="模型标识"
-          value={data.model || ""}
-          required
-          disabled={loading}
-          onChange={(event) => {
-            const candidate = candidates.find(
-              (model) => model.id === event.target.value,
-            );
-            if (candidate)
-              patch({
-                model: candidate.id,
-                ...(codex
-                  ? {}
-                  : {
-                      context_window: candidate.context_window,
-                      max_output_tokens: candidate.max_output_tokens,
-                    }),
-              });
-          }}
-        >
-          <option value="" disabled>
-            {loading ? "正在读取模型目录…" : "请选择模型"}
-          </option>
-          {data.model &&
-            !candidates.some((model) => model.id === data.model) && (
-              <option value={data.model} disabled>
-                {data.model}（当前目录未返回，保留已保存标识）
-              </option>
-            )}
-          {candidates.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.id}
-              {model.displayName && model.displayName !== model.id
-                ? ` · ${model.displayName}`
-                : ""}
+      <div className="model-selection-row">
+        <label>
+          模型标识
+          <ActionSelect
+            aria-label="模型标识"
+            value={data.model || ""}
+            required
+            disabled={loading}
+            onChange={(event) => {
+              const candidate = candidates.find(
+                (model) => model.id === event.target.value,
+              );
+              if (candidate)
+                patch({
+                  model: candidate.id,
+                  ...(codex
+                    ? {}
+                    : {
+                        context_window: candidate.context_window,
+                        max_output_tokens: candidate.max_output_tokens,
+                      }),
+                });
+            }}
+          >
+            <option value="" disabled>
+              {loading ? "正在读取模型目录…" : "请选择模型"}
             </option>
-          ))}
-        </ActionSelect>
-      </label>
-      <div className="actions">
-        <ActionButton
-          type="button"
-          disabled={loading}
-          onClick={() => setRevision((value) => value + 1)}
-        >
-          刷新模型目录
-        </ActionButton>
-        {error && (
-          <p className="action-feedback error" role="alert">
-            {error}
-          </p>
-        )}
+            {data.model &&
+              !candidates.some((model) => model.id === data.model) && (
+                <option value={data.model} disabled>
+                  {data.model}（当前目录未返回，保留已保存标识）
+                </option>
+              )}
+            {candidates.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.id}
+                {model.displayName && model.displayName !== model.id
+                  ? ` · ${model.displayName}`
+                  : ""}
+              </option>
+            ))}
+          </ActionSelect>
+        </label>
+        <div className="actions">
+          <ActionButton
+            type="button"
+            disabled={loading}
+            onClick={() => setRevision((value) => value + 1)}
+          >
+            刷新模型目录
+          </ActionButton>
+        </div>
+        {parameters}
       </div>
+      {error && (
+        <p className="action-feedback error" role="alert">
+          {error}
+        </p>
+      )}
       {source && <p className="muted">{source} · 读取目录不会发起推理。</p>}
       {!codex && (
         <>

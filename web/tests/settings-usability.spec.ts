@@ -86,7 +86,7 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
   for (const [nav, tabs] of [
     ["基础组件", ["Model", "Harness"]],
     ["流程与规范", ["Spec", "Standard"]],
-    ["角色与 Agent", ["Role", "Capability", "Agent"]],
+    ["角色与Agent", ["Role", "Capability", "Agent"]],
   ] as const) {
     await page.getByRole("button", { name: nav, exact: true }).click();
     for (const tab of tabs) {
@@ -410,7 +410,7 @@ test("会话绑定更新同步 Agent，切换身份后隔离迟到历史", async
 
 test("配置路由和浏览器前进后退保留未保存的 Role 草稿", async ({ page }) => {
   await setup(page);
-  await page.getByRole("button", { name: "角色与 Agent", exact: true }).click();
+  await page.getByRole("button", { name: "角色与Agent", exact: true }).click();
   await page.getByRole("tab", { name: "Role", exact: true }).click();
   const list = page.locator(".configuration-list");
   await list.getByRole("button").nth(1).click();

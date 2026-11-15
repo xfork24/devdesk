@@ -393,7 +393,7 @@ test("未接入 GitHub 的后端项目不进入 Web 项目列表和工程内容"
   await expect(
     page.getByRole("button", { name: "新 Feature", exact: true }),
   ).toBeDisabled();
-  for (const name of ["工作总览", "执行与交付", "角色与 Agent", "设置"]) {
+  for (const name of ["工作总览", "执行与交付", "角色与Agent", "设置"]) {
     await page.getByRole("button", { name, exact: true }).click();
     await expect(page.locator("body")).not.toContainText(
       /Simulation mode|模拟项目|模拟场景|origin=simulated|sim-harness|模拟工程执行身份/,
