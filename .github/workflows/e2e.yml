@@ -1,0 +1,76 @@
+# Browser regression as an independent workflow that runs only after BOTH the
+# rust and web workflows succeed for the same commit.
+#
+# Mechanism: `workflow_run` fires when either rust or web completes. A
+# concurrency group keyed on the head SHA cancels the earlier duplicate, so
+# exactly one e2e run survives per commit; the guard job rejects triggering
+# runs that failed, then polls the sibling workflow's conclusion for the same
+# commit before building. Note: workflow_run runs from the default branch, so
+# it does not trigger for fork PRs — same-repo branches only.
+name: e2e
+
+on:
+  workflow_run:
+    workflows: ["rust", "web"]
+    types: [completed]
+
+concurrency:
+  group: e2e-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  e2e:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Wait for the sibling workflow on the same commit
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.workflow_run.name }}" = "rust" ]; then
+            sibling="web.yml"
+          else
+            sibling="rust.yml"
+          fi
+          echo "Waiting for $sibling on $SHA"
+          for _ in $(seq 1 60); do
+            row="$(gh run list --workflow "$sibling" --commit "$SHA" --json status,conclusion --limit 1)"
+            status="$(printf '%s' "$row" | jq -r '.[0].status // empty')"
+            conclusion="$(printf '%s' "$row" | jq -r '.[0].conclusion // empty')"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "$sibling succeeded for $SHA"
+                exit 0
+              fi
+              echo "::error::$sibling finished with '$conclusion' for $SHA; skipping e2e"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::timed out waiting for $sibling on $SHA"
+          exit 1
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      # Playwright launches ../target/debug/devdesk-host itself (default profile).
+      - run: cargo build --locked -p devdesk-host
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: npx playwright test
+        working-directory: web
