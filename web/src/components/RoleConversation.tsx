@@ -10,19 +10,17 @@ import { ExecutionTaskDetails } from "./WorkflowTaskPreview";
 import {
   loadCatalog,
   MarkdownField,
-  MarkdownPreview,
+  type Request,
+  type Row,
 } from "./configuration-ui";
 import { AgentExperience } from "./AgentExperience";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-type Row = Record<string, any>;
-type Request = (method: string, params?: Row) => Promise<any>;
 type Props = {
   project?: Row;
   feature?: Row;
   tasks: Row[];
   agents: Row[];
-  installations: Row[];
   configurations?: Row[];
   onLocateExperience?: (entry: Row) => void;
   initialOwner?: string;
@@ -37,7 +35,6 @@ export function RoleConversation({
   feature,
   tasks,
   agents,
-  installations,
   configurations = [],
   onLocateExperience,
   initialOwner,
@@ -120,8 +117,8 @@ export function RoleConversation({
   );
   const boundAgents = runtime?.data.plan?.definitions
     ? Object.values(runtime.data.plan.definitions as Row)
-        .filter((row: any) => row.type === "agent")
-        .map((row: any) => row.id as string)
+        .filter((row: Row) => row.type === "agent")
+        .map((row: Row) => row.id as string)
     : (Object.values(
         runtime?.data.role_agent_bindings ||
           workLock?.data.role_agent_bindings ||
@@ -400,14 +397,16 @@ export function RoleConversation({
   async function action(work: () => Promise<void>) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
       await work();
     } catch (e) {
       setError(String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   async function open(forceNew = false) {

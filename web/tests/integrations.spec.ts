@@ -300,10 +300,9 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   const resources = await rpc(page, "query.permission_resources");
   const bindings = resources.targets
     .filter((r: any) =>
-      [
-        "builtin-harness-codex-managed:1",
-        "builtin-sandbox-docker:1",
-      ].includes(r.target.revision_id),
+      ["builtin-harness-codex-managed:1", "builtin-sandbox-docker:1"].includes(
+        r.target.revision_id,
+      ),
     )
     .map((r: any) => ({
       target: r.target,
@@ -319,7 +318,6 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   });
   await page.getByRole("button", { name: "基础组件", exact: true }).click();
   await page.getByRole("tab", { name: "MCP", exact: true }).click();
-  const source = page.getByRole("region", { name: "MCP 接入管理" });
   const name = "Browser MCP " + crypto.randomUUID().slice(0, 6);
   const creator = page.getByRole("region", {
     name: "MCP 接入管理",
@@ -344,10 +342,16 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
     );
   let releaseDefaults!: () => void;
   let defaultsRequested!: () => void;
-  const defaultsGate = new Promise<void>((resolve) => { releaseDefaults = resolve; });
-  const defaultsPending = new Promise<void>((resolve) => { defaultsRequested = resolve; });
+  const defaultsGate = new Promise<void>((resolve) => {
+    releaseDefaults = resolve;
+  });
+  const defaultsPending = new Promise<void>((resolve) => {
+    defaultsRequested = resolve;
+  });
   await page.route("**/rpc", async (route) => {
-    if (route.request().postDataJSON().method === "query.configuration_defaults") {
+    if (
+      route.request().postDataJSON().method === "query.configuration_defaults"
+    ) {
       defaultsRequested();
       await defaultsGate;
     }
@@ -360,7 +364,9 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   const account = page.getByRole("region", { name: "接入绑定管理" });
   await defaultsPending;
   try {
-    await expect(account.getByLabel("绑定名称", { exact: true })).toBeDisabled();
+    await expect(
+      account.getByLabel("绑定名称", { exact: true }),
+    ).toBeDisabled();
   } finally {
     releaseDefaults();
   }

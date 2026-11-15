@@ -369,14 +369,16 @@ function SourceManager({
   async function run(fn: () => Promise<void>) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
       await fn();
     } catch (e) {
       setError(String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   const rows = latest(
@@ -952,16 +954,29 @@ function BindingManager({
     [oauthUrl, setOauthUrl] = useState("");
   useEffect(() => {
     let current = true;
-    void Promise.all([request("query.permission_resources"), request("query.configuration_defaults")])
+    void Promise.all([
+      request("query.permission_resources"),
+      request("query.configuration_defaults"),
+    ])
       .then(([resources, defaults]) => {
         if (!current) return;
         bindingDefaults.current = defaults;
         setPermissions(resources);
-        setDraft((previous) => previous.selected ? previous : { ...previous, harness_ref: previous.harness_ref || defaults.harness_ref || "", sandbox_ref: previous.sandbox_ref || defaults.sandbox_ref || "" });
+        setDraft((previous) =>
+          previous.selected
+            ? previous
+            : {
+                ...previous,
+                harness_ref: previous.harness_ref || defaults.harness_ref || "",
+                sandbox_ref: previous.sandbox_ref || defaults.sandbox_ref || "",
+              },
+        );
         setBindingReady(true);
       })
       .catch((e) => setError(String(e)));
-    return () => { current = false; };
+    return () => {
+      current = false;
+    };
   }, [request]);
   const bindings = latest(
     sources.filter(
@@ -1007,14 +1022,16 @@ function BindingManager({
   async function run(fn: () => Promise<void>) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
       await fn();
     } catch (e) {
       setError(String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   return (
@@ -1109,7 +1126,10 @@ function BindingManager({
             });
           }}
         >
-          <fieldset disabled={!!deletedBinding || !bindingReady} className="integration-fields">
+          <fieldset
+            disabled={!!deletedBinding || !bindingReady}
+            className="integration-fields"
+          >
             <label>
               绑定名称
               <input
@@ -1432,7 +1452,10 @@ function BindingManager({
               multiple
               onChange={(allowed_tools) => {
                 captureFeedback();
-                return setDraft({ ...draft, allowed_tools });
+                return setDraft({
+                  ...draft,
+                  allowed_tools: allowed_tools as string[],
+                });
               }}
             />
             <p>
@@ -1816,14 +1839,16 @@ function HttpToolEditor({
   async function run(fn: () => Promise<void>) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
       await fn();
     } catch (e) {
       setError(String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   return (
@@ -2350,7 +2375,7 @@ function ToolTest({
         label="测试工具修订"
         records={tools.filter((t) => binding.data.allowed_tools.includes(t.id))}
         value={tool}
-        onChange={setTool}
+        onChange={(value) => setTool(value as string)}
       />
       <JsonField label="测试调用参数" value={args} onChange={setArgs} />
       <ActionButton
@@ -2358,7 +2383,8 @@ function ToolTest({
         onClick={async () => {
           captureFeedback();
 
-          (beginFeedback(), setBusy(true));
+          beginFeedback();
+          setBusy(true);
           setError("");
           try {
             const result = await command(request, "integration.test", project, {
@@ -2370,7 +2396,8 @@ function ToolTest({
           } catch (e) {
             setError(String(e));
           } finally {
-            (endFeedback(), setBusy(false));
+            endFeedback();
+            setBusy(false);
           }
         }}
       >
@@ -2427,14 +2454,13 @@ function SkillImport({
           captureFeedback();
 
           e.preventDefault();
-          (beginFeedback(), setBusy(true));
+          beginFeedback();
+          setBusy(true);
           setError("");
           try {
             const r = await command(request, "skill.import_package", project, {
               name,
-              scope: project
-                ? `project:${project.id}`
-                : "global",
+              scope: project ? `project:${project.id}` : "global",
               requires_tools: requires,
               source_revision_id: sourceRevision || undefined,
               ...(sourceRevision
@@ -2457,7 +2483,8 @@ function SkillImport({
           } catch (e) {
             setError(String(e));
           } finally {
-            (endFeedback(), setBusy(false));
+            endFeedback();
+            setBusy(false);
           }
         }}
       >
@@ -2479,7 +2506,7 @@ function SkillImport({
           onChange={async (value) => {
             captureFeedback();
 
-            setSourceRevision(value);
+            setSourceRevision(value as string);
             const row = catalog.find((r) => r.id === value);
             if (row) {
               setName(row.name);
@@ -2583,7 +2610,7 @@ function SkillImport({
           records={catalog.filter((r) => r.type === "tool")}
           value={requires}
           multiple
-          onChange={setRequires}
+          onChange={(value) => setRequires(value as string[])}
         />
         <p>仅导入静态指令和参考文件；包内脚本不会自动安装或执行。</p>
         <ActionButton

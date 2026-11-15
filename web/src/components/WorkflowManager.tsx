@@ -48,21 +48,22 @@ const splitPaths = (value: string) =>
     .map((value) => value.trim())
     .filter(Boolean);
 function replacePort(
-  value: any,
+  value: unknown,
   step: string,
   previous: string,
   next: string,
-): any {
+): unknown {
   if (Array.isArray(value))
     return value.map((value) => replacePort(value, step, previous, next));
   if (!value || typeof value !== "object") return value;
-  if (value.type === "constant") return value;
-  if (value.step === step && value.port === previous)
-    return { ...value, port: next };
+  const record = value as Row;
+  if (record.type === "constant") return value;
+  if (record.step === step && record.port === previous)
+    return { ...record, port: next };
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
+    Object.entries(record).map(([key, item]) => [
       key,
-      value.op === "equals" && key === "value"
+      record.op === "equals" && key === "value"
         ? item
         : replacePort(item, step, previous, next),
     ]),
@@ -316,7 +317,9 @@ export function WorkflowManager({ request, project, refresh }: Props) {
           }
         : item,
     );
-    update(replacePort({ ...document, steps }, step.key, previous, next));
+    update(
+      replacePort({ ...document, steps }, step.key, previous, next) as Row,
+    );
   }
   const visibleRows = rows;
   return (

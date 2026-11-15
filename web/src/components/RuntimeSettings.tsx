@@ -1,9 +1,9 @@
 import {
   ActionButton,
-  ActionForm,
   ActionSelect,
   useActionFeedback,
 } from "./ActionFeedback";
+import type { Request } from "./configuration-ui";
 import { useState } from "react";
 import { DshProviderSettings } from "./DshProviderSettings";
 import { isProjectRuntimeInstallation } from "./runtime-installations";
@@ -22,7 +22,7 @@ type Installation = {
 type Props = {
   provider: Provider;
   installations: Installation[];
-  request: (method: string, params?: Record<string, unknown>) => Promise<any>;
+  request: Request;
   refresh: () => Promise<void>;
 };
 
@@ -62,7 +62,8 @@ export function RuntimeSettings({
           onChange={async (event) => {
             captureFeedback();
 
-            (beginFeedback(), setBusy(true));
+            beginFeedback();
+            setBusy(true);
             setMessage("");
             try {
               await request("settings.update", {
@@ -75,7 +76,8 @@ export function RuntimeSettings({
             } catch {
               setMessage("默认 Harness 保存失败");
             } finally {
-              (endFeedback(), setBusy(false));
+              endFeedback();
+              setBusy(false);
             }
           }}
         >
@@ -104,7 +106,8 @@ export function RuntimeSettings({
                 } catch {
                   // The official link below also works when popups are blocked.
                 }
-                (beginFeedback(), setBusy(true));
+                beginFeedback();
+                setBusy(true);
                 setMessage("正在准备登录组件并请求官方授权地址…");
                 try {
                   const result = await request("codex.auth.start");
@@ -137,7 +140,8 @@ export function RuntimeSettings({
                   authorizationWindow?.close();
                   setMessage(`无法开始登录，可再次点击重试：${String(error)}`);
                 } finally {
-                  (endFeedback(), setBusy(false));
+                  endFeedback();
+                  setBusy(false);
                 }
               }}
             >
@@ -148,7 +152,8 @@ export function RuntimeSettings({
               onClick={async () => {
                 captureFeedback();
 
-                (beginFeedback(), setBusy(true));
+                beginFeedback();
+                setBusy(true);
                 try {
                   const result = await request("codex.auth.status");
                   await refresh();
@@ -164,7 +169,8 @@ export function RuntimeSettings({
                 } catch {
                   setMessage("无法核对登录状态，请检查运行环境或稍后重试");
                 } finally {
-                  (endFeedback(), setBusy(false));
+                  endFeedback();
+                  setBusy(false);
                 }
               }}
             >
@@ -176,7 +182,8 @@ export function RuntimeSettings({
                 onClick={async () => {
                   captureFeedback();
 
-                  (beginFeedback(), setBusy(true));
+                  beginFeedback();
+                  setBusy(true);
                   try {
                     await request("codex.auth.cancel", {
                       login_id: login.loginId,
@@ -185,7 +192,8 @@ export function RuntimeSettings({
                   } catch {
                     setMessage("登录取消结果未知，请核对状态");
                   } finally {
-                    (endFeedback(), setBusy(false));
+                    endFeedback();
+                    setBusy(false);
                   }
                 }}
               >

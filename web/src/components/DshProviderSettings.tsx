@@ -5,7 +5,7 @@ import {
   useActionFeedback,
 } from "./ActionFeedback";
 import { useEffect, useState, type FormEvent } from "react";
-import type { Request } from "./configuration-ui";
+import type { Request, Row } from "./configuration-ui";
 
 export type ModelProvider = {
   id: string;
@@ -74,7 +74,8 @@ export function DshProviderSettings({ request }: { request: Request }) {
     captureFeedback();
 
     event.preventDefault();
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setMessage("");
     try {
       setStatus(
@@ -90,13 +91,15 @@ export function DshProviderSettings({ request }: { request: Request }) {
       setMessage(String(error));
     } finally {
       setSecret("");
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   async function check(method: string) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setMessage("");
     try {
       await request(method, { model_provider: provider });
@@ -104,7 +107,8 @@ export function DshProviderSettings({ request }: { request: Request }) {
     } catch (error) {
       setMessage(String(error));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   const selected = providers.find((p) => p.id === provider);
@@ -294,12 +298,10 @@ export function ModelFields({
         )
           .then((result) => {
             if (!active) return;
-            const models = (result.models || []).map(
-              (model: Record<string, any>) => ({
-                ...model,
-                id: model.model || model.id,
-              }),
-            );
+            const models = (result.models || []).map((model: Row) => ({
+              ...model,
+              id: model.model || model.id,
+            }));
             setCandidates(models);
             if (!models.length)
               setError("模型目录为空，请检查后端服务或账号配置后刷新。");

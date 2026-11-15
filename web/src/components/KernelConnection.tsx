@@ -1,9 +1,4 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, ActionForm, useActionFeedback } from "./ActionFeedback";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 const addressKey = "devdesk:v1:kernel-address";
@@ -66,7 +61,8 @@ export function KernelConnection() {
     setError("");
     const controller = new AbortController();
     request.current = controller;
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     try {
       const origin = normalizeKernelAddress(address);
       let response: Response;
@@ -173,7 +169,8 @@ export function KernelAuthentication({
     captureFeedback();
 
     event.preventDefault();
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     const controller = new AbortController();
     request.current = controller;

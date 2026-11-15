@@ -264,7 +264,7 @@ export function ReadableValue({
   if (value === null || value === undefined)
     return <span className="muted">未记录</span>;
   if (typeof value === "string") {
-    if (depth < 4 && /^[\s]*[\[{]/.test(value)) {
+    if (depth < 4 && /^[\s]*[[{]/.test(value)) {
       try {
         const parsed = JSON.parse(value);
         if (parsed && typeof parsed === "object")
@@ -370,7 +370,7 @@ export function LazyDetails({
 
 function compactValue(value: unknown, depth = 0): unknown {
   if (typeof value === "string") {
-    if (depth === 0 && /^[\s]*[\[{]/.test(value)) {
+    if (depth === 0 && /^[\s]*[[{]/.test(value)) {
       try {
         const parsed = JSON.parse(value);
         if (parsed && typeof parsed === "object")

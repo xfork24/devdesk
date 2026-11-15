@@ -1,15 +1,9 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, useActionFeedback } from "./ActionFeedback";
 import { useEffect, useRef, useState } from "react";
-import { MarkdownPreview } from "./configuration-ui";
-type Row = Record<string, any>;
+import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
 type Props = {
   revision?: string;
-  request: (method: string, params?: Row) => Promise<any>;
+  request: Request;
   projectId: string;
   instanceId: string;
   owner: Row;
@@ -226,7 +220,12 @@ export function AgentExperience({
                 {detail.entry.binding?.installation?.key.provider} · 完整性{" "}
                 {detail.integrity}
               </p>
-              <MarkdownPreview text={detail.snapshot.content || "该快照没有附加文字上下文；文档与执行引用仍可读取。"} />
+              <MarkdownPreview
+                text={
+                  detail.snapshot.content ||
+                  "该快照没有附加文字上下文；文档与执行引用仍可读取。"
+                }
+              />
               <details>
                 <summary>完整快照与证据引用</summary>
                 <pre>{JSON.stringify(detail, null, 2)}</pre>
@@ -236,7 +235,8 @@ export function AgentExperience({
                 onClick={async () => {
                   captureFeedback();
 
-                  (beginFeedback(), setBusy(true));
+                  beginFeedback();
+                  setBusy(true);
                   setError("");
                   try {
                     const result = await request("experience.restore", {
@@ -256,7 +256,8 @@ export function AgentExperience({
                   } catch (e) {
                     setError(String(e));
                   } finally {
-                    (endFeedback(), setBusy(false));
+                    endFeedback();
+                    setBusy(false);
                   }
                 }}
               >

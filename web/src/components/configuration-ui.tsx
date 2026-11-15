@@ -10,7 +10,11 @@ import {
 } from "react";
 import { useCatalogGeneration } from "../template-catalog";
 const RenderMarkdown = lazy(() => import("./MarkdownPreview"));
+// The one sanctioned loose-record hatch: kernel JSON rows are structural data
+// owned by the RPC contract, not the UI.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Row = Record<string, any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Request = (method: string, params?: Row) => Promise<any>;
 export const templateSourceLabel = (row?: Row) =>
   (
@@ -194,7 +198,7 @@ export function RevisionSelect({
   label: string;
   records: Row[];
   value: string | string[];
-  onChange: (value: any) => void;
+  onChange: (value: string | string[]) => void;
   multiple?: boolean;
   required?: boolean;
 }) {

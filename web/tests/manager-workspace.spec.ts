@@ -24,7 +24,10 @@ test("没有 Feature 时项目经理工作台提供独立的组合与会话入�
         method: "project.create",
         params: {
           command_id: crypto.randomUUID(),
-          payload: { title: "Manager without Feature", repository:"https://github.com/fixture/manager.git" },
+          payload: {
+            title: "Manager without Feature",
+            repository: "https://github.com/fixture/manager.git",
+          },
         },
       },
     })

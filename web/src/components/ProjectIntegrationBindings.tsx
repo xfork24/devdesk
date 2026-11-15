@@ -1,9 +1,4 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, useActionFeedback } from "./ActionFeedback";
 import { useCallback, useEffect, useState } from "react";
 import {
   latest,
@@ -94,7 +89,7 @@ export function ProjectIntegrationBindings({
             value={mapping[id] || ""}
             onChange={(value) => {
               captureFeedback();
-              return setMapping({ ...mapping, [id]: value });
+              return setMapping({ ...mapping, [id]: value as string });
             }}
             required
           />
@@ -109,7 +104,8 @@ export function ProjectIntegrationBindings({
             onClick={async () => {
               captureFeedback();
 
-              (beginFeedback(), setBusy(true));
+              beginFeedback();
+              setBusy(true);
               setError("");
               try {
                 await request("integration.project.bind", {
@@ -128,7 +124,8 @@ export function ProjectIntegrationBindings({
               } catch (e) {
                 setError(String(e));
               } finally {
-                (endFeedback(), setBusy(false));
+                endFeedback();
+                setBusy(false);
               }
             }}
           >

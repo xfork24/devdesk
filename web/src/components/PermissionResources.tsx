@@ -1,6 +1,5 @@
 import {
   ActionButton,
-  ActionForm,
   ActionSelect,
   ActionInput,
   useActionFeedback,
@@ -8,11 +7,8 @@ import {
 import { useEffect, useState } from "react";
 import { ResourceEditor } from "./AgentCatalog";
 import { DirectoryPicker } from "./DirectoryPicker";
+import { type Request, type Row } from "./configuration-ui";
 
-type Request = (
-  method: string,
-  params?: Record<string, unknown>,
-) => Promise<any>;
 type Profile = {
   schema_version: number;
   scope: string;
@@ -23,7 +19,7 @@ type Profile = {
   target_kind: "harness" | "sandbox";
   policy: Record<string, unknown>;
 };
-const profileView = (source: any): Profile => ({
+const profileView = (source: Row): Profile => ({
   ...source.data,
   scope: source.scope,
   identity: source.identity,
@@ -133,7 +129,7 @@ export function PermissionResources({
       setBindingProfileId("");
       return;
     }
-    const active = (catalog.bindings as any[]).find(
+    const active = (catalog.bindings as Row[]).find(
       (row) => row.id === target.active?.binding_revision_id,
     );
     const activeProfile = active?.data?.permission_revision_id;
@@ -158,14 +154,16 @@ export function PermissionResources({
   async function action(work: () => Promise<void>) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setMessage("");
     try {
       await work();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   const command = (method: string, payload: unknown, extra = {}) =>

@@ -352,7 +352,8 @@ export function ExecutionTaskDetails({
         onClick={async () => {
           captureFeedback();
 
-          (beginFeedback(), setBusy(true));
+          beginFeedback();
+          setBusy(true);
           setLoadedTurn(selected);
           setError("");
           try {
@@ -365,7 +366,8 @@ export function ExecutionTaskDetails({
           } catch (e) {
             setError(String(e));
           } finally {
-            (endFeedback(), setBusy(false));
+            endFeedback();
+            setBusy(false);
           }
         }}
       >

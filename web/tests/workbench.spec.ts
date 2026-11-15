@@ -228,7 +228,10 @@ test("打开 GitHub 项目自动接入，完成前阻止工程操作，重载保
     page.getByRole("button", { name: "新 Feature", exact: true }),
   ).toBeDisabled();
   expect(fixture.commands[0].method).toBe("project.open_github");
-  expect(fixture.commands.find((call) => call.params.payload.repository)?.params.payload).toMatchObject({
+  expect(
+    fixture.commands.find((call) => call.params.payload.repository)?.params
+      .payload,
+  ).toMatchObject({
     repository: "fixture/repository",
     mainline: "main",
   });
@@ -238,15 +241,32 @@ test("打开 GitHub 项目自动接入，完成前阻止工程操作，重载保
   fixture.ready();
   await expect(page.getByText("GitHub 已接入", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  const repository = page.getByRole("region", { name: "GitHub 仓库状态", exact: true });
-  await expect(repository.getByText("打开项目时自动检查权限、登记并克隆仓库。", { exact: true })).toHaveCount(0);
-  await expect(repository.locator(".panel-heading")).toHaveCSS("border-bottom-width", "0px");
+  const repository = page.getByRole("region", {
+    name: "GitHub 仓库状态",
+    exact: true,
+  });
+  await expect(
+    repository.getByText("打开项目时自动检查权限、登记并克隆仓库。", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(repository.locator(".panel-heading")).toHaveCSS(
+    "border-bottom-width",
+    "0px",
+  );
   await expect(repository.getByRole("status")).toHaveText("仓库已接入");
-  await expect(repository.getByText("仓库接入 · 已完成", { exact: true })).toHaveCount(0);
-  const link = await repository.getByRole("link", { name: "fixture/repository", exact: true }).boundingBox();
+  await expect(
+    repository.getByText("仓库接入 · 已完成", { exact: true }),
+  ).toHaveCount(0);
+  const link = await repository
+    .getByRole("link", { name: "fixture/repository", exact: true })
+    .boundingBox();
   const status = await repository.getByRole("status").boundingBox();
   expect(Math.abs(link!.y - status!.y)).toBeLessThan(2);
-  await page.screenshot({ path: testInfo.outputPath("repository-settings.png"), fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath("repository-settings.png"),
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "工作总览", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "新 Feature", exact: true }),
@@ -344,7 +364,9 @@ test("完整 Agent 无需手工登记安装，显示准备及失败原因", asyn
     page.getByRole("button", { name: /登记.*镜像|登记本机/ }),
   ).toHaveCount(0);
   await expect(
-    page.getByText("尚未准备项目执行运行时；首次执行时自动准备", { exact: true }),
+    page.getByText("尚未准备项目执行运行时；首次执行时自动准备", {
+      exact: true,
+    }),
   ).toBeVisible();
 });
 
@@ -505,8 +527,16 @@ test("真实接入设置偏好、密钥表单与浏览器 OAuth 链接", async (
 test("设置只提供版本化权限并拒绝旧权限接口", async ({ page }) => {
   await ensureSetup(page);
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Permission 定义与版本绑定" })).toBeVisible();
-  await expect(page.getByText("旧权限配置兼容入口", { exact: true })).toHaveCount(0);
-  const reply = await page.request.post("/rpc", { data: { jsonrpc: "2.0", id: 1, method: "query.permissions", params: {} } }).then((r) => r.json());
+  await expect(
+    page.getByRole("heading", { name: "Permission 定义与版本绑定" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("旧权限配置兼容入口", { exact: true }),
+  ).toHaveCount(0);
+  const reply = await page.request
+    .post("/rpc", {
+      data: { jsonrpc: "2.0", id: 1, method: "query.permissions", params: {} },
+    })
+    .then((r) => r.json());
   expect(reply.error.data.code).toBe("method_not_found");
 });

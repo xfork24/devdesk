@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { once } from "node:events";
 
 const test = base.extend<{ appUrl: string }>({
-  appUrl: async ({}, use) => {
+  appUrl: async (_, use) => {
     const socket = createServer();
     await new Promise<void>((done) => socket.listen(0, "127.0.0.1", done));
     const port = (socket.address() as { port: number }).port;
@@ -164,12 +164,15 @@ test("重置失败可重试，确认前并发修改要求重新预览", async ({
   await page.goto(`${appUrl}/?tab=settings`);
   await page.getByRole("button", { name: "重置模板定义", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "确认重置模板定义" });
-  await expect(dialog.getByRole("button", { name: "确认重置", exact: true })).toBeEnabled();
+  await expect(
+    dialog.getByRole("button", { name: "确认重置", exact: true }),
+  ).toBeEnabled();
   await rpc(page, appUrl, "delivery_type.create", {
     command_id: crypto.randomUUID(),
-    payload: {spec_refs: ["builtin-spec-stage-prd:2"],
+    payload: {
+      spec_refs: ["builtin-spec-stage-prd:2"],
       name: "Concurrent delivery",
-      data: {format: "markdown",body: "concurrent"},
+      data: { format: "markdown", body: "concurrent" },
     },
   });
   await dialog.getByRole("button", { name: "确认重置", exact: true }).click();

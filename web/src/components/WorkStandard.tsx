@@ -45,7 +45,12 @@ export function WorkStandard({
   useEffect(() => {
     comparisonGeneration.current++;
     setWorkComparison(undefined);
-  }, [projectId, owner.id, instance?.data.active_plan_revision_id, selectionVersion]);
+  }, [
+    projectId,
+    owner.id,
+    instance?.data.active_plan_revision_id,
+    selectionVersion,
+  ]);
   const runtime = instance?.data;
   const activeStandard =
     runtime?.plan.standard_ref || configuration?.data.standard_ref;
@@ -188,7 +193,7 @@ export function WorkStandard({
             )}
             value={selected}
             onChange={(value) => {
-              setSelected(value);
+              setSelected(value as string);
               setWorkflow(
                 records.find((r) => r.id === value)?.data
                   .root_workflow_refs[0] || "",
@@ -201,7 +206,7 @@ export function WorkStandard({
             records={records.filter((r) => roots.includes(r.id))}
             value={workflow}
             onChange={(value) => {
-              setWorkflow(value);
+              setWorkflow(value as string);
               setPreview(undefined);
             }}
           />
@@ -226,7 +231,7 @@ export function WorkStandard({
               records={records.filter((r) => r.type === "permission_context")}
               value={permission}
               onChange={(value) => {
-                setPermission(value);
+                setPermission(value as string);
                 setPreview(undefined);
               }}
             />

@@ -85,9 +85,10 @@ async function fixtures(page: Page) {
         undefined,
         undefined,
         undefined,
-        {spec_refs: [spec.id],
+        {
+          spec_refs: [spec.id],
           name: `Standard browser ${type}`,
-          data: {format: "json",content_schema: { type }},
+          data: { format: "json", content_schema: { type } },
         },
       )
     ).id;
@@ -246,15 +247,27 @@ test("Standard 只读生成比较与归档保留规范源", async ({ page }, inf
   await expect(
     page.getByRole("button", { name: "恢复快照选择", exact: true }),
   ).toBeVisible();
-  await page.screenshot({path:info.outputPath("standard-readonly-archived.png"),fullPage:true});
+  await page.screenshot({
+    path: info.outputPath("standard-readonly-archived.png"),
+    fullPage: true,
+  });
   const catalog = await rpc(page, "query.standard", { id: ids[1] });
-  expect(Object.keys(catalog.record.data).sort()).toEqual([
-    "schema_version",
-  ]);
+  expect(Object.keys(catalog.record.data).sort()).toEqual(["schema_version"]);
   expect(catalog.record.root_workflow_refs).toEqual([b.id]);
-  await page.setViewportSize({width:390,height:844});
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
-  await page.screenshot({path:info.outputPath("standard-readonly-mobile.png"),fullPage:true});
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth + 1,
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: info.outputPath("standard-readonly-mobile.png"),
+    fullPage: true,
+  });
 });
 
 test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行依据", async ({
@@ -374,7 +387,9 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   await page.goto(
     `/?tab=execution&project_id=${project.id}&feature_id=${feature.id}`,
   );
-  const card = page.locator(".task-grid article").filter({ has: page.getByText("Task B", {exact:true}) });
+  const card = page
+    .locator(".task-grid article")
+    .filter({ has: page.getByText("Task B", { exact: true }) });
   await card.locator(".work-standard > summary").click();
   await card.getByLabel("采用 Standard", { exact: true }).selectOption(sb.id);
   await card
@@ -427,13 +442,17 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   await page.reload();
   const updatedCard = page
     .locator(".task-grid article")
-    .filter({ has: page.getByText("Task B", {exact:true}) });
+    .filter({ has: page.getByText("Task B", { exact: true }) });
   await updatedCard.locator(".work-standard > summary").click();
-  await updatedCard.getByText("与其他工作比较规范", {exact:true}).click();
-  const ta = workspace.detail.tasks.find((t:any) => t.title === "Task A");
-  await updatedCard.getByLabel("比较工作", {exact:true}).selectOption(ta.id);
-  await updatedCard.getByRole("button",{name:"比较工作规范",exact:true}).click();
-  await expect(updatedCard.locator(".standard-diff").first()).toContainText("规范变化");
+  await updatedCard.getByText("与其他工作比较规范", { exact: true }).click();
+  const ta = workspace.detail.tasks.find((t: any) => t.title === "Task A");
+  await updatedCard.getByLabel("比较工作", { exact: true }).selectOption(ta.id);
+  await updatedCard
+    .getByRole("button", { name: "比较工作规范", exact: true })
+    .click();
+  await expect(updatedCard.locator(".standard-diff").first()).toContainText(
+    "规范变化",
+  );
   await updatedCard
     .getByLabel("采用 Standard", { exact: true })
     .selectOption(sa.id);

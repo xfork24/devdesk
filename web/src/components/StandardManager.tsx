@@ -53,7 +53,9 @@ export function StandardDiff({ diff }: { diff: Row }) {
 
 export function StandardDetail({ snapshot }: { snapshot: Row }) {
   const sourceName = (reference: string) => {
-    const node = snapshot.nodes.find((node: Row) => node.reference === reference);
+    const node = snapshot.nodes.find(
+      (node: Row) => node.reference === reference,
+    );
     return node ? `${node.name} · v${reference.split(":").at(-1)}` : reference;
   };
   const ports = (values: Row = {}) => (
@@ -78,9 +80,7 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
       <h4>Workflow 入口</h4>
       <ul>
         {snapshot.root_workflow_refs.map((reference: string) => (
-          <li key={reference}>
-            {sourceName(reference)}
-          </li>
+          <li key={reference}>{sourceName(reference)}</li>
         ))}
       </ul>
       {snapshot.nodes.map((node: Row) => (
@@ -93,7 +93,9 @@ export function StandardDetail({ snapshot }: { snapshot: Row }) {
                 : "Spec"}{" "}
             · {sourceName(node.reference)}
           </summary>
-          <p className="muted"><code>{node.reference}</code></p>
+          <p className="muted">
+            <code>{node.reference}</code>
+          </p>
           {node.kind === "spec" ? (
             <>
               <MarkdownPreview text={node.content.body} />
@@ -293,9 +295,7 @@ export function StandardManager({
       setBusy(false);
     }
   }
-  const standards = records.filter(
-    (r) => r.type === "standard",
-  );
+  const standards = records.filter((r) => r.type === "standard");
   return (
     <section className="panel standard-manager" aria-label="Standard 规范快照">
       <h3>Standard 规范快照</h3>
@@ -314,9 +314,9 @@ export function StandardManager({
         records={standards}
         value={selected}
         onChange={(value) => {
-          setSelected(value);
+          setSelected(value as string);
           const params = new URLSearchParams(location.search);
-          if (value) params.set("standard_id", value);
+          if (value) params.set("standard_id", value as string);
           else params.delete("standard_id");
           history.replaceState(null, "", `?${params}`);
         }}
@@ -333,7 +333,7 @@ export function StandardManager({
           records={records.filter((r) => r.type === "workflow")}
           value={roots}
           onChange={(value) => {
-            setRoots(value);
+            setRoots(value as string[]);
             setCandidate(undefined);
           }}
         />
@@ -372,9 +372,7 @@ export function StandardManager({
                       name,
                       root_workflow_refs: roots,
                       preview_digest: candidate.snapshot_digest,
-                      scope: project
-                        ? `project:${project.id}`
-                        : "global",
+                      scope: project ? `project:${project.id}` : "global",
                     },
                   });
                   await load();
@@ -442,7 +440,7 @@ export function StandardManager({
             records={standards}
             value={compare}
             onChange={(value) => {
-              setCompare(value);
+              setCompare(value as string);
               setDiff(undefined);
             }}
           />

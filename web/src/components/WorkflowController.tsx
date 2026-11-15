@@ -264,7 +264,7 @@ export function WorkflowController({
               }
               records={catalog.filter((row) => row.type === "agent")}
               value={managerAgent}
-              onChange={setManagerAgent}
+              onChange={(value) => setManagerAgent(value as string)}
             />
             <RevisionSelect
               label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
@@ -272,7 +272,7 @@ export function WorkflowController({
                 (row) => row.type === "permission_context",
               )}
               value={managerPermission}
-              onChange={setManagerPermission}
+              onChange={(value) => setManagerPermission(value as string)}
             />
             <ActionButton
               disabled={
@@ -312,9 +312,9 @@ export function WorkflowController({
             {data?.driverWaiting?.length > 0 && (
               <ul aria-label="调度等待条件">
                 {(data?.driverWaiting || []).slice(0, 12).map((item: Row) => {
-                  const gate = Object.values(item.actions || {}).find(
-                    (action: any) => item.waiting_for?.includes(action.code),
-                  ) as Row | undefined;
+                  const gate = (
+                    Object.values(item.actions || {}) as Row[]
+                  ).find((action) => item.waiting_for?.includes(action.code));
                   return (
                     <li key={item.execution_id}>
                       {item.path || item.step}：
@@ -343,7 +343,7 @@ export function WorkflowController({
                   (row) => row.type === "orchestration_policy",
                 )}
                 value={policy}
-                onChange={setPolicy}
+                onChange={(value) => setPolicy(value as string)}
               />
             )}
             <ActionButton

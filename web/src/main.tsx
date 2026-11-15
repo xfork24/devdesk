@@ -27,7 +27,11 @@ import React, {
   FormEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { MarkdownField, MarkdownPreview } from "./components/configuration-ui";
+import {
+  MarkdownField,
+  MarkdownPreview,
+  type Row,
+} from "./components/configuration-ui";
 import {
   Layers3,
   LayoutDashboard,
@@ -38,21 +42,13 @@ import {
   Settings,
   Plus,
   ArrowRight,
-  Check,
   X,
-  Play,
   Pause,
-  RotateCcw,
-  GitMerge,
   ChevronRight,
   FolderOpen,
   CircleDot,
   Activity,
-  ShieldCheck,
-  Terminal,
   Box,
-  Copy,
-  Menu,
   AlertTriangle,
 } from "lucide-react";
 import "./style.css";
@@ -72,7 +68,6 @@ import {
   KernelConnection,
 } from "./components/KernelConnection";
 
-type RecordData = { [key: string]: any };
 type Field = {
   key: string;
   label: string;
@@ -86,7 +81,7 @@ type DialogSpec = {
   title: string;
   method: string;
   target?: string;
-  payload?: RecordData;
+  payload?: Row;
   fields: Field[];
   revision?: number;
   feedbackTarget?: ActionTarget | null;
@@ -108,12 +103,10 @@ const labels: Record<string, string> = {
   released: "已释放",
   cleanup_failed: "清理失败",
 };
-const pretty = (v: any) => JSON.stringify(v, null, 2);
+const pretty = (v: unknown) => JSON.stringify(v, null, 2);
 const short = (id: string) => id?.slice(0, 8) || "—";
-const fmt = (time: number) =>
-  new Date(time).toLocaleString("zh-CN", { hour12: false });
 let sequence = 0;
-async function rpc(method: string, params: RecordData = {}) {
+async function rpc(method: string, params: Row = {}) {
   if (isTemplateMutation(method)) {
     if (getCatalogGeneration() === undefined)
       await rpc("query.template_catalog");
@@ -195,8 +188,8 @@ function App() {
   const projectGeneration = useRef(0);
   const kernelStopped = useRef(false);
   const [detailPages, setDetailPages] = useState<Record<string, number>>({});
-  const [data, setData] = useState<RecordData>();
-  const [caps, setCaps] = useState<RecordData>();
+  const [data, setData] = useState<Row>();
+  const [caps, setCaps] = useState<Row>();
   const [projectId, setProjectId] = useState("");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
@@ -214,25 +207,23 @@ function App() {
     title: string;
     body: string;
     format?: "markdown";
-    metadata?: RecordData;
+    metadata?: Row;
   }>();
   const [setupPath, setSetupPath] = useState("./data");
-  const [roleRevision, setRoleRevision] = useState(0);
-  const [focusedSession, setFocusedSession] = useState<RecordData | undefined>(
-    () =>
-      route.get("session_id") && route.get("tab") === "discussion"
-        ? {
-            id: route.get("session_id"),
-            owner_id:
-              route.get("task_id") ||
-              route.get("feature_id") ||
-              route.get("project_id"),
-            project_id: route.get("project_id"),
-          }
-        : undefined,
+  const [focusedSession, setFocusedSession] = useState<Row | undefined>(() =>
+    route.get("session_id") && route.get("tab") === "discussion"
+      ? {
+          id: route.get("session_id"),
+          owner_id:
+            route.get("task_id") ||
+            route.get("feature_id") ||
+            route.get("project_id"),
+          project_id: route.get("project_id"),
+        }
+      : undefined,
   );
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
-  const [readingTarget, setReadingTarget] = useState<RecordData>(() => ({
+  const [readingTarget, setReadingTarget] = useState<Row>(() => ({
     ...Object.fromEntries(
       readingKeys.map((key) => [key, route.get(key) || ""]),
     ),
@@ -341,8 +332,6 @@ function App() {
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
   }, [projectId]);
-  const [snapshotA, setSnapshotA] = useState("");
-  const [snapshotB, setSnapshotB] = useState("");
   const load = useCallback(
     async (afterCommand = false) => {
       // A command refresh must settle before another form captures its revision.
@@ -429,8 +418,6 @@ function App() {
             );
             setFeaturePage(Number(route.get("page") || 0));
             setDetailPages({});
-            setSnapshotA("");
-            setSnapshotB("");
             setData(undefined);
             return;
           }
@@ -509,12 +496,12 @@ function App() {
   }, [load, projectId, caps?.setup_required]);
   const detail = data?.detail;
   const f = detail?.feature;
-  const projects: RecordData[] = (data?.projects || []).filter(
-    (p: RecordData) => p.workspace_definition?.repository,
+  const projects: Row[] = (data?.projects || []).filter(
+    (p: Row) => p.workspace_definition?.repository,
   );
-  const features: RecordData[] = data?.features || [];
-  const definitions: RecordData[] = (data?.definitions || []).filter(
-    (d: RecordData) => d.family !== "agent" || d.agent_profile,
+  const features: Row[] = data?.features || [];
+  const definitions: Row[] = (data?.definitions || []).filter(
+    (d: Row) => d.family !== "agent" || d.agent_profile,
   );
   const project = data?.active_project?.workspace_definition?.repository
     ? data.active_project
@@ -531,8 +518,6 @@ function App() {
     setFeatureId("");
     setFeaturePage(0);
     setDetailPages({});
-    setSnapshotA("");
-    setSnapshotB("");
     setTaskFilter("");
     setView(undefined);
     setData(undefined);
@@ -594,7 +579,7 @@ function App() {
   const command = async (
     method: string,
     target?: string,
-    payload: RecordData = {},
+    payload: Row = {},
     revision?: number,
     feedback = true,
   ) => {
@@ -626,9 +611,6 @@ function App() {
       setBusy(false);
     }
   };
-  const configurationLock = data?.configurations?.find(
-    (r: RecordData) => r.type === "feature_lock" && r.definition_id === f?.id,
-  );
   const createProject = () =>
     show({
       title: "打开 GitHub 项目",
@@ -643,7 +625,7 @@ function App() {
     const target = currentActionTarget();
     const generation = projectGeneration.current;
     try {
-      const choices: RecordData[] = [];
+      const choices: Row[] = [];
       for (let offset = 0; ;) {
         const page = await rpc("query.workspace", {
           project_id: project?.id,
@@ -663,9 +645,8 @@ function App() {
           project_id: project?.id,
           require_configuration: true,
           configuration_revision_id: data?.configurations
-            ?.filter((r: RecordData) => r.type === "project_configuration")
-            .sort((a: RecordData, b: RecordData) => b.version - a.version)[0]
-            ?.id,
+            ?.filter((r: Row) => r.type === "project_configuration")
+            .sort((a: Row, b: Row) => b.version - a.version)[0]?.id,
         },
         fields: [
           { key: "title", label: "Feature 名称" },
@@ -696,33 +677,6 @@ function App() {
       });
     } catch (e) {
       publishActionFeedback(target, String(e), true);
-    }
-  };
-  const openArtifact = async (id: string) => {
-    const feedbackTarget = currentActionTarget();
-    const generation = projectGeneration.current;
-    try {
-      const [r, artifact] = await Promise.all([
-        fetch(`/artifacts/${id}?project_id=${encodeURIComponent(projectId)}`),
-        rpc("query.artifact", { id, project_id: projectId }),
-      ]);
-      if (!r.ok) throw new Error("产物读取失败或哈希校验失败");
-      const body = await r.text();
-      if (generation === projectGeneration.current)
-        setView({
-          title: `Artifact · ${short(id)}`,
-          body,
-          ...(/\.md$/i.test(artifact.relative_path || "") ||
-          artifact.media_type?.includes("markdown")
-            ? { format: "markdown" as const }
-            : {}),
-        });
-    } catch (e) {
-      if (
-        generation === projectGeneration.current &&
-        !publishActionFeedback(feedbackTarget, String(e), true)
-      )
-        setError(String(e));
     }
   };
   const nav = [
@@ -1110,11 +1064,11 @@ function App() {
                   <h2>当前工作流程</h2>
                   {(
                     data.configurations?.find(
-                      (r: RecordData) =>
+                      (r: Row) =>
                         r.type === "workflow_instance" &&
                         r.data.parent_execution_id == null,
                     )?.data.plan.document.stages || []
-                  ).map((stage: RecordData) => (
+                  ).map((stage: Row) => (
                     <div className="journey-step" key={stage.key}>
                       <strong>{stage.name}</strong>
                       <p>{stage.description}</p>
@@ -1215,7 +1169,6 @@ function App() {
                 setExecutionTab("context");
                 setTab("execution");
               }}
-              installations={data.runtime_installations || []}
               request={rpc}
               refresh={load}
             />
@@ -1248,12 +1201,12 @@ function App() {
                 {executionTab === "overview" &&
                   data?.configurations
                     ?.filter(
-                      (r: RecordData) =>
+                      (r: Row) =>
                         r.type === "workflow_instance" &&
                         r.data.owner_id === f.id &&
                         r.data.parent_execution_id == null,
                     )
-                    .map((r: RecordData) => (
+                    .map((r: Row) => (
                       <WorkflowInstanceView
                         key={r.id}
                         record={r}
@@ -1272,7 +1225,7 @@ function App() {
                     ))}
                 {executionTab === "overview" && (
                   <div className="task-grid">
-                    {detail.tasks.map((task: RecordData) => (
+                    {detail.tasks.map((task: Row) => (
                       <article key={task.id}>
                         <strong>{task.title}</strong>
                         <Badge value={task.status} />
@@ -1283,7 +1236,7 @@ function App() {
                           owner={task}
                           instance={data?.configurations
                             ?.filter(
-                              (r: RecordData) =>
+                              (r: Row) =>
                                 r.type === "workflow_instance" &&
                                 r.work_root !== false &&
                                 r.data.owner_id === task.id,
@@ -1318,7 +1271,7 @@ function App() {
                               label: "交付类型",
                               type: "select",
                               options: (data?.delivery_types || []).map(
-                                (r: RecordData) => ({
+                                (r: Row) => ({
                                   value: r.id,
                                   label: r.name,
                                 }),
@@ -1425,12 +1378,12 @@ function App() {
             !f &&
             data?.configurations
               ?.filter(
-                (r: RecordData) =>
+                (r: Row) =>
                   r.type === "workflow_instance" &&
                   r.data.owner_id === projectId &&
                   r.data.parent_execution_id == null,
               )
-              .map((r: RecordData) => (
+              .map((r: Row) => (
                 <WorkflowInstanceView
                   key={r.id}
                   record={r}
@@ -1700,44 +1653,40 @@ function App() {
           busy={busy}
           close={() => setDialog(undefined)}
           submit={async (payload) => {
-            try {
-              let result;
-              if (dialog.method === "shutdown") {
-                const response = await fetch("/shutdown", { method: "POST" });
-                if (!response.ok)
-                  throw new Error(`退出失败 HTTP ${response.status}`);
-                kernelStopped.current = true;
-                ++requestGeneration.current;
-                ++projectGeneration.current;
-                setView(undefined);
-                setConnection("已断开");
-                setCaps(undefined);
-                setData(undefined);
-              } else if (dialog.method === "settings.update") {
-                result = await rpc(dialog.method, payload);
-                await load();
-              } else {
-                result = await command(
-                  dialog.method,
-                  dialog.target,
-                  payload,
-                  dialog.revision,
-                  false,
-                );
-              }
-              if (dialog.method === "feature.create" && result?.id) {
-                setFeatureId(result.id);
-                setTab("overview");
-              }
-              if (dialog.method !== "shutdown")
-                publishActionFeedback(
-                  dialog.feedbackTarget || null,
-                  "操作已保存",
-                );
-              setDialog(undefined);
-            } catch (e) {
-              throw e;
+            let result;
+            if (dialog.method === "shutdown") {
+              const response = await fetch("/shutdown", { method: "POST" });
+              if (!response.ok)
+                throw new Error(`退出失败 HTTP ${response.status}`);
+              kernelStopped.current = true;
+              ++requestGeneration.current;
+              ++projectGeneration.current;
+              setView(undefined);
+              setConnection("已断开");
+              setCaps(undefined);
+              setData(undefined);
+            } else if (dialog.method === "settings.update") {
+              result = await rpc(dialog.method, payload);
+              await load();
+            } else {
+              result = await command(
+                dialog.method,
+                dialog.target,
+                payload,
+                dialog.revision,
+                false,
+              );
             }
+            if (dialog.method === "feature.create" && result?.id) {
+              setFeatureId(result.id);
+              setTab("overview");
+            }
+            if (dialog.method !== "shutdown")
+              publishActionFeedback(
+                dialog.feedbackTarget || null,
+                "操作已保存",
+              );
+            setDialog(undefined);
           }}
         />
       )}
@@ -1804,7 +1753,7 @@ function CommandDialog({
   spec: DialogSpec;
   busy: boolean;
   close: () => void;
-  submit: (p: RecordData) => Promise<void>;
+  submit: (p: Row) => Promise<void>;
 }) {
   const {
     error: localError,
@@ -1826,7 +1775,7 @@ function CommandDialog({
     beginFeedback();
     setLocalError("");
     try {
-      const payload: RecordData = { ...spec.payload };
+      const payload: Row = { ...spec.payload };
       for (const field of spec.fields) {
         const value = values[field.key];
         if (field.optional && !value.trim()) continue;
@@ -1941,40 +1890,6 @@ function CommandDialog({
     </div>
   );
 }
-function RunControls({
-  run,
-  perform,
-  inspect,
-}: {
-  run: RecordData;
-  perform: (method: string, payload?: RecordData) => void;
-  inspect: () => void;
-}) {
-  return (
-    <div className="run-row">
-      <span className={`run-dot ${run.status}`} />
-      <div className="run-name">
-        <strong>{labels[run.node] || run.node}</strong>
-        <span>
-          {short(run.id)}
-          {run.retry_of && ` · retry_of ${short(run.retry_of)}`}
-        </span>
-      </div>
-      <Badge value={run.status} />
-      <div className="actions">
-        {["failed", "interrupted", "cancelled"].includes(run.status) && (
-          <ActionButton onClick={() => perform("run.retry")}>重试</ActionButton>
-        )}
-        {["running", "queued"].includes(run.status) && (
-          <ActionButton onClick={() => perform("run.cancel")}>
-            取消
-          </ActionButton>
-        )}
-        <ActionButton onClick={inspect}>详情</ActionButton>
-      </div>
-    </div>
-  );
-}
 function useModalFocus(
   ref: React.RefObject<HTMLElement | null>,
   close: () => void,
@@ -2027,7 +1942,7 @@ function Reader({
   title: string;
   body: string;
   format?: "markdown";
-  metadata?: RecordData;
+  metadata?: Row;
   close: () => void;
 }) {
   const ref = useRef<HTMLElement>(null);

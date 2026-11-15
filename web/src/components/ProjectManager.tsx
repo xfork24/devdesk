@@ -158,7 +158,8 @@ export function ProjectManager({
     captureFeedback();
 
     if (!project) return;
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
       const row = await request("project.configuration.update", {
@@ -185,7 +186,8 @@ export function ProjectManager({
     } catch (e) {
       setError(String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   return (
@@ -259,7 +261,8 @@ export function ProjectManager({
               onClick={() => {
                 captureFeedback();
 
-                (beginFeedback(), setBusy(true));
+                beginFeedback();
+                setBusy(true);
                 void onOpen(row.id)
                   .catch((e) => setError(String(e)))
                   .finally(() => (endFeedback(), setBusy(false)));
@@ -279,7 +282,8 @@ export function ProjectManager({
               captureFeedback();
 
               e.preventDefault();
-              (beginFeedback(), setBusy(true));
+              beginFeedback();
+              setBusy(true);
               setError("");
               try {
                 const row = await request("project.open_github", {
@@ -293,7 +297,8 @@ export function ProjectManager({
               } catch (e) {
                 setError(String(e));
               } finally {
-                (endFeedback(), setBusy(false));
+                endFeedback();
+                setBusy(false);
               }
             }}
           >
@@ -381,7 +386,7 @@ export function ProjectManager({
                   captureFeedback();
                   return setDraft({
                     ...draft,
-                    workflow_ref: value,
+                    workflow_ref: value as string,
                     standard_ref: "",
                   });
                 }}
@@ -465,7 +470,10 @@ export function ProjectManager({
               records={records.filter((r) => r.type === "permission_context")}
               value={draft.permission_context_ref}
               onChange={(permission_context_ref) =>
-                setDraft({ ...draft, permission_context_ref })
+                setDraft({
+                  ...draft,
+                  permission_context_ref: permission_context_ref as string,
+                })
               }
             />
             <label>
@@ -511,7 +519,7 @@ export function ProjectManager({
                     ...draft,
                     role_agent_bindings: {
                       ...draft.role_agent_bindings,
-                      [draft.orchestrator_role_ref]: value,
+                      [draft.orchestrator_role_ref]: value as string,
                     },
                   })
                 }

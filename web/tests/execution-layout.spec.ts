@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 // This test creates a real project; keep it outside the suite's shared dataset.
 const test = base.extend<{ stageKernel: string }>({
-  stageKernel: async ({}, use) => {
+  stageKernel: async (_, use) => {
     const directory = mkdtempSync(join(tmpdir(), "devdesk-stage-rows-"));
     const kernelEnv = { ...process.env };
     delete kernelEnv.DEVDESK_ACCESS_TOKEN;
@@ -317,9 +317,7 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     .getByRole("button", { name: "应用此计划调整", exact: true })
     .click();
   await runtime.getByRole("button", { name: /可选复核/ }).click();
-  await expect(
-    runtime.getByRole("button", { name: /可选检查/ }),
-  ).toBeVisible();
+  await expect(runtime.getByRole("button", { name: /可选检查/ })).toBeVisible();
   await editor.getByLabel("计划调整方式").selectOption("add");
   await editor.getByLabel("计划调整对象").selectOption("collect");
   await editor.getByLabel("新增步骤名称").fill("补充交接");

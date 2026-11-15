@@ -106,7 +106,8 @@ export function RoleManager({
   async function save(remove = false) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     setMessage("");
     try {
@@ -152,7 +153,8 @@ export function RoleManager({
     } catch (e) {
       setError(String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   return (

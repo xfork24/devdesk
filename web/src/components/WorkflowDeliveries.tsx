@@ -11,7 +11,7 @@ export function JsonField({
 }: {
   label: string;
   value: unknown;
-  onChange: (value: any) => void;
+  onChange: (value: unknown) => void;
   readOnly?: boolean;
 }) {
   const encoded = JSON.stringify(value, null, 2);

@@ -352,10 +352,11 @@ export function ResourceEditor({
   async function save(remove = false) {
     captureFeedback();
 
-    (beginFeedback(), setBusy(true));
+    beginFeedback();
+    setBusy(true);
     setError("");
     try {
-      let payload = structuredClone(data);
+      const payload = structuredClone(data);
       if (kind === "model" && !payload.model)
         throw new Error("请先从模型目录中选择模型标识");
       if (kind === "capability")
@@ -431,7 +432,8 @@ export function ResourceEditor({
     } catch (e) {
       setError(String(e));
     } finally {
-      (endFeedback(), setBusy(false));
+      endFeedback();
+      setBusy(false);
     }
   }
   const role = records.find((r) => r.id === data.role_ref),
@@ -565,7 +567,7 @@ export function ResourceEditor({
                       : "执行授权配置"
                 }
                 value={data}
-                onChange={(data) => setDraft({ ...draft, data })}
+                onChange={(data) => setDraft({ ...draft, data: data as Row })}
               />
             )}
             {kind === "agent" && (
@@ -856,7 +858,8 @@ export function ResourceEditor({
                       onClick={async () => {
                         captureFeedback();
 
-                        (beginFeedback(), setBusy(true));
+                        beginFeedback();
+                        setBusy(true);
                         try {
                           await request("runtime.prepare_harness", {
                             id: old.id,
@@ -866,7 +869,8 @@ export function ResourceEditor({
                         } catch (e) {
                           setError(String(e));
                         } finally {
-                          (endFeedback(), setBusy(false));
+                          endFeedback();
+                          setBusy(false);
                         }
                       }}
                     >
@@ -1095,7 +1099,8 @@ export function ResourceEditor({
                   onClick={async () => {
                     captureFeedback();
 
-                    (beginFeedback(), setBusy(true));
+                    beginFeedback();
+                    setBusy(true);
                     setError("");
                     try {
                       const pkg = await request("skill.export", {
@@ -1117,7 +1122,8 @@ export function ResourceEditor({
                     } catch (e) {
                       setError(String(e));
                     } finally {
-                      (endFeedback(), setBusy(false));
+                      endFeedback();
+                      setBusy(false);
                     }
                   }}
                 >

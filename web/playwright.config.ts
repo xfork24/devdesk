@@ -1,7 +1,8 @@
 import { defineConfig } from "@playwright/test";
 const profile = process.env.DEVDESK_E2E_PROFILE ?? "debug";
 const port = Number(process.env.DEVDESK_E2E_PORT ?? "4318");
-if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid DEVDESK_E2E_PORT");
+if (!Number.isInteger(port) || port < 1024 || port > 65535)
+  throw new Error("Invalid DEVDESK_E2E_PORT");
 if (profile !== "debug" && profile !== "release") {
   throw new Error("DEVDESK_E2E_PROFILE must be debug or release");
 }

@@ -1,11 +1,6 @@
-import {
-  ActionButton,
-  ActionForm,
-  ActionSelect,
-  useActionFeedback,
-} from "./ActionFeedback";
+import { ActionButton, useActionFeedback } from "./ActionFeedback";
+import { type Request, type Row } from "./configuration-ui";
 import { useEffect, useState } from "react";
-type Row = Record<string, any>;
 const operationLabels: Record<string, string> = {
   prepared: "等待接入",
   dispatched: "处理中",
@@ -16,7 +11,7 @@ const operationLabels: Record<string, string> = {
 type Props = {
   project: Row;
   ready: boolean;
-  request: (method: string, params?: Row) => Promise<any>;
+  request: Request;
   refresh: () => Promise<void>;
 };
 export function RepositorySettings({
@@ -129,7 +124,8 @@ export function RepositorySettings({
                   onClick={async () => {
                     captureFeedback();
 
-                    (beginFeedback(), setBusy(true));
+                    beginFeedback();
+                    setBusy(true);
                     setError("");
                     try {
                       await request("repository.reconcile", {
@@ -143,7 +139,8 @@ export function RepositorySettings({
                     } catch (e) {
                       setError(String(e));
                     } finally {
-                      (endFeedback(), setBusy(false));
+                      endFeedback();
+                      setBusy(false);
                     }
                   }}
                 >

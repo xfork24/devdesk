@@ -25,9 +25,12 @@ async function rpc(page: Page, method: string, params = {}) {
 }
 async function createGlobalAgent(page: Page, name: string) {
   const defaults = await rpc(page, "query.configuration_defaults");
-  const definition = defaults.records.find((r: any) => r.id === defaults.role_agent_bindings["builtin-role-analyst:1"]);
+  const definition = defaults.records.find(
+    (r: any) => r.id === defaults.role_agent_bindings["builtin-role-analyst:1"],
+  );
   const created = await rpc(page, "agent.instance.create", {
-    command_id: crypto.randomUUID(), payload: { name, scope: "global", agent_revision_id:definition.id },
+    command_id: crypto.randomUUID(),
+    payload: { name, scope: "global", agent_revision_id: definition.id },
   });
   return { instance: created.id, agent: definition.id };
 }
@@ -41,12 +44,24 @@ async function rowFeedback(button: Locator, text: string) {
   expect(f!.y).toBeGreaterThanOrEqual(b!.y + b!.height);
   const rowLeft = await button.evaluate((element) => {
     let row = element.parentElement!;
-    while (getComputedStyle(row).display === "contents") row = row.parentElement!;
-    return row.getBoundingClientRect().left + parseFloat(getComputedStyle(row).paddingLeft);
+    while (getComputedStyle(row).display === "contents")
+      row = row.parentElement!;
+    return (
+      row.getBoundingClientRect().left +
+      parseFloat(getComputedStyle(row).paddingLeft)
+    );
   });
   expect(Math.abs(f!.x - rowLeft)).toBeLessThan(1);
-  const style = await feedback.evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, border: getComputedStyle(element).borderTopWidth, padding: getComputedStyle(element).paddingLeft }));
-  expect(style).toEqual({ background: "rgba(0, 0, 0, 0)", border: "0px", padding: "0px" });
+  const style = await feedback.evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    border: getComputedStyle(element).borderTopWidth,
+    padding: getComputedStyle(element).paddingLeft,
+  }));
+  expect(style).toEqual({
+    background: "rgba(0, 0, 0, 0)",
+    border: "0px",
+    padding: "0px",
+  });
 }
 test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶部", async ({
   page,
@@ -77,8 +92,12 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
     for (const tab of tabs) {
       await page.getByRole("tab", { name: tab, exact: true }).click();
       if (tab === "Standard") {
-        await expect(page.getByText("从 Workflow 生成快照", { exact: true })).toBeVisible();
-        await expect(page.getByRole("button", {name:"添加覆盖规则"})).toHaveCount(0);
+        await expect(
+          page.getByText("从 Workflow 生成快照", { exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "添加覆盖规则" }),
+        ).toHaveCount(0);
         continue;
       }
       await expect(
@@ -106,19 +125,29 @@ test("反馈位于当前行左侧且无背景框，新建入口位于左侧顶�
   await expect(
     page.getByRole("heading", { name: "DSH 原生工具组", exact: true }),
   ).toBeVisible();
-
 });
 test("全局角色讨论按 Agent 确定经验归属，无重复经验范围选择", async ({
   page,
 }, info) => {
   await setup(page);
-  const created = await createGlobalAgent(page, "Global agent " + crypto.randomUUID());
+  const created = await createGlobalAgent(
+    page,
+    "Global agent " + crypto.randomUUID(),
+  );
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
-  await page.getByLabel("讨论角色", {exact:true}).selectOption(created.agent);
-  await page.getByLabel("Agent", { exact: true }).selectOption(created.instance);
-  await expect(page.getByText("新实例经验范围", {exact:true})).toHaveCount(0);
-  await expect(page.getByRole("button", {name:/创建.*Agent/})).toHaveCount(0);
+  await page
+    .getByLabel("讨论角色", { exact: true })
+    .selectOption(created.agent);
+  await page
+    .getByLabel("Agent", { exact: true })
+    .selectOption(created.instance);
+  await expect(page.getByText("新实例经验范围", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("button", { name: /创建.*Agent/ })).toHaveCount(
+    0,
+  );
   await expect(
     page.getByText(
       "该 Agent 的经验范围：全局 / 跨项目；已有工作按此身份保留。",
@@ -207,14 +236,21 @@ test("创建 Feature 提供全部同项目的前序选项，并说明关联语�
   ).toBeVisible();
 });
 
-
 test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page }) => {
   await setup(page);
-  const firstCreated = await createGlobalAgent(page, "First agent " + crypto.randomUUID());
-  const secondCreated = await createGlobalAgent(page, "Second agent " + crypto.randomUUID());
+  const firstCreated = await createGlobalAgent(
+    page,
+    "First agent " + crypto.randomUUID(),
+  );
+  const secondCreated = await createGlobalAgent(
+    page,
+    "Second agent " + crypto.randomUUID(),
+  );
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await page.getByLabel("讨论范围", { exact: true }).selectOption("global");
-  await page.getByLabel("讨论角色", {exact:true}).selectOption(firstCreated.agent);
+  await page
+    .getByLabel("讨论角色", { exact: true })
+    .selectOption(firstCreated.agent);
   const identity = page.getByLabel("Agent", { exact: true });
   await identity.selectOption(firstCreated.instance);
   const first = firstCreated.instance;
@@ -231,11 +267,13 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
     let result: any;
     if (c.method === "session.open") {
       requests.push(c);
-      let session = !c.params.payload.force_new && sessions.findLast(
-        (s) =>
-          s.runtime_binding.agent_configuration.agent_instance_id ===
-          c.params.payload.agent_instance_id,
-      );
+      let session =
+        !c.params.payload.force_new &&
+        sessions.findLast(
+          (s) =>
+            s.runtime_binding.agent_configuration.agent_instance_id ===
+            c.params.payload.agent_instance_id,
+        );
       if (!session) {
         session = {
           id: crypto.randomUUID(),
@@ -249,7 +287,7 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
             agent_configuration: {
               agent_instance_id: c.params.payload.agent_instance_id,
             },
-                    work_type: "discussion",
+            work_type: "discussion",
           },
         };
         sessions.push(session);
@@ -257,7 +295,10 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
       result = { id: session.id };
     } else if (c.method === "query.sessions" && c.params.scope === "global") {
       requests.push(c);
-      if (holdSecondList && c.params.agent_instance_id === secondCreated.instance)
+      if (
+        holdSecondList &&
+        c.params.agent_instance_id === secondCreated.instance
+      )
         await secondListReady;
       const selected = sessions.filter(
         (s) =>
@@ -302,16 +343,24 @@ test("切换 Agent 后清空原会话，历史按该身份查询", async ({ page
     page.getByText("第一个身份的已完成工作", { exact: true }),
   ).toBeVisible();
   const firstSession = sessions.at(-1).id;
-  await page.getByRole("button", {name:"新建 Session",exact:true}).click();
+  await page.getByRole("button", { name: "新建 Session", exact: true }).click();
   await expect.poll(() => sessions.length).toBe(2);
   const latestSession = sessions.at(-1).id;
   expect(latestSession).not.toBe(firstSession);
-  await expect(page.getByLabel("讨论会话",{exact:true})).toHaveValue(latestSession);
+  await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
+    latestSession,
+  );
   await open.click();
-  await expect(page.getByLabel("讨论会话",{exact:true})).toHaveValue(latestSession);
+  await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
+    latestSession,
+  );
   expect(sessions).toHaveLength(2);
   await identity.selectOption(secondCreated.instance);
-  await expect(page.getByLabel("讨论会话", { exact: true }).locator(`option[value="${latestSession}"]`)).toHaveCount(0);
+  await expect(
+    page
+      .getByLabel("讨论会话", { exact: true })
+      .locator(`option[value="${latestSession}"]`),
+  ).toHaveCount(0);
   holdSecondList = false;
   releaseSecondList();
   await expect(identity).not.toHaveValue(first);

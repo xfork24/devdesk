@@ -156,19 +156,17 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   await expect(
     native.getByRole("heading", { name: "适用 Harness", exact: true }),
   ).toHaveCount(0);
-  const dsh = native
-    .locator(".native-tool-group")
-    .filter({
-      has: page.getByRole("heading", { name: "DSH 原生工具组", exact: true }),
-    });
+  const dsh = native.locator(".native-tool-group").filter({
+    has: page.getByRole("heading", { name: "DSH 原生工具组", exact: true }),
+  });
   await expect(dsh).toContainText("适用 Harness 版本：0.2.2-rc.1");
   await dsh.click();
   await expect(page.getByLabel("运行时后端", { exact: true })).toHaveValue(
     "dsh",
   );
-  await expect(page.getByLabel("运行资源精确修订", { exact: true })).toHaveValue(
-    "builtin-runtime-dsh:1",
-  );
+  await expect(
+    page.getByLabel("运行资源精确修订", { exact: true }),
+  ).toHaveValue("builtin-runtime-dsh:1");
   await page.unrouteAll({ behavior: "wait" });
 });
 
@@ -300,11 +298,9 @@ test("项目与 Global 历史合并事件和工具调用，统一排序分页并
   await expect(history.locator(".event-id")).toHaveText(["#1", "#2", "#3"]);
   await expect(history).not.toContainText(globalCall.name);
   await expect(
-    page
-      .locator(".panel")
-      .filter({
-        has: page.getByRole("heading", { name: "持久化事件", exact: true }),
-      }),
+    page.locator(".panel").filter({
+      has: page.getByRole("heading", { name: "持久化事件", exact: true }),
+    }),
   ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Tools调用记录", exact: true }),
@@ -385,11 +381,17 @@ test("项目与 Global 历史合并事件和工具调用，统一排序分页并
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建身份", async ({ page }) => {
+test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建身份", async ({
+  page,
+}) => {
   await setup(page);
   await page.goto("/?tab=actors&config_tab=agent_instance");
-  await expect(page.getByRole("tab", { name: "Agent", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("tab", { name: "Agent 定义", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("tab", { name: "Agent", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("tab", { name: "Agent 定义", exact: true }),
+  ).toHaveCount(0);
   await expect(page.getByRole("tablist").getByRole("tab")).toHaveCount(3);
   await expect(page).toHaveURL(/config_tab=agent(?:&|$)/);
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
@@ -400,82 +402,163 @@ test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建�
   await role.selectOption("builtin-agent-sol-high-analyst:5");
   await expect(role).not.toHaveValue("");
   const agentId = await role.inputValue();
-  const created = page.waitForResponse((response) => response.url().endsWith("/rpc") && response.request().postDataJSON()?.method === "agent.instance.create");
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/rpc") &&
+      response.request().postDataJSON()?.method === "agent.instance.create",
+  );
   await page.getByRole("button", { name: "新建讨论身份", exact: true }).click();
   const response = await created;
   const result = await response.json();
   expect(result.error).toBeUndefined();
-  expect(response.request().postDataJSON().params.payload.agent_revision_id).toBe(agentId);
-  expect(response.request().postDataJSON().params.payload.scope).toEqual("global");
-  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(result.result.id);
-  await page.goto(`/?tab=actors&config_tab=agent_instance&config_object=${result.result.id}`);
-  await expect(page.getByRole("tab", { name: "Agent", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("名称", { exact: true })).toHaveValue(/Sol High/);
+  expect(
+    response.request().postDataJSON().params.payload.agent_revision_id,
+  ).toBe(agentId);
+  expect(response.request().postDataJSON().params.payload.scope).toEqual(
+    "global",
+  );
+  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
+    result.result.id,
+  );
+  await page.goto(
+    `/?tab=actors&config_tab=agent_instance&config_object=${result.result.id}`,
+  );
+  await expect(
+    page.getByRole("tab", { name: "Agent", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
+    /Sol High/,
+  );
 });
 
-
-test("清理项目后旧链接返回可用工作台", async ({page}) => {
+test("清理项目后旧链接返回可用工作台", async ({ page }) => {
   await setup(page);
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
-    if (call.method !== "project.open_github" || call.params.target !== "deleted-project") return route.fallback();
-    await route.fulfill({json:{jsonrpc:"2.0",id:call.id,error:{code:-32000,message:"项目不存在",data:{code:"not_found"}}}});
+    if (
+      call.method !== "project.open_github" ||
+      call.params.target !== "deleted-project"
+    )
+      return route.fallback();
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        error: {
+          code: -32000,
+          message: "项目不存在",
+          data: { code: "not_found" },
+        },
+      },
+    });
   });
-  await page.goto("/?tab=projects&project_id=deleted-project&feature_id=deleted-feature&task_id=deleted-task");
-  await expect(page.getByRole("heading", {name:"项目管理",exact:true}).first()).toBeVisible();
-  await expect(page).not.toHaveURL(/deleted-project|deleted-feature|deleted-task/);
+  await page.goto(
+    "/?tab=projects&project_id=deleted-project&feature_id=deleted-feature&task_id=deleted-task",
+  );
+  await expect(
+    page.getByRole("heading", { name: "项目管理", exact: true }).first(),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(
+    /deleted-project|deleted-feature|deleted-task/,
+  );
   await expect(page.getByText(/not_found · 项目不存在/)).toHaveCount(0);
 });
 
-test("MCP 和 Tools 在同一列表内新建与编辑，Skills 导入位于编辑区", async ({ page }, info) => {
+test("MCP 和 Tools 在同一列表内新建与编辑，Skills 导入位于编辑区", async ({
+  page,
+}, info) => {
   const errors: string[] = [];
-  page.on("pageerror", error => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.message));
   await setup(page);
   for (const [tab, kind, field] of [
     ["mcp", "MCP", "MCP URL"],
     ["http", "HTTP API", "API Base URL"],
   ]) {
     await page.goto(`/?tab=components&config_tab=${tab}`);
-    const manager = page.getByRole("region", { name: `${kind} 接入管理`, exact: true });
+    const manager = page.getByRole("region", {
+      name: `${kind} 接入管理`,
+      exact: true,
+    });
     const list = manager.locator(".configuration-list");
-    await expect(page.getByRole("region", { name: `${kind} 新建接入`, exact: true })).toHaveCount(0);
-    await list.getByRole("button", { name: `新建 ${kind} 接入源`, exact: true }).click();
+    await expect(
+      page.getByRole("region", { name: `${kind} 新建接入`, exact: true }),
+    ).toHaveCount(0);
+    await list
+      .getByRole("button", { name: `新建 ${kind} 接入源`, exact: true })
+      .click();
     const name = `${kind} unified ${crypto.randomUUID().slice(0, 6)}`;
     await manager.getByLabel("接入名称", { exact: true }).fill(name);
-    await manager.getByLabel(field, { exact: true }).fill("https://example.test/api");
-    await manager.getByRole("button", { name: "创建接入源", exact: true }).click();
+    await manager
+      .getByLabel(field, { exact: true })
+      .fill("https://example.test/api");
+    await manager
+      .getByRole("button", { name: "创建接入源", exact: true })
+      .click();
     await expect(manager.getByRole("status")).toContainText("接入定义已保存");
     const item = list.getByRole("button", { name: new RegExp(name) });
     await expect(item).toHaveClass("selected");
     const itemBox = (await item.boundingBox())!;
-    const formBox = (await manager.getByLabel("接入名称", { exact: true }).boundingBox())!;
+    const formBox = (await manager
+      .getByLabel("接入名称", { exact: true })
+      .boundingBox())!;
     expect(itemBox.x + itemBox.width).toBeLessThan(formBox.x);
-    await manager.getByLabel("接入名称", { exact: true }).fill(`${name} revised`);
-    await manager.getByRole("button", { name: "保存接入新修订", exact: true }).click();
+    await manager
+      .getByLabel("接入名称", { exact: true })
+      .fill(`${name} revised`);
+    await manager
+      .getByRole("button", { name: "保存接入新修订", exact: true })
+      .click();
     await expect(manager.getByRole("status")).toContainText("接入定义已保存");
     await page.reload();
-    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue(`${name} revised`);
-    await list.getByRole("button", { name: `新建 ${kind} 接入源`, exact: true }).click();
-    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue("");
-    await expect(manager.getByRole("button", { name: "创建接入源", exact: true })).toBeVisible();
+    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue(
+      `${name} revised`,
+    );
+    await list
+      .getByRole("button", { name: `新建 ${kind} 接入源`, exact: true })
+      .click();
+    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue(
+      "",
+    );
+    await expect(
+      manager.getByRole("button", { name: "创建接入源", exact: true }),
+    ).toBeVisible();
     await expect(page).not.toHaveURL(/config_object=/);
-    await list.getByRole("button", { name: new RegExp(`${name} revised`) }).click();
-    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue(`${name} revised`);
-    await page.screenshot({ path: info.outputPath(`${tab}-unified-editor.png`), fullPage: true });
+    await list
+      .getByRole("button", { name: new RegExp(`${name} revised`) })
+      .click();
+    await expect(manager.getByLabel("接入名称", { exact: true })).toHaveValue(
+      `${name} revised`,
+    );
+    await page.screenshot({
+      path: info.outputPath(`${tab}-unified-editor.png`),
+      fullPage: true,
+    });
   }
   await page.goto("/?tab=components&config_tab=skills");
   const skills = page.getByRole("region", { name: "Skill 管理", exact: true });
   const list = skills.locator(".configuration-list");
-  await expect(page.getByRole("region", { name: "Skill 包导入", exact: true })).toHaveCount(0);
-  await list.getByRole("button", { name: "导入 Skill 包", exact: true }).click();
-  const importer = skills.getByRole("region", { name: "Skill 包导入", exact: true });
+  await expect(
+    page.getByRole("region", { name: "Skill 包导入", exact: true }),
+  ).toHaveCount(0);
+  await list
+    .getByRole("button", { name: "导入 Skill 包", exact: true })
+    .click();
+  const importer = skills.getByRole("region", {
+    name: "Skill 包导入",
+    exact: true,
+  });
   await expect(importer).toBeVisible();
   const listBox = (await list.boundingBox())!;
   const importerBox = (await importer.boundingBox())!;
   expect(listBox.x + listBox.width).toBeLessThan(importerBox.x);
-  await page.screenshot({ path: info.outputPath("skills-unified-editor.png"), fullPage: true });
+  await page.screenshot({
+    path: info.outputPath("skills-unified-editor.png"),
+    fullPage: true,
+  });
   await list.getByRole("button", { name: "新建 Skill", exact: true }).click();
   await expect(importer).toHaveCount(0);
-  await expect(skills.getByRole("button", { name: "创建 Skill", exact: true })).toBeVisible();
+  await expect(
+    skills.getByRole("button", { name: "创建 Skill", exact: true }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });
