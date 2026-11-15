@@ -218,7 +218,7 @@ function App() {
   const [roleRevision, setRoleRevision] = useState(0);
   const [focusedSession, setFocusedSession] = useState<RecordData>();
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
-  const [_readingTarget, setReadingTarget] = useState<RecordData>(() => Object.fromEntries(readingKeys.map(key => [key, route.get(key) || ""])));
+  const [readingTarget, setReadingTarget] = useState<RecordData>(() => Object.fromEntries(readingKeys.map(key => [key, route.get(key) || ""])));
   const [executionTab, setExecutionTab] = useState(
     route.get("detail") ||
       (route.get("tab") === "documents" ? "documents" : "overview"),
@@ -247,7 +247,7 @@ function App() {
     featureId,
     taskFilter,
     executionTab,
-    _readingTarget,
+    readingTarget,
     workFilter,
     featurePage,
     historyScope,
@@ -1242,6 +1242,8 @@ function App() {
                       projectId={projectId}
                       ownerId={f.id}
                       request={rpc}
+                      target={readingTarget}
+                      documents={detail.documents}
                     />
                     <h3>材料修订</h3>
                     <ActionButton
@@ -1270,14 +1272,6 @@ function App() {
                     >
                       新建材料
                     </ActionButton>
-                    {detail.documents.map((doc: RecordData) => (
-                      <details key={doc.id}>
-                        <summary>
-                          {doc.title} · v{doc.version}
-                        </summary>
-                        <MarkdownPreview text={doc.body} />
-                      </details>
-                    ))}
                     {pager("documents")}
                   </>
                 )}

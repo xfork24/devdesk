@@ -4,95 +4,38 @@ import {
   ActionSelect,
   useActionFeedback,
 } from "./ActionFeedback";
-import { MarkdownField, type Request, type Row } from "./configuration-ui";
+import { MarkdownPreview, type Request, type Row } from "./configuration-ui";
+import { RawJsonLink, ReadableValue, ReadingLink } from "./reading";
 
-export function AgentTaskView({ value }: { value: Row }) {
-  // The backend only returns validated task contracts; no renderer-version filtering here.
-  const content =
-    typeof value.task === "object" ? value.task : value;
-  const instructions =
-    content.task_instructions ||
-    (typeof value.task === "string" ? value.task : "");
-  if (!instructions)
-    return <p className="muted">此讨论没有 Workflow 步骤任务。</p>;
-  return (
-    <section aria-label="Agent 任务与上下文">
-      {content.role?.role?.data?.instructions ? (
-        <MarkdownField
-          label={`Role 职责 · ${content.role.name}`}
-          value={content.role.role.data.instructions}
-          onChange={() => {}}
-          readOnly
-        />
-      ) : null}
-      <MarkdownField
-        label="任务指令"
-        value={instructions}
-        onChange={() => {}}
-        readOnly
-        rows={8}
-      />
-      {content.stage?.description ? (
-        <MarkdownField
-          label="阶段背景"
-          value={content.stage.description}
-          onChange={() => {}}
-          readOnly
-        />
-      ) : null}
-      {(content.required_skills || []).map((skill: Row) => (
-        <MarkdownField
-          key={skill.id}
-          label={`Skill · ${skill.name}`}
-          value={skill.data?.body || skill.body || ""}
-          onChange={() => {}}
-          readOnly
-        />
-      ))}
-      {[
-        ...(content.specifications || []),
-        ...(content.document_specifications || []),
-      ].map((spec: Row) => (
-        <MarkdownField
-          key={spec.id}
-          label={`Spec · ${spec.name}`}
-          value={spec.data?.body || spec.body || ""}
-          onChange={() => {}}
-          readOnly
-        />
-      ))}
-      {(value.diagnostics || []).map((line: string) => (
-        <p key={line} className="muted">
-          {line}
-        </p>
-      ))}
-      <details>
-        <summary>来源、材料与输出要求</summary>
-        <pre>
-          {JSON.stringify(
-            {
-              source: content.source || value.source,
-              role_ref: value.role_ref,
-              inputs: content.inputs || value.inputs,
-              input_sources: content.input_sources,
-              runtime_context: content.runtime_context,
-              outputs: content.outputs || value.outputs,
-              completion: content.completion || value.completion,
-              authorization: content.authorization || value.access,
-            },
-            null,
-            2,
-          )}
-        </pre>
+export function AgentTaskView({ value, compact = false, projectId, ownerId }: { value: Row; compact?: boolean; projectId?: string; ownerId?: string }) {
+  let content = value;
+  for (let level = 0; level < 4 && content.task && typeof content.task === "object" && !content.task_instructions; level++) content = content.task;
+  const frozen = value.task?.rendered_input ? value.task : value;
+  const instructions = content.task_instructions || (typeof value.task === "string" ? value.task : "");
+  if (!instructions) return <p className="muted">此轮没有 Workflow 步骤冻结任务。</p>;
+  const inputSources = content.input_sources || {};
+  return <section aria-label="Agent 任务与上下文" className="reading-body">
+    <h4>任务请求</h4><MarkdownPreview text={compact ? instructions.slice(0, 600) : instructions}/>
+    {compact && instructions.length > 600 && <p className="muted">此处为任务摘要；完整指令在上下文页阅读。</p>}
+    {compact && projectId && ownerId && value.turn_id && <ReadingLink detail="context" projectId={projectId} ownerId={ownerId} target={{turn_id:value.turn_id}}>查看此轮完整上下文</ReadingLink>}
+    {!compact && <>
+      {content.stage?.description && <><h4>工作背景</h4><MarkdownPreview text={content.stage.description}/></>}
+      <h4>输入材料</h4>
+      {Object.keys(inputSources).length ? Object.entries(inputSources).map(([key, source]) => <section key={key}><strong>{key}</strong><ReadableValue value={source}/></section>) : <p className="muted">未记录独立的输入来源索引。</p>}
+      <details><summary>冻结输入内容</summary><ReadableValue value={content.inputs || value.inputs}/></details>
+      <h4>输出要求</h4><ReadableValue value={content.outputs || value.outputs}/>
+      <details><summary>职责、方法与规范</summary>
+        {content.role?.role?.data?.instructions && <><h4>Role · {content.role.name}</h4><MarkdownPreview text={content.role.role.data.instructions}/></>}
+        {(content.required_skills || []).map((skill: Row) => <section key={skill.id}><h4>Skill · {skill.name}</h4><MarkdownPreview text={skill.data?.body || skill.body || ""}/></section>)}
+        {[...(content.specifications || []), ...(content.document_specifications || [])].map((spec: Row) => <section key={spec.id}><h4>Spec · {spec.name}</h4><MarkdownPreview text={spec.data?.body || spec.body || ""}/></section>)}
       </details>
-      {typeof value.task === "object" && value.task?.rendered_input ? (
-        <details>
-          <summary>实际发送的新输入</summary>
-          <pre>{value.task.rendered_input}</pre>
-        </details>
-      ) : null}
-    </section>
-  );
+      <details><summary>完成条件与授权依据</summary><ReadableValue value={{completion:content.completion || value.completion, authorization:content.authorization || value.access}}/></details>
+      {frozen.rendered_input && <details><summary>实际发送的完整输入</summary><pre>{frozen.rendered_input}</pre></details>}
+      <details><summary>冻结来源与运行环境</summary><ReadableValue value={{source:content.source || value.source, runtime_context:content.runtime_context}}/></details>
+    </>}
+    {(value.diagnostics || []).map((line: string) => <p key={line} className="muted">{line}</p>)}
+    {projectId && value.turn_id && <RawJsonLink source="task" params={{project_id:projectId,turn_id:value.turn_id}}/>}
+  </section>;
 }
 
 export function WorkflowTaskPreview({
@@ -264,7 +207,7 @@ export function ExecutionTaskDetails({
       </ActionButton>
       {error ? <p role="alert">{error}</p> : null}
       {value && loadedTurn === selected ? (
-        <AgentTaskView value={value} />
+        <AgentTaskView value={value} compact projectId={projectId} ownerId={value.task?.source?.owner_id || ""} />
       ) : null}
     </details>
   );

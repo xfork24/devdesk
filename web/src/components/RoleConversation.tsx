@@ -1,3 +1,4 @@
+import { ConversationContent } from "./ConversationContent";
 import {
   ActionButton,
   ActionForm,
@@ -29,15 +30,6 @@ type Props = {
   refresh: () => Promise<void>;
 };
 const globalOwner = { id: "global", title: "全局 / 跨项目", revision: 0 };
-function structuredContent(content: string) {
-  if (!/^[\s]*[\[{]/.test(content)) return false;
-  try {
-    const value = JSON.parse(content);
-    return value !== null && typeof value === "object";
-  } catch {
-    return false;
-  }
-}
 
 export function RoleConversation({
   project = globalOwner,
@@ -469,12 +461,13 @@ export function RoleConversation({
             e.provider_item === event.provider_item,
         )
       : undefined;
-    if (previous)
+    if (previous) {
+      previous.source_events.push(event);
       previous.content =
         event.mode === "delta"
           ? previous.content + event.content
           : event.content;
-    else projected.push({ ...event });
+    } else projected.push({ ...event, source_events: [event] });
   }
   return (
     <div className="panel conversation-panel">
@@ -870,15 +863,8 @@ export function RoleConversation({
           )}
           <div role="log" aria-label="讨论记录" className="conversation-log">
             {projected.map((e) => (
-              <article key={e.id} className={`conversation-message ${e.kind}`}>
-                <strong>{e.kind}</strong>
-                {["user", "assistant"].includes(e.kind) &&
-                !structuredContent(e.content) ? (
-                  <MarkdownPreview text={e.content} />
-                ) : (
-                  <pre>{e.content}</pre>
-                )}
-              </article>
+              <ConversationContent key={e.id} event={e} projectId={global ? undefined : project.id} sessionId={sessionId} ownerId={owner}/>
+
             ))}
           </div>
           {active && (

@@ -34,6 +34,21 @@ impl Engine {
                 owners.insert(id.as_str(), ("project", project.title.as_str()));
             }
         }
+        if let Some(id) = p["output_id"].as_str() {
+            if let Some(document) = state.documents.iter().find(|document| {
+                document.id == id
+                    && owners.contains_key(
+                        document
+                            .task_id
+                            .as_deref()
+                            .or(document.feature_id.as_deref())
+                            .or(document.project_id.as_deref())
+                            .unwrap_or(""),
+                    )
+            }) {
+                return Ok(json!({"document":document}));
+            }
+        }
         let mut selected: BTreeSet<&str> = owners
             .keys()
             .filter_map(|id| crate::standards::current_work_instance(&state, id))
@@ -196,6 +211,9 @@ impl Engine {
                         .is_some_and(|text| text.to_lowercase().contains(&query))
                 })
         });
+        if let Some(execution) = p["execution_id"].as_str() {
+            materials.retain(|row| row.metadata["execution_id"] == execution);
+        }
         let total = materials.len();
         let offset = p["offset"].as_u64().unwrap_or(0) as usize;
         let limit = p["limit"].as_u64().unwrap_or(20).clamp(1, 100) as usize;
