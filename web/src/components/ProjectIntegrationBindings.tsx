@@ -89,7 +89,7 @@ export function ProjectIntegrationBindings({
             value={mapping[id] || ""}
             onChange={(value) => {
               captureFeedback();
-              return setMapping({ ...mapping, [id]: value as string });
+              return setMapping({ ...mapping, [id]: value });
             }}
             required
           />

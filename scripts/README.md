@@ -7,10 +7,10 @@
 | `dev/` | `build.sh` | 安装前端依赖、校验权限资产、准备 macOS 凭据助手、构建 Web 和 release Host、签名 |
 | `dev/` | `dev.sh` | 构建 Web 和 debug Host、签名并启动；macOS 从独立签名副本运行，参数传给 Host |
 | `dev/` | `run-host.py` | 启动已构建的 Host；macOS 使用私有临时副本，后续重建不影响运行中签名，退出时清理 |
-| `check/` | `check.sh` | 默认离线回归：权限资产、Web、Rust、HTTP、运行环境准备、debug/release Chromium |
+| `check/` | `check.sh` | 默认回归：权限资产、Web、Rust、HTTP、运行环境准备、debug/release Chromium |
 | `check/` | `check-live.sh` | 调用 `tests/live/check_live.py`，执行专用资源上的真实验收或已有证据复核 |
 | `check/` | `check-architecture.sh` | 检查层依赖、domain 环境访问、出厂资产与业务接纳边界 |
-| `check/` | `check-style.sh` | 风格门禁：rustfmt、clippy `-D warnings`、ESLint 与 Prettier；规范见 `docs/code-standards-*.md` |
+| `check/` | `check-style.sh` | 风格与构建门禁：rustfmt、clippy `-D warnings`、ESLint、TypeScript、Prettier 与 Web 构建；规范见 `docs/code-standards-*.md` |
 | `check/` | `check-permissions.sh` | 校验权限预设、后端 manifest 与不可变文件摘要 |
 | `check/` | `doctor.sh` | 检查宿主环境、Docker、GitHub CLI 和所选权限后端 |
 | `release/` | `package.sh` | 先构建，再生成本机独立运行包与 SHA-256 文件 |
@@ -22,6 +22,8 @@
 | `platform/linux/` | `install-linux-sandbox-policy.sh` | 检查或安装受限嵌套沙箱的命名 AppArmor 策略 |
 | `py/` | `doctor.py`、`check-permissions.py`、`package-source.py` | 对应 Shell 入口的 Python 实现 |
 | `py/` | `credential-helper-fingerprint.py` | 计算凭据助手自身源码及依赖的指纹，由 macOS 安装器调用 |
+
+完整检查前，在已激活的 Python 虚拟环境中执行 `python3 -m pip install -r scripts/check/requirements.txt`；MCP 浏览器验收需要 Docker，`prepare_browser_runtime.py` 从已选出厂源预热镜像构建缓存。
 
 常用命令：
 

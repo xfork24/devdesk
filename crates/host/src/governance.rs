@@ -98,15 +98,6 @@ impl Workspace {
         }
         e.evaluate_workflows()
     }
-    #[cfg(test)]
-    pub(super) fn resolve_agent_composition(
-        &self,
-        e: &Engine,
-        command: &mut Command,
-    ) -> Result<()> {
-        e.resolve_session_composition(&self.session_resources(), command)
-    }
-
     pub(super) fn governance_dispatch(
         &self,
         method: &str,

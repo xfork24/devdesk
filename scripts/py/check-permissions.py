@@ -21,9 +21,18 @@ for source in presets:
  assert p['policy']['filesystem']['mode'] in ['full_access','read_only','scoped']
  assert p['policy']['network']['mode'] in ['enabled','disabled','allowlist']
 try:
- import jsonschema
- for p in presets:jsonschema.validate(p,json.loads((root/'schemas/permission-profile.schema.json').read_text()))
- jsonschema.validate(manifest,json.loads((root/'schemas/permission-backend.schema.json').read_text()))
-except ImportError:
- print('JSON Schema validation skipped: optional Python jsonschema package is not installed')
+ from jsonschema import Draft202012Validator
+ from referencing import Registry, Resource
+except ImportError as error:
+ raise SystemExit('Permission Schema validation requires: python3 -m pip install -r scripts/check/requirements.txt') from error
+# The default registry cannot retrieve remote resources. All references resolve
+# against the checked-out schema set, independently of the caller's cwd.
+schemas={p.name:json.loads(p.read_text()) for p in (root/'schemas').glob('*.schema.json')}
+registry=Registry().with_resources((name,Resource.from_contents(schema)) for name,schema in schemas.items())
+for name in ('permission-profile.schema.json','permission-backend.schema.json'):
+ Draft202012Validator.check_schema(schemas[name])
+def validate_source(value):
+ Draft202012Validator(schemas['permission-profile.schema.json'],registry=registry).validate(value)
+for p in presets:validate_source(p)
+Draft202012Validator(schemas['permission-backend.schema.json'],registry=registry).validate(manifest)
 print(f'PASS Permission assets: {len(presets)} presets, {len(manifest["backends"])} backends, {len(manifest["assets"])} immutable files')

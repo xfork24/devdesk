@@ -1449,9 +1449,14 @@ mod adapter_injection_tests {
             payload: json!({"agent":default_configured_agent_id("analyst")}),
         };
         assert!(
-            w.resolve_agent_composition(&e, &mut command)
-                .inspect_err(|error| eprintln!("compose failed: {error:?}"))
-                .is_ok()
+            e.resolve_session_composition(
+                &crate::test_runtime::ResourceFixture {
+                    store: w.global.as_ref(),
+                },
+                &mut command,
+            )
+            .inspect_err(|error| eprintln!("compose failed: {error:?}"))
+            .is_ok()
         );
         let payload = json!({"name":"Continuation instance","scope":format!("project:{two}"),"agent_revision_id":default_configured_agent_id("analyst")});
         assert!(

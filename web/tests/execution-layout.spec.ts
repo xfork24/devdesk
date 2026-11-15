@@ -1,73 +1,8 @@
-import { test as base, expect, type Page } from "@playwright/test";
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
-import { mkdtempSync, rmSync } from "node:fs";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./support/kernel";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-// This test creates a real project; keep it outside the suite's shared dataset.
-const test = base.extend<{ stageKernel: string }>({
-  // An empty destructuring pattern is Playwright's way to ignore fixture args.
-  // eslint-disable-next-line no-empty-pattern
-  stageKernel: async ({}, use) => {
-    const directory = mkdtempSync(join(tmpdir(), "devdesk-stage-rows-"));
-    const kernelEnv = { ...process.env };
-    delete kernelEnv.DEVDESK_ACCESS_TOKEN;
-    const child = spawn(
-      resolve(
-        import.meta.dirname,
-        "../../target",
-        process.env.DEVDESK_E2E_PROFILE ?? "debug",
-        "devdesk-host",
-      ),
-      ["--data", directory, "--port", "0"],
-      {
-        env: kernelEnv,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let diagnostics = "";
-    child.stderr.on("data", (data) => {
-      diagnostics = (diagnostics + data).slice(-4000);
-    });
-    try {
-      const origin = await new Promise<string>((done, fail) => {
-        const lines = createInterface({ input: child.stdout });
-        const timer = setTimeout(
-          () => fail(new Error("Stage kernel startup timed out")),
-          15000,
-        );
-        child.once("error", (error) => {
-          clearTimeout(timer);
-          fail(error);
-        });
-        child.once("exit", () => {
-          clearTimeout(timer);
-          fail(new Error(diagnostics));
-        });
-        lines.on("line", (line) => {
-          if (line.startsWith("http://")) {
-            clearTimeout(timer);
-            lines.close();
-            done(line.trim());
-          }
-        });
-      });
-      await use(origin);
-    } finally {
-      if (child.exitCode === null)
-        await new Promise<void>((done) => {
-          const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
-          child.once("exit", () => {
-            clearTimeout(timer);
-            done();
-          });
-          child.kill("SIGINT");
-        });
-      rmSync(directory, { recursive: true, force: true });
-    }
-  },
-  baseURL: async ({ stageKernel }, use) => use(stageKernel),
-});
+import { join } from "node:path";
 async function rpc(page: Page, method: string, params: any = {}) {
   const r = await page.request
     .post("/rpc", { data: { jsonrpc: "2.0", id: 1, method, params } })
@@ -363,10 +298,23 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   expect(after.runtime.active_plan_revision_id).not.toBe(
     before.runtime.active_plan_revision_id,
   );
+  expect(after.history.length).toBeGreaterThan(before.history.length);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await runtime.getByText("计划与执行历史", { exact: true }).click();
-  await expect(runtime.getByText(/原合同/).first()).toBeVisible();
+  const reloaded = await rpc(page, "query.workflow_instance", {
+    project_id: project.id,
+    id: started.id,
+  });
+  expect(reloaded.history).toEqual(after.history);
+  const history = runtime.locator("details").filter({
+    has: page.getByText(/^计划与执行历史 · \d+ 条$/),
+  });
+  await history.locator("summary").click();
+  for (const entry of reloaded.history) {
+    await expect(
+      history.getByText(entry.name, { exact: false }).first(),
+    ).toBeVisible();
+  }
   await page.screenshot({
     path: info.outputPath("harness-plan-mobile.png"),
     fullPage: true,

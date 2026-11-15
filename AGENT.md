@@ -37,7 +37,7 @@
 
 ## 构建与检查
 
-Rust 1.99.1 由 `rust-toolchain.toml` 固定；前端使用 Node 24/npm，脚本还需要 Python 3 和 C 编译工具链。macOS 先按 `docs/system-credentials.md` 配置签名与固定助手；真实工程另需 Docker、Git、GitHub CLI 及相应认证。
+Rust 1.99.1 由 `rust-toolchain.toml` 固定；前端使用 Node 24/npm，脚本还需要 Python 3.10+ 和 C 编译工具链。macOS 先按 `docs/system-credentials.md` 配置签名与固定助手；真实工程另需 Docker、Git、GitHub CLI 及相应认证。
 
 从仓库根目录执行：
 
@@ -51,15 +51,16 @@ cargo fmt --all -- --check
 
 `build.sh` 安装前端依赖并构建 release；`dev.sh` 构建 debug 并启动 Host。macOS 通过 `scripts/dev/run-host.py` 使用私有签名副本，避免后续构建覆盖正在执行的程序。Web 嵌入 Host，界面更改后需构建并重启。
 
-完整回归：
+完整回归（先激活 Python 虚拟环境，Schema 校验依赖不能跳过）：
 
 ```bash
+python3 -m pip install -r scripts/check/requirements.txt
 npm --prefix web ci
 (cd web && npx playwright install chromium)
 ./scripts/check/check.sh
 ```
 
-该入口检查权限资产、出厂目录、架构、风格门禁（`scripts/check/check-style.sh`：rustfmt、clippy `-D warnings`、ESLint、Prettier）、Web、Rust、HTTP/数据集与 debug/release Chromium。按实际改动选择必要检查：纯文档改动核对代码事实、链接和示例即可；协议、状态、持久化和权限改动要覆盖对应边界。Rust 测试位于模块及 `crates/adapters/tests/`，浏览器测试在 `web/tests/`，跨进程检查在 `tests/entrypoints/`。默认回归不调用付费模型或真实 GitHub。
+该入口检查权限资产、出厂目录、架构、风格门禁（`scripts/check/check-style.sh`：rustfmt、ESLint、TypeScript、Prettier、Web 构建、clippy `-D warnings`）、Web、Rust、HTTP/数据集与 debug/release Chromium。按实际改动选择必要检查：纯文档改动核对代码事实、链接和示例即可；协议、状态、持久化和权限改动要覆盖对应边界。Rust 测试位于模块及 `crates/adapters/tests/`，浏览器测试在 `web/tests/`，跨进程检查在 `tests/entrypoints/`。默认回归不调用付费模型或真实 GitHub；MCP 浏览器测试需要 Docker Engine，首次构建运行资源需要镜像与包源网络。
 
 真实 Git/Docker 可用 `scripts/check/check-live.sh --groups git,docker,permissions`。模型/GitHub 工程及 Standard 探针须使用任务已授权的专用认证、数据集和仓库；接口替身、禁外网协议夹具和真实服务验收分别报告。保存实际 Host/脚本内容身份、原始日志、输入产物及失败项，不能靠模型摘要宣布通过。
 

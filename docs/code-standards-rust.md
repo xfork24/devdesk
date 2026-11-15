@@ -1,6 +1,6 @@
 # Rust 代码规范
 
-基线工具链之外没有第二个风格仲裁者：**rustfmt 默认值就是格式标准，clippy 默认告警集（`clippy::all` + `unused`）就是质量标准**。本仓库不提供 rustfmt.toml / clippy.toml 覆盖；如需调整风格，改的是这份文档和 workspace lints，不是个人编辑器配置。
+基线工具链之外没有第二个风格仲裁者：**rustfmt 默认值就是格式标准，clippy 默认告警集（`clippy::all` + `unused`）是静态检查基线**。本仓库不提供 rustfmt.toml / clippy.toml 覆盖；如需调整风格，改的是这份文档和 workspace lints，不是个人编辑器配置。
 
 - 格式检查：`cargo fmt --all -- --check`（必须零差异）
 - 静态检查：`cargo clippy --workspace --all-targets --locked -- -D warnings`（必须零告警）
@@ -20,22 +20,22 @@
 
 遵循 Rust API Guidelines 的 C-CASE 与 C-CONV：
 
-- 模块与文件 `snake_case`，类型与 trait `CamelCase`，常量 `SCREAMING_SNAKE_CASE`，函数与字段 `snake_case` 动词开头
+- 模块与文件 `snake_case`，类型与 trait `CamelCase`，常量 `SCREAMING_SNAKE_CASE`，函数与字段 `snake_case`；执行动作的函数优先用动词，查询和字段按含义命名
 - 端口 trait 以能力命名（`Harness`、`Git`、`EngineeringStore`），一律 `Send + Sync`
 - 测试函数名陈述被验证的不变量，不加 `test_` 前缀：`revision_conflicts_and_pagination_are_enforced`、`artifact_symlinks_cannot_escape_dataset`
 - 跳过真实环境测试用带理由的 `#[ignore = "explicit local Docker protocol acceptance; no model input"]`
 
 ## 语言分工（本仓库最重要的约定）
 
-- **代码注释与 `///`/`//!` 文档一律英文**；`//!` 是单行英文模块契约，说明该模块是什么、边界在哪里（"GitHub is the remote PR system. This adapter never invokes a platform merge."）
-- **用户可见文案一律中文**：错误消息、`require(...)` 的说明文本、CLI 输出。`err("not_found", "Project 不存在")` 是标准形态
+- 新增代码注释与 `///`/`//!` 文档优先英文；`//!` 模块契约可以使用多行，说明该模块是什么、边界在哪里（"GitHub is the remote PR system. This adapter never invokes a platform merge."）
+- 面向工作台用户的文案使用中文：错误消息、`require(...)` 的说明文本。外部协议原文、机器输出、工具名和开发检查日志保留相应格式。`err("not_found", "Project 不存在")` 是标准形态
 - 错误码是 snake_case 机器字符串（`blocked`、`revision_conflict`、`dataset_locked`）；单一 `domain::Error { code, message }` + `Result<T>` 别名贯穿全仓，不引入 anyhow，不新建每 crate 错误枚举
 
 ## 惯用法
 
-- `ok_or_else`（不写 `ok_or`）、`let ... else` 早退、edition 2024 let-chains 合并嵌套条件（clippy::collapsible_if 会强制）
+- 错误构造有分配或计算时使用 `ok_or_else`，廉价常量可用 `ok_or`；使用 `let ... else` 早退，按 clippy 建议合并 let-chains，保持求值顺序和副作用不变
 - 外来错误用小型适配函数转换：`.map_err(storage)?`；`require(cond, msg)?` 取代手写 if-return
-- serde：只用 `rename_all = "snake_case"`（禁止 camelCase）；DTO 开 `deny_unknown_fields`；前向兼容字段显式 `#[serde(default)]`；派生顺序固定 `#[derive(Debug, Clone, Serialize, Deserialize)]`（可比较加 `PartialEq, Eq`）
+- 自有持久化/RPC 合同使用 snake_case；外部协议按其字段名显式映射。拒绝未知字段与默认值由具体合同决定：受控写入 DTO 通常使用 `deny_unknown_fields`，外部只读响应可能需要兼容新增字段，不能全仓机械添加。`#[serde(default)]` 必须符合缺省值语义。派生顺序优先沿用文件惯例
 - lib.rs 组织：`mod x; pub use x::*;` 为默认，少量模块走 `pub mod x;` 显式路径
 - crate 内模块顶部 `use crate::*;`（adapters 用 `use super::*;`）是既定风格，不算风格违规
 - `.unwrap()` 只出现在测试与"已验证不变量"点（如序列化已知 JSON）；生产不可达路径用带理由的 `.expect("...")`
@@ -60,6 +60,10 @@ pub(crate) fn record(...)
 - 临时目录用 `tempfile`；夹具保持纯离线——真实 Docker/模型/GitHub 测试必须 `#[ignore]` + 专用入口
 - 平台相关代码（macOS Keychain、unix 权限位）用 `#[cfg(...)]` 门控，Linux 上的门控死代码用 `cfg_attr(not(...), allow(dead_code))` 而非删除测试
 
+## 门禁覆盖范围
+
+`rust.yml` 在 Ubuntu 与 macOS 上运行 fmt、clippy、workspace 测试和可移植配置检查，避免 `cfg` 分支只在一个平台上合格。工具检查不代替协议/副作用/持久化的行为验收。`check-style.sh` 先检查并构建 Web，随后运行 clippy，支持尚无 `web/dist` 的干净源码目录；执行前需要 `npm --prefix web ci`。
+
 ## 提交前自查
 
 ```bash
@@ -68,4 +72,4 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-或直接 `./scripts/check/check-style.sh`（见 [脚本索引](scripts/README.md)）。
+或直接 `./scripts/check/check-style.sh`（见 [脚本索引](../scripts/README.md)）。

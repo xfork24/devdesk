@@ -278,25 +278,24 @@ export function ResourceEditor({
     key: string,
     multiple = false,
     required = false,
-  ) => (
-    <RevisionSelect
-      label={label}
-      records={options(family)}
-      value={
-        family === "tool"
-          ? (data[key] || []).filter((id: string) =>
-              options("tool").some((row) => row.id === id),
-            )
-          : data[key] || (multiple ? [] : "")
-      }
-      multiple={multiple}
-      required={required}
-      onChange={(value) => {
-        captureFeedback();
-        return patch({ [key]: value });
-      }}
-    />
-  );
+  ) => {
+    const props = { label, records: options(family), required };
+    const value =
+      family === "tool"
+        ? (data[key] || []).filter((id: string) =>
+            options("tool").some((row) => row.id === id),
+          )
+        : data[key] || (multiple ? [] : "");
+    const onChange = (value: string | string[]) => {
+      captureFeedback();
+      patch({ [key]: value });
+    };
+    return multiple ? (
+      <RevisionSelect {...props} multiple value={value} onChange={onChange} />
+    ) : (
+      <RevisionSelect {...props} value={value} onChange={onChange} />
+    );
+  };
   const field = (label: string, key: string, required = false) => (
     <label>
       {label}

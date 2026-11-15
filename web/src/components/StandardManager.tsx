@@ -314,9 +314,9 @@ export function StandardManager({
         records={standards}
         value={selected}
         onChange={(value) => {
-          setSelected(value as string);
+          setSelected(value);
           const params = new URLSearchParams(location.search);
-          if (value) params.set("standard_id", value as string);
+          if (value) params.set("standard_id", value);
           else params.delete("standard_id");
           history.replaceState(null, "", `?${params}`);
         }}
@@ -333,7 +333,7 @@ export function StandardManager({
           records={records.filter((r) => r.type === "workflow")}
           value={roots}
           onChange={(value) => {
-            setRoots(value as string[]);
+            setRoots(value);
             setCandidate(undefined);
           }}
         />
@@ -440,7 +440,7 @@ export function StandardManager({
             records={standards}
             value={compare}
             onChange={(value) => {
-              setCompare(value as string);
+              setCompare(value);
               setDiff(undefined);
             }}
           />

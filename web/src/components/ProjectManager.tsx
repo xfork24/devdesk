@@ -265,7 +265,10 @@ export function ProjectManager({
                 setBusy(true);
                 void onOpen(row.id)
                   .catch((e) => setError(String(e)))
-                  .finally(() => (endFeedback(), setBusy(false)));
+                  .finally(() => {
+                    endFeedback();
+                    setBusy(false);
+                  });
               }}
             >
               <strong>{row.title}</strong>
@@ -386,7 +389,7 @@ export function ProjectManager({
                   captureFeedback();
                   return setDraft({
                     ...draft,
-                    workflow_ref: value as string,
+                    workflow_ref: value,
                     standard_ref: "",
                   });
                 }}
@@ -472,7 +475,7 @@ export function ProjectManager({
               onChange={(permission_context_ref) =>
                 setDraft({
                   ...draft,
-                  permission_context_ref: permission_context_ref as string,
+                  permission_context_ref: permission_context_ref,
                 })
               }
             />
@@ -519,7 +522,7 @@ export function ProjectManager({
                     ...draft,
                     role_agent_bindings: {
                       ...draft.role_agent_bindings,
-                      [draft.orchestrator_role_ref]: value as string,
+                      [draft.orchestrator_role_ref]: value,
                     },
                   })
                 }

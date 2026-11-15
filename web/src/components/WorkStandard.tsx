@@ -193,7 +193,7 @@ export function WorkStandard({
             )}
             value={selected}
             onChange={(value) => {
-              setSelected(value as string);
+              setSelected(value);
               setWorkflow(
                 records.find((r) => r.id === value)?.data
                   .root_workflow_refs[0] || "",
@@ -206,7 +206,7 @@ export function WorkStandard({
             records={records.filter((r) => roots.includes(r.id))}
             value={workflow}
             onChange={(value) => {
-              setWorkflow(value as string);
+              setWorkflow(value);
               setPreview(undefined);
             }}
           />
@@ -231,7 +231,7 @@ export function WorkStandard({
               records={records.filter((r) => r.type === "permission_context")}
               value={permission}
               onChange={(value) => {
-                setPermission(value as string);
+                setPermission(value);
                 setPreview(undefined);
               }}
             />

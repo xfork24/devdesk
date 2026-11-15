@@ -1,0 +1,2 @@
+# Permission asset validation; keep local and CI schema behavior identical.
+jsonschema==4.26.0

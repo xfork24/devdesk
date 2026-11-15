@@ -1,5 +1,7 @@
 # 代码规范、Lint 体系与 CI 建设计划
 
+main 补充实施与本地验收已完成：原报告包含未完成验收和未经证实的根因，已重新评估并修复。独立评估见 [ASSESSMENT.md](ASSESSMENT.md)，修复与最终结果见 [ACCEPTANCE.md](ACCEPTANCE.md)。下文保留原执行时的记录。
+
 状态：已完成（分支 `code-standards-lint-ci`，2026-11-15）。执行报告见 [EXECUTION.md](EXECUTION.md)；执行中发现的存量问题（与本次改动无关、按用户指示未修改）见 [ISSUES.md](ISSUES.md)。
 
 ## 背景与现状结论

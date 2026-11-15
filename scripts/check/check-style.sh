@@ -7,7 +7,10 @@ if ! command -v cargo >/dev/null && [ -f "$HOME/.cargo/env" ]; then source "$HOM
 cd "$(dirname "$0")/../.."
 
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
 npm --prefix web run lint
+npm --prefix web run typecheck
 npm --prefix web run format:check
-echo "style: OK — rustfmt, clippy, eslint, prettier"
+# RustEmbed needs the current Web bundle even in a clean checkout.
+npm --prefix web run build
+cargo clippy --workspace --all-targets --locked -- -D warnings
+echo "style: OK — rustfmt, clippy, eslint, typescript, prettier, web build"

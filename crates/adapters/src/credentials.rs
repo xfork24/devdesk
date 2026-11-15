@@ -92,10 +92,10 @@ impl CredentialVault {
         #[cfg(target_os = "macos")]
         {
             let value = crate::credentials_macos::call("read", &self.service, &account, None)?;
-            return value["secret"]
+            value["secret"]
                 .as_str()
                 .map(str::to_owned)
-                .ok_or_else(|| err("credential_missing", "接入凭据不可用"));
+                .ok_or_else(|| err("credential_missing", "接入凭据不可用"))
         }
         #[cfg(target_os = "linux")]
         {

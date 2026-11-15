@@ -16,10 +16,20 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: scripts/check/requirements.txt
+      - run: python3 -m pip install -r scripts/check/requirements.txt
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -35,3 +45,5 @@ jobs:
       - run: ./scripts/check/check-architecture.sh
       - run: ./scripts/check/check-defaults.sh
       - run: ./scripts/check/check-permissions.sh
+      - run: python3 tests/entrypoints/permission_schema.py
+      - run: node --test tests/entrypoints/ci_workflow_gate.mjs

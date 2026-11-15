@@ -250,6 +250,7 @@ test("paused root manager adopts exact successor sources through the Human resum
   });
   await page.goto(url);
   const panel = page.getByRole("region", { name: "项目经理协作" });
+  await panel.getByText("调度与经理管理", { exact: true }).click();
   await panel
     .getByLabel("经理 Agent 精确修订", { exact: true })
     .selectOption("manager-new:1");

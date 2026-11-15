@@ -1454,7 +1454,7 @@ function BindingManager({
                 captureFeedback();
                 return setDraft({
                   ...draft,
-                  allowed_tools: allowed_tools as string[],
+                  allowed_tools: allowed_tools,
                 });
               }}
             />
@@ -2375,7 +2375,7 @@ function ToolTest({
         label="测试工具修订"
         records={tools.filter((t) => binding.data.allowed_tools.includes(t.id))}
         value={tool}
-        onChange={(value) => setTool(value as string)}
+        onChange={(value) => setTool(value)}
       />
       <JsonField label="测试调用参数" value={args} onChange={setArgs} />
       <ActionButton
@@ -2506,7 +2506,7 @@ function SkillImport({
           onChange={async (value) => {
             captureFeedback();
 
-            setSourceRevision(value as string);
+            setSourceRevision(value);
             const row = catalog.find((r) => r.id === value);
             if (row) {
               setName(row.name);
@@ -2610,7 +2610,7 @@ function SkillImport({
           records={catalog.filter((r) => r.type === "tool")}
           value={requires}
           multiple
-          onChange={(value) => setRequires(value as string[])}
+          onChange={(value) => setRequires(value)}
         />
         <p>仅导入静态指令和参考文件；包内脚本不会自动安装或执行。</p>
         <ActionButton

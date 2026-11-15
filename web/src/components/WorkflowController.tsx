@@ -239,10 +239,8 @@ export function WorkflowController({
       {!data && <p role="status">正在读取经理状态…</p>}
       {!workspaceOnly && data && (
         <p>
-          当前调度：{data.driver?.data.mode || "未记录根驱动"}
-          {controller
-            ? ` · 经理${statuses[controller.status] || controller.status}`
-            : ""}
+          当前调度：{data.driver?.data.mode || "未记录根驱动"} · 代次{" "}
+          {data.driver?.data.epoch ?? "未记录"}
         </p>
       )}
       {!workspaceOnly && data?.driver?.data.reason && (
@@ -264,7 +262,7 @@ export function WorkflowController({
               }
               records={catalog.filter((row) => row.type === "agent")}
               value={managerAgent}
-              onChange={(value) => setManagerAgent(value as string)}
+              onChange={(value) => setManagerAgent(value)}
             />
             <RevisionSelect
               label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
@@ -272,7 +270,7 @@ export function WorkflowController({
                 (row) => row.type === "permission_context",
               )}
               value={managerPermission}
-              onChange={(value) => setManagerPermission(value as string)}
+              onChange={(value) => setManagerPermission(value)}
             />
             <ActionButton
               disabled={
@@ -296,34 +294,6 @@ export function WorkflowController({
         }
         {!workspaceOnly && (
           <>
-            {data && (
-              <p>
-                当前调度：{data.driver?.data.mode || "未记录根驱动"} · 代次{" "}
-                {data.driver?.data.epoch ?? "未记录"}
-              </p>
-            )}
-            {data?.driver?.data.reason && (
-              <p role="status">
-                {typeof data.driver.data.reason === "string"
-                  ? data.driver.data.reason
-                  : data.driver.data.reason.message}
-              </p>
-            )}
-            {data?.driverWaiting?.length > 0 && (
-              <ul aria-label="调度等待条件">
-                {(data?.driverWaiting || []).slice(0, 12).map((item: Row) => {
-                  const gate = (
-                    Object.values(item.actions || {}) as Row[]
-                  ).find((action) => item.waiting_for?.includes(action.code));
-                  return (
-                    <li key={item.execution_id}>
-                      {item.path || item.step}：
-                      {gate?.reason || item.reason || item.status}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
             <label>
               切换调度模式
               <ActionSelect
@@ -343,7 +313,7 @@ export function WorkflowController({
                   (row) => row.type === "orchestration_policy",
                 )}
                 value={policy}
-                onChange={(value) => setPolicy(value as string)}
+                onChange={(value) => setPolicy(value)}
               />
             )}
             <ActionButton
@@ -354,59 +324,74 @@ export function WorkflowController({
             </ActionButton>
           </>
         )}
-        <p>
-          {controller
-            ? statuses[controller.status] || controller.status
-            : data
-              ? "发送指令后启动项目经理"
-              : ""}
-        </p>
-        {controller?.reason && <p role="status">{controller.reason}</p>}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act("orchestration.input");
-          }}
-        >
-          <label>
-            给项目经理的指令
-            <textarea
-              aria-label="给项目经理的指令"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="例如：采用我提供的设计，调整后续任务并继续执行"
-            />
-          </label>
-          <div className="actions">
+      </details>
+      {data?.driverWaiting?.length > 0 && (
+        <ul aria-label="调度等待条件">
+          {(data?.driverWaiting || []).slice(0, 12).map((item: Row) => {
+            const gate = (Object.values(item.actions || {}) as Row[]).find(
+              (action) => item.waiting_for?.includes(action.code),
+            );
+            return (
+              <li key={item.execution_id}>
+                {item.path || item.step}：
+                {gate?.reason || item.reason || item.status}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p>
+        {controller
+          ? statuses[controller.status] || controller.status
+          : data
+            ? "发送指令后启动项目经理"
+            : ""}
+      </p>
+      {controller?.reason && <p role="status">{controller.reason}</p>}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void act("orchestration.input");
+        }}
+      >
+        <label>
+          给项目经理的指令
+          <textarea
+            aria-label="给项目经理的指令"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="例如：采用我提供的设计，调整后续任务并继续执行"
+          />
+        </label>
+        <div className="actions">
+          <ActionButton
+            type="submit"
+            disabled={
+              busy ||
+              !data ||
+              !input.trim() ||
+              ["completed", "cancelled"].includes(instance.data.status)
+            }
+          >
+            {workspaceOnly ? "发送" : "发送并推进"}
+          </ActionButton>
+          {controller && (
             <ActionButton
-              type="submit"
-              disabled={
-                busy ||
-                !data ||
-                !input.trim() ||
-                ["completed", "cancelled"].includes(instance.data.status)
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void act(
+                  controller.status === "active"
+                    ? "orchestration.takeover"
+                    : "orchestration.resume",
+                )
               }
             >
-              {workspaceOnly ? "发送" : "发送并推进"}
+              {controller.status === "active" ? "人工接管" : "恢复项目经理"}
             </ActionButton>
-            {controller && (
-              <ActionButton
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void act(
-                    controller.status === "active"
-                      ? "orchestration.takeover"
-                      : "orchestration.resume",
-                  )
-                }
-              >
-                {controller.status === "active" ? "人工接管" : "恢复项目经理"}
-              </ActionButton>
-            )}
-          </div>
-        </form>
-      </details>
+          )}
+        </div>
+      </form>
       {error && (
         <p className="error" role="alert">
           {error}

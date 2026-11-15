@@ -187,21 +187,16 @@ export function useGroupTab(group: string, allowed: string[]) {
   };
   return [tab, choose] as const;
 }
-export function RevisionSelect({
-  label,
-  records,
-  value,
-  onChange,
-  multiple = false,
-  required = false,
-}: {
+type RevisionSelectProps = {
   label: string;
   records: Row[];
-  value: string | string[];
-  onChange: (value: string | string[]) => void;
-  multiple?: boolean;
   required?: boolean;
-}) {
+} & (
+  | { multiple: true; value: string[]; onChange: (value: string[]) => void }
+  | { multiple?: false; value: string; onChange: (value: string) => void }
+);
+export function RevisionSelect(props: RevisionSelectProps) {
+  const { label, records, value, multiple = false, required = false } = props;
   const ids = Array.isArray(value) ? value : [value];
   const options = [
     ...new Map(records.map((row) => [row.id, row])).values(),
@@ -222,13 +217,15 @@ export function RevisionSelect({
         multiple={multiple}
         required={required}
         value={value}
-        onChange={(e) =>
-          onChange(
-            multiple
-              ? Array.from(e.target.selectedOptions, (o) => o.value)
-              : e.target.value,
-          )
-        }
+        onChange={(e) => {
+          if (props.multiple) {
+            props.onChange(
+              Array.from(e.target.selectedOptions, (o) => o.value),
+            );
+          } else {
+            props.onChange(e.target.value);
+          }
+        }}
       >
         {!multiple && <option value="">请选择</option>}
         {options.map((r) => (

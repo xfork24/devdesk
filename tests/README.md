@@ -1,6 +1,6 @@
 # 测试组织与入口
 
-测试按边界组织。默认回归使用临时数据集和明确的原生端口替身，不调用付费模型或真实 GitHub 服务。
+测试按边界组织。默认回归使用临时数据集和明确的原生端口替身，不调用付费模型或真实 GitHub 服务。MCP 浏览器用例实际运行 Docker 容器：需要 Linux Docker Engine，首次构建运行资源需要访问镜像与 npm/apt 包源。
 
 | 位置 | 验证内容 |
 |---|---|
@@ -17,11 +17,14 @@
 
 ## 默认检查
 
+先激活 Python 虚拟环境，安装固定的 Schema 校验依赖；缺少依赖时检查会失败，不再静默跳过。完整浏览器回归还需要 Docker 与 Chromium。
+
 ```bash
+python3 -m pip install -r scripts/check/requirements.txt
 ./scripts/check/check.sh
 ```
 
-入口执行 Permission 资产检查、Web 构建、Rust、debug/release Host HTTP 与 Chromium。可使用 `DEVDESK_E2E_PORT=4329` 避免占用日常开发端口。HTTP standalone 检查会将二进制复制到临时空目录，验证运行不依赖源码。
+入口执行 Permission/出厂/架构检查、CI 依赖门禁的离线测试、风格/类型/Web 构建、Rust、debug/release Host HTTP/数据集/环境准备与 Chromium。接入浏览器用例使用逐测试独立 Host，避免运行准备状态污染其他规格。可使用 `DEVDESK_E2E_PORT=4329` 避免占用日常开发端口。HTTP standalone 检查会将二进制复制到临时空目录，验证运行不依赖源码。
 
 工作流专项：
 

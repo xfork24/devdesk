@@ -7,6 +7,7 @@ import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
+import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   { ignores: ["dist", "node_modules", "test-results", "playwright-report"] },
@@ -15,12 +16,13 @@ export default tseslint.config(
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2022,
-      globals: { ...globals.browser, ...globals.node },
+      globals: globals.browser,
     },
     rules: {
       // Warnings stay visible in every run; the single sanctioned `any`
       // escape hatch is the Row alias in src/components/configuration-ui.tsx.
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "error",
+      "no-sequences": ["error", { allowInParentheses: false }],
       // Leading-underscore names document intentionally unused bindings.
       "@typescript-eslint/no-unused-vars": [
         "error",
@@ -49,10 +51,17 @@ export default tseslint.config(
   },
   {
     files: ["tests/**/*.ts", "playwright.config.ts"],
+    languageOptions: { globals: globals.node },
     rules: {
       // Spec helpers ferry untyped kernel JSON rows; the kernel contract, not
       // the spec, owns those shapes.
       "@typescript-eslint/no-explicit-any": "off",
     },
   },
+  {
+    files: ["*.js"],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.node },
+  },
+  prettier,
 );
