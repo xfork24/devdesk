@@ -1,6 +1,6 @@
 # 代码规范、Lint 体系与 CI 建设计划
 
-状态：执行中（分支 `code-standards-lint-ci`）。本文件保存用户批准的方案原文与执行进度；验收记录在实现完成后补录 EXECUTION.md。
+状态：已完成（分支 `code-standards-lint-ci`，2026-11-15）。执行报告见 [EXECUTION.md](EXECUTION.md)；执行中发现的存量问题（与本次改动无关、按用户指示未修改）见 [ISSUES.md](ISSUES.md)。
 
 ## 背景与现状结论
 

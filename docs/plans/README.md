@@ -4,7 +4,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
-| [代码规范、Lint 体系与 CI 建设](code-standards-lint-ci/PLAN.md) | 计划原文（含进度与偏差记录） | 执行中；clippy/fmt 全仓清零达成，web lint 清理进行中，规范文档与三个 CI workflow 待建 |
+| [代码规范、Lint 体系与 CI 建设](code-standards-lint-ci/PLAN.md) | [执行报告](code-standards-lint-ci/EXECUTION.md)、[存量问题记录](code-standards-lint-ci/ISSUES.md) | 已完成（2026-11-15）；clippy/fmt 全仓清零、web lint 0 错误、规范文档与 check-style.sh 门禁、rust/web/e2e 三 workflow；存量失败另有记录未处理 |
 | [源配置信封扁平化](source-envelope-flattening/PLAN.md) | [评审](source-envelope-flattening/REVIEW.md)、[实施与验收](source-envelope-flattening/EXECUTION.md)、[验证报告](source-envelope-flattening/VALIDATION.md) | 已完成；151 源、Rust 236 项、浏览器 debug/release 各 51 项通过；真实 Codex Feature 42 节点完成，两次精确发布，证据复核与现场封存完成 |
 | [合同版本去硬编码](contract-version-decoupling/PLAN.md) | [实施与验收](contract-version-decoupling/EXECUTION.md) | 部分实施（2026-11-12）；W01-W05+W08+W09 完成：结构识别、白名单枚举化、读取机制外置、normalize-plan 删除、check-defaults 脚本；W06 大文件重构等后续工作保留；W07 展示过滤与残留版本门禁已在源信封扁平化中清理 |
 | [出厂配置精简与 dsh/minimax/glm 栈补全](configuration-slimming-dsh-stack/PLAN.md) | [实施与验收](configuration-slimming-dsh-stack/EXECUTION.md) | 已完成（2026-11-12，W4 门禁能力化当晚按用户决定回滚）；61 个历史修订删除、dsh 双栈补全（PM 为普通 agent 形态）；出厂 codex 修订链维持 main 原版本；测试全绿 |
