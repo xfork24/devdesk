@@ -1,6 +1,6 @@
 //! Read-only material index over current executions, preserving frozen output contracts.
 use crate::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 struct Material<'a> {
     metadata: Value,
@@ -11,29 +11,10 @@ struct Material<'a> {
 impl Engine {
     pub(crate) fn workflow_materials(&self, p: &Value) -> Result<Value> {
         let state = self.store.snapshot()?;
-        let owner = text(p, "owner_id")?;
-        let work = work_reference(&state, &owner)?;
-        let scope = work.scope(&state)?;
-        let project = scope.project_id().unwrap();
-        if p["project_id"].as_str().is_some_and(|id| id != project) {
-            return Err(err("scope_violation", "材料不属于当前项目"));
-        }
-        let mut owners = BTreeMap::new();
-        match work {
-            WorkReference::Feature { ref id } => {
-                owners.insert(id.as_str(), ("feature", state.feature(id)?.title.as_str()));
-                for task in state.tasks.iter().filter(|task| task.feature_id == *id) {
-                    owners.insert(task.id.as_str(), ("task", task.title.as_str()));
-                }
-            }
-            WorkReference::Task { ref id } => {
-                owners.insert(id.as_str(), ("task", state.task(id)?.title.as_str()));
-            }
-            WorkReference::Project { ref id } => {
-                let project = state.projects.iter().find(|row| row.id == *id).unwrap();
-                owners.insert(id.as_str(), ("project", project.title.as_str()));
-            }
-        }
+        let scope = crate::workflow_reading::workflow_read_scope(&state, p)?;
+        let project = scope.project.as_str();
+        let owners = &scope.owners;
+        let selected = &scope.instances;
         if let Some(id) = p["output_id"].as_str() {
             if let Some(document) = state.documents.iter().find(|document| {
                 document.id == id
@@ -49,42 +30,6 @@ impl Engine {
                 return Ok(json!({"document":document}));
             }
         }
-        let mut selected: BTreeSet<&str> = owners
-            .keys()
-            .filter_map(|id| crate::standards::current_work_instance(&state, id))
-            .map(|row| row.id.as_str())
-            .collect();
-        // Nested Workflows need not be separate work roots. Follow only current
-        // parent executions, excluding children superseded by rework or a new plan.
-        loop {
-            let executions: BTreeSet<&str> = state
-                .governance
-                .iter()
-                .filter(|row| selected.contains(row.id.as_str()))
-                .flat_map(|row| row.data["steps"].as_array().into_iter().flatten())
-                .filter_map(|step| step["id"].as_str())
-                .collect();
-            let before = selected.len();
-            selected.extend(
-                state
-                    .governance
-                    .iter()
-                    .filter(|row| {
-                        row.r#type == "workflow_instance"
-                            && row.scope.project_id() == Some(project)
-                            && row.data["owner_id"]
-                                .as_str()
-                                .is_some_and(|id| owners.contains_key(id))
-                            && row.data["parent_execution_id"]
-                                .as_str()
-                                .is_some_and(|id| executions.contains(id))
-                    })
-                    .map(|row| row.id.as_str()),
-            );
-            if selected.len() == before {
-                break;
-            }
-        }
         let mut materials = Vec::new();
         let mut seen = BTreeSet::new();
         for instance in state
@@ -96,7 +41,7 @@ impl Engine {
                 return Err(err("scope_violation", "工作流材料跨项目"));
             }
             let owner_id = instance.data["owner_id"].as_str().unwrap();
-            let (owner_kind, owner_title) = owners[owner_id];
+            let (owner_kind, owner_title) = &owners[owner_id];
             for execution in instance.data["steps"].as_array().into_iter().flatten() {
                 for (port, output_id) in execution["outputs"].as_object().into_iter().flatten() {
                     let output_id = output_id

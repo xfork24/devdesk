@@ -76,6 +76,7 @@ pub mod ports;
 mod proposals;
 mod repositories;
 mod workflow_materials;
+mod workflow_reading;
 mod workflow_runtime;
 mod workflow_runtime_facts;
 // Shared domain types and execution ports.
@@ -743,6 +744,9 @@ impl Engine {
         self.drive_controllers()
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if method == "query.workflow_contexts" {
+            return self.workflow_contexts(p);
+        }
         if method == "query.workflow_materials" {
             return self.workflow_materials(p);
         }

@@ -40,7 +40,7 @@ export function ReadState({ loading, error, retry }: {loading: boolean; error?: 
   return loading ? <p role="status">正在读取…</p> : error ? <div role="alert"><p className="error">{error}</p><button onClick={retry}>重试读取</button></div> : null;
 }
 const rawMethods: Record<string, string> = {
-  material: "query.workflow_materials", task: "query.execution_task", event: "query.session", execution: "query.workflow_executions", record: "query.workflow_record",
+  context: "query.workflow_contexts", material: "query.workflow_materials", task: "query.execution_task", event: "query.session", execution: "query.workflow_executions", record: "query.workflow_record",
 };
 export function RawJsonLink({ source, params, title = "查看原始 JSON" }: {source: keyof typeof rawMethods; params: Row; title?: string}) {
   const p = new URLSearchParams({read: source});
@@ -76,4 +76,12 @@ export function ReadableValue({ value, depth = 0 }: {value: unknown; depth?: num
   if (!entries.length) return <p className="muted">无附加内容</p>;
   if (depth > 5) return <details><summary>更多嵌套字段</summary><ReadableValue value={value} depth={0}/></details>;
   return <dl className="readable-fields">{entries.map(([key, item]) => <div key={key}><dt>{fieldName(key)}</dt><dd><ReadableValue value={item} depth={depth + 1}/></dd></div>)}</dl>;
+}
+
+export function DiscussionLink({ projectId, ownerId, sessionId, taskId, children }: {projectId:string;ownerId:string;sessionId:string;taskId?:string;children:React.ReactNode}) {
+  const p=new URLSearchParams(executionUrl("context",projectId,ownerId,{session_id:sessionId}));
+  p.set("tab","discussion");
+  if(taskId) p.set("task_id",taskId); else p.delete("task_id");
+  const url=`?${p}`;
+  return <a href={url} onClick={e=>{if(!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&e.button===0){e.preventDefault();navigateReading(url);}}}>{children}</a>;
 }

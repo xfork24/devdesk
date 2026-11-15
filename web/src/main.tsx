@@ -1,3 +1,4 @@
+import { WorkflowContexts } from "./components/WorkflowContexts";
 import { RawJsonReader, readingKeys } from "./components/reading";
 import {
   getCatalogGeneration,
@@ -216,7 +217,7 @@ function App() {
   }>();
   const [setupPath, setSetupPath] = useState("./data");
   const [roleRevision, setRoleRevision] = useState(0);
-  const [focusedSession, setFocusedSession] = useState<RecordData>();
+  const [focusedSession, setFocusedSession] = useState<RecordData | undefined>(() => route.get("session_id") && route.get("tab") === "discussion" ? {id:route.get("session_id"),owner_id:route.get("task_id") || route.get("feature_id") || route.get("project_id"),project_id:route.get("project_id")} : undefined);
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
   const [readingTarget, setReadingTarget] = useState<RecordData>(() => Object.fromEntries(readingKeys.map(key => [key, route.get(key) || ""])));
   const [executionTab, setExecutionTab] = useState(
@@ -1275,50 +1276,8 @@ function App() {
                     {pager("documents")}
                   </>
                 )}
-                {executionTab === "context" && (
-                  <>
-                    {detail.contexts.map((context: RecordData) => (
-                      <article key={context.id}>
-                        <strong>
-                          {context.owner_id === f.id
-                            ? f.title
-                            : detail.tasks.find(
-                                (t: RecordData) => t.id === context.owner_id,
-                              )?.title}
-                        </strong>
-                        <MarkdownPreview text={context.content} />
-                        <ActionButton
-                          onClick={() =>
-                            show({
-                              title: "更新上下文",
-                              method: "context.update",
-                              target: context.id,
-                              fields: [
-                                {
-                                  key: "content",
-                                  label: "内容",
-                                  type: "markdown",
-                                  value: context.content,
-                                },
-                              ],
-                            })
-                          }
-                        >
-                          编辑上下文
-                        </ActionButton>
-                      </article>
-                    ))}
-                    {detail.snapshots.map((snapshot: RecordData) => (
-                      <details key={snapshot.id}>
-                        <summary>
-                          {snapshot.kind} · {short(snapshot.id)}
-                        </summary>
-                        <pre>{pretty(snapshot)}</pre>
-                      </details>
-                    ))}
-                    {pager("snapshots")}
-                  </>
-                )}
+                {executionTab === "context" && <WorkflowContexts key={`${projectId}:${f.id}`} projectId={projectId} ownerId={f.id} request={rpc} target={readingTarget} contexts={detail.contexts} onEditContext={context=>show({title:"更新上下文",method:"context.update",target:context.id,fields:[{key:"content",label:"内容",type:"markdown",value:context.content}]})}/>}
+
               </section>
             </>
           )}

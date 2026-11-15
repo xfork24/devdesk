@@ -19,11 +19,15 @@ export function AgentTaskView({ value, compact = false, projectId, ownerId }: { 
     {compact && instructions.length > 600 && <p className="muted">此处为任务摘要；完整指令在上下文页阅读。</p>}
     {compact && projectId && ownerId && value.turn_id && <ReadingLink detail="context" projectId={projectId} ownerId={ownerId} target={{turn_id:value.turn_id}}>查看此轮完整上下文</ReadingLink>}
     {!compact && <>
+      {content.supplemental_input && <><h4>补充请求</h4><MarkdownPreview text={content.supplemental_input}/></>}
       {content.stage?.description && <><h4>工作背景</h4><MarkdownPreview text={content.stage.description}/></>}
       <h4>输入材料</h4>
-      {Object.keys(inputSources).length ? Object.entries(inputSources).map(([key, source]) => <section key={key}><strong>{key}</strong><ReadableValue value={source}/></section>) : <p className="muted">未记录独立的输入来源索引。</p>}
+      {Object.keys(inputSources).length ? Object.entries(inputSources).map(([key, source]) => {
+        const origin=source as Row;
+        return <section key={key}><strong>{key}</strong>{origin.source_output_id && projectId && ownerId ? <p><ReadingLink detail="documents" projectId={projectId} ownerId={ownerId} target={{output_id:origin.source_output_id}}>查看输入材料 · {key}</ReadingLink></p> : <p className="muted">{origin.binding?.type === "constant" ? "冻结常量" : "工作范围输入"}</p>}<details><summary>该输入的来源依据</summary><ReadableValue value={origin}/></details></section>;
+      }) : <p className="muted">未记录独立的输入来源索引。</p>}
       <details><summary>冻结输入内容</summary><ReadableValue value={content.inputs || value.inputs}/></details>
-      <h4>输出要求</h4><ReadableValue value={content.outputs || value.outputs}/>
+      <h4>输出要求</h4>{Object.entries(content.outputs || value.outputs || {}).map(([port, requirement])=>{const r=requirement as Row;return <section key={port}><strong>{r.definition?.name || port}</strong><p>{port} · {r.required ? "必需" : "可选"}{r.content_checks ? " · 需要内容检查" : ""}</p><details><summary>交付规范与检查要求</summary><ReadableValue value={r}/></details></section>;})}
       <details><summary>职责、方法与规范</summary>
         {content.role?.role?.data?.instructions && <><h4>Role · {content.role.name}</h4><MarkdownPreview text={content.role.role.data.instructions}/></>}
         {(content.required_skills || []).map((skill: Row) => <section key={skill.id}><h4>Skill · {skill.name}</h4><MarkdownPreview text={skill.data?.body || skill.body || ""}/></section>)}
@@ -207,7 +211,7 @@ export function ExecutionTaskDetails({
       </ActionButton>
       {error ? <p role="alert">{error}</p> : null}
       {value && loadedTurn === selected ? (
-        <AgentTaskView value={value} compact projectId={projectId} ownerId={value.task?.source?.owner_id || ""} />
+        <AgentTaskView value={value} compact projectId={projectId} ownerId={value.task?.task?.owner_id || value.task?.owner_id || ""} />
       ) : null}
     </details>
   );
