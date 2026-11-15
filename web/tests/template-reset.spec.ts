@@ -14,7 +14,9 @@ import { join, resolve } from "node:path";
 import { once } from "node:events";
 
 const test = base.extend<{ appUrl: string }>({
-  appUrl: async (_, use) => {
+  // An empty destructuring pattern is Playwright's way to ignore fixture args.
+  // eslint-disable-next-line no-empty-pattern
+  appUrl: async ({}, use) => {
     const socket = createServer();
     await new Promise<void>((done) => socket.listen(0, "127.0.0.1", done));
     const port = (socket.address() as { port: number }).port;

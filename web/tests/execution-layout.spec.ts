@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 // This test creates a real project; keep it outside the suite's shared dataset.
 const test = base.extend<{ stageKernel: string }>({
-  stageKernel: async (_, use) => {
+  // An empty destructuring pattern is Playwright's way to ignore fixture args.
+  // eslint-disable-next-line no-empty-pattern
+  stageKernel: async ({}, use) => {
     const directory = mkdtempSync(join(tmpdir(), "devdesk-stage-rows-"));
     const kernelEnv = { ...process.env };
     delete kernelEnv.DEVDESK_ACCESS_TOKEN;
