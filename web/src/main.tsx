@@ -1,3 +1,4 @@
+import { RawJsonReader, readingKeys } from "./components/reading";
 import {
   getCatalogGeneration,
   observeCatalogGeneration,
@@ -217,6 +218,7 @@ function App() {
   const [roleRevision, setRoleRevision] = useState(0);
   const [focusedSession, setFocusedSession] = useState<RecordData>();
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
+  const [_readingTarget, setReadingTarget] = useState<RecordData>(() => Object.fromEntries(readingKeys.map(key => [key, route.get(key) || ""])));
   const [executionTab, setExecutionTab] = useState(
     route.get("detail") ||
       (route.get("tab") === "documents" ? "documents" : "overview"),
@@ -225,7 +227,7 @@ function App() {
   const routeApplied = useRef(false);
   useEffect(() => {
     const params = new URLSearchParams();
-    for (const key of ["config_tab", "config_object", "workflow_id", "standard_id"]) {
+    for (const key of ["config_tab", "config_object", "workflow_id", "standard_id", ...readingKeys]) {
       const value = new URLSearchParams(location.search).get(key);
       if (value) params.set(key, value);
     }
@@ -245,6 +247,7 @@ function App() {
     featureId,
     taskFilter,
     executionTab,
+    _readingTarget,
     workFilter,
     featurePage,
     historyScope,
@@ -274,6 +277,8 @@ function App() {
       setFeatureId(p.get("feature_id") || "");
       setTaskFilter(p.get("task_id") || "");
       setExecutionTab(p.get("detail") || "overview");
+      setReadingTarget(Object.fromEntries(readingKeys.map(key => [key, p.get(key) || ""])));
+      if (p.get("tab") === "discussion" && p.get("session_id")) setFocusedSession({id: p.get("session_id"), owner_id: p.get("task_id") || p.get("feature_id") || pid, project_id: pid});
       setWorkFilter(p.get("filter") || "");
       setFeaturePage(Number(p.get("page") || 0));
     };
@@ -1967,6 +1972,6 @@ function Reader({
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {route.has("read") ? <RawJsonReader request={rpc} /> : <App />}
   </React.StrictMode>,
 );

@@ -717,6 +717,14 @@ impl Engine {
                     "Session 跨项目",
                 )?;
             }
+            if let Some(event_id) = p["event_id"].as_str() {
+                let event = s
+                    .conversation_events
+                    .iter()
+                    .find(|event| event.id == event_id && event.session_id == sid)
+                    .ok_or_else(|| err("not_found", "原始事件不属于此会话"))?;
+                return Ok(json!({"event":event}));
+            }
             let cursor = p["cursor"].as_u64().unwrap_or(0);
             let events: Vec<_> = s
                 .conversation_events

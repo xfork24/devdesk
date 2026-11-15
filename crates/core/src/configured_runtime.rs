@@ -2932,6 +2932,12 @@ impl Engine {
                 .contains(&r.r#type.as_str())
                     && p["turn_id"] == r.definition_id
             })?;
+            if p["project_id"]
+                .as_str()
+                .is_some_and(|id| row.scope.project_id() != Some(id))
+            {
+                return Some(Err(err("scope_violation", "冻结任务不属于当前项目")));
+            }
             return Some(Ok(
                 json!({"configured":true,"archived":row.r#type=="archived_configured_execution_task","task":row.data,"turn_id":row.definition_id}),
             ));
