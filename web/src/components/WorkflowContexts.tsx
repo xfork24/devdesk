@@ -1,4 +1,4 @@
-import { type Request, type Row, MarkdownPreview } from "./configuration-ui";
+import { type Request, type Row } from "./configuration-ui";
 import { AgentTaskView } from "./WorkflowTaskPreview";
 import {
   RawJsonLink,
@@ -259,7 +259,16 @@ export function WorkflowContexts({
                   <summary>共享工作背景 · 手工维护（不代表当轮已发送）</summary>
                   {shared.map((context) => (
                     <section key={context.id}>
-                      <MarkdownPreview text={context.content} />
+                      <ReadableValue value={context.content} />
+                      <RawJsonLink
+                        source="context"
+                        title="查看共享背景原始 JSON"
+                        params={{
+                          project_id: projectId,
+                          owner_id: ownerId,
+                          context_id: context.id,
+                        }}
+                      />
                       {onEditContext && (
                         <button onClick={() => onEditContext(context)}>
                           编辑上下文
@@ -296,7 +305,16 @@ export function WorkflowContexts({
           <summary>尚未分配给 Agent 的共享工作背景</summary>
           {contexts.map((context) => (
             <section key={context.id}>
-              <MarkdownPreview text={context.content} />
+              <ReadableValue value={context.content} />
+              <RawJsonLink
+                source="context"
+                title="查看共享背景原始 JSON"
+                params={{
+                  project_id: projectId,
+                  owner_id: ownerId,
+                  context_id: context.id,
+                }}
+              />
               {onEditContext && (
                 <button onClick={() => onEditContext(context)}>
                   编辑上下文

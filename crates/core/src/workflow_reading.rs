@@ -170,6 +170,14 @@ impl Engine {
     pub(crate) fn workflow_contexts(&self, p: &Value) -> Result<Value> {
         let state = self.store.snapshot()?;
         let scope = workflow_read_scope(&state, p)?;
+        if let Some(id) = p["context_id"].as_str() {
+            let context = state
+                .contexts
+                .iter()
+                .find(|context| context.id == id && scope.owners.contains_key(&context.owner_id))
+                .ok_or_else(|| err("not_found", "手工背景不属于当前工作范围"))?;
+            return Ok(json!({"context":context,"source":"current_manual_context"}));
+        }
         let mut groups: BTreeMap<String, Value> = BTreeMap::new();
         for entry in read_executions(&state, &scope) {
             if p["instance_id"]

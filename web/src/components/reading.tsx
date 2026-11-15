@@ -174,7 +174,8 @@ export function RawJsonReader({ request }: { request: Request }) {
             params.turn_id ||
             params.event_id ||
             params.execution_id ||
-            params.record_id}
+            params.record_id ||
+            params.context_id}
         </p>
         <button
           disabled={!raw}
