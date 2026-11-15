@@ -1050,3 +1050,43 @@ fn global_agent_discussion_has_no_project_and_persists_identity_messages_and_sna
     assert_eq!(detail["session"]["scope"], "global");
     assert!(e.store.snapshot().unwrap().projects.is_empty());
 }
+
+#[test]
+fn turn_diagnostics_include_final_messages_and_stop_proof_without_stream_fragments() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = engine(directory.path());
+    let (pid, sid, tid) = initialize(&e);
+    e.store.transact(None,&mut |s| {
+        for (sequence,mode,content,kind) in [(2,MessageMode::Delta,"part",ConversationEventKind::Assistant),(3,MessageMode::Delta,"more",ConversationEventKind::Assistant),
+            (4,MessageMode::Full,"final answer",ConversationEventKind::Assistant),
+            (5,MessageMode::Full,r#"{"operation_id":"worker","writer_revoked":true,"mode":"normal_stop","requires_successor":false}"#,ConversationEventKind::Status)] {
+            s.conversation_events.push(ConversationEvent {id:id(),session_id:sid.clone(),turn_id:tid.clone(),sequence,deduplication_key:format!("message-{sequence}"),kind,content:content.into(),artifact_id:None,time:sequence,mode,provider_item:Some("message".into())});
+        } Ok(json!(null))
+    }).unwrap();
+    let detail = e
+        .query(
+            "query.session",
+            &json!({"id":sid,"project_id":pid,"diagnostic_turn_id":tid}),
+            1,
+        )
+        .unwrap();
+    assert_eq!(detail["records"].as_array().unwrap().len(), 3);
+    assert_eq!(detail["stop_receipts"][0]["writer_revoked"], true);
+    assert!(!detail.to_string().contains("\"mode\":\"delta\""));
+    assert!(
+        e.query(
+            "query.session",
+            &json!({"id":sid,"diagnostic_turn_id":id()}),
+            1
+        )
+        .is_err()
+    );
+    assert!(
+        e.query(
+            "query.session",
+            &json!({"id":sid,"project_id":id(),"diagnostic_turn_id":tid}),
+            1
+        )
+        .is_err()
+    );
+}

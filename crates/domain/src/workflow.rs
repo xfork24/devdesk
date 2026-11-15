@@ -12,6 +12,8 @@ pub const WORKFLOW_INSTANCE_SCHEMA: u64 = 6;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowDefinition {
+    #[serde(default)]
+    pub scheduling: WorkflowScheduling,
     pub schema_version: u64,
     #[serde(default)]
     pub action_requirements: BTreeMap<String, BTreeSet<String>>,
@@ -42,6 +44,10 @@ pub struct StageDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_permission_ref: Option<Id>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_permission_ref: Option<Id>,
     #[serde(default)]
     pub node_id: Id,
     pub key: String,
@@ -561,6 +567,7 @@ impl WorkflowDefinition {
     }
 
     pub fn validate(&self) -> Result<Vec<String>> {
+        self.scheduling.validate()?;
         require(
             !self.steps.is_empty() && self.steps.len() <= WORKFLOW_STEP_LIMIT,
             "流程需要 1—1000 个步骤",
@@ -698,15 +705,8 @@ impl WorkflowDefinition {
             if let Some(path) = &step.access.working_directory {
                 valid_resource_path(path)?;
             }
-            if !step.access.writable_paths.is_empty() {
-                require(
-                    step.access
-                        .workspace_input
-                        .as_ref()
-                        .is_some_and(|key| step.inputs.contains_key(key)),
-                    "写执行需要明确工作空间输入",
-                )?;
-            }
+            // A Profile permits access when a workspace is supplied; it does not
+            // require every task to consume a repository workspace.
             let unique = |refs: &[Id]| {
                 refs.iter().collect::<BTreeSet<_>>().len() == refs.len()
                     && refs.iter().all(|r| !r.is_empty())

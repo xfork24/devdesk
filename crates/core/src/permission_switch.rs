@@ -47,6 +47,23 @@ impl Engine {
             if !session.runtime_binding.as_ref().is_some_and(|b| {
                 let mut expected = b.clone();
                 expected.permissions = new_binding.permissions.clone();
+                if let Some(lock) = new_binding
+                    .permissions
+                    .as_ref()
+                    .and_then(|p| p.binding_lock.as_ref())
+                {
+                    let (write, read) =
+                        profile_pair_workspace_access(&lock.harness.profile, &lock.sandbox.profile);
+                    expected.writable_paths = write;
+                    expected.read_only_paths = read;
+                    expected.tool_policy = if expected.writable_paths.is_empty() {
+                        ToolPolicy::ReadOnly
+                    } else if expected.writable_paths == ["."] {
+                        ToolPolicy::WorkspaceWrite
+                    } else {
+                        ToolPolicy::ScopedWrite
+                    };
+                }
                 expected.configuration_digest = new_binding.configuration_digest.clone();
                 if let (Some(old), Some(next)) = (
                     &mut expected.agent_configuration,

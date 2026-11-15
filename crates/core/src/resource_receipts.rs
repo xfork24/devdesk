@@ -111,12 +111,22 @@ impl Engine {
         resources: &dyn ports::SessionResources,
         record: &ConfigurationRecord,
     ) -> Result<RuntimeInstallation> {
+        let state = self.store.snapshot()?;
+        let selection = permission_selection(&state)?;
+        self.materialize_harness_in_sandbox(resources, record, &selection.sandbox_ref)
+    }
+    pub fn materialize_harness_in_sandbox(
+        &self,
+        resources: &dyn ports::SessionResources,
+        record: &ConfigurationRecord,
+        sandbox_ref: &str,
+    ) -> Result<RuntimeInstallation> {
         let h: HarnessDefinition = record.decode()?;
         let provider: HarnessProvider = serde_json::from_value(json!(h.provider))
             .map_err(|e| err("unsupported", e.to_string()))?;
         let state = self.store.snapshot()?;
-        let selected = harness_runtime_resource(&state, record)?.clone();
-        let runtime: RuntimeResourceDefinition = selected.decode()?;
+        let selected = state.configuration(sandbox_ref)?.clone();
+        let runtime = compose_execution_recipe(record, &selected)?;
         let digest = runtime.recipe_digest();
         let store = if record.scope.is_global() {
             resources.shared_store()
@@ -124,7 +134,7 @@ impl Engine {
             self.store.as_ref()
         };
         let key = format!(
-            "harness-materialization:{}:linux:{}",
+            "harness-materialization:{}:{digest}:linux:{}",
             record.id,
             resources.architecture()
         );
@@ -148,7 +158,7 @@ impl Engine {
                 && installation.key.provider == provider,
             "实际安装与冻结 Harness 配方不符",
         )?;
-        let data = json!({"harness_revision_id":record.id,"runtime_resource_ref":selected.id,"recipe_digest":digest,"installation_id":installation.id,"key":installation.key,"artifact":installation.artifact});
+        let data = json!({"harness_revision_id":record.id,"sandbox_ref":selected.id,"recipe_digest":digest,"installation_id":installation.id,"key":installation.key,"artifact":installation.artifact});
         self.record_harness_materialization(store, &key, record, &data)?;
         Ok(installation)
     }

@@ -62,9 +62,9 @@ flowchart LR
 
 ## 权限、运行时与供应商
 
-RuntimeInstallation 独立于 Agent、Session 和 RuntimeExecution；安装按驱动、平台及配方内容摘要复用，版本只作标签，原生线程、容器和私有状态仍隔离。`runtime_resource` 源修订保存不可变镜像或构建文件；Harness 通过确切引用或配方摘要选择资源。运行绑定冻结实际 Model、Harness、参数、连接、权限和资产；客户端不能提交解析后的运行 binding。
+RuntimeInstallation 独立于 Agent、Session 和 RuntimeExecution；安装按驱动、平台及内容摘要复用，原生线程、容器与私有状态隔离。Harness 声明程序版本和安装件，Sandbox 声明 Docker 基础环境，组合产生内部配方。运行绑定冻结实际 Model、Harness、Sandbox、参数、连接、Profile 和资产，客户端不能提交解析后的运行 binding。
 
-根实例可选择 manual、rust 或 agent 驱动，全部复用 core 的派发、接纳与完成命令。Rust 驱动固定 `orchestration_policy` 源、epoch 和租约，按有界动作推进；Agent 驱动由真实 WorkflowController 调用原生控制工具。项目经理工作台独立于根实例调度，提供项目知识读取和受限配置创作，没有根控制权时不能调度该实例。
+根实例可选择 manual、rust 或 agent 驱动，复用 core 派发、接纳与完成命令。调度参数属于 Workflow，不独立发布或选择；驱动固定实际 Workflow 调度快照、epoch 与租约。Agent 控制器和 Rust 驱动的平台操作权限来自 Harness Profile；项目经理工作台独立于根调度，不自动取得根控制权。
 
 Permission profile 与目标绑定分别版本化。两层权限、Scope、工具授权及操作系统隔离取交集，无法落实的策略明确拒绝。共享安装不因角色或权限复制。模型连接、工具网络、审批、隔离和资源额度分别表达。具体能力与限制见 [权限说明](../permissions/README.md) 和 [适配器合同](real-adapter-contract.md)。
 
@@ -78,4 +78,4 @@ React Web 在 Rust 构建时嵌入，发布程序不依赖源码或宿主 Node�
 
 运行计划修订按新图实际引用的角色、资源和权限/集成锁计算影响；子流程重新编译时移除未使用的父级闭包资源，不会使已完成前缀失效。`workflow.change.preview/apply` 支持单独的 `revert_change {change_id}`：只可回退本实例最近应用的纯 `upsert_step` 变更，且全部受影响的替代执行仍未启动，不包含子流程调用。core 校验原冻结计划、输入和不可变执行历史，创建新的计划修订并逐字复用原回执；原始拒绝、原变更和被撤回的 queued 执行均保留。已启动、跨实例、混合操作或存在新外部作用时拒绝回退。
 
-实现依据：[应用端口](../crates/core/src/ports.rs)、[根实例驱动](../crates/core/src/workflow_driver.rs)、[经理工作台](../crates/core/src/manager_workspace.rs)、[运行资源物化](../crates/core/src/resource_receipts.rs)、[存储编解码](../crates/adapters/src/source_store.rs)。
+实现依据：[应用端口](../crates/core/src/ports.rs)、[根实例驱动](../crates/core/src/workflow_driver.rs)、[经理工作台](../crates/core/src/manager_workspace.rs)、[执行安装物化](../crates/core/src/resource_receipts.rs)、[存储编解码](../crates/adapters/src/source_store.rs)。

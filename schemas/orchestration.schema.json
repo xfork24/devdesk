@@ -325,7 +325,7 @@
             "workflow_ref": {
               "$ref": "source-reference.schema.json"
             },
-            "permission_context_ref": {
+            "harness_permission_ref": {
               "anyOf": [
                 {
                   "$ref": "source-reference.schema.json"
@@ -556,7 +556,7 @@
         "policy": {
           "$ref": "#/$defs/WorkflowControlPolicy"
         },
-        "permission_context_ref": {
+        "harness_permission_ref": {
           "type": "string",
           "pattern": "^.+:[1-9][0-9]*$"
         },
@@ -583,7 +583,7 @@
         "event_cursor",
         "wakeup_turns",
         "policy",
-        "permission_context_ref"
+        "harness_permission_ref"
       ],
       "additionalProperties": false
     },
@@ -752,7 +752,44 @@
       ],
       "additionalProperties": false
     },
-    "OrchestrationPolicy": {
+    "OrchestrationSelection": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "manual",
+            "rust",
+            "agent"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AgentSchedulingBudget": {
+      "type": "object",
+      "properties": {
+        "max_turns_per_wakeup": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "max_tool_calls_per_turn": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkflowScheduling": {
       "type": "object",
       "required": [
         "max_concurrency",
@@ -787,28 +824,9 @@
             "type": "string"
           },
           "uniqueItems": true
-        }
-      },
-      "additionalProperties": false
-    },
-    "OrchestrationSelection": {
-      "type": "object",
-      "required": [
-        "mode"
-      ],
-      "properties": {
-        "mode": {
-          "enum": [
-            "manual",
-            "rust",
-            "agent"
-          ]
         },
-        "policy_ref": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "agent": {
+          "$ref": "#/$defs/AgentSchedulingBudget"
         }
       },
       "additionalProperties": false

@@ -453,16 +453,11 @@ impl EngineeringState {
                     require(binding.writable_paths.is_empty(), "只读角色不能有写路径")?
                 }
                 ToolPolicy::WorkspaceWrite => require(
-                    [SessionScope::Task, SessionScope::Feature].contains(&scope)
-                        && binding.writable_paths == vec!["."],
-                    "工作空间写权限需要明确的工程归属及根目录授权",
+                    binding.writable_paths == vec!["."],
+                    "完整工作区写模式需要根目录权限",
                 )?,
                 ToolPolicy::ScopedWrite => {
-                    require(
-                        [SessionScope::Task, SessionScope::Feature].contains(&scope)
-                            && !binding.writable_paths.is_empty(),
-                        "局部写权限需要明确的工程归属及路径",
-                    )?;
+                    require(!binding.writable_paths.is_empty(), "局部写模式需要明确路径")?;
                     for path in &binding.writable_paths {
                         require(
                             !path.starts_with(['/', '-'])

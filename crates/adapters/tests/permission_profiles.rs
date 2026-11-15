@@ -533,7 +533,7 @@ fn exact_target_bindings_cas_batch_atomicity_pinning_and_frozen_results() {
         &json!(next.harness.binding),
     );
     schemas::SCHEMAS.assert_valid("rpc.schema.json#/$defs/ExecutionPermissions", &json!(old));
-    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"capabilities":[]}}),None,None)).unwrap();
+    let other=execute(&e,command("harness.create",json!({"name":"same upstream different definition","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"capabilities":[],"installation":e.store.snapshot().unwrap().configuration(DEFAULT_HARNESS_ID).unwrap().data["installation"]}}),None,None)).unwrap();
     assert!(
         resolve_bound_permission(
             &e.store.snapshot().unwrap(),
@@ -586,17 +586,19 @@ fn compiler_rejects_unenforceable_rules_and_checks_the_real_scope() {
         "permission_unsupported"
     );
     bind_pair(&e, &h.id, "builtin-permission-harness-read-only:1");
+    let compiled = compile_permission_profiles(
+        &e.store.snapshot().unwrap(),
+        &lock(&e, &h.id),
+        Some(ExecutionScope {
+            work_type: WorkType::Workflow,
+            writable_paths: vec!["src".into()],
+            read_only_paths: vec![],
+        }),
+    )
+    .unwrap();
     assert!(
-        compile_permission_profiles(
-            &e.store.snapshot().unwrap(),
-            &lock(&e, &h.id),
-            Some(ExecutionScope {
-                work_type: WorkType::Workflow,
-                writable_paths: vec!["src".into()],
-                read_only_paths: vec![]
-            })
-        )
-        .is_err()
+        compiled.scope.writable_paths.is_empty(),
+        "caller scope cannot expand a read-only Profile"
     );
 }
 
@@ -1012,7 +1014,24 @@ fn v2_binding_compiles_into_real_codex_and_dsh_file_and_network_boundaries() {
     for provider in ["codex", "dsh"] {
         let root = tempfile::tempdir().unwrap();
         let (_, e) = global(root.path());
-        let harness=execute(&e,command("harness.create",json!({"name":provider,"runtime_resource_ref":format!("builtin-runtime-{provider}:1"),"model_providers":[],"data":{"provider":provider,"runtime_version":if provider=="codex" {devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex)}else{devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Dsh)},"capabilities":[]}}),None,None)).unwrap();
+        let state = e.store.snapshot().unwrap();
+        let data = state
+            .governance
+            .iter()
+            .find(|r| r.r#type == "harness" && r.data["provider"] == provider)
+            .unwrap()
+            .data
+            .clone();
+        let harness = execute(
+            &e,
+            command(
+                "harness.create",
+                json!({"name":provider,"model_providers":[],"data":data}),
+                None,
+                None,
+            ),
+        )
+        .unwrap();
         let h = harness["id"].as_str().unwrap();
         let p=execute(&e,command("permission.profile.create",json!({"identity":format!("native-{provider}"),"name":"Native v2 restrictions","target_kind":"harness","policy":{
             "filesystem":{"mode":"scoped","rules":[{"path":"/","access":"read"},{"path":"/work","access":"read_write"},{"path":"/work/tests","access":"read"}]},
@@ -1391,8 +1410,19 @@ fn frozen_configured_permission(
         .ok_or_else(|| err("not_found", "流程不存在"))?;
     let plan: ConfiguredWorkflowPlan =
         serde_json::from_value(instance.data["plan"].clone()).unwrap();
+    let instance: ConfiguredWorkflowInstance = instance.decode()?;
+    let role = state.resolve_agent(agent)?.role_ref.unwrap();
+    let step = plan
+        .document
+        .steps
+        .iter()
+        .find(|step| plan.document.role(step) == Some(role.as_str()))
+        .ok_or_else(|| err("not_found", "步骤不存在"))?;
     plan.permission_locks
-        .get(agent)
+        .get(&format!(
+            "{}:{}",
+            instance.plan.workflow_revision_id, step.key
+        ))
         .cloned()
         .ok_or_else(|| err("not_found", "权限未冻结"))
 }

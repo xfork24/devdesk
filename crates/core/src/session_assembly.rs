@@ -181,7 +181,15 @@ impl Engine {
             e.execute("agent.instance.create",Command{command_id:format!("{}:agent-instance",command.command_id),target:None,expected_revision:None,payload:json!({"name":format!("{} · {}",record.name,title),"scope":scope,"agent_revision_id":agent_id,"frozen_feature_id":if frozen && !command.payload["controller_id"].is_string(){Some(feature)}else{None},"frozen_controller_id":command.payload["controller_id"]})})?["id"].as_str().unwrap().into()
         };
         state.resolve_model_connection(&model, &harness_record)?;
-        let materialized = e.materialize_harness(resources, &harness_record)?;
+        let materialized = if let Some(configured) = &configured {
+            e.materialize_harness_in_sandbox(
+                resources,
+                &harness_record,
+                &configured.permissions.sandbox.binding.target.revision_id,
+            )?
+        } else {
+            e.materialize_harness(resources, &harness_record)?
+        };
         command.payload["installation_id"] = json!(materialized.id);
         let integration_lock = match configured {
             Some(configured) => configured.integration_lock,
@@ -325,6 +333,15 @@ impl Engine {
                 read_only_paths: read_only_paths.clone(),
             }),
         )?;
+        let writable_paths = resolved_permissions.scope.writable_paths.clone();
+        let read_only_paths = resolved_permissions.scope.read_only_paths.clone();
+        let policy = if writable_paths.is_empty() {
+            ToolPolicy::ReadOnly
+        } else if writable_paths == ["."] {
+            ToolPolicy::WorkspaceWrite
+        } else {
+            ToolPolicy::ScopedWrite
+        };
         let adapter = resources.adapter_identity(provider);
         let agent_configuration: Option<AgentExecutionConfiguration> = command
             .payload

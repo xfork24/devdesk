@@ -35,7 +35,7 @@ inspect 为每步返回 actions.dispatch/accept/retry 及结构化 code/reason�
 
 源码：[crates/core/src/controllers.rs](../../../crates/core/src/controllers.rs)。
 
-`CONTROL_TOOLS` 列出 21 个 workflow 控制工具。`controller_command` 管理根编排或 workspace_only 项目经理的打开、输入、接管、恢复和后继；选择完整 Agent 与 Permission Context，并检查实际驱动支持 orchestration。
+`CONTROL_TOOLS` 列出 21 个 workflow 控制工具。`controller_command` 管理根编排或 workspace_only 项目经理的打开、输入、接管、恢复和后继；选择完整 Agent 与 Profile 选择，并检查实际驱动支持 orchestration。
 
 `drive_controllers` 比较持久事件/状态、用户输入和结果摘要，生成有限唤醒和原生 Turn；没有新状态/输入时不反复调用模型。ControllerSessionBinding、epoch、lease 和真实 Session/Turn/worker 共同确定当前权限，接管或后继使旧调用失效。预算围栏与业务步骤预算分开。
 

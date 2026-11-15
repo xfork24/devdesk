@@ -121,6 +121,16 @@ pub fn insert_permission_profiles(
         origin.created_at = 0;
         s.governance.push(origin);
     }
+    for id in &added {
+        let profile = s.configuration(id)?;
+        for edge in configuration_edges(profile)? {
+            let target = s.configuration(&edge.to)?;
+            require(
+                target.r#type == "tool" && target.scope.visible_from(&profile.scope),
+                "Profile 工具引用类型或作用域不匹配",
+            )?;
+        }
+    }
     Ok(json!({"added":added,"unchanged":unchanged}))
 }
 

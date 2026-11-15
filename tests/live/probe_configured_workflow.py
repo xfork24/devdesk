@@ -30,12 +30,15 @@ try:
   {'key':'investigate','name':'按技能分析','stage':'study','executor':{'type':'agent'},'required_skill_refs':[skill['id']],'task_instructions':'按本次加载的顺序分析 Skill 处理 numbers 输入。先实际调用 devdesk_materials_capture 工具，参数为计算结果对象 ordered 与 sum；收到成功回执后，再只输出当前 output_contract 要求的单个 JSON 对象，分析结果写入 result 端口。','inputs':{'numbers':{'type':'constant','value':[3,1,2,3]}},'outputs':{'result':{'delivery_ref':delivery['id']}},'budget':{'max_turns':2,'timeout_seconds':300,'retry_limit':1}},
   {'key':'consume','name':'消费确切材料','stage':'study','executor':{'type':'control'},'dependencies':['investigate'],'inputs':{'analysis':{'type':'source','source':{'step':'investigate','port':'result'}}}}
  ]}
+ base_profile=next(r for r in defaults['records'] if r['id']=='builtin-permission-harness-read-only:1')
+ policy={**base_profile['data']['policy'],'tool_refs':[capture]}
+ permission=c.command('permission.profile.create',payload={'name':'Native research Profile','identity':'native-step-'+project,'target_kind':'harness','policy':policy})
+ profile_ref=f"{permission['identity']}:{permission['revision']}"
+ next(step for step in document['steps'] if step['key']=='investigate')['harness_permission_ref']=profile_ref
  draft=c.command('workflow.create',payload={'name':'自定义数字研究','document':document});workflow=c.command('workflow.publish',draft['id'],draft['revision'])
- context=next(r for r in defaults['records'] if r['id']==defaults['permission_context_ref'])['data']
- permission=c.command('permission_context.create',payload={'name':'Native research authorization','data':{**context,'step_grants':[{'workflow_ref':workflow['id'],'step':'investigate','tool_refs':[capture]}]}})
- p=c.rpc('query.workspace')['active_project'];c.command('project.configuration.update',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{**defaults['role_agent_bindings'],role['id']:agent['id']},'permission_context_ref':permission['id']})
+ p=c.rpc('query.workspace')['active_project'];c.command('project.configuration.update',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{**defaults['role_agent_bindings'],role['id']:agent['id']},'harness_permission_ref':defaults['harness_permission_ref']})
  p=c.rpc('query.workspace')['active_project'];run=c.command('workflow.start',project,p['revision'],{'workflow_ref':workflow['id'],'role_agent_bindings':{role['id']:agent['id']}})
- manager=c.command('orchestration.open',run['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'permission_context_ref':permission['id']})['id']
+ manager=c.command('orchestration.open',run['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'harness_permission_ref':defaults['harness_permission_ref']})['id']
  manager_row=c.rpc('query.orchestration',{'id':manager})['record']
  c.command('orchestration.input',manager,manager_row['revision'],{'input':'按当前调查流程派发、核对、接纳每步并完成。必须使用真实业务 Agent 和工具，不更改或绕过计划。'})
  last=None

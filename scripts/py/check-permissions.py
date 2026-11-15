@@ -17,7 +17,9 @@ for source in presets:
  assert source['type']=='permission_profile' and source['revision']>=1
  p=source['data']
  assert type(p['schema_version']) is int and p['schema_version'] >= 1
- assert set(p['policy'])==({'filesystem','network','tools','approval'} if p['target_kind']=='harness' else {'filesystem','network'})
+ required={'filesystem','network','tools','approval'} if p['target_kind']=='harness' else {'filesystem','network'}
+ optional={'platform','tool_refs'} if p['target_kind']=='harness' else set()
+ assert required <= set(p['policy']) <= required | optional
  assert p['policy']['filesystem']['mode'] in ['full_access','read_only','scoped']
  assert p['policy']['network']['mode'] in ['enabled','disabled','allowlist']
 try:

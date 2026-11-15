@@ -46,7 +46,7 @@ TEMPLATE_FILES 来自 build.rs。资源路径仅接受安全的普通相对路�
 
 源码：[crates/adapters/src/configuration_backend.rs](../../../crates/adapters/src/configuration_backend.rs)。
 
-ConfigurationBackend 实现 core 的配置后端：权限绑定预演先检查 Profile 能否针对实际 Harness/运行资源编译，再计算 enforcement contract。这个准备阶段不启动工作，也不借预演给调用者提权。
+ConfigurationBackend 实现 core 的配置后端：权限绑定预演先检查 Profile 能否针对实际 Harness/执行安装编译，再计算 enforcement contract。这个准备阶段不启动工作，也不借预演给调用者提权。
 
 GlobalStore 的 ProjectInventory 实现汇集安装、协议报告与权限资产事实，并分页读取工程只读快照。它向 core 提供确切事实而非“环境大概可用”的布尔猜测；跨库发布、经理工作台和会话装配据此进行各自授权与提交校验。
 

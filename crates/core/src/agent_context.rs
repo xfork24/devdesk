@@ -117,6 +117,17 @@ impl Engine {
             .as_ref()
             .ok_or_else(|| err("permission_unconfigured", "缺少冻结权限"))?;
         let tool_ref = invocation["tool"]["revision_id"].as_str().unwrap_or("");
+        if let Some(lock) = &permissions.binding_lock {
+            require(
+                lock.harness
+                    .profile
+                    .policy
+                    .tool_refs
+                    .as_ref()
+                    .is_none_or(|refs| refs.iter().any(|id| id == tool_ref)),
+                "Profile 未允许该工具修订",
+            )?;
+        }
         for policy in [&permissions.harness.policy, &permissions.sandbox.policy] {
             let allowed = match &policy.tools {
                 ToolPermission::AllAvailable => true,
@@ -204,7 +215,7 @@ impl Engine {
             _ => Err(err(
                 "context_required",
                 format!(
-                    "{} 需要明确的工作目标与相应执行授权；Agent 能力保持可用",
+                    "{} 需要明确的工作目标与相应权限 Profile；Agent 能力保持可用",
                     definition.qualified_name
                 ),
             )),

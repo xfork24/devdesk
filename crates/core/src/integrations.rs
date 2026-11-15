@@ -459,6 +459,17 @@ impl Engine {
                 "只读权限不能执行写动作",
             )?;
         }
+        if let Some(lock) = &i.permissions.binding_lock {
+            require(
+                lock.harness
+                    .profile
+                    .policy
+                    .tool_refs
+                    .as_ref()
+                    .is_none_or(|refs| refs.contains(&i.tool.revision_id)),
+                "Profile 未允许该工具修订",
+            )?;
+        }
         let allowed = match &i.permissions.harness.policy.tools {
             ToolPermission::AllAvailable => true,
             ToolPermission::Restricted { allow, deny } => {

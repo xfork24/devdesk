@@ -104,10 +104,9 @@ try:
         workflow = rpc('query.workflow', {'id': defaults['workflow_ref']})
         assert workflow['data']['schema_version'] == 6
         feature_tests = next(step for step in workflow['data']['steps'] if 'release_recipe' in step.get('tags', []))
-        authorization = next(row['data'] for row in defaults['records'] if row['id'] == defaults['permission_context_ref'])
-        grant = next(g for g in authorization['step_grants'] if g['workflow_ref'] == workflow['id'] and g['step'] == feature_tests['key'])
-        assert grant['writable_paths'], 'Feature test author must have actual test-directory access'
-        assert 'writable_paths' not in feature_tests['access'], 'Workflow cannot own permission grants'
+        profile = next(row['data']['policy'] for row in defaults['records'] if row['id'] == feature_tests['harness_permission_ref'])
+        assert any(rule['access'] == 'read_write' and rule['path'].startswith('/work/') for rule in profile['filesystem']['rules'])
+        assert 'writable_paths' not in feature_tests['access'], 'Workflow references a Profile instead of owning permission rules'
         report['feature_test_author_has_explicit_write_scope'] = True
         document = json.loads(json.dumps(workflow['data']))
         step = next(s for s in document['steps'] if s['executor']['type'] == 'agent')

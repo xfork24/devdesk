@@ -17,7 +17,6 @@ parser.add_argument('--github-repo', required=True)
 parser.add_argument('--provider', choices=['codex', 'dsh'], default='codex')
 parser.add_argument('--workflow-ref')
 parser.add_argument('--driver', choices=['agent', 'rust'], default='agent')
-parser.add_argument('--policy-ref', help='Exact scheduling policy for the Rust driver')
 parser.add_argument('--dedicated-repository', action='store_true', help='The caller explicitly designates this repository for destructive test changes regardless of its name')
 parser.add_argument('--data-root', type=Path, help='Dataset root for local evidence export')
 parser.add_argument('--evidence-dir', type=Path, help='New local archive directory; authentication state is excluded')
@@ -31,8 +30,6 @@ parser.add_argument('--timeout', type=int, default=2400)
 parser.add_argument('--report', type=Path, required=True)
 args = parser.parse_args()
 assert args.dedicated_repository or 'test' in args.github_repo.lower(), 'designate a dedicated test repository with --dedicated-repository'
-if args.driver == 'rust' and not args.policy_ref:
-    parser.error('--driver rust requires --policy-ref')
 if bool(args.data_root) != bool(args.evidence_dir):
     parser.error('--data-root and --evidence-dir must be supplied together')
 client = Client(args.url)
@@ -57,16 +54,16 @@ try:
             harness = next(r for r in client.rpc('query.configurations', {'kind': 'harness', 'include_history': True, 'limit': 100})['records'] if r['id'] == capability['harness_ref'])
             assert harness['data']['provider'] == args.provider, 'configure matching Agents or pass --bindings'
         current = client.rpc('query.workspace')['active_project']
-        client.command('project.configuration.update', project, current['revision'], {'workflow_ref': workflow, 'role_agent_bindings': bindings, 'orchestrator_role_ref':defaults['orchestrator_role_ref'], 'permission_context_ref':defaults['permission_context_ref'], 'orchestration':{'mode':args.driver, **({'policy_ref':args.policy_ref} if args.driver=='rust' else {})}})
+        client.command('project.configuration.update', project, current['revision'], {'workflow_ref': workflow, 'role_agent_bindings': bindings, 'orchestrator_role_ref':defaults['orchestrator_role_ref'], 'harness_permission_ref':defaults['harness_permission_ref'], 'orchestration':{'mode':args.driver}})
         feature = client.command('feature.create', payload={'project_id': project, 'title': 'Workflow v6 verification', 'workflow_inputs': json.loads(args.inputs.read_text()) if args.inputs else {}})['id']
     defaults=client.rpc('query.configuration_defaults')
     initial=client.rpc('query.workflow_instance',{'owner_id':feature})
     driver=client.rpc('query.workflow_driver',{'id':initial['record']['id']})
     if initial['record']['data']['status'] not in ['completed','cancelled'] and (driver['driver'] or {}).get('data',{}).get('mode')!=args.driver:
         latest=client.rpc('workflow.inspect',{'id':initial['record']['id']})['record']
-        client.command('workflow.driver.select',latest['id'],latest['revision'],{'mode':args.driver,**({'policy_ref':args.policy_ref} if args.driver=='rust' else {})})
+        client.command('workflow.driver.select',latest['id'],latest['revision'],{'mode':args.driver})
     if args.driver == 'agent':
-        manager=client.command('orchestration.open',initial['record']['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'permission_context_ref':defaults['permission_context_ref']})['id']
+        manager=client.command('orchestration.open',initial['record']['id'],payload={'role_ref':defaults['orchestrator_role_ref'],'agent_ref':defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],'harness_permission_ref':defaults['harness_permission_ref']})['id']
         manager_row=client.rpc('query.orchestration',{'id':manager})['record']
         client.command('orchestration.input',manager,manager_row['revision'],{'input':'按当前冻结流程组织派发、接纳及根/子实例完成。保留所有测试、独立性及人工门禁，不得绕过或伪造成功。'+(args.supplement or '')})
     report.extend(['Project: ' + client.project, 'Feature: ' + feature, ''])

@@ -444,8 +444,8 @@ impl EngineeringState {
 mod configuration_graph;
 pub use configuration_graph::*;
 
-mod runtime_resource;
-pub use runtime_resource::*;
+mod execution_recipe;
+pub use execution_recipe::*;
 
 mod workflow_driver;
 pub use workflow_driver::*;

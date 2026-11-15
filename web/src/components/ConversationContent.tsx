@@ -8,7 +8,7 @@ const kindNames: Record<string, string> = {
   user: "用户请求",
   assistant: "Agent 响应",
   tool: "工具调用 / 响应",
-  status: "运行状态",
+  status: "状态提示",
   approval: "审批",
   question: "待澄清问题",
 };
@@ -31,7 +31,11 @@ export function ConversationContent({
   }
   const value =
     parsed && typeof parsed === "object" ? (parsed as Row) : undefined;
-  const sourceEvents: Row[] = event.source_events || [event];
+  if (
+    event.kind === "status" &&
+    (event.content === "completed" || value?.writer_revoked !== undefined)
+  )
+    return null;
   const isTask =
     value && (value.task_instructions || value.task?.task_instructions);
   const tool = value && event.kind === "tool";
@@ -113,28 +117,15 @@ export function ConversationContent({
       ) : (
         <MarkdownPreview text={event.content} />
       )}
-      {sourceEvents.length > 1 ? (
-        <details>
-          <summary>合并展示 · {sourceEvents.length} 条原始事件</summary>
-          {sourceEvents.map((e) => (
-            <div key={e.id}>
-              <RawJsonLink
-                source="event"
-                title={`原始事件 ${e.sequence}`}
-                params={{
-                  project_id: projectId,
-                  id: sessionId,
-                  event_id: e.id,
-                }}
-              />
-            </div>
-          ))}
-        </details>
-      ) : (
+      {event.kind === "assistant" && (
         <RawJsonLink
           source="event"
-          title="查看原始事件 JSON"
-          params={{ project_id: projectId, id: sessionId, event_id: event.id }}
+          title="原始事件"
+          params={{
+            project_id: projectId,
+            id: sessionId,
+            diagnostic_turn_id: event.turn_id,
+          }}
         />
       )}
     </article>

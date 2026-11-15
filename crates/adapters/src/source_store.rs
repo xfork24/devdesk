@@ -3,12 +3,8 @@ use super::*;
 
 pub(super) fn is_source(r: &ConfigurationRecord) -> bool {
     r.is_definition()
-        || [
-            "permission_context",
-            "project_configuration",
-            "integration_project_configuration",
-        ]
-        .contains(&r.r#type.as_str())
+        || ["project_configuration", "integration_project_configuration"]
+            .contains(&r.r#type.as_str())
 }
 
 pub(super) fn load_records(conn: &Connection) -> Result<Vec<ConfigurationRecord>> {

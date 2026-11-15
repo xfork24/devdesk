@@ -164,48 +164,50 @@ export function PermissionResources({ request, refresh, projectId }: Props) {
           )}
           <fieldset disabled={busy}>
             <legend>权限定义</legend>
-            <label>
-              权限类型
-              <ActionSelect
-                aria-label="权限类型"
-                value={kind}
-                onChange={(e) => {
-                  setKind(e.target.value as PermissionKind);
-                  setSelected("");
-                  setDraft("");
-                }}
-              >
-                <option value="harness">Harness</option>
-                <option value="sandbox">Sandbox</option>
-              </ActionSelect>
-            </label>
-            <label>
-              权限修订
-              <ActionSelect
-                aria-label="版本化权限修订"
-                value={selected}
-                onChange={(e) => {
-                  captureFeedback();
+            <div className="permission-definition-toolbar">
+              <label>
+                权限类型
+                <ActionSelect
+                  aria-label="权限类型"
+                  value={kind}
+                  onChange={(e) => {
+                    setKind(e.target.value as PermissionKind);
+                    setSelected("");
+                    setDraft("");
+                  }}
+                >
+                  <option value="harness">Harness</option>
+                  <option value="sandbox">Sandbox</option>
+                </ActionSelect>
+              </label>
+              <label>
+                权限修订
+                <ActionSelect
+                  aria-label="版本化权限修订"
+                  value={selected}
+                  onChange={(e) => {
+                    captureFeedback();
 
-                  const p = catalog.profiles.find(
-                    (p) => p.id === e.target.value,
-                  );
-                  if (p) edit(p);
-                }}
-              >
-                <option value="">选择权限</option>
-                {catalog.profiles
-                  .filter((p) => p.target_kind === kind)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.target_kind} · v{p.version}
-                    </option>
-                  ))}
-              </ActionSelect>
-            </label>
-            <ActionButton type="button" onClick={fresh}>
-              新建权限草稿
-            </ActionButton>
+                    const p = catalog.profiles.find(
+                      (p) => p.id === e.target.value,
+                    );
+                    if (p) edit(p);
+                  }}
+                >
+                  <option value="">选择权限</option>
+                  {catalog.profiles
+                    .filter((p) => p.target_kind === kind)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} · {p.target_kind} · v{p.version}
+                      </option>
+                    ))}
+                </ActionSelect>
+              </label>
+              <ActionButton type="button" onClick={fresh}>
+                新建权限草稿
+              </ActionButton>
+            </div>
             <label>
               统一权限 JSON
               <textarea

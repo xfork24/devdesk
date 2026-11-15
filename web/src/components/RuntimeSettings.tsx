@@ -1,9 +1,8 @@
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type Request } from "./rpc-types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DshProviderSettings } from "./DshProviderSettings";
-import { isProjectRuntimeInstallation } from "./runtime-installations";
 
 type Provider = "codex" | "dsh";
 type Installation = {
@@ -38,11 +37,57 @@ export function RuntimeSettings({
   } = useActionFeedback();
 
   const [busy, setBusy] = useState(false);
-  const projectInstallations = installations.filter(
-    isProjectRuntimeInstallation,
-  );
+  const [preparing, setPreparing] = useState(false);
+  const [runtimePreparing, setRuntimePreparing] = useState(false);
+  const [phase, setPhase] = useState("");
+  useEffect(() => {
+    if (!preparing && !runtimePreparing) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const status = await request("codex.auth.preparation_status");
+        const auth = status.preparations?.find(
+          (r: { provider: string; message: string; started?: number }) =>
+            r.provider === (preparing ? "codex-auth" : provider),
+        );
+        if (active && auth)
+          setPhase(
+            `${auth.message}${auth.started ? ` · 已用 ${Math.max(0, Math.floor((Date.now() - auth.started) / 1000))} 秒` : ""}`,
+          );
+      } catch {
+        if (active) setPhase("正在读取登录准备状态…");
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [preparing, runtimePreparing, provider, request]);
 
   const [login, setLogin] = useState<{ loginId: string; authUrl: string }>();
+  useEffect(() => {
+    let active = true;
+    void request("codex.auth.status")
+      .then((status) => {
+        const pending = status.pending_login;
+        if (!active || !pending?.loginId || !pending.authUrl) return;
+        const url = new URL(pending.authUrl);
+        if (
+          url.protocol === "https:" &&
+          ["auth.openai.com", "auth0.openai.com"].includes(url.hostname)
+        ) {
+          setLogin({ loginId: pending.loginId, authUrl: url.href });
+          setMessage("已恢复待完成的官方授权，可打开下方链接继续");
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [request, setMessage]);
+
   return (
     <>
       <div className="setting-row">
@@ -105,13 +150,11 @@ export function RuntimeSettings({
                 }
                 beginFeedback();
                 setBusy(true);
-                setMessage("正在准备登录组件并请求官方授权地址…");
+                setPreparing(true);
+                setPhase("检查本地登录程序…");
+                setMessage("");
                 try {
                   const result = await request("codex.auth.start");
-                  await refresh();
-                  window.dispatchEvent(
-                    new Event("devdesk:runtime-options-changed"),
-                  );
                   const url = new URL(result.authUrl);
                   if (
                     url.protocol !== "https:" ||
@@ -128,6 +171,10 @@ export function RuntimeSettings({
                     authorizationWindow?.close();
                     authorizationWindow = null;
                   }
+                  void refresh().catch(() => {});
+                  window.dispatchEvent(
+                    new Event("devdesk:runtime-options-changed"),
+                  );
                   setMessage(
                     authorizationWindow
                       ? "请在官方网页完成授权，然后检查登录状态"
@@ -137,6 +184,8 @@ export function RuntimeSettings({
                   authorizationWindow?.close();
                   setMessage(`无法开始登录，可再次点击重试：${String(error)}`);
                 } finally {
+                  setPreparing(false);
+                  setPhase("");
                   endFeedback();
                   setBusy(false);
                 }
@@ -159,10 +208,13 @@ export function RuntimeSettings({
                   );
                   setMessage(
                     result.authenticated
-                      ? "Codex OAuth 已登录"
+                      ? result.verification === "local credential presence"
+                        ? "本地已保存 Codex 登录凭据；有效性将在连接时核验"
+                        : "Codex OAuth 已登录"
                       : "Codex 尚未登录",
                   );
-                  if (result.authenticated) setLogin(undefined);
+                  if (result.authenticated && !result.pending)
+                    setLogin(undefined);
                 } catch {
                   setMessage("无法核对登录状态，请检查运行环境或稍后重试");
                 } finally {
@@ -173,6 +225,16 @@ export function RuntimeSettings({
             >
               检查登录状态
             </ActionButton>
+            {preparing && (
+              <ActionButton
+                onClick={async () => {
+                  await request("codex.auth.preparation_cancel");
+                  setPhase("已请求取消，正在核对停止结果…");
+                }}
+              >
+                取消登录准备
+              </ActionButton>
+            )}
             {login && (
               <ActionButton
                 disabled={busy}
@@ -211,14 +273,38 @@ export function RuntimeSettings({
       <DshProviderSettings request={request} />
       <div className="setting-row">
         <div>
-          <h3>共享运行时安装</h3>
+          <h3>本地安装与执行镜像</h3>
+          <ActionButton
+            disabled={busy}
+            onClick={async () => {
+              captureFeedback();
+              beginFeedback();
+              setBusy(true);
+              setRuntimePreparing(true);
+              setMessage("");
+              try {
+                await request("runtime.prepare", { provider });
+                await refresh();
+                setMessage("所选 Harness 执行镜像已准备并通过协议核验");
+              } catch (error) {
+                setMessage(`执行镜像准备失败：${String(error)}`);
+              } finally {
+                setRuntimePreparing(false);
+                setPhase("");
+                setBusy(false);
+                endFeedback();
+              }
+            }}
+          >
+            准备所选 Harness 执行镜像
+          </ActionButton>
           <p className="muted">
-            运行时由 DevDesk 按需下载、构建并复用，无需手动登记。
+            固定版本程序与镜像在本机保存复用；只有缺少匹配资产时才下载或构建。
           </p>
-          {projectInstallations.length === 0 ? (
+          {installations.length === 0 ? (
             <p className="muted">尚未准备项目执行运行时；首次执行时自动准备</p>
           ) : (
-            projectInstallations.map((runtime) => (
+            installations.map((runtime) => (
               <p key={runtime.id}>
                 {runtime.key.provider} · {runtime.key.version} ·{" "}
                 {runtime.key.os}/{runtime.key.arch}
@@ -233,6 +319,7 @@ export function RuntimeSettings({
           )}
         </div>
       </div>
+      {phase && <p role="status">{phase}</p>}
       <p role="status" aria-live="polite">
         {message}
       </p>

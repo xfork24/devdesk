@@ -284,11 +284,8 @@ impl Engine {
                 ConfigurationOperation::PermissionBindings { bindings } => {
                     let local = self.store.snapshot()?;
                     let agent = local.resolve_agent(&controller.agent_revision_id)?;
-                    let own_sandbox = local
-                        .configuration(&controller.permission_context_ref)?
-                        .refs
-                        .get("sandbox_ref")
-                        .and_then(Value::as_str);
+                    let sandbox = permission_selection(&local)?.sandbox_ref;
+                    let own_sandbox = Some(sandbox.as_str());
                     require(
                         !bindings.iter().any(|b| {
                             b["target"]["revision_id"] == agent.harness_ref
@@ -570,7 +567,7 @@ pub fn read_project_knowledge(
         "project.resources" => {
             let actual = runtime_facts;
             chunk(
-                &json!({"drivers":driver_capabilities(),"runtime_facts":actual,"configurations":s.governance.iter().filter(|r|["harness","sandbox","model","model_provider","runtime_resource","permission_binding","permission_context"].contains(&r.r#type.as_str())).map(|r|json!({"reference":r.id,"type":r.r#type,"content_hash":r.content_hash})).collect::<Vec<_>>()}),
+                &json!({"drivers":driver_capabilities(),"runtime_facts":actual,"configurations":s.governance.iter().filter(|r|["harness","sandbox","model","model_provider","permission_binding","permission_profile"].contains(&r.r#type.as_str())).map(|r|json!({"reference":r.id,"type":r.r#type,"content_hash":r.content_hash})).collect::<Vec<_>>()}),
                 p,
             )
         }

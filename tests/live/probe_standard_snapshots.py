@@ -186,21 +186,10 @@ try:
         review.setdefault('spec_refs', []).append(extra['id'])
         wb = publish(c, task_source, task_doc, 'Additional traceability requirement')
         sb = c.command('standard.capture', payload={'name': 'Reusable engineering snapshot B', 'root_workflow_refs': [wb['id']], 'scope': 'global'})
-        context_source = next(r for r in defaults['records'] if r['id'] == defaults['permission_context_ref'])
-        context = context_source['data']
-
-        def permission(task_ref, name):
-            data = json.loads(json.dumps(context))
-            for grant in data['step_grants']:
-                if grant['workflow_ref'] == feature_source['id']:
-                    grant['workflow_ref'] = wf['id']
-                if grant['workflow_ref'] == task_source['id']:
-                    grant['workflow_ref'] = task_ref
-            return c.command('permission_context.create', payload={'name': name, 'scope': 'project:' + str(project), 'sandbox_ref': context_source['sandbox_ref'], 'data': data})['id']
-
-        pa, pb = permission(task_source['id'], 'Original work authorization'), permission(wb['id'], 'Selected work authorization')
+        # Step Profile references travel with the published Workflow revisions.
+        pa = pb = defaults['harness_permission_ref']
         current = c.rpc('query.workspace')['active_project']
-        c.command('project.configuration.update', project, current['revision'], {'workflow_ref': wf['id'], 'standard_ref': sa['id'], 'role_agent_bindings': defaults['role_agent_bindings'], 'orchestrator_role_ref': defaults['orchestrator_role_ref'], 'permission_context_ref': pa})
+        c.command('project.configuration.update', project, current['revision'], {'workflow_ref': wf['id'], 'standard_ref': sa['id'], 'role_agent_bindings': defaults['role_agent_bindings'], 'orchestrator_role_ref': defaults['orchestrator_role_ref'], 'harness_permission_ref': pa})
         suffix = uuid.uuid4().hex[:8]
         directory = f'standard-{suffix}'
         goal = f'''在专用测试仓库实现两个互不依赖的 Task，稳定 key 为 add 和 twice，名称分别为 Add 和 Twice。
@@ -223,7 +212,7 @@ try:
         ta, tb = sorted(tasks, key=lambda t: t['title'])
         original_standard = c.rpc('query.work_configuration', {'owner_id': ta['id']})['configuration']['data']['standard_ref']
         assert original_standard != sb['id']
-        c.command('work.configuration.update', tb['id'], tb['revision'], {'standard_ref': sb['id'], 'workflow_ref': wb['id'], 'permission_context_ref': pb, 'role_agent_bindings': defaults['role_agent_bindings']})
+        c.command('work.configuration.update', tb['id'], tb['revision'], {'standard_ref': sb['id'], 'workflow_ref': wb['id'], 'harness_permission_ref': pb, 'role_agent_bindings': defaults['role_agent_bindings']})
         assert c.rpc('query.workflow_instance', {'id': root})['runtime']['plan']['standard_ref'] == paused['data']['plan']['standard_ref']
         control(c, 'workflow.resume', root)
         manager_input(c, manager, '第二个 Task 已显式采用另一份 Standard，按各自冻结配置执行。先派发 Task 子调用；分别完成两个子流程的 workspace、tests 和 tests_snapshot 必要节点并真实接纳。只到独立测试源码快照已固定为止，不进入 red_baseline 或实现；两项均完成 tests_snapshot 后暂停根流程并结束 Turn 等待。两个子调用允许同时存在，项目并发额度仍由平台限制。禁止更改计划、检查、绑定或豁免。')
@@ -239,7 +228,7 @@ try:
         old_executions = [s for s in child_a['data']['steps'] if s['started']]
         old_view = c.rpc('query.workflow_instance', {'id': child_a['id']})
         (out / 'before-switch.json').write_text(json.dumps({'a': child_a, 'b': child_b, 'outputs': old_view['outputs']}, ensure_ascii=False, indent=2))
-        changes = {'plan_revision_id': old_plan, 'reason': '本次修改显式切换规范并保留原始测试依据', 'operations': [{'type': 'adopt_standard', 'standard_ref': sb['id'], 'workflow_ref': wb['id'], 'permission_context_ref': pb}]}
+        changes = {'plan_revision_id': old_plan, 'reason': '本次修改显式切换规范并保留原始测试依据', 'operations': [{'type': 'adopt_standard', 'standard_ref': sb['id'], 'workflow_ref': wb['id'], 'harness_permission_ref': pb}]}
         preview = c.rpc('workflow.change.preview', {'id': child_a['id'], 'changeset': changes})
         control(c, 'workflow.change.apply', child_a['id'], {'changeset': changes, 'preview_hash': preview['preview_hash']})
         for execution in old_executions:

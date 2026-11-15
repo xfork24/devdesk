@@ -8,7 +8,7 @@ Workspace 把目录、工程库与真实端口组合为服务。后台持续推�
 
 - [src/workspace.rs](#file-src-workspace-rs)：全局与工程 Engine 装配、请求选择和共享配额
 - [src/github_projects.rs](#file-src-github-projects-rs)：GitHub 项目身份与异步仓库准备
-- [src/runtime_setup.rs](#file-src-runtime-setup-rs)：运行资源端口的薄装配层
+- [src/runtime_setup.rs](#file-src-runtime-setup-rs)：执行安装端口的薄装配层
 
 <a id="file-src-workspace-rs"></a>
 
@@ -48,7 +48,7 @@ Host 负责把 gh 事实、目录和 Engine 命令接起来，实际 Git 执行�
 
 <a id="file-src-runtime-setup-rs"></a>
 
-## src/runtime_setup.rs：运行资源端口的薄装配层
+## src/runtime_setup.rs：执行安装端口的薄装配层
 
 源码：[crates/host/src/runtime_setup.rs](../../../crates/host/src/runtime_setup.rs)。
 

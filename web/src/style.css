@@ -2490,9 +2490,6 @@ pre {
 .permission-history-entry pre {
   flex-basis: 100%;
 }
-.permission-context-editor > summary {
-  padding: 18px 21px;
-}
 @media (max-width: 760px) {
   .resource-detail-footer {
     grid-column: 1;
@@ -2575,4 +2572,18 @@ pre {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
+}
+
+.permission-definition-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+:root .permission-definition-toolbar > label:has(> select) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
 }

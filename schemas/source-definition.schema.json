@@ -98,10 +98,6 @@
       },
       "uniqueItems": true
     },
-    "runtime_resource_ref": {
-      "type": "string",
-      "pattern": "^\\S+:[1-9][0-9]*$"
-    },
     "default_workflow_ref": {
       "type": "string",
       "pattern": "^\\S+:[1-9][0-9]*$"
@@ -169,11 +165,6 @@
               "required": [
                 "sandbox_ref"
               ]
-            },
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
             }
           ]
         }
@@ -236,11 +227,6 @@
             {
               "required": [
                 "tools"
-              ]
-            },
-            {
-              "required": [
-                "runtime_resource_ref"
               ]
             }
           ]
@@ -309,11 +295,6 @@
             {
               "required": [
                 "tools"
-              ]
-            },
-            {
-              "required": [
-                "runtime_resource_ref"
               ]
             }
           ]
@@ -387,79 +368,6 @@
       "if": {
         "properties": {
           "type": {
-            "const": "permission_context"
-          }
-        },
-        "required": [
-          "type"
-        ]
-      },
-      "then": {
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "capability_ref"
-              ]
-            },
-            {
-              "required": [
-                "harness_ref"
-              ]
-            },
-            {
-              "required": [
-                "model_catalog_ref"
-              ]
-            },
-            {
-              "required": [
-                "model_providers"
-              ]
-            },
-            {
-              "required": [
-                "model_ref"
-              ]
-            },
-            {
-              "required": [
-                "role_ref"
-              ]
-            },
-            {
-              "required": [
-                "root_workflow_refs"
-              ]
-            },
-            {
-              "required": [
-                "skills"
-              ]
-            },
-            {
-              "required": [
-                "spec_refs"
-              ]
-            },
-            {
-              "required": [
-                "tools"
-              ]
-            },
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
-            }
-          ]
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "type": {
             "const": "standard"
           }
         },
@@ -519,11 +427,6 @@
               "required": [
                 "tools"
               ]
-            },
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
             }
           ]
         }
@@ -539,7 +442,6 @@
                 "agent",
                 "delivery_type",
                 "harness",
-                "permission_context",
                 "standard"
               ]
             }
@@ -626,16 +528,7 @@
         "required": [
           "role_ref",
           "capability_ref"
-        ],
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
-            }
-          ]
-        }
+        ]
       }
     },
     {
@@ -655,16 +548,7 @@
           "model_ref",
           "skills",
           "tools"
-        ],
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
-            }
-          ]
-        }
+        ]
       }
     },
     {
@@ -681,42 +565,7 @@
       "then": {
         "required": [
           "spec_refs"
-        ],
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
-            }
-          ]
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "permission_context"
-          }
-        },
-        "required": [
-          "type"
         ]
-      },
-      "then": {
-        "required": [
-          "sandbox_ref"
-        ],
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
-            }
-          ]
-        }
       }
     },
     {
@@ -733,149 +582,7 @@
       "then": {
         "required": [
           "root_workflow_refs"
-        ],
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
-            }
-          ]
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "runtime_resource"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "data": {
-            "type": "object",
-            "required": [
-              "provider",
-              "version",
-              "license"
-            ],
-            "properties": {
-              "provider": {
-                "enum": [
-                  "codex",
-                  "dsh"
-                ]
-              },
-              "version": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 160
-              },
-              "license": {
-                "type": "string",
-                "minLength": 1
-              },
-              "files": {
-                "type": "array",
-                "maxItems": 128,
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "path",
-                    "content"
-                  ],
-                  "properties": {
-                    "path": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "content": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              "image": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "native_releases": {
-                "type": "object"
-              }
-            },
-            "additionalProperties": false
-          }
-        },
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "harness_ref"
-              ]
-            },
-            {
-              "required": [
-                "role_ref"
-              ]
-            },
-            {
-              "required": [
-                "capability_ref"
-              ]
-            },
-            {
-              "required": [
-                "model_ref"
-              ]
-            },
-            {
-              "required": [
-                "sandbox_ref"
-              ]
-            },
-            {
-              "required": [
-                "runtime_resource_ref"
-              ]
-            },
-            {
-              "required": [
-                "model_catalog_ref"
-              ]
-            },
-            {
-              "required": [
-                "spec_refs"
-              ]
-            },
-            {
-              "required": [
-                "skills"
-              ]
-            },
-            {
-              "required": [
-                "tools"
-              ]
-            },
-            {
-              "required": [
-                "model_providers"
-              ]
-            },
-            {
-              "required": [
-                "root_workflow_refs"
-              ]
-            }
-          ]
-        }
+        ]
       }
     },
     {
@@ -906,6 +613,22 @@
             }
           ]
         }
+      }
+    },
+    {
+      "not": {
+        "properties": {
+          "type": {
+            "enum": [
+              "orchestration_policy",
+              "permission_context",
+              "runtime_resource"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ]
       }
     }
   ]

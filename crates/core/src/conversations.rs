@@ -757,6 +757,40 @@ impl Engine {
                     "Session 跨项目",
                 )?;
             }
+            if let Some(tid) = p["diagnostic_turn_id"].as_str() {
+                let turn = s
+                    .turns
+                    .iter()
+                    .find(|t| t.id == tid && t.session_id == sid)
+                    .ok_or_else(|| err("not_found", "轮次不属于此会话"))?;
+                let records: Vec<_> = s
+                    .conversation_events
+                    .iter()
+                    .filter(|e| {
+                        e.session_id == sid && e.turn_id == tid && e.mode != MessageMode::Delta
+                    })
+                    .collect();
+                let stops: Vec<Value> = records
+                    .iter()
+                    .filter_map(|e| {
+                        let value: Value = serde_json::from_str(&e.content).ok()?;
+                        value.get("writer_revoked").map(|_| value.clone())
+                    })
+                    .collect();
+                let executions: Vec<_> = s
+                    .executions
+                    .iter()
+                    .filter(|e| {
+                        e.session_id == sid
+                            && stops
+                                .iter()
+                                .any(|stop| stop["operation_id"] == e.operation_id)
+                    })
+                    .collect();
+                return Ok(json!({"session_id":sid,"turn":turn,"executions":executions,
+                    "stop_receipts":stops,"records":records,
+                    "source":"persisted conversation records; streaming fragments omitted"}));
+            }
             if let Some(event_id) = p["event_id"].as_str() {
                 let event = s
                     .conversation_events

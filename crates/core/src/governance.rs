@@ -38,35 +38,6 @@ pub(crate) fn validate_source_payload(
                 visibility.validate()?;
             }
         }
-        "permission_context" => {
-            validate_source_data("permission_context", refs, data)?;
-            let context: PermissionContextDefinition = decode(data)?;
-            reference(s, &reference_id(refs, "sandbox_ref")?, "sandbox", scope)?;
-            for (selection, kind) in [
-                (&context.harness, PermissionTargetKind::Harness),
-                (&context.sandbox, PermissionTargetKind::Sandbox),
-            ] {
-                if let PermissionSelection::Pinned {
-                    binding_revision_id,
-                } = selection
-                {
-                    let binding: VersionedPermissionBinding =
-                        reference(s, binding_revision_id, "permission_binding", scope)?.decode()?;
-                    require(binding.target.kind == kind, "授权绑定层不匹配")?;
-                }
-            }
-            for grant in context.step_grants {
-                let workflow: WorkflowDefinition =
-                    reference(s, &grant.workflow_ref, "workflow", scope)?.decode()?;
-                require(
-                    workflow.steps.iter().any(|step| step.key == grant.step),
-                    "授权引用了不存在的步骤",
-                )?;
-                for tool in grant.tool_refs {
-                    reference(s, &tool, "tool", scope)?;
-                }
-            }
-        }
         "delivery_type" => {
             let delivery: DeliveryTypeDefinition = decode(data)?;
             s.validate_delivery_specs(refs, &delivery, scope)?;
@@ -170,8 +141,6 @@ pub(crate) fn record_with_refs(
         "model",
         "model_provider",
         "model_catalog",
-        "runtime_resource",
-        "orchestration_policy",
         "tool",
         "harness",
         "agent",
@@ -188,7 +157,6 @@ pub(crate) fn record_with_refs(
         "permission_profile",
         "permission_binding",
         "permission_assignment",
-        "permission_context",
         "project_configuration",
         "integration_project_configuration",
     ]
@@ -534,8 +502,6 @@ impl Engine {
             "model",
             "model_provider",
             "model_catalog",
-            "runtime_resource",
-            "orchestration_policy",
             "tool",
             "harness",
             "skill",
@@ -543,7 +509,6 @@ impl Engine {
             "standard",
             "role",
             "capability",
-            "permission_context",
             "sandbox",
         ]
         .contains(&family)

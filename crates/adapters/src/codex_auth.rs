@@ -147,6 +147,15 @@ impl CodexAuthentication {
         installation: &str,
         action: impl FnOnce(&mut AuthWorker) -> Result<Value>,
     ) -> Result<Value> {
+        self.with_worker_progress(store, installation, &|_| {}, action)
+    }
+    fn with_worker_progress(
+        &self,
+        store: &GlobalStore,
+        installation: &str,
+        progress: &dyn Fn(&str),
+        action: impl FnOnce(&mut AuthWorker) -> Result<Value>,
+    ) -> Result<Value> {
         let runtime = store
             .runtime_installations()?
             .into_iter()
@@ -190,7 +199,9 @@ impl CodexAuthentication {
                 ])
                 .env("CODEX_HOME", &self.home)
                 .current_dir(&self.home);
+            progress("启动本地认证进程");
             let mut process = JsonlProcess::spawn(command)?;
+            progress("初始化登录协议");
             process.initialize_codex()?;
             *worker = Some(AuthWorker {
                 installation: installation.into(),
@@ -223,9 +234,39 @@ impl CodexAuthentication {
         })
     }
     pub fn start(&self, store: &GlobalStore, installation: &str, device: bool) -> Result<Value> {
-        self.with_worker(store, installation, |worker| {
-            worker.start_login(device, std::time::Duration::from_secs(20))
+        self.start_observed(store, installation, device, &|_| {})
+    }
+    pub fn start_observed(
+        &self,
+        store: &GlobalStore,
+        installation: &str,
+        device: bool,
+        progress: &dyn Fn(&str),
+    ) -> Result<Value> {
+        self.with_worker_progress(store, installation, progress, |worker| {
+            progress("请求官方授权地址");
+            let result = worker.start_login(device, std::time::Duration::from_secs(20));
+            progress(if result.is_ok() {
+                "等待用户完成官方网页授权"
+            } else {
+                "获取官方授权地址失败"
+            });
+            result
         })
+    }
+    pub fn local_status(&self) -> Value {
+        // Presence is local state, not a claim that the provider accepted the token.
+        let configured = fs::read(self.home.join("auth.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .is_some_and(|v| v["tokens"]["account_id"].is_string());
+        let pending_login = self.worker.try_lock().ok().and_then(|worker| {
+            worker
+                .as_ref()
+                .filter(|worker| worker.pending)
+                .and_then(|worker| worker.login.clone())
+        });
+        json!({"authenticated":configured,"verification":"local credential presence","pending":pending_login.is_some(),"pending_login":pending_login})
     }
     pub fn cancel(&self, store: &GlobalStore, installation: &str, login: &str) -> Result<Value> {
         self.with_worker(store, installation, |worker| {

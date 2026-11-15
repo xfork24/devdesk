@@ -8,6 +8,7 @@ pub struct RuntimePreparation {
     codex: Mutex<()>,
     dsh: Mutex<()>,
     auth: Mutex<()>,
+    auth_cancel: std::sync::atomic::AtomicBool,
     status: RwLock<BTreeMap<String, Value>>,
 }
 impl RuntimePreparation {
@@ -19,17 +20,21 @@ impl RuntimePreparation {
         }
         .lock()
         .map_err(|e| err("storage", e.to_string()))?;
+        let started = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
         let progress = |message: &str| {
             self.status.write().unwrap().insert(
                 key.into(),
-                json!({"provider":key,"status":"preparing","message":message}),
+                json!({"provider":key,"status":"preparing","message":message,"started":started}),
             );
         };
         progress("正在检查运行环境");
         let result = work(&progress);
         self.status.write().unwrap().insert(key.into(), match &result {
-            Ok(_) => json!({"provider":key,"status":"ready","message":"运行环境已就绪"}),
-            Err(error) => json!({"provider":key,"status":"failed","message":error.message,"code":error.code}),
+            Ok(_) => json!({"provider":key,"status":"ready","message":"运行环境已就绪","started":started}),
+            Err(error) => json!({"provider":key,"status":"failed","message":error.message,"code":error.code,"started":started}),
         });
         result
     }
@@ -44,8 +49,29 @@ pub struct SessionResourceAdapter<'a> {
     pub preparation: &'a RuntimePreparation,
 }
 impl RuntimePreparation {
+    pub fn cancel_auth(&self) {
+        self.auth_cancel
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    pub fn auth_cancelled(&self) -> bool {
+        self.auth_cancel.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    pub fn auth_progress(&self, message: &str) {
+        self.status
+            .write()
+            .unwrap()
+            .entry("codex-auth".into())
+            .and_modify(|v| {
+                v["message"] = json!(message);
+                v["status"] = json!("preparing");
+            });
+    }
     pub fn prepare_auth(&self, global: &GlobalStore) -> Result<RuntimeInstallation> {
-        self.run("codex-auth", |progress| global.prepare_codex_auth(progress))
+        self.run("codex-auth", |progress| {
+            self.auth_cancel
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            global.prepare_codex_auth_cancellable(progress, &|| self.auth_cancelled())
+        })
     }
 }
 impl ports::SessionResources for SessionResourceAdapter<'_> {
@@ -61,13 +87,14 @@ impl ports::SessionResources for SessionResourceAdapter<'_> {
         resource: &ConfigurationRecord,
     ) -> Result<RuntimeInstallation> {
         let harness: HarnessDefinition = record.decode()?;
-        let selected: RuntimeResourceDefinition = resource.decode()?;
+        let selected = compose_execution_recipe(record, resource)?;
         require(
             selected.provider.as_str() == harness.provider,
-            "运行资源的协议驱动不匹配",
+            "执行安装的协议驱动不匹配",
         )?;
         self.preparation.run(harness.provider.as_str(), |progress| {
-            self.global.prepare_runtime_resource(resource, progress)
+            self.global
+                .prepare_execution_recipe(resource, &selected, progress)
         })
     }
     fn installations(&self) -> Result<Vec<RuntimeInstallation>> {

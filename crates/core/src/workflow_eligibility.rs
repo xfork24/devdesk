@@ -101,8 +101,58 @@ pub(crate) fn step_actions_with_facts(
             retry: blocked,
         });
     }
+    let uses_worker = matches!(
+        step.executor,
+        StepExecutor::Agent { .. } | StepExecutor::Tool { .. }
+    );
+    let worker_count = |tree: bool| {
+        state
+            .governance
+            .iter()
+            .filter(|r| {
+                r.r#type == "workflow_instance"
+                    && (if tree {
+                        r.data["root_instance_id"] == instance.root_instance_id
+                    } else {
+                        r.id == id
+                    })
+            })
+            .map(|r| {
+                r.data["steps"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|e| {
+                        ["running", "needs_reconciliation"]
+                            .contains(&e["status"].as_str().unwrap_or(""))
+                            && r.data["plan"]["document"]["steps"]
+                                .as_array()
+                                .is_some_and(|steps| {
+                                    steps.iter().any(|s| {
+                                        s["key"] == e["step"]
+                                            && ["agent", "tool"].contains(
+                                                &s["executor"]["type"].as_str().unwrap_or(""),
+                                            )
+                                    })
+                                })
+                    })
+                    .count()
+            })
+            .sum::<usize>()
+    };
+    let root_limit = state
+        .configuration(&instance.root_instance_id)
+        .ok()
+        .and_then(|r| r.data["plan"]["document"]["scheduling"]["max_concurrency"].as_u64())
+        .unwrap_or(instance.plan.document.scheduling.max_concurrency as u64)
+        as usize;
+    let capacity = !uses_worker
+        || (worker_count(false) < instance.plan.document.scheduling.max_concurrency
+            && worker_count(true) < root_limit);
     let dispatch = if execution.status != StepExecutionStatus::Queued {
         WorkflowActionEligibility::blocked("execution_state", "步骤已派发或已结束")
+    } else if !capacity {
+        WorkflowActionEligibility::blocked("workflow_capacity", "工作流并发额度已满")
     } else if state.workflow_instance_suspended(id) {
         WorkflowActionEligibility::blocked("paused", "流程暂停中")
     } else if state

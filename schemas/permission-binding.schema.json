@@ -58,6 +58,22 @@
             "binding_revision_id"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "const": "profile"
+            },
+            "permission_revision_id": {
+              "$ref": "source-reference.schema.json"
+            }
+          },
+          "required": [
+            "mode",
+            "permission_revision_id"
+          ],
+          "additionalProperties": false
         }
       ]
     },

@@ -94,12 +94,7 @@ pub fn reference_fields(kind: &str) -> &'static [&'static str] {
         "capability" => &["harness_ref", "model_ref", "skills", "tools", "spec_refs"],
         "agent" => &["role_ref", "capability_ref"],
         "delivery_type" => &["spec_refs"],
-        "harness" => &[
-            "model_providers",
-            "model_catalog_ref",
-            "runtime_resource_ref",
-        ],
-        "permission_context" => &["sandbox_ref"],
+        "harness" => &["model_providers", "model_catalog_ref"],
         "standard" => &[
             "root_workflow_refs",
             "default_workflow_ref",
@@ -162,8 +157,6 @@ impl ConfigurationRecord {
             "model",
             "model_provider",
             "model_catalog",
-            "runtime_resource",
-            "orchestration_policy",
             "tool",
             "harness",
             "agent",
@@ -177,7 +170,6 @@ impl ConfigurationRecord {
             "integration",
             "integration_binding",
             "sandbox",
-            "permission_context",
             "permission_profile",
             "permission_binding",
             "permission_assignment",
@@ -242,6 +234,8 @@ pub struct HarnessDefinition {
     /// Exact managed build inputs; its first verified image is permanently bound separately.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recipe_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installation: Option<HarnessInstallation>,
     #[serde(default)]
     pub capabilities: Vec<String>,
 }

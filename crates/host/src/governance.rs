@@ -163,8 +163,6 @@ impl Workspace {
             || method.starts_with("model_provider.")
             || method.starts_with("model_catalog.")
             || method.starts_with("tool.")
-            || method.starts_with("orchestration_policy.")
-            || method.starts_with("runtime_resource.")
             || method.starts_with("harness.")
             || method.starts_with("sandbox.")
             || method.starts_with("role.")

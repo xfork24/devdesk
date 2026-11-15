@@ -84,25 +84,28 @@ fn load() -> Result<()> {
     })
 }
 /// Packaged defaults are ordinary source data, also usable before a dataset is initialized.
-pub(crate) fn packaged_runtime(provider: HarnessProvider) -> Result<SourceDefinition> {
+pub(crate) fn packaged_harness(provider: HarnessProvider) -> Result<ConfigurationRecord> {
     let manifest: Value = serde_json::from_str(resource("manifest.json")?).map_err(storage)?;
-    let defaults: Value =
-        serde_json::from_str(resource(manifest["defaults"].as_str().unwrap())?).map_err(storage)?;
-    let reference = defaults["runtime_resources"][provider.as_str()]
-        .as_str()
-        .ok_or_else(|| err("configuration_required", "没有默认运行资源选择"))?;
-    for path in manifest["types"]["runtime_resource"]
+    for path in manifest["types"]["harness"]
         .as_array()
         .into_iter()
         .flatten()
     {
         let source: SourceDefinition =
             serde_json::from_str(resource(path.as_str().unwrap())?).map_err(storage)?;
-        if source_reference(&source.identity, source.revision)? == reference {
-            return Ok(source);
+        if source.data["provider"] == provider.as_str() {
+            return source.into_record();
         }
     }
-    Err(err("configuration_required", "默认运行资源不存在"))
+    Err(err("configuration_required", "默认 Harness 缺失"))
+}
+pub(crate) fn packaged_runtime(provider: HarnessProvider) -> Result<ExecutionRecipe> {
+    let manifest: Value = serde_json::from_str(resource("manifest.json")?).map_err(storage)?;
+    let path = manifest["types"]["sandbox"][0]
+        .as_str()
+        .ok_or_else(|| err("configuration_required", "默认 Sandbox 缺失"))?;
+    let sandbox: SourceDefinition = serde_json::from_str(resource(path)?).map_err(storage)?;
+    compose_execution_recipe(&packaged_harness(provider)?, &sandbox.into_record()?)
 }
 
 pub(crate) fn packaged_permission_presets() -> Result<Vec<(String, &'static str)>> {

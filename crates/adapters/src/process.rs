@@ -55,11 +55,31 @@ pub(crate) fn capture_command_limited(
     capture_command_streams(command, timeout, input, limit, false)
 }
 fn capture_command_streams(
+    command: Command,
+    timeout: Duration,
+    input: Option<Vec<u8>>,
+    limit: usize,
+    stderr: bool,
+) -> Result<Output> {
+    capture_command_streams_cancellable(command, timeout, input, limit, stderr, None)
+}
+pub(crate) fn capture_cancellable(
+    program: &str,
+    args: &[String],
+    timeout: Duration,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Output> {
+    let mut command = Command::new(program);
+    command.args(args);
+    capture_command_streams_cancellable(command, timeout, None, 1024 * 1024, false, Some(cancelled))
+}
+fn capture_command_streams_cancellable(
     mut command: Command,
     timeout: Duration,
     input: Option<Vec<u8>>,
     limit: usize,
     stderr: bool,
+    cancelled: Option<&dyn Fn() -> bool>,
 ) -> Result<Output> {
     #[cfg(unix)]
     {
@@ -110,7 +130,9 @@ fn capture_command_streams(
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) if Instant::now() < deadline && !cancelled.is_some_and(|c| c()) => {
+                thread::sleep(Duration::from_millis(10))
+            }
             _ => {
                 kill_group(&mut child);
                 let _ = child.wait();
@@ -132,6 +154,9 @@ fn capture_command_streams(
         })
         .transpose()?
         .unwrap_or_default();
+    if cancelled.is_some_and(|c| c()) {
+        return Err(err("cancelled", "准备已取消，所属进程已停止"));
+    }
     let status = status.ok_or_else(|| {
         err(
             "needs_reconciliation",
@@ -182,6 +207,19 @@ mod tests {
         let start = Instant::now();
         let result = capture_command(command, Duration::from_millis(100), None);
         assert_eq!(result.err().unwrap().code, "needs_reconciliation");
+        assert!(start.elapsed() < Duration::from_secs(3));
+    }
+    #[test]
+    #[cfg(unix)]
+    fn cancellation_reaps_only_the_owned_process_group() {
+        let start = Instant::now();
+        let output = capture_cancellable(
+            "/bin/sh",
+            &["-c".into(), "sleep 30 & wait".into()],
+            Duration::from_secs(30),
+            &|| start.elapsed() >= Duration::from_millis(100),
+        );
+        assert_eq!(output.err().unwrap().code, "cancelled");
         assert!(start.elapsed() < Duration::from_secs(3));
     }
 }

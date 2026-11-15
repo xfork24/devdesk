@@ -479,6 +479,16 @@ impl Workspace {
                 .map_err(|_| err("invalid_params", "需要 provider"))?;
             return Ok(json!(self.global.discover_docker_runtime(provider)?));
         }
+        if method == "codex.auth.preparation_status" {
+            return Ok(self.runtime_setup.status());
+        }
+        if method == "codex.auth.preparation_cancel" {
+            self.runtime_setup.cancel_auth();
+            return Ok(json!({"cancel_requested":true}));
+        }
+        if method == "codex.auth.status" && params["installation_id"].is_null() {
+            return Ok(self.codex_auth.local_status());
+        }
         if method.starts_with("codex.auth.") {
             let prepared;
             let installation = if let Some(id) = params["installation_id"].as_str() {
@@ -490,11 +500,25 @@ impl Workspace {
             return match method {
                 "codex.auth.status" => self.codex_auth.status(&self.global, installation),
                 "codex.auth.models" => self.codex_auth.models(&self.global, installation),
-                "codex.auth.start" => self.codex_auth.start(
-                    &self.global,
-                    installation,
-                    params["device"].as_bool().unwrap_or(false),
-                ),
+                "codex.auth.start" => {
+                    require(!self.runtime_setup.auth_cancelled(), "登录准备已取消")?;
+                    let result = self.codex_auth.start_observed(
+                        &self.global,
+                        installation,
+                        params["device"].as_bool().unwrap_or(false),
+                        &|message| self.runtime_setup.auth_progress(message),
+                    );
+                    if self.runtime_setup.auth_cancelled() {
+                        if let Ok(value) = &result
+                            && let Some(login) = value["loginId"].as_str()
+                        {
+                            self.codex_auth.cancel(&self.global, installation, login)?;
+                        }
+                        Err(err("cancelled", "登录已取消，所属认证请求已停止"))
+                    } else {
+                        result
+                    }
+                }
                 "codex.auth.cancel" => self.codex_auth.cancel(
                     &self.global,
                     installation,
@@ -569,8 +593,8 @@ impl Workspace {
             } else {
                 self.global.snapshot()?
             };
-            let recipes: Vec<_> = recipe_state.governance.iter().filter(|r|r.r#type == "runtime_resource" && !devdesk_core::configuration_retired(&recipe_state, r))
-                .filter_map(|r| r.decode::<RuntimeResourceDefinition>().ok().map(|d|json!({"reference":r.id,"name":r.name,"provider":d.provider,"version":d.version,"recipe_digest":d.recipe_digest(),"os":"linux","arch":std::env::consts::ARCH}))).collect();
+            let recipes: Vec<_> = recipe_state.governance.iter().filter(|r|r.r#type == "harness" && !devdesk_core::configuration_retired(&recipe_state, r))
+                .filter_map(|r| harness_execution_recipe(&recipe_state,r).ok().map(|d|json!({"reference":r.id,"name":r.name,"provider":d.provider,"version":d.version,"recipe_digest":d.recipe_digest(),"os":"linux","arch":std::env::consts::ARCH}))).collect();
             return Ok(
                 json!({"default_harness":self.global.default_harness()?,"host_os":std::env::consts::OS,"host_arch":std::env::consts::ARCH,
                 "installations":installations,"model_providers":providers,"recipes":recipes,"drivers":devdesk_core::driver_capabilities()}),
@@ -1428,7 +1452,7 @@ mod adapter_injection_tests {
         };
         let harness = create_resource(
             "harness.create",
-            json!({"name":"Explicit pinned Harness","runtime_resource_ref":"builtin-runtime-codex:1","model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"capabilities":[]}}),
+            json!({"name":"Explicit pinned Harness","model_providers":["builtin-model-provider-openai:1"],"data":w.active_engine(Some(&pid)).unwrap().store.snapshot().unwrap().configuration("builtin-harness-codex-managed:1").unwrap().data}),
         );
         let capability = create_resource(
             "capability.create",

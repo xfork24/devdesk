@@ -39,7 +39,7 @@ fn cmd(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Result
 }
 fn select(defaults: &Value, overrides: Value) -> Value {
     json!({"standard_ref":defaults["standard_ref"],"standard_overrides":overrides,
-        "role_agent_bindings":defaults["role_agent_bindings"],"permission_context_ref":defaults["permission_context_ref"],
+        "role_agent_bindings":defaults["role_agent_bindings"],"harness_permission_ref":defaults["harness_permission_ref"],
         "orchestrator_role_ref":defaults["orchestrator_role_ref"]})
 }
 
@@ -66,7 +66,7 @@ fn selecting_an_existing_standard_without_overrides_reuses_it_without_deriving_s
     let pid = project["id"].as_str().unwrap();
     let defaults = e.configuration_defaults(Some(pid)).unwrap();
     let before = source_hashes(e.store.snapshot().unwrap());
-    let preview = e.query("query.project_standard_preview", &json!({"project_id":pid,"standard_ref":defaults["standard_ref"],"permission_context_ref":defaults["permission_context_ref"]}), 4).unwrap();
+    let preview = e.query("query.project_standard_preview", &json!({"project_id":pid,"standard_ref":defaults["standard_ref"],"harness_permission_ref":defaults["harness_permission_ref"]}), 4).unwrap();
     assert_eq!(preview["standard_ref"], defaults["standard_ref"]);
     assert_eq!(preview["default_workflow_ref"], defaults["workflow_ref"]);
     assert_eq!(preview["provenance"]["diff"]["equal"], true);
@@ -84,8 +84,8 @@ fn selecting_an_existing_standard_without_overrides_reuses_it_without_deriving_s
         assert_eq!(saved["data"]["standard_ref"], defaults["standard_ref"]);
         assert_eq!(saved["data"]["workflow_ref"], defaults["workflow_ref"]);
         assert_eq!(
-            saved["data"]["permission_context_ref"],
-            defaults["permission_context_ref"]
+            saved["data"]["harness_permission_ref"],
+            defaults["harness_permission_ref"]
         );
         assert_eq!(source_hashes(e.store.snapshot().unwrap()), before);
     }
@@ -150,7 +150,7 @@ fn project_override_rewrites_the_graph_and_permissions_without_changing_frozen_f
     .unwrap();
     let overrides = json!([{"source_ref":old_spec.id,"replacement_ref":revised["id"]}]);
     let before_preview = e.store.snapshot().unwrap();
-    let preview = e.query("query.project_standard_preview", &json!({"project_id":pid,"standard_ref":base,"standard_overrides":overrides,"permission_context_ref":defaults["permission_context_ref"]}), 4).unwrap();
+    let preview = e.query("query.project_standard_preview", &json!({"project_id":pid,"standard_ref":base,"standard_overrides":overrides,"harness_permission_ref":defaults["harness_permission_ref"]}), 4).unwrap();
     assert_eq!(
         before_preview.governance.len(),
         e.store.snapshot().unwrap().governance.len()
@@ -187,9 +187,9 @@ fn project_override_rewrites_the_graph_and_permissions_without_changing_frozen_f
     assert_eq!(state.configuration(&old_spec.id).unwrap(), old_spec);
     assert_eq!(state.configuration(&old_root.id).unwrap(), &old_root);
     assert_eq!(old_root.data["plan"]["standard_ref"], old_standard);
-    assert_ne!(
-        saved["data"]["permission_context_ref"],
-        defaults["permission_context_ref"]
+    assert_eq!(
+        saved["data"]["harness_permission_ref"],
+        defaults["harness_permission_ref"]
     );
     let fresh = cmd(
         &e,
@@ -266,8 +266,8 @@ fn project_override_rewrites_the_graph_and_permissions_without_changing_frozen_f
     .unwrap();
     assert_eq!(reverted["data"]["standard_ref"], base);
     assert_eq!(
-        reverted["data"]["permission_context_ref"],
-        defaults["permission_context_ref"]
+        reverted["data"]["harness_permission_ref"],
+        defaults["harness_permission_ref"]
     );
     let after_revert = e.store.snapshot().unwrap();
     assert_eq!(

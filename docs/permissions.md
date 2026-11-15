@@ -1,66 +1,41 @@
 # 运行时权限
 
-本文描述权限的**系统语义**：策略如何表达、授权如何叠加到步骤、执行如何冻结、切换为何等价于后继会话。资产清单与后端矩阵见 [权限说明](../permissions/README.md)，命令合同见 [本地协议](protocol.md)。
+Profile 是文件、网络、工具、审批与平台操作权限的唯一规则来源。Agent/Capability 表示具备的完整能力；实际调用仍须满足选定 Profile 与可信执行边界。Role、任务文字或工具需求不能扩大权限。后端资产与平台矩阵见 [权限后端](../permissions/README.md)。
 
-## 工作台入口
+## 选择与默认绑定
 
-Harness、Sandbox 和 Permission 位于“基础组件”。Harness/Sandbox 编辑器按所选不可变修订显示目标权限绑定、兼容性预检、构建和安装信息、双层执行范围预览及绑定历史；只有已保存修订才能绑定，查看旧修订不会更改其他版本。权限修订与文件来源可从目标详情追溯至 Permission 页面。
+每次执行采用一个 Harness Profile 和一个 Sandbox Profile。项目选择 Sandbox，可直接选择各层 Profile；Workflow 步骤的 `harness_permission_ref`、`sandbox_permission_ref` 可进一步指定确切修订。显式选择替换同层默认选择；没有显式选择时才解析该目标修订的活动默认绑定。
 
-Permission 集中管理两类 Profile 定义、修订历史、导入导出、预设目录和重载；执行授权上下文在同页的独立分区编辑。范围预览自动使用当前目标及已应用绑定，并要求选择另一端和执行范围；它与待应用权限的兼容性预检分别展示。设置页不再承载这些配置。
+默认绑定与 Profile 都可版本化管理，绑定含确切目标、Profile 及执行合同，CAS 更新活动分配。直接选 Profile 无需先建立默认绑定，但仍检查目标类型、作用域和真实后端支持范围。两种选择都会冻结实际目标、Profile 与内容身份，不能绕过后端兼容性。
 
-## 五层模型
+不存在独立执行授权配置。Workflow 步骤只保存 Profile 引用，不保存另一套可写目录或工具规则。派生 StepAccess、ExecutionScope 和 PermissionLock 是执行视图及事实，不是第二份可编辑源。
 
-```text
-PermissionProfile（不可变源修订，schema v2：文件/网络/工具/审批策略）
-  → PermissionTarget（Harness / Sandbox 的确切目标修订，含配方摘要与执行合同）
-    → VersionedPermissionBinding + Assignment（按目标修订 CAS 的活动绑定）
-      → PermissionLock（执行开始冻结的双端锁）
-PermissionContext（源修订：sandbox_ref + 双端选择 + step_grants + Controller 控制策略）
-```
+## Profile 字段与两层执行
 
-核心原则：**Agent 与 Capability 不含任何权限字段**。技术能力（Capability 声明具备某工具）与本次调用授权（Permission 授予）分别表达；Role 名称、任务指令或提示词都不能扩大权限。
+Profile schema v2 要求 Harness policy 包含 filesystem、network、tools、approval；Sandbox policy 只处理文件与网络，不接受工具与审批。文件模式为 full_access/read_only/scoped，网络为 enabled/disabled/allowlist，原生工具为 all_available/restricted，审批为 never/on_request。无法落实的组合返回 `permission_unsupported`，不静默放宽。
 
-## 权限预设来源
+Harness 的 `policy.tool_refs` 限制宿主管理工具的确切源修订：省略表示允许 Capability 中的全部此类工具，显式空数组表示全部拒绝。原生工具的限制由 `policy.tools` 和实际驱动支持决定，不能用平台工具引用假装限制任意原生命令。所有引用进入有类型源图校验。
 
-默认预设优先使用运行包旁的 `resources/configuration/permissions/profiles`；没有附带该目录时，从包内资源按内容摘要生成到当前数据集的 `packaged-permission-presets/`，不读取编译时的源码目录。生成缓存可恢复，旧内容代际保留；修改预设应选择自己的目录，避免把生成缓存当作编辑源。
+文件和网络访问同时满足 Harness 与 Sandbox 两层边界。规范路径如 `/work/tests` 由 Profile 表达，可信挂载解析器映射宿主项目路径；执行器只挂载实际输入，容器以普通用户运行，不授予宿主 HOME 或 Docker socket。显式 Harness Profile 不替换 Sandbox 边界。
 
-用户选择的预设目录持久化保存，重新加载只读取该目录；“重新加载内置预设”恢复运行包提供的来源。加载产生不可变 Profile 修订，不自动改绑 Harness 或 Sandbox，也不改变历史执行的冻结权限。
+默认工程步骤直接引用专用 Profile：tests 只可写 tests/；red_baseline 与 implementation 可写仓库而 tests 只读；documentation 和评审使用只读 Profile 及确切工具范围。未特别选择的步骤使用项目选择或目标默认绑定。TDD、独立评审和业务确认条件仍由 Workflow 表达。
 
-## Profile 职责矩阵
+## 平台操作与调度
 
-Profile schema v2 强制：Harness profile 必须含 filesystem / network / tools / approval 四键；Sandbox profile 不得含 tools 与 approval（审批语义只属于 Harness 层）。可移植词汇为：
+Harness Profile 的 `policy.platform` 包含 allowed_operations、human_operations、waivable_requirements、allow_task_revision；省略时不授予平台控制权限。它约束经理、Agent 控制器与 Rust 驱动。共享目录写入另需 configuration.global.write。内核的人类决定保护独立存在，宽松 Profile 也不能代答人类或自行批准受保护计划。
 
-- filesystem：full_access / read_only / scoped（≤128 条规范绝对路径）；
-- network：enabled / disabled / allowlist（1–128 个域名目标）；
-- tools：all_available / restricted（+deny ≤256）；
-- approval：never / on_request。
+调度预算不属于权限。并发、每轮动作、租约、技术重试与 Agent 唤醒预算位于 Workflow 的 scheduling，跟随工作流修订和 Standard 冻结。平台能力、Profile 权限、运行 epoch/租约与预算须同时满足。
 
-可移植策略由 `permission-compiler/v2` 编译为固定后端合同（Codex 配置、DSH profile 与工具边界、Docker 旗标与 seccomp/AppArmor 资产）；后端资产按 sha256 钉死并与 manifest 比对防漂移。无法落实的策略组合在编译期明确拒绝，不静默放宽。
+## 冻结、恢复与切换
 
-## 授权叠加：step_grants
+执行开始固定双层目标与 Profile。存储 codec 保存确切源引用及选择，不持久化第二份展开权限正文；恢复按原源重建，默认改绑不改变已冻结工作。同一 Agent 在不同步骤可以采用不同 Profile，锁按工作流和步骤保存。
 
-存储态 Workflow 只描述任务上下文（工作空间输入、工作目录）；读写目录与工具授权全部放在 Permission Context 的 `step_grants`：按 `workflow_ref + step key` 精确声明可写目录、只读目录与工具修订。加载执行视图时由同一解析器叠加到匹配步骤，实际访问同时受文件范围、工具白名单和双端 Profile 限制。完整 Agent 工具清单保持不变，步骤工具范围在调用时校验；需要工作流控制权的操作仍检查 Controller 身份与策略。
+讨论发送时检测当前选择变化；变化需静止校验、取得实际停止与写撤销证明、保存快照并创建后继 Session。原会话、输入和回执保持历史。持久化意图保证崩溃后核对再恢复，不能在未知执行仍可能写入时直接换绑。
 
-默认工程上下文（`builtin-permission-context-engineering:6`）显式收紧 16 个步骤：Task 的 `tests` 步骤只可写 `tests/`；`red_baseline` 与 `implementation` 可写全仓但 tests 只读，保护独立断言不被实现改写；`documentation` 全仓只读且只提供 outputs-read 工具。Task 的 `review` / `candidate_review` 及 Feature 的 `candidate_review` 没有文件授权，工具白名单包含所选原生工具与 outputs-read；其余只读评审按各自 grant 执行。工具能力仍须由 Capability 提供。
+## 工作台与预设
 
-## 执行冻结与切换
+基础组件的 Permission 管理 Profile 创建、修订、导入导出、预设目录和历史；Harness/Sandbox 详情管理目标默认绑定与兼容性预检。实际范围预览从两层 Profile 自动推导，无需手填另一份执行范围。保存 Profile 或重新加载预设不会自动改绑已有目标。
 
-运行开始时解析双端（Harness/Sandbox）锁并冻结进 RuntimeBinding；**重试与恢复不追随新的活动分配**——绑定变更不改变已冻结执行。
+预设优先使用发行包旁的 resources/configuration/permissions/profiles；无外部目录时从包内资源恢复到数据集的 packaged-permission-presets。自定义来源目录可持久化选择，旧代际与历史修订保留。
 
-权限切换等价于**后继会话**，三段式完成：静止校验 → 逐执行取得停止与写撤销证明（首停时导出协议日志）→ 会话快照 + 强制新建后继 Session（继承 Agent 实例）。全过程 durable intent，任意崩溃点重试收敛；原会话与输入保留历史，不被改写。
-
-权限、实际接入绑定和通用上下文协议变化通过同一后继机制核对；Agent 身份、模型、Harness 与运行环境变化分别验证。创建、发送和恢复使用一致能力解析，工具集合不会因入口过滤产生伪切换。
-
-讨论会话发送消息时自动检测改绑：锁未变直接执行；变化则走上述切换。`permission_status` 状态机为 unconfigured / pending / ready_to_switch / adopted / needs_reconciliation，待恢复时可用 pending_command 原样重试。
-
-## 默认绑定与收紧方向
-
-默认配置绑定 `builtin-permission-harness-full-access` 与 `builtin-permission-sandbox-full-access`，把整个容器视为信任范围（宿主凭据库、其他项目、未挂载路径仍在容器外；Agent 拿不到 Docker socket）。最小权限的精细化由 step_grants 表达；需要收紧 Harness 层时可发布 read_only 或 scoped profile 并经 preflight 预检后应用绑定（`permission.bindings.apply`，同作用域原子批次、CAS 更新、可回退）。
-
-## Controller 操作策略
-
-Permission Context 内嵌 WorkflowControlPolicy：允许的编排操作集合、必须留给人类的操作、可豁免的要求类别（完成/确认/测试/独立性/覆盖）、是否允许修订任务、唤醒预算（轮次/每轮工具调用/超时）。Controller 的每个控制工具调用都经过策略、epoch、租约与预算围栏；留给人类的操作必须持有逐参数匹配的人工决定。
-
-同一策略还约束 Rust 驱动及经理工作台的项目读取、配置预演/应用；共享目录写入另需 `configuration.global.write`。当前默认策略不授予共享写权限或任何豁免能力。计划应用（含 Task 范围修订）要求绑定确切参数的人类决定；受保护流程的澄清输入必须由人类提供。默认 Feature 的 PRD、Design、Tasks 独立评审后须人类确认，其他步骤按原门禁自动推进。内核的人工决策保护独立于 Controller 策略，宽松策略也不能授权 Agent 代答或自行改写受保护计划。
-
-实现依据：[权限源类型](../crates/domain/src/source.rs)、[默认步骤授权](../resources/configuration/permissions/bindings/builtin-permission-context-engineering-v6.json)、[权限编译](../crates/adapters/src/permissions.rs)、[权限切换](../crates/core/src/permission_switch.rs)。
+实现依据：[Profile 与选择](../crates/domain/src/permission_profile.rs)、[默认步骤 Profile](../resources/configuration/permissions/profiles)、[双层编译](../crates/adapters/src/permission_profiles.rs)、[冻结 codec](../crates/adapters/src/source_views.rs)、[权限切换](../crates/core/src/permission_switch.rs)。

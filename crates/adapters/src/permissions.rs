@@ -86,12 +86,12 @@ pub fn compile_resolved_permissions(
     let mut result = ExecutionPermissions {
         binding_lock: None,
         harness: harness.clone(),
-        sandbox,
+        sandbox: sandbox.clone(),
         approval,
         scope,
         isolation: SandboxIsolation {
             protected_metadata: vec![".git".into(), ".codex".into(), ".agents".into()],
-            read_only_root: false,
+            read_only_root: sandbox.policy.filesystem != FilesystemPermission::FullAccess,
             executable_tmp: true,
             nested_sandbox: nested,
             backend: if nested {
@@ -189,12 +189,6 @@ pub fn validate_execution_permissions(
                         ),
                     ));
                 }
-            }
-            if layer == "sandbox" {
-                return Err(err(
-                    "permission_unsupported",
-                    "Sandbox scoped 策略请使用执行范围挂载；当前只支持 FullAccess / ReadOnly",
-                ));
             }
         }
     }

@@ -446,7 +446,7 @@ fn configuration_schemas_cover_stage_intent_capability_and_standard_snapshot() {
         json!({"schema_version":3,"body":"# 内容规范","checks":[]}),
     );
     round_trip::<ConfiguredStandard>("ConfiguredStandard", json!({"schema_version":4}));
-    let project = json!({"schema_version":4,"workflow_ref":"workflow:1","standard_ref":"standard:1","role_agent_bindings":{"product":"analyst-v2"},"permission_context_ref":"authorization:1"});
+    let project = json!({"schema_version":4,"workflow_ref":"workflow:1","standard_ref":"standard:1","role_agent_bindings":{"product":"analyst-v2"},"harness_permission_ref":"authorization:1"});
     SCHEMAS.assert_valid("project-configuration.schema.json", &project);
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(

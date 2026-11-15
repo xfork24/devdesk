@@ -16,7 +16,7 @@
 
 源码：[crates/core/src/configured_workflows.rs](../../../crates/core/src/configured_workflows.rs)。
 
-`ConfiguredWorkflowPlan` 包含原 Workflow 修订、Standard/工作采用/Permission Context、解析后文档、Role 绑定、确切定义、权限锁、工具绑定和规范视图。它是执行时需要的组合，不意味着整个展开对象都应持久化。
+`ConfiguredWorkflowPlan` 包含原 Workflow 修订、Standard/工作采用/Profile 选择、解析后文档、Role 绑定、确切定义、权限锁、工具绑定和规范视图。它是执行时需要的组合，不意味着整个展开对象都应持久化。
 
 compile_workflow_sources 递归访问确切子流程，核对 DAG、深度/展开数、Role→Agent 身份、必需 Skill、Tool 能力和授权，解析 Delivery 与 Spec，并检查平台 producer 和真实执行方式相容。独立 Tool Step 不能把一个原生工具组当可调用动作；测试工具需要冻结运行环境；外部工具需要账户和权限绑定。
 

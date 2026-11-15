@@ -4,19 +4,19 @@
 
 配置以 `{type, identity, revision, name, scope, 根级引用, data}` 表达不可变修订，引用为 `identity:revision`。源文件与数据库没有重复引用注册表、存储表选择或手工投影。源文件的正文路径在加载其所属修订时读取；其他定义只持有源引用。
 
-Scope 使用 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。引用白名单按类型定义，Capability/Agent 的组合引用、Delivery 的 `spec_refs`、Harness 的供应商/目录引用、Permission Context 的 `sandbox_ref` 和 Standard 的 `root_workflow_refs` 位于信封根级；其余内容及嵌套引用仍在 `data`。内容摘要覆盖根级引用与 `data`。
+Scope 使用 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。引用白名单按类型定义，Capability/Agent 的组合引用、Delivery 的 `spec_refs`、Harness 的供应商/目录引用 和 Standard 的 `root_workflow_refs` 位于信封根级；其余内容及嵌套引用仍在 `data`。内容摘要覆盖根级引用与 `data`。
 
 Agent 仅组合 Role 与 Capability。Capability 选择模型、Harness、方法、工具及自身规范的 `spec_refs`。完整能力随 Agent 身份装配，讨论、工作流、经理与编排入口保持一致；Workflow 只负责调度。技术能力、任务要求和执行授权分别表达：要求某 Skill/Tool 不会自动给 Agent 增加能力；具备 Tool 也不会自动获得本次调用权限。
 
-## 独立授权
+## Profile 选择
 
-Permission Profile 保存底层策略，Permission Context 选择 Sandbox、绑定方式、步骤授权和 Controller 操作策略。项目保存确切 `permission_context_ref`。Harness/Sandbox 的绑定修订独立发布；运行开始记录实际采用的绑定引用，后续重试或恢复不追随新的活动分配。
+Permission Profile 是唯一权限规则源。项目选择 Sandbox，可显式选择 Harness/Sandbox Profile；未选择时解析目标的默认绑定。步骤也可直接选择确切 Profile，替换同层默认选择。Harness/Sandbox 的默认绑定独立发布；运行开始固定实际目标、Profile 和绑定，重试与恢复不追随新分配。
 
-存储态 Workflow 的 access 只描述工作空间输入和工作目录；可写目录、只读目录和工具范围由 Permission Context 提供。内存执行视图仍使用 StepAccess 承载叠加后的授权，不能将它当作源定义的第二份权限配置。确认条件由 Workflow 描述；操作授权由 Permission 管理。Agent 和 Capability 都不含权限字段。
+存储态 Workflow 的 access 只描述工作空间输入和工作目录；步骤的 `harness_permission_ref`、`sandbox_permission_ref` 直接引用 Profile。内存 StepAccess 根据 Profile 推导文件和工具范围，不持有另一套可编辑权限。平台控制权限位于 Harness Profile 的 `policy.platform`，唤醒预算位于 Workflow 的 `scheduling.agent`。Agent 和 Capability 不含权限字段。
 
 ## 解析与恢复
 
-1. 读取 Workflow、Role→Agent、Permission Context 及接入绑定选择。
+1. 读取 Workflow、Role→Agent、Sandbox、Profile 及接入绑定选择。
 2. 沿确切源引用读取 Role、Capability、Model、Harness、Skill、Tool、Delivery 与 Spec。
 3. 校验类型、作用域、方法需求、流程依赖及执行授权。
 4. 在内存中生成任务、运行环境、工具和权限视图，交付原有执行器。
@@ -29,7 +29,7 @@ Permission Profile 保存底层策略，Permission Context 选择 Sandbox、绑�
 
 ## Workflow 工具
 
-`tools/builtin-tool-workflow-*.json` 是平台工具的源合同，定义调用名、输入输出 Schema 与处理器标识，不定义第二套工作流。Capability 引用工具表示具备调用能力；Permission Context 决定编排操作授权。执行时 Codex 的原生工具桥把 `devdesk_workflow_*` 调用交给 Rust 控制器；core 校验真实调用身份、epoch、计划版本和授权后，调用原有查询或工作流命令，持久化意图及实际回执。JSON 本身不执行调度。
+`tools/builtin-tool-workflow-*.json` 是平台工具的源合同，定义调用名、输入输出 Schema 与处理器标识，不定义第二套工作流。Capability 引用工具表示具备调用能力；Harness Profile 决定平台操作权限。执行时 Codex 的原生工具桥把 `devdesk_workflow_*` 调用交给 Rust 控制器；core 校验真实调用身份、epoch、计划版本和授权后，调用原有查询或工作流命令，持久化意图及实际回执。JSON 本身不执行调度。
 
 ## 文档规范
 
@@ -61,9 +61,9 @@ Standard 不是持久化的展开投影，它是持有确切 Workflow 根引用�
 
 共享源发布与项目采用可使用 `configuration.transfer.stage/apply/cancel`。暂存候选不进入可用源目录；采用时在项目库一次提交所需源副本和选择，再完成共享目录发布。途中状态持久化，Host 打开项目时先恢复 applying 操作，再同步目录。prepared 可取消；项目冲突在无采用回执时记录失败。该协议不宣称两个 SQLite 库存在原子事务。
 
-## 运行资源源修订
+## Harness 与 Sandbox 安装输入
 
-`runtime_resource` 保存驱动、版本标签、许可证、不可变 OCI digest 或有界构建文件，以及按平台校验的登录下载件。Harness 用根级 `runtime_resource_ref` 选择精确修订，也支持将 `data.recipe_digest` 作为有类型内容地址边解析到同驱动的资源；当前出厂 Harness 使用后一种形式。不能用任意版本字符串查找安装。配置发布/预演不构建或执行资产，默认发行版在资源包数据中指定。
+Harness 的 `runtime_version` 是程序版本的唯一声明；`installation` 包含精确包来源、许可证、入口、扩展文件及本机发行件。Sandbox 的 `build` 包含基础镜像 digest、系统包、后端文件及可选的预构建镜像映射。组合器生成内部 ExecutionRecipe，或按 Harness 安装内容身份选择不可变 OCI 镜像。不存在第三种安装配置源，也不能用任意版本字符串猜测安装。发布和预演不构建资产。
 
 安装以独立 `recipe_digest` 保存来源，版本仅为标签。同一驱动允许多个不同配方。`runtime.prepare_harness` 构建/拉取后核验实际镜像：Codex 探测 initialize、thread/start 与动态工具注册，DSH 探测 initialize，均不调用模型。报告绑定实际产物、driver 和权限资产，明确 `inference_verified=false`、`tool_execution_verified=false`。准备完成不证明推理或工具执行成功；真实会话另做权限、认证及执行边界验证。准备意图可通过 `runtime.preparation_status` 查询，`runtime.preparation_cancel` 在检查点生效，未知结果须先 `runtime.preparation_reconcile`。
 
@@ -81,4 +81,4 @@ Standard 不是持久化的展开投影，它是持有确切 Workflow 根引用�
 
 检查器有内容/数量/深度/工作量边界；JSON Schema 只接受有界的非递归本地引用展开，pattern 使用线性 regex 引擎及编译内存边界，不支持回溯式反向引用。规范不会执行任意命令；测试/Git/发布事实继续走实际平台用例和回执。
 
-实现依据：[源协议与引用白名单](../crates/domain/src/source.rs)、[运行资源](../crates/domain/src/runtime_resource.rs)、[配置变更](../crates/core/src/configuration_changes.rs)、[冻结视图](../crates/core/src/frozen_views.rs)、[准备与内容标签](../crates/adapters/src/runtime_preparation.rs)、[机器检查](../crates/domain/src/spec_checks.rs)。
+实现依据：[源协议与引用白名单](../crates/domain/src/source.rs)、[安装组合](../crates/domain/src/execution_recipe.rs)、[配置变更](../crates/core/src/configuration_changes.rs)、[冻结视图](../crates/core/src/frozen_views.rs)、[准备与内容标签](../crates/adapters/src/runtime_preparation.rs)、[机器检查](../crates/domain/src/spec_checks.rs)。

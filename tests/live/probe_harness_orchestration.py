@@ -74,12 +74,15 @@ try:
         {"key":"optional","name":"可选检查","stage":"optional_check","executor":{"type":"control"},"dependencies":["calculate"]},
         {"key":"finish","name":"确认交接","stage":"handoff","executor":{"type":"control"},"dependencies":["optional"],"inputs":{"analysis":{"type":"source","source":{"step":"calculate","port":"result"}}}}
     ],"outputs":{"result":{"step":"calculate","port":"result"}}}
+    base_profile=next(r for r in defaults['records'] if r['id']=='builtin-permission-harness-read-only:1')
+    policy={**base_profile['data']['policy'],'tool_refs':[capture]}
+    permission=c.command('permission.profile.create',payload={'name':'Native calculation Profile','identity':'native-step-'+project,'target_kind':'harness','policy':policy})
+    profile_ref=f"{permission['identity']}:{permission['revision']}"
+    next(step for step in document['steps'] if step['key']=='calculate')['harness_permission_ref']=profile_ref
     draft=c.command("workflow.create",payload={"name":"Harness 控制的数字工作流","document":document});workflow=c.command("workflow.publish",draft["id"],draft["revision"])
-    context_source=next(r for r in defaults["records"] if r["id"]==defaults["permission_context_ref"]);context=context_source["data"]
-    permission=c.command("permission_context.create",payload={"name":"Native calculation authorization","scope":"project:"+project,"sandbox_ref":context_source["sandbox_ref"],"data":{**context,"step_grants":[{"workflow_ref":workflow["id"],"step":"calculate","tool_refs":[capture]}]}})
     bindings={role["id"]:agent["id"],**defaults["role_agent_bindings"]}
     p=c.rpc("query.workspace")["active_project"]
-    config=c.command("project.configuration.update",project,p["revision"],{"workflow_ref":workflow["id"],"role_agent_bindings":bindings,"orchestrator_role_ref":defaults["orchestrator_role_ref"],"permission_context_ref":permission["id"]})
+    config=c.command("project.configuration.update",project,p["revision"],{"workflow_ref":workflow["id"],"role_agent_bindings":bindings,"orchestrator_role_ref":defaults["orchestrator_role_ref"],"harness_permission_ref":defaults["harness_permission_ref"]})
     p=c.rpc("query.workspace")["active_project"];manager=c.command("orchestration.open",project,p["revision"],{})["id"]
     controller_command(c,"orchestration.input",manager,{"input":"请读取本项目当前配置，通过 workflow.start 建立它的工作流。只建立根实例，保持所有业务步骤 queued；不派发任何步骤，不调整计划，不 complete。建立后结束 Turn 等待我继续。"})
     def started():

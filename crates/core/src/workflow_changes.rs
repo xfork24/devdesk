@@ -199,22 +199,26 @@ impl Engine {
         let mut waivers = vec![];
         let mut task_changes = vec![];
         let mut adopted: Option<(Id, Id)> = None;
-        let mut permission_selection = old.plan.permission_context_ref.clone();
+        let mut permission_selection = old.plan.harness_permission_ref.clone();
+        let mut execution_selection = old.plan.execution_selection.clone();
         for op in &changes.operations {
             match op {
                 WorkflowChangeOperation::AdoptStandard {
                     standard_ref,
                     workflow_ref,
-                    permission_context_ref,
+                    harness_permission_ref,
                 } => {
-                    if let Some(context) = permission_context_ref {
+                    if let Some(context) = harness_permission_ref {
                         crate::governance::reference(
                             state,
                             context,
-                            "permission_context",
+                            "permission_profile",
                             &row.scope,
                         )?;
                         permission_selection = Some(context.clone());
+                        execution_selection.harness = PermissionSelection::Profile {
+                            permission_revision_id: context.clone(),
+                        };
                     }
                     require(adopted.is_none(), "一次变更只能选择一份目标 Standard")?;
                     standard_entry(state, standard_ref, workflow_ref, &row.scope)?;
@@ -542,8 +546,17 @@ impl Engine {
                 candidate = target.clone();
             }
         }
-        let context = json!({"workflow_ref":candidate.id,"permission_context_ref":permission_selection,"permission_workflow_ref":if adopted.is_some() && candidate.id!=old.plan.workflow_revision_id {Some(candidate.id.clone())}else{old.plan.permission_workflow_ref.clone()}});
-        let selected = crate::standards::selection_state(state, &context);
+        let mut context = crate::frozen_views::selection_configuration(&execution_selection);
+        context["workflow_ref"] = json!(candidate.id);
+        context["base_workflow_ref"] = json!(if adopted.is_some()
+            && candidate.id != old.plan.workflow_revision_id
+        {
+            Some(candidate.id.clone())
+        } else {
+            old.plan.base_workflow_ref.clone()
+        });
+        let mut selected = crate::standards::selection_state(state, &context);
+        crate::frozen_views::pin_permission_defaults(&mut selected, &old.plan.permission_locks)?;
         let mut plan =
             self.compile_configured_workflow(&selected, &candidate, &row.scope, Some(&bindings))?;
         plan.standard_ref = adopted
@@ -551,6 +564,7 @@ impl Engine {
             .map(|(s, _)| s.clone())
             .or_else(|| old.plan.standard_ref.clone());
         plan.work_configuration_ref = old.plan.work_configuration_ref.clone();
+        plan.harness_permission_ref = permission_selection;
         let definitions = |p: &ConfiguredWorkflowPlan| {
             p.definitions
                 .iter()
@@ -596,11 +610,11 @@ impl Engine {
         )?;
         let footprint = json!({"executions":old.steps.iter().filter(|s|affected.contains(&s.step)).collect::<Vec<_>>(),"tasks":task_changes,
             "children":state.governance.iter().filter(|r|r.r#type=="workflow_instance"&&r.data["root_instance_id"]==old.root_instance_id&&r.id!=row.id).map(|r|(&r.id,&r.data)).collect::<Vec<_>>()});
-        plan.permission_workflow_ref =
+        plan.base_workflow_ref =
             if adopted.is_some() && plan.workflow_revision_id != old.plan.workflow_revision_id {
                 Some(plan.workflow_revision_id.clone())
             } else {
-                old.plan.permission_workflow_ref.clone()
+                old.plan.base_workflow_ref.clone()
             };
         // Resolve the candidate source and Standard in a disposable state. Preview publishes nothing.
         let mut candidate_state = state.clone();
@@ -1104,6 +1118,48 @@ impl Engine {
             &changes.reason,
         );
         update_instance(state, &row, &instance);
+        if instance.root_instance_id == row.id {
+            let scheduling = &instance.plan.document.scheduling;
+            for driver in state
+                .governance
+                .iter_mut()
+                .filter(|r| r.r#type == "workflow_driver" && r.definition_id == row.id)
+            {
+                let mut data = driver.data.clone();
+                data["policy"] = json!(scheduling);
+                update_record(driver, data);
+            }
+            let controllers: Vec<_> = state
+                .governance
+                .iter()
+                .filter(|r| {
+                    r.r#type == "workflow_controller"
+                        && r.data["root_instance_id"] == row.id
+                        && r.data["workspace_only"] != true
+                })
+                .cloned()
+                .collect();
+            for controller in controllers {
+                let policy = profile_control_policy(
+                    state,
+                    controller.data["harness_permission_ref"]
+                        .as_str()
+                        .unwrap_or(""),
+                    Some(&scheduling.agent),
+                )?;
+                let mut data = controller.data.clone();
+                data["policy_digest"] = json!(configuration_hash(&policy));
+                data["policy"] = json!(policy);
+                update_record(
+                    state
+                        .governance
+                        .iter_mut()
+                        .find(|r| r.id == controller.id)
+                        .unwrap(),
+                    data,
+                );
+            }
+        }
         let mut data = change.data.clone();
         data["status"] = json!("applied");
         data["new_plan_revision_id"] = json!(instance.active_plan_revision_id);

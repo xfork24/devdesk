@@ -2,6 +2,59 @@
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatformPermission {
+    #[serde(default)]
+    pub allowed_operations: BTreeSet<String>,
+    #[serde(default)]
+    pub human_operations: BTreeSet<String>,
+    #[serde(default)]
+    pub waivable_requirements: BTreeSet<String>,
+    #[serde(default)]
+    pub allow_task_revision: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AgentSchedulingBudget {
+    pub max_turns_per_wakeup: u64,
+    pub max_tool_calls_per_turn: u64,
+    pub timeout_seconds: u64,
+}
+impl Default for AgentSchedulingBudget {
+    fn default() -> Self {
+        Self {
+            max_turns_per_wakeup: 8,
+            max_tool_calls_per_turn: 64,
+            timeout_seconds: 600,
+        }
+    }
+}
+pub fn profile_control_policy(
+    state: &EngineeringState,
+    reference: &str,
+    budget: Option<&AgentSchedulingBudget>,
+) -> Result<WorkflowControlPolicy> {
+    let profile = state.configuration(reference)?.permission_profile()?;
+    require(
+        profile.target_kind == PermissionTargetKind::Harness,
+        "平台操作需要 Harness Profile",
+    )?;
+    let platform = profile.policy.platform.unwrap_or_default();
+    let budget = budget.cloned().unwrap_or_default();
+    let policy = WorkflowControlPolicy {
+        allowed_operations: platform.allowed_operations,
+        human_operations: platform.human_operations,
+        waivable_requirements: platform.waivable_requirements,
+        allow_task_revision: platform.allow_task_revision,
+        max_turns_per_wakeup: budget.max_turns_per_wakeup,
+        max_tool_calls_per_turn: budget.max_tool_calls_per_turn,
+        timeout_seconds: budget.timeout_seconds,
+    };
+    policy.validate()?;
+    Ok(policy)
+}
+
 /// Renderer identity recorded on orchestration wakeups. Metadata only.
 pub const ORCHESTRATION_RENDERER: &str = "orchestration-task/v2";
 
@@ -93,7 +146,7 @@ pub struct WorkflowController {
     pub root_instance_id: Option<Id>,
     pub agent_revision_id: Id,
     pub role_ref: Id,
-    pub permission_context_ref: Id,
+    pub harness_permission_ref: Id,
     pub policy: WorkflowControlPolicy,
     pub policy_digest: String,
     pub session_id: Option<Id>,

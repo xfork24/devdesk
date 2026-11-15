@@ -12,7 +12,7 @@ pub enum WorkflowChangeOperation {
         standard_ref: Id,
         workflow_ref: Id,
         #[serde(default)]
-        permission_context_ref: Option<Id>,
+        harness_permission_ref: Option<Id>,
     },
     RevertChange {
         change_id: Id,

@@ -19,7 +19,6 @@ REFERENCE_FIELDS = (
     "harness_ref",
     "sandbox_ref",
     "model_catalog_ref",
-    "runtime_resource_ref",
     "spec_refs",
     "skills",
     "tools",
@@ -113,8 +112,6 @@ def main() -> None:
                     resolve(item, f"{rel} {field}")
 
     defaults = json.loads((ROOT / manifest["defaults"]).read_text())
-    for provider, reference in defaults.get("runtime_resources", {}).items():
-        resolve(reference, f"defaults runtime_resources {provider}")
     scalar_refs = [
         "workflow_ref",
         "task_workflow_ref",
@@ -123,7 +120,6 @@ def main() -> None:
         "sandbox_ref",
         "capability_ref",
         "standard_ref",
-        "permission_context_ref",
         "orchestrator_role_ref",
         "harness_permission_ref",
         "sandbox_permission_ref",

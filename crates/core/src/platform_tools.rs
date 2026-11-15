@@ -179,15 +179,20 @@ impl Engine {
                 && !state.workflow_instance_suspended(&row.id),
             "当前步骤已停止或失效",
         )?;
-        let step = instance
-            .plan
-            .document
-            .steps
-            .iter()
-            .find(|step| step.key == execution.step)
-            .unwrap();
         require(
-            step.access.tool_refs.contains(&definition.id),
+            session
+                .runtime_binding
+                .as_ref()
+                .and_then(|b| b.permissions.as_ref())
+                .and_then(|p| p.binding_lock.as_ref())
+                .is_some_and(|lock| {
+                    lock.harness
+                        .profile
+                        .policy
+                        .tool_refs
+                        .as_ref()
+                        .is_none_or(|refs| refs.contains(&definition.id))
+                }),
             "平台工具不属于当前 Step 授权",
         )?;
         let operation = state
@@ -1154,7 +1159,7 @@ impl Engine {
                                         let definition=standard_snapshot(state,standard,&Scope::project(request.project_id.clone()))?;
                                         let doc:WorkflowDefinition=serde_json::from_value(parent_instance.data["plan"]["document"].clone()).map_err(|e|err("invalid_configuration",e.to_string()))?;
                                         if let Some(entry)=doc.steps.iter().find_map(|step|match &step.executor {StepExecutor::Workflow{workflow_ref,work_binding:Some(_),..} if definition.nodes.iter().any(|n|n.kind=="workflow" && &n.reference==workflow_ref)=>Some(workflow_ref.clone()),_=>None}) {
-                                            let selection=json!({"standard_ref":standard,"workflow_ref":entry,"role_agent_bindings":parent_instance.data["role_agent_bindings"],"permission_context_ref":parent_instance.data["plan"]["permission_context_ref"]});
+                                            let selection=json!({"standard_ref":standard,"workflow_ref":entry,"role_agent_bindings":parent_instance.data["role_agent_bindings"],"harness_permission_ref":parent_instance.data["plan"]["harness_permission_ref"]});
                                             crate::standards::select_work_configuration(state,&tid,&selection,Some(&parent))?;
                                         }
                                     }

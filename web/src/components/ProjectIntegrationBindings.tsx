@@ -70,11 +70,16 @@ export function ProjectIntegrationBindings({
   return (
     <section className="panel" aria-label="项目工具接入绑定">
       <div className="panel-heading">
-        <h2>项目接入账户</h2>
-        <p>按所选 Agent 的具体工具选择账户、执行环境和授权修订。</p>
+        <h2>项目工具接入绑定</h2>
+        <p>
+          为所选 Agent
+          的外部工具选择账户、执行环境和访问限制；模型服务商登录在设置中管理。
+        </p>
       </div>
       <div className="integration-content">
-        {!required.size && <p>当前 Agent 使用原生工具，无需外部接入绑定。</p>}
+        {!required.size && (
+          <p>当前所选 Agent 的工具无需配置项目级外部接入绑定。</p>
+        )}
         {[...required].map((id) => (
           <RevisionSelect
             key={id}
@@ -93,42 +98,44 @@ export function ProjectIntegrationBindings({
           />
         ))}
         <div className="actions">
-          <ActionButton
-            disabled={
-              busy ||
-              ![...required].every((id) => mapping[id]) ||
-              !required.size
-            }
-            onClick={async () => {
-              captureFeedback();
-
-              beginFeedback();
-              setBusy(true);
-              setError("");
-              try {
-                await request("integration.project.bind", {
-                  project_id: project.id,
-                  command_id: crypto.randomUUID(),
-                  payload: {
-                    project_id: project.id,
-                    source_configuration_id: source || null,
-                    bindings: mapping,
-                  },
-                });
-                await load();
-                setMessage(
-                  "项目接入绑定已保存；已有 Feature 保留冻结版本，讨论在静止边界采用新绑定。",
-                );
-              } catch (e) {
-                setError(String(e));
-              } finally {
-                endFeedback();
-                setBusy(false);
+          {!!required.size && (
+            <ActionButton
+              disabled={
+                busy ||
+                ![...required].every((id) => mapping[id]) ||
+                !required.size
               }
-            }}
-          >
-            保存项目接入绑定
-          </ActionButton>
+              onClick={async () => {
+                captureFeedback();
+
+                beginFeedback();
+                setBusy(true);
+                setError("");
+                try {
+                  await request("integration.project.bind", {
+                    project_id: project.id,
+                    command_id: crypto.randomUUID(),
+                    payload: {
+                      project_id: project.id,
+                      source_configuration_id: source || null,
+                      bindings: mapping,
+                    },
+                  });
+                  await load();
+                  setMessage(
+                    "项目接入绑定已保存；已有 Feature 保留冻结版本，讨论在静止边界采用新绑定。",
+                  );
+                } catch (e) {
+                  setError(String(e));
+                } finally {
+                  endFeedback();
+                  setBusy(false);
+                }
+              }}
+            >
+              保存项目接入绑定
+            </ActionButton>
+          )}
           <a
             href={`?tab=components&config_tab=http&project_id=${encodeURIComponent(project.id)}`}
           >

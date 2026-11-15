@@ -1,13 +1,13 @@
-# 运行资源、模型连接与权限
+# 执行安装、模型连接与权限
 
 [代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
 
-运行资源说明准备什么，安装记录说明准备出了什么，会话绑定说明本次选择什么，真实执行记录说明实际运行了什么。权限另分底层策略、目标绑定、步骤范围和后端执行计划。这里负责纯解析和校验；构建、凭据读取及原生隔离由 adapters 完成。
+执行安装说明准备什么，安装记录说明准备出了什么，会话绑定说明本次选择什么，真实执行记录说明实际运行了什么。权限另分底层策略、目标绑定、步骤范围和后端执行计划。这里负责纯解析和校验；构建、凭据读取及原生隔离由 adapters 完成。
 
 ## 本页文件
 
 - [src/runtime.rs](#file-src-runtime-rs)：驱动、安装产物和完整性结果
-- [src/runtime_resource.rs](#file-src-runtime-resource-rs)：配置决定运行配方，摘要决定实际来源
+- [src/execution_recipe.rs](#file-src-execution-recipe-rs)：配置决定运行配方，摘要决定实际来源
 - [src/model_provider.rs](#file-src-model-provider-rs)：服务商事实、容量及冻结连接的纯规则
 - [src/permission.rs](#file-src-permission-rs)：可移植策略与实际执行计划
 - [src/permission_profile.rs](#file-src-permission-profile-rs)：Profile、目标绑定和双端权限锁
@@ -24,21 +24,21 @@
 
 代码定位：[`HarnessProvider`](../../../crates/domain/src/runtime.rs#L6)、[`RuntimeKey`](../../../crates/domain/src/runtime.rs#L28)、[`RuntimeArtifact`](../../../crates/domain/src/runtime.rs#L61)、[`RuntimeInstallation`](../../../crates/domain/src/runtime.rs#L74)、[`RuntimeIntegrity`](../../../crates/domain/src/runtime.rs#L93)。
 
-关联阅读：[domain/src/runtime_resource.rs](runtime-and-permissions.md#file-src-runtime-resource-rs)、[adapters/src/runtime_registry.rs](../devdesk-adapters/runtime-preparation.md#file-src-runtime-registry-rs)、[adapters/src/runtime_verification.rs](../devdesk-adapters/runtime-preparation.md#file-src-runtime-verification-rs)。
+关联阅读：[domain/src/execution_recipe.rs](runtime-and-permissions.md#file-src-execution-recipe-rs)、[adapters/src/runtime_registry.rs](../devdesk-adapters/runtime-preparation.md#file-src-runtime-registry-rs)、[adapters/src/runtime_verification.rs](../devdesk-adapters/runtime-preparation.md#file-src-runtime-verification-rs)。
 
-<a id="file-src-runtime-resource-rs"></a>
+<a id="file-src-execution-recipe-rs"></a>
 
-## src/runtime_resource.rs：配置决定运行配方，摘要决定实际来源
+## src/execution_recipe.rs：配置决定运行配方，摘要决定实际来源
 
-源码：[crates/domain/src/runtime_resource.rs](../../../crates/domain/src/runtime_resource.rs)。
+源码：[crates/domain/src/execution_recipe.rs](../../../crates/domain/src/execution_recipe.rs)。
 
-`RuntimeResourceDefinition` 接受两种互斥来源：带完整 @sha256 的镜像，或包含 Dockerfile 的构建文件集合；另可声明各平台的 HTTPS 下载件、SHA-256 和成员路径。文件不能越界、重复或超出数量/总大小边界，下载 URL 不允许内嵌凭据和附加查询参数。
+`HarnessInstallation` 保存包、入口、扩展与本机发行件；版本唯一来自 Harness.runtime_version。`SandboxBuild` 保存基础镜像、系统包、后端文件及可选预构建镜像映射。`compose_execution_recipe` 生成有界内部 ExecutionRecipe，校验 digest、路径、文件总量及下载件；这些派生数据不是第三种配置源。
 
-`recipe_digest` 对镜像引用或构建文件的路径/内容计算身份，不把展示版本号当成构建身份。`resolve_configuration_edge` 可解析普通精确引用，也可解析同驱动、可见资源的内容摘要边。`harness_runtime_resource` 检查源类型、Scope、驱动与 Harness 明示摘要一致。
+`recipe_digest` 对实际镜像引用或生成文件集合计算身份。`resolve_configuration_edge` 只读取确切源引用；安装组合不再通过另一种资源源或内容地址边查找。相同驱动可有不同合法安装组合，发布不启动构建。
 
 因此同一个驱动可以存在多个合法配方；准备和协议验证由适配器完成，发布配置本身不会构建容器。
 
-代码定位：[`RuntimeResourceDefinition`](../../../crates/domain/src/runtime_resource.rs#L20)、[`recipe_digest`](../../../crates/domain/src/runtime_resource.rs#L101)、[`resolve_configuration_edge`](../../../crates/domain/src/runtime_resource.rs#L116)、[`harness_runtime_resource`](../../../crates/domain/src/runtime_resource.rs#L143)。
+代码定位：[ExecutionRecipe / compose_execution_recipe](../../../crates/domain/src/execution_recipe.rs)。
 
 关联阅读：[adapters/src/runtime_preparation.rs](../devdesk-adapters/runtime-preparation.md#file-src-runtime-preparation-rs)、[core/src/resource_receipts.rs](../devdesk-core/session-resources-and-permissions.md#file-src-resource-receipts-rs)、[domain/src/configuration_graph.rs](configuration-and-sources.md#file-src-configuration-graph-rs)。
 
@@ -80,11 +80,11 @@
 
 源码：[crates/domain/src/permission_profile.rs](../../../crates/domain/src/permission_profile.rs)。
 
-Profile 保存策略正文，`PermissionTargetRef` 固定 Harness/Sandbox 的具体修订和内容摘要，`VersionedPermissionBinding` 把目标映射到 Profile，活动 assignment 再给目标选择当前绑定。`PermissionSelection` 可 follow_target 或 pinned；执行开始解析为确切 BoundPermission 和双端锁。
+Profile 保存策略正文，`PermissionTargetRef` 固定 Harness/Sandbox 的具体修订和内容摘要，`VersionedPermissionBinding` 把目标映射到 Profile，活动 assignment 再给目标选择当前绑定。`PermissionSelection` 可 follow_target、pinned 或直接选择 Profile；执行开始解析为确切 BoundPermission 和双端锁。
 
 `ProfilePolicy` 要求 Harness 有文件、网络、工具、审批完整策略，Sandbox 不携带工具/审批。`normalize` 生成可移植规范形式，`permission_content_hash` 保持内容身份。`resolve_permission_lock` 检查目标、Profile、绑定及 Scope 一致；`validate_frozen_permissions` 防止保存后的锁与实际策略脱节。
 
-这里还定义 Sandbox 源的形状和从 Permission Context 取得执行选择的方法。follow_target 只影响下一次解析，不能使已经冻结的运行自动追随新 assignment；自动检测和后继切换由 core 完成。
+这里还定义 Sandbox 源的形状和从项目和步骤的 Profile 引用取得执行选择的方法。follow_target 只影响下一次解析，不能使已经冻结的运行自动追随新 assignment；自动检测和后继切换由 core 完成。
 
 代码定位：[`PermissionProfile`](../../../crates/domain/src/permission_profile.rs#L70)、[`ProfilePolicy`](../../../crates/domain/src/permission_profile.rs#L43)、[`PermissionSelection`](../../../crates/domain/src/permission_profile.rs#L126)、[`VersionedPermissionBinding`](../../../crates/domain/src/permission_profile.rs#L141)、[`VersionedPermissionLock`](../../../crates/domain/src/permission_profile.rs#L159)、[`resolve_permission_lock`](../../../crates/domain/src/permission_profile.rs#L258)。
 

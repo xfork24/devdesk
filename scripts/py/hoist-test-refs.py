@@ -10,7 +10,6 @@ REFERENCE_FIELDS = {
     "agent": ["role_ref", "capability_ref"],
     "delivery_type": ["spec_refs"],
     "harness": ["model_providers", "model_catalog_ref"],
-    "permission_context": ["sandbox_ref"],
     "standard": ["root_workflow_refs"],
 }
 

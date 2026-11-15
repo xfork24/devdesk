@@ -812,7 +812,7 @@ impl Engine {
             "standard_ref",
             "workflow_ref",
             "role_agent_bindings",
-            "permission_context_ref",
+            "harness_permission_ref",
             "orchestration",
         ] {
             if let Some(value) = p.get(key) {
@@ -941,7 +941,10 @@ impl Engine {
             permissions: instance
                 .plan
                 .permission_locks
-                .get(execution.agent_revision_id.as_ref().unwrap())
+                .get(&format!(
+                    "{}:{}",
+                    instance.plan.workflow_revision_id, step.key
+                ))
                 .ok_or_else(|| err("permission_unconfigured", "Agent 权限未冻结"))?
                 .clone(),
         }))
@@ -2387,7 +2390,7 @@ impl Engine {
                             )?;
                             let inherited =
                                 crate::standards::work_configuration(state, &child_owner).cloned();
-                            let fallback = json!({"standard_ref":instance.plan.standard_ref,"workflow_ref":child.id,"role_agent_bindings":instance.role_agent_bindings,"permission_context_ref":instance.plan.permission_context_ref});
+                            let fallback = json!({"standard_ref":instance.plan.standard_ref,"workflow_ref":child.id,"role_agent_bindings":instance.role_agent_bindings,"harness_permission_ref":instance.plan.harness_permission_ref});
                             let selection = if let Some(selection) = inherited {
                                 selection
                             } else {
@@ -2462,6 +2465,26 @@ impl Engine {
                                     r.data["parent_execution_id"].as_str().map(str::to_owned)
                                 });
                         }
+                        for step in &mut effective_doc.steps {
+                            if let Some(lock) = child_plan
+                                .permission_locks
+                                .get(&format!("{}:{}", effective_child.id, step.key))
+                            {
+                                let (write, read) = profile_pair_workspace_access(
+                                    &lock.harness.profile,
+                                    &lock.sandbox.profile,
+                                );
+                                step.access.writable_paths = write;
+                                step.access.read_only_paths = read;
+                                step.access.tool_refs = lock
+                                    .harness
+                                    .profile
+                                    .policy
+                                    .tool_refs
+                                    .clone()
+                                    .unwrap_or_default();
+                            }
+                        }
                         let child_doc = &effective_doc;
                         let child = &effective_child;
                         for (name, port) in &child_doc.inputs {
@@ -2522,7 +2545,7 @@ impl Engine {
                             .collect();
                         let mut plan = child_plan;
                         plan.workflow_revision_id = child.id.clone();
-                        plan.permission_workflow_ref = Some(child.id.clone());
+                        plan.base_workflow_ref = Some(child.id.clone());
                         plan.document = (*child_doc).clone();
                         let mut child_instance = ConfiguredWorkflowInstance {
                             active_plan_revision_id: String::new(),

@@ -223,6 +223,17 @@
                           "never",
                           "on_request"
                         ]
+                      },
+                      "platform": {
+                        "type": "object"
+                      },
+                      "tool_refs": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^\\S+:[1-9][0-9]*$"
+                        },
+                        "uniqueItems": true
                       }
                     },
                     "required": [

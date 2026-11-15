@@ -350,7 +350,7 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
             "目录非空且不是 DevDesk 数据集；请选择空目录",
         )?;
         require(
-            fs::read_to_string(&marker).map_err(storage)? == "devdesk-source-flat-v1\n",
+            fs::read_to_string(&marker).map_err(storage)? == "devdesk-profile-runtime-v2\n",
             "数据集标记不受支持",
         )
     };
@@ -369,7 +369,7 @@ fn lock_dataset(path: &Path) -> Result<(PathBuf, File)> {
         .map_err(|_| err("dataset_locked", "此 data 已由另一个 host 打开"))?;
     // Recheck after obtaining ownership. Never replace a lock file that another Host can hold.
     if metadata_only()? {
-        fs::write(&marker, "devdesk-source-flat-v1\n").map_err(storage)?;
+        fs::write(&marker, "devdesk-profile-runtime-v2\n").map_err(storage)?;
     } else {
         validate_marker()?;
     }

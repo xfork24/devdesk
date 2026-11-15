@@ -253,7 +253,7 @@ impl RuntimeWorkers {
                 "代码视图归属不符",
             )?;
             let git = CliGit::new(&self.root)?;
-            if binding.tool_policy == ToolPolicy::ReadOnly {
+            if binding.tool_policy == ToolPolicy::ReadOnly || r.configured_task.is_none() {
                 let parent = meta.join(format!("view-{}", r.execution.operation_id));
                 private_dir(&parent)?;
                 work = parent.join("work");
@@ -261,7 +261,7 @@ impl RuntimeWorkers {
             } else {
                 require(
                     r.configured_task.is_some(),
-                    "代码写入需要 Workflow 步骤的冻结任务与授权范围",
+                    "工程工作树写入需要 Workflow 步骤的冻结任务与权限范围",
                 )?;
                 git.validate_view(&view.context, &view.revision)?;
                 work = PathBuf::from(&view.context.source.worktree);
@@ -269,11 +269,12 @@ impl RuntimeWorkers {
                     scoped_directory(&work, relative)?;
                 }
             }
-        } else {
-            require(
-                binding.tool_policy == ToolPolicy::ReadOnly,
-                "没有正式代码视图不能启动写 worker",
-            )?;
+        }
+        // Without a code view /work is this session's private directory. Profile
+        // write permission never adds a repository mount; real code writes above
+        // still require the trusted Workflow task and its frozen view.
+        for relative in binding.writable_paths.iter().filter(|p| p.as_str() != ".") {
+            scoped_directory(&work, relative)?;
         }
         let mut skill_paths = serde_json::Map::new();
         let skill_directory = if let Some(lock) = binding

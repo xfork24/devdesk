@@ -448,7 +448,7 @@
                         "type": "string",
                         "minLength": 1
                       },
-                      "permission_context_ref": {
+                      "harness_permission_ref": {
                         "type": [
                           "string",
                           "null"

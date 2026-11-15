@@ -1,4 +1,6 @@
-//! Explicit Harness control through production commands and SQLite.
+#[path = "../../../tests/support/configuration.rs"]
+mod configuration_fixture;
+// Explicit Harness control through production commands and SQLite.
 #[path = "../../../tests/support/runtime.rs"]
 mod runtime;
 use devdesk_adapters::integrations::NativeTools;
@@ -20,28 +22,57 @@ fn engine(path: &std::path::Path) -> Engine {
     e
 }
 fn cmd(e: &Engine, method: &str, target: Option<&str>, mut p: Value) -> Result<Value> {
+    if method == "permission.profile.create" {
+        return configuration_fixture::create_profile(e, p);
+    }
     if method == "orchestration.open"
         && let Some(policy) = p.as_object_mut().and_then(|v| v.remove("policy"))
     {
         let state = e.store.snapshot()?;
-        let source = permission_context(&state).unwrap().clone();
+        let source = selected_harness_profile(&state).unwrap();
         let mut data = source.data.clone();
-        data["control_policy"] = policy;
-        let mut payload =
-            json!({"name":"Fixture controller authorization","scope":"global","data":data});
-        for (key, value) in &source.refs {
-            payload[key] = value.clone();
+        let mut authority = policy.clone();
+        let mut budget = serde_json::to_value(AgentSchedulingBudget::default()).unwrap();
+        for key in [
+            "max_turns_per_wakeup",
+            "max_tool_calls_per_turn",
+            "timeout_seconds",
+        ] {
+            if let Some(value) = authority.as_object_mut().unwrap().remove(key) {
+                budget[key] = value;
+            }
         }
-        let context = e.execute(
-            "permission_context.create",
-            Command {
-                command_id: id(),
-                target: None,
-                expected_revision: None,
-                payload,
-            },
+        data["policy"]["platform"] = authority;
+        if let Some(target) = target.filter(|id| {
+            state
+                .configuration(id)
+                .is_ok_and(|r| r.r#type == "workflow_instance")
+        }) {
+            configuration_fixture::scheduling(e, target, &json!({"agent":budget}))?;
+        } else {
+            p["budget"] = budget;
+        }
+        let context = configuration_fixture::create_profile(
+            e,
+            json!({"name":"Fixture controller Profile","data":data}),
         )?;
-        p["permission_context_ref"] = context["id"].clone();
+        p["harness_permission_ref"] = context["id"].clone();
+    }
+    if method == "workflow.driver.select" && p["policy_ref"].is_object() {
+        let patch = p.as_object_mut().unwrap().remove("policy_ref").unwrap();
+        configuration_fixture::scheduling(e, target.unwrap(), &patch)?;
+    }
+    if method == "workflow.start" && p["orchestration"]["policy_ref"].is_object() {
+        let patch = p["orchestration"]
+            .as_object_mut()
+            .unwrap()
+            .remove("policy_ref")
+            .unwrap();
+        p["workflow_ref"] = json!(configuration_fixture::workflow_with_scheduling(
+            e,
+            p["workflow_ref"].as_str().unwrap(),
+            &patch
+        )?);
     }
     let s = e.store.snapshot()?;
     let r = target.and_then(|id| {
@@ -653,6 +684,16 @@ fn drive_manager_cycle(e: &Engine, allow_send: bool, full_tick: bool) {
                 model_parameters: Default::default(),
                 tool_revisions: a.tools,
             });
+            let permissions = binding.permissions.as_ref().unwrap();
+            binding.writable_paths = permissions.scope.writable_paths.clone();
+            binding.read_only_paths = permissions.scope.read_only_paths.clone();
+            binding.tool_policy = if binding.writable_paths.is_empty() {
+                ToolPolicy::ReadOnly
+            } else if binding.writable_paths == ["."] {
+                ToolPolicy::WorkspaceWrite
+            } else {
+                ToolPolicy::ScopedWrite
+            };
             c.payload["binding"] = json!(binding);
         }
         if method == "conversation.send" && intent.data["controller"] == true {
@@ -2096,14 +2137,14 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
         json!({"changeset":change,"preview_hash":preview["preview_hash"]}),
     )
     .unwrap();
-    let context = permission_context(&state).unwrap();
-    let mut data = context.data.clone();
-    data["control_policy"]["timeout_seconds"] = json!(1800);
+    let context = selected_harness_profile(&state).unwrap();
+    let data = context.data.clone();
+    configuration_fixture::scheduling(&e,&root,&json!({"agent":{"max_turns_per_wakeup":8,"max_tool_calls_per_turn":64,"timeout_seconds":1800}})).unwrap();
     let mut payload = json!({"name":"Selected longer budget","scope":"global","data":data});
     for (k, v) in &context.refs {
         payload[k] = v.clone();
     }
-    let next_context = cmd(&e, "permission_context.create", None, payload).unwrap()["id"]
+    let next_context = cmd(&e, "permission.profile.create", None, payload).unwrap()["id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -2150,7 +2191,7 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
             &e,
             "orchestration.resume",
             Some(&controller),
-            json!({"agent_ref":next_agent,"permission_context_ref":next_context})
+            json!({"agent_ref":next_agent,"harness_permission_ref":next_context})
         )
         .is_err()
     );
@@ -2179,11 +2220,11 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
         &e,
         "orchestration.resume",
         Some(&controller),
-        json!({"agent_ref":next_agent,"permission_context_ref":next_context}),
+        json!({"agent_ref":next_agent,"harness_permission_ref":next_context}),
     )
     .unwrap();
     assert_eq!(reply["controller"]["agent_revision_id"], next_agent);
-    assert_eq!(reply["controller"]["permission_context_ref"], next_context);
+    assert_eq!(reply["controller"]["harness_permission_ref"], next_context);
     assert_eq!(reply["controller"]["policy"]["timeout_seconds"], 1800);
     assert_eq!(reply["controller"]["predecessor_session_id"], old_sid);
     let successor = reply["id"].as_str().unwrap().to_owned();
@@ -2262,8 +2303,8 @@ fn human_adopts_root_manager_sources_only_after_the_old_writer_is_stopped() {
     );
 }
 
-fn rust_policy(e: &Engine, max_actions: usize) -> String {
-    cmd(e,"orchestration_policy.create",None,json!({"name":"Bounded driver","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":max_actions,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}})).unwrap()["id"].as_str().unwrap().into()
+fn rust_policy(_e: &Engine, max_actions: usize) -> Value {
+    json!({"id":{"max_concurrency":2,"max_actions_per_tick":max_actions,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}})["id"].clone()
 }
 
 #[test]
@@ -2758,13 +2799,13 @@ fn recovery_root(e: &Engine, effect: &str) -> (String, String) {
     doc["stages"][0]["default_role_ref"] = json!("builtin-role-analyst:1");
     doc["steps"][0]["executor"] = json!({"type":"agent"});
     doc["steps"][0]["task_instructions"] = json!("Return the declared result for the frozen input");
+    doc["scheduling"] = json!({"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_transient"]});
     let root = start(e, doc);
-    let policy = cmd(e,"orchestration_policy.create",None,json!({"name":"recovery","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_transient"]}})).unwrap();
     cmd(
         e,
         "workflow.driver.select",
         Some(&root),
-        json!({"mode":"rust","policy_ref":policy["id"]}),
+        json!({"mode":"rust"}),
     )
     .unwrap();
     e.drive_rust_workflows().unwrap();
@@ -2850,7 +2891,7 @@ fn tool_preparation_recovers_through_the_same_known_failure_policy() {
         &e,
         json!({"schema_version":6,"stages":[{"key":"work","name":"work"}],"steps":[{"key":"capture","name":"capture","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-materials-capture:1","arguments":{"material":{"type":"constant","value":{"data":"frozen input"}}}}}]}),
     );
-    let policy=cmd(&e,"orchestration_policy.create",None,json!({"name":"technical recovery","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_preparation_failed"]}})).unwrap();
+    let policy = json!({"id":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_preparation_failed"]}});
     cmd(
         &e,
         "workflow.driver.select",
@@ -2921,7 +2962,7 @@ fn an_unknown_worker_reserves_its_root_capacity_until_reconciliation() {
         step["dependencies"] = json!([]);
     }
     let root = start(&e, doc);
-    let policy=cmd(&e,"orchestration_policy.create",None,json!({"name":"one physical worker","scope":"global","data":{"max_concurrency":1,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_unknown"]}})).unwrap();
+    let policy = json!({"id":{"max_concurrency":1,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["fixture_unknown"]}});
     cmd(
         &e,
         "workflow.driver.select",
@@ -3168,7 +3209,7 @@ fn one_root_schedules_three_bound_tasks_without_a_dependent_member_taking_a_slot
     )
     .unwrap();
     e.evaluate_workflows().unwrap();
-    let policy=cmd(&e,"orchestration_policy.create",None,json!({"name":"one worker two invocation slots","scope":"global","data":{"max_concurrency":1,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}})).unwrap();
+    let policy = json!({"id":{"max_concurrency":1,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":0,"retry_error_codes":[]}});
     cmd(
         &e,
         "workflow.driver.select",
@@ -3223,5 +3264,26 @@ fn one_root_schedules_three_bound_tasks_without_a_dependent_member_taking_a_slot
             .tasks
             .iter()
             .all(|task| task.status == Status::Completed)
+    );
+}
+
+#[test]
+fn scheduling_adoption_updates_driver_and_budget_from_the_new_workflow_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let root = start(&e, document());
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"rust"}),
+    )
+    .unwrap();
+    configuration_fixture::scheduling(&e,&root,&json!({"max_concurrency":1,"max_actions_per_tick":2,"agent":{"max_turns_per_wakeup":3,"max_tool_calls_per_turn":12,"timeout_seconds":90}})).unwrap();
+    let view = e.workflow_driver_query(&json!({"id":root})).unwrap();
+    assert_eq!(view["driver"]["data"]["policy"]["max_actions_per_tick"], 2);
+    assert_eq!(
+        view["driver"]["data"]["policy"]["agent"]["max_turns_per_wakeup"],
+        3
     );
 }

@@ -58,7 +58,7 @@ effect 必须核对实际状态语义：稳定函数可以直接作为依赖；�
 
 ## 检查与测试边界
 
-`check-style.sh` 包含 lint、两个 TypeScript project、Prettier 与 Web 构建，然后执行 Rust clippy；`check.sh` 继续执行 Rust、HTTP/数据集/环境准备和 debug/release Chromium。MCP 的浏览器用例实际使用 Docker，首次构建所选运行资源需要镜像/包源网络；不调用付费模型。接入类浏览器测试使用独立 Host 和临时数据集，运行准备状态不能泄漏给其他用例。纯 Rust 组合测试使用显式端口夹具，真实 Docker 协议测试保持单独分层。
+`check-style.sh` 包含 lint、两个 TypeScript project、Prettier 与 Web 构建，然后执行 Rust clippy；`check.sh` 继续执行 Rust、HTTP/数据集/环境准备和 debug/release Chromium。MCP 的浏览器用例实际使用 Docker，首次构建所选执行安装需要镜像/包源网络；不调用付费模型。接入类浏览器测试使用独立 Host 和临时数据集，运行准备状态不能泄漏给其他用例。纯 Rust 组合测试使用显式端口夹具，真实 Docker 协议测试保持单独分层。
 
 ## 提交前自查
 

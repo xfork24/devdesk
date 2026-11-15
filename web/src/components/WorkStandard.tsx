@@ -100,9 +100,9 @@ export function WorkStandard({
               {},
           );
           setPermission(
-            instance?.data.plan.permission_context_ref ||
-              data.configuration?.data.permission_context_ref ||
-              defaults.configuration?.data.permission_context_ref ||
+            instance?.data.plan.harness_permission_ref ||
+              data.configuration?.data.harness_permission_ref ||
+              defaults.configuration?.data.harness_permission_ref ||
               "",
           );
         }
@@ -121,7 +121,7 @@ export function WorkStandard({
     instance?.data.active_plan_revision_id,
     selectionVersion,
     instance?.data.plan.standard_ref,
-    instance?.data.plan.permission_context_ref,
+    instance?.data.plan.harness_permission_ref,
     instance?.data.workflow_ref,
     instanceBindings,
   ]);
@@ -229,8 +229,12 @@ export function WorkStandard({
               />
             ))}
             <RevisionSelect
-              label="工作执行授权"
-              records={records.filter((r) => r.type === "permission_context")}
+              label="Harness Profile"
+              records={records.filter(
+                (r) =>
+                  r.type === "permission_profile" &&
+                  r.data.target_kind === "harness",
+              )}
               value={permission}
               onChange={(value) => {
                 setPermission(value);
@@ -265,7 +269,7 @@ export function WorkStandard({
                         type: "adopt_standard",
                         standard_ref: selected,
                         workflow_ref: workflow,
-                        permission_context_ref: permission || undefined,
+                        harness_permission_ref: permission || undefined,
                       },
                       { type: "set_bindings", bindings },
                     ],
@@ -287,7 +291,7 @@ export function WorkStandard({
                       standard_ref: selected,
                       workflow_ref: workflow,
                       role_agent_bindings: bindings,
-                      permission_context_ref: permission || undefined,
+                      harness_permission_ref: permission || undefined,
                     },
                   });
                   await refresh();

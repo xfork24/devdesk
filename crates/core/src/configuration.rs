@@ -374,23 +374,7 @@ pub(crate) fn validate_harness(
             .all(|c| driver_supports(&h.provider, c)),
         "Harness 声明了实际驱动没有的能力",
     )?;
-    let probe = SourceDefinition {
-        r#type: "harness".into(),
-        identity: "validation-harness".into(),
-        revision: 1,
-        name: "validation".into(),
-        scope: scope.clone(),
-        refs: refs.clone(),
-        data: data.clone(),
-    }
-    .into_record()?;
-    if refs.contains_key("runtime_resource_ref") || h.recipe_digest.is_some() {
-        // A direct source reference can resolve before publication; legacy content edges
-        // use this temporary origin solely to carry provider/scope into resolution.
-        let mut candidate = s.clone();
-        candidate.governance.push(probe.clone());
-        harness_runtime_resource(&candidate, &probe)?;
-    }
+    require(h.installation.is_some(), "Harness 必须声明安装输入")?;
     let mut provider_ids = std::collections::BTreeSet::new();
     for provider_ref in &reference_list(refs, "model_providers")? {
         let provider: ProviderFacts =

@@ -1,0 +1,38 @@
+{
+  "type": "permission_profile",
+  "identity": "builtin-permission-step-task-sol-high-tests",
+  "revision": 1,
+  "name": "步骤权限 · tests",
+  "scope": "global",
+  "data": {
+    "policy": {
+      "approval": "never",
+      "filesystem": {
+        "mode": "scoped",
+        "rules": [
+          {
+            "path": "/",
+            "access": "read"
+          },
+          {
+            "path": "/work/tests",
+            "access": "read_write"
+          }
+        ]
+      },
+      "network": {
+        "mode": "enabled"
+      },
+      "tools": {
+        "mode": "all_available"
+      },
+      "tool_refs": [
+        "builtin-tool-codex-native:1",
+        "builtin-tool-workflow-outputs-read:2",
+        "builtin-tool-spec-lint:1"
+      ]
+    },
+    "schema_version": 2,
+    "target_kind": "harness"
+  }
+}

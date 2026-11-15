@@ -35,9 +35,6 @@ function TargetBinding({ request, projectId, targetRef, kind }: Props) {
   const [bindingPreview, setBindingPreview] = useState<unknown>();
   const [scopePreview, setScopePreview] = useState<unknown>();
   const [counterpart, setCounterpart] = useState("");
-  const [scope, setScope] = useState(
-    '{"work_type":"discussion","writable_paths":[],"read_only_paths":[]}',
-  );
   const target = catalog?.targets.find(
     (t) => t.target.revision_id === targetRef && t.target.kind === kind,
   );
@@ -145,7 +142,7 @@ function TargetBinding({ request, projectId, targetRef, kind }: Props) {
                     permission_revision_id: value,
                   }),
                 );
-                setMessage("目标兼容性预检通过，仍需实际执行范围校验。");
+                setMessage("目标兼容性预检通过，执行范围由 Profile 解析。");
               })
             }
           >
@@ -244,18 +241,6 @@ function TargetBinding({ request, projectId, targetRef, kind }: Props) {
               ))}
             </ActionSelect>
           </label>
-          <label>
-            ExecutionScope JSON
-            <textarea
-              aria-label="ExecutionScope JSON"
-              rows={5}
-              value={scope}
-              onChange={(e) => {
-                setScope(e.target.value);
-                setScopePreview(undefined);
-              }}
-            />
-          </label>
           <ActionButton
             type="button"
             disabled={busy || !otherRef || !active || !target.supported}
@@ -270,7 +255,6 @@ function TargetBinding({ request, projectId, targetRef, kind }: Props) {
                       harness: { mode: "follow_target" },
                       sandbox: { mode: "follow_target" },
                     },
-                    scope: JSON.parse(scope),
                   }),
                 );
                 setMessage("完整范围预览通过；正式执行仍由协调器核验并冻结。");

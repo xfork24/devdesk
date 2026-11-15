@@ -19,6 +19,18 @@ type Props = {
 };
 const emptyDocument = () => ({
   schema_version: 6,
+  scheduling: {
+    max_concurrency: 4,
+    max_actions_per_tick: 16,
+    lease_seconds: 60,
+    max_retries: 0,
+    retry_error_codes: [],
+    agent: {
+      max_turns_per_wakeup: 8,
+      max_tool_calls_per_turn: 64,
+      timeout_seconds: 600,
+    },
+  },
   stages: [
     { key: "work", name: "工作", description: "", default_role_ref: null },
   ],
@@ -663,6 +675,20 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                 {draft.node === "workflow" ? (
                   <>
                     <legend>流程配置</legend>
+                    <JsonField
+                      label="调度配置"
+                      value={document.scheduling || emptyDocument().scheduling}
+                      onChange={(scheduling) =>
+                        setDraft((current) => ({
+                          ...current,
+                          document: { ...current.document, scheduling },
+                        }))
+                      }
+                    />
+                    <p className="muted">
+                      调度配置随工作流版本发布；每轮动作数与租约用于 Rust
+                      驱动，Agent 唤醒预算用于 Agent 编排。
+                    </p>
                     <label>
                       流程名称
                       <input
@@ -1259,9 +1285,33 @@ export function WorkflowManager({ request, project, refresh }: Props) {
                         />
                       </label>
                       <p className="muted">
-                        工作空间读写范围及工具授权由项目选定的 Permission
-                        配置管理。
+                        读写和工具权限由所选 Profile
+                        定义；留空时采用执行环境的默认 Profile。
                       </p>
+                      <RevisionSelect
+                        label="Harness Profile"
+                        records={records.filter(
+                          (r) =>
+                            r.type === "permission_profile" &&
+                            r.data.target_kind === "harness",
+                        )}
+                        value={step.harness_permission_ref || ""}
+                        onChange={(value) =>
+                          updateStep({ harness_permission_ref: value || null })
+                        }
+                      />
+                      <RevisionSelect
+                        label="Sandbox Profile"
+                        records={records.filter(
+                          (r) =>
+                            r.type === "permission_profile" &&
+                            r.data.target_kind === "sandbox",
+                        )}
+                        value={step.sandbox_permission_ref || ""}
+                        onChange={(value) =>
+                          updateStep({ sandbox_permission_ref: value || null })
+                        }
+                      />
                       <JsonField
                         key={`${step.key}:budget`}
                         label="执行预算"

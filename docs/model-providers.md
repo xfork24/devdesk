@@ -46,8 +46,8 @@ DevDesk 当前发布 OpenAI/Codex 及 DeepSeek Harness（DSH）的模型配置�
 
 新 key 产生新的不透明引用，已有 Session 和技术重试保留原引用；旧引用不可读时明确失败，不自动换 key。Model 或 Harness 新修订不修改既有 Capability、Agent、Feature 或 Session。更新配置后通过新的完整组合及后继 Session 使用新连接。
 
-当前出厂 DSH 资源标签为 `0.2.2-rc.1`，发行文件与构建 pin 保存在运行资源源中。模型容量目录通过配方摘要绑定 Harness，执行检查冻结连接和生成 profile 的内容摘要，不把版本字符串作为兼容门槛。未知模型需要明确容量声明；不读取用户全局 DSH 设置。原会话保留实际安装、连接与适配器身份，不能在旧运行上替换代码或密钥。
+当前出厂 DSH 资源标签为 `0.2.2-rc.1`，程序版本和安装文件位于 Harness，Docker 基础镜像和系统依赖位于 Sandbox。模型容量目录通过配方摘要绑定 Harness，执行检查冻结连接和生成 profile 的内容摘要，不把版本字符串作为兼容门槛。未知模型需要明确容量声明；不读取用户全局 DSH 设置。原会话保留实际安装、连接与适配器身份，不能在旧运行上替换代码或密钥。
 
-`models.list` 的目录读取、运行资源协议探针和真实推理是不同检查。DSH 路由的本地流式夹具不证明某个真实订阅可用；Ollama 宿主目录读取不证明容器连通或推理成功。当前验收入口见 [真实工程接入](real-engineering.md)，历史结果按对应报告的版本和范围解释。
+`models.list` 的目录读取、执行安装协议探针和真实推理是不同检查。DSH 路由的本地流式夹具不证明某个真实订阅可用；Ollama 宿主目录读取不证明容器连通或推理成功。当前验收入口见 [真实工程接入](real-engineering.md)，历史结果按对应报告的版本和范围解释。
 
 实现依据：[服务商领域规则](../crates/domain/src/model_provider.rs)、[出厂服务商](../resources/configuration/model-providers/)、[目录查询](../crates/host/src/model_providers.rs)、[DSH 连接与 profile](../crates/adapters/src/model_providers.rs)、[凭据助手检查](../crates/adapters/src/credentials_macos.rs)。

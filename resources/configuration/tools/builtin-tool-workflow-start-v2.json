@@ -31,7 +31,7 @@
         "work_configuration_ref": {
           "type": "string"
         },
-        "permission_context_ref": {
+        "harness_permission_ref": {
           "type": "string"
         }
       },

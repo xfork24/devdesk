@@ -84,11 +84,11 @@ StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝
 
 源码：[crates/domain/src/workflow_driver.rs](../../../crates/domain/src/workflow_driver.rs)。
 
-`OrchestrationSelection` 明确选择 manual、rust 或 agent；rust 必须提供精确 policy_ref。`OrchestrationPolicy` 只定义执行并发、每 tick 动作数、租约时间以及技术错误重试集合和上限。
+`OrchestrationSelection` 只选择 manual、rust 或 agent 模式。`WorkflowScheduling` 内嵌在 Workflow，定义执行并发、每轮动作、租约、技术重试与 Agent 唤醒预算，随工作流修订冻结。
 
 校验限制并发 1–32、动作 1–64、租约 5–3600 秒、最多 8 次策略重试和 32 个错误码。策略定义本身不产生动作，也不证明所有失败都已有结构化错误来源；实际选择、预算解释和持久化围栏由 core 的驱动实现。
 
-代码定位：[`OrchestrationPolicy`](../../../crates/domain/src/workflow_driver.rs#L6)、[`OrchestrationSelection`](../../../crates/domain/src/workflow_driver.rs#L29)、[`validate`](../../../crates/domain/src/workflow_driver.rs#L16)。
+代码定位：[`WorkflowScheduling`](../../../crates/domain/src/workflow_driver.rs#L6)、[`OrchestrationSelection`](../../../crates/domain/src/workflow_driver.rs#L29)、[`validate`](../../../crates/domain/src/workflow_driver.rs#L16)。
 
 关联阅读：[core/src/workflow_driver.rs](../devdesk-core/orchestration-and-drivers.md#file-src-workflow-driver-rs)、[core/src/orchestration.rs](../devdesk-core/orchestration-and-drivers.md#file-src-orchestration-rs)。
 
@@ -98,7 +98,7 @@ StepExecution 的 failure 保存可信失败事实，retry_of 指向本技术尝
 
 源码：[crates/domain/src/orchestration.rs](../../../crates/domain/src/orchestration.rs)。
 
-`WorkflowControlPolicy` 给出允许操作、必须留给人类的操作、允许豁免的要求类别和唤醒预算。`WorkflowController` 固定 Agent、Role、Permission Context、会话、根实例、epoch 与消费游标；workspace_only 表示项目经理独立工作台，并不自动获得某个根的调度权。
+`WorkflowControlPolicy` 是执行视图，权限来自 Harness Profile.policy.platform，预算来自 Workflow.scheduling.agent。WorkflowController 固定 Agent、Profile、会话、根实例、epoch 与消费游标；workspace_only 项目经理不自动拥有根调度权。
 
 `WorkflowActor` 区分 Human、带 Session/Turn/epoch 的 Controller、Driver 和 Segment。决定、封存材料和 ActionPermit 分别记录业务处置、材料来源与候选/目标要求；把它们分开才能保留原拒绝，不伪造人类签名或测试事实。Wakeup/Lease 表达持久投递和单写者围栏；它们需要 core 和实际存储实现生命周期。
 

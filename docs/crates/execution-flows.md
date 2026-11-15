@@ -42,7 +42,7 @@ flowchart TD
 
 ## 2. 编译冻结计划，再装配完整会话
 
-[compile_workflow_sources](devdesk-core/workflow-compilation.md#file-src-configured-workflows-rs) 从根 Workflow 遍历子流程，核对 DAG、Role 继承、Agent 技术组合、Skill、Tool、Delivery/Spec 和 Permission Context。得到 ConfiguredWorkflowPlan，包含规范视图、确切源和锁；纯编译不启动模型。
+[compile_workflow_sources](devdesk-core/workflow-compilation.md#file-src-configured-workflows-rs) 从根 Workflow 遍历子流程，核对 DAG、Role 继承、Agent 技术组合、Skill、Tool、Delivery/Spec 和 Profile 选择。得到 ConfiguredWorkflowPlan，包含规范视图、确切源和锁；纯编译不启动模型。
 
 启动实例时 [configured_runtime](devdesk-core/workflow-execution.md#file-src-configured-runtime-rs) 固定 owner/root、计划版本、整体输入和 queued 步骤，尚不填齐各步骤 inputs。每步有效派发后首次推进才解析输入、计算 input_digest 并保存证据清单；所依赖的产物可能此时才出现。技术 retry 保持这份步骤输入，rework 才重解析。
 
@@ -104,7 +104,7 @@ accept_configured_outputs 核对输出封套、端口、Schema/Spec、内容报�
 
 父子调用按精确实例和 execution 聚合，Task 完成才释放后置 Task 业务依赖。最终 workflow.complete 再核对每步已处置、整体完成规则和最终输出；“所有 worker 都停了”本身不构成完成。
 
-当前默认配置由 [defaults.json](../../resources/configuration/defaults.json) 指向 Feature/Task Workflow 修订 7、Standard 修订 4、Permission Context 修订 5。Feature 22 步、Task 20 步；PRD/Design/TaskPlan Delivery 修订 3，配合具体内容要求、证据项与 delivery-self-check Skill。这里的版本是默认选择，用户自建流程仍通过相同通用编译和执行合同运行。
+当前默认配置由 [defaults.json](../../resources/configuration/defaults.json) 选择 Feature Workflow 8、Task Workflow 7、Standard 6。Feature 22 步、Task 20 步；步骤 Profile 与调度配置随 Workflow 冻结。具体 Delivery/Spec 修订按精确源引用解析，默认变化不升级已有运行。
 
 <a id="engineering-evidence"></a>
 

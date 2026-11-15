@@ -18,7 +18,7 @@
 
 源码：[crates/adapters/src/lib.rs](../../../crates/adapters/src/lib.rs)。
 
-`SqliteStore` 打开工程目录，核对 `devdesk-source-flat-v1` 数据标记、数据库版本和独占锁；全局库与工程库使用各自 SQL 基线，当前版本分别为 18 和 48。非空的不兼容目录不会自动迁移或清空。只读工程快照用于跨项目查询，不取得执行控制权。
+`SqliteStore` 打开工程目录，核对 `devdesk-profile-runtime-v2` 数据标记、数据库版本和独占锁；全局库与工程库使用各自 SQL 基线，当前版本分别为 18 和 48。非空的不兼容目录不会自动迁移或清空。只读工程快照用于跨项目查询，不取得执行控制权。
 
 EngineeringStore 的 transact 先取得 writer 锁，核对 command_id 与请求指纹并载入状态；运行业务闭包前释放数据库连接锁。闭包成功且状态发生变化时校验差异，再打开短 SQLite 事务提交状态和操作回执；这期间 writer 锁仍在，其他只读查询可取得连接。重放已提交操作恢复原结果，不再次执行闭包。`has_pending_work` 用数据库投影判断是否值得调度，避免每次 tick 为闲置工程加载全部历史。
 

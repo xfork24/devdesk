@@ -38,14 +38,11 @@ const labels: Record<string, string> = {
   model: "Model",
   harness: "Harness",
   sandbox: "Sandbox",
-  runtime_resource: "运行资源",
-  orchestration_policy: "调度策略",
   tool: "Tool",
   skill: "Skill",
   spec: "Spec",
   standard: "Standard",
   delivery_type: "Delivery",
-  permission_context: "执行授权",
 };
 function initial(kind: string): Row {
   switch (kind) {
@@ -53,22 +50,6 @@ function initial(kind: string): Row {
       return {
         role_ref: "",
         capability_ref: "",
-      };
-    case "permission_context":
-      return {
-        sandbox_ref: "",
-        harness: { mode: "follow_target" },
-        sandbox: { mode: "follow_target" },
-        step_grants: [],
-        control_policy: {
-          allowed_operations: [],
-          human_operations: [],
-          waivable_requirements: [],
-          allow_task_revision: false,
-          max_turns_per_wakeup: 8,
-          max_tool_calls_per_turn: 64,
-          timeout_seconds: 600,
-        },
       };
     case "capability":
       return {
@@ -84,22 +65,6 @@ function initial(kind: string): Row {
         model: "",
         parameters: {},
         capabilities: [],
-      };
-    case "orchestration_policy":
-      return {
-        max_concurrency: 4,
-        max_actions_per_tick: 16,
-        lease_seconds: 60,
-        max_retries: 0,
-        retry_error_codes: [],
-      };
-    case "runtime_resource":
-      return {
-        provider: "codex",
-        version: "",
-        license: "",
-        files: [{ path: "Dockerfile", content: "" }],
-        native_releases: {},
       };
     case "harness":
       return {
@@ -230,10 +195,6 @@ export function ResourceEditor({
   } = useActionFeedback();
 
   const [providers, setProviders] = useState<ModelProvider[]>([]);
-  const [runtimeOptions, setRuntimeOptions] = useState<Row>({
-    recipes: [],
-    installations: [],
-  });
   const [records, setRecords] = useState<Row[]>([]),
     [busy, setBusy] = useState(false),
     [integrations, setIntegrations] = useState<Row[]>([]);
@@ -242,21 +203,14 @@ export function ResourceEditor({
     () => ({ selected: "", name: "", scope: "global", data: initial(kind) }),
   );
   const load = useCallback(async () => {
-    const [records, modelProviders, integrationResources, runtimeOptions] =
-      await Promise.all([
-        loadCatalog(
-          request,
-          project?.id,
-          ["harness", "sandbox"].includes(kind),
-        ),
-        request("query.model_providers"),
-        ["capability", "agent", "skill"].includes(kind)
-          ? loadIntegrationRecords(request, project?.id)
-          : Promise.resolve([]),
-        request("query.runtime_options"),
-      ]);
+    const [records, modelProviders, integrationResources] = await Promise.all([
+      loadCatalog(request, project?.id, ["harness", "sandbox"].includes(kind)),
+      request("query.model_providers"),
+      ["capability", "agent", "skill"].includes(kind)
+        ? loadIntegrationRecords(request, project?.id)
+        : Promise.resolve([]),
+    ]);
     setRecords(records);
-    setRuntimeOptions(runtimeOptions);
     setIntegrations(integrationResources);
     setProviders(modelProviders.providers || []);
     if (kind === "tool")
@@ -285,9 +239,6 @@ export function ResourceEditor({
       ...current,
       data: { ...current.data, ...value },
     }));
-  const runtimeVersions: Row[] = (runtimeOptions.recipes || []).filter(
-    (r: Row) => r.provider === data.provider,
-  );
   const options = (family: string) => records.filter((r) => r.type === family);
   const select = (
     label: string,
@@ -380,18 +331,6 @@ export function ResourceEditor({
         throw new Error("请先从模型目录中选择模型标识");
       if (kind === "agent" && !payload.instructions)
         delete payload.instructions;
-      if (
-        kind === "harness" &&
-        !runtimeVersions.some(
-          (r) =>
-            r.reference === payload.runtime_resource_ref ||
-            (!payload.runtime_resource_ref &&
-              r.recipe_digest === payload.recipe_digest),
-        )
-      )
-        throw new Error("请选择精确的运行资源修订");
-      if (kind === "harness" && !payload.recipe_digest)
-        delete payload.recipe_digest;
       if (kind === "tool") {
         if (payload.implementation === "harness.native") {
           // Native contracts belong to the Harness; keep existing metadata for history.
@@ -582,23 +521,6 @@ export function ResourceEditor({
                 {project && <option value="project">当前项目</option>}
               </ActionSelect>
             </label>
-            {[
-              "permission_context",
-              "runtime_resource",
-              "orchestration_policy",
-            ].includes(kind) && (
-              <JsonField
-                label={
-                  kind === "runtime_resource"
-                    ? "运行资源定义（JSON）"
-                    : kind === "orchestration_policy"
-                      ? "调度策略（JSON）"
-                      : "执行授权配置"
-                }
-                value={data}
-                onChange={(data) => setDraft({ ...draft, data: data as Row })}
-              />
-            )}
             {kind === "agent" && (
               <>
                 {select("Role 精确版本", "role", "role_ref", false, true)}
@@ -629,7 +551,7 @@ export function ResourceEditor({
                   </div>
                 )}
                 <p className="muted full-width">
-                  职责来自 Role，方法与工具来自 Capability；本次执行授权由
+                  职责来自 Role，方法与工具来自 Capability；本次权限 Profile由
                   Permission 单独管理。
                 </p>
               </>
@@ -793,6 +715,11 @@ export function ResourceEditor({
                 </label>
                 {field("Sandbox 运行版本", "runtime_version", true)}
                 {field("Sandbox 执行合同", "enforcement", true)}
+                <JsonField
+                  label="Docker 基础环境与构建"
+                  value={data.build || {}}
+                  onChange={(build) => patch({ build })}
+                />
                 <label>
                   支持平台
                   <ActionSelect
@@ -825,17 +752,8 @@ export function ResourceEditor({
                       captureFeedback();
                       return patch({
                         provider: e.target.value,
-                        runtime_resource_ref:
-                          runtimeOptions.recipes.find(
-                            (r: Row) => r.provider === e.target.value,
-                          )?.reference || "",
-                        runtime_version:
-                          runtimeOptions.recipes.find(
-                            (r: Row) => r.provider === e.target.value,
-                          )?.version || "",
-                        recipe_digest: runtimeOptions.recipes.find(
-                          (r: Row) => r.provider === e.target.value,
-                        )?.recipe_digest,
+                        runtime_version: "",
+                        installation: {},
                         model_providers: providers
                           .filter((p) => p.harness === e.target.value)
                           .map((p) => p.reference),
@@ -846,39 +764,12 @@ export function ResourceEditor({
                     <option value="dsh">DSH</option>
                   </ActionSelect>
                 </label>
-                <label>
-                  运行资源精确修订
-                  <ActionSelect
-                    aria-label="运行资源精确修订"
-                    required
-                    value={
-                      data.runtime_resource_ref ||
-                      runtimeVersions.find(
-                        (r) => r.recipe_digest === data.recipe_digest,
-                      )?.reference ||
-                      ""
-                    }
-                    onChange={(e) => {
-                      const selected = runtimeVersions.find(
-                        (r) => r.reference === e.target.value,
-                      );
-                      patch({
-                        runtime_resource_ref: e.target.value,
-                        runtime_version: selected?.version,
-                        recipe_digest: selected?.recipe_digest,
-                      });
-                    }}
-                  >
-                    <option value="" disabled>
-                      请选择运行资源
-                    </option>
-                    {runtimeVersions.map((r) => (
-                      <option key={r.reference} value={r.reference}>
-                        {r.name} · {r.version} · {r.reference}
-                      </option>
-                    ))}
-                  </ActionSelect>
-                </label>
+                {field("Harness 发行版本", "runtime_version", true)}
+                <JsonField
+                  label="Harness 安装与登录组件"
+                  value={data.installation || {}}
+                  onChange={(installation) => patch({ installation })}
+                />
                 <fieldset className="model-provider-options">
                   <legend>支持的模型服务商</legend>
                   {providers
@@ -905,11 +796,6 @@ export function ResourceEditor({
                       </label>
                     ))}
                 </fieldset>
-                {data.recipe_digest && (
-                  <p className="muted full-width">
-                    构建配方摘要：<code>{data.recipe_digest}</code>
-                  </p>
-                )}
                 <div className="full-width">
                   <h3>已登记安装</h3>
                   {projectInstallations.length === 0 && (

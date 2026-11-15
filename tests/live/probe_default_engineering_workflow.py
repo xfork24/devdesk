@@ -16,14 +16,12 @@ parser.add_argument('--dedicated-repository',action='store_true',help='Explicitl
 parser.add_argument('--report-directory',type=Path)
 parser.add_argument('--resume',action='store_true')
 parser.add_argument('--driver',choices=['agent','rust'],default='agent')
-parser.add_argument('--policy-ref',help='Exact immutable policy selected for the Rust driver')
 parser.add_argument('--unattended',action='store_true',help='Fresh Agent run: fail on supplemental input or any Human gate; no probe intervention')
 parser.add_argument('--guidance',default='')
 parser.add_argument('--timeout-seconds',type=int,default=10800)
-parser.add_argument('--manager-context-source',type=Path,help='Explicit immutable Permission Context source to adopt during stopped-controller recovery')
+parser.add_argument('--manager-profile-source',type=Path,help='Explicit immutable Harness Profile source to adopt during stopped-controller recovery')
 args=parser.parse_args()
-assert args.driver!='rust' or args.policy_ref, '--driver rust requires --policy-ref'
-assert args.manager_context_source is None or args.resume, 'manager context adoption is a resume operation'
+assert args.manager_profile_source is None or args.resume, 'manager context adoption is a resume operation'
 assert args.timeout_seconds>0
 assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset'
 assert not (args.driver=='rust' and args.unattended), 'Rust actor verification is separate from the unattended Agent controller contract'
@@ -111,17 +109,17 @@ try:
     c.wait(lambda:c.rpc('query.workflow_instance',{'id':row['id']}),lambda v:next(e for e in v['runtime']['steps'] if e['step']==interrupted['step'])['status']=='cancelled',60)
     control('workflow.step.retry')
   selected_context=None
-  if args.manager_context_source:
-   source=json.loads(args.manager_context_source.read_text());assert source['type']=='permission_context'
+  if args.manager_profile_source:
+   source=json.loads(args.manager_profile_source.read_text());assert source['type']=='permission_profile'
    selected_context=source['identity']+':'+str(source['revision'])
-   catalog=c.rpc('query.configurations',{'local':True,'kind':'permission_context','include_history':True,'limit':100})['records'];existing=next((r for r in catalog if r['id']==selected_context),None)
+   catalog=c.rpc('query.configurations',{'local':True,'kind':'permission_profile','include_history':True,'limit':100})['records'];existing=next((r for r in catalog if r['id']==selected_context),None)
    if existing:
     assert existing['data']==source['data'] and existing['scope']==source['scope'],'Existing context differs from the explicit source'
    else:
     change={'operations':[{'type':'create','source':source}]};preview=c.rpc('configuration.change.preview',{'changeset':change});applied=c.command('configuration.change.apply',payload={'changeset':change,'preview_hash':preview['preview_hash']});(attempt/'manager-context-import.json').write_text(json.dumps({'source':source,'preview':preview,'receipt':applied},ensure_ascii=False,indent=2))
-   shutil.copy2(args.manager_context_source,attempt/'manager-context-source.json')
-  manager_row=c.rpc('query.orchestration',{'id':manager})['record'];resumed=c.command('orchestration.resume',manager,manager_row['revision'],{'epoch':manager_row['data']['epoch'],**({'permission_context_ref':selected_context} if selected_context else {})});manager=resumed['id']
-  context['resumptions'][-1]['controller_id']=manager;context['resumptions'][-1]['permission_context_ref']=resumed['controller']['permission_context_ref'];(OUT/'context.json').write_text(json.dumps(context,ensure_ascii=False,indent=2))
+   shutil.copy2(args.manager_profile_source,attempt/'manager-context-source.json')
+  manager_row=c.rpc('query.orchestration',{'id':manager})['record'];resumed=c.command('orchestration.resume',manager,manager_row['revision'],{'epoch':manager_row['data']['epoch'],**({'harness_permission_ref':selected_context} if selected_context else {})});manager=resumed['id']
+  context['resumptions'][-1]['controller_id']=manager;context['resumptions'][-1]['harness_permission_ref']=resumed['controller']['harness_permission_ref'];(OUT/'context.json').write_text(json.dumps(context,ensure_ascii=False,indent=2))
   m=c.rpc('query.orchestration',{'id':manager})['record'];print('Resumed preserved root:',root_id,flush=True)
  else:
   project=c.command('project.open_github',payload={'repository':args.github_repo,'mainline':'main','title':'Core engineering acceptance'})['id'];c.project=project
@@ -131,7 +129,7 @@ try:
   goal=f'''本次验收事实已经全部确定，无需等待用户补充：在已有仓库新增依赖免费的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 `Hello, <trimmed>!`；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；本次明确两个 TDD 增量：先 AC-GREET 的问候与 trim，再 AC-INVALID 的无效输入拒绝，每个增量分别保留真实 Red 和 Green。独立 tests 断言保持只读，自有增量测试按这两个冻结增量逐步增加并分别采集 Red/Green；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。测试使用 node:test、node:assert/strict，无 npm 安装、无联网、无外部依赖。测试 import 为 ../../{module}。模块或导出缺失属于运行前置条件错误，不使用动态 import 的 catch、assert.fail 或伪造返回值将它包装成业务 Red；由 Task Workflow 的 red_baseline 步骤准备可调用的最小接口，平台 Red 必须来自真实业务断言差异。实施逐次原始日志及测试/源码内容快照通过必需 evidence 输出交付，不能只提交临时路径或摘要。每轮采集真实 run 后，将该轮完整结构化 run JSON 输出到原生命令工具的 stdout，保留在工具观察账本中，再将相同记录汇总到 evidence；不要只在最终模型回答中补写记录。Task 配方仅运行 {task_test}；Feature 和最终候选配方运行 {task_test} 与 {feature_test} 两个文件。固定 Node TestRecipe 的 runner=node_test、image={image}、timeout_seconds=60。测试、实现、文档和独立评审必须按各自 Skill 和当前 Step 合同真实完成，不能把计划、模型自述或未运行内容当作工具回执。业务文档通过当前输出端口交付。README 修改是可选项，不属于本次必填交付物；规划和评审不得把它升级为新增完成条件，文档节点为只读时必须通过 result 端口交付完整文档。'''
   assert {step['key'] for step in workflow['steps'] if step.get('confirmation')=='human'}=={'requirements_review','design_review','plan_review'}
   published={'id':defaults['workflow_ref']};p=c.rpc('query.workspace')['active_project']
-  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'permission_context_ref':defaults['permission_context_ref'],'orchestration':{'mode':'manual'}})
+  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':'manual'}})
   feature=c.command('feature.create',payload={'project_id':project,'title':'Core greeting '+suffix,'initial_requirement':goal,'configuration_revision_id':configuration['id']})['id']
   (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':False,'expected_human_checkpoints':['requirements_review','design_review','plan_review'],'required_increment_pairs':2,'unattended':args.unattended,'driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
   initial=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=initial['record']['id']
@@ -163,7 +161,7 @@ try:
      time.sleep(.5)
    raise RuntimeError('Control selection CAS did not settle')
   if args.driver=='rust':
-   selection=select_control('workflow.driver.select',{'mode':'rust','policy_ref':args.policy_ref})
+   selection=select_control('workflow.driver.select',{'mode':'rust'})
    (attempt/'driver-selection.json').write_text(json.dumps(selection,ensure_ascii=False,indent=2));manager=None
   else:
    manager=select_control('orchestration.open',{})['id']

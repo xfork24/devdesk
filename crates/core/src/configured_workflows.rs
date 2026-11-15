@@ -11,13 +11,14 @@ pub struct ConfiguredWorkflowPlan {
     #[serde(default)]
     pub work_configuration_ref: Option<Id>,
     #[serde(default)]
-    pub permission_context_ref: Option<Id>,
+    pub harness_permission_ref: Option<Id>,
     #[serde(default)]
-    pub permission_workflow_ref: Option<Id>,
+    pub base_workflow_ref: Option<Id>,
     pub document: WorkflowDefinition,
     pub roles: BTreeMap<Id, Value>,
     pub definitions: BTreeMap<Id, ConfigurationRecord>,
     pub permission_locks: BTreeMap<Id, VersionedPermissionLock>,
+    pub execution_selection: ExecutionPermissionSelection,
     pub tool_bindings: BTreeMap<Id, BoundTool>,
     pub integration_locks: BTreeMap<Id, IntegrationLock>,
     pub specification_view: Vec<Value>,
@@ -165,13 +166,13 @@ impl Engine {
                     "项目修订冲突",
                 )?;
                 let scope = Scope::project(project.id.clone());
-                let source_context = p["permission_context_ref"]
+                let source_context = p["harness_permission_ref"]
                     .as_str()
                     .map(str::to_owned)
-                    .or_else(|| permission_context(state).map(|r| r.id.clone()))
-                    .ok_or_else(|| err("permission_unconfigured", "项目需要独立授权上下文"))?;
+                    .or_else(|| selected_harness_profile(state).map(|r| r.id.clone()))
+                    .ok_or_else(|| err("permission_unconfigured", "项目需要Harness Profile"))?;
                 let project_standard = if let Some(base) = p["standard_ref"].as_str() {
-                    let candidate = self.project_standard_preview(state.clone(), &json!({"project_id":project.id,"standard_ref":base,"standard_overrides":p.get("standard_overrides").cloned().unwrap_or(json!([])),"permission_context_ref":source_context}))?;
+                    let candidate = self.project_standard_preview(state.clone(), &json!({"project_id":project.id,"standard_ref":base,"standard_overrides":p.get("standard_overrides").cloned().unwrap_or(json!([])),"harness_permission_ref":source_context}))?;
                     if let Some(hash) = p["standard_preview_hash"].as_str() {
                         require(
                             candidate["preview_hash"] == hash,
@@ -218,7 +219,20 @@ impl Engine {
                 } else {
                     source_context.clone()
                 };
-                reference(state, &context_ref, "permission_context", &scope)?;
+                reference(state, &context_ref, "permission_profile", &scope)?;
+                for (field, kind) in [
+                    ("harness_permission_ref", PermissionTargetKind::Harness),
+                    ("sandbox_permission_ref", PermissionTargetKind::Sandbox),
+                ] {
+                    if let Some(id) = p[field].as_str() {
+                        let profile = reference(state, id, "permission_profile", &scope)?
+                            .permission_profile()?;
+                        require(profile.target_kind == kind, "项目 Profile 类型不匹配")?;
+                    }
+                }
+                if let Some(id) = p["sandbox_ref"].as_str() {
+                    reference(state, id, "sandbox", &scope)?;
+                }
                 // Validate this selection before committing it; the compiler uses the same context at execution.
                 let mut selected_state = state.clone();
                 selected_state.governance.push(record(
@@ -228,7 +242,7 @@ impl Engine {
                     project.title.clone(),
                     u64::MAX,
                     None,
-                    json!({"permission_context_ref":context_ref}),
+                    json!({"harness_permission_ref":p["harness_permission_ref"],"sandbox_ref":p["sandbox_ref"],"sandbox_permission_ref":p["sandbox_permission_ref"]}),
                     true,
                 ));
                 if let Some(role_ref) = p["orchestrator_role_ref"].as_str() {
@@ -248,13 +262,7 @@ impl Engine {
                         ),
                         "此 Harness 尚不支持编排原生工具桥",
                     )?;
-                    let policy: WorkflowControlPolicy = serde_json::from_value(
-                        permission_context(&selected_state)
-                            .ok_or_else(|| err("permission_unconfigured", "缺少编排授权"))?
-                            .data["control_policy"]
-                            .clone(),
-                    )
-                    .map_err(|e| err("configuration_required", e.to_string()))?;
+                    let policy = profile_control_policy(&selected_state, &context_ref, None)?;
                     policy.validate()?;
                     require(
                         composition.tools.iter().any(|id| {
@@ -305,7 +313,7 @@ impl Engine {
                     old.as_ref().map_or(1, |r| r.version + 1),
                     old.map(|r| r.id),
                     json!({"orchestration":orchestration,"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
-                    "orchestrator_role_ref":p["orchestrator_role_ref"],"permission_context_ref":context_ref,"permission_context_source_ref":source_context}),
+                    "orchestrator_role_ref":p["orchestrator_role_ref"],"harness_permission_ref":p["harness_permission_ref"],"sandbox_ref":permission_selection(&selected_state)?.sandbox_ref,"sandbox_permission_ref":p["sandbox_permission_ref"]}),
                     true,
                 );
                 let result = json!(row);
@@ -400,7 +408,10 @@ impl Engine {
                     "草稿修订冲突",
                 )?;
                 let mut candidate = old.clone();
-                candidate.data = old.data["document"].clone();
+                let typed: WorkflowDefinition =
+                    serde_json::from_value(old.data["document"].clone())
+                        .map_err(|e| err("invalid_workflow", e.to_string()))?;
+                candidate.data = json!(typed);
                 self.compile_configured_workflow(state, &candidate, &old.scope, None)?;
                 require(
                     !state.governance.iter().any(|r| {
@@ -694,6 +705,16 @@ pub fn compile_workflow_sources(
         plan.definitions
             .insert(workflow.id.clone(), workflow.clone());
         for step in &doc.steps {
+            for (selected, kind) in [
+                (&step.harness_permission_ref, PermissionTargetKind::Harness),
+                (&step.sandbox_permission_ref, PermissionTargetKind::Sandbox),
+            ] {
+                if let Some(id) = selected {
+                    let profile =
+                        reference(state, id, "permission_profile", scope)?.permission_profile()?;
+                    require(profile.target_kind == kind, "步骤 Profile 类型不匹配")?;
+                }
+            }
             let location = format!("{path}/{}", step.key);
             if let Some(role) = doc.role(step) {
                 let record = crate::configuration::role_record(state, role)?;
@@ -722,9 +743,9 @@ pub fn compile_workflow_sources(
                         "Agent 必须属于指定 Role 身份",
                     )?;
                     crate::governance::validate_composition(state, &composition, scope)?;
-                    let selection = permission_selection(state)?;
+                    let selection = step_permission_selection(state, step)?;
                     plan.permission_locks.insert(
-                        agent.id.clone(),
+                        format!("{}:{}", workflow.id, step.key),
                         resolve_permission_lock(state, &composition.harness_ref, &selection)?,
                     );
                     plan.integration_locks.insert(
@@ -1043,12 +1064,13 @@ pub fn compile_workflow_sources(
         workflow_revision_id: workflow.id.clone(),
         standard_ref: None,
         work_configuration_ref: None,
-        permission_context_ref: permission_context(state).map(|r| r.id.clone()),
-        permission_workflow_ref: Some(workflow.id.clone()),
+        harness_permission_ref: selected_harness_profile(state).map(|r| r.id.clone()),
+        base_workflow_ref: Some(workflow.id.clone()),
         document,
         roles: BTreeMap::new(),
         definitions: BTreeMap::new(),
         permission_locks: BTreeMap::new(),
+        execution_selection: permission_selection(state)?,
         tool_bindings: BTreeMap::new(),
         integration_locks: BTreeMap::new(),
         specification_view: vec![],
@@ -1064,5 +1086,34 @@ pub fn compile_workflow_sources(
         &mut plan,
         "",
     )?;
+    for step in &mut plan.document.steps {
+        if let Some(lock) = plan
+            .permission_locks
+            .get(&format!("{}:{}", workflow.id, step.key))
+        {
+            let (write, read) =
+                profile_pair_workspace_access(&lock.harness.profile, &lock.sandbox.profile);
+            step.access.writable_paths = write;
+            step.access.read_only_paths = read;
+            step.access.tool_refs = lock
+                .harness
+                .profile
+                .policy
+                .tool_refs
+                .clone()
+                .unwrap_or_default();
+        }
+    }
+    for lock in plan.permission_locks.values() {
+        for reference in [
+            &lock.harness.profile.id,
+            &lock.sandbox.profile.id,
+            &lock.harness.binding.target.revision_id,
+            &lock.sandbox.binding.target.revision_id,
+        ] {
+            plan.definitions
+                .insert(reference.clone(), state.configuration(reference)?.clone());
+        }
+    }
     Ok(plan)
 }

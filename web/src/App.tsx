@@ -116,15 +116,11 @@ async function rpc(method: string, params: Row = {}) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++sequence, method, params }),
     signal: AbortSignal.timeout(
-      [
-        "session.open",
-        "runtime.prepare",
-        "codex.auth.start",
-        "codex.auth.status",
-        "codex.auth.models",
-      ].includes(method)
+      ["session.open", "runtime.prepare", "codex.auth.models"].includes(method)
         ? 25 * 60 * 1000
-        : 30000,
+        : method === "codex.auth.start"
+          ? 5 * 60 * 1000
+          : 30000,
     ),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} · 内核连接失败`);

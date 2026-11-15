@@ -27,7 +27,6 @@ export function WorkflowController({
   const [managerAgent, setManagerAgent] = useState("");
   const [managerPermission, setManagerPermission] = useState("");
   const [mode, setMode] = useState("manual");
-  const [policy, setPolicy] = useState("");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -109,7 +108,7 @@ export function WorkflowController({
             payload: {
               ...(managerAgent ? { agent_ref: managerAgent } : {}),
               ...(managerPermission
-                ? { permission_context_ref: managerPermission }
+                ? { harness_permission_ref: managerPermission }
                 : {}),
             },
           },
@@ -132,7 +131,7 @@ export function WorkflowController({
             ? {
                 ...(managerAgent ? { agent_ref: managerAgent } : {}),
                 ...(managerPermission
-                  ? { permission_context_ref: managerPermission }
+                  ? { harness_permission_ref: managerPermission }
                   : {}),
               }
             : {}),
@@ -157,7 +156,7 @@ export function WorkflowController({
         payload: {
           ...(managerAgent ? { agent_ref: managerAgent } : {}),
           ...(managerPermission
-            ? { permission_context_ref: managerPermission }
+            ? { harness_permission_ref: managerPermission }
             : {}),
         },
       });
@@ -181,7 +180,7 @@ export function WorkflowController({
         command_id: crypto.randomUUID(),
         target: instance.id,
         expected_revision: current.record.revision,
-        payload: { mode, policy_ref: mode === "rust" ? policy : null },
+        payload: { mode },
       });
       await Promise.all([load(), refresh()]);
     } catch (e) {
@@ -281,7 +280,7 @@ export function WorkflowController({
             <RevisionSelect
               label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
               records={catalog.filter(
-                (row) => row.type === "permission_context",
+                (row) => row.type === "permission_profile",
               )}
               value={managerPermission}
               onChange={(value) => setManagerPermission(value)}
@@ -321,18 +320,8 @@ export function WorkflowController({
                 <option value="agent">Agent 调度</option>
               </ActionSelect>
             </label>
-            {mode === "rust" && (
-              <RevisionSelect
-                label="根实例调度策略"
-                records={catalog.filter(
-                  (row) => row.type === "orchestration_policy",
-                )}
-                value={policy}
-                onChange={(value) => setPolicy(value)}
-              />
-            )}
             <ActionButton
-              disabled={busy || !data || (mode === "rust" && !policy)}
+              disabled={busy || !data}
               onClick={() => void selectDriver()}
             >
               采用调度模式

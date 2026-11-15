@@ -35,8 +35,7 @@
         "harness",
         "sandbox",
         "tool",
-        "permission_profile",
-        "permission_context"
+        "permission_profile"
       ],
       "additionalProperties": {
         "type": "array",

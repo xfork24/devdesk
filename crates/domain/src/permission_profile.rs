@@ -28,6 +28,8 @@ pub struct SandboxDefinition {
     pub provider: String,
     pub runtime_version: String,
     pub enforcement: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<SandboxBuild>,
     pub platforms: Vec<String>,
 }
 
@@ -41,6 +43,18 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProfilePolicy {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "supplied"
+    )]
+    pub platform: Option<PlatformPermission>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "supplied"
+    )]
+    pub tool_refs: Option<Vec<Id>>,
     pub filesystem: FilesystemPermission,
     pub network: NetworkPermission,
     #[serde(
@@ -100,7 +114,10 @@ impl PermissionProfile {
                 ));
             }
             PermissionTargetKind::Sandbox
-                if self.policy.tools.is_some() || self.policy.approval.is_some() =>
+                if self.policy.tools.is_some()
+                    || self.policy.approval.is_some()
+                    || self.policy.platform.is_some()
+                    || self.policy.tool_refs.is_some() =>
             {
                 return Err(err(
                     "permission_inapplicable",
@@ -108,6 +125,26 @@ impl PermissionProfile {
                 ));
             }
             _ => {}
+        }
+        if let Some(tools) = &self.policy.tool_refs {
+            require(tools.len() <= 256, "Profile 工具引用超过数量边界")?;
+            let mut unique = std::collections::BTreeSet::new();
+            for tool in tools {
+                parse_source_reference(tool)?;
+                require(unique.insert(tool), "Profile 工具引用重复")?;
+            }
+        }
+        if let Some(platform) = &self.policy.platform {
+            WorkflowControlPolicy {
+                allowed_operations: platform.allowed_operations.clone(),
+                human_operations: platform.human_operations.clone(),
+                waivable_requirements: platform.waivable_requirements.clone(),
+                allow_task_revision: platform.allow_task_revision,
+                max_turns_per_wakeup: 8,
+                max_tool_calls_per_turn: 64,
+                timeout_seconds: 600,
+            }
+            .validate()?;
         }
         let mut policy = self.policy.portable();
         policy.validate()?;
@@ -125,6 +162,7 @@ impl PermissionProfile {
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PermissionSelection {
     FollowTarget,
+    Profile { permission_revision_id: Id },
     Pinned { binding_revision_id: Id },
 }
 
@@ -205,7 +243,35 @@ pub fn resolve_bound_permission(
     target: PermissionTargetRef,
     selection: &PermissionSelection,
 ) -> Result<BoundPermission> {
+    if let PermissionSelection::Profile {
+        permission_revision_id,
+    } = selection
+    {
+        let row = s.configuration(permission_revision_id)?;
+        let profile = row.permission_profile()?;
+        // Explicit selection is checked against the consuming Workflow/project
+        // scope at admission. A project Profile may restrict a global target
+        // without changing that target's global default binding.
+        require(
+            row.immutable && profile.target_kind == target.kind,
+            "Profile 类型或作用域不匹配",
+        )?;
+        let contract = format!("direct-profile:{}", target.content_hash);
+        let binding = VersionedPermissionBinding {
+            target,
+            permission_revision_id: row.id.clone(),
+            enforcement_contract: contract,
+        };
+        return Ok(BoundPermission {
+            binding_revision_id: row.id.clone(),
+            binding_hash: content_digest(&References::new(), &json!(binding)),
+            binding,
+            profile,
+            profile_hash: row.content_hash.clone(),
+        });
+    }
     let id = match selection {
+        PermissionSelection::Profile { .. } => unreachable!(),
         PermissionSelection::Pinned {
             binding_revision_id,
         } => binding_revision_id.clone(),
@@ -274,44 +340,155 @@ pub fn resolve_permission_lock(
     })
 }
 
-pub fn permission_context(s: &EngineeringState) -> Option<&ConfigurationRecord> {
-    let selected = s
+pub fn selected_harness_profile(s: &EngineeringState) -> Option<&ConfigurationRecord> {
+    let project = s
         .governance
         .iter()
         .filter(|r| r.r#type == "project_configuration")
-        .max_by_key(|r| r.version)
-        .and_then(|r| r.data["permission_context_ref"].as_str())
-        .or_else(|| {
-            template_catalog_state(s)
-                .and_then(|r| r.data["defaults"]["permission_context_ref"].as_str())
-        });
-    selected.and_then(|id| s.configuration(id).ok())
+        .max_by_key(|r| r.version);
+    let defaults = template_catalog_state(s).map(|r| &r.data["defaults"]);
+    let explicit = project
+        .and_then(|r| r.data["harness_permission_ref"].as_str())
+        .filter(|id| !id.is_empty());
+    let followed = defaults
+        .and_then(|d| d["harness_ref"].as_str())
+        .and_then(|id| permission_target(s, PermissionTargetKind::Harness, id).ok())
+        .and_then(|target| active_permission_binding(s, &target))
+        .and_then(|r| r.data["binding_revision_id"].as_str())
+        .and_then(|id| s.configuration(id).ok())
+        .and_then(|r| r.data["permission_revision_id"].as_str());
+    explicit
+        .or(followed)
+        .or_else(|| defaults.and_then(|d| d["harness_permission_ref"].as_str()))
+        .and_then(|id| s.configuration(id).ok())
 }
-
 pub fn permission_selection(s: &EngineeringState) -> Result<ExecutionPermissionSelection> {
-    let r = permission_context(s)
-        .ok_or_else(|| err("permission_unconfigured", "请选择执行授权上下文"))?;
-    permission_selection_from_context(s, &r.id)
+    let project = s
+        .governance
+        .iter()
+        .filter(|r| r.r#type == "project_configuration")
+        .max_by_key(|r| r.version);
+    let defaults = template_catalog_state(s).map(|r| &r.data["defaults"]);
+    let selected = |key: &str| {
+        project
+            .and_then(|r| r.data[key].as_str())
+            .or_else(|| defaults.and_then(|d| d[key].as_str()))
+    };
+    Ok(ExecutionPermissionSelection {
+        sandbox_ref: selected("sandbox_ref")
+            .ok_or_else(|| err("permission_unconfigured", "请选择 Sandbox"))?
+            .into(),
+        harness: project
+            .and_then(|r| r.data["harness_permission_ref"].as_str())
+            .map_or(PermissionSelection::FollowTarget, |id| {
+                PermissionSelection::Profile {
+                    permission_revision_id: id.into(),
+                }
+            }),
+        sandbox: project
+            .and_then(|r| r.data["sandbox_permission_ref"].as_str())
+            .map_or(PermissionSelection::FollowTarget, |id| {
+                PermissionSelection::Profile {
+                    permission_revision_id: id.into(),
+                }
+            }),
+    })
 }
-pub fn permission_selection_from_context(
+pub fn permission_selection_with_profile(
     s: &EngineeringState,
     reference: &str,
 ) -> Result<ExecutionPermissionSelection> {
-    let r = s.configuration(reference)?;
+    let mut selection = permission_selection(s)?;
     require(
-        r.r#type == "permission_context",
-        "需要 Permission Context 源修订",
+        s.configuration(reference)?
+            .permission_profile()?
+            .target_kind
+            == PermissionTargetKind::Harness,
+        "需要 Harness Profile",
     )?;
-    Ok(ExecutionPermissionSelection {
-        sandbox_ref: reference_value(&r.refs, "sandbox_ref")
-            .as_str()
-            .ok_or_else(|| err("permission_unconfigured", "缺少 Sandbox"))?
-            .into(),
-        harness: serde_json::from_value(r.data["harness"].clone())
-            .map_err(|e| err("invalid_configuration", e.to_string()))?,
-        sandbox: serde_json::from_value(r.data["sandbox"].clone())
-            .map_err(|e| err("invalid_configuration", e.to_string()))?,
-    })
+    selection.harness = PermissionSelection::Profile {
+        permission_revision_id: reference.into(),
+    };
+    Ok(selection)
+}
+pub fn step_permission_selection(
+    s: &EngineeringState,
+    step: &StepDefinition,
+) -> Result<ExecutionPermissionSelection> {
+    let mut selection = permission_selection(s)?;
+    if let Some(id) = &step.harness_permission_ref {
+        selection.harness = PermissionSelection::Profile {
+            permission_revision_id: id.clone(),
+        };
+    }
+    if let Some(id) = &step.sandbox_permission_ref {
+        selection.sandbox = PermissionSelection::Profile {
+            permission_revision_id: id.clone(),
+        };
+    }
+    Ok(selection)
+}
+/// Derived display/mount scope; no caller supplied second permission policy.
+pub fn profile_workspace_access(profile: &PermissionProfile) -> (Vec<String>, Vec<String>) {
+    match &profile.policy.filesystem {
+        FilesystemPermission::FullAccess => (vec![".".into()], vec![]),
+        FilesystemPermission::ReadOnly => (vec![], vec![".".into()]),
+        FilesystemPermission::Scoped { rules } => {
+            let mut write = vec![];
+            let mut read = vec![];
+            for rule in rules {
+                if let Some(path) = if rule.path == "/work" {
+                    Some(".")
+                } else {
+                    rule.path.strip_prefix("/work/")
+                } {
+                    if rule.access == FileAccess::ReadWrite {
+                        write.push(path.into());
+                    } else if rule.access == FileAccess::Read {
+                        read.push(path.into());
+                    }
+                }
+            }
+            (write, read)
+        }
+    }
+}
+
+/// Mounts are a deterministic projection of both Profile policies.
+pub fn profile_pair_workspace_access(
+    harness: &PermissionProfile,
+    sandbox: &PermissionProfile,
+) -> (Vec<String>, Vec<String>) {
+    let (mut candidates, mut readonly) = profile_workspace_access(harness);
+    let (other, read) = profile_workspace_access(sandbox);
+    candidates.extend(other);
+    readonly.extend(read);
+    let absolute = |p: &str| {
+        if p == "." {
+            "/work".into()
+        } else {
+            format!("/work/{p}")
+        }
+    };
+    candidates.retain(|p| {
+        harness.policy.portable().file_access(&absolute(p)) == FileAccess::ReadWrite
+            && sandbox.policy.portable().file_access(&absolute(p)) == FileAccess::ReadWrite
+    });
+    candidates.sort();
+    candidates.dedup();
+    readonly.sort();
+    readonly.dedup();
+    if !candidates.is_empty() {
+        readonly.retain(|r| {
+            candidates.iter().any(|w| {
+                w == "."
+                    || r == w
+                    || r.strip_prefix(w)
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+            })
+        });
+    }
+    (candidates, readonly)
 }
 
 pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermissions) -> Result<()> {
@@ -330,12 +507,14 @@ pub fn validate_frozen_permissions(s: &EngineeringState, p: &ExecutionPermission
         checked.normalize()?;
         require(
             checked == bound.profile
-                && r.r#type == "permission_binding"
+                && (r.r#type == "permission_binding" || r.id == profile.id)
                 && r.immutable
                 && profile.r#type == "permission_profile"
                 && profile.immutable
-                && r.data == serde_json::to_value(&bound.binding).unwrap()
-                && r.content_hash == bound.binding_hash
+                && (r.id == profile.id
+                    || (r.data == serde_json::to_value(&bound.binding).unwrap()
+                        && r.content_hash == bound.binding_hash))
+                && bound.binding_hash == content_digest(&References::new(), &json!(bound.binding))
                 && r.content_hash == content_digest(&r.refs, &r.data)
                 && profile.data == permission_profile_data(&bound.profile)
                 && profile.content_hash == bound.profile_hash

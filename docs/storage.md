@@ -4,7 +4,7 @@
 
 ## 数据集总览
 
-一个数据集目录（`--data`）以 `.devdesk-dataset` 标记（内容 `devdesk-source-flat-v1`）并施加独占写锁（`.devdesk.lock`）；同一数据集同时只能有一个可写进程。
+一个数据集目录（`--data`）以 `.devdesk-dataset` 标记（内容 `devdesk-profile-runtime-v2`）并施加独占写锁（`.devdesk.lock`）；同一数据集同时只能有一个可写进程。
 
 ```text
 <data>/
@@ -67,6 +67,6 @@
 
 ## 证据归档
 
-`tests/live/export_evidence.py` 使用 SQLite backup 生成一致快照，关闭快照后计算摘要，按项目登记核验 Artifact 的路径与实际内容，再生成逐文件 SHA-256 清单。记录投影遮蔽已知凭据字段；全局认证文件、进程环境和私有 worker 状态不导出。归档保留实际失败、未运行项、运行资源及原始来源，不用模型摘要替代证据。
+`tests/live/export_evidence.py` 使用 SQLite backup 生成一致快照，关闭快照后计算摘要，按项目登记核验 Artifact 的路径与实际内容，再生成逐文件 SHA-256 清单。记录投影遮蔽已知凭据字段；全局认证文件、进程环境和私有 worker 状态不导出。归档保留实际失败、未运行项、执行安装及原始来源，不用模型摘要替代证据。
 
 实现依据：[全局 SQL](../sql/global/schema.sql)、[项目 SQL](../sql/project/schema.sql)、[数据集与项目库](../crates/adapters/src/lib.rs)、[Git 目录](../crates/adapters/src/git.rs)、[证据导出](../tests/live/export_evidence.py)。

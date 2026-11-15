@@ -16,13 +16,12 @@ fn setup(path: &std::path::Path) -> (Arc<GlobalStore>, Engine) {
     e.bootstrap().unwrap();
     (store, e)
 }
-fn source(version: &str, content: &str) -> ConfigurationRecord {
-    SourceDefinition{r#type:"runtime_resource".into(),identity:format!("resource-{version}"),revision:1,name:version.into(),scope:Scope::global(),refs:References::new(),
-        data:json!({"provider":"codex","version":version,"license":"test","files":[{"path":"Dockerfile","content":content}]})}.into_record().unwrap()
+fn source(version: &str, content: &str) -> ExecutionRecipe {
+    serde_json::from_value(json!({"provider":"codex","version":version,"license":"test","files":[{"path":"Dockerfile","content":content}]})).unwrap()
 }
 #[test]
 fn labels_and_native_catalog_do_not_determine_recipe_identity() {
-    let a: RuntimeResourceDefinition = source("alpha", "FROM scratch\n").decode().unwrap();
+    let a: ExecutionRecipe = source("alpha", "FROM scratch\n");
     let mut b = a.clone();
     b.version = "other-label".into();
     assert_eq!(a.recipe_digest(), b.recipe_digest());
@@ -37,14 +36,19 @@ fn labels_and_native_catalog_do_not_determine_recipe_identity() {
 fn two_external_recipes_are_valid_and_forged_driver_capability_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let (_, e) = setup(dir.path());
+    let state = e.store.snapshot().unwrap();
+    let template = state
+        .configuration("builtin-harness-codex-managed:1")
+        .unwrap();
     for label in ["alpha", "beta"] {
-        let record = source(label, &format!("FROM scratch\nLABEL test={label}\n"));
-        let src = record.source();
-        let change = json!({"operations":[{"type":"create","source":src},{"type":"create","source":{"type":"harness","identity":format!("h-{label}"),"revision":1,"name":label,"scope":"global","runtime_resource_ref":record.id,"model_providers":[],"data":{"provider":"codex","runtime_version":"unrelated-display","capabilities":["dynamic-tools"]}}}]});
+        let mut source = template.source();
+        source.identity = format!("h-{label}");
+        source.name = label.into();
+        source.data["runtime_version"] = json!(label);
+        let change = json!({"operations":[{"type":"create","source":source}]});
         let preview = e
             .preview_configuration_change(&serde_json::from_value(change.clone()).unwrap())
             .unwrap();
-
         e.execute(
             "configuration.change.apply",
             Command {
@@ -84,7 +88,16 @@ fn real_two_recipes_probe_without_inference() {
             label,
             &format!("FROM {base}\nLABEL devdesk.acceptance={label}\n"),
         );
-        let i = store.prepare_runtime_resource(&record, |_| {}).unwrap();
+        let i = store
+            .prepare_execution_recipe(
+                &store
+                    .default_execution_recipe(HarnessProvider::Codex)
+                    .unwrap()
+                    .0,
+                &record,
+                |_| {},
+            )
+            .unwrap();
         let report = store.runtime_verification(&i).unwrap().unwrap();
         assert_eq!(report["status"], "verified");
         assert_eq!(report["inference_verified"], false);
@@ -114,8 +127,10 @@ fn real_prepared_image_survives_other_dataset_rebuild() {
     let second = tempfile::tempdir().unwrap();
     let (a, _) = setup(first.path());
     let (b, _) = setup(second.path());
-    let original = a.default_runtime_resource(HarnessProvider::Codex).unwrap();
-    let old = a.prepare_runtime_resource(&original, |_| {}).unwrap();
+    let (sandbox, original) = a.default_execution_recipe(HarnessProvider::Codex).unwrap();
+    let old = a
+        .prepare_execution_recipe(&sandbox, &original, |_| {})
+        .unwrap();
     let RuntimeArtifact::DockerImage { image_id } = &old.artifact else {
         panic!()
     };
@@ -128,12 +143,14 @@ fn real_prepared_image_survives_other_dataset_rebuild() {
             image_id.trim_start_matches("sha256:")
         ),
     );
-    let new = b.prepare_runtime_resource(&other, |_| {}).unwrap();
+    let new = b
+        .prepare_execution_recipe(&sandbox, &other, |_| {})
+        .unwrap();
     assert_ne!(old.artifact, new.artifact);
     a.require_runtime_verification(&old).unwrap();
     b.require_runtime_verification(&new).unwrap();
     assert_eq!(
-        a.prepare_runtime_resource(&original, |_| {})
+        a.prepare_execution_recipe(&sandbox, &original, |_| {})
             .unwrap()
             .artifact,
         old.artifact

@@ -15,6 +15,37 @@
       },
       "tools": {
         "mode": "all_available"
+      },
+      "platform": {
+        "allowed_operations": [
+          "accept",
+          "apply",
+          "cancel",
+          "complete",
+          "configuration.apply",
+          "configuration.preview",
+          "configuration.read",
+          "dispatch",
+          "import",
+          "input",
+          "inspect",
+          "pause",
+          "preview",
+          "project.read",
+          "reconcile",
+          "request_decision",
+          "resume",
+          "retry",
+          "rework",
+          "segment",
+          "start",
+          "stop"
+        ],
+        "human_operations": [
+          "apply"
+        ],
+        "waivable_requirements": [],
+        "allow_task_revision": true
       }
     },
     "schema_version": 2,

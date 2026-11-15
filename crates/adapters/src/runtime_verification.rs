@@ -32,7 +32,7 @@ impl GlobalStore {
         require(
             self.runtime_verification(installation)?
                 .is_some_and(|v| v["status"] == "verified"),
-            "实际运行资源尚未通过当前驱动/权限资产的协议验证，请重新准备",
+            "实际执行安装尚未通过当前驱动/权限资产的协议验证，请重新准备",
         )
     }
     pub fn verify_runtime_protocol(&self, installation: &RuntimeInstallation) -> Result<Value> {
@@ -104,7 +104,7 @@ impl GlobalStore {
                     "dynamicTools":[{"type":"function","name":"devdesk_probe","description":"Registration probe; never invoked","inputSchema":{"type":"object","properties":{}}}]}))?;
                 require(
                     result["thread"]["id"].as_str().is_some(),
-                    "运行资源未返回有效 thread 身份",
+                    "执行安装未返回有效 thread 身份",
                 )?;
                 vec!["initialize", "thread/start", "dynamic-tool-registration"]
             }
@@ -175,13 +175,14 @@ impl GlobalStore {
         let value = catalog::setting(&conn, &key)?;
         require(
             !value.is_some_and(|v| v["cancel_requested"] == true),
-            "运行资源准备已请求取消；不采用构建结果",
+            "执行安装准备已请求取消；不采用构建结果",
         )
     }
     pub(crate) fn preparation_intent(
         &self,
         source: &ConfigurationRecord,
         digest: &str,
+        provider: HarnessProvider,
         status: &str,
         result: Option<&Value>,
     ) -> Result<()> {
@@ -201,7 +202,7 @@ impl GlobalStore {
         catalog::put_setting(
             &conn,
             &key,
-            &json!({"source_ref":source.id,"provider":source.data["provider"],"recipe_digest":digest,"status":status,"result":result,"updated_at":now()}),
+            &json!({"source_ref":source.id,"provider":provider,"recipe_digest":digest,"status":status,"result":result,"updated_at":now()}),
         )
     }
     pub fn preparation_provider(&self, digest: &str) -> Result<String> {

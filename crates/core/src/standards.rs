@@ -127,13 +127,35 @@ pub(crate) fn select_work_configuration(
     } else {
         bindings
     };
-    let context = payload["permission_context_ref"]
+    let context = payload
+        .get("harness_permission_ref")
+        .unwrap_or(&data["harness_permission_ref"])
+        .clone();
+    if let Some(id) = context.as_str() {
+        let profile = reference(state, id, "permission_profile", &scope)?.permission_profile()?;
+        require(
+            profile.target_kind == PermissionTargetKind::Harness,
+            "工作需要 Harness Profile",
+        )?;
+    }
+    let defaults = permission_selection(state)?;
+    let sandbox = payload["sandbox_ref"]
         .as_str()
-        .or_else(|| data["permission_context_ref"].as_str())
-        .map(str::to_owned)
-        .or_else(|| permission_context(state).map(|r| r.id.clone()))
-        .ok_or_else(|| err("permission_unconfigured", "工作需要执行授权上下文"))?;
-    reference(state, &context, "permission_context", &scope)?;
+        .or_else(|| data["sandbox_ref"].as_str())
+        .unwrap_or(&defaults.sandbox_ref)
+        .to_owned();
+    reference(state, &sandbox, "sandbox", &scope)?;
+    let sandbox_profile = payload
+        .get("sandbox_permission_ref")
+        .unwrap_or(&data["sandbox_permission_ref"])
+        .clone();
+    if let Some(id) = sandbox_profile.as_str() {
+        let profile = reference(state, id, "permission_profile", &scope)?.permission_profile()?;
+        require(
+            profile.target_kind == PermissionTargetKind::Sandbox,
+            "工作需要 Sandbox Profile",
+        )?;
+    }
     let old = work_configuration(state, owner).cloned();
     let orchestration = payload
         .get("orchestration")
@@ -141,7 +163,7 @@ pub(crate) fn select_work_configuration(
         .cloned()
         .unwrap_or(json!({"mode":"manual"}));
     crate::workflow_driver::validate_selection(state, &orchestration, &scope)?;
-    let selection = json!({"orchestration":orchestration,"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"permission_context_ref":context,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
+    let selection = json!({"orchestration":orchestration,"schema_version":1,"work":work,"standard_ref":standard,"workflow_ref":workflow,"role_agent_bindings":bindings,"harness_permission_ref":context,"sandbox_ref":sandbox,"sandbox_permission_ref":sandbox_profile,"source_configuration_ref":inherited.map(|r|json!(r.id)).or_else(||payload.get("source_configuration_ref").cloned())});
     if let Some(old) = &old
         && old.data == selection
     {

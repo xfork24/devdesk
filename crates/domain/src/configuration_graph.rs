@@ -56,7 +56,6 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
             "base_standard_ref" => "standard",
             "model_providers" => "model_provider",
             "model_catalog_ref" => "model_catalog",
-            "runtime_resource_ref" => "runtime_resource",
             "harness_ref" => "harness",
             "model_ref" => "model",
             "role_ref" => "role",
@@ -68,17 +67,6 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
     }
     let data = &record.data;
     match record.r#type.as_str() {
-        "harness" if !record.refs.contains_key("runtime_resource_ref") => {
-            if let Some(digest) = data["recipe_digest"].as_str() {
-                edges.push(ConfigurationEdge {
-                    from: record.id.clone(),
-                    path: "/data/recipe_digest".into(),
-                    relation: "content_digest".into(),
-                    expected_type: "runtime_resource".into(),
-                    to: digest.into(),
-                });
-            }
-        }
         "workflow" => {
             let _: WorkflowDefinition = record.decode()?;
             for (i, stage) in data["stages"].as_array().into_iter().flatten().enumerate() {
@@ -98,6 +86,13 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
                         format!("/data/steps/{i}/executor/{key}"),
                         kind,
                         &step["executor"][key],
+                    )?;
+                }
+                for key in ["harness_permission_ref", "sandbox_permission_ref"] {
+                    add(
+                        format!("/data/steps/{i}/{key}"),
+                        "permission_profile",
+                        &step[key],
                     )?;
                 }
                 for (key, kind) in [("required_skill_refs", "skill"), ("spec_refs", "spec")] {
@@ -124,31 +119,12 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
                 )?;
             }
         }
-        "permission_context" => {
-            for layer in ["harness", "sandbox"] {
-                add(
-                    format!("/data/{layer}/binding_revision_id"),
-                    "permission_binding",
-                    &data[layer]["binding_revision_id"],
-                )?;
-            }
-            for (i, grant) in data["step_grants"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .enumerate()
-            {
-                add(
-                    format!("/data/step_grants/{i}/workflow_ref"),
-                    "workflow",
-                    &grant["workflow_ref"],
-                )?;
-                add(
-                    format!("/data/step_grants/{i}/tool_refs"),
-                    "tool",
-                    &grant["tool_refs"],
-                )?;
-            }
+        "permission_profile" => {
+            add(
+                "/data/policy/tool_refs".into(),
+                "tool",
+                &data["policy"]["tool_refs"],
+            )?;
         }
         "model_catalog" => {
             for (i, p) in data["providers"]
@@ -196,16 +172,12 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
             )?;
         }
         "project_configuration" | "work_configuration" => {
-            add(
-                "/data/orchestration/policy_ref".into(),
-                "orchestration_policy",
-                &data["orchestration"]["policy_ref"],
-            )?;
             for (key, kind) in [
                 ("workflow_ref", "workflow"),
                 ("standard_ref", "standard"),
-                ("permission_context_ref", "permission_context"),
-                ("permission_context_source_ref", "permission_context"),
+                ("harness_permission_ref", "permission_profile"),
+                ("sandbox_permission_ref", "permission_profile"),
+                ("sandbox_ref", "sandbox"),
                 ("orchestrator_role_ref", "role"),
             ] {
                 add(format!("/data/{key}"), kind, &data[key])?;

@@ -30,8 +30,8 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 ## 工程流程
 
 1. 在 Web “打开 GitHub 项目”，填写仓库和主分支，等待克隆及工作空间登记完成。
-2. 在设置中完成模型认证；在项目管理采用 Workflow、Standard、Role→Agent、Permission Context 与驱动选择。运行资源按确切配置准备，准备探针不调用模型。
-3. 创建 Feature，用自然语言填写初始需求，选择人工逐步、Rust 有界调度或项目经理 Agent 调度。三者使用相同的派发、接纳、完成及证据规则；Rust 模式必须选择精确调度策略。
+2. 在设置中完成模型认证；在项目管理采用 Workflow、Standard、Role→Agent、Sandbox、Profile 与驱动选择。执行镜像按确切 Harness/Sandbox 配置组合准备，准备探针不调用模型。
+3. 创建 Feature，用自然语言填写初始需求，选择人工逐步、Rust 有界调度或项目经理 Agent 调度。三者使用相同的派发、接纳、完成及证据规则；调度参数在 Workflow 内发布并冻结。
 4. 在“执行与交付”查看步骤、原始产物、真实测试、独立评审及候选。运行计划变更经过预演、静止等待和原子应用；未知副作用先核对。
 5. 核对候选、测试、评审、业务接纳与远端发布回执，取得 PR。模型自述不能代替 Docker 测试、Git 事实或人类签署。
 
@@ -50,9 +50,9 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 <data>/projects/<id>/execution/                    # 会话、测试、工具、Git 意图与工作副本
 ```
 
-数据集标记为 `devdesk-source-flat-v1`，当前 SQLite 基线为 **global 18 / project 48**，同一数据集只有一个可写 Host。不兼容旧数据集直接拒绝，不自动转换、删库或重建；兼容数据集可重开，验证新代码使用独立空目录。
+数据集标记为 `devdesk-profile-runtime-v2`，当前 SQLite 基线为 **global 18 / project 48**，同一数据集只有一个可写 Host。不兼容旧数据集直接拒绝，不自动转换、删库或重建；兼容数据集可重开，验证新代码使用独立空目录。
 
-配置唯一存储在 `source_definitions`，执行视图按原源引用恢复，不存第二份展开闭包。权限与能力分开：Agent 只引用 Role/Capability，Permission Context 提供步骤授权，Profile 落实 Harness/Sandbox 策略。真实 worker 在 Linux 容器运行，宿主登录组件不作为工程执行环境。
+配置唯一存储在 `source_definitions`，执行视图按原源引用恢复，不存第二份展开闭包。权限与能力分开：Agent 只引用 Role/Capability，Profile 落实 Harness/Sandbox 策略，步骤直接引用所需 Profile，显式选择替换同层默认绑定。真实 worker 在 Linux 容器运行，宿主登录组件不作为工程执行环境。
 
 ## 开发与验证
 

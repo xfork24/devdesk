@@ -14,13 +14,13 @@
 ./devdesk-host --data "/完整路径/DevDesk 数据" --port 4317
 ```
 
-路径可含中文和空格。Host 嵌入 Web 和出厂资源，运行工作台不需要 Rust、宿主 Node、数据库服务或源码。实际工程执行需要已启动的 Linux Docker Engine/Desktop、Git 与已登录的 GitHub CLI；模型认证在设置中完成。登录组件及 worker 运行资源按实际所选配置下载/校验、构建或拉取，不要求手工登记镜像。
+路径可含中文和空格。Host 嵌入 Web 和出厂资源，运行工作台不需要 Rust、宿主 Node、数据库服务或源码。实际工程执行需要已启动的 Linux Docker Engine/Desktop、Git 与已登录的 GitHub CLI；模型认证在设置中完成。登录组件及 worker 执行安装按实际所选配置下载/校验、构建或拉取，不要求手工登记镜像。
 
 本机运行包由 `scripts/release/package.sh` 构建，名称为 `devdesk-0.2.0-<rust-host-target>.tar.gz`，附 SHA-256 文件。macOS Apple Silicon 的 target 为 `aarch64-apple-darwin`；其他机器使用对应平台产物。macOS 包是带凭据助手的签名命令行程序，不是已公证的 `.app` 安装器。
 
 ## 数据集与恢复
 
-数据集标记为 `devdesk-source-flat-v1`，SQLite 基线为 global 18 / project 48。兼容数据集可直接重开；旧协议/旧结构明确拒绝，不自动迁移、删除或重建。验证新代码使用独立空目录，不把清空现有数据当作恢复手段。
+数据集标记为 `devdesk-profile-runtime-v2`，SQLite 基线为 global 18 / project 48。兼容数据集可直接重开；旧协议/旧结构明确拒绝，不自动迁移、删除或重建。验证新代码使用独立空目录，不把清空现有数据当作恢复手段。
 
 初始化先取得 `.devdesk.lock` 独占锁。同一数据集只能有一个可写 Host；非空非 DevDesk 目录不初始化。仅剩 `.devdesk-dataset`、`.devdesk.lock` 和 `.DS_Store` 的无数据目录可初始化当前结构，含数据库、认证或产物的目录不能按空目录处理。
 
@@ -42,9 +42,9 @@ HTTPS 可由反向代理提供，并设置 `--public-url https://desk.example`�
 
 ## 模型、权限与平台设置
 
-工程从“打开 GitHub 项目”接入仓库与分支，后台克隆并登记工作空间。项目选择 Workflow、Standard、Role→Agent、Permission Context 及 manual/rust/agent 驱动。Codex 当前提供经理/编排原生工具桥；DSH 支持所配置的普通模型会话，不能承担需要该桥的控制会话。
+工程从“打开 GitHub 项目”接入仓库与分支，后台克隆并登记工作空间。项目选择 Workflow、Standard、Role→Agent、Sandbox、可选双层 Profile 及 manual/rust/agent 驱动。Codex 当前提供经理/编排原生工具桥；DSH 支持所配置的普通模型会话，不能承担需要该桥的控制会话。
 
-运行资源来自不可变配置源，以配方、实际镜像和 driver/权限资产核验；准备成功只证明协议探针通过，不证明模型推理或实际工具执行成功。已有运行和技术重试保留原冻结资源。
+执行配方来自确切 Harness/Sandbox 源组合，以配方、实际镜像和 driver/权限资产核验；准备成功只证明协议探针通过，不证明模型推理或实际工具执行成功。已有运行和技术重试保留原冻结资源。
 
 macOS API key 和工具 token 由固定签名 `devdesk-credential-helper` 访问 Keychain。包提供一份助手，首次需要时安装到用户私有共享目录；当前要求协议 2、内容摘要及同证书签名。普通访问不自动弹窗，设置页提供显式钥匙串授权。兼容助手复用，不随 Host 构建替换；需要显式升级时使用包含对应助手的包执行：
 

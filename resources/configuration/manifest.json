@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.15-agent-context-v1",
+  "bundle_version": "2026.11.16-profile-installation-workflow-v1",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -190,10 +190,23 @@
     "permission_profile": [
       "permissions/profiles/builtin-permission-harness-full-access-v1.json",
       "permissions/profiles/builtin-permission-harness-read-only-v1.json",
-      "permissions/profiles/builtin-permission-sandbox-full-access-v1.json"
-    ],
-    "permission_context": [
-      "permissions/bindings/builtin-permission-context-engineering-v6.json"
+      "permissions/profiles/builtin-permission-sandbox-full-access-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-design-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-release_recipe-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-closure-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-closure_review-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-candidate_review-v1.json",
+      "permissions/profiles/builtin-permission-step-task-sol-high-tests-v1.json",
+      "permissions/profiles/builtin-permission-step-task-sol-high-red_baseline-v1.json",
+      "permissions/profiles/builtin-permission-step-task-sol-high-implementation-v1.json",
+      "permissions/profiles/builtin-permission-step-task-sol-high-documentation-v1.json",
+      "permissions/profiles/builtin-permission-step-task-sol-high-review-v1.json",
+      "permissions/profiles/builtin-permission-step-task-sol-high-candidate_review-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-requirements-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-requirements_review-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-design_review-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-planning-v1.json",
+      "permissions/profiles/builtin-permission-step-feature-sol-high-plan_review-v1.json"
     ],
     "model_provider": [
       "model-providers/builtin-model-provider-openai-v1.json",
@@ -204,13 +217,6 @@
     ],
     "model_catalog": [
       "harnesses/builtin-model-catalog-dsh-v1.json"
-    ],
-    "runtime_resource": [
-      "runtime-resources/builtin-runtime-codex-v1.json",
-      "runtime-resources/builtin-runtime-dsh-v1.json"
-    ],
-    "orchestration_policy": [
-      "orchestration-policies/builtin-balanced-v1.json"
     ]
   },
   "defaults": "defaults.json"

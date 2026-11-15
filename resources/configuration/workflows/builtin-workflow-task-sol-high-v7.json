@@ -142,7 +142,8 @@
         ],
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-task-sol-high-tests:1"
       },
       {
         "key": "tests_snapshot",
@@ -261,7 +262,8 @@
         ],
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-task-sol-high-red_baseline:1"
       },
       {
         "key": "red_snapshot",
@@ -475,7 +477,8 @@
         ],
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-task-sol-high-implementation:1"
       },
       {
         "key": "implementation_snapshot",
@@ -681,7 +684,8 @@
         ],
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-task-sol-high-documentation:1"
       },
       {
         "key": "verify",
@@ -1019,7 +1023,8 @@
         },
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-task-sol-high-review:1"
       },
       {
         "key": "candidate_review",
@@ -1152,7 +1157,8 @@
           "max_turns": 8,
           "timeout_seconds": 1800,
           "retry_limit": 3
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-task-sol-high-candidate_review:1"
       },
       {
         "key": "advance",
@@ -1452,6 +1458,18 @@
       "git.advance": [
         "tests"
       ]
+    },
+    "scheduling": {
+      "max_concurrency": 4,
+      "max_actions_per_tick": 16,
+      "lease_seconds": 60,
+      "max_retries": 0,
+      "retry_error_codes": [],
+      "agent": {
+        "max_turns_per_wakeup": 8,
+        "max_tool_calls_per_turn": 64,
+        "timeout_seconds": 600
+      }
     }
   }
 }

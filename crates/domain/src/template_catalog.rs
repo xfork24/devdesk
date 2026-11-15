@@ -27,14 +27,11 @@ pub fn template_definition_kind(kind: &str) -> bool {
             | "model"
             | "model_provider"
             | "model_catalog"
-            | "runtime_resource"
-            | "orchestration_policy"
             | "harness"
             | "sandbox"
             | "tool"
             | "integration"
             | "integration_binding"
-            | "permission_context"
             | "permission_profile"
     )
 }

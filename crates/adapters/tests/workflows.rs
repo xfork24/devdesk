@@ -354,7 +354,7 @@ fn empty_or_cleared_datasets_initialize_despite_hidden_metadata() {
         None,
         Some("devdesk-schema-v1\n"),
         Some("devdesk-schema-v1\\n"),
-        Some("devdesk-source-flat-v1\n"),
+        Some("devdesk-profile-runtime-v2\n"),
     ] {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join(".DS_Store"), b"Finder metadata").unwrap();
@@ -365,7 +365,7 @@ fn empty_or_cleared_datasets_initialize_despite_hidden_metadata() {
         let store = GlobalStore::open(directory.path()).unwrap();
         assert_eq!(
             std::fs::read_to_string(directory.path().join(".devdesk-dataset")).unwrap(),
-            "devdesk-source-flat-v1\n"
+            "devdesk-profile-runtime-v2\n"
         );
         assert!(directory.path().join("global.sqlite3").is_file());
         drop(store);

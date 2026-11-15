@@ -210,7 +210,7 @@ test("paused root manager adopts exact successor sources through the Human resum
             epoch: adopted ? 4 : 3,
             role_ref: "manager-role:1",
             agent_revision_id: "manager-old:1",
-            permission_context_ref: "context-old:1",
+            harness_permission_ref: "context-old:1",
           },
         },
         calls: [],
@@ -242,12 +242,12 @@ test("paused root manager adopts exact successor sources through the Human resum
           },
           {
             id: "context-new:1",
-            type: "permission_context",
+            type: "permission_profile",
             definition_id: "context-new",
             name: "Selected budget",
             version: 1,
             scope: "global",
-            data: {},
+            data: { target_kind: "harness" },
           },
         ],
         total: 3,
@@ -280,7 +280,7 @@ test("paused root manager adopts exact successor sources through the Human resum
     .toEqual({
       epoch: 3,
       agent_ref: "manager-new:1",
-      permission_context_ref: "context-new:1",
+      harness_permission_ref: "context-new:1",
     });
   await expect(
     panel.getByRole("button", { name: "采用并恢复经理", exact: true }),

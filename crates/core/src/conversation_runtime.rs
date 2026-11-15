@@ -213,6 +213,7 @@ impl Engine {
                 .rev()
                 .find(|t| t.session_id == execution.session_id && t.code_view.is_some())
                 && snapshot.turn_runtime_binding(turn)?.tool_policy != ToolPolicy::ReadOnly
+                && self.configured_task(&snapshot, &turn.id)?.is_some()
             {
                 writers.insert(
                     turn.code_view
@@ -234,11 +235,10 @@ impl Engine {
                 continue;
             }
             let binding = snapshot.turn_runtime_binding(turn)?;
-            if binding.tool_policy != ToolPolicy::ReadOnly {
-                let view = turn
-                    .code_view
-                    .as_ref()
-                    .ok_or_else(|| err("scope_violation", "写入任务没有明确工作空间"))?;
+            if binding.tool_policy != ToolPolicy::ReadOnly
+                && self.configured_task(&snapshot, &turn.id)?.is_some()
+                && let Some(view) = turn.code_view.as_ref()
+            {
                 if writers.contains(&view.context.source.worktree) {
                     continue;
                 }

@@ -48,7 +48,9 @@ export function ProjectManager({
     `devdesk:standard-project-v2:${project?.id || "global"}`,
     () => ({
       orchestrator_role_ref: "",
-      permission_context_ref: "",
+      harness_permission_ref: "",
+      sandbox_ref: "",
+      sandbox_permission_ref: "",
       workflow_ref: "",
       standard_ref: "",
       standard_overrides: [] as {
@@ -104,13 +106,13 @@ export function ProjectManager({
         current.workflow_ref
           ? current
           : {
+              sandbox_ref: configuration.configuration.data.sandbox_ref || "",
+              sandbox_permission_ref:
+                configuration.configuration.data.sandbox_permission_ref || "",
               orchestrator_role_ref:
                 configuration.configuration.data.orchestrator_role_ref || "",
-              permission_context_ref:
-                configuration.configuration.data
-                  .permission_context_source_ref ||
-                configuration.configuration.data.permission_context_ref ||
-                "",
+              harness_permission_ref:
+                configuration.configuration.data.harness_permission_ref || "",
               workflow_ref: configuration.configuration.data.workflow_ref,
               standard_ref:
                 saved?.provenance?.base_standard_ref ||
@@ -127,8 +129,10 @@ export function ProjectManager({
         current.workflow_ref
           ? current
           : {
+              sandbox_ref: preset.sandbox_ref || "",
+              sandbox_permission_ref: preset.sandbox_permission_ref || "",
               orchestrator_role_ref: preset.orchestrator_role_ref,
-              permission_context_ref: preset.permission_context_ref,
+              harness_permission_ref: "",
               workflow_ref: preset.workflow_ref,
               standard_ref: preset.standard_ref,
               standard_overrides: [],
@@ -162,7 +166,7 @@ export function ProjectManager({
         project_id: project.id,
         standard_ref: draft.standard_ref,
         standard_overrides: draft.standard_overrides,
-        permission_context_ref: draft.permission_context_ref || undefined,
+        harness_permission_ref: draft.harness_permission_ref || undefined,
       }),
     ])
       .then(([source, result]) => {
@@ -184,7 +188,7 @@ export function ProjectManager({
     project?.id,
     draft.standard_ref,
     draft.standard_overrides,
-    draft.permission_context_ref,
+    draft.harness_permission_ref,
     setError,
   ]);
   const managerRole = records.find(
@@ -209,7 +213,9 @@ export function ProjectManager({
         payload: {
           orchestration,
           orchestrator_role_ref: draft.orchestrator_role_ref || null,
-          permission_context_ref: draft.permission_context_ref,
+          harness_permission_ref: draft.harness_permission_ref,
+          sandbox_ref: draft.sandbox_ref || undefined,
+          sandbox_permission_ref: draft.sandbox_permission_ref || undefined,
           standard_ref: draft.standard_ref,
           standard_overrides: draft.standard_overrides,
           standard_preview_hash: preview?.preview_hash,
@@ -262,8 +268,11 @@ export function ProjectManager({
                   setOverrideSource("");
                   setOverrideReplacement("");
                   return setDraft({
+                    sandbox_ref: defaults.sandbox_ref || "",
+                    sandbox_permission_ref:
+                      defaults.sandbox_permission_ref || "",
                     orchestrator_role_ref: defaults.orchestrator_role_ref,
-                    permission_context_ref: defaults.permission_context_ref,
+                    harness_permission_ref: "",
                     workflow_ref: defaults.workflow_ref,
                     standard_ref: defaults.standard_ref,
                     standard_overrides: [],
@@ -588,14 +597,36 @@ export function ProjectManager({
                 </ActionSelect>
               </label>
               <RevisionSelect
-                label="执行授权"
-                records={records.filter((r) => r.type === "permission_context")}
-                value={draft.permission_context_ref}
-                onChange={(permission_context_ref) =>
+                label="Harness Profile（留空采用默认）"
+                records={records.filter(
+                  (r) =>
+                    r.type === "permission_profile" &&
+                    r.data.target_kind === "harness",
+                )}
+                value={draft.harness_permission_ref}
+                onChange={(harness_permission_ref) =>
                   setDraft({
                     ...draft,
-                    permission_context_ref: permission_context_ref,
+                    harness_permission_ref: harness_permission_ref,
                   })
+                }
+              />
+              <RevisionSelect
+                label="Sandbox"
+                records={records.filter((r) => r.type === "sandbox")}
+                value={draft.sandbox_ref}
+                onChange={(sandbox_ref) => setDraft({ ...draft, sandbox_ref })}
+              />
+              <RevisionSelect
+                label="Sandbox Profile（默认可留空）"
+                records={records.filter(
+                  (r) =>
+                    r.type === "permission_profile" &&
+                    r.data.target_kind === "sandbox",
+                )}
+                value={draft.sandbox_permission_ref}
+                onChange={(sandbox_permission_ref) =>
+                  setDraft({ ...draft, sandbox_permission_ref })
                 }
               />
               <label>
@@ -653,18 +684,6 @@ export function ProjectManager({
                 />
               )}
             </div>
-            {orchestration.mode === "rust" && (
-              <RevisionSelect
-                label="自动调度策略"
-                records={records.filter(
-                  (r) => r.type === "orchestration_policy",
-                )}
-                value={orchestration.policy_ref || ""}
-                onChange={(policy_ref) =>
-                  setOrchestration({ ...orchestration, policy_ref })
-                }
-              />
-            )}
             <p className="muted">
               项目管理与流程编排仅由项目经理角色承担；其他角色负责流程中的专业步骤。
             </p>

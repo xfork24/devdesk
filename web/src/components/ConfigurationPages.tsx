@@ -25,8 +25,6 @@ const foundationTabs = [
   ["harness", "Harness"],
   ["sandbox", "Sandbox"],
   ["permission", "Permission"],
-  ["runtime_resource", "运行资源"],
-  ["orchestration_policy", "调度策略"],
   ["mcp", "MCP"],
   ["skills", "Skills"],
   ["http", "Tools"],
@@ -88,26 +86,10 @@ export function ConfigurationPage({
             projectId={props.project?.id}
             refresh={props.refresh}
           />
-          <details className="panel permission-context-editor">
-            <summary>执行授权（Permission Context）</summary>
-            <ResourceEditor
-              kind="permission_context"
-              request={props.request}
-              project={props.project}
-              installations={props.installations}
-              revision={0}
-            />
-          </details>
         </>
-      ) : [
-          "model",
-          "harness",
-          "sandbox",
-          "runtime_resource",
-          "orchestration_policy",
-          "spec",
-          "delivery_type",
-        ].includes(tab) ? (
+      ) : ["model", "harness", "sandbox", "spec", "delivery_type"].includes(
+          tab,
+        ) ? (
         <ResourceEditor
           key={`${tab}:${props.project?.id}`}
           kind={tab}

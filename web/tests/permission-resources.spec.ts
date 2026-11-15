@@ -136,7 +136,7 @@ test("权限定义迁入基础组件，目标绑定与来源历史按组件管�
   ).toBe(true);
   await page.getByRole("button", { name: "预检目标绑定" }).click();
   await expect(
-    page.getByText("目标兼容性预检通过，仍需实际执行范围校验。", {
+    page.getByText("目标兼容性预检通过，执行范围由 Profile 解析。", {
       exact: true,
     }),
   ).toBeVisible();
@@ -284,15 +284,12 @@ test("权限定义迁入基础组件，目标绑定与来源历史按组件管�
   await expect(
     page.getByRole("heading", { name: "目标版本绑定", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByText("执行授权（Permission Context）", { exact: true })
-    .click();
   await expect(
-    page.getByRole("region", { name: "执行授权 管理", exact: true }),
-  ).toBeVisible();
+    page.getByText("执行授权（Permission Context）", { exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("textbox", { name: "执行授权配置", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查看旧版本", async ({
@@ -323,8 +320,6 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
     "Harness",
     "Sandbox",
     "Permission",
-    "运行资源",
-    "调度策略",
     "MCP",
     "Skills",
     "Tools",
@@ -368,7 +363,7 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
     .getByRole("button", { name: "预检目标绑定", exact: true })
     .click();
   await expect(
-    panel.getByText("目标兼容性预检通过，仍需实际执行范围校验。", {
+    panel.getByText("目标兼容性预检通过，执行范围由 Profile 解析。", {
       exact: true,
     }),
   ).toBeVisible();

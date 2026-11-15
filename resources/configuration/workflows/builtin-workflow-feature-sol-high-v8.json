@@ -73,7 +73,8 @@
         ],
         "tags": [
           "requirements"
-        ]
+        ],
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-requirements:1"
       },
       {
         "key": "requirements_review",
@@ -136,7 +137,8 @@
             }
           ]
         },
-        "confirmation": "human"
+        "confirmation": "human",
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-requirements_review:1"
       },
       {
         "key": "source_workspace",
@@ -307,7 +309,8 @@
         ],
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-design:1"
       },
       {
         "key": "design_review",
@@ -386,7 +389,8 @@
             }
           ]
         },
-        "confirmation": "human"
+        "confirmation": "human",
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-design_review:1"
       },
       {
         "key": "planning",
@@ -444,7 +448,8 @@
         ],
         "tags": [
           "planning"
-        ]
+        ],
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-planning:1"
       },
       {
         "key": "plan_review",
@@ -531,7 +536,8 @@
             }
           ]
         },
-        "confirmation": "human"
+        "confirmation": "human",
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-plan_review:1"
       },
       {
         "key": "tasks",
@@ -712,7 +718,8 @@
         ],
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-release_recipe:1"
       },
       {
         "key": "tests_snapshot",
@@ -912,7 +919,8 @@
         ],
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-closure:1"
       },
       {
         "key": "mainline",
@@ -1169,7 +1177,8 @@
         },
         "access": {
           "workspace_input": "workspace"
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-closure_review:1"
       },
       {
         "key": "candidate_review",
@@ -1295,7 +1304,8 @@
           "max_turns": 8,
           "timeout_seconds": 1800,
           "retry_limit": 3
-        }
+        },
+        "harness_permission_ref": "builtin-permission-step-feature-sol-high-candidate_review:1"
       },
       {
         "key": "advance",
@@ -1409,6 +1419,18 @@
       "git.advance": [
         "tests"
       ]
+    },
+    "scheduling": {
+      "max_concurrency": 4,
+      "max_actions_per_tick": 16,
+      "lease_seconds": 60,
+      "max_retries": 0,
+      "retry_error_codes": [],
+      "agent": {
+        "max_turns_per_wakeup": 8,
+        "max_tool_calls_per_turn": 64,
+        "timeout_seconds": 600
+      }
     }
   }
 }

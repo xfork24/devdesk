@@ -1,4 +1,6 @@
-//! Real native-call admission/receipts with an explicit scripted Harness; no model calls.
+#[path = "../../../tests/support/configuration.rs"]
+mod configuration_fixture;
+// Real native-call admission/receipts with an explicit scripted Harness; no model calls.
 use devdesk_adapters::*;
 use devdesk_core::*;
 use devdesk_domain::*;
@@ -137,6 +139,9 @@ impl ports::Harness for Scripted {
     }
 }
 fn cmd(e: &Engine, method: &str, target: Option<&str>, payload: Value) -> Value {
+    if method == "permission.profile.create" {
+        return configuration_fixture::create_profile(e, payload).unwrap();
+    }
     let s = e.store.snapshot().unwrap();
     let revision = target.and_then(|id| {
         s.configuration(id)
@@ -214,7 +219,7 @@ fn drive(e: &Engine, rounds: usize) {
                     .configuration(c.payload["agent"].as_str().unwrap())
                     .unwrap();
                 let composition = s.resolve_agent(&agent.id).unwrap();
-                let binding = RuntimeBinding {
+                let mut binding = RuntimeBinding {
                     installation: RuntimeInstallation {
                         id: "explicit-manager-runtime".into(),
                         recipe_digest: Some(runtime_preparation::default_codex_recipe_digest()),
@@ -265,6 +270,16 @@ fn drive(e: &Engine, rounds: usize) {
                         model_parameters: Default::default(),
                         tool_revisions: composition.tools,
                     }),
+                };
+                let permissions = binding.permissions.as_ref().unwrap();
+                binding.writable_paths = permissions.scope.writable_paths.clone();
+                binding.read_only_paths = permissions.scope.read_only_paths.clone();
+                binding.tool_policy = if binding.writable_paths.is_empty() {
+                    ToolPolicy::ReadOnly
+                } else if binding.writable_paths == ["."] {
+                    ToolPolicy::WorkspaceWrite
+                } else {
+                    ToolPolicy::ScopedWrite
                 };
                 c.payload["binding"] = json!(binding);
             }
@@ -674,9 +689,9 @@ fn explicitly_granted_shared_publication_keeps_actor_and_does_not_change_current
     let dir = tempfile::tempdir().unwrap();
     let (e, h, project) = setup(dir.path());
     let s = e.store.snapshot().unwrap();
-    let old = permission_context(&s).unwrap();
+    let old = selected_harness_profile(&s).unwrap();
     let mut data = old.data.clone();
-    data["control_policy"]["allowed_operations"]
+    data["policy"]["platform"]["allowed_operations"]
         .as_array_mut()
         .unwrap()
         .push(json!("configuration.global.write"));
@@ -685,7 +700,7 @@ fn explicitly_granted_shared_publication_keeps_actor_and_does_not_change_current
     for (k, v) in &old.refs {
         payload[k] = v.clone();
     }
-    let permission = cmd(&e, "permission_context.create", None, payload);
+    let permission = cmd(&e, "permission.profile.create", None, payload);
     let mut shared = source(
         "skill",
         "authorized-shared",
@@ -703,7 +718,7 @@ fn explicitly_granted_shared_publication_keeps_actor_and_does_not_change_current
         &e,
         "manager.open",
         Some(&project),
-        json!({"permission_context_ref":permission["id"]}),
+        json!({"harness_permission_ref":permission["id"]}),
     );
     cmd(
         &e,
@@ -732,7 +747,7 @@ fn explicitly_granted_shared_publication_keeps_actor_and_does_not_change_current
             .unwrap()
             .configuration(manager["id"].as_str().unwrap())
             .unwrap()
-            .data["permission_context_ref"],
+            .data["harness_permission_ref"],
         permission["id"]
     );
 }
@@ -816,7 +831,7 @@ fn manager_workspace_edits_future_configuration_while_rust_owns_root() {
         &e,
         "workflow.start",
         Some(&project),
-        json!({"workflow_ref":"rust-work:1","role_agent_bindings":{},"orchestration":{"mode":"rust","policy_ref":"builtin-orchestration-policy-balanced:1"}}),
+        json!({"workflow_ref":"rust-work:1","role_agent_bindings":{},"orchestration":{"mode":"rust"}}),
     );
     assert_eq!(
         e.store
@@ -864,9 +879,9 @@ fn authorized_manager_cross_store_adoption_preserves_staged_actor() {
     let dir = tempfile::tempdir().unwrap();
     let (e, h, project) = setup(dir.path());
     let s = e.store.snapshot().unwrap();
-    let old = permission_context(&s).unwrap();
+    let old = selected_harness_profile(&s).unwrap();
     let mut data = old.data.clone();
-    data["control_policy"]["allowed_operations"]
+    data["policy"]["platform"]["allowed_operations"]
         .as_array_mut()
         .unwrap()
         .push(json!("configuration.global.write"));
@@ -874,7 +889,7 @@ fn authorized_manager_cross_store_adoption_preserves_staged_actor() {
     for (k, v) in &old.refs {
         payload[k] = v.clone();
     }
-    let permission = cmd(&e, "permission_context.create", None, payload);
+    let permission = cmd(&e, "permission.profile.create", None, payload);
     let mut spec = source(
         "spec",
         "transferred-spec",
@@ -900,7 +915,7 @@ fn authorized_manager_cross_store_adoption_preserves_staged_actor() {
         &e,
         "manager.open",
         Some(&project),
-        json!({"permission_context_ref":permission["id"]}),
+        json!({"harness_permission_ref":permission["id"]}),
     );
     cmd(
         &e,
@@ -971,10 +986,6 @@ fn skill_package_and_permission_binding_share_preview_validation_without_executi
         .source();
     harness.identity = "project-harness".into();
     harness.scope = Scope::project(&project);
-    harness.refs.insert(
-        "runtime_resource_ref".into(),
-        json!("builtin-runtime-codex:1"),
-    );
     apply(&e, vec![create(harness)]);
     let s = e.store.snapshot().unwrap();
     let target = permission_target(&s, PermissionTargetKind::Harness, "project-harness:1").unwrap();

@@ -297,31 +297,16 @@ pub(crate) fn materialize_project_standard(
 pub(crate) fn project_standard_permissions(
     state: &mut EngineeringState,
     project: &str,
-    context: &str,
-    rewrites: &BTreeMap<Id, Id>,
+    profile: &str,
+    _rewrites: &BTreeMap<Id, Id>,
 ) -> Result<Id> {
-    let source = reference(
+    reference(
         state,
-        context,
-        "permission_context",
+        profile,
+        "permission_profile",
         &Scope::project(project),
-    )?
-    .clone();
-    let mut data = source.data.clone();
-    let mut changed = false;
-    for grant in data["step_grants"].as_array_mut().into_iter().flatten() {
-        if let Some(next) = grant["workflow_ref"]
-            .as_str()
-            .and_then(|id| rewrites.get(id))
-        {
-            grant["workflow_ref"] = json!(next);
-            changed = true;
-        }
-    }
-    if !changed {
-        return Ok(source.id);
-    }
-    Ok(derived_source(state, project, &source, source.refs.clone(), data)?.id)
+    )?;
+    Ok(profile.into())
 }
 
 impl Engine {
@@ -345,14 +330,14 @@ impl Engine {
             &base,
             p.get("standard_overrides").unwrap_or(&json!([])),
         )?;
-        let source_context = p["permission_context_ref"]
+        let source_context = p["harness_permission_ref"]
             .as_str()
             .map(str::to_owned)
-            .or_else(|| permission_context(&state).map(|r| r.id.clone()))
-            .ok_or_else(|| err("permission_unconfigured", "请选择执行授权"))?;
+            .or_else(|| selected_harness_profile(&state).map(|r| r.id.clone()))
+            .ok_or_else(|| err("permission_unconfigured", "请选择权限 Profile"))?;
         let context =
             project_standard_permissions(&mut state, &project, &source_context, &result.rewrites)?;
-        let mut selection = json!({"permission_context_ref":context});
+        let mut selection = json!({"harness_permission_ref":context});
         selection["standard_ref"] = json!(result.standard.id);
         let selected = crate::standards::selection_state(&state, &selection);
         let plan = self.compile_configured_workflow(
@@ -363,7 +348,7 @@ impl Engine {
         )?;
         let hash = configuration_hash(&(&result.entry, &result.provenance, &context));
         Ok(
-            json!({"standard_ref":result.standard.id,"default_workflow_ref":result.entry,"snapshot":result.snapshot,"provenance":result.provenance,"preview_hash":hash,"permission_context_ref":context,
+            json!({"standard_ref":result.standard.id,"default_workflow_ref":result.entry,"snapshot":result.snapshot,"provenance":result.provenance,"preview_hash":hash,"harness_permission_ref":context,
             "requirements":{"roles":plan.roles.values().collect::<Vec<_>>(),"specification_view":plan.specification_view}}),
         )
     }

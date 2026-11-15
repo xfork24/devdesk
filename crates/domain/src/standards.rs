@@ -205,6 +205,19 @@ pub fn resolve_standard_sources(
                         self.port(&source, format!("inputs/{name}"), port, depth)?;
                     }
                     for step in &workflow.steps {
+                        for profile in [&step.harness_permission_ref, &step.sandbox_permission_ref]
+                            .into_iter()
+                            .flatten()
+                        {
+                            self.link(
+                                &source,
+                                format!("steps/{}/permission", step.key),
+                                "step_permission",
+                                profile,
+                                "permission_profile",
+                                depth,
+                            )?;
+                        }
                         for spec in &step.spec_refs {
                             self.link(
                                 &source,
@@ -250,6 +263,9 @@ pub fn resolve_standard_sources(
                             depth,
                         )?;
                     }
+                }
+                "permission_profile" => {
+                    source.permission_profile()?;
                 }
                 "spec" => {
                     source.decode::<ConfiguredSpecification>()?.validate()?;

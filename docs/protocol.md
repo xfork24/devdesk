@@ -31,7 +31,7 @@ Web 的 `feature.create` 显式提交 `payload.start_workflow=false`：保存草
 
 ## 配置、编译与任务
 
-项目页以 Standard 为唯一规范入口。`query.project_standard_preview({project_id,standard_ref,standard_overrides,permission_context_ref?})` 返回生效快照、默认入口、角色需求、来源差异及 `preview_hash`，不写入数据库。`standard_overrides` 为 `{source_ref,replacement_ref}` 数组，作用于基础 Standard 内该确切修订的所有引用位置。类型、可见范围、重复覆盖、被其他覆盖移除的目标及引用循环会被拒绝。
+项目页以 Standard 为唯一规范入口。`query.project_standard_preview({project_id,standard_ref,standard_overrides,harness_permission_ref?})` 返回生效快照、默认入口、角色需求、来源差异及 `preview_hash`，不写入数据库。`standard_overrides` 为 `{source_ref,replacement_ref}` 数组，作用于基础 Standard 内该确切修订的所有引用位置。类型、可见范围、重复覆盖、被其他覆盖移除的目标及引用循环会被拒绝。
 
 `project.configuration.update` 的新入口提交 `standard_ref`、`standard_overrides` 和可选 `standard_preview_hash`，无需提交 `workflow_ref`。保存时核对预览；无覆盖项时直接引用所选 Standard，不创建项目专属 Standard、派生源或来源记录，有覆盖项时才原子发布项目专属 Standard 及必要的源后继。移除全部覆盖后恢复引用基础 Standard。存储的 `workflow_ref` 由 Standard 的默认入口解析得到。`query.standard` 返回 `default_workflow_ref` 与项目快照的 `provenance`。基础来源与差异永久保留；旧 Feature 的冻结引用不回填。原有仅提交 Workflow 的 API 继续支持生成规范快照。
 
@@ -94,7 +94,7 @@ Capability 可通过根级 `spec_refs` 引用 Agent 自身规范，业务能力�
 
 Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和 title，再次可指定项目 target；接入意图、克隆及回执异步完成。`project.open` 切换已登记项目，`project.create` 保留为后端元数据入口。仓库实际就绪前不能启动工程执行。
 
-`runtime.prepare({provider})` 准备当前默认运行资源；`runtime.prepare_harness({id,project_id?})` 的 id 是确切 Harness 源引用，正常会话也可按需物化。构建/拉取在事务外执行，核验实际镜像后保存 prepared 内容标签、安装和协议报告。`runtime.preparation_status` 同时返回当前准备状态及持久化 intents；`runtime.preparation_cancel({recipe_digest})` 在检查点生效，`runtime.preparation_reconcile({recipe_digest})` 核对未知准备结果。运行和重试不按新标签替换原冻结安装。
+`runtime.prepare({provider})` 准备当前默认 Harness 与 Sandbox 的组合镜像；`runtime.prepare_harness({id,project_id?})` 的 id 是确切 Harness 源引用，正常会话也可按需物化。构建/拉取在事务外执行，核验实际镜像后保存 prepared 内容标签、安装和协议报告。`runtime.preparation_status` 同时返回当前准备状态及持久化 intents；`runtime.preparation_cancel({recipe_digest})` 在检查点生效，`runtime.preparation_reconcile({recipe_digest})` 核对未知准备结果。运行和重试不按新标签替换原冻结安装。
 
 协议探针只验证初始化及当前驱动实际支持的会话/动态工具注册，返回 `inference_verified:false`、`tool_execution_verified:false`，不证明模型、账户或工具调用已经成功。
 
@@ -112,7 +112,7 @@ Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和
 
 `permission.binding.preflight({target,permission_revision_id})` 只检查绑定兼容性，返回 scope_checked=false。完整预览输入 harness_ref、selection={sandbox_ref,harness,sandbox} 和可选 scope={work_type,writable_paths,read_only_paths}；selection 每层为 `{mode:"follow_target"}` 或 `{mode:"pinned",binding_revision_id}`。提供 Scope 时复用实际执行编译器；无 Scope 时不承诺具体工作范围可执行。
 
-Agent 只保存 role_ref、capability_ref。项目选择独立的 permission_context_ref，授权上下文提供 Sandbox、两层权限选择、步骤范围和控制策略。RuntimeBinding.permissions.binding_lock 为按源引用解析的执行视图，持久化仅保留确切绑定引用和实际执行范围。
+Agent 只保存 role_ref、capability_ref。项目保存 sandbox_ref，以及可选 harness_permission_ref/sandbox_permission_ref；步骤可直接选择两层 Profile，显式选择替换同层默认绑定。RuntimeBinding.permissions.binding_lock 固定实际目标、Profile 和绑定选择，持久化只保留确切源选择及执行事实。
 
 `conversation.send` 对追随目标的讨论在接受新输入前检测改绑，无活动工作时持久化切换并创建后继 Session。返回值可增加 effective_session_id、predecessor，UI 跟随有效 Session；原 command_id 和 client_message_id 保持幂等。query.session/session.read 增加 permission_status，包含 frozen、desired、status、reason、pending_command；待恢复时可用 pending_command 原样重试 conversation.send。已有运行、排队输入、工程冻结与技术重试保留原权限，目标默认更新不改写它们。
 
@@ -147,9 +147,9 @@ query.project_configuration 附带 pinned_records 与 uses_archived_templates，
 
 RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。所选服务商需要的连接快照不完整时拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。
 
-`query.runtime_options` 只读取安装、运行资源和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和 Harness 的安装列表只展示项目执行用安装；登录/模型目录组件内部登记。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务，智谱与 MiniMax 使用所采用目录的容量数据，结果标明 `source` 和未验证的推理状态。
+`query.runtime_options` 只读取安装、Harness 安装组合和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和 Harness 的安装列表只展示项目执行用安装；登录/模型目录组件内部登记。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务，智谱与 MiniMax 使用所采用目录的容量数据，结果标明 `source` 和未验证的推理状态。
 
-项目配置选择 Workflow、Standard、Role→Agent、Permission Context 和编排配置，不另设项目或角色运行时偏好。模型、连接、容量与参数来自绑定 Agent 的 Model 修订，Harness 按所选资源配方物化。有效参数冻结在 RuntimeBinding；每个 Agent Step 使用独立 Session，补充输入沿用该 Step 的冻结运行锁。
+项目配置选择 Workflow、Standard、Role→Agent、Sandbox、可选双层 Profile 和驱动模式，不另设项目或角色运行时偏好。模型、连接、容量与参数来自绑定 Agent 的 Model 修订，Harness 与 Sandbox 组合并按内容摘要物化。有效参数冻结在 RuntimeBinding；每个 Agent Step 使用独立 Session，补充输入沿用该 Step 的冻结运行锁。
 
 `integration.delete` 将接入源及所属工具、绑定从后续选择中删除，或单独删除已发布工具。操作原子检查在用引用，拒绝仍被 Capability、Agent、Skill 或项目配置使用的资源；修订和历史调用保留，紧急停用另由 `integration.disable` 处理。
 
@@ -165,7 +165,7 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ## 编排与运行计划
 
-项目和工作选择中的 `orchestration` 为 `{mode:"manual"|"rust"|"agent",policy_ref?}`；rust 模式必须提供确切 `orchestration_policy` 源。`workflow.driver.select` 是人类命令，target 为根实例，expected_revision 为其当前修订，payload 为上述选择。它撤销旧控制代次/未派发控制意图，不停止正在运行的业务 worker。`query.workflow_driver({id,project_id})` 返回实际驱动、策略、epoch 与等待门禁；不能从经理会话是否存在推断驱动模式。
+项目和工作选择中的 `orchestration` 为 `{mode:"manual"|"rust"|"agent"}`。每个 Workflow 的 scheduling 包含并发、每轮动作、租约、技术重试和 agent 唤醒预算，随工作流和 Standard 冻结。`workflow.driver.select` 是人类命令，target 为根实例，expected_revision 为其当前修订，payload 只选择模式。它撤销旧控制代次和未派发控制意图，不停止业务 worker。`query.workflow_driver` 返回实际模式、冻结调度参数、epoch 与等待门禁。
 
 `orchestration.open/input/takeover/resume` 管理项目经理及后继会话；`query.orchestration` 返回对话、实际控制调用和待人类决定请求。输入是用户自然语言，只有冻结 Capability/Permission 允许的原生工具调用才产生控制效果。
 
@@ -181,7 +181,7 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ## 独立经理工作台
 
-`manager.open` 的 target 是项目 ID，payload 可指定精确 `agent_ref` 与 `permission_context_ref`；它可以在没有 Feature 或使用 Rust 根驱动时建立工作台。`query.orchestration({owner_id:project_id,workspace_only:true,project_id})` 读取工作台；已建立 Controller 的输入、接管与恢复沿用 `orchestration.input/takeover/resume`。
+`manager.open` 的 target 是项目 ID，payload 可指定精确 `agent_ref` 与 Harness Profile 的 `harness_permission_ref`；它可以在没有 Feature 或使用 Rust 根驱动时建立工作台。`query.orchestration({owner_id:project_id,workspace_only:true,project_id})` 读取工作台；已建立 Controller 的输入、接管与恢复沿用 `orchestration.input/takeover/resume`。
 
 经理原生工具包括 `project.overview/records.list/record.read/artifact.read/resources`、`configuration.catalog/read/usage/change.preview/change.apply/transfer.stage/transfer.apply/transfer.cancel/transfer.status` 和 `spec.lint`。概览只给摘要；列表与正文提供有界分页/分块、value_digest、next_offset。工具绑定固定项目，不接受任意 RPC、SQL、文件路径或改项目参数。已知凭据字段遮蔽；共享配置写入另需 `configuration.global.write`。
 
@@ -201,7 +201,7 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 | 方法 | 参数与结果 |
 |---|---|
-| configuration.change.preview | `{changeset:{operations:[...]}}`；返回 preview_hash、基准指纹、published_refs、影响与选择。运行资源状态明确为尚未探测。 |
+| configuration.change.preview | `{changeset:{operations:[...]}}`；返回 preview_hash、基准指纹、published_refs、影响与选择。执行资产状态明确为尚未探测。 |
 | configuration.change.apply | Command.payload `{changeset,preview_hash}`；单库原子应用。project_id 指定项目库，缺省使用共享库。 |
 | query.configuration_graph | `{id,project_id?}`；返回精确对象、类型化依赖、使用方及带字段路径的诊断。 |
 | configuration.transfer.stage | Command.payload `{global_changeset,project_changeset}`，并指定 project_id；返回持久化暂存操作 ID。共享阶段只发布源修订，不混入共享停用/删除。 |

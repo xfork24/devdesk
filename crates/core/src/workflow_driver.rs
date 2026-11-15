@@ -1,20 +1,15 @@
 //! Rust and Harness drivers use the same explicit control kernel and persisted worker intents.
-use crate::governance::{record, reference, update_record};
+use crate::governance::{record, update_record};
 use crate::*;
 
 pub(crate) fn validate_selection(
-    s: &EngineeringState,
+    _s: &EngineeringState,
     value: &Value,
-    scope: &Scope,
+    _scope: &Scope,
 ) -> Result<OrchestrationSelection> {
     let selection: OrchestrationSelection = serde_json::from_value(value.clone())
         .map_err(|e| err("invalid_configuration", e.to_string()))?;
     selection.validate()?;
-    if let Some(id) = &selection.policy_ref {
-        reference(s, id, "orchestration_policy", scope)?
-            .decode::<OrchestrationPolicy>()?
-            .validate()?;
-    }
     Ok(selection)
 }
 fn driver<'a>(s: &'a EngineeringState, root: &str) -> Option<&'a ConfigurationRecord> {
@@ -68,11 +63,7 @@ impl Engine {
             !["completed", "cancelled"].contains(&root.data["status"].as_str().unwrap_or("")),
             "流程已结束",
         )?;
-        let selection = validate_selection(
-            s,
-            &json!({"mode":c.payload["mode"],"policy_ref":c.payload["policy_ref"]}),
-            &root.scope,
-        )?;
+        let selection = validate_selection(s, &json!({"mode":c.payload["mode"]}), &root.scope)?;
         let previous = driver(s, &root.id).cloned();
         let epoch = previous
             .as_ref()
@@ -171,13 +162,10 @@ impl Engine {
         } else {
             None
         };
-        let policy = selection
-            .policy_ref
-            .as_deref()
-            .map(|id| s.configuration(id)?.decode::<OrchestrationPolicy>())
-            .transpose()?;
-        let data = json!({"mode":selection.mode,"policy_ref":selection.policy_ref,"policy":policy,"epoch":epoch,
-            "controller_id":controller_id,"expires_at":now()+policy.as_ref().map_or(60,|p|p.lease_seconds)*1000,"reason":""});
+        let instance: ConfiguredWorkflowInstance = root.decode()?;
+        let policy = instance.plan.document.scheduling.clone();
+        let data = json!({"mode":selection.mode,"policy":policy,"epoch":epoch,"controller_id":controller_id,
+            "expires_at":now()+policy.lease_seconds*1000,"reason":""});
         let id = if let Some(previous) = previous {
             update_record(
                 s.governance
@@ -255,13 +243,15 @@ impl Engine {
                 let context = s.configuration(
                     instance
                         .plan
-                        .permission_context_ref
+                        .harness_permission_ref
                         .as_deref()
                         .ok_or_else(|| err("permission_unconfigured", "缺少控制策略"))?,
                 )?;
-                let policy: WorkflowControlPolicy =
-                    serde_json::from_value(context.data["control_policy"].clone())
-                        .map_err(|e| err("invalid_configuration", e.to_string()))?;
+                let policy = profile_control_policy(
+                    s,
+                    &context.id,
+                    Some(&instance.plan.document.scheduling.agent),
+                )?;
                 policy.permits(operation(method))?;
                 require(
                     !policy.human_operations.contains(operation(method)),
@@ -353,7 +343,7 @@ impl Engine {
             }) {
                 continue;
             }
-            let policy: OrchestrationPolicy = serde_json::from_value(row.data["policy"].clone())
+            let policy: WorkflowScheduling = serde_json::from_value(row.data["policy"].clone())
                 .map_err(|e| err("storage", e.to_string()))?;
             if row.data["expires_at"].as_u64().unwrap_or(0) < now() + policy.lease_seconds * 500 {
                 self.store.transact(None, &mut |s| {
@@ -449,17 +439,16 @@ impl Engine {
                         next = page["page"]["next_offset"].as_u64();
                     }
                     ready["steps"] = json!(steps);
-                    let context = instance.data["plan"]["permission_context_ref"]
+                    let context = instance.data["plan"]["harness_permission_ref"]
                         .as_str()
                         .and_then(|id| s.configuration(id).ok());
+                    let scheduling: WorkflowScheduling = serde_json::from_value(
+                        instance.data["plan"]["document"]["scheduling"].clone(),
+                    )
+                    .map_err(|e| err("storage", e.to_string()))?;
                     let control = context
-                        .map(|r| {
-                            serde_json::from_value::<WorkflowControlPolicy>(
-                                r.data["control_policy"].clone(),
-                            )
-                        })
-                        .transpose()
-                        .map_err(|e| err("storage", e.to_string()))?;
+                        .map(|r| profile_control_policy(&s, &r.id, Some(&scheduling.agent)))
+                        .transpose()?;
                     let permits = |op: &str| {
                         control.as_ref().is_some_and(|p| {
                             p.allowed_operations.contains(op) && !p.human_operations.contains(op)
@@ -483,10 +472,11 @@ impl Engine {
                             && permits("retry")
                             && candidate_available("workflow.step.retry", execution)
                             && step["actions"]["retry"]["allowed"] == true
-                            && step["retry_count"].as_u64().unwrap_or(u64::MAX) < policy.max_retries
+                            && step["retry_count"].as_u64().unwrap_or(u64::MAX)
+                                < scheduling.max_retries
                             && failure.as_ref().is_some_and(|f| {
                                 f.automatic_retry_safe()
-                                    && policy.retry_error_codes.contains(&f.code)
+                                    && scheduling.retry_error_codes.contains(&f.code)
                             })
                         {
                             selected = Some(("workflow.step.retry", step.clone()));
@@ -510,7 +500,10 @@ impl Engine {
                                 ["agent", "tool"]
                                     .contains(&d["executor"]["type"].as_str().unwrap_or(""))
                             });
-                            if !uses_worker || active < policy.max_concurrency {
+                            if !uses_worker
+                                || active < policy.max_concurrency
+                                    && active < scheduling.max_concurrency
+                            {
                                 selected = Some(("workflow.step.dispatch", step.clone()));
                                 break;
                             }

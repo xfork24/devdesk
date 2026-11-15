@@ -1,4 +1,4 @@
-# 完整会话绑定、权限修订与运行资源回执
+# 完整会话绑定、权限修订与执行安装回执
 
 [代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
 
@@ -81,13 +81,13 @@ permission_resource_command 处理 Profile 的创建/修订等应用命令，`ap
 
 `import_experience` 把外层只读查到的快照转为当前范围的新 context：使用原 command_id 派生身份，清除原文档所有权引用，保留来源和背景，不改当前代码、治理配置或文档 head。导入与后续 session.open 各有独立幂等键。
 
-`materialize_harness` 从确切源解析运行资源和 recipe_digest，根据全局/项目归属选择回执库，按 Harness、Linux 和架构定位物化回执。已有回执必须保持配方一致，并通过端口取得原安装；首次准备后核对实际安装驱动/配方，再用 record_harness_materialization 保存不可替换事实。
+`materialize_harness` 从确切 Harness 和选定 Sandbox 组合内部配方，以 Harness/Sandbox、配方摘要、Linux 和架构定位回执。已有回执核对实际安装；首次准备核对驱动与配方后保存不可替换的物化事实。重试与恢复使用原锁，不读取新默认替换历史依据。
 
 因此安装操作在适配器，采用与物化身份由 core 裁定。相同源若已对应另一安装不能偷偷替换，需要明确的后继配置或核对。
 
 代码定位：[`import_experience`](../../../crates/core/src/resource_receipts.rs#L3)、[`record_harness_materialization`](../../../crates/core/src/resource_receipts.rs#L75)、[`materialize_harness`](../../../crates/core/src/resource_receipts.rs#L109)。
 
-关联阅读：[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[domain/src/runtime_resource.rs](../devdesk-domain/runtime-and-permissions.md#file-src-runtime-resource-rs)、[adapters/src/experience.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-experience-rs)、[core/src/session_assembly.rs](session-resources-and-permissions.md#file-src-session-assembly-rs)。
+关联阅读：[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[domain/src/execution_recipe.rs](../devdesk-domain/runtime-and-permissions.md#file-src-execution-recipe-rs)、[adapters/src/experience.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-experience-rs)、[core/src/session_assembly.rs](session-resources-and-permissions.md#file-src-session-assembly-rs)。
 
 <a id="file-src-driver-capabilities-rs"></a>
 

@@ -62,28 +62,6 @@ impl SourceDefinition {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PermissionContextDefinition {
-    pub harness: PermissionSelection,
-    pub sandbox: PermissionSelection,
-    #[serde(default)]
-    pub step_grants: Vec<StepPermissionGrant>,
-    pub control_policy: WorkflowControlPolicy,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StepPermissionGrant {
-    pub workflow_ref: Id,
-    pub step: String,
-    #[serde(default)]
-    pub writable_paths: Vec<String>,
-    #[serde(default)]
-    pub read_only_paths: Vec<String>,
-    #[serde(default)]
-    pub tool_refs: Vec<Id>,
-}
-
 /// Flattened references must stay within the type's allowlist and use canonical
 /// `identity:revision` strings; lists never repeat a revision.
 pub fn validate_references(kind: &str, refs: &References) -> Result<()> {
@@ -135,6 +113,15 @@ pub fn validate_references(kind: &str, refs: &References) -> Result<()> {
 }
 
 pub fn validate_source_data(kind: &str, refs: &References, data: &Value) -> Result<()> {
+    require(
+        ![
+            "permission_context",
+            "runtime_resource",
+            "orchestration_policy",
+        ]
+        .contains(&kind),
+        "此独立配置类型已移除",
+    )?;
     let invalid = |e: serde_json::Error| err("invalid_source", e.to_string());
     validate_references(kind, refs)?;
     match kind {
@@ -177,32 +164,6 @@ pub fn validate_source_data(kind: &str, refs: &References, data: &Value) -> Resu
             let catalog: ModelCatalogDefinition =
                 serde_json::from_value(data.clone()).map_err(invalid)?;
             catalog.validate()?;
-        }
-        "orchestration_policy" => {
-            serde_json::from_value::<OrchestrationPolicy>(data.clone())
-                .map_err(invalid)?
-                .validate()?;
-        }
-        "runtime_resource" => {
-            serde_json::from_value::<RuntimeResourceDefinition>(data.clone())
-                .map_err(invalid)?
-                .validate()?;
-        }
-        "harness" => {
-            serde_json::from_value::<HarnessDefinition>(data.clone()).map_err(invalid)?;
-        }
-        "permission_context" => {
-            let context: PermissionContextDefinition =
-                serde_json::from_value(data.clone()).map_err(invalid)?;
-            context.control_policy.validate()?;
-            let mut grants = std::collections::BTreeSet::new();
-            for grant in &context.step_grants {
-                parse_source_reference(&grant.workflow_ref)?;
-                require(
-                    !grant.step.is_empty() && grants.insert((&grant.workflow_ref, &grant.step)),
-                    "步骤授权需要唯一的 Workflow 修订和步骤",
-                )?;
-            }
         }
         "standard" => {
             let standard: ConfiguredStandard =
@@ -350,35 +311,14 @@ impl EngineeringState {
         self.resolve_workflow_source(r)
     }
     pub fn resolve_workflow_source(&self, r: &ConfigurationRecord) -> Result<WorkflowDefinition> {
-        let reference = &r.id;
         let mut doc: WorkflowDefinition = r.decode()?;
-        if let Some(context) = permission_context(self) {
-            for grant in context.data["step_grants"].as_array().into_iter().flatten() {
-                let selection = self
-                    .governance
-                    .iter()
-                    .filter(|r| r.r#type == "project_configuration")
-                    .max_by_key(|r| r.version);
-                let selected = selection
-                    .filter(|r| r.data["workflow_ref"].as_str() == Some(reference))
-                    .and_then(|r| r.data["permission_workflow_ref"].as_str())
-                    .unwrap_or(reference);
-                if grant["workflow_ref"].as_str() != Some(selected) {
-                    continue;
-                }
-                let Some(step) = doc
-                    .steps
-                    .iter_mut()
-                    .find(|s| Some(s.key.as_str()) == grant["step"].as_str())
-                else {
-                    continue;
-                };
-                step.access.writable_paths =
-                    serde_json::from_value(grant["writable_paths"].clone()).unwrap_or_default();
-                step.access.read_only_paths =
-                    serde_json::from_value(grant["read_only_paths"].clone()).unwrap_or_default();
-                step.access.tool_refs =
-                    serde_json::from_value(grant["tool_refs"].clone()).unwrap_or_default();
+        for step in &mut doc.steps {
+            if let Some(id) = &step.harness_permission_ref {
+                let profile = self.configuration(id)?.permission_profile()?;
+                let (write, read) = profile_workspace_access(&profile);
+                step.access.writable_paths = write;
+                step.access.read_only_paths = read;
+                step.access.tool_refs = profile.policy.tool_refs.unwrap_or_default();
             }
         }
         Ok(doc)

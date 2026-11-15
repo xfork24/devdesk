@@ -18,7 +18,7 @@ core 把领域规则组织成应用用例。它负责发布配置、固定执行
 - [控制命令、经理会话与 Rust 调度](orchestration-and-drivers.md)
 - [经理知识、平台动作与 Spec 检查](manager-and-platform-tools.md)
 - [会话命令、原生观察、提案与历史](conversations-and-history.md)
-- [完整会话绑定、权限修订与运行资源回执](session-resources-and-permissions.md)
+- [完整会话绑定、权限修订与执行安装回执](session-resources-and-permissions.md)
 - [外部工具与仓库操作的持久化执行](integrations-and-repositories.md)
 
 ## 完整文件索引

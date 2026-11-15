@@ -9,7 +9,7 @@
 | Role | 职责正文和定义适用范围。 |
 | Agent | 仅 `role_ref`、`capability_ref`。 |
 | Capability | 精确 Model、Harness、Skills、Tools；表示技术能力，不授予权限。 |
-| Model / Harness / Sandbox | 模型参数、执行协议及隔离后端技术条件。 |
+| Model / Harness / Sandbox | 模型参数、Harness 程序版本/安装件及 Sandbox Docker 基础环境；二者组合产生内部执行配方。 |
 | Model Provider | 模型服务商实例：路由、协议、端点、凭据约定；由 Harness 按 `identity:revision` 引用。 |
 | Model Catalog | 单一 Harness 构建已验证的模型容量目录，通过 `recipe_digest` 关联构建配方。 |
 | Skill | 工作方法和工具需求，不复制职责、文档规范或权限。 |
@@ -18,8 +18,7 @@
 | Delivery | 格式、离线 JSON Schema、必填 `spec_refs` 与可选的产出来源约束。所有交付的内容要求由对应 Spec 定义。 |
 | Spec | 唯一规范正文和内容检查项。 |
 | Standard | Workflow、Delivery、Spec 及声明关系的不可变快照，使用者分别引用。 |
-| Permission Profile | 文件、网络、工具和审批策略。 |
-| Permission Context | Sandbox 及权限绑定选择、Workflow/Step 的授权范围、Controller 操作策略。 |
+| Permission Profile | 文件、网络、工具、审批与平台操作策略。 |
 
 Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` 引用 Markdown。文本归其源修订所有，不向 Agent、Delivery 或执行配置复制。
 
@@ -29,9 +28,9 @@ Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` �
 
 ## 权限与环境
 
-权限预设唯一来源为 `permissions/profiles/`，授权上下文位于 `permissions/bindings/`。仓库根目录 `permissions/backends/` 只保存执行器资产。项目选择 `permission_context_ref`；Agent、Capability、Tool 均不保存权限选择或写入策略。
+权限预设唯一来源为 `permissions/profiles/`。仓库根目录 `permissions/backends/` 保存执行器资产。项目选择 Sandbox 与可选 Harness/Sandbox Profile；步骤可直接引用两层 Profile，显式选择替换同层默认绑定。Agent、Capability、Tool 不保存权限规则。
 
-步骤的工作空间输入和工作目录属于任务上下文。可写目录、只读目录和可用工具限制由 Permission 中的 `step_grants` 表达，使用确切 Workflow 引用及步骤 key 定位。`step_grants` 显式列出 16 个需要收紧授权的步骤；未列出的步骤沿用 Permission Context 的整体选择。TDD、评审、确认和候选接纳行为不变。
+步骤的工作空间输入和工作目录属于任务上下文。文件与工具限制属于 Profile；默认 16 个收紧权限的步骤直接引用专用 Profile，未列出的步骤使用项目选择或目标默认绑定。TDD、评审、确认和候选接纳行为不变。Workflow 的 scheduling 包含并发、动作、租约、重试和 Agent 唤醒预算，随修订与 Standard 一起冻结。
 
 ## 执行与存储
 
@@ -45,8 +44,8 @@ Role / Skill / Spec 正文通过各自的 `instructions_file` 或 `body_file` �
 
 默认 Feature 仍有 22 个步骤，Task 仍有 20 个步骤。目录自洽（manifest ↔ 文件 ↔ defaults 引用 ↔ 正文归属）由 `scripts/py/check-defaults.py` 把关；结构校验在构建期，交叉引用与能力组合校验在测试期 materialize 完成。
 
-源与运行时记录统一使用 `type` 判别类型；`scope` 为 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。Capability 的 `harness_ref/model_ref/skills/tools`、Agent 的 `role_ref/capability_ref`、Delivery 的 `spec_refs`、Harness 的 `model_providers/model_catalog_ref`、PermissionContext 的 `sandbox_ref`、Standard 的 `root_workflow_refs` 位于根级，其余载荷保留在 `data`。能力标签和嵌套引用保持原位。内容摘要同时覆盖引用与载荷。只支持当前协议的新数据集。
+源与运行时记录统一使用 `type` 判别类型；`scope` 为 `global`、`project:<id>` 或 `feature:<pid>:<fid>` 字符串。Capability 的 `harness_ref/model_ref/skills/tools`、Agent 的 `role_ref/capability_ref`、Delivery 的 `spec_refs`、Harness 的 `model_providers/model_catalog_ref`、Standard 的 `root_workflow_refs` 位于根级，其余载荷保留在 `data`。能力标签和嵌套引用保持原位。内容摘要同时覆盖引用与载荷。只支持当前协议的新数据集。
 
 ## 默认交付自检
 
-Codex 的六类业务 Agent Capability 包含 spec.lint 与“交付草稿自检与冻结证据定位” Skill；对应 16 个 Agent 步骤通过 Permission Context 显式授权该只读工具。它只检查当前步骤冻结的输入/输出 Delivery 与内容，不获得经理配置写权限。默认 PRD/Design Spec 检查实际必需章节，默认关键评审要求冻结输入的精确位置；语义质量、真实测试、独立评审和最终接纳仍按原流程判定。所有依赖通过后继精确引用发布，旧工作继续使用已冻结修订。
+Codex 的六类业务 Agent Capability 包含 spec.lint 与“交付草稿自检与冻结证据定位” Skill；对应 16 个 Agent 步骤直接选择 Profile 允许该只读工具。它只检查当前步骤冻结的输入/输出 Delivery 与内容，不获得经理配置写权限。默认 PRD/Design Spec 检查实际必需章节，默认关键评审要求冻结输入的精确位置；语义质量、真实测试、独立评审和最终接纳仍按原流程判定。所有依赖通过后继精确引用发布，旧工作继续使用已冻结修订。

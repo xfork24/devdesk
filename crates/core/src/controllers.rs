@@ -210,9 +210,9 @@ impl Engine {
                 let replacing = c.payload["agent_ref"]
                     .as_str()
                     .is_some_and(|id| existing.data["agent_revision_id"] != id)
-                    || c.payload["permission_context_ref"]
+                    || c.payload["harness_permission_ref"]
                         .as_str()
-                        .is_some_and(|id| existing.data["permission_context_ref"] != id);
+                        .is_some_and(|id| existing.data["harness_permission_ref"] != id);
                 if !replacing {
                     crate::configuration::project_manager_role(
                         s,
@@ -315,22 +315,41 @@ impl Engine {
             )?;
             require(
                 c.payload.get("policy").is_none(),
-                "编排授权必须通过 Permission Context 源修订选择",
+                "编排授权必须通过 Permission Profile 源修订选择",
             )?;
-            let context_ref = c.payload["permission_context_ref"]
+            let context_ref = c.payload["harness_permission_ref"]
                 .as_str()
                 .map(str::to_owned)
-                .or_else(|| permission_context(s).map(|r| r.id.clone()))
+                .or_else(|| {
+                    permission_selection(s)
+                        .and_then(|choice| {
+                            resolve_permission_lock(s, &composition.harness_ref, &choice)
+                        })
+                        .ok()
+                        .map(|lock| lock.harness.profile.id)
+                })
                 .ok_or_else(|| err("permission_unconfigured", "请选择编排授权"))?;
             let context = crate::governance::reference(
                 s,
                 &context_ref,
-                "permission_context",
+                "permission_profile",
                 &Scope::project(project.clone()),
             )?;
-            let policy: WorkflowControlPolicy =
-                serde_json::from_value(context.data["control_policy"].clone())
-                    .map_err(|e| err("invalid_source", e.to_string()))?;
+            let scheduling = root
+                .as_ref()
+                .and_then(|r| r.data["plan"]["document"]["scheduling"]["agent"].as_object())
+                .map(|v| serde_json::from_value::<AgentSchedulingBudget>(json!(v)))
+                .transpose()
+                .map_err(|e| err("invalid_source", e.to_string()))?;
+            let scheduling = if root.is_none() && c.payload["budget"].is_object() {
+                Some(
+                    serde_json::from_value::<AgentSchedulingBudget>(c.payload["budget"].clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?,
+                )
+            } else {
+                scheduling
+            };
+            let policy = profile_control_policy(s, &context.id, scheduling.as_ref())?;
             policy.validate()?;
             let controller = WorkflowController {
                 workspace_only,
@@ -339,7 +358,7 @@ impl Engine {
                 root_instance_id: root.as_ref().map(|r| r.id.clone()),
                 agent_revision_id: agent.id.clone(),
                 role_ref: role.id.clone(),
-                permission_context_ref: context_ref,
+                harness_permission_ref: context_ref,
                 policy_digest: configuration_hash(&policy),
                 policy,
                 session_id: None,
@@ -423,7 +442,7 @@ impl Engine {
                     data["expires_at"] = json!(now() + 60_000);
                     update_record(driver, data);
                 }
-                s.governance.push(record("controller_selection",successor.clone(),Scope::project(controller.project_id.clone()),"人类采用后继经理".into(),1,None,json!({"predecessor_controller_id":previous,"successor_controller_id":successor,"agent_ref":controller.agent_revision_id,"context_ref":controller.permission_context_ref}),true));
+                s.governance.push(record("controller_selection",successor.clone(),Scope::project(controller.project_id.clone()),"人类采用后继经理".into(),1,None,json!({"predecessor_controller_id":previous,"successor_controller_id":successor,"agent_ref":controller.agent_revision_id,"harness_permission_ref":controller.harness_permission_ref}),true));
             }
             return Ok(Some(out));
         }
@@ -484,7 +503,7 @@ impl Engine {
             } else {
                 require(
                     c.payload.get("policy").is_none(),
-                    "编排授权必须通过 Permission Context 源修订选择",
+                    "编排授权必须通过 Permission Profile 源修订选择",
                 )?;
                 if let Some(sid) = &controller.session_id {
                     require(
@@ -498,7 +517,7 @@ impl Engine {
                         "请先停止并核对旧编排执行者",
                     )?;
                 }
-                for field in ["agent_ref", "permission_context_ref"] {
+                for field in ["agent_ref", "harness_permission_ref"] {
                     if let Some(value) = c.payload.get(field) {
                         require(value.is_string(), "经理配置引用必须是确切源修订字符串")?;
                     }
@@ -507,12 +526,12 @@ impl Engine {
                     .as_str()
                     .unwrap_or(&controller.agent_revision_id)
                     .to_owned();
-                let context_ref = c.payload["permission_context_ref"]
+                let context_ref = c.payload["harness_permission_ref"]
                     .as_str()
-                    .unwrap_or(&controller.permission_context_ref)
+                    .unwrap_or(&controller.harness_permission_ref)
                     .to_owned();
                 if agent_ref != controller.agent_revision_id
-                    || context_ref != controller.permission_context_ref
+                    || context_ref != controller.harness_permission_ref
                 {
                     require(
                         row.data["status"] != "active" || controller.session_id.is_none(),
@@ -521,7 +540,7 @@ impl Engine {
                     return self.controller_command(
                         if controller.workspace_only { "manager.open" } else { "orchestration.open" },
                         &Command { command_id:format!("{}:successor",c.command_id), target:Some(controller.root_instance_id.clone().unwrap_or_else(||controller.owner_id.clone())), expected_revision:None,
-                            payload:json!({"role_ref":controller.role_ref,"agent_ref":agent_ref,"permission_context_ref":context_ref}) }, s,
+                            payload:json!({"role_ref":controller.role_ref,"agent_ref":agent_ref,"harness_permission_ref":context_ref}) }, s,
                     );
                 }
                 if let Some(session) = controller
@@ -590,7 +609,7 @@ impl Engine {
         let permissions = resolve_permission_lock(
             &s,
             &agent.harness_ref,
-            &permission_selection_from_context(&s, &controller.permission_context_ref)?,
+            &permission_selection_with_profile(&s, &controller.harness_permission_ref)?,
         )?;
         let lock = freeze_integrations(&s, &agent, Some(&controller.project_id))?;
         require(

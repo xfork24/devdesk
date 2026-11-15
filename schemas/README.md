@@ -4,7 +4,7 @@
 
 | 入口 | 当前合同 |
 |---|---|
-| `orchestration.schema.json` | ControlPolicy、actor、ChangeSet、typed material 和运行时变更。 |
+| `orchestration.schema.json` | Workflow 内嵌 scheduling、控制权限执行视图、actor、ChangeSet、typed material 和运行时变更。 |
 | `rpc.schema.json` | JSON-RPC、配置修订、原生执行，以及 Workflow 运行实例和 StepExecution。 |
 | `workflow.schema.json` | Workflow v6：Stage、四种执行器、显式端口、访问范围、预算与有界完成规则。 |
 | `agent-task.schema.json` | `ConfiguredAgentTask`，renderer `agent-task/v6`；保存实际 Turn、Agent、输入正文、来源与摘要。 |

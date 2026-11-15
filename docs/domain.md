@@ -33,7 +33,7 @@ Step 的执行方式仅为 Agent、工具、子流程、控制。Agent Step 必�
 | RepositoryWorktree | 已登记的实际仓库工作副本、owner、分支、路径、基线与操作来源。 |
 | WorkflowController | 一个根实例的编排 Role、确切 Agent、控制策略、持续 Session、epoch 和预算。 |
 | WorkflowDriver | 根实例的 manual / rust / agent 调度选择；Rust 模式固定策略源、epoch、动作预算与租约。 |
-| RuntimeResource | 运行资源的不可变配方或 OCI 镜像摘要、版本标签、许可证及本机登录组件下载件；不表示已经安装或验证。 |
+| ExecutionRecipe | 由 Harness 程序安装输入和 Sandbox 基础环境组合生成的内部配方/OCI 身份，不是配置源；不表示已安装或验证。 |
 | WorkflowPlanRevision | 不可变源修订选择及输入、角色绑定、父修订和变更原因；实例只切换活动引用。 |
 | WorkflowChangeSet | 类型化操作、基准计划、影响、预演哈希和 quiesce/apply 状态。 |
 | WorkflowDecision / Waiver | 真实 actor 对确切执行、产物和要求的处置；与原报告分开。 |
@@ -103,4 +103,4 @@ Project 默认、Feature 和 Task 通过通用采用关系引用它。同一 Fea
 
 运行计划固定当时的 Standard。规范变更通过同一 ChangeSet 预演并原子切换，旧执行、输入、产物、计划及原生任务仍引用原 Standard。快照相同只表示定义相同，实际检查、豁免、测试和 Git 回执继续作为运行事实记录。
 
-实现依据：[Workflow 与检查报告](../crates/domain/src/workflow.rs)、[源定义](../crates/domain/src/source.rs)、[Standard](../crates/domain/src/standards.rs)、[调度策略](../crates/domain/src/workflow_driver.rs)、[编排身份](../crates/domain/src/orchestration.rs)。
+实现依据：[Workflow 与检查报告](../crates/domain/src/workflow.rs)、[源定义](../crates/domain/src/source.rs)、[Standard](../crates/domain/src/standards.rs)、[Workflow 调度配置](../crates/domain/src/workflow_driver.rs)、[编排身份](../crates/domain/src/orchestration.rs)。

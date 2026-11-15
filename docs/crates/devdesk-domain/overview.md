@@ -6,7 +6,7 @@
 
 调用方通常先把 JSON 解析成这里的类型，再检查引用、作用域、DAG 和不可变约束。[core 的 Engine](../devdesk-core/engine-and-ports.md#file-src-lib-rs) 决定何时应用这些规则，[SQLite 事务](../devdesk-adapters/storage-and-source-codecs.md#file-src-lib-rs) 在提交状态时再次保护它们。一次字段反序列化成功，只说明形状可读，不表示它已经有执行权限或真实外部证据。
 
-阅读顺序建议是共同工作模型 → 源修订 → Workflow 与内容检查 → 会话 → 运行资源/权限。`lib.rs` 汇出子模块，外部通常通过 `devdesk_domain::*` 使用这些类型。包内有纯规则单元测试，更完整的持久化和流程组合回归放在 adapters 的集成测试中。
+阅读顺序建议是共同工作模型 → 源修订 → Workflow 与内容检查 → 会话 → 执行安装/权限。`lib.rs` 汇出子模块，外部通常通过 `devdesk_domain::*` 使用这些类型。包内有纯规则单元测试，更完整的持久化和流程组合回归放在 adapters 的集成测试中。
 
 ## 专题阅读
 
@@ -14,7 +14,7 @@
 - [源修订、配置依赖与规范快照](configuration-and-sources.md)
 - [Workflow、完成规则与可定位的内容检查](workflows-and-checks.md)
 - [Agent 身份、会话与轮次](agents-and-conversations.md)
-- [运行资源、模型连接与权限](runtime-and-permissions.md)
+- [执行安装、模型连接与权限](runtime-and-permissions.md)
 - [外部工具、账户绑定与 Skill 包](integrations.md)
 
 ## 完整文件索引
@@ -40,7 +40,7 @@
 | [src/permission_profile.rs](../../../crates/domain/src/permission_profile.rs) | [Profile、目标绑定和双端权限锁](runtime-and-permissions.md#file-src-permission-profile-rs) |
 | [src/repository.rs](../../../crates/domain/src/repository.rs) | [仓库操作、工作副本与 PR 回执](work-and-materials.md#file-src-repository-rs) |
 | [src/runtime.rs](../../../crates/domain/src/runtime.rs) | [驱动、安装产物和完整性结果](runtime-and-permissions.md#file-src-runtime-rs) |
-| [src/runtime_resource.rs](../../../crates/domain/src/runtime_resource.rs) | [配置决定运行配方，摘要决定实际来源](runtime-and-permissions.md#file-src-runtime-resource-rs) |
+| [src/execution_recipe.rs](../../../crates/domain/src/execution_recipe.rs) | [配置决定运行配方，摘要决定实际来源](runtime-and-permissions.md#file-src-execution-recipe-rs) |
 | [src/source.rs](../../../crates/domain/src/source.rs) | [规范源引用与纯解析入口](configuration-and-sources.md#file-src-source-rs) |
 | [src/spec_checks.rs](../../../crates/domain/src/spec_checks.rs) | [机器断言与冻结输入位置证明](workflows-and-checks.md#file-src-spec-checks-rs) |
 | [src/standards.rs](../../../crates/domain/src/standards.rs) | [规范闭包、稳定摘要与结构差异](configuration-and-sources.md#file-src-standards-rs) |

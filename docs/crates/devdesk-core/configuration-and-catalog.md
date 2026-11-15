@@ -23,7 +23,7 @@
 
 这里集中处理 Role 的业务身份/可见性、Agent 规范化和 Capability 验证，并为查询构建可用资源与使用关系。`reference_users`、`integration_reference_users` 和 `ensure_unreferenced` 用明确合同发现仍被采用的配置，避免“列表不显示”被误解为安全可停用。
 
-Model Provider、Model Catalog 与 Harness 校验检查服务商、容量目录、运行资源及实际驱动组合。`project_configuration_references` 读取项目的确切选择；`retired` 将配置停用事实纳入后续选择。这里不安装镜像、不取得系统密钥，能解析的组合还要经过执行装配和授权。
+Model Provider、Model Catalog 与 Harness 校验检查服务商、容量目录、执行安装及实际驱动组合。`project_configuration_references` 读取项目的确切选择；`retired` 将配置停用事实纳入后续选择。这里不安装镜像、不取得系统密钥，能解析的组合还要经过执行装配和授权。
 
 代码定位：[`role_record`](../../../crates/core/src/configuration.rs#L5)、[`visible`](../../../crates/core/src/configuration.rs#L15)、[`validate_capability`](../../../crates/core/src/configuration.rs#L63)、[`reference_users`](../../../crates/core/src/configuration.rs#L172)、[`project_configuration_references`](../../../crates/core/src/configuration.rs#L265)、[`validate_harness`](../../../crates/core/src/configuration.rs#L329)。
 

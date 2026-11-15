@@ -231,10 +231,10 @@ impl ports::SessionResources for ResourceFixture<'_> {
     }
     fn prepare_harness(
         &self,
-        _: &ConfigurationRecord,
+        harness: &ConfigurationRecord,
         resource: &ConfigurationRecord,
     ) -> Result<RuntimeInstallation> {
-        let r: RuntimeResourceDefinition = resource.decode()?;
+        let r = compose_execution_recipe(harness, resource)?;
         Ok(RuntimeInstallation {
             id: format!("fixture-{}", r.recipe_digest()),
             key: RuntimeKey {

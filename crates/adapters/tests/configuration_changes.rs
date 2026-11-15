@@ -449,7 +449,7 @@ fn work_selection_preview_has_stable_identity_and_does_not_start_a_workflow() {
             ConfigurationOperation::SelectWork {
                 owner_id: pid.clone(),
                 expected_revision: 1,
-                selection: json!({"workflow_ref":"local-flow:1","permission_context_ref":"builtin-permission-context-engineering:6","role_agent_bindings":{}}),
+                selection: json!({"workflow_ref":"local-flow:1","harness_permission_ref":"builtin-permission-harness-full-access:1","role_agent_bindings":{}}),
             },
         ],
     };

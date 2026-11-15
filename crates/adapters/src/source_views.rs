@@ -43,17 +43,6 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
                 key.clone(),
                 if factual_field(key) {
                     item.clone()
-                } else if key == "policy" && value["controller_id"].is_string() {
-                    let context = value["controller_id"]
-                        .as_str()
-                        .and_then(|id| state.configuration(id).ok())
-                        .and_then(|r| r.data["permission_context_ref"].as_str())
-                        .and_then(|id| state.configuration(id).ok());
-                    if let Some(context) = context.filter(|r| r.data["control_policy"] == *item) {
-                        json!({"$source":"control_policy","context_ref":context.id})
-                    } else {
-                        pack(state, item)?
-                    }
                 } else {
                     pack(state, item)?
                 },
@@ -69,18 +58,6 @@ pub(super) fn pack(state: &EngineeringState, value: &Value) -> Result<Value> {
             .map(Value::Array);
     }
     Ok(value.clone())
-}
-
-fn bound_permission(state: &EngineeringState, id: &str) -> Result<BoundPermission> {
-    let row = state.configuration(id)?;
-    let binding: VersionedPermissionBinding = row.decode()?;
-    resolve_bound_permission(
-        state,
-        binding.target.clone(),
-        &PermissionSelection::Pinned {
-            binding_revision_id: id.into(),
-        },
-    )
 }
 
 fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Value>> {
@@ -122,22 +99,6 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
         }
         return Ok(Some(value.clone()));
     }
-    if value.get("epoch").is_some()
-        && value.get("policy_digest").is_some()
-        && value.get("permission_context_ref").is_some()
-    {
-        let mut stored = serde_json::Map::new();
-        for (key, item) in value.as_object().unwrap() {
-            if !["policy", "policy_digest"].contains(&key.as_str()) {
-                stored.insert(key.clone(), pack(state, item)?);
-            }
-        }
-        stored.insert(
-            "policy".into(),
-            json!({"$source":"control_policy","context_ref":value["permission_context_ref"]}),
-        );
-        return Ok(Some(Value::Object(stored)));
-    }
     if value.get("installation").is_some()
         && value.get("configuration_digest").is_some()
         && value["agent_configuration"].is_object()
@@ -158,9 +119,10 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
         && value.get("enforcement").is_some()
         && value.get("scope").is_some()
     {
+        let lock: VersionedPermissionLock =
+            serde_json::from_value(value["binding_lock"].clone()).map_err(storage)?;
         return Ok(Some(
-            json!({"$source":"execution_permissions","harness_binding_ref":value["binding_lock"]["harness"]["binding_revision_id"],
-                "sandbox_binding_ref":value["binding_lock"]["sandbox"]["binding_revision_id"],"scope":value["scope"]}),
+            json!({"$source":"execution_permissions","harness_choice":devdesk_core::frozen_views::permission_choice(&lock.harness),"sandbox_choice":devdesk_core::frozen_views::permission_choice(&lock.sandbox),"scope":value["scope"]}),
         ));
     }
     if value.get("files").is_some()
@@ -187,7 +149,7 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
             }
         }
         for (key, lock) in &plan.permission_locks {
-            permissions.insert(key.clone(),json!({"harness":lock.harness.binding_revision_id,"sandbox":lock.sandbox.binding_revision_id}));
+            permissions.insert(key.clone(),json!({"harness":devdesk_core::frozen_views::permission_choice(&lock.harness),"sandbox":devdesk_core::frozen_views::permission_choice(&lock.sandbox)}));
         }
         for (tool, bound) in &plan.tool_bindings {
             connections.insert(tool.clone(), bound.binding_ref.clone());
@@ -215,8 +177,8 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
             .or_else(|| (state.projects.len() == 1).then(|| state.projects[0].id.as_str()));
         return Ok(Some(
             json!({"$source":"workflow_plan","workflow_ref":plan.workflow_revision_id,"standard_ref":plan.standard_ref,"work_configuration_ref":plan.work_configuration_ref,"role_agent_bindings":bindings,
-                "permission_context_ref":plan.permission_context_ref,"permission_workflow_ref":plan.permission_workflow_ref,"permission_bindings":permissions,"integration_bindings":connections,
-                "project_id":project_id}),
+                "harness_permission_ref":plan.harness_permission_ref,"execution_selection":plan.execution_selection,"base_workflow_ref":plan.base_workflow_ref,"permission_bindings":permissions,"integration_bindings":connections,
+                "sandbox_ref":plan.permission_locks.values().next().map(|lock|&lock.sandbox.binding.target.revision_id),"project_id":project_id}),
         ));
     }
     // Copies embedded in receipts/tasks are regenerated from their owning source.
@@ -233,11 +195,10 @@ fn pack_reference(state: &EngineeringState, value: &Value) -> Result<Option<Valu
         && value.get("profile_hash").is_some()
         && value.get("profile").is_some()
     {
-        let reference =
-            json!({"$source":"bound_permission","binding_ref":value["binding_revision_id"]});
-        if restore(state, &reference).is_ok_and(|expected| expected == *value) {
-            return Ok(Some(reference));
-        }
+        let bound: BoundPermission = serde_json::from_value(value.clone()).map_err(storage)?;
+        return Ok(Some(
+            json!({"$source":"bound_permission","choice":devdesk_core::frozen_views::permission_choice(&bound)}),
+        ));
     }
     if value.get("integration_hash").is_some()
         && value.get("binding_ref").is_some()
@@ -287,7 +248,7 @@ pub(super) fn restore_with(
                 })
                 .collect::<Result<serde_json::Map<_, _>>>()?;
             if object.contains_key("epoch")
-                && object.contains_key("permission_context_ref")
+                && object.contains_key("harness_permission_ref")
                 && object.contains_key("policy")
             {
                 object.insert(
@@ -368,16 +329,6 @@ fn restore_reference(
                 state.configuration(source["plan_revision_id"].as_str().unwrap_or(""))?;
             let plan = restore_with(state, &plan_record.data["plan"], memo)?;
             devdesk_core::frozen_views::restore_task(state, value, plan)
-        }
-        Some("control_policy") => {
-            let policy: WorkflowControlPolicy = serde_json::from_value(
-                state
-                    .configuration(value["context_ref"].as_str().unwrap_or(""))?
-                    .data["control_policy"]
-                    .clone(),
-            )
-            .map_err(storage)?;
-            Ok(json!(policy))
         }
         Some("runtime_binding") => {
             let configuration: AgentExecutionConfiguration =
@@ -466,13 +417,13 @@ fn restore_reference(
         }
         Some("execution_permissions") => {
             let lock = VersionedPermissionLock {
-                harness: bound_permission(
+                harness: devdesk_core::frozen_views::restore_permission_choice(
                     state,
-                    value["harness_binding_ref"].as_str().unwrap_or(""),
+                    &value["harness_choice"],
                 )?,
-                sandbox: bound_permission(
+                sandbox: devdesk_core::frozen_views::restore_permission_choice(
                     state,
-                    value["sandbox_binding_ref"].as_str().unwrap_or(""),
+                    &value["sandbox_choice"],
                 )?,
             };
             let scope = serde_json::from_value(value["scope"].clone()).map_err(storage)?;
@@ -489,10 +440,9 @@ fn restore_reference(
         Some("source") => Ok(json!(
             state.configuration(value["ref"].as_str().unwrap_or(""))?
         )),
-        Some("bound_permission") => Ok(json!(bound_permission(
-            state,
-            value["binding_ref"].as_str().unwrap_or("")
-        )?)),
+        Some("bound_permission") => Ok(json!(
+            devdesk_core::frozen_views::restore_permission_choice(state, &value["choice"])?
+        )),
         Some("bound_tool") => {
             let tool = state.configuration(value["tool_ref"].as_str().unwrap_or(""))?;
             let binding = state.configuration(value["binding_ref"].as_str().unwrap_or(""))?;

@@ -68,7 +68,19 @@ impl Workspace {
         let selection = permission_selection(&s)
             .ok()
             .ok_or_else(|| err("invalid_configuration", "缺少命名权限选择"))?;
-        let lock = resolve_permission_lock(&s, &a.harness_ref, &selection)?;
+        let frozen = s
+            .governance
+            .iter()
+            .any(|r| r.r#type == "configured_session" && r.definition_id == session.id);
+        let lock = if frozen {
+            binding
+                .permissions
+                .as_ref()
+                .and_then(|p| p.binding_lock.clone())
+                .ok_or_else(|| err("permission_unconfigured", "步骤会话缺少冻结 Profile"))?
+        } else {
+            resolve_permission_lock(&s, &a.harness_ref, &selection)?
+        };
         devdesk_adapters::permission_profiles::verify_permission_installation(
             &s,
             &lock,
@@ -122,6 +134,15 @@ impl Workspace {
             }),
         )?;
         let mut next = binding.clone();
+        next.writable_paths = permissions.scope.writable_paths.clone();
+        next.read_only_paths = permissions.scope.read_only_paths.clone();
+        next.tool_policy = if next.writable_paths.is_empty() {
+            ToolPolicy::ReadOnly
+        } else if next.writable_paths == ["."] {
+            ToolPolicy::WorkspaceWrite
+        } else {
+            ToolPolicy::ScopedWrite
+        };
         next.permissions = Some(permissions);
         if let Some(config) = &mut next.agent_configuration {
             config.integration_lock = Some(integrations);
@@ -272,10 +293,11 @@ impl Workspace {
                             };
                             let contract=resolved.and_then(|target| permission_contract(&s,&target));
                             let active=active_permission_binding(&s,&target);
+                            let recipe_digest = if r.r#type == "harness" { harness_execution_recipe(&s,r).ok().map(|recipe|recipe.recipe_digest()) } else { None };
                             let registered: Vec<_> = installations.iter().filter(|installation| {
                                 r.r#type == "harness"
                                     && json!(installation.key.provider) == r.data["provider"]
-                                    && r.data["recipe_digest"].as_str().is_some_and(|digest| {
+                                    && recipe_digest.as_deref().is_some_and(|digest| {
                                         devdesk_adapters::permissions::installation_recipe(installation) == digest
                                     })
                             }).collect();
@@ -283,7 +305,7 @@ impl Workspace {
                             let allowed_permission_ids: Vec<_> = s.governance.iter().filter(|p|p.r#type=="permission_profile" && profile_visible(p))
                                 .filter_map(|p|p.permission_profile().ok().filter(|profile|preflight_profile(&s,&target,profile).is_ok()).map(|profile|profile.id)).collect();
                             Some(json!({"target":target,"name":r.name,"version":r.version,"provider":r.data["provider"],"runtime_version":r.data["runtime_version"],
-                                "platforms":if r.r#type=="sandbox" {r.data["platforms"].clone()}else{json!(["linux/aarch64","linux/x86_64"])},"recipe_digest":r.data["recipe_digest"],"registered_installations":registered,"materializations":materializations,
+                                "platforms":if r.r#type=="sandbox" {r.data["platforms"].clone()}else{json!(["linux/aarch64","linux/x86_64"])},"recipe_digest":recipe_digest,"registered_installations":registered,"materializations":materializations,
                                 "supported":contract.is_ok(),"enforcement_contract":contract.as_ref().ok(),"unsupported_reason":contract.as_ref().err().map(|e|&e.message),
                                 "allowed_permission_ids":allowed_permission_ids,"active":active.map(|a|json!({"revision":a.version,"binding_revision_id":a.data["binding_revision_id"]}))}))
                         }).collect();
@@ -374,10 +396,9 @@ impl Workspace {
                                     .map_err(|e| err("invalid_params", e.to_string()))
                             })
                             .transpose()?;
-                        let checked = scope.is_some();
                         let resolved = compile_permission_profiles(&s, &lock, scope)?;
                         Ok(
-                            json!({"resolved":resolved,"configuration_digest":configuration_digest(&json!(resolved))?,"scope_checked":checked,"execution_scope_required":!checked,"side_effects":false}),
+                            json!({"resolved":resolved,"configuration_digest":configuration_digest(&json!(resolved))?,"scope_checked":true,"execution_scope_required":false,"side_effects":false}),
                         )
                     } else {
                         let target: PermissionTargetRef =
@@ -715,6 +736,8 @@ mod tests {
             model_profile_digest: None,
             agent_configuration: None,
             model_parameters: Default::default(),
+            writable_paths: permissions.scope.writable_paths.clone(),
+            read_only_paths: permissions.scope.read_only_paths.clone(),
             permissions: Some(permissions),
             installation: RuntimeInstallation {
                 recipe_digest: Some(
@@ -735,9 +758,7 @@ mod tests {
             },
             adapter_version: harness::managed_adapter_identity(HarnessProvider::Codex),
             model: "fixture".into(),
-            tool_policy: ToolPolicy::ReadOnly,
-            writable_paths: vec![],
-            read_only_paths: vec![],
+            tool_policy: ToolPolicy::WorkspaceWrite,
             work_type: WorkType::Discussion,
             configuration_digest: "a".repeat(64),
             credential_ref: None,
@@ -821,7 +842,15 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":format!("project:{project}"),"model_providers":["builtin-model-provider-openai:1"],"data":{"provider":"codex","runtime_version":devdesk_adapters::runtime_preparation::default_version(HarnessProvider::Codex),"recipe_digest":devdesk_adapters::runtime_preparation::default_codex_recipe_digest(),"capabilities":[]}}})).unwrap();
+        let data = w
+            .global
+            .snapshot()
+            .unwrap()
+            .configuration(DEFAULT_HARNESS_ID)
+            .unwrap()
+            .data
+            .clone();
+        let h=w.dispatch("harness.create",json!({"project_id":project,"command_id":id(),"payload":{"name":"Project Codex","scope":format!("project:{project}"),"model_providers":["builtin-model-provider-openai:1"],"data":data}})).unwrap();
         assert!(
             w.dispatch("query.permission_resources", json!({"target_ref":h["id"]}))
                 .is_err()
@@ -880,7 +909,7 @@ mod tests {
                 json!({"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1"}),
             )
             .unwrap();
-        assert_eq!(preflight["scope_checked"], false);
+        assert_eq!(preflight["scope_checked"], true);
         let request = json!({"command_id":id(),"payload":{"bindings":[{"target":target,"permission_revision_id":"builtin-permission-harness-read-only:1","expected_revision":1}]}});
         let first = w
             .dispatch("permission.bindings.apply", request.clone())

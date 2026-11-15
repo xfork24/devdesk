@@ -50,6 +50,13 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
         payload.as_object_mut().unwrap().remove("agent_refs");
         payload["role_agent_bindings"] = serde_json::to_value(bindings).unwrap();
     }
+    if method == "permission.profile.create" && payload["data"].is_object() {
+        let data = payload.as_object_mut().unwrap().remove("data").unwrap();
+        payload["target_kind"] = data["target_kind"].clone();
+        payload["policy"] = data["policy"].clone();
+        payload.as_object_mut().unwrap().remove("scope");
+        payload["identity"] = json!(id());
+    }
     let revision = target.and_then(|id| {
         e.store
             .snapshot()
@@ -77,7 +84,7 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
                     .map(|f| f.revision)
             })
     });
-    e.execute(
+    let mut result = e.execute(
         method,
         Command {
             command_id: id(),
@@ -85,7 +92,14 @@ fn command(e: &Engine, method: &str, target: Option<&str>, mut payload: Value) -
             expected_revision: revision,
             payload,
         },
-    )
+    )?;
+    if method == "permission.profile.create" {
+        result["id"] = json!(source_reference(
+            result["identity"].as_str().unwrap(),
+            result["revision"].as_u64().unwrap()
+        )?);
+    }
+    Ok(result)
 }
 #[test]
 fn current_defaults_exclude_experience_tools_and_reject_them_at_creation() {
@@ -320,7 +334,7 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
     .unwrap();
     let project_id = project["id"].as_str().unwrap();
     let defaults = e.configuration_defaults(Some(project_id)).unwrap();
-    let payload = json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"],"permission_context_ref":"missing:1"});
+    let payload = json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"],"harness_permission_ref":"missing:1"});
     assert!(
         command(
             &e,
@@ -331,19 +345,20 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
         .is_err()
     );
     let before = e.store.snapshot().unwrap();
-    let mut context = permission_context(&before).unwrap().data.clone();
-    context["sandbox_ref"] = json!("missing:1");
+    let mut context = selected_harness_profile(&before).unwrap().data.clone();
+    context["policy"]["filesystem"] =
+        json!({"mode":"scoped","rules":[{"path":"../outside","access":"read_write"}]});
     assert!(
         command(
             &e,
-            "permission_context.create",
+            "permission.profile.create",
             None,
             json!({"name":"Invalid source","data":context})
         )
         .is_err()
     );
-    let context = command(&e, "permission_context.create", None, {
-        let source = permission_context(&before).unwrap();
+    let context = command(&e, "permission.profile.create", None, {
+        let source = selected_harness_profile(&before).unwrap();
         let mut payload =
             json!({"name":"Project authorization","scope":"global","data":source.data});
         for (key, value) in &source.refs {
@@ -353,7 +368,7 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
     })
     .unwrap();
     let mut selected = payload;
-    selected["permission_context_ref"] = context["id"].clone();
+    selected["harness_permission_ref"] = context["id"].clone();
     let saved = command(
         &e,
         "project.configuration.update",
@@ -361,7 +376,7 @@ fn project_authorization_is_validated_before_selection_and_does_not_modify_agent
         selected,
     )
     .unwrap();
-    assert_eq!(saved["data"]["permission_context_ref"], context["id"]);
+    assert_eq!(saved["data"]["harness_permission_ref"], context["id"]);
     assert!(saved["data"].get("specification_view").is_none());
     let integrations = command(
         &e,
@@ -832,9 +847,9 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
     let e = engine(dir.path());
     let before = e.store.snapshot().unwrap();
     // A custom permission context without the factory's codex-only step tool grants.
-    let mut source = permission_context(&before).unwrap().clone();
+    let mut source = selected_harness_profile(&before).unwrap().clone();
     source.data["step_grants"] = json!([]);
-    let context = command(&e, "permission_context.create", None, {
+    let context = command(&e, "permission.profile.create", None, {
         let mut payload = json!({"name":"Bridge-free context","scope":"global","data":source.data});
         for (key, value) in &source.refs {
             payload[key] = value.clone();
@@ -866,7 +881,7 @@ fn dsh_workers_compile_custom_workflows_without_platform_tool_grants() {
         json!({
             "workflow_ref": workflow["id"],
             "role_agent_bindings": bindings,
-            "permission_context_ref": context["id"],
+            "harness_permission_ref": context["id"],
         }),
     )
     .unwrap();
@@ -898,7 +913,7 @@ fn project_usage_follows_flattened_agent_and_capability_references() {
             "workflow_ref":defaults["workflow_ref"],
             "role_agent_bindings":defaults["role_agent_bindings"],
             "orchestrator_role_ref":defaults["orchestrator_role_ref"],
-            "permission_context_ref":defaults["permission_context_ref"],
+            "harness_permission_ref":defaults["harness_permission_ref"],
         }),
     )
     .unwrap();

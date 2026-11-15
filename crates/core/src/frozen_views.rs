@@ -6,12 +6,8 @@ fn storage(e: impl std::fmt::Display) -> Error {
 }
 fn is_source(r: &ConfigurationRecord) -> bool {
     r.is_definition()
-        || [
-            "permission_context",
-            "project_configuration",
-            "integration_project_configuration",
-        ]
-        .contains(&r.r#type.as_str())
+        || ["project_configuration", "integration_project_configuration"]
+            .contains(&r.r#type.as_str())
 }
 fn source_closure(
     state: &EngineeringState,
@@ -43,8 +39,9 @@ fn source_closure(
     for key in [
         "workflow_ref",
         "standard_ref",
-        "permission_context_ref",
-        "permission_workflow_ref",
+        "harness_permission_ref",
+        "execution_selection",
+        "base_workflow_ref",
         "role_agent_bindings",
         "permission_bindings",
         "integration_bindings",
@@ -65,16 +62,54 @@ fn source_closure(
     }
     Ok(())
 }
-fn bound_permission(state: &EngineeringState, id: &str) -> Result<BoundPermission> {
-    let row = state.configuration(id)?;
-    let binding: VersionedPermissionBinding = row.decode()?;
-    resolve_bound_permission(
-        state,
-        binding.target.clone(),
-        &PermissionSelection::Pinned {
-            binding_revision_id: id.into(),
-        },
-    )
+pub fn selection_configuration(choice: &ExecutionPermissionSelection) -> Value {
+    let profile = |selection: &PermissionSelection| match selection {
+        PermissionSelection::Profile {
+            permission_revision_id,
+        } => Some(permission_revision_id.clone()),
+        _ => None,
+    };
+    json!({"sandbox_ref":choice.sandbox_ref,"harness_permission_ref":profile(&choice.harness),"sandbox_permission_ref":profile(&choice.sandbox)})
+}
+pub fn pin_permission_defaults(
+    state: &mut EngineeringState,
+    locks: &BTreeMap<Id, VersionedPermissionLock>,
+) -> Result<()> {
+    for lock in locks.values() {
+        for bound in [&lock.harness, &lock.sandbox] {
+            if bound.binding_revision_id == bound.profile.id {
+                continue;
+            }
+            let mut row = state.configuration(&bound.binding_revision_id)?.clone();
+            row.r#type = "permission_assignment".into();
+            row.id = format!("selected:{}", bound.binding_revision_id);
+            row.version = u64::MAX;
+            row.data = json!({"target":bound.binding.target,"binding_revision_id":bound.binding_revision_id});
+            row.content_hash = content_digest(&row.refs, &row.data);
+            state.governance.push(row);
+        }
+    }
+    Ok(())
+}
+pub fn permission_choice(bound: &BoundPermission) -> Value {
+    let selection = if bound.binding_revision_id == bound.profile.id {
+        PermissionSelection::Profile {
+            permission_revision_id: bound.profile.id.clone(),
+        }
+    } else {
+        PermissionSelection::Pinned {
+            binding_revision_id: bound.binding_revision_id.clone(),
+        }
+    };
+    json!({"target":bound.binding.target,"selection":selection})
+}
+pub fn restore_permission_choice(
+    state: &EngineeringState,
+    value: &Value,
+) -> Result<BoundPermission> {
+    let target = serde_json::from_value(value["target"].clone()).map_err(storage)?;
+    let selection = serde_json::from_value(value["selection"].clone()).map_err(storage)?;
+    resolve_bound_permission(state, target, &selection)
 }
 
 pub fn restore_task(state: &EngineeringState, value: &Value, plan: Value) -> Result<Value> {
@@ -158,6 +193,11 @@ pub fn restore_plan(
         .as_str()
         .map(Scope::project)
         .unwrap_or(Scope::global());
+    let choice: ExecutionPermissionSelection =
+        serde_json::from_value(value["execution_selection"].clone()).map_err(storage)?;
+    let mut selected = selection_configuration(&choice);
+    selected["workflow_ref"] = value["workflow_ref"].clone();
+    selected["base_workflow_ref"] = value["base_workflow_ref"].clone();
     let mut policy = ConfigurationRecord {
         id: "resolver-context".into(),
         r#type: "project_configuration".into(),
@@ -168,7 +208,7 @@ pub fn restore_plan(
         supersedes: None,
         content_hash: String::new(),
         refs: References::new(),
-        data: json!({"permission_context_ref":value["permission_context_ref"],"permission_workflow_ref":value["permission_workflow_ref"],"workflow_ref":value["workflow_ref"]}),
+        data: selected,
         immutable: true,
         revision: 1,
         created_at: 0,
@@ -181,11 +221,13 @@ pub fn restore_plan(
         .flat_map(|v| v.values())
     {
         for layer in ["harness", "sandbox"] {
-            let id = choice[layer]
-                .as_str()
-                .ok_or_else(|| err("storage", "权限选择缺失"))?;
+            let bound = restore_permission_choice(state, &choice[layer])?;
+            if bound.binding_revision_id == bound.profile.id {
+                continue;
+            }
+            let id = bound.binding_revision_id.as_str();
             let binding = state.configuration(id)?;
-            let data: VersionedPermissionBinding = binding.decode()?;
+            let data = bound.binding;
             let mut row = binding.clone();
             row.r#type = "permission_assignment".into();
             row.id = format!("selected:{id}");
@@ -222,12 +264,13 @@ pub fn restore_plan(
         serde_json::from_value(value["role_agent_bindings"].clone()).map_err(storage)?;
     let workflow = context.configuration(value["workflow_ref"].as_str().unwrap_or(""))?;
     let mut plan = compile_workflow_sources(None, &context, workflow, &scope, Some(&bindings))?;
+    plan.harness_permission_ref = value["harness_permission_ref"].as_str().map(str::to_owned);
     plan.standard_ref = value["standard_ref"].as_str().map(str::to_owned);
     plan.work_configuration_ref = value["work_configuration_ref"].as_str().map(str::to_owned);
     if let Some(reference) = &plan.standard_ref {
         standard_snapshot(state, reference, &scope)?;
     }
-    plan.permission_workflow_ref = value["permission_workflow_ref"].as_str().map(str::to_owned);
+    plan.base_workflow_ref = value["base_workflow_ref"].as_str().map(str::to_owned);
     for (key, choice) in value["permission_bindings"]
         .as_object()
         .into_iter()
@@ -236,8 +279,8 @@ pub fn restore_plan(
         plan.permission_locks.insert(
             key.clone(),
             VersionedPermissionLock {
-                harness: bound_permission(state, choice["harness"].as_str().unwrap_or(""))?,
-                sandbox: bound_permission(state, choice["sandbox"].as_str().unwrap_or(""))?,
+                harness: restore_permission_choice(state, &choice["harness"])?,
+                sandbox: restore_permission_choice(state, &choice["sandbox"])?,
             },
         );
     }

@@ -1453,6 +1453,9 @@
             "null"
           ],
           "pattern": "^\\S+:[1-9][0-9]*$"
+        },
+        "installation": {
+          "type": "object"
         }
       },
       "required": [
@@ -1904,74 +1907,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "permission_context"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "capability_ref"
-                  ]
-                },
-                {
-                  "required": [
-                    "harness_ref"
-                  ]
-                },
-                {
-                  "required": [
-                    "model_catalog_ref"
-                  ]
-                },
-                {
-                  "required": [
-                    "model_providers"
-                  ]
-                },
-                {
-                  "required": [
-                    "model_ref"
-                  ]
-                },
-                {
-                  "required": [
-                    "role_ref"
-                  ]
-                },
-                {
-                  "required": [
-                    "root_workflow_refs"
-                  ]
-                },
-                {
-                  "required": [
-                    "skills"
-                  ]
-                },
-                {
-                  "required": [
-                    "spec_refs"
-                  ]
-                },
-                {
-                  "required": [
-                    "tools"
-                  ]
-                }
-              ]
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "standard"
               }
             },
@@ -2046,7 +1981,6 @@
                     "agent",
                     "delivery_type",
                     "harness",
-                    "permission_context",
                     "standard"
                   ]
                 }
@@ -2170,23 +2104,6 @@
           "then": {
             "required": [
               "spec_refs"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "permission_context"
-              }
-            },
-            "required": [
-              "type"
-            ]
-          },
-          "then": {
-            "required": [
-              "sandbox_ref"
             ]
           }
         },
@@ -4471,6 +4388,18 @@
         },
         "node_id": {
           "type": "string"
+        },
+        "harness_permission_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sandbox_permission_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -4561,6 +4490,9 @@
               "type": "string"
             }
           }
+        },
+        "scheduling": {
+          "$ref": "orchestration.schema.json#/$defs/WorkflowScheduling"
         }
       },
       "required": [
@@ -4797,21 +4729,37 @@
             "null"
           ]
         },
-        "permission_context_ref": {
-          "$ref": "source-reference.schema.json"
+        "harness_permission_ref": {
+          "anyOf": [
+            {
+              "$ref": "source-reference.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "orchestration": {
           "$ref": "orchestration.schema.json#/$defs/OrchestrationSelection"
         },
-        "permission_context_source_ref": {
+        "sandbox_ref": {
           "$ref": "source-reference.schema.json"
+        },
+        "sandbox_permission_ref": {
+          "anyOf": [
+            {
+              "$ref": "source-reference.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "schema_version",
         "workflow_ref",
         "role_agent_bindings",
-        "permission_context_ref",
         "standard_ref"
       ],
       "additionalProperties": false
@@ -5065,13 +5013,13 @@
           "type": "array",
           "items": {}
         },
-        "permission_context_ref": {
+        "harness_permission_ref": {
           "type": [
             "string",
             "null"
           ]
         },
-        "permission_workflow_ref": {
+        "base_workflow_ref": {
           "type": [
             "string",
             "null"
@@ -5097,6 +5045,9 @@
               "type": "null"
             }
           ]
+        },
+        "execution_selection": {
+          "$ref": "#/$defs/ExecutionPermissionSelection"
         }
       },
       "required": [
@@ -5107,7 +5058,8 @@
         "permission_locks",
         "tool_bindings",
         "integration_locks",
-        "specification_view"
+        "specification_view",
+        "execution_selection"
       ],
       "additionalProperties": false
     },
@@ -5307,8 +5259,11 @@
             "$ref": "source-reference.schema.json"
           }
         },
-        "permission_context_ref": {
-          "$ref": "source-reference.schema.json"
+        "harness_permission_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "source_configuration_ref": {
           "anyOf": [
@@ -5323,6 +5278,15 @@
         },
         "orchestration": {
           "$ref": "orchestration.schema.json#/$defs/OrchestrationSelection"
+        },
+        "sandbox_ref": {
+          "$ref": "source-reference.schema.json"
+        },
+        "sandbox_permission_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -5331,7 +5295,7 @@
         "standard_ref",
         "workflow_ref",
         "role_agent_bindings",
-        "permission_context_ref"
+        "harness_permission_ref"
       ],
       "additionalProperties": false
     },
@@ -5345,7 +5309,8 @@
           "enum": [
             "workflow",
             "delivery_type",
-            "spec"
+            "spec",
+            "permission_profile"
           ]
         },
         "name": {
@@ -6138,6 +6103,9 @@
         "effect"
       ],
       "additionalProperties": false
+    },
+    "ExecutionPermissionSelection": {
+      "$ref": "permission-binding.schema.json#/$defs/ExecutionPermissionSelection"
     }
   },
   "allOf": [

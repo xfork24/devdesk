@@ -20,7 +20,7 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
             let h: HarnessDefinition = r.decode()?;
             let provider: HarnessProvider = serde_json::from_value(json!(h.provider))
                 .map_err(|_| err("permission_unsupported", "未知 Harness"))?;
-            harness_runtime_resource(s, r)?;
+            harness_execution_recipe(s, r)?;
             // Execution build identity remains frozen separately in RuntimeBinding.
             // A model-catalog/UI/schema change does not change permission semantics.
             Ok(format!(
@@ -65,7 +65,13 @@ pub fn compile_permission_profiles(
             || bound.binding_hash != content_digest(&References::new(), &json!(bound.binding))
             || bound.binding.permission_revision_id != profile.id
             || bound.binding.target.kind != profile.target_kind
-            || bound.binding.enforcement_contract != permission_contract(s, &bound.binding.target)?
+            || bound.binding.enforcement_contract
+                != if bound.binding_revision_id == bound.profile.id {
+                    permission_contract(s, &bound.binding.target)?;
+                    format!("direct-profile:{}", bound.binding.target.content_hash)
+                } else {
+                    permission_contract(s, &bound.binding.target)?
+                }
         {
             return Err(err(
                 "permission_asset_mismatch",
@@ -94,30 +100,14 @@ pub fn compile_permission_profiles(
             "此受限 profile 无法证明审批绕过原生沙箱后仍维持最大权限范围",
         ));
     }
-    // Binding feasibility is distinct from an authorized execution scope. The inferred
-    // roots prove only that some scope can enforce this profile; dispatch always supplies its real scope.
-    let scope = scope.unwrap_or_else(|| {
-        let mut inferred = ExecutionScope {
-            work_type: WorkType::Discussion,
-            writable_paths: vec![],
-            read_only_paths: vec![],
-        };
-        if let FilesystemPermission::Scoped { rules } = &h.filesystem {
-            for r in rules {
-                if let Some(p) = r.path.strip_prefix("/work/") {
-                    if r.access == FileAccess::ReadWrite {
-                        inferred.writable_paths.push(p.into());
-                    }
-                    if r.access == FileAccess::Read {
-                        inferred.read_only_paths.push(p.into());
-                    }
-                } else if r.path == "/work" && r.access == FileAccess::ReadWrite {
-                    inferred.writable_paths.push(".".into());
-                }
-            }
-        }
-        inferred
-    });
+    let work_type = scope.as_ref().map_or(WorkType::Discussion, |s| s.work_type);
+    let (writable_paths, read_only_paths) =
+        profile_pair_workspace_access(&lock.harness.profile, &lock.sandbox.profile);
+    let scope = ExecutionScope {
+        work_type,
+        writable_paths,
+        read_only_paths,
+    };
     for path in scope.writable_paths.iter().chain(&scope.read_only_paths) {
         if path != "."
             && (path.is_empty()
@@ -258,7 +248,7 @@ pub fn preflight_profile(
     };
     let compiled = compile_permission_profiles(s, &lock, None)?;
     Ok(
-        json!({"compatible":true,"scope_checked":false,"execution_scope_required":true,"enforcement_contract":permission_contract(s,target)?,"enforcement":compiled.enforcement,"side_effects":false}),
+        json!({"compatible":true,"scope_checked":true,"execution_scope_required":false,"enforcement_contract":permission_contract(s,target)?,"enforcement":compiled.enforcement,"side_effects":false}),
     )
 }
 
@@ -274,8 +264,10 @@ pub fn verify_permission_installation(
         .decode()?;
     let platform = format!("{}/{}", installation.key.os, installation.key.arch);
     // The installation must originate from the exact recipe the permission target pinned.
-    let selected: RuntimeResourceDefinition =
-        harness_runtime_resource(s, harness_record)?.decode()?;
+    let selected = compose_execution_recipe(
+        harness_record,
+        s.configuration(&lock.sandbox.binding.target.revision_id)?,
+    )?;
     let recipe_match = permissions::installation_recipe(installation) == selected.recipe_digest();
     if installation.key.provider.as_str() != h.provider
         || !recipe_match

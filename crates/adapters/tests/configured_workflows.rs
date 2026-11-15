@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/configuration.rs"]
+mod configuration_fixture;
 #[path = "../../../tests/support/control.rs"]
 mod control_fixture;
 // Configuration-driven execution through actual SQLite and Artifact storage.
@@ -29,7 +31,33 @@ fn engine(path: &std::path::Path) -> Engine {
     runtime::bind_default_permissions(&engine);
     engine
 }
-fn command(engine: &Engine, method: &str, target: Option<&str>, payload: Value) -> Result<Value> {
+fn command(
+    engine: &Engine,
+    method: &str,
+    target: Option<&str>,
+    mut payload: Value,
+) -> Result<Value> {
+    if method == "workflow.driver.select" && payload["policy_ref"].is_object() {
+        let patch = payload
+            .as_object_mut()
+            .unwrap()
+            .remove("policy_ref")
+            .unwrap();
+        configuration_fixture::scheduling(engine, target.unwrap(), &patch)?;
+    }
+    if method == "workflow.start" && payload["orchestration"]["policy_ref"].is_object() {
+        let patch = payload["orchestration"]
+            .as_object_mut()
+            .unwrap()
+            .remove("policy_ref")
+            .unwrap();
+        payload["workflow_ref"] = json!(configuration_fixture::workflow_with_scheduling(
+            engine,
+            payload["workflow_ref"].as_str().unwrap(),
+            &patch
+        )?);
+    }
+
     let state = engine.store.snapshot()?;
     let revision = target.and_then(|target| {
         state
@@ -69,21 +97,55 @@ fn command(engine: &Engine, method: &str, target: Option<&str>, payload: Value) 
     )
 }
 fn publish(engine: &Engine, mut document: Value) -> Value {
-    // Fixture authorization is authored independently from the Workflow source.
-    let mut grants = Vec::new();
+    // Fixtures choose Profiles exactly as production Workflow sources do.
     for step in document["steps"].as_array_mut().unwrap() {
-        let mut grant = serde_json::Map::new();
-        grant.insert("step".into(), step["key"].clone());
-        if let Some(access) = step.get_mut("access").and_then(Value::as_object_mut) {
-            for key in ["writable_paths", "read_only_paths", "tool_refs"] {
-                if let Some(value) = access.remove(key) {
-                    grant.insert(key.into(), value);
-                }
+        let mut access = step.get_mut("access").and_then(Value::as_object_mut);
+        let write = access.as_mut().and_then(|a| a.remove("writable_paths"));
+        let read = access.as_mut().and_then(|a| a.remove("read_only_paths"));
+        let tools = access.as_mut().and_then(|a| a.remove("tool_refs"));
+        if write.is_none() && read.is_none() && tools.is_none() {
+            continue;
+        }
+        let mut source = engine
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration("builtin-permission-harness-full-access:1")
+            .unwrap()
+            .source();
+        source.identity = format!("fixture-step-profile-{}", id());
+        source.name = "Fixture step profile".into();
+        source.data["policy"]
+            .as_object_mut()
+            .unwrap()
+            .remove("platform");
+        let mut rules = vec![json!({"path":"/","access":"read"})];
+        for (paths, mode) in [(write, "read_write"), (read, "read")] {
+            for path in paths
+                .as_ref()
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let path = path.as_str().unwrap();
+                rules.push(json!({"path":if path=="." {"/work".into()} else {format!("/work/{path}")},"access":mode}));
             }
         }
-        if grant.len() > 1 {
-            grants.push(Value::Object(grant));
+        rules.sort_by_key(|r| r["path"].as_str().unwrap().to_owned());
+        source.data["policy"]["filesystem"] = json!({"mode":"scoped","rules":rules});
+        if let Some(tools) = tools {
+            source.data["policy"]["tool_refs"] = tools;
         }
+        let record = source.into_record().unwrap();
+        let reference = record.id.clone();
+        engine
+            .store
+            .transact(None, &mut |state| {
+                state.governance.push(record.clone());
+                Ok(Value::Null)
+            })
+            .unwrap();
+        step["harness_permission_ref"] = json!(reference);
     }
     let draft = command(
         engine,
@@ -92,45 +154,7 @@ fn publish(engine: &Engine, mut document: Value) -> Value {
         json!({"name":"自定义业务","document":document}),
     )
     .unwrap();
-    let workflow = command(engine, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
-    if !grants.is_empty() {
-        engine
-            .store
-            .transact(None, &mut |s| {
-                let context = permission_context(s).unwrap().clone();
-                let mut data = context.data.clone();
-                for grant in &mut grants {
-                    grant["workflow_ref"] = workflow["id"].clone();
-                }
-                data["step_grants"]
-                    .as_array_mut()
-                    .unwrap()
-                    .extend(grants.clone());
-                let source = SourceDefinition {
-                    r#type: "permission_context".into(),
-                    identity: format!("fixture-permission.{}", id()),
-                    revision: 1,
-                    name: "Fixture execution authorization".into(),
-                    scope: Scope::global(),
-                    refs: context.refs.clone(),
-                    data,
-                }
-                .into_record()?;
-                let reference = source.id.clone();
-                s.governance.push(source);
-                let selected = s
-                    .governance
-                    .iter_mut()
-                    .find(|r| r.r#type == "template_catalog_state")
-                    .unwrap();
-                selected.data["defaults"]["permission_context_ref"] = json!(reference);
-                selected.content_hash = content_digest(&selected.refs, &selected.data);
-                selected.revision += 1;
-                Ok(Value::Null)
-            })
-            .unwrap();
-    }
-    workflow
+    command(engine, "workflow.publish", draft["id"].as_str(), json!({})).unwrap()
 }
 
 #[test]
@@ -175,7 +199,7 @@ fn custom_role_and_typed_business_step_publish_preview_and_reload() {
             .configuration(workflow["id"].as_str().unwrap())
             .unwrap()
             .data["steps"],
-        document["steps"]
+        json!(serde_json::from_value::<WorkflowDefinition>(document.clone()).unwrap())["steps"]
     );
     drop(engine);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
@@ -633,6 +657,11 @@ fn research_agent(engine: &Engine) -> (Value, Value) {
     (role, agent)
 }
 fn launch(engine: &Engine, role: &Value, agent: &Value, mut step: Value) -> Value {
+    let scheduling = step
+        .as_object_mut()
+        .unwrap()
+        .remove("fixture_scheduling")
+        .unwrap_or_else(|| json!(WorkflowScheduling::default()));
     step["key"] = json!("study");
     step["name"] = json!("调查");
     step["stage"] = json!("work");
@@ -642,7 +671,7 @@ fn launch(engine: &Engine, role: &Value, agent: &Value, mut step: Value) -> Valu
     }
     let workflow = publish(
         engine,
-        json!({"schema_version":6,"stages":[{"key":"work","name":"调查"}],"steps":[step]}),
+        json!({"schema_version":6,"scheduling":scheduling,"stages":[{"key":"work","name":"调查"}],"steps":[step]}),
     );
     let project = command(engine, "project.create", None, json!({"title":"调查项目"})).unwrap();
     command(engine,"workflow.start",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap()
@@ -3408,7 +3437,7 @@ fn rust_driver_runs_agent_tool_control_and_child_without_manager_turns() {
             {"key":"child","name":"child","stage":"work","dependencies":["control"],"executor":{"type":"workflow","workflow_ref":child["id"]}}
         ]}),
     );
-    let policy=command(&e,"orchestration_policy.create",None,json!({"name":"test policy","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60}})).unwrap();
+    let policy = json!({"id":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60}});
     let project = command(
         &e,
         "project.create",
@@ -3739,14 +3768,13 @@ fn native_rejection_retries_only_after_real_stop_proof_and_keeps_the_failure_eve
         &e,
         &role,
         &agent,
-        json!({"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}),
+        json!({"fixture_scheduling":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["provider_rejected"]},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}),
     );
-    let policy=command(&e,"orchestration_policy.create",None,json!({"name":"known native error","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":1,"retry_error_codes":["provider_rejected"]}})).unwrap();
     command(
         &e,
         "workflow.driver.select",
         run["id"].as_str(),
-        json!({"mode":"rust","policy_ref":policy["id"]}),
+        json!({"mode":"rust"}),
     )
     .unwrap();
     drive_native_rust(&e, 14);
@@ -3799,14 +3827,13 @@ fn business_rejection_is_not_automatically_retried_by_a_matching_error_policy() 
         &e,
         &role,
         &agent,
-        json!({"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}),
+        json!({"fixture_scheduling":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":2,"retry_error_codes":["output_invalid"]},"outputs":{"result":{"delivery_ref":"fixture-delivery-object:1"}}}),
     );
-    let policy=command(&e,"orchestration_policy.create",None,json!({"name":"must not override rejection","scope":"global","data":{"max_concurrency":2,"max_actions_per_tick":16,"lease_seconds":60,"max_retries":2,"retry_error_codes":["output_invalid"]}})).unwrap();
     command(
         &e,
         "workflow.driver.select",
         run["id"].as_str(),
-        json!({"mode":"rust","policy_ref":policy["id"]}),
+        json!({"mode":"rust"}),
     )
     .unwrap();
     drive_native_rust(&e, 10);

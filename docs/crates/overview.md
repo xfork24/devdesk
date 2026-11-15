@@ -57,7 +57,7 @@ flowchart TD
 | Spec/Delivery | 交付什么结构，怎样检查内容与来源？ | [机器检查](devdesk-domain/workflows-and-checks.md#file-src-spec-checks-rs)、[交付合同](devdesk-domain/work-and-materials.md#file-src-deliverable-rs) |
 | Standard | 本次采用哪份规范闭包？ | [Standard](devdesk-domain/configuration-and-sources.md#file-src-standards-rs) |
 | Capability/Agent | 角色绑定到哪个技术组合？ | [Agent 组合](devdesk-domain/configuration-and-sources.md#file-src-governance-rs) |
-| Permission Context/Profile | 本次允许什么，后端怎样落实？ | [权限 Profile](devdesk-domain/runtime-and-permissions.md#file-src-permission-profile-rs)、[实际编译](devdesk-adapters/credentials-and-permissions.md#file-src-permissions-rs) |
+| Permission Profile | 本次允许什么，后端怎样落实？ | [权限 Profile](devdesk-domain/runtime-and-permissions.md#file-src-permission-profile-rs)、[实际编译](devdesk-adapters/credentials-and-permissions.md#file-src-permissions-rs) |
 
 业务 key、标题和角色名不应成为选择隐藏执行器的开关。代码只解释 Agent/Tool/Workflow/Control 等通用原语；具体方法、默认流程和发行 pin 来自 [资源 manifest](../../resources/configuration/manifest.json) 与 [默认映射](../../resources/configuration/defaults.json)。实际驱动能力来自 [受管能力注册](devdesk-core/session-resources-and-permissions.md#file-src-driver-capabilities-rs)，配置声明不能让 DSH 获得当前未实现的 Codex 动态桥。
 

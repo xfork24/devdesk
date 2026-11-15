@@ -51,7 +51,7 @@
 
 `SourceDefinition` 是文件/导入使用的扁平源形状。`source_reference` 与 `parse_source_reference` 约束规范的 `identity:revision`：修订必须是正整数，不能用别名或非规范表示指向同一版本。`into_record` 先校验名称、类型载荷与根级引用，再形成不可变记录和内容摘要。
 
-`validate_source_data` 按源类型检查内容，例如 Agent 只持 Role/Capability 引用，Permission Context 另保存 Sandbox 选择及 step_grants；Workflow 存储态不能偷偷携带写路径/工具权限。`resolve_agent` 追踪确切 Role、Capability、Model、Harness、Skill 和 Tool，构造可读执行组合；`resolve_workflow_source` 将授权上下文叠加成执行视图。
+`validate_source_data` 按类型检查源：Agent 只持 Role/Capability；Profile 保存权限规则；Workflow 步骤可直接引用 Profile，access 仅描述工作空间输入与工作目录。resolve_workflow_source 在内存中按 Profile 推导 StepAccess，不生成另一套可编辑权限源。
 
 解析不会选择“最新同名配置”，也不执行外部操作。`refresh_configuration_views` 重建派生的内存视图，支持存储只保留原源引用。包内测试核对扁平引用、摘要和 Scope 编码。
 
@@ -67,11 +67,11 @@
 
 `ConfigurationEdge` 保存出发源、字段路径、关系、期待类型和目标。`configuration_edges` 读取根级引用，还识别 Workflow 的角色/工具/子流程/端口、权限绑定、目录、项目和工作选择等有明确合同的嵌套字段。
 
-自由正文、例子和 constant 输入不是引用。Harness 的 recipe_digest 可形成指向运行资源的 content_digest 边；Workflow 调用 Workflow 则标为 subflow。这些区别让预演诊断能指出真实字段位置，避免把说明文字中的相似字符串误当作停用依赖。图提取不等于执行图可运行，递归与完整组合仍由编译器检查。
+自由正文、例子和 constant 输入不是引用。Workflow 子流程、步骤 Profile 与 Profile 的精确工具引用都有明确类型及字段路径；Harness 安装输入与 Sandbox 构建数据不形成另一种资源源。依赖图提取不等于可运行校验，递归与技术组合仍由编译器检查。
 
 代码定位：[`ConfigurationEdge`](../../../crates/domain/src/configuration_graph.rs#L5)、[`configuration_edges`](../../../crates/domain/src/configuration_graph.rs#L12)。
 
-关联阅读：[core/src/configuration_changes.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-changes-rs)、[domain/src/standards.rs](configuration-and-sources.md#file-src-standards-rs)、[domain/src/runtime_resource.rs](runtime-and-permissions.md#file-src-runtime-resource-rs)。
+关联阅读：[core/src/configuration_changes.rs](../devdesk-core/configuration-and-catalog.md#file-src-configuration-changes-rs)、[domain/src/standards.rs](configuration-and-sources.md#file-src-standards-rs)、[domain/src/execution_recipe.rs](runtime-and-permissions.md#file-src-execution-recipe-rs)。
 
 <a id="file-src-template-catalog-rs"></a>
 

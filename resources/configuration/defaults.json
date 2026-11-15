@@ -23,10 +23,5 @@
       "retry_limit": 3
     }
   },
-  "orchestrator_role_ref": "builtin-role-project-manager:1",
-  "permission_context_ref": "builtin-permission-context-engineering:6",
-  "runtime_resources": {
-    "codex": "builtin-runtime-codex:1",
-    "dsh": "builtin-runtime-dsh:1"
-  }
+  "orchestrator_role_ref": "builtin-role-project-manager:1"
 }

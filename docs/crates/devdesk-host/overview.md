@@ -29,7 +29,7 @@ Host 负责连接认证、参数路由、资源准备与端口装配；业务状
 | [src/main.rs](../../../crates/host/src/main.rs) | [服务启动、请求围栏与固定作用域 SSE](http-and-security.md#file-src-main-rs) |
 | [src/model_providers.rs](../../../crates/host/src/model_providers.rs) | [当前模型目录、凭据设置和冻结选择的区别](rpc-and-configuration.md#file-src-model-providers-rs) |
 | [src/permission_resources.rs](../../../crates/host/src/permission_resources.rs) | [权限目录、精确绑定与后继会话发送](rpc-and-configuration.md#file-src-permission-resources-rs) |
-| [src/runtime_setup.rs](../../../crates/host/src/runtime_setup.rs) | [运行资源端口的薄装配层](workspace-and-lifecycle.md#file-src-runtime-setup-rs) |
+| [src/runtime_setup.rs](../../../crates/host/src/runtime_setup.rs) | [执行安装端口的薄装配层](workspace-and-lifecycle.md#file-src-runtime-setup-rs) |
 | [src/templates.rs](../../../crates/host/src/templates.rs) | [模板重置预演、目录代次与旧引用保留](rpc-and-configuration.md#file-src-templates-rs) |
 | [src/workspace.rs](../../../crates/host/src/workspace.rs) | [全局与工程 Engine 装配、请求选择和共享配额](workspace-and-lifecycle.md#file-src-workspace-rs) |
 
