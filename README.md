@@ -31,11 +31,11 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 
 1. 在 Web “打开 GitHub 项目”，填写仓库和主分支，等待克隆及工作空间登记完成。
 2. 在设置中完成模型认证；在项目管理采用 Workflow、Standard、Role→Agent、Permission Context 与驱动选择。运行资源按确切配置准备，准备探针不调用模型。
-3. 创建 Feature，选择人工逐步、Rust 有界调度或项目经理 Agent 调度。三者使用相同的派发、接纳、完成及证据规则；Rust 模式必须选择精确调度策略。
+3. 创建 Feature，用自然语言填写初始需求，选择人工逐步、Rust 有界调度或项目经理 Agent 调度。三者使用相同的派发、接纳、完成及证据规则；Rust 模式必须选择精确调度策略。
 4. 在“执行与交付”查看步骤、原始产物、真实测试、独立评审及候选。运行计划变更经过预演、静止等待和原子应用；未知副作用先核对。
 5. 核对候选、测试、评审、业务接纳与远端发布回执，取得 PR。模型自述不能代替 Docker 测试、Git 事实或人类签署。
 
-默认 Feature 为 7 阶段 22 步，Task 为 7 阶段 20 步，覆盖需求、设计、任务规划、独立测试、Red/Green、实现、文档、评审、候选与发布。出厂步骤确认均为 automatic，仍须满足业务门禁；显式 human 策略及人工例外单独记录。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
+默认 Feature 为 7 阶段 22 步，Task 为 7 阶段 20 步，覆盖需求、设计、任务规划、独立测试、Red/Green、实现、文档、评审、候选与发布。默认 Feature 的 PRD、Design 和 Tasks 在独立 Spec 验收后分别等待人类确认；其他步骤自动推进，仍须满足业务门禁。澄清回答、后续范围/验收/关键方案变化由人类决定，Agent 不得代答或自行绕过。完整流程、预算和授权见 [工作流与编排](docs/workflow-orchestration.md) 与 [默认配置](resources/configuration/README.md)。
 
 项目经理独立工作台可在创建 Feature 前查询资料、预演和创作配置；它与根实例调度权分开。当前 Codex 提供平台/编排原生工具桥，DSH 不提供该桥。DSH 可按源配置连接 DeepSeek、智谱国内编程订阅、MiniMax 国内订阅及本机 Ollama；目录结果不代表真实推理已验证。
 

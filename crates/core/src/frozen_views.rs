@@ -87,6 +87,10 @@ pub fn restore_task(state: &EngineeringState, value: &Value, plan: Value) -> Res
     instance["workflow_ref"] = source["workflow_revision_id"].clone();
     instance["active_plan_revision_id"] = source["plan_revision_id"].clone();
     instance["role_agent_bindings"] = plan_record.data["role_agent_bindings"].clone();
+    instance["human_governance"] = json!(plan_record.data["human_governance"] == true);
+    if let Some(request) = plan_record.data.get("user_request") {
+        instance["user_request"] = request.clone();
+    }
     let instance: ConfiguredWorkflowInstance = serde_json::from_value(instance).map_err(storage)?;
     let execution_ref = source["execution_id"].as_str().unwrap_or("");
     let mut execution = instance

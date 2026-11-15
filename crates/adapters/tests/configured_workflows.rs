@@ -685,12 +685,25 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         .filter(|row| row.r#type == "workflow")
     {
         let definition: WorkflowDefinition = workflow.decode().unwrap();
+        let checkpoints: Vec<_> = definition
+            .steps
+            .iter()
+            .filter(|step| step.confirmation == ConfirmationPolicy::Human)
+            .map(|step| step.key.as_str())
+            .collect();
+        if workflow.id == defaults["workflow_ref"].as_str().unwrap() {
+            assert_eq!(
+                checkpoints,
+                ["requirements_review", "design_review", "plan_review"]
+            );
+        } else {
+            assert!(checkpoints.is_empty());
+        }
         assert!(
-            definition.steps.iter().all(|step| {
-                step.confirmation == ConfirmationPolicy::Automatic
-                    && !step.allow_completion_override
-            }),
-            "default workflows must advance through satisfied checks without confirm/approve commands"
+            definition
+                .steps
+                .iter()
+                .all(|step| !step.allow_completion_override)
         );
     }
     let project = command(
@@ -701,8 +714,40 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
     )
     .unwrap();
     let configuration = command(&engine, "project.configuration.update", project["id"].as_str(), json!({"workflow_ref":defaults["workflow_ref"],"role_agent_bindings":defaults["role_agent_bindings"]})).unwrap();
-    let feature = command(&engine, "feature.create", None, json!({"project_id":project["id"],"title":"Created through the normal entry point","configuration_revision_id":configuration["id"]})).unwrap();
+    let brief = "给已有导出功能增加 CSV 格式，并保持原 JSON 导出行为。";
+    let feature = command(&engine, "feature.create", None, json!({"project_id":project["id"],"title":"Created through the normal entry point","initial_requirement":brief,"configuration_revision_id":configuration["id"]})).unwrap();
     let created = engine.store.snapshot().unwrap();
+    let request = created
+        .governance
+        .iter()
+        .find(|r| r.r#type == "feature_request" && r.definition_id == feature["id"])
+        .unwrap();
+    assert!(request.immutable);
+    assert_eq!(request.data["user_request"]["initial_requirement"], brief);
+    let row = created
+        .governance
+        .iter()
+        .find(|row| row.r#type == "workflow_instance" && row.data["owner_id"] == feature["id"])
+        .unwrap();
+    let instance: ConfiguredWorkflowInstance = row.decode().unwrap();
+    assert!(instance.human_governance);
+    let rendered: Value = serde_json::from_str(
+        &render_source_task(
+            &instance,
+            &instance.plan.document.steps[0],
+            &instance.steps[0],
+            None,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(rendered["user_request"]["initial_requirement"], brief);
+    assert!(
+        rendered["human_governance"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("required Specs")
+    );
     let frozen: ConfiguredWorkflowPlan = serde_json::from_value(
         created
             .governance
@@ -970,7 +1015,15 @@ fn shipped_configuration_compiles_and_reset_references_form_a_complete_new_graph
         .unwrap();
     definition.validate().unwrap();
     for step in &definition.steps {
-        assert_eq!(step.confirmation, ConfirmationPolicy::Automatic);
+        assert_eq!(
+            step.confirmation,
+            if ["requirements_review", "design_review", "plan_review"].contains(&step.key.as_str())
+            {
+                ConfirmationPolicy::Human
+            } else {
+                ConfirmationPolicy::Automatic
+            }
+        );
         assert!(!step.allow_completion_override);
         for port in step.outputs.values() {
             assert!(restored.configuration(&port.delivery_ref).is_ok());
@@ -1495,6 +1548,95 @@ fn persisted_evidence_case(large: bool) {
         .unwrap(),
         evidence
     );
+}
+
+#[test]
+fn natural_language_feature_request_survives_restart_and_reaches_actual_agent_turns() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut workbench = engine(directory.path());
+    let recorder = Arc::new(RecordingAgent::default());
+    workbench.harness = recorder.clone();
+    recorder
+        .responses
+        .lock()
+        .unwrap()
+        .push(json!({"status":"needs_input","summary":"需要导出哪些字段？","outputs":{}}));
+    let (role, agent) = research_agent(&workbench);
+    let workflow = publish(
+        &workbench,
+        json!({"schema_version":6,"stages":[{"key":"requirements","name":"需求"}],"steps":[{
+        "key":"clarify","name":"需求澄清","stage":"requirements","executor":{"type":"agent","role_ref":role["id"]},
+        "task_instructions":"依据用户初始需求和 Spec 判断是否需要澄清。","confirmation":"human",
+        "outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}]}),
+    );
+    let project = command(
+        &workbench,
+        "project.create",
+        None,
+        json!({"title":"自然语言需求"}),
+    )
+    .unwrap();
+    let configuration = command(&workbench,"project.configuration.update",project["id"].as_str(),json!({"workflow_ref":workflow["id"],"role_agent_bindings":{role["id"].as_str().unwrap():agent["id"]}})).unwrap();
+    let brief = "给已有导出功能增加 CSV 格式。";
+    let feature = command(&workbench,"feature.create",None,json!({"project_id":project["id"],"title":"CSV 导出","initial_requirement":brief,"configuration_revision_id":configuration["id"]})).unwrap();
+    let root = workbench
+        .query(
+            "query.workflow_instance",
+            &json!({"owner_id":feature["id"]}),
+            4,
+        )
+        .unwrap()["record"]["id"]
+        .clone();
+    drive(&workbench, 12);
+    assert_eq!(
+        instance(&workbench, &root)["steps"][0]["status"],
+        "waiting_input"
+    );
+    drop(workbench);
+    let mut workbench = engine(directory.path());
+    workbench.harness = recorder.clone();
+    assert_eq!(
+        instance(&workbench, &root)["user_request"]["initial_requirement"],
+        brief
+    );
+    command(
+        &workbench,
+        "workflow.step.input",
+        root.as_str(),
+        json!({"step":"clarify","input":"只导出 ID 和名称。"}),
+    )
+    .unwrap();
+    drive(&workbench, 12);
+    let calls = recorder.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    for call in calls.iter() {
+        assert_eq!(
+            call.configured_task.as_ref().unwrap().task["user_request"]["initial_requirement"],
+            brief
+        );
+    }
+    assert_eq!(
+        calls[1].configured_task.as_ref().unwrap().task["supplemental_input"],
+        "只导出 ID 和名称。"
+    );
+    assert_eq!(
+        instance(&workbench, &root)["steps"][0]["status"],
+        "waiting_confirmation"
+    );
+    let expected = calls[0].configured_task.as_ref().unwrap().task.clone();
+    let turn = calls[0].turn.id.clone();
+    drop(calls);
+    drop(workbench);
+    let restored = SqliteStore::open(directory.path())
+        .unwrap()
+        .snapshot()
+        .unwrap();
+    let task = restored
+        .governance
+        .iter()
+        .find(|r| r.r#type == "configured_execution_task" && r.definition_id == turn)
+        .unwrap();
+    assert_eq!(task.data["task"], expected);
 }
 
 #[test]

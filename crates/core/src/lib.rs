@@ -23,6 +23,7 @@ mod controllers;
 mod manager_workspace;
 mod spec_lint;
 pub use manager_workspace::{MANAGER_TOOLS, ManagerServices};
+mod human_governance;
 mod orchestration;
 mod platform_tools;
 mod standards;
@@ -681,6 +682,19 @@ impl Engine {
                     input_version: 1,
                     predecessor,
                 });
+                if p.get("initial_requirement").is_some() {
+                    let initial_requirement = text(p, "initial_requirement")?;
+                    s.governance.push(governance::record(
+                        "feature_request",
+                        fid.clone(),
+                        Scope::feature(pid.clone(), fid.clone()),
+                        "用户初始需求".into(),
+                        1,
+                        None,
+                        json!({"actor":actor,"user_request":{"feature_id":fid,"title":s.feature(&fid)?.title,"initial_requirement":initial_requirement}}),
+                        true,
+                    ));
+                }
                 s.heads.push(GitHead {
                     id: fid.clone(),
                     project_id: pid.clone(),

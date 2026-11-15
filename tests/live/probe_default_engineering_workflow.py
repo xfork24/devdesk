@@ -129,11 +129,11 @@ try:
   runtime=c.rpc('runtime.prepare',{'provider':'codex'});image=runtime['artifact']['image_id']
   defaults=c.rpc('query.configuration_defaults');workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v5-{suffix}/greeting.mjs';task_test=f'tests/workflow-v5-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v5-{suffix}-feature/behavior.test.mjs';increment_test=f'test/workflow-v5-{suffix}-increments.test.mjs'
   goal=f'''本次验收事实已经全部确定，无需等待用户补充：在已有仓库新增依赖免费的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 `Hello, <trimmed>!`；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；本次明确两个 TDD 增量：先 AC-GREET 的问候与 trim，再 AC-INVALID 的无效输入拒绝，每个增量分别保留真实 Red 和 Green。独立 tests 断言保持只读，自有增量测试按这两个冻结增量逐步增加并分别采集 Red/Green；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。测试使用 node:test、node:assert/strict，无 npm 安装、无联网、无外部依赖。测试 import 为 ../../{module}。模块或导出缺失属于运行前置条件错误，不使用动态 import 的 catch、assert.fail 或伪造返回值将它包装成业务 Red；由 Task Workflow 的 red_baseline 步骤准备可调用的最小接口，平台 Red 必须来自真实业务断言差异。实施逐次原始日志及测试/源码内容快照通过必需 evidence 输出交付，不能只提交临时路径或摘要。每轮采集真实 run 后，将该轮完整结构化 run JSON 输出到原生命令工具的 stdout，保留在工具观察账本中，再将相同记录汇总到 evidence；不要只在最终模型回答中补写记录。Task 配方仅运行 {task_test}；Feature 和最终候选配方运行 {task_test} 与 {feature_test} 两个文件。固定 Node TestRecipe 的 runner=node_test、image={image}、timeout_seconds=60。测试、实现、文档和独立评审必须按各自 Skill 和当前 Step 合同真实完成，不能把计划、模型自述或未运行内容当作工具回执。业务文档通过当前输出端口交付。README 修改是可选项，不属于本次必填交付物；规划和评审不得把它升级为新增完成条件，文档节点为只读时必须通过 result 端口交付完整文档。'''
-  assert all(step.get('confirmation','automatic')=='automatic' for step in workflow['steps'])
+  assert {step['key'] for step in workflow['steps'] if step.get('confirmation')=='human'}=={'requirements_review','design_review','plan_review'}
   published={'id':defaults['workflow_ref']};p=c.rpc('query.workspace')['active_project']
   configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'permission_context_ref':defaults['permission_context_ref'],'orchestration':{'mode':'manual'}})
-  feature=c.command('feature.create',payload={'project_id':project,'title':'Core greeting '+suffix,'configuration_revision_id':configuration['id']})['id']
-  (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':True,'required_increment_pairs':2,'unattended':args.unattended,'driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
+  feature=c.command('feature.create',payload={'project_id':project,'title':'Core greeting '+suffix,'initial_requirement':goal,'configuration_revision_id':configuration['id']})['id']
+  (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':False,'expected_human_checkpoints':['requirements_review','design_review','plan_review'],'required_increment_pairs':2,'unattended':args.unattended,'driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
   initial=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=initial['record']['id']
   # Bind actual authorized business facts before either driver starts. This is an
   # ordinary preview/apply change; it neither writes outputs nor removes gates.
@@ -195,21 +195,26 @@ try:
       if manager and time.monotonic()-max(first,last_manager_progress)<600:continue
      detail=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'failed-instance.json').write_text(json.dumps(detail,ensure_ascii=False,indent=2));raise RuntimeError((step['path'],step['status'],step['reason']))
     if step['status']=='waiting_input':
-     if args.unattended or args.driver=='rust':raise RuntimeError('Automatic workflow requested supplemental input: '+step['path'])
-     key=(step['id'],step['sequence'])
-     if key in inputs or step['sequence']>3:raise RuntimeError('Repeated clarification: '+step['path'])
-     c.command('workflow.step.input',row['id'],row['revision'],{'step':step['step'],'input':goal+'\n当前流程已提供并接纳的输出引用：'+json.dumps({s['step']:s['outputs'] for s in row['data']['steps'] if s['outputs']},ensure_ascii=False)+'。本次使用 Workflow 端口材料，不存在另一个未声明的提案采纳过程。'});inputs.add(key);break
+     if args.unattended:raise RuntimeError('Workflow needs an actual human answer: '+step['path'])
+     pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-input.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
+     answer=input('Human clarification required for '+step['path']+'\n'+step['reason']+'\nAnswer (empty stops acceptance): ').strip()
+     if not answer:raise RuntimeError('Human answer was not provided')
+     c.command('workflow.step.input',row['id'],pending['record']['revision'],{'plan_revision_id':pending['runtime']['active_plan_revision_id'],'step':step['step'],'input':answer});inputs.add((step['id'],step['sequence']));break
     if step['status']=='waiting_confirmation' and step['id'] not in confirmed:
      pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-confirmation.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
-     if json.loads((OUT/'context.json').read_text()).get('default_automatic_confirmations'):raise RuntimeError('Default workflow unexpectedly requires Human confirmation: '+step['path'])
+     if args.unattended or json.loads((OUT/'context.json').read_text()).get('default_automatic_confirmations'):raise RuntimeError('Workflow requires actual Human confirmation: '+step['path'])
      definition=next(definition for definition in pending['plan']['steps'] if definition['key']==step['step'])
      rejected=[name for name,port in definition.get('outputs',{}).items() if port.get('content_checks') and pending['outputs'][step['outputs'][name]]['value']['approve'] is False]
      if rejected:raise RuntimeError('Content review rejected '+step['path']+': '+step['reason'])
+     if not pending['completion_status'][step['id']]['confirmation']:
+      print('Review exact artifacts at '+urls[0]+'/?tab=execution&project_id='+project+'&feature_id='+feature,flush=True)
+      print('Frozen instance saved at '+str(OUT/'pending-confirmation.json'),flush=True)
+      if input('Human confirmation for '+step['path']+' (type confirm after reviewing this version): ').strip()!='confirm':raise RuntimeError('Human did not confirm the checkpoint')
      requests=[r for r in manager_view['decisions'] if r['definition_id']==row['id'] and r['data']['status']=='pending' and r['data']['plan_revision_id']==pending['runtime']['active_plan_revision_id'] and r['data']['request'].get('operation') in ('workflow.step.accept','workflow.step.confirm') and r['data']['request'].get('arguments',{}).get('execution_id')==step['id']]
      if requests:
-      for request in requests:c.command('workflow.decision.resolve',request['id'],request['revision'],{'approved':True,'reason':'专用验收：核对确切执行、原始报告与实际工具回执后提供 Human 决定，不覆盖未满足条件。'})
+      for request in requests:c.command('workflow.decision.resolve',request['id'],request['revision'],{'approved':True,'reason':'验收终端的人类明确确认本版本；不覆盖未满足条件。'})
      elif not pending['completion_status'][step['id']]['confirmation']:
-      c.command('workflow.step.confirm',row['id'],pending['record']['revision'],{'plan_revision_id':pending['runtime']['active_plan_revision_id'],'control_version':pending['runtime']['control_version'],'step':step['step'],'input_digest':step['input_digest'],'outputs':step['outputs'],'reason':'专用验收：核对当前确切输入、模型报告及实际工具回执；不覆盖未满足条件。'})
+      c.command('workflow.step.confirm',row['id'],pending['record']['revision'],{'plan_revision_id':pending['runtime']['active_plan_revision_id'],'control_version':pending['runtime']['control_version'],'step':step['step'],'execution_id':step['id'],'input_digest':step['input_digest'],'outputs':step['outputs'],'reason':'验收终端的人类明确确认本版本；不覆盖未满足条件。'})
      confirmed.add(step['id']);print('Confirmed:',step['path'],flush=True);break
   if root['data']['status']=='completed':
    assert view['detail']['feature']['status']=='completed';assert len(view['detail']['tasks'])==1 and view['detail']['tasks'][0]['status']=='completed'

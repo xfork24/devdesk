@@ -140,6 +140,8 @@ def verify_evidence(client, rows, output):
    human_confirmations+=1
    step=next(s for s in view['runtime']['steps'] if s['step']==definition['key']);decision=confirmations[step['id']]
    assert decision['input_digest']==step['input_digest'] and decision['outputs']==step['outputs'] and not decision.get('override_completion')
+ if context.get('expected_human_checkpoints'):
+  assert human_confirmations==len(context['expected_human_checkpoints']), 'Default business checkpoints must retain actual Human confirmations'
  if context.get('default_automatic_confirmations'):
   assert human_confirmations==0 and not confirmations, 'Default automatic policy must not create Human approvals'
   with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:

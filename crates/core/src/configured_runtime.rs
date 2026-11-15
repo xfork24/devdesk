@@ -14,6 +14,12 @@ pub struct ConfiguredWorkflowInstance {
     pub plan: ConfiguredWorkflowPlan,
     pub role_agent_bindings: BTreeMap<Id, Id>,
     pub inputs: BTreeMap<String, Value>,
+    /// Original user request, frozen independently of typed Workflow input ports.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub user_request: Value,
+    /// Remains enabled even if a later, human-approved plan removes a checkpoint.
+    #[serde(default)]
+    pub human_governance: bool,
     pub steps: Vec<StepExecution>,
     pub status: StepExecutionStatus,
     pub paused: bool,
@@ -560,7 +566,7 @@ pub fn task_input(
         .collect();
     let mut input = json!({"renderer_version":AGENT_TASK_RENDERER,"source":{"workflow_revision_id":instance.workflow_ref,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"execution_id":execution.id,
         "workflow_instance_id":execution.workflow_instance_id,"plan_revision_id":execution.plan_revision_id,"node_id":execution.node_id,"contract_digest":execution.contract_digest,"path":execution.path,"step":step.key,"round":execution.round,"sequence":execution.sequence},
-        "owner_id":instance.owner_id,
+        "owner_id":instance.owner_id,"user_request":instance.user_request,
         "agent":execution.agent_revision_id.as_ref().and_then(|id|definitions.get(id)),
         "role":instance.plan.document.role(step).and_then(|id|instance.plan.roles.get(id).or_else(||instance.plan.roles.values().find(|role|role["role"]["id"]==id))),
         "stage":instance.plan.document.stages.iter().find(|s|s.key == step.stage),
@@ -574,6 +580,14 @@ pub fn task_input(
             "instructions":"Use the supplied input values and provenance. Request missing information only when required by this step. Return one JSON object. Output keys must be declared ports. Values must match their declared delivery schemas. Platform receipts are references, never model-generated evidence."}});
     if execution.rework.is_none() {
         input.as_object_mut().unwrap().remove("rework");
+    }
+    if instance.user_request.is_null() {
+        input.as_object_mut().unwrap().remove("user_request");
+    }
+    if instance.human_governance {
+        input["human_governance"] = json!({
+            "instructions":"Use the user's original request and confirmed upstream documents as the business authority. Decide whether clarification is necessary using the required Specs. If necessary facts are missing, or scope, acceptance criteria or a key design must change, return needs_input with concrete questions and wait for the human's answer. Never invent a human answer, approval or waiver. Keep confirmed business decisions unchanged until the human decides. Spec review and human confirmation are separate requirements."
+        });
     }
     if !execution.runtime_context.is_null() {
         input["runtime_context"] = execution.runtime_context.clone();
@@ -1410,6 +1424,22 @@ impl Engine {
                 owner_id: target.into(),
                 workflow_ref: workflow.id.clone(),
                 project_id: scope.project_id().unwrap().into(),
+                user_request: state
+                    .governance
+                    .iter()
+                    .find(|r| r.r#type == "feature_request" && r.definition_id == target)
+                    .map(|r| r.data["user_request"].clone())
+                    .or_else(|| {
+                        state.features.iter().find(|f| f.id == target).map(
+                            |f| json!({"feature_id":f.id,"title":f.title,"initial_requirement":""}),
+                        )
+                    })
+                    .unwrap_or(Value::Null),
+                human_governance: plan
+                    .document
+                    .steps
+                    .iter()
+                    .any(|s| s.confirmation == ConfirmationPolicy::Human),
                 plan,
                 role_agent_bindings: bindings,
                 inputs,
@@ -1563,6 +1593,9 @@ impl Engine {
                             "步骤不在等待确认",
                         )?;
                         require(!instance.cancel_requested, "流程已请求停止，不能批准结果")?;
+                        if let Some(execution_id) = p.get("execution_id") {
+                            require(*execution_id == execution.id, "步骤执行版本不匹配")?;
+                        }
                         if manual {
                             // Other steps may advance concurrently; this decision is bound to
                             // the exact execution, inputs and outputs below, not their revisions.
@@ -2467,6 +2500,13 @@ impl Engine {
                             owner_id: child_owner.clone(),
                             workflow_ref: child.id.clone(),
                             project_id: instance.project_id.clone(),
+                            user_request: instance.user_request.clone(),
+                            human_governance: instance.human_governance
+                                || plan
+                                    .document
+                                    .steps
+                                    .iter()
+                                    .any(|s| s.confirmation == ConfirmationPolicy::Human),
                             plan,
                             role_agent_bindings: child_bindings,
                             inputs,
@@ -3001,7 +3041,7 @@ impl Engine {
                     && r.data["input_digest"] == execution.input_digest
                     && r.data["outputs"] == json!(execution.outputs)
             });
-            (&execution.id, json!({"satisfied":step.completion.evaluate(&current_facts),"confirmation":confirmation.map(|r| &r.data)}))
+            (&execution.id, json!({"satisfied":step.completion.evaluate(&current_facts),"human_satisfied":step.confirmation!=ConfirmationPolicy::Human||confirmation.is_some()||crate::orchestration::waiver(&state,&instance,&step.node_id,"confirmation"),"confirmation":confirmation.map(|r| &r.data)}))
         }).collect::<BTreeMap<_, _>>();
         let history=state.governance.iter().filter(|r|(r.r#type=="workflow_plan_revision"&&(r.data["instance_id"]==row.id||r.id==instance.active_plan_revision_id||instance.steps.iter().any(|e|e.plan_revision_id==r.id)))||(r.r#type=="workflow_execution_history"&&r.data["workflow_instance_id"]==row.id)||(r.r#type=="workflow_change"&&r.definition_id==row.id)).map(|r| {
             let data=if r.r#type=="workflow_plan_revision" {json!({"parent_revision_id":r.data["parent_revision_id"],"reason":r.data["reason"]})} else if r.r#type=="workflow_change" {json!({"status":r.data["status"],"new_plan_revision_id":r.data["new_plan_revision_id"],"affected":r.data["preview"]["affected"],"bypassed":r.data["preview"]["bypassed"]})} else {r.data.clone()};

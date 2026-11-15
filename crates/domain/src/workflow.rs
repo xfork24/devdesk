@@ -908,12 +908,17 @@ impl EngineeringState {
                     "project_id",
                     "parent_execution_id",
                     "root_instance_id",
+                    "user_request",
                 ] {
                     require(
                         record.data[key] == old.data[key],
                         format!("运行时冻结配置不可改变: {key}"),
                     )?;
                 }
+                require(
+                    old.data["human_governance"] != true || record.data["human_governance"] == true,
+                    "运行中的人工决策保护不能撤销",
+                )?;
             }
             let plan = self.configuration(
                 record.data["active_plan_revision_id"]

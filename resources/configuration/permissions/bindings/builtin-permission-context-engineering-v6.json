@@ -1,7 +1,7 @@
 {
   "type": "permission_context",
   "identity": "builtin-permission-context-engineering",
-  "revision": 5,
+  "revision": 6,
   "name": "默认工程执行授权",
   "scope": "global",
   "sandbox_ref": "builtin-sandbox-docker:1",
@@ -14,7 +14,7 @@
     },
     "step_grants": [
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "design",
         "writable_paths": [],
         "read_only_paths": [
@@ -26,7 +26,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "release_recipe",
         "writable_paths": [
           "tests"
@@ -39,7 +39,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "closure",
         "writable_paths": [],
         "read_only_paths": [
@@ -51,7 +51,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "closure_review",
         "writable_paths": [],
         "read_only_paths": [
@@ -63,7 +63,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "candidate_review",
         "writable_paths": [],
         "read_only_paths": [],
@@ -151,7 +151,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "requirements",
         "writable_paths": [],
         "read_only_paths": [],
@@ -161,7 +161,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "requirements_review",
         "writable_paths": [],
         "read_only_paths": [],
@@ -171,7 +171,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "design_review",
         "writable_paths": [],
         "read_only_paths": [],
@@ -181,7 +181,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "planning",
         "writable_paths": [],
         "read_only_paths": [],
@@ -191,7 +191,7 @@
         ]
       },
       {
-        "workflow_ref": "builtin-workflow-feature-sol-high:7",
+        "workflow_ref": "builtin-workflow-feature-sol-high:8",
         "step": "plan_review",
         "writable_paths": [],
         "read_only_paths": [],
@@ -226,15 +226,11 @@
         "configuration.preview",
         "configuration.apply"
       ],
-      "human_operations": [],
-      "waivable_requirements": [
-        "completion",
-        "confirmation",
-        "tests",
-        "independence",
-        "coverage"
+      "human_operations": [
+        "apply"
       ],
-      "allow_task_revision": false,
+      "waivable_requirements": [],
+      "allow_task_revision": true,
       "max_turns_per_wakeup": 8,
       "max_tool_calls_per_turn": 64,
       "timeout_seconds": 600

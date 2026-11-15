@@ -59,6 +59,18 @@ export function AgentTaskView({
       )}
       {!compact && (
         <>
+          {content.user_request && (
+            <>
+              <h4>用户初始需求</h4>
+              <p>{content.user_request.title}</p>
+              <MarkdownPreview
+                text={
+                  content.user_request.initial_requirement ||
+                  "尚未提供初始需求，需要向用户澄清。"
+                }
+              />
+            </>
+          )}
           {content.supplemental_input && (
             <>
               <h4>补充请求</h4>

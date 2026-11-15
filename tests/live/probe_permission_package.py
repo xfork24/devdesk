@@ -131,8 +131,9 @@ try:
         feature_steps = {step['key']: step for step in workflow['data']['steps']}
         assert len(feature_steps) == 22 and len(task_steps) == 20
         assert 'engineering_constraints' in feature_steps
+        assert {key for key, step in feature_steps.items() if step.get('confirmation') == 'human'} == {'requirements_review', 'design_review', 'plan_review'}
+        assert all(step.get('confirmation', 'automatic') == 'automatic' for step in task_steps.values())
         for graph in [workflow['data'], task_workflow['data']]:
-            assert all(step.get('confirmation', 'automatic') == 'automatic' for step in graph['steps'])
             assert graph['action_requirements']['git.advance'] == ['tests']
         for steps, review_key, snapshot_key in [(feature_steps, 'closure_review', 'tests_snapshot'), (task_steps, 'review', 'implementation_snapshot')]:
             def reaches(key, target):
@@ -144,7 +145,7 @@ try:
             assert steps[snapshot_key]['executor']['arguments']['include_diff']['value'] is True
         evidence_type = next(row for row in defaults['records'] if row['id'] == task_steps['implementation']['outputs']['evidence']['delivery_ref'])
         assert {'environment', 'termination'} <= set(evidence_type['data']['content_schema']['properties']['runs']['items']['required'])
-        report['merged_main_evidence_and_automatic_policy'] = True
+        report['merged_main_evidence_and_human_checkpoints'] = True
         for key in ['closure_review', 'candidate_review']:
             assert feature_steps[key]['inputs']['tasks']['source'] == {'step': 'implementation', 'port': 'result', 'pointer': ''}
         for method in ['workflow.change.preview', 'workflow.change.apply']:
