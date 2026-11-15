@@ -2581,57 +2581,53 @@ fn ancestor_pause_suspends_nested_dispatch_without_overriding_a_child_pause() {
 
 #[test]
 fn supplemental_human_wait_does_not_consume_the_configured_execution_budget() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut engine = engine(dir.path());
-    let recorder = Arc::new(RecordingAgent::default());
-    recorder
-        .responses
-        .lock()
-        .unwrap()
-        .push(json!({"status":"needs_input","summary":"请补充资料","outputs":{}}));
-    engine.harness = recorder;
-    let (role, agent) = research_agent(&engine);
-    let run = launch(
-        &engine,
-        &role,
-        &agent,
-        json!({"budget":{"max_turns":3,"timeout_seconds":10,"retry_limit":1},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
-    );
-    drive(&engine, 8);
-    assert_eq!(
-        instance(&engine, &run["id"])["steps"][0]["status"],
-        "waiting_input"
-    );
-    let fake_past = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-        - 60_000;
-    engine
-        .store
-        .transact(None, &mut |state| {
-            let row = state
-                .governance
-                .iter_mut()
-                .find(|r| Some(r.id.as_str()) == run["id"].as_str())
-                .unwrap();
-            row.data["steps"][0]["started"] = json!(fake_past);
-            row.data["steps"][0]["budget_wait_started"] = json!(fake_past);
-            row.content_hash = content_digest(&row.refs, &row.data);
-            Ok(Value::Null)
-        })
+    struct Clock(std::sync::atomic::AtomicU64);
+    impl ports::ApplicationEnvironment for Clock {
+        fn allocate_id(&self) -> String {
+            uuid::Uuid::new_v4().to_string()
+        }
+        fn unix_millis(&self) -> u64 {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+    let clock = Arc::new(Clock(std::sync::atomic::AtomicU64::new(1_000_000)));
+    with_application_environment(clock.clone(), || {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let recorder = Arc::new(RecordingAgent::default());
+        recorder
+            .responses
+            .lock()
+            .unwrap()
+            .push(json!({"status":"needs_input","summary":"请补充资料","outputs":{}}));
+        engine.harness = recorder;
+        let (role, agent) = research_agent(&engine);
+        let run = launch(
+            &engine,
+            &role,
+            &agent,
+            json!({"budget":{"max_turns":3,"timeout_seconds":10,"retry_limit":1},"outputs":{"risks":{"delivery_ref":"fixture-delivery-object:1"}}}),
+        );
+        drive(&engine, 8);
+        assert_eq!(
+            instance(&engine, &run["id"])["steps"][0]["status"],
+            "waiting_input"
+        );
+        clock
+            .0
+            .fetch_add(60_000, std::sync::atomic::Ordering::SeqCst);
+        command(
+            &engine,
+            "workflow.step.input",
+            run["id"].as_str(),
+            json!({"step":"study","input":"当前输入资料"}),
+        )
         .unwrap();
-    command(
-        &engine,
-        "workflow.step.input",
-        run["id"].as_str(),
-        json!({"step":"study","input":"当前输入资料"}),
-    )
-    .unwrap();
-    drive(&engine, 8);
-    let runtime = instance(&engine, &run["id"]);
-    assert_eq!(runtime["status"], "completed");
-    assert!(runtime["steps"][0]["budget_waited_ms"].as_u64().unwrap() >= 60_000);
+        drive(&engine, 8);
+        let runtime = instance(&engine, &run["id"]);
+        assert_eq!(runtime["status"], "completed");
+        assert_eq!(runtime["steps"][0]["budget_waited_ms"], 60_000);
+    });
 }
 
 #[test]
