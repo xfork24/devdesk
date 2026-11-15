@@ -12,6 +12,20 @@ pub(crate) fn role_record<'a>(
         .max_by_key(|r| r.version)
         .ok_or_else(|| err("not_found", format!("Role 不存在: {key}")))
 }
+pub(crate) fn project_manager_role<'a>(
+    s: &'a EngineeringState,
+    key: &str,
+) -> Result<&'a ConfigurationRecord> {
+    let role = role_record(s, key)?;
+    let defaults = current_template_defaults(s)
+        .ok_or_else(|| err("configuration_required", "项目经理角色未配置"))?;
+    let manager = role_record(s, &text(&defaults, "orchestrator_role_ref")?)?;
+    require(
+        role.definition_id == manager.definition_id,
+        "只有项目经理角色可以管理项目和编排流程",
+    )?;
+    Ok(role)
+}
 pub fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: Option<&str>) -> bool {
     if project.is_none() {
         return true;

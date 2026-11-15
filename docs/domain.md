@@ -95,7 +95,9 @@ TypedMaterial 是有来源的封存材料；bypass、waiver、原评审和实际
 
 ## Standard 与规范采用
 
-Standard v4 只保存 `root_workflow_refs`，沿不可变确切源引用恢复 Workflow、Delivery、Spec 及关联。根引用是解析锚点，闭包中的 Workflow 都可作为工作的入口。Standard 没有业务 owner 或工作类型；源封套的可见性是存储访问元数据。
+Standard v4 通过 `root_workflow_refs` 沿不可变确切源引用恢复 Workflow、Delivery、Spec 及关联。规范内容与差异比较仅包含这些定义及关联；`default_workflow_ref` 是项目启动入口的选择元数据，不参与规范内容摘要或差异判定。单根旧快照可从唯一根确定入口；多根快照不按数组顺序猜测。闭包中的 Workflow 仍可作为工作独立采用的入口。
+
+项目选择基础 Standard 后，无覆盖项时直接引用其确切修订，不创建项目专属 Standard 或派生源。项目可将其中的 Spec、Delivery 或 Workflow 替换为其他已发布的确切修订；有覆盖项时，保存会自动派生受影响的 Delivery、Workflow 和对应的步骤授权引用，生成项目可见的不可变 Standard 修订，运行时不叠加覆盖规则。移除全部覆盖后恢复引用基础 Standard。`base_standard_ref` 保留基础来源，`standard_derivation` 保存请求覆盖、源引用改写和实际差异。公共定义保持原样，项目快照只能在所属项目使用。已有 Feature/Task 的工作配置与计划继续固定原规范，变更须显式采用或经过运行计划变更。
 
 Project 默认、Feature 和 Task 通过通用采用关系引用它。同一 Feature 下的不同 Task 可以使用不同 Standard。Workflow 的显式 `work_binding` 从真实工作引用解析其采用配置，逐成员固定 Standard 和入口；外部端口合同必须与父调用兼容。普通静态子流程不会被项目默认值替换。
 

@@ -212,6 +212,21 @@ export function WorkflowController({
     }
   }
   const controller = data?.record?.data;
+  const managerRole = catalog.find(
+    (row) => row.type === "role" && row.id === controller?.role_ref,
+  );
+  const managerAgents = catalog.filter(
+    (row) =>
+      row.type === "agent" &&
+      (row.role_ref === controller?.role_ref ||
+        (managerRole &&
+          catalog.some(
+            (role) =>
+              role.type === "role" &&
+              role.id === row.role_ref &&
+              role.definition_id === managerRole.definition_id,
+          ))),
+  );
   const actionStates: Record<string, string> = {
     prepared: "已登记",
     waiting_quiescence: "正在停止受影响的执行",
@@ -259,7 +274,7 @@ export function WorkflowController({
               label={
                 workspaceOnly ? "工作台 Agent 精确修订" : "经理 Agent 精确修订"
               }
-              records={catalog.filter((row) => row.type === "agent")}
+              records={managerAgents}
               value={managerAgent}
               onChange={(value) => setManagerAgent(value)}
             />
@@ -287,7 +302,8 @@ export function WorkflowController({
               {workspaceOnly ? "采用工作台配置" : "采用并恢复经理"}
             </ActionButton>
             <p className="muted">
-              更换组合前先暂停当前经理会话；后继会话使用所选配置。
+              默认使用项目配置中的编排
+              Agent。更换组合前先暂停当前经理会话；后继会话使用所选配置。
             </p>
           </>
         }

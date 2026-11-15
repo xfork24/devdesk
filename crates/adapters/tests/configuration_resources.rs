@@ -627,6 +627,153 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
 }
 
 #[test]
+fn only_project_manager_roles_can_be_selected_for_project_orchestration() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Manager role boundary"}),
+    )
+    .unwrap();
+    let project_id = project["id"].as_str().unwrap();
+    let defaults = e.configuration_defaults(Some(project_id)).unwrap();
+    let error = command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({
+            "workflow_ref": defaults["workflow_ref"],
+            "role_agent_bindings": defaults["role_agent_bindings"],
+            "orchestrator_role_ref": "builtin-role-analyst:1",
+        }),
+    )
+    .unwrap_err();
+    assert!(error.message.contains("只有项目经理角色"), "{error}");
+    let saved = command(
+        &e,
+        "project.configuration.update",
+        Some(project_id),
+        json!({
+            "workflow_ref": defaults["workflow_ref"],
+            "role_agent_bindings": defaults["role_agent_bindings"],
+            "orchestrator_role_ref": defaults["orchestrator_role_ref"],
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        saved["data"]["orchestrator_role_ref"],
+        defaults["orchestrator_role_ref"]
+    );
+    let state = e.store.snapshot().unwrap();
+    assert!(state.features.is_empty() && state.tasks.is_empty() && state.sessions.is_empty());
+    assert!(!state.governance.iter().any(|r| matches!(
+        r.r#type.as_str(),
+        "workflow_instance" | "workflow_controller"
+    )));
+}
+
+#[test]
+fn deferred_feature_creation_freezes_inputs_and_configuration_until_explicit_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = engine(dir.path());
+    let project = command(
+        &e,
+        "project.create",
+        None,
+        json!({"title":"Create then start"}),
+    )
+    .unwrap();
+    let project_id = project["id"].as_str().unwrap();
+    let defaults = e.configuration_defaults(Some(project_id)).unwrap();
+    let spec = command(&e, "spec.create", None, json!({
+        "name":"Start input content", "scope":"global",
+        "data":{"schema_version":3,"body":"提供明确的业务背景。","checks":[{"key":"brief","name":"业务背景","instructions":"说明工作目标。"}]}
+    })).unwrap();
+    let delivery = command(
+        &e,
+        "delivery_type.create",
+        None,
+        json!({
+            "name":"Start input", "scope":"global", "spec_refs":[spec["id"]],
+            "data":{"format":"json","content_schema":{"type":"string"}}
+        }),
+    )
+    .unwrap();
+    let draft = command(
+        &e,
+        "workflow.create",
+        None,
+        json!({
+            "name":"Explicit start", "document":{"schema_version":6,
+                "inputs":{"brief":{"delivery_ref":delivery["id"],"required":true}},
+                "stages":[{"key":"work","name":"Work"}],
+                "steps":[{"key":"done","name":"Done","stage":"work","executor":{"type":"control"}}]
+            }
+        }),
+    )
+    .unwrap();
+    let workflow = command(&e, "workflow.publish", draft["id"].as_str(), json!({})).unwrap();
+    let selected = command(&e, "project.configuration.update", Some(project_id), json!({
+        "workflow_ref":workflow["id"], "role_agent_bindings":defaults["role_agent_bindings"],
+        "orchestrator_role_ref":defaults["orchestrator_role_ref"], "orchestration":{"mode":"agent"}
+    })).unwrap();
+    let mut payload = json!({
+        "project_id":project_id, "title":"Draft Feature", "initial_requirement":"保存需求后显式启动。",
+        "configuration_revision_id":selected["id"], "start_workflow":false
+    });
+    let error = command(&e, "feature.create", None, payload.clone()).unwrap_err();
+    assert!(error.message.contains("缺少流程输入 brief"), "{error}");
+    payload["workflow_inputs"] = json!({"brief":"持久化的流程输入"});
+    let feature = command(&e, "feature.create", None, payload).unwrap();
+    let feature_id = feature["id"].as_str().unwrap();
+    e.drive_controllers().unwrap();
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(state.feature(feature_id).unwrap().status, Status::Draft);
+    assert!(state.sessions.is_empty() && state.turns.is_empty());
+    assert!(!state.governance.iter().any(|r| matches!(
+        r.r#type.as_str(),
+        "workflow_instance" | "workflow_controller" | "workflow_driver"
+    )));
+    let frozen = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "work_configuration" && r.definition_id == feature_id)
+        .unwrap()
+        .clone();
+    assert_eq!(frozen.data["source_configuration_ref"], selected["id"]);
+    drop(e);
+    let e = engine(dir.path());
+    command(&e, "project.configuration.update", Some(project_id), json!({
+        "workflow_ref":workflow["id"], "role_agent_bindings":defaults["role_agent_bindings"],
+        "orchestrator_role_ref":defaults["orchestrator_role_ref"], "orchestration":{"mode":"manual"}
+    })).unwrap();
+    let started = command(&e, "workflow.start", Some(feature_id), json!({})).unwrap();
+    let state = e.store.snapshot().unwrap();
+    let root = state
+        .configuration(started["id"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(state.feature(feature_id).unwrap().status, Status::Running);
+    assert_eq!(root.data["inputs"], json!({"brief":"持久化的流程输入"}));
+    assert_eq!(
+        root.data["user_request"]["initial_requirement"],
+        "保存需求后显式启动。"
+    );
+    assert_eq!(
+        root.data["plan"]["standard_ref"],
+        frozen.data["standard_ref"]
+    );
+    let driver = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_driver" && r.definition_id == root.id)
+        .unwrap();
+    assert_eq!(driver.data["mode"], "agent");
+    assert!(command(&e, "workflow.start", Some(feature_id), json!({})).is_err());
+}
+
+#[test]
 fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
     let dir = tempfile::tempdir().unwrap();
     let e = engine(dir.path());

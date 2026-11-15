@@ -57,13 +57,22 @@ button.primary:hover {
 input,
 textarea,
 select {
-  width: 100%;
   border: 1px solid #d9dfeb;
   border-radius: 6px;
   padding: 9px 11px;
   background: #fff;
   color: #263148;
   outline: none;
+}
+input,
+textarea {
+  width: 100%;
+}
+select {
+  width: max-content;
+  max-width: 100%;
+  flex-shrink: 0;
+  padding-inline-end: 32px;
 }
 input:focus,
 textarea:focus,
@@ -173,7 +182,8 @@ pre {
   margin-bottom: 27px;
   border-radius: 7px;
 }
-.project-selector > span {
+.project-selector > span:not(.action-control) {
+  display: block;
   font-size: 10px;
   letter-spacing: 1px;
   color: #95a0b8;
@@ -567,6 +577,7 @@ main {
 }
 .feature-picker {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 18px;
   margin-bottom: 21px;
@@ -575,11 +586,11 @@ main {
   display: flex;
   align-items: center;
   gap: 14px;
-  min-width: 300px;
+  min-width: 0;
 }
 .feature-picker select {
   margin: 0;
-  max-width: 300px;
+  max-width: 100%;
 }
 .toolbar {
   padding: 17px 20px;
@@ -595,7 +606,6 @@ main {
   gap: 10px;
 }
 .toolbar select {
-  width: 190px;
   margin: 0;
   font-size: 12px;
 }
@@ -835,6 +845,7 @@ main {
 }
 .setting-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -1387,10 +1398,8 @@ button.selected {
   min-width: 0;
 }
 .workflow-step-form input,
-.workflow-step-form select,
 .workflow-step-form textarea,
 .form-grid input,
-.form-grid select,
 .form-grid textarea {
   width: 100%;
   box-sizing: border-box;
@@ -1403,10 +1412,46 @@ select[multiple] {
   min-height: 90px;
 }
 .form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 10px 20px;
   margin: 12px 0;
+}
+.form-grid > label {
+  flex: 1 1 220px;
+}
+.form-grid > :not(label):not(.action-control) {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.project-configuration-form {
+  padding: 0 21px 21px;
+  overflow-wrap: anywhere;
+}
+.project-configuration-form details {
+  margin: 12px 0;
+}
+.project-configuration-form > label,
+.project-configuration-row > label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.project-configuration-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 20px;
+  margin: 16px 0;
+}
+.project-configuration-row > label {
+  margin: 0;
+}
+.project-configuration-row select {
+  min-width: 0;
+  margin-top: 0;
 }
 .workflow-runtime {
   display: grid;
@@ -1636,6 +1681,8 @@ pre {
 }
 .full-width {
   grid-column: 1/-1;
+  flex-basis: 100%;
+  width: 100%;
 }
 .configuration-layout textarea {
   width: 100%;
@@ -2084,23 +2131,6 @@ pre {
   }
 }
 
-.project-role-bindings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 16px 0;
-}
-.project-role-bindings > label {
-  display: grid;
-  grid-template-columns: minmax(130px, 220px) minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  margin: 0;
-}
-.project-role-bindings select {
-  min-width: 0;
-  width: 100%;
-}
 .template-reset-dialog {
   max-width: 620px;
   width: calc(100% - 48px);
@@ -2365,4 +2395,29 @@ pre {
 }
 .reading-body select {
   max-width: 100%;
+}
+
+/* Native select sizing includes every option, rather than only the selection. */
+:root label:has(> select) {
+  display: inline-flex;
+  vertical-align: top;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 0 1 auto;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  gap: 7px;
+  margin: 8px 16px 8px 0;
+}
+:root
+  :is(
+    .form-grid,
+    .project-configuration-row,
+    .actions,
+    .toolbar,
+    .feature-picker
+  )
+  > label:has(> select) {
+  margin: 0;
 }

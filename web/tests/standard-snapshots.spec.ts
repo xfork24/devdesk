@@ -193,6 +193,37 @@ async function captureStep(
   return { view, execution };
 }
 
+test("Standard 内容相同时，默认启动入口未声明或不同均显示规范定义相同", async ({
+  page,
+}) => {
+  await setup(page);
+  const defaults = await rpc(page, "query.configuration_defaults");
+  const base = await rpc(page, "query.standard", { id: defaults.standard_ref });
+  const copies = [];
+  for (const entry of [null, defaults.task_workflow_ref]) {
+    copies.push(
+      await command(page, "standard.capture", undefined, undefined, undefined, {
+        name: "相同规范的入口元数据 " + crypto.randomUUID().slice(0, 6),
+        root_workflow_refs: base.root_workflow_refs,
+        default_workflow_ref: entry,
+      }),
+    );
+  }
+  await page.getByRole("button", { name: "流程与规范", exact: true }).click();
+  await page.getByRole("tab", { name: "Standard", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Standard 规范快照" });
+  await panel
+    .getByLabel("查看 Standard", { exact: true })
+    .selectOption(defaults.standard_ref);
+  for (const copy of copies) {
+    await panel
+      .getByLabel("与另一个 Standard 比较", { exact: true })
+      .selectOption(copy.id);
+    await panel.getByRole("button", { name: "比较规范", exact: true }).click();
+    await expect(panel.locator(".standard-diff")).toHaveText("规范定义相同");
+  }
+});
+
 test("Standard 只读生成比较与归档保留规范源", async ({ page }, info) => {
   await setup(page);
   const { material } = await fixtures(page);
@@ -358,7 +389,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   let workspace = await rpc(page, "query.workspace", {
     project_id: project.id,
   });
-  await command(
+  const projectSelection = await command(
     page,
     "project.configuration.update",
     project.id,
@@ -499,5 +530,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
     project_id: project.id,
     id: root.record.id,
   });
-  expect(root.runtime.plan.standard_ref).toBe(sa.id);
+  expect(root.runtime.plan.standard_ref).toBe(
+    projectSelection.data.standard_ref,
+  );
 });

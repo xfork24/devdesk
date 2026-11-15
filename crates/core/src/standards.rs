@@ -63,7 +63,13 @@ pub(crate) fn capture_standard(
         name.into(),
         version,
         None,
-        References::from([("root_workflow_refs".to_string(), json!(roots))]),
+        {
+            let mut refs = References::from([("root_workflow_refs".to_string(), json!(roots))]);
+            if roots.len() == 1 {
+                refs.insert("default_workflow_ref".into(), json!(roots[0]));
+            }
+            refs
+        },
         json!(definition),
         true,
     );
@@ -262,6 +268,14 @@ impl Engine {
         let mut roots: Vec<Id> = serde_json::from_value(p["root_workflow_refs"].clone())
             .map_err(|e| err("invalid_params", e.to_string()))?;
         roots.sort();
+        roots.dedup();
+        let entry = p["default_workflow_ref"]
+            .as_str()
+            .map(str::to_owned)
+            .or_else(|| (roots.len() == 1).then(|| roots[0].clone()));
+        if let Some(entry) = &entry {
+            require(roots.contains(entry), "默认启动入口必须属于所选根 Workflow")?;
+        }
         let scope: Scope = serde_json::from_value(p.get("scope").cloned().unwrap_or_else(|| {
             self.store
                 .project_id()
@@ -300,14 +314,53 @@ impl Engine {
                 name,
                 previous.version + 1,
                 Some(previous.id),
-                References::from([("root_workflow_refs".to_string(), json!(roots.clone()))]),
+                {
+                    let mut refs = References::from([(
+                        "root_workflow_refs".to_string(),
+                        json!(roots.clone()),
+                    )]);
+                    if let Some(entry) = &entry {
+                        refs.insert("default_workflow_ref".into(), json!(entry));
+                    }
+                    refs
+                },
                 json!(definition),
                 true,
             );
             state.governance.push(row.clone());
             row
         } else {
-            capture_standard(state, roots, &scope, &name)?
+            if let Some(entry) = &entry {
+                let refs = References::from([
+                    ("root_workflow_refs".into(), json!(roots)),
+                    ("default_workflow_ref".into(), json!(entry)),
+                ]);
+                let identity = format!("standard.{}", configuration_hash(&(&scope, &refs)));
+                if let Some(row) = state
+                    .governance
+                    .iter()
+                    .find(|r| r.r#type == "standard" && r.definition_id == identity)
+                    .cloned()
+                {
+                    row
+                } else {
+                    let row = record_with_refs(
+                        "standard",
+                        identity,
+                        scope.clone(),
+                        name.clone(),
+                        1,
+                        None,
+                        refs,
+                        json!(definition),
+                        true,
+                    );
+                    state.governance.push(row.clone());
+                    row
+                }
+            } else {
+                capture_standard(state, roots, &scope, &name)?
+            }
         };
         Ok(Some(json!(row)))
     }
@@ -321,6 +374,7 @@ impl Engine {
             "query.work_standard_diff",
             "query.work_configuration",
             "query.standard_catalog",
+            "query.project_standard_preview",
         ]
         .contains(&method)
         {
@@ -328,6 +382,9 @@ impl Engine {
         }
         Some((|| {
             let state = self.store.snapshot()?;
+            if method == "query.project_standard_preview" {
+                return self.project_standard_preview(state, p);
+            }
             let scope = self
                 .store
                 .project_id()
@@ -345,6 +402,10 @@ impl Engine {
                     .map(|r| {
                         let mut value = json!(r);
                         value["archived"] = json!(standard_archived(&state, &r.id));
+                        value["default_workflow_ref"] =
+                            standard_default_workflow(&state, &r.id, &scope)
+                                .ok()
+                                .map_or(Value::Null, |id| json!(id));
                         value["workflow_refs"] = json!(
                             standard_snapshot(&state, &r.id, &scope)?
                                 .nodes
@@ -438,6 +499,14 @@ impl Engine {
             );
             result["record"] = json!(state.configuration(&id)?);
             result["archived"] = json!(standard_archived(&state, &id));
+            result["default_workflow_ref"] = standard_default_workflow(&state, &id, &scope)
+                .ok()
+                .map_or(Value::Null, |id| json!(id));
+            result["provenance"] = state
+                .governance
+                .iter()
+                .find(|r| r.r#type == "standard_derivation" && r.definition_id == id)
+                .map_or(Value::Null, |r| r.data.clone());
             Ok(result)
         })())
     }

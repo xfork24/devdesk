@@ -26,6 +26,7 @@ pub use manager_workspace::{MANAGER_TOOLS, ManagerServices};
 mod human_governance;
 mod orchestration;
 mod platform_tools;
+mod project_standards;
 mod standards;
 mod workflow_driver;
 mod workflow_eligibility;
@@ -682,8 +683,12 @@ impl Engine {
                     input_version: 1,
                     predecessor,
                 });
-                if p.get("initial_requirement").is_some() {
-                    let initial_requirement = text(p, "initial_requirement")?;
+                if p.get("initial_requirement").is_some() || p.get("workflow_inputs").is_some() {
+                    let initial_requirement = if p.get("initial_requirement").is_some() {
+                        text(p, "initial_requirement")?
+                    } else {
+                        String::new()
+                    };
                     s.governance.push(governance::record(
                         "feature_request",
                         fid.clone(),
@@ -691,7 +696,7 @@ impl Engine {
                         "用户初始需求".into(),
                         1,
                         None,
-                        json!({"actor":actor,"user_request":{"feature_id":fid,"title":s.feature(&fid)?.title,"initial_requirement":initial_requirement}}),
+                        json!({"actor":actor,"workflow_inputs":p.get("workflow_inputs").cloned().unwrap_or(json!({})),"user_request":{"feature_id":fid,"title":s.feature(&fid)?.title,"initial_requirement":initial_requirement}}),
                         true,
                     ));
                 }

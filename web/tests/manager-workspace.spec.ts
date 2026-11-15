@@ -3,9 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("没有 Feature 时项目经理工作台提供独立的组合与会话入口", async ({
-  page,
-}) => {
+test("项目管理只保存配置并统一设置项目经理", async ({ page }) => {
   await page.goto("/");
   const capabilities = await page.request
     .get("/capabilities")
@@ -35,12 +33,46 @@ test("没有 Feature 时项目经理工作台提供独立的组合与会话入�
   expect(created.error, JSON.stringify(created)).toBeUndefined();
   await page.reload();
   await page.getByRole("button", { name: "项目管理", exact: true }).click();
-  const workspace = page.getByRole("region", { name: "项目经理工作台" });
-  await expect(workspace).toBeVisible();
-  await expect(workspace.getByLabel("工作台 Agent 精确修订")).toBeVisible();
-  await expect(workspace.getByLabel("工作台授权上下文")).toBeVisible();
-  await expect(workspace.getByLabel("给项目经理的指令")).toBeVisible();
-  await expect(workspace.getByLabel("切换调度模式")).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "项目经理工作台" }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("工作台 Agent 精确修订")).toHaveCount(0);
+  await expect(page.getByLabel("给项目经理的指令")).toHaveCount(0);
+  await expect(page.getByText("发送指令后启动项目经理")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "新 Feature", exact: true }),
+  ).toHaveCount(0);
+  const configuration = page.getByRole("region", { name: "项目配置" });
+  await expect(
+    configuration.getByLabel("编排 Agent", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    configuration.getByLabel("编排角色").locator("option"),
+  ).toHaveText(["仅手动操作工作流", "项目经理"]);
+  await expect(configuration.getByLabel("流程所需 Role → Agent")).toBeVisible();
+  const starts: string[] = [];
+  page.on("request", (request) => {
+    if (!request.url().endsWith("/rpc") || request.method() !== "POST") return;
+    const method = request.postDataJSON().method;
+    if (
+      [
+        "manager.open",
+        "orchestration.open",
+        "orchestration.input",
+        "workflow.start",
+        "feature.create",
+      ].includes(method)
+    )
+      starts.push(method);
+  });
+  await configuration.getByRole("button", { name: "保存项目配置" }).click();
+  await expect(
+    page.getByText(
+      "项目配置已保存，直接使用所选 Standard；已有 Feature 的冻结版本保持不变。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  expect(starts).toEqual([]);
   const result = await page.request
     .post("/rpc", {
       data: {
@@ -54,4 +86,12 @@ test("没有 Feature 时项目经理工作台提供独立的组合与会话入�
   expect(result.error, JSON.stringify(result)).toBeUndefined();
   expect(result.result.counts.features).toBe(0);
   expect(result.result.counts.tasks).toBe(0);
+  await page.getByRole("button", { name: "工作总览", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "新 Feature", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "执行与交付", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "新 Feature", exact: true }),
+  ).toHaveCount(0);
 });

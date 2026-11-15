@@ -100,7 +100,7 @@ fn capture(e: &Engine, roots: Vec<String>) -> String {
         e,
         "standard.capture",
         None,
-        json!({"name":"可复用规范","root_workflow_refs":roots}),
+        json!({"name":"可复用规范","root_workflow_refs":roots,"default_workflow_ref":roots[0]}),
     )
     .unwrap()["id"]
         .as_str()
@@ -182,7 +182,7 @@ fn standards_freeze_only_normative_sources_and_detect_relationship_changes() {
     );
     assert_eq!(
         standard_row.refs.keys().cloned().collect::<Vec<_>>(),
-        vec!["root_workflow_refs"]
+        vec!["default_workflow_ref", "root_workflow_refs"]
     );
     let duplicate = capture(&e, vec![workflow.clone()]);
     assert_eq!(duplicate, standard);
@@ -251,13 +251,17 @@ fn tasks_in_one_feature_execute_distinct_standards_and_keep_history_after_switch
         .as_str()
         .unwrap()
         .to_owned();
-    command(
+    let selected = command(
         &e,
         "project.configuration.update",
         Some(&project),
         json!({"workflow_ref":parent,"standard_ref":sa,"role_agent_bindings":{}}),
     )
     .unwrap();
+    let sa = selected["data"]["standard_ref"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let feature = command(
         &e,
         "feature.create",

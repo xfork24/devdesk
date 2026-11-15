@@ -799,7 +799,7 @@ fn intent(
 }
 
 impl Engine {
-    pub(crate) fn start_configured_feature(
+    pub(crate) fn configure_feature_workflow(
         &self,
         state: &mut EngineeringState,
         feature: &str,
@@ -821,6 +821,24 @@ impl Engine {
         }
         selection["source_configuration_ref"] = json!(configuration.id);
         selection["inputs"] = p.get("workflow_inputs").cloned().unwrap_or(json!({}));
+        if p["start_workflow"] == false {
+            let work =
+                crate::standards::select_work_configuration(state, feature, &selection, None)?;
+            let selected = crate::standards::selection_state(state, &work.data);
+            let workflow = selected.configuration(&text(&work.data, "workflow_ref")?)?;
+            let bindings = serde_json::from_value(work.data["role_agent_bindings"].clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            let plan = self.compile_configured_workflow(
+                &selected,
+                workflow,
+                &work.scope,
+                Some(&bindings),
+            )?;
+            let inputs = serde_json::from_value(selection["inputs"].clone())
+                .map_err(|e| err("invalid_params", e.to_string()))?;
+            self.validate_workflow_inputs(state, &plan, &inputs)?;
+            return Ok(());
+        }
         self.configured_runtime_command(
             "workflow.start",
             &Command {
@@ -833,6 +851,34 @@ impl Engine {
         )?
         .ok_or_else(|| err("configuration_required", "工作未选择当前 Workflow"))?;
         Ok(())
+    }
+
+    fn validate_workflow_inputs(
+        &self,
+        state: &EngineeringState,
+        plan: &ConfiguredWorkflowPlan,
+        inputs: &BTreeMap<String, Value>,
+    ) -> Result<()> {
+        for (name, port) in &plan.document.inputs {
+            if port.required {
+                require(inputs.contains_key(name), format!("缺少流程输入 {name}"))?;
+            }
+            if let Some(value) = inputs.get(name) {
+                self.enforce_delivery_value(
+                    state,
+                    plan.definitions
+                        .get(&port.delivery_ref)
+                        .ok_or_else(|| err("configuration_required", "输入类型不在闭包中"))?,
+                    value,
+                )?;
+            }
+        }
+        require(
+            inputs
+                .keys()
+                .all(|key| plan.document.inputs.contains_key(key)),
+            "流程包含未声明输入",
+        )
     }
 
     pub fn configured_agent_request(
@@ -1352,29 +1398,20 @@ impl Engine {
                 }),
                 "同一归属已有未结束流程",
             )?;
-            let inputs: BTreeMap<String, Value> =
-                serde_json::from_value(p.get("inputs").cloned().unwrap_or(json!({})))
-                    .map_err(|e| err("invalid_params", e.to_string()))?;
-            for (name, port) in &plan.document.inputs {
-                if port.required {
-                    require(inputs.contains_key(name), format!("缺少流程输入 {name}"))?;
-                }
-                if let Some(value) = inputs.get(name) {
-                    self.enforce_delivery_value(
-                        state,
-                        plan.definitions
-                            .get(&port.delivery_ref)
-                            .ok_or_else(|| err("configuration_required", "输入类型不在闭包中"))?,
-                        value,
-                    )?;
-                }
-            }
-            require(
-                inputs
-                    .keys()
-                    .all(|key| plan.document.inputs.contains_key(key)),
-                "流程包含未声明输入",
-            )?;
+            let inputs: BTreeMap<String, Value> = serde_json::from_value(
+                p.get("inputs")
+                    .cloned()
+                    .or_else(|| {
+                        state
+                            .governance
+                            .iter()
+                            .find(|r| r.r#type == "feature_request" && r.definition_id == target)
+                            .and_then(|r| r.data.get("workflow_inputs").cloned())
+                    })
+                    .unwrap_or(json!({})),
+            )
+            .map_err(|e| err("invalid_params", e.to_string()))?;
+            self.validate_workflow_inputs(state, &plan, &inputs)?;
             if let Some(feature) = state.features.iter_mut().find(|f| f.id == target)
                 && feature.status != Status::Running
             {

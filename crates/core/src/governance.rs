@@ -505,7 +505,7 @@ impl Engine {
                 "Project 默认配置已变化，请刷新创建表单",
             )?;
         }
-        self.start_configured_feature(s, feature, &current, p)
+        self.configure_feature_workflow(s, feature, &current, p)
     }
 
     pub(crate) fn governance_command(

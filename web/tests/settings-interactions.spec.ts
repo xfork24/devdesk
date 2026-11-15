@@ -407,7 +407,11 @@ test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建�
       response.url().endsWith("/rpc") &&
       response.request().postDataJSON()?.method === "agent.instance.create",
   );
-  await page.getByRole("button", { name: "新建讨论身份", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "新建讨论身份", exact: true }),
+  ).toHaveCount(0);
+  const instance = page.getByLabel("Agent", { exact: true });
+  await instance.selectOption({ label: "新建Agent实例" });
   const response = await created;
   const result = await response.json();
   expect(result.error).toBeUndefined();
@@ -417,9 +421,13 @@ test("角色页仅保留 Agent 定义，旧入口兼容且可在讨论内创建�
   expect(response.request().postDataJSON().params.payload.scope).toEqual(
     "global",
   );
-  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
-    result.result.id,
-  );
+  await expect(instance).toHaveValue(result.result.id);
+  await expect(
+    instance.locator(`option[value="${result.result.id}"]`),
+  ).toHaveCount(1);
+  await expect(
+    instance.getByRole("option", { name: "新建Agent实例", exact: true }),
+  ).toHaveCount(1);
   await page.goto(
     `/?tab=actors&config_tab=agent_instance&config_object=${result.result.id}`,
   );

@@ -145,6 +145,7 @@ impl Engine {
         let parses =
             |value: &Value| serde_json::from_value::<WorkflowDefinition>(value.clone()).is_ok();
         let is_current = document.as_ref().is_some_and(|doc| parses(doc))
+            || (method == "project.configuration.update" && p["standard_ref"].is_string())
             || selected
                 .as_ref()
                 .is_some_and(|r| parses(&r.data) || parses(&r.data["document"]));
@@ -164,15 +165,59 @@ impl Engine {
                     "项目修订冲突",
                 )?;
                 let scope = Scope::project(project.id.clone());
-                let workflow = selected.unwrap();
-                let bindings: BTreeMap<Id, Id> =
-                    serde_json::from_value(p["role_agent_bindings"].clone())
-                        .map_err(|e| err("invalid_params", e.to_string()))?;
-                let context_ref = p["permission_context_ref"]
+                let source_context = p["permission_context_ref"]
                     .as_str()
                     .map(str::to_owned)
                     .or_else(|| permission_context(state).map(|r| r.id.clone()))
                     .ok_or_else(|| err("permission_unconfigured", "项目需要独立授权上下文"))?;
+                let project_standard = if let Some(base) = p["standard_ref"].as_str() {
+                    let candidate = self.project_standard_preview(state.clone(), &json!({"project_id":project.id,"standard_ref":base,"standard_overrides":p.get("standard_overrides").cloned().unwrap_or(json!([])),"permission_context_ref":source_context}))?;
+                    if let Some(hash) = p["standard_preview_hash"].as_str() {
+                        require(
+                            candidate["preview_hash"] == hash,
+                            "规范预览已变化，请重新核对",
+                        )?;
+                    }
+                    Some(crate::project_standards::materialize_project_standard(
+                        state,
+                        &project.id,
+                        base,
+                        p.get("standard_overrides").unwrap_or(&json!([])),
+                    )?)
+                } else {
+                    None
+                };
+                let workflow = if let Some(standard) = &project_standard {
+                    if let Some(workflow) = p["workflow_ref"].as_str() {
+                        require(
+                            workflow == standard.entry
+                                || standard.provenance["source_rewrites"][workflow]
+                                    == standard.entry,
+                            "项目入口由 Standard 指定，不能独立选择其他 Workflow",
+                        )?;
+                    }
+                    state.configuration(&standard.entry)?.clone()
+                } else {
+                    require(
+                        p.get("standard_overrides")
+                            .is_none_or(|v| v.as_array().is_some_and(Vec::is_empty)),
+                        "覆盖规范必须选择基础 Standard",
+                    )?;
+                    selected.ok_or_else(|| err("configuration_required", "请选择 Standard"))?
+                };
+                let bindings: BTreeMap<Id, Id> =
+                    serde_json::from_value(p["role_agent_bindings"].clone())
+                        .map_err(|e| err("invalid_params", e.to_string()))?;
+                let context_ref = if let Some(standard) = &project_standard {
+                    crate::project_standards::project_standard_permissions(
+                        state,
+                        &project.id,
+                        &source_context,
+                        &standard.rewrites,
+                    )?
+                } else {
+                    source_context.clone()
+                };
                 reference(state, &context_ref, "permission_context", &scope)?;
                 // Validate this selection before committing it; the compiler uses the same context at execution.
                 let mut selected_state = state.clone();
@@ -187,7 +232,7 @@ impl Engine {
                     true,
                 ));
                 if let Some(role_ref) = p["orchestrator_role_ref"].as_str() {
-                    let role = crate::configuration::role_record(state, role_ref)?;
+                    let role = crate::configuration::project_manager_role(state, role_ref)?;
                     let agent = bindings
                         .get(&role.id)
                         .ok_or_else(|| err("configuration_required", "编排 Role 未绑定 Agent"))?;
@@ -228,9 +273,8 @@ impl Engine {
                     &scope,
                     Some(&bindings),
                 )?;
-                let standard_ref = if let Some(id) = p["standard_ref"].as_str() {
-                    standard_entry(state, id, &workflow.id, &scope)?;
-                    id.to_owned()
+                let standard_ref = if let Some(standard) = &project_standard {
+                    standard.standard.id.clone()
                 } else {
                     crate::standards::capture_standard(
                         state,
@@ -261,7 +305,7 @@ impl Engine {
                     old.as_ref().map_or(1, |r| r.version + 1),
                     old.map(|r| r.id),
                     json!({"orchestration":orchestration,"schema_version":4,"workflow_ref":workflow.id,"role_agent_bindings":bindings,"standard_ref":standard_ref,
-                    "orchestrator_role_ref":p["orchestrator_role_ref"],"permission_context_ref":context_ref}),
+                    "orchestrator_role_ref":p["orchestrator_role_ref"],"permission_context_ref":context_ref,"permission_context_source_ref":source_context}),
                     true,
                 );
                 let result = json!(row);

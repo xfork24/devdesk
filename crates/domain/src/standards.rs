@@ -341,6 +341,29 @@ pub fn standard_entry(
     Ok(snapshot)
 }
 
+pub fn standard_default_workflow(
+    state: &EngineeringState,
+    standard: &str,
+    scope: &Scope,
+) -> Result<Id> {
+    let source = state.configuration(standard)?;
+    let roots = reference_list(&source.refs, "root_workflow_refs")?;
+    let entry = source
+        .refs
+        .get("default_workflow_ref")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| (roots.len() == 1).then(|| roots[0].clone()))
+        .ok_or_else(|| {
+            err(
+                "standard_entry_required",
+                "此 Standard 包含多个流程，请先在 Standard 中指定默认启动入口",
+            )
+        })?;
+    standard_entry(state, standard, &entry, scope)?;
+    Ok(entry)
+}
+
 pub fn diff_standard_snapshots(left: &StandardSnapshot, right: &StandardSnapshot) -> Value {
     fn identity(reference: &str) -> &str {
         parse_source_reference(reference)

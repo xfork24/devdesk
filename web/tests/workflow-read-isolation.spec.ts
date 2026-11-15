@@ -231,6 +231,16 @@ test("paused root manager adopts exact successor sources through the Human resum
             data: {},
           },
           {
+            id: "developer-agent:1",
+            type: "agent",
+            definition_id: "developer-agent",
+            name: "Developer cannot manage projects",
+            version: 1,
+            scope: "global",
+            role_ref: "developer-role:1",
+            data: {},
+          },
+          {
             id: "context-new:1",
             type: "permission_context",
             definition_id: "context-new",
@@ -240,7 +250,7 @@ test("paused root manager adopts exact successor sources through the Human resum
             data: {},
           },
         ],
-        total: 2,
+        total: 3,
       };
     } else if (call.method === "orchestration.resume") {
       adopted = call.params.payload;
@@ -251,6 +261,11 @@ test("paused root manager adopts exact successor sources through the Human resum
   await page.goto(url);
   const panel = page.getByRole("region", { name: "项目经理协作" });
   await panel.getByText("调度与经理管理", { exact: true }).click();
+  await expect(
+    panel
+      .getByLabel("经理 Agent 精确修订", { exact: true })
+      .locator('option[value="developer-agent:1"]'),
+  ).toHaveCount(0);
   await panel
     .getByLabel("经理 Agent 精确修订", { exact: true })
     .selectOption("manager-new:1");

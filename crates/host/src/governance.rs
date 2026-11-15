@@ -183,6 +183,7 @@ impl Workspace {
             "query.work_standard_choices",
             "query.work_configuration",
             "query.standard_catalog",
+            "query.project_standard_preview",
             "query.workflow_task_preview",
             "query.workflow_requirements",
             "query.specification_audit",
@@ -298,10 +299,9 @@ impl Workspace {
                             Ok(snapshot)
                         }
                     };
-                return Ok(diff_standard_snapshots(
-                    &resolve("before_ref", "before_project_id", "before_workflow_ref")?,
-                    &resolve("after_ref", "after_project_id", "after_workflow_ref")?,
-                ));
+                let left = resolve("before_ref", "before_project_id", "before_workflow_ref")?;
+                let right = resolve("after_ref", "after_project_id", "after_workflow_ref")?;
+                return Ok(diff_standard_snapshots(&left, &right));
             }
 
             if method == "query.standard_usage" && params["project_id"].is_null() && target_global {
@@ -353,6 +353,7 @@ impl Workspace {
                         "configuration.change.preview",
                         "query.configuration_graph",
                         "query.workflow_driver",
+                        "query.project_standard_preview",
                     ]
                     .contains(&method))
                     || (params["project_id"].is_string()
@@ -609,6 +610,34 @@ mod role_discussion_instance_loading {
 mod standard_comparison_tests {
     use super::*;
     use crate::workspace::tests::{create, select};
+    #[test]
+    fn cross_project_standard_comparison_ignores_default_entry_metadata() {
+        let root = tempfile::tempdir().unwrap();
+        let w =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let defaults = w
+            .dispatch("query.configuration_defaults", json!({}))
+            .unwrap();
+        let base = w
+            .dispatch("query.standard", json!({"id":defaults["standard_ref"]}))
+            .unwrap();
+        let project = create(&w, "Default entry metadata");
+        for entry in [Value::Null, defaults["task_workflow_ref"].clone()] {
+            let copy = w.dispatch("standard.capture", json!({"project_id":project,"command_id":id(),"payload":{
+                "name":"Same project standard","root_workflow_refs":base["root_workflow_refs"],"default_workflow_ref":entry
+            }})).unwrap();
+            assert_ne!(copy["default_workflow_ref"], defaults["workflow_ref"]);
+            let diff = w
+                .dispatch(
+                    "query.standard_diff",
+                    json!({"before_ref":defaults["standard_ref"],"after_ref":copy["id"]}),
+                )
+                .unwrap();
+            assert_eq!(diff["before_digest"], diff["after_digest"]);
+            assert_eq!(diff["equal"], true);
+            assert_eq!(diff["changes"], json!([]));
+        }
+    }
     #[test]
     fn comparisons_read_each_project_and_work_without_switching_the_active_project() {
         let root = tempfile::tempdir().unwrap();

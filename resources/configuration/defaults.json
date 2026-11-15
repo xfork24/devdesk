@@ -5,7 +5,7 @@
   "harness_ref": "builtin-harness-codex-managed:1",
   "sandbox_ref": "builtin-sandbox-docker:1",
   "capability_ref": "builtin-capability-sol-high-codex:3",
-  "standard_ref": "builtin-standard-engineering:5",
+  "standard_ref": "builtin-standard-engineering:6",
   "role_agent_bindings": {
     "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:5",
     "builtin-role-architect:1": "builtin-agent-sol-high-architect:5",

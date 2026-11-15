@@ -1625,6 +1625,14 @@
             "pattern": "^\\S+:[1-9][0-9]*$"
           },
           "uniqueItems": true
+        },
+        "default_workflow_ref": {
+          "type": "string",
+          "pattern": "^\\S+:[1-9][0-9]*$"
+        },
+        "base_standard_ref": {
+          "type": "string",
+          "pattern": "^\\S+:[1-9][0-9]*$"
         }
       },
       "required": [
@@ -2194,6 +2202,36 @@
             "required": [
               "root_workflow_refs"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "standard"
+                }
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "default_workflow_ref"
+                  ]
+                },
+                {
+                  "required": [
+                    "base_standard_ref"
+                  ]
+                }
+              ]
+            }
           }
         }
       ]
@@ -4735,6 +4773,9 @@
         },
         "orchestration": {
           "$ref": "orchestration.schema.json#/$defs/OrchestrationSelection"
+        },
+        "permission_context_source_ref": {
+          "$ref": "source-reference.schema.json"
         }
       },
       "required": [
@@ -5076,11 +5117,21 @@
         "user_request": {
           "type": "object",
           "properties": {
-            "feature_id": { "type": "string" },
-            "title": { "type": "string" },
-            "initial_requirement": { "type": "string" }
+            "feature_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "initial_requirement": {
+              "type": "string"
+            }
           },
-          "required": ["feature_id", "title", "initial_requirement"],
+          "required": [
+            "feature_id",
+            "title",
+            "initial_requirement"
+          ],
           "additionalProperties": false
         },
         "human_governance": {

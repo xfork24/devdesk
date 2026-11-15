@@ -279,6 +279,7 @@ impl Engine {
         call: &ConfigurationRecord,
     ) -> Result<()> {
         let current: WorkflowController = s.configuration(&call.definition_id)?.decode()?;
+        crate::configuration::project_manager_role(s, &current.role_ref)?;
         require(
             session_instance_current(s, &current),
             "经理实例已换绑/移除，需要后继会话",

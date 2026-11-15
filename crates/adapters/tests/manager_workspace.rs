@@ -490,6 +490,57 @@ fn manager_five_configuration_scenarios_have_native_receipts_without_feature_or_
     );
 }
 #[test]
+fn non_manager_agents_cannot_open_project_management_controllers() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, _, project) = setup(dir.path());
+    for method in ["manager.open", "orchestration.open"] {
+        let error = e
+            .execute(
+                method,
+                Command {
+                    command_id: id(),
+                    target: Some(project.clone()),
+                    expected_revision: None,
+                    payload: json!({
+                        "role_ref": "builtin-role-analyst:1",
+                        "agent_ref": "builtin-agent-sol-high-analyst:5",
+                    }),
+                },
+            )
+            .unwrap_err();
+        assert!(
+            error.message.contains("只有项目经理角色"),
+            "{method}: {error}"
+        );
+    }
+    let error = e
+        .execute(
+            "manager.open",
+            Command {
+                command_id: id(),
+                target: Some(project.clone()),
+                expected_revision: None,
+                payload: json!({"agent_ref":"builtin-agent-sol-high-analyst:5"}),
+            },
+        )
+        .unwrap_err();
+    assert!(error.message.contains("只有项目经理角色"), "{error}");
+    assert!(
+        !e.store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.r#type == "workflow_controller")
+    );
+    let manager = cmd(&e, "manager.open", Some(&project), json!({}));
+    assert_eq!(
+        manager["controller"]["role_ref"],
+        "builtin-role-project-manager:1"
+    );
+}
+
+#[test]
 fn project_records_are_paginated_chunked_and_cross_project_queries_are_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let (e, _, project) = setup(dir.path());

@@ -222,6 +222,7 @@ export function StandardManager({
   const [usage, setUsage] = useState<Row>();
   const [name, setName] = useState("");
   const [roots, setRoots] = useState<string[]>([]);
+  const [defaultEntry, setDefaultEntry] = useState("");
   const [candidate, setCandidate] = useState<Row>();
   const [base, setBase] = useState("");
   const [compare, setCompare] = useState("");
@@ -331,19 +332,39 @@ export function StandardManager({
           value={roots}
           onChange={(value) => {
             setRoots(value);
+            setDefaultEntry(
+              value.includes(defaultEntry)
+                ? defaultEntry
+                : value.length === 1
+                  ? value[0]
+                  : "",
+            );
             setCandidate(undefined);
           }}
         />
         <p className="muted">
           只选择已发布入口；Delivery、Spec 和子流程由系统解析。
         </p>
+        <RevisionSelect
+          label="默认启动 Workflow"
+          records={records.filter(
+            (r) => r.type === "workflow" && roots.includes(r.id),
+          )}
+          value={defaultEntry}
+          required
+          onChange={(value) => {
+            setDefaultEntry(value);
+            setCandidate(undefined);
+          }}
+        />
         <ActionButton
-          disabled={busy || !roots.length}
+          disabled={busy || !roots.length || !defaultEntry}
           onClick={() =>
             void act(async () => {
               setCandidate(
                 await request("standard.capture.preview", {
                   root_workflow_refs: roots,
+                  default_workflow_ref: defaultEntry,
                   project_id: project?.id,
                 }),
               );
@@ -368,6 +389,7 @@ export function StandardManager({
                     payload: {
                       name,
                       root_workflow_refs: roots,
+                      default_workflow_ref: defaultEntry,
                       preview_digest: candidate.snapshot_digest,
                       scope: project ? `project:${project.id}` : "global",
                     },
@@ -424,6 +446,7 @@ export function StandardManager({
             }
             onClick={() => {
               setRoots(snapshot.root_workflow_refs);
+              setDefaultEntry(snapshot.default_workflow_ref || "");
               setName(snapshot.record.name);
               setBase(selected);
               setCandidate(undefined);

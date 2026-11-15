@@ -653,6 +653,7 @@ function App() {
         payload: {
           project_id: project?.id,
           require_configuration: true,
+          start_workflow: false,
           configuration_revision_id: configuration?.id,
         },
         fields: [
@@ -1218,6 +1219,40 @@ function App() {
                     </ActionButton>
                   ))}
                 </div>
+                {executionTab === "overview" &&
+                  !["completed", "cancelled"].includes(f.status) &&
+                  !data?.configurations?.some(
+                    (r: Row) =>
+                      r.type === "workflow_instance" &&
+                      r.data.owner_id === f.id &&
+                      r.data.parent_execution_id == null,
+                  ) && (
+                    <section className="panel" aria-label="启动 Feature">
+                      <div className="panel-heading">
+                        <div>
+                          <h3>Feature 尚未启动</h3>
+                          <p>
+                            已保存需求和执行配置，点击启动后创建工作流并采用已选调度模式。
+                          </p>
+                        </div>
+                        <ActionButton
+                          className="primary"
+                          disabled={busy || !repositoryReady}
+                          onClick={() =>
+                            void command("workflow.start", f.id).catch(() => {})
+                          }
+                        >
+                          启动 Feature
+                        </ActionButton>
+                      </div>
+                      <WorkStandard
+                        request={rpc}
+                        projectId={projectId}
+                        owner={f}
+                        refresh={load}
+                      />
+                    </section>
+                  )}
                 {executionTab === "overview" &&
                   data?.configurations
                     ?.filter(

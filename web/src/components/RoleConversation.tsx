@@ -29,6 +29,7 @@ type Props = {
   refresh: () => Promise<void>;
 };
 const globalOwner = { id: "global", title: "全局 / 跨项目", revision: 0 };
+const createAgentInstanceOption = "__create_agent_instance__";
 
 export function RoleConversation({
   project = globalOwner,
@@ -437,6 +438,29 @@ export function RoleConversation({
       setBusy(false);
     }
   }
+  async function createAgentInstance() {
+    if (!composite) return;
+    await action(async () => {
+      const created = await request("agent.instance.create", {
+        project_id: global ? undefined : project.id,
+        command_id: crypto.randomUUID(),
+        payload: {
+          name: composite.name,
+          agent_revision_id: composite.id,
+          ...(!global &&
+          owner !== project.id &&
+          runtime?.data.role_agent_bindings &&
+          boundAgents.includes(composite.id)
+            ? { frozen_work_id: owner }
+            : {}),
+          scope: global ? "global" : `project:${project.id}`,
+        },
+      });
+      clearSelectedSession();
+      setCatalog(await loadCatalog(request, global ? undefined : project?.id));
+      setInstanceId(created.id);
+    });
+  }
   async function open(forceNew = false) {
     captureFeedback();
 
@@ -583,6 +607,10 @@ export function RoleConversation({
                 value={instanceId}
                 onChange={(e) => {
                   captureFeedback();
+                  if (e.target.value === createAgentInstanceOption) {
+                    void createAgentInstance();
+                    return;
+                  }
                   clearSelectedSession();
                   setInstanceId(e.target.value);
                 }}
@@ -592,56 +620,29 @@ export function RoleConversation({
                 </option>
                 {instances.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.name} · {r.scope} · v
+                    {r.name.replace(/\s*·\s*(?:项目|全局)讨论\s*\d+$/u, "")} ·{" "}
+                    {r.scope
+                      .split(":")
+                      .map((part: string, index: number) =>
+                        index === 0 ? part : part.slice(0, 8),
+                      )
+                      .join(":")}{" "}
+                    · v
                     {
                       catalog.find((c) => c.id === r.data.agent_revision_id)
                         ?.version
                     }{" "}
-                    · {r.id.slice(0, 8)}
+                    · {r.id.replace(/^agent-instance\./u, "").slice(0, 8)}
                   </option>
                 ))}
+                <option value={createAgentInstanceOption}>新建Agent实例</option>
               </ActionSelect>
             </label>
-            <div className="actions">
-              <ActionButton
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  action(async () => {
-                    const created = await request("agent.instance.create", {
-                      project_id: global ? undefined : project.id,
-                      command_id: crypto.randomUUID(),
-                      payload: {
-                        name: `${composite.name} · ${global ? "全局" : "项目"}讨论 ${instances.length + 1}`,
-                        agent_revision_id: composite.id,
-                        ...(!global &&
-                        owner !== project.id &&
-                        runtime?.data.role_agent_bindings &&
-                        boundAgents.includes(composite.id)
-                          ? { frozen_work_id: owner }
-                          : {}),
-                        scope: global ? "global" : `project:${project.id}`,
-                      },
-                    });
-                    clearSelectedSession();
-                    setCatalog(
-                      await loadCatalog(
-                        request,
-                        global ? undefined : project?.id,
-                      ),
-                    );
-                    setInstanceId(created.id);
-                  })
-                }
-              >
-                新建讨论身份
-              </ActionButton>
-              {!instances.length && (
-                <p className="muted">
-                  先创建讨论身份，即可独立保留该 Agent 的会话与经验。
-                </p>
-              )}
-            </div>
+            {!instances.length && (
+              <p className="muted">
+                在 Agent 下拉列表中选择“新建Agent实例”，即可独立保留会话与经验。
+              </p>
+            )}
             {instanceId && (
               <p className="muted">
                 该 Agent 的经验范围：

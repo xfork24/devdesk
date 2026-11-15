@@ -213,6 +213,12 @@ pub fn validate_source_data(kind: &str, refs: &References, data: &Value) -> Resu
                 !roots.is_empty() && roots.len() <= 100,
                 "Standard 需要 1—100 个 Workflow 入口",
             )?;
+            if let Some(entry) = refs.get("default_workflow_ref") {
+                require(
+                    roots.iter().any(|r| Some(r.as_str()) == entry.as_str()),
+                    "Standard 默认入口必须是声明的根 Workflow",
+                )?;
+            }
         }
         "workflow" => {
             for step in data["steps"].as_array().into_iter().flatten() {

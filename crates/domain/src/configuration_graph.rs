@@ -52,7 +52,8 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
             "skills" => "skill",
             "tools" => "tool",
             "spec_refs" => "spec",
-            "root_workflow_refs" => "workflow",
+            "root_workflow_refs" | "default_workflow_ref" => "workflow",
+            "base_standard_ref" => "standard",
             "model_providers" => "model_provider",
             "model_catalog_ref" => "model_catalog",
             "runtime_resource_ref" => "runtime_resource",
@@ -204,6 +205,7 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
                 ("workflow_ref", "workflow"),
                 ("standard_ref", "standard"),
                 ("permission_context_ref", "permission_context"),
+                ("permission_context_source_ref", "permission_context"),
                 ("orchestrator_role_ref", "role"),
             ] {
                 add(format!("/data/{key}"), kind, &data[key])?;
@@ -224,6 +226,30 @@ pub fn configuration_edges(record: &ConfigurationRecord) -> Result<Vec<Configura
         "integration_project_configuration" => {
             for (key, binding) in data.as_object().into_iter().flatten() {
                 add(format!("/data/{key}"), "integration_binding", binding)?;
+            }
+        }
+        "standard_derivation" => {
+            add(
+                "/data/base_standard_ref".into(),
+                "standard",
+                &data["base_standard_ref"],
+            )?;
+            for (i, source) in data["override_sources"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                let kind = source["kind"].as_str().unwrap_or("");
+                require(
+                    ["workflow", "delivery_type", "spec"].contains(&kind),
+                    "规范覆盖来源类型无效",
+                )?;
+                add(
+                    format!("/data/override_sources/{i}/reference"),
+                    kind,
+                    &source["reference"],
+                )?;
             }
         }
         "skill_package" => {

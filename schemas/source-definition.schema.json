@@ -101,6 +101,14 @@
     "runtime_resource_ref": {
       "type": "string",
       "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "default_workflow_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
+    },
+    "base_standard_ref": {
+      "type": "string",
+      "pattern": "^\\S+:[1-9][0-9]*$"
     }
   },
   "additionalProperties": false,
@@ -869,6 +877,36 @@
             {
               "required": [
                 "root_workflow_refs"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "not": {
+              "const": "standard"
+            }
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "default_workflow_ref"
+              ]
+            },
+            {
+              "required": [
+                "base_standard_ref"
               ]
             }
           ]

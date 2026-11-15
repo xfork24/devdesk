@@ -27,7 +27,15 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 18 / project 
 
 JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.message`，领域代码位于 `error.data.code`，常见为 invalid_params、not_found、blocked、revision_conflict、project_changed、project_required、configuration_required、dataset_locked 和 storage。
 
+Web 的 `feature.create` 显式提交 `payload.start_workflow=false`：保存草稿、初始需求、流程输入及冻结的工作配置，不创建 Workflow、Driver 或经理会话。之后在执行与交付页以 `workflow.start` 启动该 Feature；不传 `inputs` 时使用创建时保存的 `workflow_inputs`。旧 API 调用省略 `start_workflow` 时保留创建并初始化流程的行为。
+
 ## 配置、编译与任务
+
+项目页以 Standard 为唯一规范入口。`query.project_standard_preview({project_id,standard_ref,standard_overrides,permission_context_ref?})` 返回生效快照、默认入口、角色需求、来源差异及 `preview_hash`，不写入数据库。`standard_overrides` 为 `{source_ref,replacement_ref}` 数组，作用于基础 Standard 内该确切修订的所有引用位置。类型、可见范围、重复覆盖、被其他覆盖移除的目标及引用循环会被拒绝。
+
+`project.configuration.update` 的新入口提交 `standard_ref`、`standard_overrides` 和可选 `standard_preview_hash`，无需提交 `workflow_ref`。保存时核对预览；无覆盖项时直接引用所选 Standard，不创建项目专属 Standard、派生源或来源记录，有覆盖项时才原子发布项目专属 Standard 及必要的源后继。移除全部覆盖后恢复引用基础 Standard。存储的 `workflow_ref` 由 Standard 的默认入口解析得到。`query.standard` 返回 `default_workflow_ref` 与项目快照的 `provenance`。基础来源与差异永久保留；旧 Feature 的冻结引用不回填。原有仅提交 Workflow 的 API 继续支持生成规范快照。
+
+`standard.capture` 支持根级 `default_workflow_ref`，必须属于 `root_workflow_refs`；Standard 编辑器要求显式选择默认入口。旧项目曾明确保存的入口及旧目录默认映射可在生成项目快照时沿用，转换后入口写入项目 Standard，不从多个根中任取一个。
 
 `role.create/revise/delete` 只管理自由业务身份，不生成默认 Agent 或 Skill。Capability 和 Agent 明确引用当前资源；不从角色名称推导权限或业务输出。`query.configuration_defaults` 返回当前目录的确切默认引用，不创建项目采用记录，也不安装运行时。
 
@@ -173,7 +181,7 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ## Standard 快照接口
 
-`standard.capture.preview` 只读解析确切 `root_workflow_refs`，`standard.capture` 核对候选并发布或复用不可变快照。`standard.archive` 只改变选择列表，不删除历史。`query.standard_catalog/standard/standard_diff/standard_usage` 返回按需视图及真实采用关系。
+`standard.capture.preview` 只读解析确切 `root_workflow_refs`，`standard.capture` 核对候选并发布或复用不可变快照。`standard.archive` 只改变选择列表，不删除历史。`query.standard_catalog/standard/standard_diff/standard_usage` 返回按需视图及真实采用关系。规范差异与项目覆盖预览仅比较 Workflow、Delivery、Spec 定义及关联；默认启动入口元数据的缺省或不同不构成规范变化。
 
 `work.configuration.update` 为尚未启动的工作选择 `standard_ref`、`workflow_ref`、执行者和权限；启动后使用 `WorkflowChangeOperation::AdoptStandard`，并沿既有 preview/apply、CAS、授权与静止等待路径切换。`query.work_configuration` 返回来源及计划历史，`query.work_standard_diff` 区分自身规范、入口投影及子工作采用。历史计划中的子调用清单以冻结的首次调用依据标记，当前调用树另行展示。
 `query.work_standard_choices` 分页返回可访问工作及其采用依据；工作比较可跨项目，不切换活动项目。未运行工作以已选配置为依据，已运行工作以冻结计划为依据。Standard 对比同样可跨可访问目录，解析双方各自的源修订。

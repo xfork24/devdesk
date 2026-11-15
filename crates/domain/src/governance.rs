@@ -100,7 +100,11 @@ pub fn reference_fields(kind: &str) -> &'static [&'static str] {
             "runtime_resource_ref",
         ],
         "permission_context" => &["sandbox_ref"],
-        "standard" => &["root_workflow_refs"],
+        "standard" => &[
+            "root_workflow_refs",
+            "default_workflow_ref",
+            "base_standard_ref",
+        ],
         _ => &[],
     }
 }

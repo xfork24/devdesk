@@ -53,7 +53,8 @@
       "specs/builtin-spec-located-review-v1.json"
     ],
     "standard": [
-      "standards/builtin-standard-engineering-v5.json"
+      "standards/builtin-standard-engineering-v5.json",
+      "standards/builtin-standard-engineering-v6.json"
     ],
     "workflow": [
       "workflows/builtin-workflow-task-sol-high-v7.json",

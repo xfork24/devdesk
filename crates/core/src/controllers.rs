@@ -214,6 +214,10 @@ impl Engine {
                         .as_str()
                         .is_some_and(|id| existing.data["permission_context_ref"] != id);
                 if !replacing {
+                    crate::configuration::project_manager_role(
+                        s,
+                        &text(&existing.data, "role_ref")?,
+                    )?;
                     return Ok(Some(
                         json!({"id":existing.id,"reused":true,"controller":existing.data}),
                     ));
@@ -279,7 +283,7 @@ impl Engine {
                         .flatten()
                 })
                 .ok_or_else(|| err("configuration_required", "项目需要明确编排 Role"))?;
-            let role = crate::configuration::role_record(s, role)?;
+            let role = crate::configuration::project_manager_role(s, role)?;
             let agent_id = c.payload["agent_ref"]
                 .as_str()
                 .or_else(|| config.and_then(|r| r.data["role_agent_bindings"][&role.id].as_str()))
@@ -426,6 +430,9 @@ impl Engine {
         let row = s.configuration(target)?.clone();
         require(row.r#type == "workflow_controller", "不是编排控制器")?;
         let mut controller: WorkflowController = row.decode()?;
+        if method != "orchestration.takeover" {
+            crate::configuration::project_manager_role(s, &controller.role_ref)?;
+        }
         require(
             !s.governance.iter().any(|r| {
                 r.r#type == "controller_selection" && r.data["predecessor_controller_id"] == row.id
@@ -575,6 +582,11 @@ impl Engine {
             "编排会话缺少确切执行意图",
         )?;
         let agent = s.resolve_agent(&controller.agent_revision_id)?;
+        let role = crate::configuration::project_manager_role(&s, &controller.role_ref)?;
+        require(
+            agent.role == role.definition_id,
+            "编排 Agent 必须属于项目经理角色",
+        )?;
         let permissions = resolve_permission_lock(
             &s,
             &agent.harness_ref,
@@ -624,6 +636,7 @@ impl Engine {
             .configuration(bound.data["controller_id"].as_str().unwrap_or(""))?
             .clone();
         let controller: WorkflowController = row.decode()?;
+        crate::configuration::project_manager_role(s, &controller.role_ref)?;
         require(
             crate::manager_workspace::session_instance_current(s, &controller),
             "经理实例已改变，需要后继会话",

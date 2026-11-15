@@ -101,6 +101,7 @@ test("创建 Feature 接收自然语言需求，未声明输入时隐藏 JSON �
   expect(submitted().payload.initial_requirement).toBe(brief);
   expect(submitted().payload.workflow_inputs).toBeUndefined();
   expect(submitted().payload.configuration_revision_id).toBe("selected-config");
+  expect(submitted().payload.start_workflow).toBe(false);
 });
 
 test("声明的流程输入放在折叠高级选项中，并与自然语言需求分别提交", async ({
@@ -132,6 +133,134 @@ test("声明的流程输入放在折叠高级选项中，并与自然语言需�
   expect(submitted().payload.initial_requirement).toBe(
     "基于提供的业务背景梳理导出需求。",
   );
+});
+
+test("已有 Feature 只在执行与交付显式启动，创建入口仍在工作总览", async ({
+  page,
+}) => {
+  await setup(page);
+  const project = {
+    id: "start-project",
+    title: "显式启动项目",
+    revision: 1,
+    workspace_definition: { repository: "fixture/start", mainline: "main" },
+  };
+  const feature = {
+    id: "start-feature",
+    project_id: project.id,
+    title: "待启动的 Feature",
+    status: "draft",
+    revision: 3,
+  };
+  const configuration = {
+    id: "saved-work:1",
+    type: "work_configuration",
+    definition_id: feature.id,
+    version: 1,
+    data: {
+      workflow_ref: "saved-flow:1",
+      standard_ref: "saved-standard:1",
+      role_agent_bindings: {},
+    },
+  };
+  let submitted: any;
+  await page.route("**/capabilities", (route) =>
+    route.fulfill({
+      json: { setup_required: false, active_project_id: project.id },
+    }),
+  );
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    switch (call.method) {
+      case "query.workspace":
+        result = {
+          active_project: project,
+          projects: [project],
+          features: [feature],
+          total_features: 1,
+          total_projects: 1,
+          repository_ready: true,
+          configuration_ready: true,
+          configurations: [configuration],
+          summary: {},
+          definitions: [],
+          harnesses: [],
+          sandboxes: [],
+          detail: {
+            feature,
+            tasks: [],
+            documents: [],
+            snapshots: [],
+            contexts: [],
+            totals: {},
+          },
+        };
+        break;
+      case "query.work_configuration":
+        result = { configuration, history: [] };
+        break;
+      case "query.project_configuration":
+        result = { configuration: null };
+        break;
+      case "query.configurations":
+        result = { records: [], total: 0 };
+        break;
+      case "query.standard_catalog":
+        result = { records: [] };
+        break;
+      case "query.workflow_requirements":
+        result = { roles: [] };
+        break;
+      case "workflow.start":
+        submitted = call.params;
+        return route.fulfill({
+          json: {
+            jsonrpc: "2.0",
+            id: call.id,
+            error: {
+              code: -32000,
+              message: "已捕获启动请求",
+              data: { code: "fixture_boundary" },
+            },
+          },
+        });
+      default:
+        return route.fallback();
+    }
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(
+    `/?tab=overview&project_id=${project.id}&feature_id=${feature.id}`,
+  );
+  await expect(
+    page.getByRole("button", { name: "新 Feature", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "启动 Feature", exact: true }),
+  ).toHaveCount(0);
+  expect(submitted).toBeUndefined();
+  await page.getByRole("button", { name: "执行与交付", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "新 Feature", exact: true }),
+  ).toHaveCount(0);
+  const start = page.getByRole("region", { name: "启动 Feature", exact: true });
+  await expect(
+    start.getByText("Feature 尚未启动", { exact: true }),
+  ).toBeVisible();
+  expect(submitted).toBeUndefined();
+  await start
+    .getByRole("button", { name: "启动 Feature", exact: true })
+    .click();
+  await expect
+    .poll(() => submitted)
+    .toMatchObject({
+      project_id: project.id,
+      target: feature.id,
+      expected_revision: feature.revision,
+      payload: {},
+    });
+  await expect(start.getByText(/已捕获启动请求/)).toBeVisible();
 });
 
 test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输入输出", async ({

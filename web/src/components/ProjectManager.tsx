@@ -1,10 +1,10 @@
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { WorkflowController } from "./WorkflowController";
 import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
 import { useCallback, useEffect, useState } from "react";
 import { loadCatalog, useDraft } from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
+import { StandardDiff, StandardDetail } from "./StandardManager";
 import { type Row, type Request } from "./rpc-types";
 export function ProjectManager({
   request,
@@ -35,16 +35,26 @@ export function ProjectManager({
     [requirements, setRequirements] = useState<Row>(),
     [busy, setBusy] = useState(false);
   const [orchestration, setOrchestration] = useState<Row>({ mode: "manual" });
+  const [preview, setPreview] = useState<Row>();
+  const [baseline, setBaseline] = useState<Row>();
+  const [savedStandard, setSavedStandard] = useState<Row>();
+  const [overrideKind, setOverrideKind] = useState("");
+  const [overrideSource, setOverrideSource] = useState("");
+  const [overrideReplacement, setOverrideReplacement] = useState("");
   const [repository, setRepository] = useState(""),
     [mainline, setMainline] = useState("main"),
     [title, setTitle] = useState("");
   const [draft, setDraft] = useDraft(
-    `devdesk:source-flat-v1:project:${project?.id || "global"}`,
+    `devdesk:standard-project-v2:${project?.id || "global"}`,
     () => ({
       orchestrator_role_ref: "",
       permission_context_ref: "",
       workflow_ref: "",
       standard_ref: "",
+      standard_overrides: [] as {
+        source_ref: string;
+        replacement_ref: string;
+      }[],
       role_agent_bindings: {} as Record<string, string>,
       source_configuration_id: "",
     }),
@@ -81,6 +91,14 @@ export function ProjectManager({
     );
     setDefaults(preset);
     setHealth(workspace);
+    const saved = configuration.configuration?.data.standard_ref
+      ? await request("query.standard", {
+          id: configuration.configuration.data.standard_ref,
+          project_id: project?.id,
+          limit: 1000,
+        })
+      : undefined;
+    setSavedStandard(saved);
     if (configuration.configuration?.data.workflow_ref)
       setDraft((current) =>
         current.workflow_ref
@@ -89,9 +107,16 @@ export function ProjectManager({
               orchestrator_role_ref:
                 configuration.configuration.data.orchestrator_role_ref || "",
               permission_context_ref:
-                configuration.configuration.data.permission_context_ref || "",
+                configuration.configuration.data
+                  .permission_context_source_ref ||
+                configuration.configuration.data.permission_context_ref ||
+                "",
               workflow_ref: configuration.configuration.data.workflow_ref,
-              standard_ref: configuration.configuration.data.standard_ref || "",
+              standard_ref:
+                saved?.provenance?.base_standard_ref ||
+                configuration.configuration.data.standard_ref ||
+                "",
+              standard_overrides: saved?.provenance?.overrides || [],
               role_agent_bindings:
                 configuration.configuration.data.role_agent_bindings || {},
               source_configuration_id: configuration.configuration.id,
@@ -105,7 +130,8 @@ export function ProjectManager({
               orchestrator_role_ref: preset.orchestrator_role_ref,
               permission_context_ref: preset.permission_context_ref,
               workflow_ref: preset.workflow_ref,
-              standard_ref: "",
+              standard_ref: preset.standard_ref,
+              standard_overrides: [],
               role_agent_bindings: preset.role_agent_bindings,
               source_configuration_id: "",
             },
@@ -123,15 +149,27 @@ export function ProjectManager({
   useEffect(() => {
     let active = true;
     setRequirements(undefined);
-    if (!project?.id || !draft.workflow_ref) return;
-    void request("query.workflow_requirements", {
-      id: draft.workflow_ref,
-      project_id: project.id,
-      standard_ref: draft.standard_ref || null,
-    })
-      .then((result) => {
+    setPreview(undefined);
+    setBaseline(undefined);
+    if (!project?.id || !draft.standard_ref) return;
+    void Promise.all([
+      request("query.standard", {
+        id: draft.standard_ref,
+        project_id: project.id,
+        limit: 1000,
+      }),
+      request("query.project_standard_preview", {
+        project_id: project.id,
+        standard_ref: draft.standard_ref,
+        standard_overrides: draft.standard_overrides,
+        permission_context_ref: draft.permission_context_ref || undefined,
+      }),
+    ])
+      .then(([source, result]) => {
         if (active) {
-          setRequirements(result);
+          setBaseline(source);
+          setPreview(result);
+          setRequirements(result.requirements);
           setError("");
         }
       })
@@ -141,8 +179,17 @@ export function ProjectManager({
     return () => {
       active = false;
     };
-  }, [request, project?.id, draft.workflow_ref, draft.standard_ref, setError]);
-  const workflows = records.filter((r) => r.type === "workflow");
+  }, [
+    request,
+    project?.id,
+    draft.standard_ref,
+    draft.standard_overrides,
+    draft.permission_context_ref,
+    setError,
+  ]);
+  const managerRole = records.find(
+    (r) => r.type === "role" && r.id === defaults?.orchestrator_role_ref,
+  );
   const standards = records.filter(
     (r) => r.type === "standard" && Array.isArray(r.root_workflow_refs),
   );
@@ -163,8 +210,9 @@ export function ProjectManager({
           orchestration,
           orchestrator_role_ref: draft.orchestrator_role_ref || null,
           permission_context_ref: draft.permission_context_ref,
-          workflow_ref: draft.workflow_ref,
-          standard_ref: draft.standard_ref || null,
+          standard_ref: draft.standard_ref,
+          standard_overrides: draft.standard_overrides,
+          standard_preview_hash: preview?.preview_hash,
           role_agent_bindings: draft.role_agent_bindings,
           source_configuration_id:
             draft.source_configuration_id || configuration?.id,
@@ -174,7 +222,11 @@ export function ProjectManager({
       setDraft((current) => ({ ...current, source_configuration_id: row.id }));
       await refresh();
       await load();
-      setMessage("项目配置已保存；用于之后创建的 Feature。");
+      setMessage(
+        draft.standard_overrides.length
+          ? "项目专属规范快照已保存；已有 Feature 的冻结版本保持不变。"
+          : "项目配置已保存，直接使用所选 Standard；已有 Feature 的冻结版本保持不变。",
+      );
     } catch (e) {
       setError(String(e));
     } finally {
@@ -189,22 +241,11 @@ export function ProjectManager({
           <div>
             <h2>项目管理</h2>
             <p>
-              先选择流程，再为流程所需 Role 绑定 Agent。规范来自 Workflow Step
-              和 Delivery，保存时固定 Standard 快照。
+              选择基础 Standard，按需覆盖规范版本，再为流程所需角色绑定 Agent。
+              有覆盖时保存为项目专属快照；流程请在“执行与交付”启动。
             </p>
           </div>
         </div>
-        {project && (
-          <WorkflowController
-            request={request}
-            instance={{ id: project.id, data: { status: "active" } }}
-            projectId={project.id}
-            refresh={async () => {
-              await refresh();
-            }}
-            workspaceOnly
-          />
-        )}
         {defaults && (
           <div className="notice">
             <strong>默认配置已准备好</strong>
@@ -217,11 +258,15 @@ export function ProjectManager({
                 disabled={busy}
                 onClick={() => {
                   captureFeedback();
+                  setOverrideKind("");
+                  setOverrideSource("");
+                  setOverrideReplacement("");
                   return setDraft({
                     orchestrator_role_ref: defaults.orchestrator_role_ref,
                     permission_context_ref: defaults.permission_context_ref,
                     workflow_ref: defaults.workflow_ref,
-                    standard_ref: "",
+                    standard_ref: defaults.standard_ref,
+                    standard_overrides: [],
                     role_agent_bindings: defaults.role_agent_bindings,
                     source_configuration_id: configuration?.id || "",
                   });
@@ -351,11 +396,12 @@ export function ProjectManager({
               <p>
                 {configuration?.data.workflow_ref
                   ? `已保存 v${configuration.version}`
-                  : "待配置：选择 Workflow 并完成所有 Role 的 Agent 绑定"}
+                  : "待配置：选择 Standard 并完成角色的 Agent 绑定"}
               </p>
             </div>
           </div>
           <ActionForm
+            className="project-configuration-form"
             onSubmit={(e) => {
               captureFeedback();
 
@@ -363,58 +409,150 @@ export function ProjectManager({
               void save();
             }}
           >
-            <div className="form-grid">
-              <RevisionSelect
-                label="项目 Workflow"
-                records={
-                  draft.standard_ref
-                    ? workflows.filter((r) =>
-                        standards
-                          .find((s) => s.id === draft.standard_ref)
-                          ?.workflow_refs?.includes(r.id),
-                      )
-                    : workflows
-                }
-                value={draft.workflow_ref}
-                required
-                onChange={(value) => {
+            <RevisionSelect
+              label="基础 Standard"
+              records={standards}
+              value={draft.standard_ref}
+              required
+              onChange={(standard_ref) => {
+                captureFeedback();
+                setOverrideKind("");
+                setOverrideSource("");
+                setOverrideReplacement("");
+                setDraft({ ...draft, standard_ref, standard_overrides: [] });
+              }}
+            />
+            <p aria-label="默认启动入口">
+              默认启动入口：
+              {preview?.snapshot.nodes.find(
+                (n: Row) => n.reference === preview.default_workflow_ref,
+              )?.name ||
+                baseline?.default_workflow_ref ||
+                "由所选 Standard 指定"}
+            </p>
+            {savedStandard && (
+              <p>
+                {savedStandard.provenance ? "当前项目快照" : "当前 Standard"}：
+                {savedStandard.record.name} · v{savedStandard.record.version} ·{" "}
+                {savedStandard.record.id}
+              </p>
+            )}
+            <details>
+              <summary>
+                项目覆盖（{draft.standard_overrides.length} 项）
+              </summary>
+              <p>
+                替换某个 Spec、Delivery 或 Workflow 的确切版本；该修订在此
+                Standard 中的所有引用同步生效。
+              </p>
+              <div className="project-configuration-row">
+                <label>
+                  规范类型
+                  <ActionSelect
+                    aria-label="规范类型"
+                    value={overrideKind}
+                    onChange={(e) => {
+                      setOverrideKind(e.target.value);
+                      setOverrideSource("");
+                      setOverrideReplacement("");
+                    }}
+                  >
+                    <option value="">请选择</option>
+                    <option value="workflow">Workflow</option>
+                    <option value="spec">Spec</option>
+                    <option value="delivery_type">Delivery</option>
+                  </ActionSelect>
+                </label>
+                <label>
+                  要覆盖的规范项
+                  <ActionSelect
+                    aria-label="要覆盖的规范项"
+                    value={overrideSource}
+                    disabled={!overrideKind}
+                    onChange={(e) => {
+                      setOverrideSource(e.target.value);
+                      setOverrideReplacement("");
+                    }}
+                  >
+                    <option value="">请选择</option>
+                    {(baseline?.nodes || [])
+                      .filter((node: Row) => node.kind === overrideKind)
+                      .map((node: Row) => (
+                        <option key={node.reference} value={node.reference}>
+                          {node.name} · {node.reference}
+                        </option>
+                      ))}
+                  </ActionSelect>
+                </label>
+                <RevisionSelect
+                  label="替换为"
+                  records={records.filter(
+                    (r) => r.type === overrideKind && r.id !== overrideSource,
+                  )}
+                  value={overrideReplacement}
+                  onChange={setOverrideReplacement}
+                />
+              </div>
+              <ActionButton
+                type="button"
+                disabled={!overrideSource || !overrideReplacement}
+                onClick={() => {
                   captureFeedback();
-                  return setDraft({
+                  setDraft({
                     ...draft,
-                    workflow_ref: value,
-                    standard_ref: "",
+                    standard_overrides: [
+                      ...draft.standard_overrides.filter(
+                        (o) => o.source_ref !== overrideSource,
+                      ),
+                      {
+                        source_ref: overrideSource,
+                        replacement_ref: overrideReplacement,
+                      },
+                    ],
                   });
+                  setOverrideSource("");
+                  setOverrideReplacement("");
                 }}
-              />
-              <label>
-                Standard 规范快照
-                <ActionSelect
-                  value={draft.standard_ref}
-                  onChange={(e) => {
-                    captureFeedback();
-                    const standard = standards.find(
-                      (r) => r.id === e.target.value,
-                    );
-                    return setDraft({
-                      ...draft,
-                      standard_ref: e.target.value,
-                      workflow_ref: standard?.root_workflow_refs.includes(
-                        draft.workflow_ref,
-                      )
-                        ? draft.workflow_ref
-                        : standard?.root_workflow_refs[0] || draft.workflow_ref,
-                    });
-                  }}
-                >
-                  <option value="">从所选 Workflow 自动生成快照</option>
-                  {standards.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} · v{r.version}
-                    </option>
-                  ))}
-                </ActionSelect>
-              </label>
-            </div>
+              >
+                添加覆盖
+              </ActionButton>
+              {draft.standard_overrides.map((item) => (
+                <div key={item.source_ref} className="setting-row">
+                  <span>
+                    {item.source_ref} → {item.replacement_ref}
+                  </span>
+                  <ActionButton
+                    type="button"
+                    aria-label={`移除覆盖 ${item.source_ref}`}
+                    onClick={() => {
+                      captureFeedback();
+                      setDraft({
+                        ...draft,
+                        standard_overrides: draft.standard_overrides.filter(
+                          (o) => o.source_ref !== item.source_ref,
+                        ),
+                      });
+                    }}
+                  >
+                    移除覆盖
+                  </ActionButton>
+                </div>
+              ))}
+            </details>
+            {preview && (
+              <details>
+                <summary>保存前查看来源与差异</summary>
+                <p>
+                  基础版本：{draft.standard_ref} ·{" "}
+                  {draft.standard_overrides.length
+                    ? "覆盖后生成项目专属快照。"
+                    : "无覆盖，直接使用所选 Standard。"}
+                  已有 Feature 不会随项目配置变化。
+                </p>
+                <StandardDiff diff={preview.provenance.diff} />
+                <StandardDetail snapshot={preview.snapshot} />
+              </details>
+            )}
             <p>
               <a
                 href={`?tab=workflows&config_tab=workflow&project_id=${encodeURIComponent(project.id)}`}
@@ -434,20 +572,87 @@ export function ProjectManager({
                 新建或编辑 Agent
               </a>
             </p>
-            <label>
-              默认调度模式
-              <ActionSelect
-                aria-label="默认调度模式"
-                value={orchestration.mode}
-                onChange={(e) =>
-                  setOrchestration({ ...orchestration, mode: e.target.value })
+            <div className="project-configuration-row project-orchestration-fields">
+              <label>
+                默认调度模式
+                <ActionSelect
+                  aria-label="默认调度模式"
+                  value={orchestration.mode}
+                  onChange={(e) =>
+                    setOrchestration({ ...orchestration, mode: e.target.value })
+                  }
+                >
+                  <option value="manual">人工控制</option>
+                  <option value="rust">Rust 自动调度</option>
+                  <option value="agent">Agent 调度</option>
+                </ActionSelect>
+              </label>
+              <RevisionSelect
+                label="执行授权"
+                records={records.filter((r) => r.type === "permission_context")}
+                value={draft.permission_context_ref}
+                onChange={(permission_context_ref) =>
+                  setDraft({
+                    ...draft,
+                    permission_context_ref: permission_context_ref,
+                  })
                 }
-              >
-                <option value="manual">人工控制</option>
-                <option value="rust">Rust 自动调度</option>
-                <option value="agent">Agent 调度</option>
-              </ActionSelect>
-            </label>
+              />
+              <label>
+                编排角色
+                <select
+                  aria-label="编排角色"
+                  value={draft.orchestrator_role_ref}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      orchestrator_role_ref: e.target.value,
+                    })
+                  }
+                >
+                  <option value="">仅手动操作工作流</option>
+                  {records
+                    .filter(
+                      (r) =>
+                        r.type === "role" &&
+                        managerRole &&
+                        r.definition_id === managerRole.definition_id,
+                    )
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {draft.orchestrator_role_ref && (
+                <RevisionSelect
+                  label="编排 Agent"
+                  records={records.filter(
+                    (r) =>
+                      r.type === "agent" &&
+                      records.some(
+                        (role) =>
+                          role.type === "role" &&
+                          role.id === r.role_ref &&
+                          role.id === draft.orchestrator_role_ref,
+                      ),
+                  )}
+                  value={
+                    draft.role_agent_bindings[draft.orchestrator_role_ref] || ""
+                  }
+                  onChange={(value) =>
+                    setDraft({
+                      ...draft,
+                      role_agent_bindings: {
+                        ...draft.role_agent_bindings,
+                        [draft.orchestrator_role_ref]: value,
+                      },
+                    })
+                  }
+                />
+              )}
+            </div>
             {orchestration.mode === "rust" && (
               <RevisionSelect
                 label="自动调度策略"
@@ -460,71 +665,14 @@ export function ProjectManager({
                 }
               />
             )}
-            <RevisionSelect
-              label="执行授权"
-              records={records.filter((r) => r.type === "permission_context")}
-              value={draft.permission_context_ref}
-              onChange={(permission_context_ref) =>
-                setDraft({
-                  ...draft,
-                  permission_context_ref: permission_context_ref,
-                })
-              }
-            />
-            <label>
-              编排角色
-              <select
-                aria-label="编排角色"
-                value={draft.orchestrator_role_ref}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    orchestrator_role_ref: e.target.value,
-                  })
-                }
-              >
-                <option value="">仅手动操作工作流</option>
-                {records
-                  .filter((r) => r.type === "role")
-                  .map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {draft.orchestrator_role_ref && (
-              <RevisionSelect
-                label="编排 Agent"
-                records={records.filter(
-                  (r) =>
-                    r.type === "agent" &&
-                    records.some(
-                      (role) =>
-                        role.type === "role" &&
-                        role.id === r.role_ref &&
-                        role.id === draft.orchestrator_role_ref,
-                    ),
-                )}
-                value={
-                  draft.role_agent_bindings[draft.orchestrator_role_ref] || ""
-                }
-                onChange={(value) =>
-                  setDraft({
-                    ...draft,
-                    role_agent_bindings: {
-                      ...draft.role_agent_bindings,
-                      [draft.orchestrator_role_ref]: value,
-                    },
-                  })
-                }
-              />
-            )}
+            <p className="muted">
+              项目管理与流程编排仅由项目经理角色承担；其他角色负责流程中的专业步骤。
+            </p>
             {requirements && (
               <>
                 <h3>流程所需 Role → Agent</h3>
                 <div
-                  className="project-role-bindings"
+                  className="project-configuration-row project-role-bindings"
                   role="group"
                   aria-label="流程所需 Role → Agent"
                 >
@@ -565,9 +713,7 @@ export function ProjectManager({
                   个规范节点（包含子流程）。
                 </p>
                 <p className="muted">
-                  {draft.standard_ref
-                    ? "已固定所选规范快照；实际验收以执行证据为准。"
-                    : "保存项目配置时自动生成不可变规范快照。"}
+                  保存后固定项目规范、来源和差异；实际验收以执行证据为准。
                 </p>
                 <details>
                   <summary>查看规范审计快照</summary>
@@ -588,7 +734,10 @@ export function ProjectManager({
                 </details>
               </>
             )}
-            <ActionButton className="primary" disabled={busy || !requirements}>
+            <ActionButton
+              className="primary"
+              disabled={busy || !requirements || !preview}
+            >
               保存项目配置
             </ActionButton>
           </ActionForm>
