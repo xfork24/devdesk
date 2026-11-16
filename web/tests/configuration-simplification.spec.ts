@@ -336,7 +336,9 @@ test("刷新设置恢复同一待授权请求，取消仍指向原登录", async
   expect(starts).toBe(0);
 });
 
-test("项目工具接入空状态区分模型登录且没有无效保存按钮", async ({ page }) => {
+test("项目默认调度与 Profile 保存恢复，工具接入空状态区分模型登录", async ({
+  page,
+}) => {
   await page.goto("/");
   const project = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),
@@ -350,7 +352,49 @@ test("项目工具接入空状态区分模型登录且没有无效保存按钮",
   await page.goto(
     `/?tab=projects&project_id=${encodeURIComponent(project.id)}`,
   );
+  const panel = page.getByRole("region", { name: "项目配置", exact: true });
+  const mode = panel.getByLabel("默认调度模式", { exact: true });
+  const profile = panel.getByLabel("Harness Profile", { exact: true });
+  const fullAccess = "builtin-permission-harness-full-access:1";
+  await expect(mode).toHaveValue("agent");
+  await expect(profile).toHaveValue(fullAccess);
+  await expect(profile.locator("option:checked")).toContainText(
+    "Harness 容器内全权限",
+  );
+  await expect(
+    panel.getByLabel("Harness Profile（留空采用默认）", { exact: true }),
+  ).toHaveCount(0);
+  async function saveProject(expectedMode: string, expectedProfile: string) {
+    const response = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/rpc") &&
+        r.request().postDataJSON()?.method === "project.configuration.update",
+    );
+    await panel
+      .getByRole("button", { name: "保存项目配置", exact: true })
+      .click();
+    expect((await (await response).json()).error).toBeUndefined();
+    const saved = await rpc(page, "query.project_configuration", {
+      project_id: project.id,
+    });
+    expect(saved.configuration.data.orchestration.mode).toBe(expectedMode);
+    expect(saved.configuration.data.harness_permission_ref).toBe(
+      expectedProfile,
+    );
+  }
+  await saveProject("agent", fullAccess);
+  await page.reload();
+  await expect(mode).toHaveValue("agent");
+  await expect(profile).toHaveValue(fullAccess);
+  await mode.selectOption("manual");
+  await profile.selectOption("builtin-permission-harness-read-only:1");
+  await saveProject("manual", "builtin-permission-harness-read-only:1");
+  await page.reload();
+  await expect(mode).toHaveValue("manual");
+  await expect(profile).toHaveValue("builtin-permission-harness-read-only:1");
   await page.getByRole("button", { name: "采用默认配置", exact: true }).click();
+  await expect(mode).toHaveValue("agent");
+  await expect(profile).toHaveValue(fullAccess);
   await expect(
     page.getByRole("heading", { name: "项目工具接入绑定", exact: true }),
   ).toBeVisible();

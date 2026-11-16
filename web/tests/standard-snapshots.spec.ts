@@ -195,7 +195,7 @@ async function captureStep(
 
 test("Standard 内容相同时，默认启动入口未声明或不同均显示规范定义相同", async ({
   page,
-}) => {
+}, info) => {
   await setup(page);
   const defaults = await rpc(page, "query.configuration_defaults");
   const base = await rpc(page, "query.standard", { id: defaults.standard_ref });
@@ -231,6 +231,47 @@ test("Standard 内容相同时，默认启动入口未声明或不同均显示�
     await panel.getByRole("button", { name: "比较规范", exact: true }).click();
     await expect(panel.locator(".standard-diff")).toHaveText("规范定义相同");
   }
+  const comparison = panel.getByRole("region", {
+    name: "Standard 比较",
+    exact: true,
+  });
+  const select = comparison.getByLabel("与另一个 Standard 比较", {
+    exact: true,
+  });
+  const selectorBox = (await select.boundingBox())!;
+  const buttonBox = (await comparison
+    .getByRole("button", { name: "比较规范", exact: true })
+    .boundingBox())!;
+  expect(Math.abs(selectorBox.y - buttonBox.y)).toBeLessThan(2);
+  expect(Math.abs(selectorBox.height - buttonBox.height)).toBeLessThan(2);
+  const titleCenter = await select.locator("..").evaluate((label) => {
+    const range = document.createRange();
+    range.selectNodeContents(label.firstChild!);
+    const rect = range.getBoundingClientRect();
+    return rect.y + rect.height / 2;
+  });
+  expect(
+    Math.abs(titleCenter - selectorBox.y - selectorBox.height / 2),
+  ).toBeLessThan(2);
+  const revise = (await panel
+    .getByRole("button", { name: "基于这些入口生成新修订", exact: true })
+    .boundingBox())!;
+  expect(selectorBox.y).toBeGreaterThan(revise.y + revise.height);
+  const usage = panel
+    .locator("summary")
+    .filter({ hasText: "使用位置 · 当前 Standard：" });
+  await expect(usage).toContainText(
+    `${base.record.name} · v${base.record.version}`,
+  );
+  await comparison.screenshot({
+    path: info.outputPath("standard-comparison-row.png"),
+  });
+  await panel
+    .getByLabel("查看 Standard", { exact: true })
+    .selectOption(copies[0].id);
+  await expect(usage).toContainText(
+    `${copies[0].name} · v${copies[0].version}`,
+  );
 });
 
 test("Standard 只读生成比较与归档保留规范源", async ({ page }, info) => {

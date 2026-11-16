@@ -568,7 +568,7 @@ export function ResourceEditor({
                 )}
                 {select("Tools", "tool", "tools", true, true)}
                 {select("Skills", "skill", "skills", true)}
-                {select("Agent Specs", "spec", "spec_refs", true)}
+                {select("Specs", "spec", "spec_refs", true)}
                 {(data.skills || []).map((id: string) => {
                   const pkg = integrations.find(
                     (r) => r.type === "skill_package" && r.definition_id === id,

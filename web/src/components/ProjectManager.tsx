@@ -1,7 +1,7 @@
 import { ActionButton, ActionForm, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { ProjectIntegrationBindings } from "./ProjectIntegrationBindings";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadCatalog, useDraft } from "./configuration-state";
 import { RevisionSelect } from "./configuration-ui";
 import { StandardDiff, StandardDetail } from "./StandardManager";
@@ -34,7 +34,8 @@ export function ProjectManager({
     [health, setHealth] = useState<Row>(),
     [requirements, setRequirements] = useState<Row>(),
     [busy, setBusy] = useState(false);
-  const [orchestration, setOrchestration] = useState<Row>({ mode: "manual" });
+  const [orchestration, setOrchestration] = useState<Row>({ mode: "agent" });
+  const orchestrationEdited = useRef(false);
   const [preview, setPreview] = useState<Row>();
   const [baseline, setBaseline] = useState<Row>();
   const [savedStandard, setSavedStandard] = useState<Row>();
@@ -73,9 +74,15 @@ export function ProjectManager({
       }).catch(() => undefined),
     ]);
     setProjects(workspace.projects || []);
-    setOrchestration(
-      configuration.configuration?.data.orchestration || { mode: "manual" },
-    );
+    if (!orchestrationEdited.current)
+      setOrchestration(
+        configuration.configuration?.data.orchestration ||
+          preset?.orchestration || { mode: "agent" },
+      );
+    const harnessProfile =
+      configuration.configuration?.data.harness_permission_ref ||
+      preset?.harness_permission_ref ||
+      "";
     const ids = new Set(records.map((row: Row) => row.id));
     setRecords([
       ...records,
@@ -104,15 +111,18 @@ export function ProjectManager({
     if (configuration.configuration?.data.workflow_ref)
       setDraft((current) =>
         current.workflow_ref
-          ? current
+          ? {
+              ...current,
+              harness_permission_ref:
+                current.harness_permission_ref || harnessProfile,
+            }
           : {
               sandbox_ref: configuration.configuration.data.sandbox_ref || "",
               sandbox_permission_ref:
                 configuration.configuration.data.sandbox_permission_ref || "",
               orchestrator_role_ref:
                 configuration.configuration.data.orchestrator_role_ref || "",
-              harness_permission_ref:
-                configuration.configuration.data.harness_permission_ref || "",
+              harness_permission_ref: harnessProfile,
               workflow_ref: configuration.configuration.data.workflow_ref,
               standard_ref:
                 saved?.provenance?.base_standard_ref ||
@@ -127,12 +137,16 @@ export function ProjectManager({
     else if (preset && !configuration.configuration)
       setDraft((current) =>
         current.workflow_ref
-          ? current
+          ? {
+              ...current,
+              harness_permission_ref:
+                current.harness_permission_ref || harnessProfile,
+            }
           : {
               sandbox_ref: preset.sandbox_ref || "",
               sandbox_permission_ref: preset.sandbox_permission_ref || "",
               orchestrator_role_ref: preset.orchestrator_role_ref,
-              harness_permission_ref: "",
+              harness_permission_ref: harnessProfile,
               workflow_ref: preset.workflow_ref,
               standard_ref: preset.standard_ref,
               standard_overrides: [],
@@ -267,12 +281,15 @@ export function ProjectManager({
                   setOverrideKind("");
                   setOverrideSource("");
                   setOverrideReplacement("");
+                  orchestrationEdited.current = true;
+                  setOrchestration(defaults.orchestration || { mode: "agent" });
                   return setDraft({
                     sandbox_ref: defaults.sandbox_ref || "",
                     sandbox_permission_ref:
                       defaults.sandbox_permission_ref || "",
                     orchestrator_role_ref: defaults.orchestrator_role_ref,
-                    harness_permission_ref: "",
+                    harness_permission_ref:
+                      defaults.harness_permission_ref || "",
                     workflow_ref: defaults.workflow_ref,
                     standard_ref: defaults.standard_ref,
                     standard_overrides: [],
@@ -587,9 +604,13 @@ export function ProjectManager({
                 <ActionSelect
                   aria-label="默认调度模式"
                   value={orchestration.mode}
-                  onChange={(e) =>
-                    setOrchestration({ ...orchestration, mode: e.target.value })
-                  }
+                  onChange={(e) => {
+                    orchestrationEdited.current = true;
+                    setOrchestration({
+                      ...orchestration,
+                      mode: e.target.value,
+                    });
+                  }}
                 >
                   <option value="manual">人工控制</option>
                   <option value="rust">Rust 自动调度</option>
@@ -597,7 +618,7 @@ export function ProjectManager({
                 </ActionSelect>
               </label>
               <RevisionSelect
-                label="Harness Profile（留空采用默认）"
+                label="Harness Profile"
                 records={records.filter(
                   (r) =>
                     r.type === "permission_profile" &&

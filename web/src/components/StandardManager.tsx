@@ -455,34 +455,41 @@ export function StandardManager({
           >
             基于这些入口生成新修订
           </ActionButton>
-          <RevisionSelect
-            label="与另一个 Standard 比较"
-            records={standards}
-            value={compare}
-            onChange={(value) => {
-              setCompare(value);
-              setDiff(undefined);
-            }}
-          />
-          <ActionButton
-            disabled={busy || !compare}
-            onClick={() =>
-              void act(async () => {
-                setDiff(
-                  await request("query.standard_diff", {
-                    before_ref: selected,
-                    after_ref: compare,
-                    project_id: project?.id,
-                  }),
-                );
-              })
-            }
-          >
-            比较规范
-          </ActionButton>
-          {diff ? <StandardDiff diff={diff} /> : null}
+          <section className="standard-compare" aria-label="Standard 比较">
+            <div className="standard-compare-controls">
+              <RevisionSelect
+                label="与另一个 Standard 比较"
+                records={standards}
+                value={compare}
+                onChange={(value) => {
+                  setCompare(value);
+                  setDiff(undefined);
+                }}
+              />
+              <ActionButton
+                disabled={busy || !compare}
+                onClick={() =>
+                  void act(async () => {
+                    setDiff(
+                      await request("query.standard_diff", {
+                        before_ref: selected,
+                        after_ref: compare,
+                        project_id: project?.id,
+                      }),
+                    );
+                  })
+                }
+              >
+                比较规范
+              </ActionButton>
+            </div>
+            {diff ? <StandardDiff diff={diff} /> : null}
+          </section>
           <details>
-            <summary>使用位置（{usage?.total || 0}）</summary>
+            <summary>
+              使用位置 · 当前 Standard：{snapshot.record.name} · v
+              {snapshot.record.version}（{usage?.total || 0}）
+            </summary>
             <ul>
               {usage?.records.map((row: Row) => (
                 <li key={row.id}>

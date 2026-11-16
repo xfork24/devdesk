@@ -16,6 +16,9 @@
   },
   "harness_permission_ref": "builtin-permission-harness-full-access:1",
   "sandbox_permission_ref": "builtin-permission-sandbox-full-access:1",
+  "orchestration": {
+    "mode": "agent"
+  },
   "authoring": {
     "execution_budget": {
       "max_turns": 8,

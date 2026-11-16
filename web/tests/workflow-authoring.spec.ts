@@ -224,7 +224,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
     .selectOption("builtin-tool-codex-native:1");
   const capName = "Browser capability " + crypto.randomUUID().slice(0, 5);
   await page
-    .getByLabel("Agent Specs", { exact: true })
+    .getByLabel("Specs", { exact: true })
     .selectOption("builtin-spec-stage-prd:2");
   await page.getByLabel("名称", { exact: true }).fill(capName);
   await page

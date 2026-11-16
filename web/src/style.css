@@ -2292,6 +2292,27 @@ pre {
   gap: 7px;
   margin: 12px 0;
 }
+.standard-compare {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #edf0f5;
+}
+.standard-compare-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+:root .standard-manager .standard-compare-controls > label:has(> select) {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+.standard-compare-controls button {
+  min-height: 41px;
+}
 .standard-manager > details,
 .standard-detail details {
   margin: 10px 0;
