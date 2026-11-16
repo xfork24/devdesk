@@ -10,6 +10,7 @@ pub mod credential_updates;
 pub mod project_updates;
 pub mod read_models;
 pub mod repository_dispatch;
+pub mod repository_projection;
 pub mod repository_updates;
 pub mod rpc_contracts;
 pub mod runtime_registry;

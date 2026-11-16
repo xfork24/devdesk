@@ -9,8 +9,13 @@ pub(super) fn registration(
     let _span = performance::Span::new("mutation_context.repository_registration");
     let connection = pool.read()?;
     let tx = connection.unchecked_transaction().map_err(storage)?;
+    let facts = registration_on(&tx, project)?;
+    tx.commit().map_err(storage)?;
+    Ok(facts)
+}
+fn registration_on(conn: &Connection, project: &str) -> Result<RepositoryRegistrationFacts> {
     let [project_row, repository_scope, feature_scope]: [_; 3] = resource_commits::read_on(
-        &tx,
+        conn,
         &[
             ResourceKey::new("project", project),
             repository_collection(project),
@@ -19,8 +24,7 @@ pub(super) fn registration(
     )?
     .try_into()
     .map_err(|_| err("storage", "仓库上下文读取不完整"))?;
-    let (has_features,has_registration,has_mainline)=tx.query_row("SELECT EXISTS(SELECT 1 FROM features WHERE project_id=?1),EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND json_extract(action,'$.kind')='connect'),EXISTS(SELECT 1 FROM repository_worktrees WHERE project_id=?1 AND kind='mainline')",[project],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).map_err(storage)?;
-    tx.commit().map_err(storage)?;
+    let (has_features,has_registration,has_mainline)=conn.query_row("SELECT EXISTS(SELECT 1 FROM features WHERE project_id=?1),EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND json_extract(action,'$.kind')='connect'),EXISTS(SELECT 1 FROM repository_worktrees WHERE project_id=?1 AND kind='mainline')",[project],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).map_err(storage)?;
     Ok(RepositoryRegistrationFacts {
         project: project_row,
         repository_scope,
@@ -29,6 +33,38 @@ pub(super) fn registration(
         has_registration,
         has_mainline,
     })
+}
+pub(super) fn connect_projection(
+    pool: &ConnectionPool,
+    project: &str,
+    operation: &str,
+) -> Result<devdesk_core::repository_projection::RepositoryConnectProjectionFacts> {
+    let _span = performance::Span::new("mutation_context.repository_connect_projection");
+    let connection = pool.read()?;
+    let tx = connection.unchecked_transaction().map_err(storage)?;
+    let registration = registration_on(&tx, project)?;
+    let [operation_row, head, mainline]: [_; 3] = resource_commits::read_on(
+        &tx,
+        &[
+            ResourceKey::new("repository_operation", operation),
+            ResourceKey::new("head", format!("main:{project}")),
+            ResourceKey::new("repository_worktree", project),
+        ],
+    )?
+    .try_into()
+    .map_err(|_| err("storage", "仓库接纳上下文读取不完整"))?;
+    let (has_other_pending_operation,has_git_call)=tx.query_row("SELECT EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND id!=?2 AND status!='completed'),EXISTS(SELECT 1 FROM governance_records WHERE type='platform_call' AND owner_project=?1 AND substr(json_extract(data,'$.request.definition.qualified_name'),1,4)='git.' AND json_extract(data,'$.status') IN ('prepared','running','needs_reconciliation'))",rusqlite::params![project,operation],|row|Ok((row.get(0)?,row.get(1)?))).map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    Ok(
+        devdesk_core::repository_projection::RepositoryConnectProjectionFacts {
+            registration,
+            operation: operation_row,
+            head,
+            mainline,
+            has_other_pending_operation,
+            has_git_call,
+        },
+    )
 }
 pub(super) fn refresh(pool: &ConnectionPool, project: &str) -> Result<RepositoryRefreshFacts> {
     let _span = performance::Span::new("mutation_context.repository_refresh");

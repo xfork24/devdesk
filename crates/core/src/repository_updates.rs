@@ -125,6 +125,14 @@ fn prepared(
         revision: 1,
     };
     let provenance = context.prepare_record(method, command);
+    let expected_repository_revision = guards
+        .iter()
+        .find(|guard| guard.resource == repository_collection(&project.id))
+        .ok_or_else(|| err("precondition_required", "仓库意图缺少活动版本"))?
+        .revision
+        .checked_add(1)
+        .filter(|revision| *revision <= i64::MAX as u64)
+        .ok_or_else(|| err("resource_exhausted", "仓库活动版本越界"))?;
     let mut intent = crate::governance::record(
         "repository_intent",
         id.clone(),
@@ -132,7 +140,7 @@ fn prepared(
         method.into(),
         1,
         None,
-        json!({"operation_id":id,"command_id":command.command_id,"command_context_id":provenance.resource.id,"action_digest":configuration_hash(&operation.action),"project_workspace_digest":configuration_hash(&(&project.workspace,&project.workspace_definition,&project.execution_mode)),"expected_project_revision":project.revision}),
+        json!({"operation_id":id,"command_id":command.command_id,"command_context_id":provenance.resource.id,"action_digest":configuration_hash(&operation.action),"project_workspace_digest":configuration_hash(&(&project.workspace,&project.workspace_definition,&project.execution_mode)),"expected_project_revision":project.revision,"expected_repository_revision":expected_repository_revision}),
         true,
     );
     intent.id = format!("repository-intent:{id}");

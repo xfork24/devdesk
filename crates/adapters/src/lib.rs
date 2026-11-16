@@ -734,6 +734,18 @@ impl EngineeringStore for SqliteStore {
                 .ok_or_else(|| err("project_required", "仓库上下文需要明确项目"))?,
         )
     }
+    fn repository_connect_projection_facts(
+        &self,
+        operation: &str,
+    ) -> Result<devdesk_core::repository_projection::RepositoryConnectProjectionFacts> {
+        repository_contexts::connect_projection(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "仓库接纳需要明确项目"))?,
+            operation,
+        )
+    }
     fn project_metadata(&self) -> Result<Project> {
         execution_read::project(
             &*self.connection.read()?,

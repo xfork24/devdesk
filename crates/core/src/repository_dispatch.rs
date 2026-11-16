@@ -57,6 +57,7 @@ pub struct RepositoryDispatchContext {
     actor: WorkflowActor,
     guards: Vec<ResourceVersion>,
     mode: DispatchMode,
+    repository_revision: u64,
 }
 impl RepositoryDispatchContext {
     pub fn read(store: &dyn EngineeringStore, operation_id: &str) -> Result<Self> {
@@ -65,16 +66,19 @@ impl RepositoryDispatchContext {
         let intent_key =
             ResourceKey::new("governance", format!("repository-intent:{operation_id}"));
         let project_key = ResourceKey::new("project", &project);
+        let repository_key = repository_collection(&project);
         let rows = store.read_resources(&[
             operation_key.clone(),
             intent_key.clone(),
             project_key.clone(),
+            repository_key.clone(),
         ])?;
         require(
-            rows.len() == 3
+            rows.len() == 4
                 && rows[0].resource == operation_key
                 && rows[1].resource == intent_key
-                && rows[2].resource == project_key,
+                && rows[2].resource == project_key
+                && rows[3].resource == repository_key,
             "仓库派发读取不完整",
         )?;
         let operation: RepositoryOperation = serde_json::from_value(
@@ -158,6 +162,16 @@ impl RepositoryDispatchContext {
             }
             _ => return Err(err("revision_conflict", "仓库操作已派发或当前不可派发")),
         };
+        if mode == DispatchMode::Execute
+            && intent.data["expected_repository_revision"].as_u64() != Some(rows[3].revision)
+        {
+            return Err(err("revision_conflict", "仓库活动在原始意图后已变化"));
+        }
+        let repository_revision = rows[3]
+            .revision
+            .checked_add(1)
+            .filter(|revision| *revision <= i64::MAX as u64)
+            .ok_or_else(|| err("resource_exhausted", "仓库活动版本越界"))?;
         Ok(Self {
             operation,
             intent,
@@ -167,9 +181,11 @@ impl RepositoryDispatchContext {
                 version(&rows[0]),
                 version(&rows[1]),
                 version(&rows[2]),
+                version(&rows[3]),
                 version(&context_rows[0]),
             ],
             mode,
+            repository_revision,
         })
     }
 
@@ -198,7 +214,7 @@ impl RepositoryDispatchContext {
             "仓库派发意图".into(),
             1,
             None,
-            json!({"operation_id":operation.id,"intent_id":self.intent.id,"command_context_id":self.provenance.id,"actor":self.actor,"action_digest":self.intent.data["action_digest"],"expected_operation_revision":self.operation.revision,"dispatched_operation_revision":operation.revision,"attempt_id":attempt_id,"mode":self.mode}),
+            json!({"operation_id":operation.id,"intent_id":self.intent.id,"command_context_id":self.provenance.id,"actor":self.actor,"action_digest":self.intent.data["action_digest"],"expected_operation_revision":self.operation.revision,"dispatched_operation_revision":operation.revision,"repository_revision":self.repository_revision,"attempt_id":attempt_id,"mode":self.mode}),
             true,
         );
         claim.id = claim_id.clone();
@@ -316,6 +332,15 @@ pub struct RepositoryObservationContext {
     claim_revision: u64,
 }
 impl RepositoryObservationContext {
+    pub(crate) fn claim(&self) -> &ConfigurationRecord {
+        &self.claim
+    }
+    pub(crate) fn claim_version(&self) -> ResourceVersion {
+        ResourceVersion {
+            resource: ResourceKey::new("governance", &self.claim.id),
+            revision: self.claim_revision,
+        }
+    }
     pub fn read(store: &dyn EngineeringStore, claim_id: &str) -> Result<Self> {
         let project_id = namespace(store)?;
         let claim_key = ResourceKey::new("governance", claim_id);

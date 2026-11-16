@@ -452,6 +452,12 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::repository_updates::RepositoryRefreshFacts> {
         Err(err("unsupported", "存储未实现主干同步上下文"))
     }
+    fn repository_connect_projection_facts(
+        &self,
+        _operation: &str,
+    ) -> Result<crate::repository_projection::RepositoryConnectProjectionFacts> {
+        Err(err("unsupported", "存储未实现仓库接纳上下文"))
+    }
     fn project_metadata(&self) -> Result<devdesk_domain::Project> {
         Err(err("unsupported", "存储未实现项目元数据读取"))
     }

@@ -316,3 +316,21 @@ fn observation_recovery_rejects_missing_or_overflowed_dispatch_versions() {
         ));
     }
 }
+
+#[test]
+fn completed_git_activity_after_intent_creation_still_fences_first_dispatch() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, id, connection) = fixture(root.path());
+    connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('intervening-git','platform_call','other',?1,'Git',1,'fixture','{}',?2,0,1,1)",params![json!(format!("project:{PROJECT}")).to_string(),json!({"status":"completed","request":{"definition":{"qualified_name":"git.status"}}}).to_string()]).unwrap();
+    assert!(
+        matches!(RepositoryDispatchContext::read(store.as_ref(),&id),Err(error) if error.code=="revision_conflict")
+    );
+    let (status, revision): (String, u64) = connection
+        .query_row(
+            "SELECT status,revision FROM repository_operations WHERE id=?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((status.as_str(), revision), ("prepared", 1));
+}
