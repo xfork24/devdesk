@@ -788,16 +788,36 @@ impl Engine {
         Ok(result)
     }
     pub fn tick(&self, global_limit: usize) -> Result<()> {
-        self.drive_controllers()?;
-        self.drive_tool_calls()?;
-        self.drive_platform_tools()?;
-        self.tick_repositories()?;
-        self.tick_conversations(global_limit)?;
-        self.evaluate_configured_workflows()?;
-        self.drive_workflow_changes()?;
-        self.drive_workflow_segments()?;
-        self.drive_rust_workflows()?;
-        self.drive_controllers()
+        self.tick_until(global_limit, &|| false)
+    }
+    /// `project_allowance` includes this project's existing writers. Admission
+    /// subtracts those writers exactly once, inside the conversation stage.
+    /// Complete each owned stage before honoring shutdown so its receipts and
+    /// writer revocation remain recoverable.
+    pub fn tick_until(
+        &self,
+        project_allowance: usize,
+        should_stop: &dyn Fn() -> bool,
+    ) -> Result<()> {
+        let stages: &[&dyn Fn() -> Result<()>] = &[
+            &|| self.drive_controllers(),
+            &|| self.drive_tool_calls(),
+            &|| self.drive_platform_tools(),
+            &|| self.tick_repositories(),
+            &|| self.tick_conversations(project_allowance),
+            &|| self.evaluate_configured_workflows(),
+            &|| self.drive_workflow_changes(),
+            &|| self.drive_workflow_segments(),
+            &|| self.drive_rust_workflows(),
+            &|| self.drive_controllers(),
+        ];
+        for stage in stages {
+            if should_stop() {
+                break;
+            }
+            stage()?;
+        }
+        Ok(())
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
         if method == "query.events" {

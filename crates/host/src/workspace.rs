@@ -1102,9 +1102,9 @@ impl Workspace {
             if should_stop() {
                 break;
             }
-            // Engine::tick owns repository and conversation advancement. Its limit
-            // already includes this project's occupied slots; subtract only other projects.
-            if let Err(error) = e.tick(limit.saturating_sub(total - running[index])) {
+            if let Err(error) =
+                e.tick_until(limit.saturating_sub(total - running[index]), &should_stop)
+            {
                 failure.get_or_insert(error);
             }
             if should_stop() {
@@ -1175,6 +1175,79 @@ mod tests {
                     payload: json!({"title":"Background authoritative title"}),
                 },
             )
+    use std::sync::atomic::AtomicUsize;
+    #[test]
+    fn scheduler_polls_each_writer_once_and_shares_available_quota() {
+        struct CountingHarness(AtomicUsize);
+        impl ports::Harness for CountingHarness {
+            fn open_session(&self, request: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+                ports::Harness::open_session(&crate::test_runtime::IdleHarness, request)
+            }
+            fn dispatch_turn(&self, _: &ports::TurnDispatch) -> Result<()> {
+                Ok(())
+            }
+            fn poll_session(&self, _: &Session) -> Result<Vec<ports::ConversationObservation>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(vec![])
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let harness = Arc::new(CountingHarness(AtomicUsize::new(0)));
+        let mut adapters = crate::test_runtime::adapters();
+        adapters.harness = harness.clone();
+        let workspace = Workspace::open_with_adapters(root.path(), adapters).unwrap();
+        workspace.global.set_concurrency(3).unwrap();
+        let first = create(&workspace, "First");
+        let first = workspace.project_engine(Some(&first)).unwrap();
+        let first_id = first.store.project_id().unwrap();
+        crate::test_runtime::queue_conversation(&first, &first_id);
+        workspace.tick(|| false).unwrap();
+        assert_eq!(first.conversation_running().unwrap(), 1);
+        harness.0.store(0, Ordering::SeqCst);
+        // Existing writers are counted once. Poll the original writer and admit
+        // another in the same round, then poll each exactly once next round.
+        crate::test_runtime::queue_conversation(&first, &first_id);
+        workspace.tick(|| false).unwrap();
+        assert_eq!(first.conversation_running().unwrap(), 2);
+        assert_eq!(harness.0.load(Ordering::SeqCst), 1);
+        harness.0.store(0, Ordering::SeqCst);
+        workspace.tick(|| false).unwrap();
+        assert_eq!(harness.0.load(Ordering::SeqCst), 2);
+        let second = create(&workspace, "Second");
+        let second = workspace.project_engine(Some(&second)).unwrap();
+        let second_id = second.store.project_id().unwrap();
+        crate::test_runtime::queue_conversation(&second, &second_id);
+        crate::test_runtime::queue_conversation(&second, &second_id);
+        for _ in 0..8 {
+            workspace.tick(|| false).unwrap();
+            let total =
+                first.conversation_running().unwrap() + second.conversation_running().unwrap();
+            assert!(total <= 3);
+            if total == 3 {
+                break;
+            }
+        }
+        assert!(first.conversation_running().unwrap() >= 1);
+        assert!(second.conversation_running().unwrap() >= 1);
+        assert_eq!(
+            first.conversation_running().unwrap() + second.conversation_running().unwrap(),
+            3
+        );
+        assert_eq!(
+            [first, second]
+                .iter()
+                .map(|engine| engine
+                    .store
+                    .snapshot()
+                    .unwrap()
+                    .turns
+                    .iter()
+                    .filter(|turn| turn.status == TurnStatus::Queued)
+                    .count())
+                .sum::<usize>(),
+            1
+        );
+    }
             .unwrap();
         let trace = performance::Trace::start();
         let value = workspace
