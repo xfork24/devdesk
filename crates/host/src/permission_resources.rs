@@ -206,13 +206,14 @@ impl Workspace {
         method: &str,
         params: &Value,
     ) -> Option<Result<Value>> {
-        self.permission_resource_api_at(method, params, None)
+        self.permission_resource_api_at(method, params, None, None)
     }
     pub(super) fn permission_resource_api_at(
         &self,
         method: &str,
         params: &Value,
         catalog: Option<Arc<ConfigurationCatalogSnapshot>>,
+        shared: Option<&EngineeringState>,
     ) -> Option<Result<Value>> {
         if ![
             "query.permission_resources",
@@ -334,7 +335,7 @@ impl Workspace {
                     Ok(
                         json!({"profiles":records("permission_profile").iter().map(|r|r.permission_profile()).collect::<Result<Vec<_>>>()?,
                         "bindings":records("permission_binding"),"origins":records("permission_origin").into_iter().chain(records("permission_file_origin")).collect::<Vec<_>>(),"targets":targets,
-                        "source":self.global.permission_preset_source()?,"default_sandbox_ref":current_template_defaults(&s).map(|d| d["sandbox_ref"].clone())}),
+                        "source":shared.map_or_else(||self.global.permission_preset_source(),|shared|self.global.permission_preset_source_at(shared))?,"default_sandbox_ref":current_template_defaults(&s).map(|d| d["sandbox_ref"].clone())}),
                     )
                 }
                 "permission.profile.export" => permission_profile_export(

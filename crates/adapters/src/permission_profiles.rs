@@ -394,8 +394,15 @@ impl GlobalStore {
     }
 
     pub fn permission_preset_source(&self) -> Result<PermissionPresetSource> {
+        self.permission_preset_source_at(&self.configuration_snapshot()?.state)
+    }
+
+    pub fn permission_preset_source_at(
+        &self,
+        state: &EngineeringState,
+    ) -> Result<PermissionPresetSource> {
         Ok(preset_source(
-            &self.snapshot()?,
+            state,
             self.builtin_permission_preset_source()?,
         ))
     }
