@@ -640,6 +640,24 @@ export function WorkflowPlanChanges({
   const [preview, setPreview] = useState<Row>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const commands = useRef(
+    new Map<string, { fingerprint: string; id: string }>(),
+  );
+  function submit(method: string, payload: Row) {
+    const params = {
+      project_id: projectId,
+      target: instance.id,
+      expected_revision: instance.revision,
+      payload,
+    };
+    const fingerprint = JSON.stringify(params);
+    if (commands.current.get(method)?.fingerprint !== fingerprint)
+      commands.current.set(method, { fingerprint, id: crypto.randomUUID() });
+    return request(method, {
+      ...params,
+      command_id: commands.current.get(method)!.id,
+    });
+  }
   useEffect(() => {
     setPreview(undefined);
   }, [runtime.active_plan_revision_id]);
@@ -664,18 +682,12 @@ export function WorkflowPlanChanges({
           const definition = plan.steps.find((s: Row) => s.key === key)
             ?.outputs?.[port];
           if (!definition) throw new Error("请选择替代材料对应的交付项");
-          const imported = await request("workflow.materials.import", {
-            project_id: projectId,
-            command_id: crypto.randomUUID(),
-            target: instance.id,
-            expected_revision: instance.revision,
-            payload: {
-              plan_revision_id: runtime.active_plan_revision_id,
-              delivery_ref: definition.delivery_ref,
-              value: material,
-              source: "用户提供的替代材料",
-              reason,
-            },
+          const imported = await submit("workflow.materials.import", {
+            plan_revision_id: runtime.active_plan_revision_id,
+            delivery_ref: definition.delivery_ref,
+            value: material,
+            source: "用户提供的替代材料",
+            reason,
           });
           substitutions[sourcePort] = {
             type: "material",
@@ -730,20 +742,10 @@ export function WorkflowPlanChanges({
     setBusy(true);
     setError("");
     try {
-      const fresh = await request("query.workflow_instance", {
-        project_id: projectId,
-        id: instance.id,
-      });
-      await request("workflow.change.apply", {
-        project_id: projectId,
-        command_id: crypto.randomUUID(),
-        target: instance.id,
-        expected_revision: fresh.record.revision,
-        payload: {
-          plan_revision_id: runtime.active_plan_revision_id,
-          changeset: preview.changeset,
-          preview_hash: preview.preview_hash,
-        },
+      await submit("workflow.change.apply", {
+        plan_revision_id: runtime.active_plan_revision_id,
+        changeset: preview.changeset,
+        preview_hash: preview.preview_hash,
       });
       setPreview(undefined);
       await refresh();
