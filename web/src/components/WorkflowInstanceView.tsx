@@ -18,6 +18,13 @@ type Props = {
   target?: Row;
   ownerId?: string;
 };
+type ActionBaseline = {
+  target: string;
+  revision: number;
+  planRevision: string;
+  controlVersion: number;
+  execution?: Row;
+};
 const stateLabels: Record<string, string> = {
   queued: "等待前置",
   running: "执行中",
@@ -66,10 +73,13 @@ export function WorkflowInstanceView({
   const { error, setError, capture, beginFeedback, endFeedback } =
     useActionFeedback();
   const [data, setData] = useState<Row>(),
-    [busy, setBusy] = useState(false),
-    [selected, setSelected] = useState("");
-  const [input, setInput] = useState("");
+    [busy, setBusy] = useState(false);
+  const [inputs, setInputs] = useState<Record<string, string>>({});
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const drafts = useRef(new Map<string, ActionBaseline>());
+  const attempts = useRef(
+    new Map<string, { fingerprint: string; id: string }>(),
+  );
   const storageKey = `devdesk:v5:runtime:${projectId}:${record.id}`;
   const [open, setOpen] = useState<Record<string, boolean>>(() => {
     try {
@@ -89,7 +99,8 @@ export function WorkflowInstanceView({
       id: record.id,
       project_id: projectId,
     });
-    if (epoch.current === current) setData(result);
+    if (epoch.current === current)
+      setData({ ...result, _projectId: projectId });
   }, [request, record.id, projectId]);
   useEffect(() => {
     let active = true;
@@ -109,15 +120,49 @@ export function WorkflowInstanceView({
       clearTimeout(timer);
       invalidate();
     };
-  }, [record, projectId, request, load, setError, invalidate]);
+  }, [
+    record.id,
+    record.revision,
+    projectId,
+    request,
+    load,
+    setError,
+    invalidate,
+  ]);
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(open));
     } catch {}
   }, [storageKey, open]);
-  const runtime = data?.runtime || record.data,
-    current = data?.record || record,
-    plan = data?.plan || runtime.plan?.document;
+  const activeData =
+    data?._projectId === projectId && data?.record?.id === record.id
+      ? data
+      : undefined;
+  const runtime = activeData?.runtime || record.data,
+    current = activeData?.record || record,
+    plan = activeData?.plan || runtime.plan?.document;
+  const draftKey = (executionId: string) =>
+    `${projectId}:${record.id}:${executionId}`;
+  function baseline(execution?: Row): ActionBaseline {
+    return {
+      target: current.id,
+      revision: current.revision,
+      planRevision: runtime.active_plan_revision_id,
+      controlVersion: runtime.control_version,
+      execution: execution
+        ? {
+            id: execution.id,
+            step: execution.step,
+            input_digest: execution.input_digest,
+            outputs: execution.outputs,
+          }
+        : undefined,
+    };
+  }
+  function beginDraft(execution: Row) {
+    const key = draftKey(execution.id);
+    if (!drafts.current.has(key)) drafts.current.set(key, baseline(execution));
+  }
   const historical = useReading(
     request,
     "query.workflow_executions",
@@ -128,7 +173,7 @@ export function WorkflowInstanceView({
       execution_id: target.execution_id,
     },
     Boolean(
-      data &&
+      activeData &&
       target.execution_id &&
       target.instance_id === record.id &&
       !runtime.steps.some((step: Row) => step.id === target.execution_id),
@@ -139,25 +184,25 @@ export function WorkflowInstanceView({
       focusedTarget.current = "";
       return;
     }
-    if (!data) return;
+    if (!activeData) return;
     const focus = `${record.id}:${target.instance_id}:${target.execution_id}`;
     if (focusedTarget.current === focus) return;
-    const selected = data.runtime.steps.find(
+    const selected = activeData.runtime.steps.find(
       (step: Row) => step.id === target.execution_id,
     );
     const next: Record<string, boolean> = {};
     if (selected) {
-      const definition = data.plan?.steps?.find(
+      const definition = activeData.plan?.steps?.find(
         (step: Row) => step.key === selected.step,
       );
       if (definition) next[`stage:${definition.stage}`] = true;
       next[`step:${selected.id}`] = true;
     } else if (target.instance_id && target.instance_id !== record.id) {
-      for (const child of data.children || []) {
-        const parent = data.runtime.steps.find(
-          (step: Row) => step.id === child.data.parent_execution_id,
+      for (const child of activeData.children || []) {
+        const parent = activeData.runtime.steps.find(
+          (step: Row) => step.id === child.activeData.parent_execution_id,
         );
-        const definition = data.plan?.steps?.find(
+        const definition = activeData.plan?.steps?.find(
           (step: Row) => step.key === parent?.step,
         );
         if (definition) next[`stage:${definition.stage}`] = true;
@@ -172,36 +217,55 @@ export function WorkflowInstanceView({
         ? { ...current, ...next }
         : current,
     );
-  }, [target.execution_id, target.instance_id, record.id, data]);
-  async function act(method: string, payload: Row = {}) {
+  }, [target.execution_id, target.instance_id, record.id, activeData]);
+  async function act(method: string, payload: Row = {}, execution?: Row) {
     capture();
     beginFeedback();
     setBusy(true);
     setError("");
     try {
-      const fresh = await request("query.workflow_instance", {
-        id: current.id,
+      const executionId = execution?.id || payload.execution_id || "";
+      const original =
+        drafts.current.get(draftKey(executionId)) || baseline(execution);
+      const originalPayload = { ...payload };
+      if (original.execution) {
+        for (const key of ["step", "execution_id", "input_digest", "outputs"])
+          if (key in originalPayload)
+            originalPayload[key] =
+              original.execution[key === "execution_id" ? "id" : key];
+      }
+      const params = {
         project_id: projectId,
-      });
-      await request(method, {
-        project_id: projectId,
-        command_id: crypto.randomUUID(),
-        target: current.id,
-        expected_revision: fresh.record.revision,
+        target: original.target,
+        expected_revision: original.revision,
         payload: {
-          plan_revision_id: runtime.active_plan_revision_id,
-          control_version: fresh.runtime.control_version,
-          ...payload,
+          ...originalPayload,
+          plan_revision_id: original.planRevision,
+          control_version: original.controlVersion,
         },
+      };
+      const key = `${draftKey(executionId)}:${method}`;
+      const fingerprint = JSON.stringify(params);
+      if (attempts.current.get(key)?.fingerprint !== fingerprint)
+        attempts.current.set(key, { fingerprint, id: crypto.randomUUID() });
+      await request(method, {
+        ...params,
+        command_id: attempts.current.get(key)!.id,
+      });
+      attempts.current.delete(key);
+      drafts.current.delete(draftKey(executionId));
+      setInputs((previous) => {
+        const next = { ...previous };
+        delete next[executionId];
+        return next;
+      });
+      setReasons((previous) => {
+        const next = { ...previous };
+        delete next[executionId];
+        return next;
       });
       await load();
       await refresh();
-      setInput("");
-      setReasons((previous) => {
-        const next = { ...previous };
-        delete next[payload.execution_id];
-        return next;
-      });
     } catch (error) {
       setError(String(error));
     } finally {
@@ -348,7 +412,8 @@ export function WorkflowInstanceView({
                   </p>
                 ) : null}
                 {executions.map(({ definition, execution }: Row) => {
-                  const completion = data?.completion_status?.[execution.id];
+                  const completion =
+                    activeData?.completion_status?.[execution.id];
                   const unmet = completion?.satisfied === false;
                   const confirmation = completion?.confirmation;
                   const humanSatisfied =
@@ -356,7 +421,7 @@ export function WorkflowInstanceView({
                     (definition.confirmation !== "human" || !!confirmation);
                   const stepKey = `step:${execution.id}`;
                   const stepOpen = !!open[stepKey];
-                  const children = (data?.children || []).filter(
+                  const children = (activeData?.children || []).filter(
                     (child: Row) =>
                       child.data.parent_execution_id === execution.id,
                   );
@@ -388,7 +453,7 @@ export function WorkflowInstanceView({
                       </ActionButton>
                       <p className="workflow-step-summary">
                         {displayText(
-                          data?.actors?.[execution.id]?.name ||
+                          activeData?.actors?.[execution.id]?.name ||
                             definition.executor?.type ||
                             "执行方式未记录",
                         )}{" "}
@@ -557,25 +622,28 @@ export function WorkflowInstanceView({
                               <label>
                                 补充本次任务
                                 <textarea
-                                  value={selected === execution.id ? input : ""}
-                                  onFocus={() => setSelected(execution.id)}
-                                  onChange={(event) =>
-                                    setInput(event.target.value)
-                                  }
+                                  value={inputs[execution.id] || ""}
+                                  onChange={(event) => {
+                                    beginDraft(execution);
+                                    setInputs((previous) => ({
+                                      ...previous,
+                                      [execution.id]: event.target.value,
+                                    }));
+                                  }}
                                 />
                               </label>
                               <ActionButton
                                 type="button"
-                                disabled={
-                                  busy ||
-                                  selected !== execution.id ||
-                                  !input.trim()
-                                }
+                                disabled={busy || !inputs[execution.id]?.trim()}
                                 onClick={() =>
-                                  void act("workflow.step.input", {
-                                    step: execution.step,
-                                    input,
-                                  })
+                                  void act(
+                                    "workflow.step.input",
+                                    {
+                                      step: execution.step,
+                                      input: inputs[execution.id],
+                                    },
+                                    execution,
+                                  )
                                 }
                               >
                                 提交补充输入
@@ -610,12 +678,13 @@ export function WorkflowInstanceView({
                                   )}
                                   <textarea
                                     value={reasons[execution.id] || ""}
-                                    onChange={(event) =>
+                                    onChange={(event) => {
+                                      beginDraft(execution);
                                       setReasons((previous) => ({
                                         ...previous,
                                         [execution.id]: event.target.value,
-                                      }))
-                                    }
+                                      }));
+                                    }}
                                   />
                                 </label>
                                 <ActionButton
