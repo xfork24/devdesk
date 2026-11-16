@@ -326,7 +326,7 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
     ).active_project.revision,
     payload: { workflow_ref: workflow.id, role_agent_bindings: {} },
   });
-  await page.goto(`/?tab=execution&project_id=${project.id}`);
+  await page.goto(`/?tab=execution&detail=overview&project_id=${project.id}`);
   const executionView = page.getByRole("region", {
     name: "当前工作流",
     exact: true,
@@ -348,17 +348,23 @@ test("Workflow 通用步骤保存发布并恢复草稿，执行确认绑定确�
         .steps[0].status;
     })
     .toBe("waiting_confirmation");
-  const state = await rpc(page, "query.workspace", { project_id: project.id });
-  const row = state.configurations.find((r: any) => r.id === instance.id);
+  const { record: row, runtime } = await rpc(page, "query.workflow_instance", {
+    project_id: project.id,
+    id: instance.id,
+  });
+  const step = runtime.steps[0];
   await rpc(page, "workflow.step.confirm", {
     project_id: project.id,
     command_id: crypto.randomUUID(),
     target: row.id,
     expected_revision: row.revision,
     payload: {
-      step: row.data.steps[0].step,
-      input_digest: row.data.steps[0].input_digest,
-      outputs: {},
+      plan_revision_id: runtime.active_plan_revision_id,
+      control_version: runtime.control_version,
+      step: step.step,
+      execution_id: step.id,
+      input_digest: step.input_digest,
+      outputs: step.outputs,
     },
   });
   await page.reload();

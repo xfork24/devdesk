@@ -249,15 +249,45 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
   await expect(
     start.getByText("Feature 尚未启动", { exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".work-standard")).toHaveCount(0);
-  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "项目经理", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   await expect(
     page.getByRole("tablist", { name: "执行详情" }).getByRole("tab"),
   ).toHaveText(["项目经理", "工作流程", "材料", "上下文", "执行记录"]);
   await expect(page.locator(".work-standard")).toBeVisible();
-  await expect(start).toHaveCount(0);
   expect(submitted).toBeUndefined();
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
+  await expect(start).toHaveCount(0);
+  await expect(page.locator(".work-standard")).toHaveCount(0);
+  await page.getByRole("button", { name: "工作总览", exact: true }).click();
+  await page.getByRole("button", { name: "执行与交付", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "项目经理", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(start).toBeVisible();
+  const executionUrl = `/?tab=execution&project_id=${project.id}&feature_id=${feature.id}`;
+  await page.goto(executionUrl);
+  await expect(
+    page.getByRole("tab", { name: "项目经理", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(start).toBeVisible();
+  await page.reload();
+  await expect(start).toBeVisible();
+  await page.goto(`${executionUrl}&detail=overview`);
+  await expect(
+    page.getByRole("tab", { name: "工作流程", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(start).toHaveCount(0);
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  await expect(start).toBeVisible();
+  await page.goBack();
+  await expect(
+    page.getByRole("tab", { name: "工作流程", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(start).toHaveCount(0);
+  await page.goForward();
+  await expect(start).toBeVisible();
   await start
     .getByRole("button", { name: "启动 Feature", exact: true })
     .click();
@@ -438,7 +468,7 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
     return route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
   await page.goto(
-    `/?tab=execution&project_id=${project.id}&feature_id=${feature.id}`,
+    `/?tab=execution&detail=overview&project_id=${project.id}&feature_id=${feature.id}`,
   );
   await page.getByRole("button", { name: /^需求 1 \/ 2/ }).click();
   const review = page.getByRole("article", {

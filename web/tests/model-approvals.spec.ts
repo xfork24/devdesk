@@ -100,7 +100,7 @@ for (const allowOverride of [false, true])
         inputs: { accepted: { value: false } },
       },
     });
-    await page.goto(`/?tab=execution&project_id=${project.id}`);
+    await page.goto(`/?tab=execution&detail=overview&project_id=${project.id}`);
     const runtime = page.getByRole("region", {
       name: "当前工作流",
       exact: true,
@@ -224,7 +224,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
       inputs: { accepted: { value: false } },
     },
   });
-  await page.goto(`/?tab=execution&project_id=${project.id}`);
+  await page.goto(`/?tab=execution&detail=overview&project_id=${project.id}`);
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
   await runtime.locator(".workflow-stage-toggle").first().click();
   const first = page.getByRole("article", {
