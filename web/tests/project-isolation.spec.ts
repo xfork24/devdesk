@@ -22,6 +22,7 @@ test("两个前端独立切换和编辑项目，刷新继续使用标签页 URL"
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-project-isolation-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   await expect(
     page.getByRole("button", { name: "设置", exact: true }),

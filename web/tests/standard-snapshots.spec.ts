@@ -24,6 +24,7 @@ async function setup(page: Page) {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-standard-web-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   await expect(
     page.getByRole("button", { name: "流程与规范", exact: true }),
@@ -439,7 +440,6 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
     undefined,
     { title: "Standard 浏览器验收" },
   );
-  await command(page, "project.open", project.id, project.id, undefined);
   let workspace = await rpc(page, "query.workspace", {
     project_id: project.id,
   });

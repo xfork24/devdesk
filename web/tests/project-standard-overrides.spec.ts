@@ -23,6 +23,7 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-standard-overrides-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   const project = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),
@@ -55,7 +56,9 @@ test("Standard 决定入口，项目覆盖保存来源与差异并在重载后�
     },
   });
   await page.reload();
-  await page.getByRole("button", { name: "项目管理", exact: true }).click();
+  await page.goto(
+    `/?tab=projects&project_id=${encodeURIComponent(project.id)}`,
+  );
   const panel = page.getByRole("region", { name: "项目配置" });
   await expect(panel.getByLabel("项目 Workflow", { exact: true })).toHaveCount(
     0,

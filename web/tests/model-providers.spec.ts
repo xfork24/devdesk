@@ -15,6 +15,7 @@ test("DSH 服务商凭据独立，Ollama 免密且模型草稿可保存", async 
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-model-provider-web-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   const configured: string[] = [];
   // Vault writes are simulated. This test never stores a key or calls a model.

@@ -742,11 +742,6 @@ test("项目默认调度与 Profile 保存恢复，工具接入空状态区分�
     command_id: crypto.randomUUID(),
     payload: { title: "工具接入说明", repository: "fixture/tool-bindings" },
   });
-  await rpc(page, "project.open", {
-    command_id: crypto.randomUUID(),
-    target: project.id,
-    payload: {},
-  });
   await page.goto(
     `/?tab=projects&project_id=${encodeURIComponent(project.id)}`,
   );

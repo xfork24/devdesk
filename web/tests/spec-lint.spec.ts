@@ -13,6 +13,7 @@ test("Spec 草稿自检显示机器结构结论并保留语义判断边界", asy
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-spec-lint-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   await page.getByRole("button", { name: "流程与规范", exact: true }).click();
   await page.getByRole("tab", { name: "Spec", exact: true }).click();

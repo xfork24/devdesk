@@ -49,6 +49,7 @@ for (const allowOverride of [false, true])
         .getByLabel("数据目录")
         .fill(mkdtempSync(join(tmpdir(), "devdesk-confirm-")));
       await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+      await expect(page.getByLabel("数据目录")).toHaveCount(0);
     }
     const delivery = await approvalDelivery(page);
     const draft = await rpc(page, "workflow.create", {
@@ -177,6 +178,7 @@ test("并行等待审批的步骤分别保存理由", async ({ page }) => {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-multi-confirm-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   const delivery = await approvalDelivery(page);
   const draft = await rpc(page, "workflow.create", {

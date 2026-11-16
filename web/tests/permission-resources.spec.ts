@@ -304,6 +304,7 @@ test("Sandbox 版本独立绑定权限，范围预览固定当前目标并可查
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-sandbox-web-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   const rpc = async (method: string, params: any = {}) => {
     const result = await page.request

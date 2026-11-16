@@ -10,6 +10,7 @@ async function settings(page: Page) {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-settings-concurrency-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await expect(

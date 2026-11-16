@@ -16,6 +16,7 @@ async function setup(page: Page) {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-settings-interactions-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
 }
 
@@ -302,7 +303,7 @@ test("项目与 Global 历史合并事件和工具调用，统一排序分页并
     } else return route.fallback();
     return route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
-  await page.goto("/?tab=history");
+  await page.goto(`/?tab=history&project_id=${encodeURIComponent(project.id)}`);
   const scope = page.getByLabel("历史范围", { exact: true });
   await expect(scope.locator("option")).toHaveText(["当前项目", "Global"]);
   await expect(page.getByLabel("调用记录归属", { exact: true })).toHaveCount(0);

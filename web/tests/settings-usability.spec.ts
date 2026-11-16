@@ -14,6 +14,7 @@ async function setup(page: Page) {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-usability-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
 }
 async function rpc(page: Page, method: string, params = {}) {

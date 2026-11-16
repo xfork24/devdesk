@@ -20,6 +20,7 @@ async function setup(page: Page) {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-task-web-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
 }
 test("Agent Step 的任务原文在 UI 编辑保存发布，并与 Role Skill Spec 一起预览", async ({

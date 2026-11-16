@@ -56,7 +56,7 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
   });
 });
 
-test("无项目讨论可以选择来源项目的原 Agent 实例并保持活动项目", async ({
+test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选择", async ({
   page,
 }) => {
   await page.goto("/");
@@ -91,9 +91,11 @@ test("无项目讨论可以选择来源项目的原 Agent 实例并保持活动�
   });
   const current = await rpc(page, "project.create", {
     command_id: crypto.randomUUID(),
-    payload: { title: "当前活动项目" },
+    payload: { title: "本页选择项目", repository: "fixture/current" },
   });
-  await page.reload();
+  await page.goto(
+    `/?tab=discussion&project_id=${encodeURIComponent(current.id)}`,
+  );
   await page.getByRole("button", { name: "角色讨论", exact: true }).click();
   await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
     "builtin-agent-sol-high-project-manager:10",
@@ -112,9 +114,14 @@ test("无项目讨论可以选择来源项目的原 Agent 实例并保持活动�
   await expect(
     page.getByRole("button", { name: "开始 / 续用讨论", exact: true }),
   ).toBeEnabled();
-  expect((await rpc(page, "query.workspace")).active_project.id).toBe(
+  await expect(page.getByLabel("当前项目", { exact: true })).toHaveValue(
     current.id,
   );
+  expect(
+    (await rpc(page, "query.ui_bootstrap", { project_id: current.id }))
+      .active_project.id,
+  ).toBe(current.id);
+  expect((await rpc(page, "query.ui_bootstrap")).active_project).toBeNull();
   expect(
     (
       await rpc(page, "query.agent_experience", {

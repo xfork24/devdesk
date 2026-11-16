@@ -20,6 +20,7 @@ async function setup(page: Page) {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-stage-rows-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
 }
 test.afterEach(async ({ page }) => {
@@ -30,6 +31,7 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
   page,
 }, info) => {
   await setup(page);
+  const context: { project_id?: string } = {};
   const command = (
     method: string,
     payload: any,
@@ -37,6 +39,7 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     revision?: number,
   ) =>
     rpc(page, method, {
+      ...context,
       command_id: crypto.randomUUID(),
       target,
       expected_revision: revision,
@@ -82,6 +85,7 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     ],
   });
   const project = await command("project.create", { title: "布局项目" });
+  context.project_id = project.id;
   const started = await command(
     "workflow.start",
     { workflow_ref: parent.id, role_agent_bindings: {} },

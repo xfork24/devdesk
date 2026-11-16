@@ -15,6 +15,7 @@ async function setup(page: Page) {
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-config-web-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   await expect(
     page.getByRole("button", { name: "流程与规范", exact: true }),
@@ -542,7 +543,7 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
     command_id: crypto.randomUUID(),
     payload: { title: "Configuration RPC fixture" },
   });
-  let workspace = await rpc(page, "query.workspace");
+  let workspace = await rpc(page, "query.workspace", { project_id: p.id });
   expect(workspace.configuration_ready).toBe(false);
   const defaults = await rpc(page, "query.configuration_defaults");
   const config = await rpc(page, "project.configuration.update", {
@@ -557,7 +558,7 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
   });
   expect(config.data.schema_version).toBe(4);
   expect(config.data.standard_ref).toMatch(/:1$/);
-  workspace = await rpc(page, "query.workspace");
+  workspace = await rpc(page, "query.workspace", { project_id: p.id });
   expect(workspace.configuration_ready).toBe(true);
   const f = await rpc(page, "feature.create", {
     project_id: p.id,

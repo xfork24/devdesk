@@ -114,8 +114,11 @@ test("项目预览后台刷新保留可操作表单与角色绑定", async ({ pa
       },
     },
   });
-  expect((await created.json()).error).toBeUndefined();
-  await page.goto("/?tab=projects");
+  const result = await created.json();
+  expect(result.error).toBeUndefined();
+  await page.goto(
+    `/?tab=projects&project_id=${encodeURIComponent(result.result.id)}`,
+  );
   const panel = page.getByRole("region", { name: "项目配置" });
   const save = panel.getByRole("button", { name: "保存项目配置", exact: true });
   await expect(save).toBeEnabled();

@@ -13,6 +13,7 @@ test("项目管理只保存配置并统一设置项目经理", async ({ page }) 
       .getByLabel("数据目录")
       .fill(mkdtempSync(join(tmpdir(), "devdesk-manager-ui-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
+    await expect(page.getByLabel("数据目录")).toHaveCount(0);
   }
   const created = await page.request
     .post("/rpc", {
@@ -31,7 +32,9 @@ test("项目管理只保存配置并统一设置项目经理", async ({ page }) 
     })
     .then((r) => r.json());
   expect(created.error, JSON.stringify(created)).toBeUndefined();
-  await page.reload();
+  await page.goto(
+    `/?tab=projects&project_id=${encodeURIComponent(created.result.id)}`,
+  );
   await page.getByRole("button", { name: "项目管理", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "项目经理工作台" }),
