@@ -720,6 +720,91 @@ fn drive_manager_cycle(e: &Engine, allow_send: bool, full_tick: bool) {
     }
 }
 
+struct RejectedManager;
+impl ports::Harness for RejectedManager {
+    fn open_session(&self, _: &ports::SessionStart) -> Result<ports::SessionReceipt> {
+        Err(err("provider_failure", "worker 未启动，输入未发送").technical_not_applied())
+    }
+    fn stop_session(&self, _: &Session, execution: &RuntimeExecution) -> Result<ports::WorkerStop> {
+        Ok(ports::WorkerStop {
+            operation_id: execution.operation_id.clone(),
+            writer_revoked: true,
+            mode: "fixture_absent_container".into(),
+            requires_successor: true,
+        })
+    }
+}
+
+#[test]
+fn manager_starts_without_extra_input_and_surfaces_rejected_startup_until_resumed() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut e = engine(directory.path());
+    e.harness = Arc::new(RejectedManager);
+    let root = start(&e, document());
+    cmd(&e, "orchestration.open", Some(&root), json!({"role_ref":"builtin-role-project-manager:1","agent_ref":"builtin-agent-sol-high-project-manager:9"})).unwrap();
+    cmd(
+        &e,
+        "workflow.driver.select",
+        Some(&root),
+        json!({"mode":"agent"}),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        drive_manager_cycle(&e, true, false);
+    }
+    let state = e.store.snapshot().unwrap();
+    let controller = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_controller")
+        .unwrap();
+    assert_eq!(controller.data["status"], "failed");
+    assert!(
+        controller.data["reason"]
+            .as_str()
+            .unwrap()
+            .contains("worker 未启动")
+    );
+    assert_eq!(
+        state.turns.len(),
+        1,
+        "must not silently replay the rejected input"
+    );
+    assert!(!state.turns[0].consumed);
+    assert_eq!(state.turns[0].status, TurnStatus::Failed);
+    assert!(state.executions.iter().all(|e| e.writer_revoked));
+    let input: Value = serde_json::from_str(&state.turns[0].input).unwrap();
+    assert_eq!(input["user_messages"], json!([]));
+    assert_eq!(
+        input["instances"][0]["steps"][0]["confirmation_policy"],
+        "automatic"
+    );
+    assert!(
+        input["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("Workflow defines which checkpoints")
+    );
+    let previous_session = controller.data["session_id"].clone();
+    cmd(
+        &e,
+        "orchestration.resume",
+        Some(&controller.id),
+        json!({"epoch":controller.data["epoch"]}),
+    )
+    .unwrap();
+    for _ in 0..8 {
+        drive_manager_cycle(&e, true, false);
+    }
+    let resumed = e.store.snapshot().unwrap();
+    assert_eq!(resumed.turns.len(), 2);
+    assert_ne!(
+        resumed.configuration(&controller.id).unwrap().data["session_id"],
+        previous_session
+    );
+    assert_eq!(resumed.turns[0].id, state.turns[0].id);
+}
+
 #[test]
 fn a_controller_does_not_inherit_a_live_owners_code_view() {
     let directory = tempfile::tempdir().unwrap();

@@ -24,6 +24,8 @@ Workspace 持有 GlobalStore、全局配置 Engine、已打开工程表、active
 
 `tick` 先处理共享工具，再筛选 has_pending_work 的已打开 Engine，按总并发预算推进 workflow、repository、conversation 和 Engine 后台工作。非活动工程及已经装配的全局讨论继续执行；不同工程已有会话占用同一配额。长时间安装准备不持有工程选择锁。每阶段检查停机信号；stop_owned_runtime 遍历已打开 Engine，核对停止其 Harness writer，未启动输入继续排队。退出不是 workflow.cancel，也不表示已撤销外部工具或远端副作用。
 
+开发用 `scripts/dev/run-host.py` 在 macOS 保存独立签名副本，但默认仍是前台启动器，不会脱离调用它的终端或工具进程组。需要跨对话轮次持续运行时，应由独立进程会话或系统服务托管，并持久保存标准输出和错误日志。启动器记录 launcher/Host PID、进程组、收到的信号与子进程退出码，便于区分外部回收和应用崩溃。服务存活须通过 HTTP 核对；SQLite 中的 running 只表示最后保存的状态。恢复中断会话时先核对 writer 停止证明和已发生的工具回执，再建立后继经理会话，不能盲目重发原输入。
+
 文件末集成测试覆盖项目创建/选择失败、请求隔离、恢复、共享预算和关闭等行为。新增入口应复用明确的 global/project 分派，避免 handler 直接操作 active 内部状态。
 
 代码定位：[`Workspace`](../../../crates/host/src/workspace.rs#L32)、[`open_with_adapters`](../../../crates/host/src/workspace.rs#L67)、[`active_engine`](../../../crates/host/src/workspace.rs#L121)、[`dispatch`](../../../crates/host/src/workspace.rs#L253)、[`event_engine`](../../../crates/host/src/workspace.rs#L786)、[`tick`](../../../crates/host/src/workspace.rs#L795)、[`stop_owned_runtime`](../../../crates/host/src/workspace.rs#L880)。

@@ -11,6 +11,61 @@ fn scope() -> ExecutionScope {
         read_only_paths: vec![],
     }
 }
+
+#[test]
+#[ignore = "requires actual Docker and pinned Codex image; never starts a worker or calls a model"]
+fn rejected_docker_create_is_known_not_applied_when_container_is_absent() {
+    use devdesk_adapters::docker::{ContainerPurpose, ContainerSpec, DockerSandbox};
+    let root = tempfile::tempdir().unwrap();
+    let work = root.path().join("work");
+    let state = root.path().join("state");
+    std::fs::create_dir(&work).unwrap();
+    std::fs::create_dir(&state).unwrap();
+    let mut permission = permission_fixture::compile(
+        HarnessProvider::Codex,
+        scope(),
+        PermissionPolicy::full_access(),
+    )
+    .unwrap();
+    permission.limits.cpus = u32::MAX;
+    let operation_id = id();
+    let spec = ContainerSpec {
+        host_gateway: false,
+        permissions: Some(permission),
+        purpose: ContainerPurpose::Harness,
+        project_id: id(),
+        session_id: id(),
+        operation_id: operation_id.clone(),
+        image_id: support::image("codex"),
+        worktree: work,
+        state,
+        writable: false,
+        writable_subdirectories: vec![],
+        read_only_subdirectories: vec![],
+        network: true,
+        command: vec!["codex".into(), "app-server".into()],
+        nested_sandbox: false,
+        credential_env_file: None,
+        profile_file: None,
+        runner_file: None,
+        skill_directory: None,
+        sensitive_output: false,
+        profile_target: None,
+    };
+    let docker = DockerSandbox::new(root.path()).unwrap();
+    let failure = docker.create(&spec).unwrap_err();
+    assert_eq!(failure.code, "provider_failure");
+    assert_eq!(
+        failure.execution_failure.unwrap().effect,
+        ExecutionFailureEffect::NotApplied
+    );
+    assert!(
+        failure.message.contains("Docker 资源配额不受支持"),
+        "{}",
+        failure.message
+    );
+    assert!(docker.inspect(&operation_id).unwrap().is_none());
+}
 #[test]
 fn full_access_and_restricted_profiles_use_native_enforcement() {
     for provider in [HarnessProvider::Codex, HarnessProvider::Dsh] {

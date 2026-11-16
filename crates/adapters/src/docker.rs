@@ -1,6 +1,6 @@
 //! Docker resource service. Agents receive an isolated work directory, never the daemon socket.
 use super::*;
-use crate::process::{Output, capture};
+use crate::process::{Output, capture, capture_split};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
@@ -13,6 +13,44 @@ pub enum ContainerPurpose {
 
 fn is_false(value: &bool) -> bool {
     !value
+}
+
+// Docker can echo env-file contents and host paths. Persist only recognized
+// causes, never raw CLI output or the create arguments.
+fn create_failure(code: i32, stderr: &[u8]) -> Error {
+    let diagnostic = String::from_utf8_lossy(stderr).to_ascii_lowercase();
+    let cause = if diagnostic.contains("bind source path does not exist") {
+        "挂载源路径不存在"
+    } else if diagnostic.contains("mounts denied")
+        || diagnostic.contains("is not shared from the host")
+    {
+        "Docker 未获准共享挂载目录"
+    } else if diagnostic.contains("invalid mount config")
+        || diagnostic.contains("duplicate mount point")
+    {
+        "Docker 挂载配置无效"
+    } else if diagnostic.contains("no such image") || diagnostic.contains("pull access denied") {
+        "固定执行镜像不可用"
+    } else if diagnostic.contains("no space left on device") {
+        "Docker 存储空间不足"
+    } else if diagnostic.contains("range of cpus") || diagnostic.contains("memory limit") {
+        "Docker 资源配额不受支持"
+    } else if diagnostic.contains("permission denied")
+        || diagnostic.contains("operation not permitted")
+    {
+        "Docker 创建权限不足"
+    } else if diagnostic.contains("cannot connect") || diagnostic.contains("connection refused") {
+        "Docker daemon 连接失败"
+    } else {
+        "Docker 拒绝创建，未识别到可公开的错误原因"
+    };
+    err(
+        "provider_failure",
+        format!(
+            "Docker create 失败 (exit {code}): {cause}；已核对容器不存在，worker 未启动，输入未发送"
+        ),
+    )
+    .technical_not_applied()
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -736,14 +774,11 @@ impl DockerSandbox {
             spec.image_id.clone(),
         ]);
         args.extend(spec.command[1..].iter().cloned());
-        let output = self.call(args)?;
+        let output = capture_split("docker", &args, Duration::from_secs(30))?;
         // Even a create error may be an ambiguous receipt; inspect the deterministic identity.
-        let receipt = self.inspect(&spec.operation_id)?.ok_or_else(|| {
-            err(
-                "provider_failure",
-                format!("Docker create 未产生可核对容器 (exit {})", output.code),
-            )
-        })?;
+        let receipt = self
+            .inspect(&spec.operation_id)?
+            .ok_or_else(|| create_failure(output.code, &output.stderr))?;
         require(receipt.specification_digest == digest, "容器规格核对失败")?;
         Ok(receipt)
     }
@@ -823,8 +858,43 @@ impl DockerSandbox {
 }
 
 #[cfg(test)]
-mod clock_tests {
+mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_create_reports_only_safe_causes_and_no_applied_input() {
+        for (diagnostic, expected) in [
+            (
+                "invalid mount config: bind source path does not exist: /private/secret",
+                "挂载源路径不存在",
+            ),
+            (
+                "Mounts denied: /private/secret",
+                "Docker 未获准共享挂载目录",
+            ),
+            ("no such image: private/secret", "固定执行镜像不可用"),
+            (
+                "no space left on device /private/secret",
+                "Docker 存储空间不足",
+            ),
+            (
+                "Range of CPUs is from 0.01 to 12.00",
+                "Docker 资源配额不受支持",
+            ),
+            (
+                "unexpected env-file content API_KEY=secret",
+                "未识别到可公开的错误原因",
+            ),
+        ] {
+            let failure = create_failure(1, diagnostic.as_bytes());
+            assert!(failure.message.contains(expected), "{}", failure.message);
+            assert!(!failure.message.contains("secret"));
+            assert_eq!(
+                failure.execution_failure.unwrap().effect,
+                ExecutionFailureEffect::NotApplied
+            );
+        }
+    }
 
     #[test]
     fn delayed_observation_keeps_actual_runtime_and_exposes_real_overruns() {
