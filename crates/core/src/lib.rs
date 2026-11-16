@@ -4,7 +4,10 @@ mod agent_tasks;
 mod invocation;
 pub use invocation::InvocationContext;
 mod catalog_sync;
+pub mod concurrency;
 mod configuration_catalog;
+pub mod rpc_contracts;
+pub mod settings;
 pub use configuration_catalog::*;
 mod configuration_queries;
 pub use configuration_queries::{

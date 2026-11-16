@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--cold-browser", action="store_true", help="Reload JavaScript/configuration cache on every navigation")
     parser.add_argument("--model-conditions", action="store_true", help="Fresh browser with the same 1,200 ms slow/failed model fixture")
+    parser.add_argument("--browser-page", choices=["configuration", "execution"], default="configuration")
     parser.add_argument("--assert-configuration-isolation", action="store_true", help="Fail RPC sampling if configuration/events restore full state or write transactions")
     args = parser.parse_args()
     if not 1 <= args.samples <= 1000:
@@ -90,7 +91,8 @@ def main():
                     break
             if not origin:
                 raise RuntimeError("benchmark server failed to start")
-            subprocess.run(["node", str(Path(__file__).with_name("model-loading.mjs" if args.model_conditions else "configuration-loading.mjs")), origin, str(args.output.resolve()), str(args.samples), str(server.pid), "cold" if args.cold_browser else "warm"], check=True)
+            script = "model-loading.mjs" if args.model_conditions else "execution-loading.mjs" if args.browser_page == "execution" else "configuration-loading.mjs"
+            subprocess.run(["node", str(Path(__file__).with_name(script)), origin, str(args.output.resolve()), str(args.samples), str(server.pid), "cold" if args.cold_browser else "warm"], check=True)
         finally:
             server.send_signal(__import__("signal").SIGINT)
             try:

@@ -85,7 +85,9 @@ test("MiniMax 默认选择、行左侧反馈、自动模型目录与原生工具
   );
   const defaultHarness = page.getByLabel("默认 Agent Harness", { exact: true });
   await defaultHarness.selectOption("dsh");
-  const feedback = page.getByText("默认 Harness 保存失败", { exact: true });
+  const feedback = page.getByText("默认 Harness 保存失败： · Fixture failure", {
+    exact: true,
+  });
   await expect(feedback).toBeVisible();
   const row = defaultHarness.locator("..");
   const left = await row.evaluate(

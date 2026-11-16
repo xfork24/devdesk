@@ -339,6 +339,23 @@ fn compiled_native_permissions_match_the_published_execution_contract() {
 }
 
 #[test]
+fn settings_request_requires_an_explicit_resource_version_envelope() {
+    let validator = SCHEMAS.validator("rpc.schema.json#/$defs/SettingsUpdate");
+    let valid = json!({"command_id":"settings-1", "preconditions":[{
+        "resource":{"kind":"setting","id":"global_concurrency"},"revision":0
+    }], "payload":{"global_concurrency":7}});
+    assert!(validator.is_valid(&valid));
+    for invalid in [
+        json!({"global_concurrency":7}),
+        json!({"command_id":"settings-1","payload":{"global_concurrency":7}}),
+        json!({"command_id":"settings-1","preconditions":[],"payload":{"global_concurrency":0}}),
+        json!({"command_id":"settings-1","preconditions":[],"payload":{"default_harness":null}}),
+    ] {
+        assert!(!validator.is_valid(&invalid), "{invalid}");
+    }
+}
+
+#[test]
 fn rpc_request_dispatch_validates_the_current_parameter_contracts() {
     let validator = SCHEMAS.validator("rpc.schema.json");
     for method in [

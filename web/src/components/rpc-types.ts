@@ -14,3 +14,8 @@ export type Request = (
   options?: RequestOptions,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ) => Promise<any>;
+
+export type ResourceVersion = {
+  resource: { kind: string; id: string };
+  revision: number;
+};

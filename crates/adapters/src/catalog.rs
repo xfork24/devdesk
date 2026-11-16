@@ -3,7 +3,7 @@ use super::*;
 use rusqlite::{OptionalExtension, params};
 
 pub struct GlobalStore {
-    pub(super) connection: Mutex<Connection>,
+    pub(super) connection: connection_pool::ConnectionPool,
     pub(super) writer: Mutex<()>,
     catalog_cache: configuration_cache::CatalogCache,
     changes: store_changes::StoreChanges,
@@ -48,7 +48,7 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 18,
+            version == 0 || version == 19,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
         connection
@@ -63,7 +63,10 @@ impl GlobalStore {
         }
 
         let store = Self {
-            connection: Mutex::new(connection),
+            connection: connection_pool::ConnectionPool::new(
+                &root.join("global.sqlite3"),
+                connection,
+            )?,
             writer: Mutex::new(()),
             catalog_cache: Default::default(),
             changes: Default::default(),
@@ -74,24 +77,19 @@ impl GlobalStore {
     }
 
     pub fn concurrency(&self) -> Result<usize> {
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read().map_err(storage)?;
         Ok(setting(&conn, "global_concurrency")?
             .and_then(|v| v.as_u64())
             .unwrap_or(4) as usize)
     }
 
     pub fn set_concurrency(&self, value: usize) -> Result<()> {
-        require((1..=32).contains(&value), "全局并发额度需为 1—32")?;
-        put_setting(
-            &*self.connection.lock().map_err(storage)?,
-            "global_concurrency",
-            &json!(value),
-        )
+        self.update_preferences(Some(value), None)
     }
 
     pub fn default_harness(&self) -> Result<HarnessProvider> {
         let value = setting(
-            &*self.connection.lock().map_err(storage)?,
+            &*self.connection.read().map_err(storage)?,
             "default_harness",
         )?
         .unwrap_or(json!("codex"));
@@ -111,16 +109,33 @@ impl GlobalStore {
         if let Some(n) = concurrency {
             require((1..=32).contains(&n), "全局并发额度需为 1—32")?;
         }
-        let _writer = self.writer.lock().map_err(storage)?;
-        let mut conn = self.connection.lock().map_err(storage)?;
-        let tx = conn.transaction().map_err(storage)?;
+        // Trusted bootstrap/test convenience. RPC saves use the client's original
+        // versions directly and must never refresh their baseline through here.
+        let settings = devdesk_core::settings::read(self)?;
+        let mut payload = serde_json::Map::new();
         if let Some(n) = concurrency {
-            put_setting(&tx, "global_concurrency", &json!(n))?;
+            payload.insert("global_concurrency".into(), json!(n));
         }
         if let Some(p) = provider {
-            put_setting(&tx, "default_harness", &json!(p))?;
+            payload.insert("default_harness".into(), json!(p));
         }
-        tx.commit().map_err(storage)
+        let versions = settings
+            .versions
+            .into_iter()
+            .filter(|version| payload.contains_key(&version.resource.id))
+            .collect();
+        devdesk_core::settings::save(
+            self,
+            &Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: Value::Object(payload),
+            },
+            &concurrency::ReadSet::new(versions)?,
+            &InvocationContext::human(None),
+        )?;
+        Ok(())
     }
 
     pub fn active_project(&self) -> Result<Option<String>> {
@@ -369,33 +384,55 @@ impl GlobalStore {
 }
 
 impl EngineeringStore for GlobalStore {
+    fn namespace(&self) -> concurrency::StoreNamespace {
+        concurrency::StoreNamespace::Configuration
+    }
+    fn read_resources(
+        &self,
+        keys: &[concurrency::ResourceKey],
+    ) -> Result<Vec<concurrency::ResourceSnapshot>> {
+        resource_commits::read(&self.connection, keys)
+    }
+    fn commit_changes(
+        &self,
+        changes: &concurrency::PreparedChangeSet,
+    ) -> Result<concurrency::CommitReceipt> {
+        let (receipt, changed) = resource_commits::commit(&self.connection, changes)?;
+        if changed {
+            self.catalog_cache.invalidate()?;
+            self.changes.notify();
+        }
+        Ok(receipt)
+    }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
     }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
-        store_changes::events_after(&*self.connection.lock().map_err(storage)?, cursor, limit)
+        store_changes::events_after(&*self.connection.read()?, cursor, limit)
     }
     fn subscribe_changes(&self, listener: std::sync::Weak<dyn Fn() + Send + Sync>) {
         self.changes.subscribe(listener);
     }
     fn has_pending_tool_calls(&self) -> Result<bool> {
-        store_changes::pending_tools(&*self.connection.lock().map_err(storage)?)
+        store_changes::pending_tools(&*self.connection.read()?)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         if let Some(snapshot) = self.catalog_cache.current()? {
             return Ok(snapshot);
         }
-        self.catalog_cache
-            .read(&*self.connection.lock().map_err(storage)?, false)
+        self.catalog_cache.read(&*self.connection.read()?, false)
     }
     fn root(&self) -> String {
         self.root.to_string_lossy().into_owned()
     }
     fn snapshot(&self) -> Result<EngineeringState> {
         let waiting = performance::Span::new("global.connection_wait");
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read()?;
         drop(waiting);
-        Self::configuration(&conn)
+        conn.execute_batch("BEGIN;").map_err(storage)?;
+        let state = Self::configuration(&conn)?;
+        conn.execute_batch("COMMIT;").map_err(storage)?;
+        Ok(state)
     }
     fn transact(
         &self,
@@ -408,7 +445,7 @@ impl EngineeringStore for GlobalStore {
         if let Some((id, fp)) = key {
             let previous: Option<(String, String)> = conn
                 .query_row(
-                    "SELECT fingerprint,result FROM operations WHERE id=?1",
+                    "SELECT fingerprint,CAST(result AS TEXT) FROM operations WHERE id=?1",
                     [id],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )

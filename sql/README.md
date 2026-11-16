@@ -2,8 +2,8 @@
 
 | 文件 | 数据库 | user_version |
 |---|---|---:|
-| `global/schema.sql` | `<data>/global.sqlite3`，共享源配置、安装与项目索引 | 18 |
-| `project/schema.sql` | `<data>/projects/<id>/engineering.sqlite3`，项目源选择、材料与执行事实 | 48 |
+| `global/schema.sql` | `<data>/global.sqlite3`，共享源配置、安装与项目索引 | 19 |
+| `project/schema.sql` | `<data>/projects/<id>/engineering.sqlite3`，项目源选择、材料与执行事实 | 49 |
 
 数据集标记为 `devdesk-profile-runtime-v2`。空库在事务中创建当前结构；清空后仅剩标记、锁及 Finder 元数据的目录可重新初始化。其他包含数据的目录若协议或数据库版本不兼容则直接拒绝，不执行升级、回退或转换，也不改写旧库。
 
@@ -14,3 +14,5 @@
 Session、Turn、RuntimeExecution、仓库操作及 Artifact 保存不可由配置重建的执行事实。幂等记录同样保存源引用，重放时解析；人工决定、失败报告、输入来源与实际回执不因解析而改写。流程修改在接纳时形成新的 Workflow 源修订，既有执行仍关联原计划和源修订。
 
 模板目录使用独立的代次选择记录；恢复出厂选择复用同一源引用。运行引用的源修订永久保留。凭据只保存不透明引用，不进入源正文或运行日志。
+
+有限资源提交使用 `resource_versions(kind, resource_id, revision)` 保护资源前置条件；`operations.versions` 和 `operations.cursor` 与结果及业务事件原子提交。该端口不允许以项目大锁替代版本校验；旧业务写路径仍须按重构计划迁移。global 18 / project 48 不自动转换为当前基线。

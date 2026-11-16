@@ -356,6 +356,25 @@ pub trait PullRequests: Send + Sync {
 }
 
 pub trait EngineeringStore: Send + Sync {
+    fn namespace(&self) -> crate::concurrency::StoreNamespace {
+        crate::concurrency::StoreNamespace::Engineering {
+            project_id: self.project_id(),
+        }
+    }
+    /// A bounded, committed resource batch; implementations must not restore history.
+    fn read_resources(
+        &self,
+        _keys: &[crate::concurrency::ResourceKey],
+    ) -> Result<Vec<crate::concurrency::ResourceSnapshot>> {
+        Err(err("unsupported", "存储未实现资源读取"))
+    }
+    /// Core-prepared changes and every business read dependency commit atomically.
+    fn commit_changes(
+        &self,
+        _changes: &crate::concurrency::PreparedChangeSet,
+    ) -> Result<crate::concurrency::CommitReceipt> {
+        Err(err("unsupported", "存储未实现资源版本提交"))
+    }
     fn observe_query(&self, _stage: &'static str) -> Box<dyn QueryObservation> {
         Box::new(())
     }

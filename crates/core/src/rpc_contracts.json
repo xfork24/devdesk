@@ -1,0 +1,2672 @@
+{
+  "description": "Reviewed ingress inventory; access describes intended side effects. Production enforcement is introduced in P2. Non-method literals are explicitly accounted for.",
+  "entries": [
+    {
+      "method": "agent.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/core/src/lib.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "agent.experience.list",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs"
+      ]
+    },
+    {
+      "method": "agent.experience.read",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs"
+      ]
+    },
+    {
+      "method": "agent.instance.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/core/src/session_assembly.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "agent.instance.rebind",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "agent.instance.remove",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "agent.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/core/src/lib.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "binding.update",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "capability.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "capability.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "codex.auth.cancel",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "codex.auth.models",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "codex.auth.preparation_cancel",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "codex.auth.preparation_status",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "codex.auth.start",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "codex.auth.status",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "configuration.apply",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "read_set",
+      "sites": [
+        "crates/core/src/manager_workspace.rs"
+      ]
+    },
+    {
+      "method": "configuration.catalog",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "configuration.change.apply",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/configuration_changes.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "configuration.change.preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configuration_changes.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "configuration.preview",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/manager_workspace.rs"
+      ]
+    },
+    {
+      "method": "configuration.read",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "configuration.retire",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "configuration.templates.reset",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configuration_transfers.rs",
+        "crates/core/src/default_permissions.rs",
+        "crates/host/src/templates.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "configuration.transfer.apply",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "configuration.transfer.cancel",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "configuration.transfer.stage",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/configuration_transfers.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "configuration.transfer.status",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "configuration.usage",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "context.update",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "conversation.cancel",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/conversations.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "conversation.send",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/conversations.rs",
+        "crates/core/src/governance.rs",
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/lib.rs",
+        "crates/core/src/permission_switch.rs",
+        "crates/core/src/workflow_failure.rs",
+        "crates/host/src/permission_resources.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "credentials.authorize",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/model_providers.rs"
+      ]
+    },
+    {
+      "method": "credentials.check",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/model_providers.rs"
+      ]
+    },
+    {
+      "method": "credentials.configure",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/model_providers.rs"
+      ]
+    },
+    {
+      "method": "credentials.integration.configure",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "credentials.integration.status",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "credentials.status",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/model_providers.rs"
+      ]
+    },
+    {
+      "method": "definition.revise",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "delivery_type.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "delivery_type.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "document.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "execution.retry_cleanup",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/conversations.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "experience.lookup",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "experience.restore",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "feature.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "git.advance",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "git.candidate",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "git.publish",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "github.diagnose",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "harness.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "harness.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "integration.binding.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.binding.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.delete",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.disable",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.discover",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.oauth.revoke",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.oauth.start",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.oauth.status",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.openapi.import",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.openapi.preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.project.bind",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.publish_tools",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.retire",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.test",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.tool.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.tool.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "integration.tools.publish",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/integrations.rs",
+        "crates/core/src/lib.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "interaction.answer",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/conversations.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "manager.open",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/controllers.rs"
+      ]
+    },
+    {
+      "method": "materials.capture",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "model.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "model.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "model_catalog.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "model_catalog.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "model_provider.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "model_provider.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "models.list",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/model_providers.rs"
+      ]
+    },
+    {
+      "method": "orchestration.input",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs"
+      ]
+    },
+    {
+      "method": "orchestration.open",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/workflow_driver.rs"
+      ]
+    },
+    {
+      "method": "orchestration.resume",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/workflow_driver.rs"
+      ]
+    },
+    {
+      "method": "orchestration.takeover",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs"
+      ]
+    },
+    {
+      "method": "permission.bind",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "permission.binding.preflight",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.bindings.apply",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configuration_transfers.rs",
+        "crates/core/src/lib.rs",
+        "crates/core/src/permission_resources.rs",
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.create",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "permission.preflight",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "permission.profile.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/permission_resources.rs",
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.profile.export",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.profile.import",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/permission_resources.rs",
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.profile.reload",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.profile.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/permission_resources.rs",
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.revise",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "permission.source.browse",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "permission.source.select",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "project.artifact.read",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "project.configuration.update",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configuration_changes.rs",
+        "crates/core/src/configuration_transfers.rs",
+        "crates/core/src/configured_workflows.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "project.create",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/github_projects.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "project.open",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "project.open_github",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/host/src/github_projects.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "project.overview",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/lib.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "project.record.read",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "project.records.list",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "project.resources",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "project.update",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "proposal.adopt",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/proposals.rs"
+      ]
+    },
+    {
+      "method": "proposal.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/proposals.rs"
+      ]
+    },
+    {
+      "method": "proposal.extract",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/proposals.rs"
+      ]
+    },
+    {
+      "method": "proposal.reject",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/proposals.rs"
+      ]
+    },
+    {
+      "method": "proposal.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/proposals.rs"
+      ]
+    },
+    {
+      "method": "query.agent_experience",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.agent_instances",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.agent_revision",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.artifact",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/main.rs"
+      ]
+    },
+    {
+      "method": "query.capabilities",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/configuration.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.configuration_defaults",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.configuration_graph",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configuration_changes.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.configuration_references",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configuration.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.configurations",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.default_configuration",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.discussion_agents",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.events",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.execution_task",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configured_runtime.rs"
+      ]
+    },
+    {
+      "method": "query.history",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.integration_bindings",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/integrations.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "query.integrations",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/integrations.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "query.model_providers",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/model_providers.rs"
+      ]
+    },
+    {
+      "method": "query.orchestration",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "query.permission_resources",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/permission_resources.rs"
+      ]
+    },
+    {
+      "method": "query.permissions",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.project_configuration",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs"
+      ]
+    },
+    {
+      "method": "query.project_directory",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.project_knowledge",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "query.project_standard_preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.project_workflow_summary",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.repository",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "query.roles",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.runtime_installations",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.runtime_options",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.runtimes",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.session",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/conversations.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.sessions",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/conversations.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.settings",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.spec_lint",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.specification_audit",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.standard",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.standard_catalog",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.standard_diff",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.standard_usage",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.template_catalog",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/templates.rs"
+      ]
+    },
+    {
+      "method": "query.template_reset_preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/host/src/templates.rs"
+      ]
+    },
+    {
+      "method": "query.tool_calls",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/history.rs",
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.ui_bootstrap",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.work_configuration",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.work_standard_choices",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.work_standard_diff",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_change_preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/orchestration.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_contexts",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_control",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/orchestration.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_draft",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_driver",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_executions",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_instance",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_materials",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configured_workflows.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_record",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_requirements",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configured_workflows.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_task_preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configured_workflows.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_validation",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/configured_workflows.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_version_diff",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflows",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/governance.rs",
+        "crates/host/src/configuration_read.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workspace",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/lib.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "repository.connect",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/repositories.rs",
+        "crates/host/src/github_projects.rs"
+      ]
+    },
+    {
+      "method": "repository.reconcile",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/repositories.rs"
+      ]
+    },
+    {
+      "method": "repository.refresh",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/repositories.rs"
+      ]
+    },
+    {
+      "method": "role.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "role.delete",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "role.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "runtime.discover_codex",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.discover_docker",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.integrity",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.preparation_cancel",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.preparation_reconcile",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.preparation_status",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.prepare",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.prepare_harness",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "runtime.register",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "intent_revision",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "sandbox.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "sandbox.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "session.list",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "session.open",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/conversations.rs",
+        "crates/core/src/governance.rs",
+        "crates/core/src/lib.rs",
+        "crates/core/src/permission_switch.rs",
+        "crates/core/src/session_assembly.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "session.read",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "settings.update",
+      "access": "mutation",
+      "scope": "global",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "skill.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "skill.export",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "skill.import",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/configuration_changes.rs",
+        "crates/core/src/integrations.rs",
+        "crates/core/src/lib.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "skill.import_package",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "skill.import_package.adopt",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "skill.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "snapshot.save",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/lib.rs"
+      ]
+    },
+    {
+      "method": "spec.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "spec.lint",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/manager_workspace.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "spec.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "standard.archive",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "standard.capture",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "standard.capture.preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "standard.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "standard.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "tasks.complete",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "tasks.create",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "tests.run",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "tool.call.approve",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "tool.call.artifact",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "tool.call.cancel",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "tool.call.reconcile",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/integrations.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "tool.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "tool.revise",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "catalog_and_head",
+      "sites": [
+        "crates/core/src/governance.rs"
+      ]
+    },
+    {
+      "method": "work.configuration.update",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configuration_changes.rs",
+        "crates/core/src/configuration_transfers.rs",
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/standards.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "workflow.cancel",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.change.apply",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.change.preview",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "workflow.complete",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/core/src/workflow_driver.rs"
+      ]
+    },
+    {
+      "method": "workflow.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_workflows.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "workflow.decision.request",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.decision.resolve",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/orchestration.rs"
+      ]
+    },
+    {
+      "method": "workflow.draft.create",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "absence_and_dependencies",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/configured_workflows.rs"
+      ]
+    },
+    {
+      "method": "workflow.draft.update",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/configured_workflows.rs"
+      ]
+    },
+    {
+      "method": "workflow.draft.upgrade",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs"
+      ]
+    },
+    {
+      "method": "workflow.driver.select",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/workflow_driver.rs"
+      ]
+    },
+    {
+      "method": "workflow.events.read",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "workflow.execution.inspect",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "workflow.execution.reconcile",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.execution.stop",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.inspect",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/core/src/workflow_driver.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "workflow.materials.import",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.outputs.read",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/agent_context.rs",
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "workflow.pause",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.publish",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/command_catalog.rs",
+        "crates/core/src/configured_workflows.rs",
+        "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "workflow.resume",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.segment.dispatch",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.start",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.accept",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/core/src/workflow_changes.rs",
+        "crates/core/src/workflow_driver.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.approve",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/orchestration.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.confirm",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/orchestration.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.dispatch",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/core/src/workflow_changes.rs",
+        "crates/core/src/workflow_driver.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.input",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/human_governance.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.reconcile",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.retry",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/core/src/workflow_driver.rs"
+      ]
+    },
+    {
+      "method": "workflow.step.rework",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/controllers.rs",
+        "crates/core/src/orchestration.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.task_upgrade",
+      "access": "retired",
+      "scope": "explicit",
+      "precondition": "rejected",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "workflow.tool.execute",
+      "access": "mutation",
+      "scope": "explicit",
+      "precondition": "resource_read_set",
+      "sites": [
+        "crates/core/src/configured_runtime.rs",
+        "crates/core/src/integrations.rs",
+        "crates/core/src/platform_tools.rs",
+        "crates/host/src/governance.rs",
+        "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "workspace.current",
+      "access": "platform_read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workspace.snapshot",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "execution_binding",
+      "sites": [
+        "crates/core/src/platform_tools.rs"
+      ]
+    }
+  ],
+  "non_methods": [
+    "configuration.changed",
+    "configuration.global.write",
+    "context.revised",
+    "execution.cleanup_retry_requested",
+    "experience.imported",
+    "harness.native",
+    "project.read",
+    "query.work_",
+    "repository.completed",
+    "repository.dispatched",
+    "repository.needs_reconciliation",
+    "workflow.compile",
+    "workflow.decision",
+    "workflow.driver.selected",
+    "workflow.updated"
+  ],
+  "http": [
+    {
+      "method": "GET",
+      "path": "/connection",
+      "access": "read",
+      "precondition": "none"
+    },
+    {
+      "method": "POST",
+      "path": "/session",
+      "access": "lifecycle",
+      "precondition": "session_challenge"
+    },
+    {
+      "method": "POST",
+      "path": "/rpc",
+      "access": "dispatch",
+      "precondition": "per_method_contract"
+    },
+    {
+      "method": "GET",
+      "path": "/oauth/integrations/callback",
+      "access": "callback",
+      "precondition": "intent_revision"
+    },
+    {
+      "method": "POST",
+      "path": "/setup",
+      "access": "lifecycle",
+      "precondition": "host_epoch_and_absence"
+    },
+    {
+      "method": "POST",
+      "path": "/shutdown",
+      "access": "lifecycle",
+      "precondition": "host_epoch_and_revision"
+    },
+    {
+      "method": "GET",
+      "path": "/capabilities",
+      "access": "read",
+      "precondition": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/events",
+      "access": "read",
+      "precondition": "none"
+    },
+    {
+      "method": "GET",
+      "path": "/artifacts/{id}",
+      "access": "read",
+      "precondition": "none"
+    }
+  ]
+}

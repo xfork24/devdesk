@@ -321,11 +321,15 @@ async fn rpc(
         devdesk_adapters::performance::record("worker.queue_wait", submitted.elapsed().as_secs_f64()*1000.0);
         let result = {
             let _span = devdesk_adapters::performance::Span::new("rpc.dispatch");
-            if read && cancelled.load(Ordering::Relaxed) { Err(devdesk_domain::err("cancelled", "读取已取消")) } else { app.workspace().and_then(|w| w.dispatch(&method, params)) }
+            if read && cancelled.load(Ordering::Relaxed) { Err(devdesk_domain::err("cancelled", "读取已取消")) } else { app.workspace().and_then(|w| w.dispatch_with_receipt(&method, params)) }
         };
         let success = result.is_ok();
         let response = match result {
-            Ok(result) => json!({"jsonrpc":"2.0","id":id,"result":result}),
+            Ok(outcome) => {
+                let mut response = json!({"jsonrpc":"2.0","id":id,"result":outcome.value});
+                if let Some(commit) = outcome.commit {response["meta"]=json!({"commit":commit});}
+                response
+            },
             Err(e) => json!({"jsonrpc":"2.0","id":id,"error":failure(e)}),
         };
         let body = {
