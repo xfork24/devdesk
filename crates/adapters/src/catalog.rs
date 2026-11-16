@@ -292,17 +292,20 @@ impl EngineeringStore for GlobalStore {
     ) -> Result<Vec<concurrency::ResourceSnapshot>> {
         resource_commits::read(&self.connection, keys)
     }
-    fn commit_changes(
+    fn submit_changes(
         &self,
         changes: &concurrency::PreparedChangeSet,
-    ) -> Result<concurrency::CommitReceipt> {
+    ) -> Result<concurrency::CommitOutcome> {
         let (receipt, changed) = resource_commits::commit(&self.connection, changes)?;
         if changed {
             // The persisted catalog clock already identifies invalidation.
             // Runtime/pref commits must keep the immutable source view alive.
             self.changes.notify();
         }
-        Ok(receipt)
+        Ok(concurrency::CommitOutcome {
+            receipt,
+            applied: changed,
+        })
     }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)

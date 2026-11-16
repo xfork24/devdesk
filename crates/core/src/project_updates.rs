@@ -15,6 +15,9 @@ pub struct ProjectUpdateContext {
     project: Project,
     version: ResourceVersion,
     project_id: Id,
+    workspace_frozen: bool,
+    constraint_versions: Vec<ResourceVersion>,
+    request_digest: String,
 }
 impl ProjectUpdateContext {
     pub fn read(store: &dyn EngineeringStore, command: &Command) -> Result<Self> {
@@ -32,18 +35,42 @@ impl ProjectUpdateContext {
             return Err(err("invalid_scope", "Project 不属于本次请求的库"));
         }
         let key = ResourceKey::new("project", target);
-        let row = store
-            .read_resources(std::slice::from_ref(&key))?
-            .into_iter()
-            .next()
-            .filter(|row| row.resource == key)
-            .ok_or_else(|| err("storage", "Project 上下文读取不完整"))?;
+        let mut constraint_versions = Vec::new();
+        let mut workspace_frozen = false;
+        let row = if command.payload.get("workspace").is_some()
+            || command.payload.get("workspace_definition").is_some()
+        {
+            let facts = store.repository_registration_facts()?;
+            workspace_frozen = facts.has_features || facts.has_mainline;
+            require(
+                facts.repository_scope.resource == repository_collection(&project_id)
+                    && facts.feature_scope.resource == feature_collection(&project_id),
+                "Project 仓库约束读取不完整",
+            )?;
+            constraint_versions.extend(
+                [facts.repository_scope, facts.feature_scope]
+                    .into_iter()
+                    .map(|row| ResourceVersion {
+                        resource: row.resource,
+                        revision: row.revision,
+                    }),
+            );
+            facts.project
+        } else {
+            store
+                .read_resources(std::slice::from_ref(&key))?
+                .into_iter()
+                .next()
+                .ok_or_else(|| err("storage", "Project 上下文读取不完整"))?
+        };
+        require(row.resource == key, "Project 上下文资源不符")?;
         let project: Project = serde_json::from_value(
             row.value
                 .ok_or_else(|| err("not_found", "Project 不存在"))?,
         )
         .map_err(|e| err("storage", e.to_string()))?;
         require(project.id == project_id, "Project 元数据归属不一致")?;
+        workspace_frozen &= project.execution_mode == "live";
         if command.expected_revision.is_none() {
             return Err(err("precondition_required", "缺少原始 Project revision"));
         }
@@ -53,6 +80,9 @@ impl ProjectUpdateContext {
         Ok(Self {
             project,
             project_id,
+            workspace_frozen,
+            constraint_versions,
+            request_digest: command_fingerprint("project.update", command),
             version: ResourceVersion {
                 resource: key,
                 revision: row.revision,
@@ -72,6 +102,10 @@ impl ProjectUpdateContext {
         }
         context.require_project(&self.project_id)?;
         require(
+            self.request_digest == command_fingerprint("project.update", command),
+            "Project 准备上下文不能替换原请求",
+        )?;
+        require(
             command.target.as_deref() == Some(self.project_id.as_str()),
             "Project 上下文与命令不符",
         )?;
@@ -86,6 +120,8 @@ impl ProjectUpdateContext {
         )?;
         let patch: ProjectPatch = serde_json::from_value(command.payload.clone())
             .map_err(|e| err("invalid_params", e.to_string()))?;
+        let original_workspace =
+            configuration_hash(&(&self.project.workspace, &self.project.workspace_definition));
         let mut project = self.project;
         if let Some(title) = patch.title {
             require(!title.trim().is_empty(), "Project 名称不能为空")?;
@@ -106,13 +142,20 @@ impl ProjectUpdateContext {
             project.workspace = definition.path.clone();
             project.workspace_definition = Some(definition);
         }
+        require(
+            !self.workspace_frozen
+                || original_workspace
+                    == configuration_hash(&(&project.workspace, &project.workspace_definition)),
+            "真实项目的仓库绑定不能原地切换",
+        )?;
         project.revision = project
             .revision
             .checked_add(1)
             .filter(|revision| *revision <= i64::MAX as u64)
             .ok_or_else(|| err("resource_exhausted", "Project revision 越界"))?;
         let provenance = context.prepare_record("project.update", command);
-        let mut guards = vec![self.version.clone()];
+        let mut guards = self.constraint_versions;
+        guards.push(self.version.clone());
         guards.push(ResourceVersion {
             resource: provenance.resource.clone(),
             revision: 0,

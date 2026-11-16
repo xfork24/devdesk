@@ -19,7 +19,7 @@ pub(super) fn registration(
     )?
     .try_into()
     .map_err(|_| err("storage", "仓库上下文读取不完整"))?;
-    let (has_features,has_registration)=tx.query_row("SELECT EXISTS(SELECT 1 FROM features WHERE project_id=?1),EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND json_extract(action,'$.kind')='connect')",[project],|row|Ok((row.get(0)?,row.get(1)?))).map_err(storage)?;
+    let (has_features,has_registration,has_mainline)=tx.query_row("SELECT EXISTS(SELECT 1 FROM features WHERE project_id=?1),EXISTS(SELECT 1 FROM repository_operations WHERE project_id=?1 AND json_extract(action,'$.kind')='connect'),EXISTS(SELECT 1 FROM repository_worktrees WHERE project_id=?1 AND kind='mainline')",[project],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).map_err(storage)?;
     tx.commit().map_err(storage)?;
     Ok(RepositoryRegistrationFacts {
         project: project_row,
@@ -27,6 +27,7 @@ pub(super) fn registration(
         feature_scope,
         has_features,
         has_registration,
+        has_mainline,
     })
 }
 pub(super) fn refresh(pool: &ConnectionPool, project: &str) -> Result<RepositoryRefreshFacts> {

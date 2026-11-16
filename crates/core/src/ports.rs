@@ -464,8 +464,16 @@ pub trait EngineeringStore: Send + Sync {
     /// Core-prepared changes and every business read dependency commit atomically.
     fn commit_changes(
         &self,
-        _changes: &crate::concurrency::PreparedChangeSet,
+        changes: &crate::concurrency::PreparedChangeSet,
     ) -> Result<crate::concurrency::CommitReceipt> {
+        self.submit_changes(changes).map(|outcome| outcome.receipt)
+    }
+    /// Distinguish this call's new commit from a durable replay. Only the new
+    /// claim may authorize an external attempt; replay requires observation.
+    fn submit_changes(
+        &self,
+        _changes: &crate::concurrency::PreparedChangeSet,
+    ) -> Result<crate::concurrency::CommitOutcome> {
         Err(err("unsupported", "存储未实现资源版本提交"))
     }
     fn observe_query(&self, _stage: &'static str) -> Box<dyn QueryObservation> {

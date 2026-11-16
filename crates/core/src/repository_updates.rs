@@ -9,6 +9,7 @@ pub struct RepositoryRegistrationFacts {
     pub feature_scope: ResourceSnapshot,
     pub has_features: bool,
     pub has_registration: bool,
+    pub has_mainline: bool,
 }
 #[derive(Debug)]
 pub struct RepositoryRefreshFacts {
@@ -177,7 +178,10 @@ impl RepositoryRegistrationContext {
         let facts = store.repository_registration_facts()?;
         let (project, project_token) = project(facts.project, &id, command)?;
         require(!facts.has_features, "请在尚未创建 Feature 的项目中登记仓库")?;
-        require(!facts.has_registration, "仓库登记已存在，请核对原操作")?;
+        require(
+            !facts.has_registration && !facts.has_mainline,
+            "仓库登记已存在，请核对原操作",
+        )?;
         Ok(Self {
             project,
             guards: vec![

@@ -201,3 +201,81 @@ fn finite_project_preparation_validates_scope_and_never_restores_unrelated_facts
         "precondition_required"
     );
 }
+
+#[test]
+fn workspace_changes_guard_repository_membership_without_blocking_title_edits() {
+    let root = tempfile::tempdir().unwrap();
+    let store = fixture(root.path());
+    let connection = rusqlite::Connection::open(
+        SqliteStore::project_path(root.path(), PROJECT)
+            .unwrap()
+            .join("engineering.sqlite3"),
+    )
+    .unwrap();
+    let workspace = command("move-workspace", 1, json!({"workspace":"/moved"}));
+    let prepared = prepare(store.as_ref(), &workspace).unwrap();
+    let title = prepare(
+        store.as_ref(),
+        &command("title", 1, json!({"title":"Allowed title edit"})),
+    )
+    .unwrap();
+    connection.execute("INSERT INTO features(id,project_id,title,status,revision,input_version) VALUES('feature',?1,'Fixture','running',1,1)",[PROJECT]).unwrap();
+    assert_eq!(
+        store.commit_changes(&prepared).unwrap_err().code,
+        "revision_conflict"
+    );
+    assert!(prepare(store.as_ref(), &workspace).is_err());
+    assert!(
+        title
+            .read_set
+            .versions()
+            .iter()
+            .all(|version| version.resource.kind != "collection")
+    );
+    store.commit_changes(&title).unwrap();
+    let unchanged = command(
+        "same-workspace",
+        2,
+        json!({"workspace":"/original","concurrency":4}),
+    );
+    store
+        .commit_changes(&prepare(store.as_ref(), &unchanged).unwrap())
+        .unwrap();
+    let original = command("original-title", 3, json!({"title":"Title"}));
+    let context = ProjectUpdateContext::read(store.as_ref(), &original).unwrap();
+    let replaced = command("original-title", 3, json!({"workspace":"/bypass"}));
+    assert!(
+        context
+            .prepare(&replaced, &InvocationContext::human(Some(PROJECT.into())))
+            .is_err()
+    );
+}
+
+#[test]
+fn a_mainline_worktree_freezes_workspace_even_before_the_first_feature() {
+    let root = tempfile::tempdir().unwrap();
+    let store = fixture(root.path());
+    let connection = rusqlite::Connection::open(
+        SqliteStore::project_path(root.path(), PROJECT)
+            .unwrap()
+            .join("engineering.sqlite3"),
+    )
+    .unwrap();
+    let request = command("before-mainline", 1, json!({"workspace":"/moved"}));
+    let prepared = prepare(store.as_ref(), &request).unwrap();
+    // Projection facts only, not a real Git receipt or worker execution.
+    connection.execute("INSERT INTO repository_operations(id,project_id,action,status,receipt,reason,revision) VALUES('fixture-connect',?1,?2,'completed',NULL,'projection fixture',1)",rusqlite::params![PROJECT,json!({"kind":"connect","repository":"fixture/repo","mainline":"main"}).to_string()]).unwrap();
+    connection.execute("INSERT INTO repository_worktrees(id,project_id,owner_id,kind,branch,path,base,operation_id) VALUES(?1,?1,?1,'mainline','main','/original',?2,'fixture-connect')",rusqlite::params![PROJECT,"a".repeat(40)]).unwrap();
+    assert_eq!(
+        store.commit_changes(&prepared).unwrap_err().code,
+        "revision_conflict"
+    );
+    assert!(prepare(store.as_ref(), &request).is_err());
+    assert!(
+        prepare(
+            store.as_ref(),
+            &command("rename-with-mainline", 1, json!({"title":"Renamed"}))
+        )
+        .is_ok()
+    );
+}

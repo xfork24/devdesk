@@ -153,6 +153,14 @@ pub struct CommitReceipt {
     pub cursor: u64,
 }
 
+/// Internal admission result. A replay returns the original durable receipt but
+/// must not grant another attempt to perform an external side effect.
+#[derive(Debug, Clone)]
+pub struct CommitOutcome {
+    pub receipt: CommitReceipt,
+    pub applied: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

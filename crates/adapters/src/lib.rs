@@ -611,10 +611,10 @@ impl EngineeringStore for SqliteStore {
     ) -> Result<Vec<concurrency::ResourceSnapshot>> {
         resource_commits::read(&self.connection, keys)
     }
-    fn commit_changes(
+    fn submit_changes(
         &self,
         changes: &concurrency::PreparedChangeSet,
-    ) -> Result<concurrency::CommitReceipt> {
+    ) -> Result<concurrency::CommitOutcome> {
         if let Some(project) = &self.project_id {
             for change in &changes.changes {
                 if change.resource.kind == "governance" {
@@ -652,7 +652,10 @@ impl EngineeringStore for SqliteStore {
             // Runtime/pref commits must keep the immutable source view alive.
             self.changes.notify();
         }
-        Ok(receipt)
+        Ok(concurrency::CommitOutcome {
+            receipt,
+            applied: changed,
+        })
     }
     fn orchestration_summary(
         &self,
