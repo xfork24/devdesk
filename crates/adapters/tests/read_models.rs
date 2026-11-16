@@ -515,3 +515,79 @@ fn execution_workspace_pages_native_facts_and_excludes_unrelated_history() {
         "not_found"
     );
 }
+
+#[test]
+fn scheduling_counts_active_turns_once_and_reads_committed_facts_without_restoration() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(root.path(), PROJECT, "excerpt");
+    let session: String = conn
+        .query_row("SELECT id FROM sessions LIMIT 1", [], |row| row.get(0))
+        .unwrap();
+    for n in 0..2 {
+        conn.execute("INSERT INTO executions(id,session_id,operation_id,image_digest,status,writer_revoked) VALUES(?1,?2,?1,'fixture','running',0)",params![format!("count-execution-{n}"),session]).unwrap();
+    }
+    for (status, expected) in [
+        ("queued", 0),
+        ("dispatching", 1),
+        ("running", 1),
+        ("waiting_interaction", 1),
+        ("needs_reconciliation", 1),
+        ("completed", 0),
+        ("failed", 0),
+        ("cancelled", 0),
+    ] {
+        conn.execute("UPDATE turns SET status=?1", [status])
+            .unwrap();
+        assert_eq!(
+            store.active_conversation_count().unwrap(),
+            expected,
+            "{status}"
+        );
+        assert_eq!(
+            store.scheduling_hints().unwrap().running_conversations,
+            expected,
+            "{status}"
+        );
+    }
+    conn.execute("UPDATE turns SET status='running'", [])
+        .unwrap();
+    conn.execute_batch("BEGIN IMMEDIATE; UPDATE executions SET writer_revoked=1;")
+        .unwrap();
+    let trace = performance::Trace::start();
+    let hints = store.scheduling_hints().unwrap();
+    assert!(hints.live && hints.pending);
+    assert_eq!(hints.running_conversations, 1);
+    assert_eq!(store.active_conversation_count().unwrap(), 1);
+    let trace = trace.finish();
+    for name in [
+        "project.full_snapshot",
+        "source.restore_records",
+        "project.transaction",
+        "catalog.build",
+    ] {
+        assert!(trace["spans"][name].is_null(), "{trace}");
+    }
+    conn.execute_batch("COMMIT;").unwrap();
+    assert_eq!(store.active_conversation_count().unwrap(), 0);
+}
+
+#[test]
+fn event_tails_mark_large_events_for_reset_without_copying_their_bodies() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(root.path(), PROJECT, "excerpt");
+    let cursor = store.event_cursor().unwrap();
+    conn.execute(
+        "INSERT INTO events(target,kind,detail,time) VALUES('root','large',?1,1)",
+        ["x".repeat(1_000_000)],
+    )
+    .unwrap();
+    conn.execute("INSERT INTO events(target,kind,detail,time) VALUES('root','small','exact persisted detail',1)",[]).unwrap();
+    let hints = store.event_hints_after(cursor, 100).unwrap();
+    assert_eq!(hints.len(), 2);
+    assert!(hints[0].omitted && hints[0].event.detail.is_empty());
+    assert!(!hints[1].omitted);
+    assert_eq!(hints[1].event.detail, "exact persisted detail");
+    let exact = store.events_after(cursor, 100).unwrap();
+    assert_eq!(exact[0].detail.len(), 1_000_000);
+    assert_eq!(exact[1].id, hints[1].event.id);
+}

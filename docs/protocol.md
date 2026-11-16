@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 52；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 53；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
@@ -36,6 +36,10 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 
 `query.workspace` 返回项目目录及活动工程，`query.history` / `query.events` / `query.artifact` 读取对应事实。分页参数有界；SSE 只通知变化，客户端重新查询权威状态。没有通用 `set_status`。
 
 `query.ui_bootstrap` 返回本请求所选项目、项目目录、配置新鲜度、配置健康摘要和页面必须的运行安装信息，不返回工程详情或历史快照；`query.project_directory` 只读取项目目录，支持 `project_offset`、`limit` 和 `github_only`。配置页面使用这两个入口，执行和历史页面继续读取 `query.workspace`。配置目录、默认选择、权限资源等查询保留原有响应内容，并附带 `catalog_version={host,global,project,project_sources}`；该版本不作为执行授权或并发写入令牌，模板重置仍使用 `catalog_generation`。
+
+Web 使用 `GET /events?tail=true&configuration=true&project_id=ID` 订阅共享失效尾流。同一作用域只有一个后台读取器，按提交通知唤醒并每秒补查一次；初次连接从当前事件头开始，发送 stream.ready，前端据此刷新当前页。确切同作用域 Last-Event-ID 优先于 cursor；跨项目 Last-Event-ID 不沿用。缓存窗口内重连按事件顺序恢复；游标过旧、超前、事件过大或缓存预算不足时发送带当前作用域游标的 stream.reset，前端失效缓存并读取当前权威状态，不把缺失事件当作已经接纳的业务事实。
+
+共享缓存每作用域至多 512 条/1 MiB、进程内容总预算 16 MiB、至多 128 个活跃作用域。预算随实际 Arc 生命周期释放；最后一个订阅者离开后释放读取器、监听和缓存。尾流的单条事件最多 64 KiB，SQL 在读取时将过长字段标为省略并形成 reset 边界，避免先复制巨大历史正文。普通尾流事件保留窗口内的原始内容，配置版本通过独立 configuration.changed 通知传播；慢客户端不各自扫描数据库。未传 tail=true 的历史流保留旧重放合同，显式确切历史仍可用 query.events 读取；该旧流尚未共享尾流缓存。
 
 SSE 可显式传入 `configuration=true`，接收无持久化事件 ID 的 `configuration.changed` 版本通知，普通事件同时附带 `configuration_version`。只有持久化事件推进 `ID:cursor`，通知不改变游标和重放语义。不传该参数时保留原事件流合同。
 

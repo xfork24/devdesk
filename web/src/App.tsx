@@ -614,7 +614,7 @@ function App() {
     if (caps?.setup_required !== false) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const stream = new EventSource(
-      `/events?configuration=true${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
+      `/events?tail=true&configuration=true${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
     );
     stream.onopen = () => {
       if (!kernelStopped.current) setConnection("已连接");
@@ -624,12 +624,14 @@ function App() {
         const value: Row = JSON.parse(message.data);
         observeConfigurationVersion(value.configuration_version, projectId);
         if (
+          value.kind === "stream.reset" ||
           /^(project|repository|workspace|runtime|settings)\./.test(
             value.kind || "",
           )
         )
           invalidateConfigurationQueries();
         if (
+          value.kind === "stream.reset" ||
           /^(runtime|credentials|codex\.auth|harness|model_provider|model_catalog)\./.test(
             value.kind || "",
           )
@@ -648,6 +650,7 @@ function App() {
           const changed = version && version !== configurationVersion.current;
           if (
             !changed &&
+            !["stream.ready", "stream.reset"].includes(value.kind) &&
             !/^(project|repository|workspace|runtime|settings)\./.test(
               value.kind || "",
             )

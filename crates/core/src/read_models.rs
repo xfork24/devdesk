@@ -355,3 +355,16 @@ pub struct ExecutionWorkspace {
     pub configurations: Vec<WorkRootMetadata>,
     pub observed_only: bool,
 }
+
+#[derive(Debug)]
+pub struct SchedulingHints {
+    pub pending: bool,
+    pub live: bool,
+    pub running_conversations: usize,
+}
+#[derive(Debug)]
+pub struct TailEvent {
+    pub event: devdesk_domain::Event,
+    /// A large persisted event is a reset boundary, never a silently clipped event.
+    pub omitted: bool,
+}

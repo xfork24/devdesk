@@ -58,7 +58,7 @@ fn append(
 }
 impl Engine {
     pub fn conversation_running(&self) -> Result<usize> {
-        self.store.conversation_running_count()
+        self.store.active_conversation_count()
     }
     pub fn tick_conversations(&self, limit: usize) -> Result<()> {
         let _span = self.store.observe_query("runtime.conversations");

@@ -462,6 +462,31 @@ pub trait EngineeringStore: Send + Sync {
         if missing { Ok(None) } else { result.map(Some) }
     }
     /// Conservative scheduling hint; providers without an indexed query remain always eligible.
+    fn active_conversation_count(&self) -> Result<usize> {
+        let state = self.snapshot()?;
+        Ok(state
+            .turns
+            .iter()
+            .filter(|turn| {
+                turn.status != devdesk_domain::TurnStatus::Queued
+                    && turn.status.active()
+                    && state.executions.iter().any(|execution| {
+                        execution.session_id == turn.session_id && !execution.writer_revoked
+                    })
+            })
+            .count())
+    }
+    fn scheduling_hints(&self) -> Result<crate::read_models::SchedulingHints> {
+        Ok(crate::read_models::SchedulingHints {
+            pending: self.has_pending_work()?,
+            live: self
+                .snapshot()?
+                .projects
+                .iter()
+                .all(|project| project.execution_mode == "live"),
+            running_conversations: self.active_conversation_count()?,
+        })
+    }
     fn has_pending_work(&self) -> Result<bool> {
         Ok(true)
     }
@@ -488,6 +513,23 @@ pub trait EngineeringStore: Send + Sync {
             .count())
     }
     fn snapshot(&self) -> Result<EngineeringState>;
+    fn event_cursor(&self) -> Result<u64> {
+        Ok(self.snapshot()?.events.last().map_or(0, |event| event.id))
+    }
+    fn event_hints_after(
+        &self,
+        cursor: u64,
+        limit: usize,
+    ) -> Result<Vec<crate::read_models::TailEvent>> {
+        Ok(self
+            .events_after(cursor, limit)?
+            .into_iter()
+            .map(|event| crate::read_models::TailEvent {
+                event,
+                omitted: false,
+            })
+            .collect())
+    }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<devdesk_domain::Event>> {
         Ok(self
             .snapshot()?

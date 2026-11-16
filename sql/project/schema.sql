@@ -324,7 +324,11 @@ CREATE INDEX idx_conversation_session_kind ON conversation_events(session_id,kin
 
 CREATE INDEX idx_workflow_parent_execution ON governance_records(json_extract(data,'$.parent_execution_id'),owner_project) WHERE type='workflow_instance';
 
-PRAGMA user_version=52;
+CREATE INDEX idx_live_execution_session ON executions(session_id) WHERE writer_revoked=0;
+CREATE INDEX idx_active_turn_status ON turns(status,session_id) WHERE status NOT IN ('queued','completed','failed','cancelled');
+CREATE INDEX idx_work_root_owner ON governance_records(owner_project,definition_id) WHERE type='workflow_instance';
+CREATE INDEX idx_invocation_member ON governance_records(owner_project,json_extract(data,'$.child_instance_id'),json_extract(data,'$.member_identity')) WHERE type='workflow_invocation';
+PRAGMA user_version=53;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,

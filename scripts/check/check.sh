@@ -14,6 +14,7 @@ cargo test --workspace --locked
 cargo build --locked -p devdesk-host
 ./scripts/platform/macos/sign-macos.sh target/debug/devdesk-host
 python3 tests/entrypoints/lifecycle_contract.py target/debug/devdesk-host
+python3 tests/entrypoints/event_tail_contract.py target/debug/devdesk-host
 python3 tests/entrypoints/http_contract.py
 python3 tests/entrypoints/template_reset.py target/debug/devdesk-host
 python3 tests/entrypoints/dataset_protocol.py target/debug/devdesk-host
@@ -23,6 +24,7 @@ python3 tests/entrypoints/prepare_browser_runtime.py
 cargo build --release --locked -p devdesk-host
 ./scripts/platform/macos/sign-macos.sh target/release/devdesk-host
 python3 tests/entrypoints/lifecycle_contract.py target/release/devdesk-host
+python3 tests/entrypoints/event_tail_contract.py target/release/devdesk-host
 python3 tests/entrypoints/http_contract.py target/release/devdesk-host --standalone
 python3 tests/entrypoints/template_reset.py target/release/devdesk-host
 python3 tests/entrypoints/dataset_protocol.py target/release/devdesk-host

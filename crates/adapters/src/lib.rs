@@ -7,6 +7,7 @@ pub mod performance;
 mod read_models;
 mod resource_commits;
 mod runtime_queries;
+mod scheduling_read;
 mod store_changes;
 pub use configuration_backend::ConfigurationBackend;
 mod factory_bundle;
@@ -419,7 +420,7 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 52,
+        version == 0 || version == 53,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -728,6 +729,16 @@ impl EngineeringStore for SqliteStore {
             query,
         )
     }
+    fn event_cursor(&self) -> Result<u64> {
+        store_changes::cursor(&*self.connection.read()?)
+    }
+    fn event_hints_after(
+        &self,
+        cursor: u64,
+        limit: usize,
+    ) -> Result<Vec<devdesk_core::read_models::TailEvent>> {
+        store_changes::tail(&*self.connection.read()?, cursor, limit)
+    }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
         store_changes::events_after(&*self.connection.read()?, cursor, limit)
     }
@@ -753,17 +764,13 @@ impl EngineeringStore for SqliteStore {
         runtime_queries::running(&*self.connection.read()?)
     }
     fn has_pending_work(&self) -> Result<bool> {
-        // Idle projects must not deserialize their complete protocol history on every tick.
-        let conn = self.connection.read()?;
-        conn.query_row("SELECT
-          EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_controller' AND json_extract(data,'$.status')='active') OR
-          EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_instance' AND json_extract(data,'$.status') NOT IN ('cancelled','completed') AND (json_extract(data,'$.cancel_requested')=1 OR (json_extract(data,'$.paused')=0 AND json_extract(data,'$.status') NOT IN ('failed','needs_reconciliation')))) OR
-          EXISTS(SELECT 1 FROM governance_records WHERE type='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR
-          EXISTS(SELECT 1 FROM governance_records WHERE type='tool_call' AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR ((json_extract(data,'$.status') IN ('succeeded','failed','cancelled') OR (json_extract(data,'$.status')='needs_reconciliation' AND json_type(data,'$.receipt')='object')) AND json_extract(data,'$.reply_sent')=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL))) OR
-          EXISTS(SELECT 1 FROM repository_operations WHERE status IN ('prepared','dispatched','observed') OR (status='needs_reconciliation' AND reason='reconcile_requested')) OR
-          EXISTS(SELECT 1 FROM turns WHERE status IN ('queued','dispatching','running','waiting_interaction') OR (status='needs_reconciliation' AND cancel_requested=1)) OR
-          EXISTS(SELECT 1 FROM executions WHERE writer_revoked=0 OR status='succeeded')",
-          [], |row| row.get(0)).map_err(storage)
+        scheduling_read::pending(&*self.connection.read()?)
+    }
+    fn active_conversation_count(&self) -> Result<usize> {
+        scheduling_read::running(&*self.connection.read()?)
+    }
+    fn scheduling_hints(&self) -> Result<devdesk_core::read_models::SchedulingHints> {
+        scheduling_read::hints(&*self.connection.read()?)
     }
     fn project_id(&self) -> Option<String> {
         self.project_id.clone()

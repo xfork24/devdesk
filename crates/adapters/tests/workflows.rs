@@ -244,7 +244,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            52,
+            53,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -302,7 +302,7 @@ fn the_previous_project_database_is_rejected_without_conversion() {
     .unwrap();
     let path = root.join("engineering.sqlite3");
     let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("CREATE TABLE sentinel(value TEXT); INSERT INTO sentinel VALUES ('retained'); PRAGMA user_version=51;").unwrap();
+    conn.execute_batch("CREATE TABLE sentinel(value TEXT); INSERT INTO sentinel VALUES ('retained'); PRAGMA user_version=52;").unwrap();
     drop(conn);
     let before = std::fs::read(&path).unwrap();
     let error = SqliteStore::open_project(directory.path(), &project)

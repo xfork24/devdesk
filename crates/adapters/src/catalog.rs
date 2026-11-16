@@ -318,6 +318,19 @@ impl EngineeringStore for GlobalStore {
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
     }
+    fn active_conversation_count(&self) -> Result<usize> {
+        Ok(0)
+    }
+    fn event_cursor(&self) -> Result<u64> {
+        store_changes::cursor(&*self.connection.read()?)
+    }
+    fn event_hints_after(
+        &self,
+        cursor: u64,
+        limit: usize,
+    ) -> Result<Vec<devdesk_core::read_models::TailEvent>> {
+        store_changes::tail(&*self.connection.read()?, cursor, limit)
+    }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
         store_changes::events_after(&*self.connection.read()?, cursor, limit)
     }

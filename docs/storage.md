@@ -36,7 +36,7 @@
 
 ## 配置的唯一存储
 
-配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 21 / project 52。
+配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 21 / project 53。
 
 配置目录另有可丢弃的进程内快照，不新增展开配置投影。`catalog_clock` 只保存目录快照时钟，由源、目录治理、Project 和 mainline 工作副本的 SQL 触发器在同一事务中推进；它只用于读取新鲜度，不是项目写入乐观锁。读取在同一 SQLite 快照内取得时钟与目录事实，热读返回该版本的不可变 Arc，不跨连接比较 `PRAGMA data_version`。慢读取不能以新版本标记旧数据或覆盖更高版本的缓存。
 
@@ -66,7 +66,7 @@ SSE 按事件主键和游标读取 `events`，提交后通知唤醒读取，低�
 
 经理与驱动的显示摘要通过项目只读连接直接查询原生元数据，并使用 controller 归属、根实例、调用归属、活动根与待决定项索引；不新增展开配置表。消息、调用、待决定项和等待条件都有限额，完整决定请求另按需读取。workflow_pending_decision / workflow_human_decision 的 request 原样保存为输入事实，不将其中用户提供的 `$source` 或保留文本解释为配置引用；全量恢复与精确详情读取遵守同一事实边界。该输入事实编解码与当前项目基线一致，不转换旧记录。
 
-项目库的 governance_records.owner_project 是从 Scope 计算的虚拟列，统一提取 project/feature 的所属项目，供运行摘要与子流程分页索引使用；global 归属为空，不进入项目运行摘要。它不保存第二份可编辑配置。事实表通用读写明确列出物理列，避免虚拟列改变 SELECT * 的列序后误解码；虚拟归属列不参与事实写入。当前使用 project 52，project 51 及更旧基线拒绝打开。
+项目库的 governance_records.owner_project 是从 Scope 计算的虚拟列，统一提取 project/feature 的所属项目，供运行摘要与子流程分页索引使用；global 归属为空，不进入项目运行摘要。它不保存第二份可编辑配置。事实表通用读写明确列出物理列，避免虚拟列改变 SELECT * 的列序后误解码；虚拟归属列不参与事实写入。当前使用 project 53，project 52 及更旧基线拒绝打开。
 
 ## 幂等与恢复模型
 
@@ -91,3 +91,7 @@ SSE 按事件主键和游标读取 `events`，提交后通知唤醒读取，低�
 `tests/live/export_evidence.py` 使用 SQLite backup 生成一致快照，关闭快照后计算摘要，按项目登记核验 Artifact 的路径与实际内容，再生成逐文件 SHA-256 清单。记录投影遮蔽已知凭据字段；全局认证文件、进程环境和私有 worker 状态不导出。归档保留实际失败、未运行项、执行安装及原始来源，不用模型摘要替代证据。
 
 实现依据：[全局 SQL](../sql/global/schema.sql)、[项目 SQL](../sql/project/schema.sql)、[数据集与项目库](../crates/adapters/src/lib.rs)、[Git 目录](../crates/adapters/src/git.rs)、[证据导出](../tests/live/export_evidence.py)。
+
+调度器的待办、运行模式和活跃对话数通过单个已提交读快照直接查询，运行数按非 queued/终态 Turn 且存在未撤销 writer 计算；同一会话有多个执行记录时仍只计该 Turn 一次。项目库增加活跃 Turn、未撤销 writer、工作根归属和调用成员索引，不增加展开配置副本。查询结果为调度提示，派发仍须通过原领域授权和执行围栏。
+
+Host 以轮转顺序访问待办项目，一轮最多 8 个项目，在项目阶段间检查 250 ms 预算；已开始的项目阶段完成后再让出，不能抢占某个外部端口调用。未选中项目的活跃 writer 仍计入全局额度。后续业务提交和回调迁移仍是移除旧写锁及缩短单个阶段的必要工作。

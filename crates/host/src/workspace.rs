@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
 };
 
 pub struct Workspace {
@@ -44,6 +44,8 @@ pub struct Workspace {
     runtime_setup: session_resources::RuntimePreparation,
     configuration_views: Mutex<Vec<(String, Arc<ConfigurationCatalogSnapshot>)>>,
     catalog_instance: String,
+    event_hubs: Mutex<BTreeMap<String, std::sync::Weak<crate::event_hub::EventHub>>>,
+    scheduler_next: std::sync::atomic::AtomicUsize,
 }
 pub struct RpcOutcome {
     pub value: Value,
@@ -113,6 +115,8 @@ impl Workspace {
             runtime_setup: session_resources::RuntimePreparation::default(),
             configuration_views: Default::default(),
             catalog_instance: id(),
+            event_hubs: Default::default(),
+            scheduler_next: Default::default(),
         });
         let mut offset = 0;
         loop {
@@ -978,6 +982,24 @@ impl Workspace {
             Err(error) => Err(error),
         }
     }
+    pub(crate) fn event_hub(
+        self: &Arc<Self>,
+        scope: &str,
+        engine: Arc<Engine>,
+    ) -> Result<Arc<crate::event_hub::EventHub>> {
+        let mut hubs = self
+            .event_hubs
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?;
+        hubs.retain(|_, hub| hub.strong_count() > 0);
+        if let Some(hub) = hubs.get(scope).and_then(std::sync::Weak::upgrade) {
+            return Ok(hub);
+        }
+        require(hubs.len() < 128, "活跃事件作用域超过预算")?;
+        let hub = crate::event_hub::EventHub::new(self, engine, scope.to_owned());
+        hubs.insert(scope.to_owned(), Arc::downgrade(&hub));
+        Ok(hub)
+    }
     pub fn tick(&self, should_stop: impl Fn() -> bool) -> Result<()> {
         if should_stop() {
             return Ok(());
@@ -988,40 +1010,45 @@ impl Workspace {
         }
         let opened: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
         let mut engines = vec![];
+        let mut running = vec![];
+        let mut total = 0;
         for engine in opened {
             if should_stop() {
                 return Ok(());
             }
-            if !engine.store.has_pending_work()? {
-                continue;
-            }
-            if engine
-                .store
-                .snapshot()?
-                .projects
-                .iter()
-                .all(|p| p.execution_mode == "live")
-            {
+            let hints = engine.store.scheduling_hints()?;
+            // Every live writer consumes global quota, including work not selected
+            // for this bounded scheduler round.
+            total += hints.running_conversations;
+            if hints.pending && hints.live {
+                running.push(hints.running_conversations);
                 engines.push(engine);
             }
         }
+        if !engines.is_empty() {
+            let start = self.scheduler_next.load(Ordering::Relaxed) % engines.len();
+            engines.rotate_left(start);
+            running.rotate_left(start);
+        }
         let limit = self.global.concurrency()?;
         let mut failure = None;
-        let mut running = vec![];
-        for engine in &engines {
-            if should_stop() {
-                return Ok(());
-            }
-            running.push(engine.conversation_running()?);
-        }
-        let mut total: usize = running.iter().sum();
+        let started = std::time::Instant::now();
+        let mut visited = 0;
         // The scheduler is single-threaded across projects. Other running projects consume quota.
         for (index, e) in engines.iter().enumerate() {
+            // Finish a project's current stages, then rotate to the next project
+            // on the next round. A slow first project cannot always start first.
+            if visited >= 8
+                || (visited > 0 && started.elapsed() >= std::time::Duration::from_millis(250))
+            {
+                break;
+            }
             // Finish the current scheduler stage, then leave remaining work queued.
             // The Host waits for this tick before stopping and sealing owned writers.
             if should_stop() {
                 break;
             }
+            visited += 1;
             if let Err(error) = self.tick_workflow_engine(e, &should_stop) {
                 failure.get_or_insert(error);
             }
@@ -1047,6 +1074,7 @@ impl Workspace {
             total = total - running[index] + next;
             running[index] = next;
         }
+        self.scheduler_next.fetch_add(visited, Ordering::Relaxed);
         failure.map_or(Ok(()), Err)
     }
     pub fn stop_owned_runtime(&self) -> Result<()> {
@@ -1196,6 +1224,11 @@ mod tests {
             );
             let execution = reader_workspace
                 .dispatch("query.execution_workspace", json!({"project_id":project}));
+            let hints = reader_workspace
+                .project_engine(Some(&project))
+                .unwrap()
+                .store
+                .scheduling_hints();
             result_tx
                 .send((
                     summary,
@@ -1203,6 +1236,7 @@ mod tests {
                     decision,
                     management,
                     execution,
+                    hints,
                     trace.finish(),
                 ))
                 .unwrap();
@@ -1213,13 +1247,14 @@ mod tests {
         release_tx.send(()).unwrap();
         writer.join().unwrap().unwrap();
         reader.join().unwrap();
-        let (summary, driver, decision, management, execution, trace) =
+        let (summary, driver, decision, management, execution, hints, trace) =
             result.expect("summary reads waited for a business lock");
         assert!(summary.unwrap()["record"].is_null());
         assert_eq!(driver.unwrap_err().code, "not_found");
         assert_eq!(decision.unwrap_err().code, "not_found");
         assert_eq!(management.unwrap_err().code, "not_found");
         assert_eq!(execution.unwrap()["kind"], "execution_workspace");
+        assert_eq!(hints.unwrap().running_conversations, 0);
         for span in [
             "catalog.build",
             "catalog.gate_wait",
@@ -1579,6 +1614,50 @@ mod adapter_injection_tests {
         );
     }
     #[test]
+    fn bounded_scheduler_rounds_rotate_across_more_than_one_project_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let settings = w.dispatch("query.settings", json!({})).unwrap();
+        let guard = settings["versions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|guard| guard["resource"]["id"] == "global_concurrency")
+            .unwrap();
+        w.dispatch("settings.update",json!({"command_id":"scheduler-quota","preconditions":[guard],"payload":{"global_concurrency":32}})).unwrap();
+        let mut engines = Vec::new();
+        for n in 0..12 {
+            let pid = create(&w, &format!("Scheduler project {n}"));
+            let engine = w.project_engine(Some(&pid)).unwrap();
+            crate::test_runtime::queue_conversation(&engine, &pid);
+            engines.push(engine);
+        }
+        // A round has at most eight project visits and a time budget checked
+        // between project stages. All twelve must progress over later rounds.
+        w.tick(|| false).unwrap();
+        let started = engines
+            .iter()
+            .filter(|engine| engine.conversation_running().unwrap() > 0)
+            .count();
+        assert!(started > 0 && started <= 8, "{started}");
+        for _ in 0..24 {
+            if engines
+                .iter()
+                .all(|engine| engine.conversation_running().unwrap() > 0)
+            {
+                break;
+            }
+            w.tick(|| false).unwrap();
+        }
+        assert!(
+            engines
+                .iter()
+                .all(|engine| engine.conversation_running().unwrap() > 0)
+        );
+        assert!(w.scheduler_next.load(Ordering::Relaxed) >= 12);
+        // IdleHarness is a test-only protocol port; no native worker was started.
+    }
+    #[test]
     fn injected_providers_are_shared_after_opening_another_project() {
         let dir = tempfile::tempdir().unwrap();
         let providers = crate::test_runtime::adapters();
@@ -1597,7 +1676,12 @@ mod adapter_injection_tests {
                 .to_string();
             let e = w.project_engine(Some(&pid)).unwrap();
             let (_, tid) = crate::test_runtime::queue_conversation(&e, &pid);
-            w.tick(|| false).unwrap();
+            for _ in 0..4 {
+                if e.conversation_running().unwrap() > 0 {
+                    break;
+                }
+                w.tick(|| false).unwrap();
+            }
             assert!(e.store.snapshot().unwrap().turns.iter().any(|t| t.id == tid
                 && [TurnStatus::Dispatching, TurnStatus::Running].contains(&t.status)));
             engines.push(e);
@@ -1905,6 +1989,8 @@ impl Workspace {
             runtime_setup: Default::default(),
             configuration_views: Default::default(),
             catalog_instance: id(),
+            event_hubs: Default::default(),
+            scheduler_next: Default::default(),
         }))
     }
 }

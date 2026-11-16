@@ -3,6 +3,7 @@
 #[cfg(test)]
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
+mod event_hub;
 mod lifecycle;
 #[cfg(test)]
 #[path = "../../../tests/support/runtime.rs"]
@@ -499,22 +500,30 @@ async fn events(
     Query(p): Query<HashMap<String, String>>,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    let pinned = app
-        .workspace()
-        .and_then(|w| w.event_engine(p.get("project_id").map(String::as_str)));
+    let workspace = match app.workspace() {
+        Ok(workspace) => workspace,
+        Err(e) => return (StatusCode::CONFLICT, Json(failure(e))).into_response(),
+    };
+    let pinned = workspace.event_engine(p.get("project_id").map(String::as_str));
     let (scope, engine) = match pinned {
         Ok(pinned) => pinned,
         Err(e) => return (StatusCode::CONFLICT, Json(failure(e))).into_response(),
     };
-    let cursor = headers
+    let resume = headers
         .get("last-event-id")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split_once(':'))
         .filter(|(id, _)| *id == scope)
         .and_then(|(_, n)| n.parse::<u64>().ok())
-        .or_else(|| p.get("cursor").and_then(|s| s.parse().ok()))
-        .unwrap_or(0);
+        .or_else(|| p.get("cursor").and_then(|s| s.parse().ok()));
     let configuration_events = p.get("configuration").is_some_and(|value| value == "true");
+    if p.get("tail").is_some_and(|value| value == "true") {
+        return match workspace.event_hub(&scope, engine) {
+            Ok(hub) => event_hub::events(app, hub, resume, configuration_events),
+            Err(e) => (StatusCode::CONFLICT, Json(failure(e))).into_response(),
+        };
+    }
+    let cursor = resume.unwrap_or(0);
     let notify = Arc::new(tokio::sync::Notify::new());
     let listener: Arc<dyn Fn() + Send + Sync> = {
         let notify = notify.clone();
