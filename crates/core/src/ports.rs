@@ -449,6 +449,18 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::WorkflowProgress> {
         Err(err("unsupported", "存储未实现工作流阶段进度"))
     }
+    fn experience_headers(
+        &self,
+        _after: Option<&str>,
+    ) -> Result<crate::read_models::ExperienceHeaderPage> {
+        Err(err("unsupported", "存储未实现经验目录版本分页"))
+    }
+    fn experience_directory_source(
+        &self,
+        _id: &str,
+    ) -> Result<Option<crate::read_models::ExperienceDirectorySource>> {
+        Err(err("unsupported", "存储未实现有界经验目录来源"))
+    }
     fn repository_registration_facts(
         &self,
     ) -> Result<crate::repository_updates::RepositoryRegistrationFacts> {

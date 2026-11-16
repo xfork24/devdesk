@@ -473,9 +473,15 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         global
             .snapshot()
             .unwrap()
-            .configuration(&current.id)
+            .configuration(
+                &devdesk_core::experience_directory::resource_key(
+                    &source_engine.store.namespace(),
+                    &current.id
+                )
+                .id
+            )
             .unwrap()
-            .revision,
+            .data["source_revision"],
         2
     );
     let grouped = lookup(

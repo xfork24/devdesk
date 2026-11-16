@@ -257,6 +257,28 @@ pub struct WorkflowProgressState {
 }
 
 #[derive(Debug)]
+pub struct ExperienceHeader {
+    pub id: String,
+    pub revision: u64,
+}
+#[derive(Debug)]
+pub struct ExperienceHeaderPage {
+    pub records: Vec<ExperienceHeader>,
+    pub next_after: Option<String>,
+}
+/// A display projection from one authoritative source snapshot; never execution
+/// inputs or a replacement for the source's complete snapshot history.
+#[derive(Debug)]
+pub struct ExperienceDirectorySource {
+    pub id: String,
+    pub revision: u64,
+    pub scope: devdesk_domain::Scope,
+    pub content_hash: String,
+    pub name: String,
+    pub metadata: Value,
+}
+
+#[derive(Debug)]
 pub struct ExecutionWorkspaceQuery {
     pub feature_id: Option<String>,
     pub feature_offset: u64,

@@ -39,6 +39,9 @@ impl GlobalStore {
             version == 0 || version == 21,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
+        if version == 21 {
+            preflight_engineering_databases(&root, &connection)?;
+        }
         connection
             .execute_batch(
                 "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;",
@@ -251,6 +254,43 @@ impl GlobalStore {
         source_store::save_records(conn, s, before)?;
         append_events(conn, &s.events, &before.events)
     }
+}
+
+// Check compatibility before bootstrap, recovery or journal mode changes can
+// write global facts. Incomplete reservations may have no database yet; a
+// published project may not silently become a newly initialized empty project.
+fn preflight_engineering_databases(root: &Path, global: &Connection) -> Result<()> {
+    let mut query = global
+        .prepare("SELECT id,project IS NOT NULL FROM project_catalog")
+        .map_err(storage)?;
+    let projects = query
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))
+        .map_err(storage)?;
+    for row in projects {
+        let (id, published) = row.map_err(storage)?;
+        let path = SqliteStore::project_path(root, &id)?.join("engineering.sqlite3");
+        if path.exists() {
+            check_engineering_baseline(&path)?;
+        } else {
+            require(!published, "已发布项目的数据库缺失；拒绝重建")?;
+        }
+    }
+    let path = SqliteStore::global_discussion_path(root)?.join("engineering.sqlite3");
+    if path.exists() {
+        reject_symlink(&path)?;
+        check_engineering_baseline(&path)?;
+    }
+    Ok(())
+}
+fn check_engineering_baseline(path: &Path) -> Result<()> {
+    let connection = connection_pool::ManagedConnection::read_only(path)?;
+    let version: u32 = connection
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(storage)?;
+    require(
+        version == PROJECT_SCHEMA_VERSION,
+        "数据集协议不兼容；请使用新的空数据目录",
+    )
 }
 
 impl EngineeringStore for GlobalStore {

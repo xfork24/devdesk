@@ -302,6 +302,7 @@ impl Engine {
     /// Reuse one pinned configuration view across existing pure query implementations.
     pub fn at_configuration(&self, catalog: Arc<ConfigurationCatalogSnapshot>) -> Self {
         Self {
+            experience_cursor: std::sync::Mutex::new(None),
             store: Arc::new(CatalogView {
                 catalog,
                 root: self.store.root(),

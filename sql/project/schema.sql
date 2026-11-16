@@ -328,6 +328,7 @@ CREATE INDEX idx_live_execution_session ON executions(session_id) WHERE writer_r
 CREATE INDEX idx_active_turn_status ON turns(status,session_id) WHERE status NOT IN ('queued','completed','failed','cancelled');
 CREATE INDEX idx_work_root_owner ON governance_records(owner_project,definition_id) WHERE type='workflow_instance';
 CREATE INDEX idx_invocation_member ON governance_records(owner_project,json_extract(data,'$.child_instance_id'),json_extract(data,'$.member_identity')) WHERE type='workflow_invocation';
+CREATE INDEX idx_experience_headers ON governance_records(owner_project,id,revision) WHERE type='experience';
 -- Derived collection tokens protect absence/range dependencies. They are not business locks.
 
 CREATE TRIGGER collection_repository_operations_insert AFTER INSERT ON repository_operations BEGIN
@@ -396,7 +397,7 @@ END;
 CREATE INDEX idx_repository_pending_project ON repository_operations(project_id,status) WHERE status!='completed';
 CREATE INDEX idx_repository_connect_project ON repository_operations(project_id) WHERE json_extract(action,'$.kind')='connect';
 CREATE INDEX idx_repository_git_calls ON governance_records(owner_project,json_extract(data,'$.status')) WHERE type='platform_call' AND substr(json_extract(data,'$.request.definition.qualified_name'),1,4)='git.';
-PRAGMA user_version=54;
+PRAGMA user_version=55;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,

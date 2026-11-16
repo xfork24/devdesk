@@ -229,7 +229,11 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
         })
     });
     for row in &mut rows {
-        row["snapshot_count"] = json!(1 + row["history"].as_array().map_or(0, Vec::len));
+        row["snapshot_count"] = json!(
+            1 + row["history_count"]
+                .as_u64()
+                .unwrap_or_else(|| row["history"].as_array().map_or(0, Vec::len) as u64)
+        );
         row.as_object_mut().unwrap().remove("history");
     }
     let offset = params["offset"].as_u64().unwrap_or(0) as usize;

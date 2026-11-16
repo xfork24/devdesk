@@ -179,6 +179,10 @@ export function AgentExperience({
                   entry.task_id ? `Task ${shortId(entry.task_id)}` : "Feature",
                 )}
               </p>
+              {entry.availability === "unavailable" &&
+              entry.metadata_excerpt ? (
+                <p className="notice">来源暂不可用，当前显示缓存的历史摘要。</p>
+              ) : null}
               <div className="actions">
                 {onReference && (
                   <ActionButton onClick={() => onReference(entry)}>

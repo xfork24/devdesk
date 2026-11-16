@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 54；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 55；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 

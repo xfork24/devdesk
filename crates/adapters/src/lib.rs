@@ -3,6 +3,7 @@ mod configuration_backend;
 mod configuration_cache;
 mod connection_pool;
 mod execution_read;
+mod experience_directory;
 pub mod performance;
 mod read_models;
 mod repository_contexts;
@@ -45,6 +46,7 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
+const PROJECT_SCHEMA_VERSION: u32 = 55;
 use rusqlite::{
     Connection,
     types::{Value as SqlValue, ValueRef},
@@ -421,7 +423,7 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 54,
+        version == 0 || version == PROJECT_SCHEMA_VERSION,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -779,6 +781,18 @@ impl EngineeringStore for SqliteStore {
                 .ok_or_else(|| err("project_required", "执行工作台需要明确项目"))?,
             query,
         )
+    }
+    fn experience_headers(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::read_models::ExperienceHeaderPage> {
+        experience_directory::headers(&self.connection, self.project_id.as_deref(), after)
+    }
+    fn experience_directory_source(
+        &self,
+        id: &str,
+    ) -> Result<Option<devdesk_core::read_models::ExperienceDirectorySource>> {
+        experience_directory::source(&self.connection, self.project_id.as_deref(), id)
     }
     fn event_cursor(&self) -> Result<u64> {
         store_changes::cursor(&*self.connection.read()?)

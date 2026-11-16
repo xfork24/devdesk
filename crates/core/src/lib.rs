@@ -7,6 +7,7 @@ mod catalog_sync;
 pub mod concurrency;
 mod configuration_catalog;
 pub mod credential_updates;
+pub mod experience_directory;
 pub mod integration_operations;
 pub mod project_creation;
 pub mod project_reservation;
@@ -131,6 +132,7 @@ pub fn command_fingerprint(method: &str, c: &Command) -> String {
     serde_json::to_string(&(method, &c.target, &c.expected_revision, &c.payload)).unwrap()
 }
 pub struct Engine {
+    pub(crate) experience_cursor: std::sync::Mutex<Option<Id>>,
     pub context_reader: Option<Arc<dyn ports::AgentContextReader>>,
     pub manager_services: Option<ManagerServices>,
     pub configuration_backend: Option<Arc<dyn ports::ConfigurationBackend>>,
@@ -331,6 +333,7 @@ impl Engine {
         adapters: ports::ExecutionAdapters,
     ) -> Self {
         Self {
+            experience_cursor: std::sync::Mutex::new(None),
             context_reader: None,
             manager_services: None,
             configuration_backend: None,

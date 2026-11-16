@@ -1080,19 +1080,21 @@ impl Workspace {
                     break;
                 }
                 visited += 1;
-                if engine.store.project_id().is_none() {
-                    continue;
-                }
-                match engine.store.project_metadata() {
-                    Ok(project) => {
-                        if let Err(error) = self.global.publish_project(&project) {
+                if engine.store.project_id().is_some() {
+                    match engine.store.project_metadata() {
+                        Ok(project) => {
+                            if let Err(error) = self.global.publish_project(&project) {
+                                failure.get_or_insert(error);
+                            }
+                        }
+                        Err(error) if error.code == "not_found" => {}
+                        Err(error) => {
                             failure.get_or_insert(error);
                         }
                     }
-                    Err(error) if error.code == "not_found" => {}
-                    Err(error) => {
-                        failure.get_or_insert(error);
-                    }
+                }
+                if let Err(error) = engine.publish_experience_index(self.global.as_ref()) {
+                    failure.get_or_insert(error);
                 }
             }
             self.directory_next.fetch_add(visited, Ordering::Relaxed);
@@ -1163,7 +1165,6 @@ impl Workspace {
             {
                 failure.get_or_insert(error);
             }
-            e.publish_experience_index(self.global.as_ref())?;
             let next = e.conversation_running()?;
             total = total - running[index] + next;
             running[index] = next;
@@ -1197,6 +1198,40 @@ impl Workspace {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+    #[test]
+    fn idle_rounds_publish_experience_metadata_without_restoring_project_history() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&workspace, "Idle experience metadata");
+        let engine = workspace.project_engine(Some(&project)).unwrap();
+        engine.store.transact(None,&mut|state|{
+            let data=json!({"project_id":project,"project_name":"Idle experience metadata","agent_instance_id":"fixture-agent","snapshot_id":"fixture-snapshot","session_id":"fixture-session","captured_at":1});
+            state.governance.push(ConfigurationRecord {id:"fixture-experience".into(),r#type:"experience".into(),definition_id:"fixture-snapshot".into(),scope:Scope::project(&project),name:"Fixture metadata".into(),version:1,supersedes:None,content_hash:content_digest(&References::new(),&data),refs:References::new(),data,immutable:true,revision:1,created_at:1});
+            Ok(Value::Null)
+        }).unwrap();
+        assert!(!engine.store.scheduling_hints().unwrap().pending);
+        let trace = performance::Trace::start();
+        workspace.tick(|| false).unwrap();
+        let report = trace.finish();
+        let key = devdesk_core::experience_directory::resource_key(
+            &engine.store.namespace(),
+            "fixture-experience",
+        );
+        let row = workspace.global.read_resources(&[key]).unwrap().remove(0);
+        let row = ConfigurationRecord::from_storage(row.value.unwrap()).unwrap();
+        assert_eq!(row.data["value"]["snapshot_id"], "fixture-snapshot");
+        for stage in [
+            "project.full_snapshot",
+            "global.full_snapshot",
+            "project.transaction",
+            "global.transaction",
+            "source.restore_records",
+            "workflow.compile",
+        ] {
+            assert!(report["spans"][stage].is_null(), "{report}");
+        }
+    }
     #[test]
     fn scheduler_polls_each_writer_once_and_shares_available_quota() {
         struct CountingHarness(AtomicUsize);

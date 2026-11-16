@@ -131,3 +131,58 @@ test("全局讨论选择来源项目的原 Agent 实例时保留本页项目选�
     ).total,
   ).toBe(0);
 });
+
+test("来源不可用时明确显示经验目录为历史摘要", async ({ page }) => {
+  await page.goto("/");
+  const defaults = await rpc(page, "query.configuration_defaults");
+  const agent = defaults.role_agent_bindings["builtin-role-analyst:1"];
+  const instance = await rpc(page, "agent.instance.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: "目录摘要分析师",
+      agent_revision_id: agent,
+      scope: "global",
+    },
+  });
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "query.agent_experience") return route.fallback();
+    return route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          records: [
+            {
+              project_id: "unavailable-origin",
+              project_name: "历史来源项目",
+              feature_name: "历史工作",
+              snapshot_id: "cached-snapshot",
+              session_id: "cached-session",
+              captured_at: 1000,
+              kind: "conversation_completed",
+              metadata_excerpt: true,
+              history_more: true,
+              snapshot_count: 46,
+              availability: "unavailable",
+            },
+          ],
+          total: 1,
+          unavailable: [],
+          scope: "global",
+        },
+      },
+    });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "角色讨论", exact: true }).click();
+  await page.getByLabel("讨论角色", { exact: true }).selectOption(agent);
+  await page.getByLabel("Agent", { exact: true }).selectOption(instance.id);
+  await page.getByText("Agent 完整能力", { exact: true }).click();
+  await page
+    .getByText("Agent 经验 · 项目 / Feature / 时间", { exact: true })
+    .click();
+  await expect(
+    page.getByText("来源暂不可用，当前显示缓存的历史摘要。", { exact: true }),
+  ).toBeVisible();
+});

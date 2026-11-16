@@ -17,7 +17,12 @@ pub(super) fn entries(
     };
     let conn = connection_pool::ManagedConnection::read_only(&path)?;
     conn.execute_batch("BEGIN;").map_err(storage)?;
-    let mut query=conn.prepare("SELECT data FROM governance_records WHERE type='experience' AND json_extract(data,'$.agent_instance_id')=?1 ORDER BY rowid").map_err(storage)?;
+    let sql = if project.is_none() {
+        "SELECT data FROM governance_records WHERE type='experience' AND json_extract(data,'$.agent_instance_id')=?1 UNION ALL SELECT json_extract(data,'$.value') FROM governance_records WHERE type='experience_directory' AND definition_id=?1 AND json_extract(data,'$.value.agent_instance_id')=?1"
+    } else {
+        "SELECT data FROM governance_records WHERE type='experience' AND json_extract(data,'$.agent_instance_id')=?1 ORDER BY rowid"
+    };
+    let mut query = conn.prepare(sql).map_err(storage)?;
     let mut rows = query
         .query_map([agent], |r| r.get::<_, String>(0))
         .map_err(storage)?
