@@ -1443,6 +1443,15 @@
       ]
     },
     {
+      "method": "query.settings",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "query.spec_lint",
       "access": "read",
       "scope": "explicit",

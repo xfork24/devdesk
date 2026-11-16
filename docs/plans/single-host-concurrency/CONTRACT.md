@@ -28,7 +28,11 @@ adapters 在写事务外校验和编码待写值；短写事务内只校验版�
 
 成功结果 `CommitReceipt` 包含 `{result,versions,cursor}`。`operations` 与业务变更和事件共同提交；相同命令/指纹重放原结果和原游标，不增加对象版本、目录版本或通知。不同参数/身份复用 ID 拒绝。
 
+HTTP JSON-RPC 将 `receipt.result` 放在原有 `result` 字段，把 `{namespace,versions,cursor}` 放在顶层 `meta.commit`，避免把提交元数据混入配置源等领域值。`namespace` 由装配的权威库生成，不能由客户端伪造。
+
 初次 CAS 可从已有对象的原生 revision 或明确的存在性恢复起始版本，后续使用 `resource_versions`。该机制不能使旧无版本写入与新 CAS 并行操作同一业务约束；同库旧写路径必须按计划完成一致切换。
+
+设置项 `global_concurrency` 与 `default_harness` 已作为独立资源族先行切换：二者不属于旧 `EngineeringState`，旧全状态保存不写这两行，全部偏好写入都已改走资源提交。它们改变后续调度额度和默认选择，不撤销已有冻结运行。这个独立性证明只适用于这两个键，其余资源不能据此混用新旧写路径。
 
 ## 错误和重试
 

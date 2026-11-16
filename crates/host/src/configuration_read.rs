@@ -159,8 +159,10 @@ impl Workspace {
         result["features"] = json!([]);
         result["total_features"] = json!(0);
         result["runtime_installations"] = json!(self.global.runtime_installations()?);
-        result["global_concurrency"] = json!(self.global.concurrency()?);
-        result["default_harness"] = json!(self.global.default_harness()?);
+        let settings = devdesk_core::settings::read(self.global.as_ref())?;
+        result["global_concurrency"] = json!(settings.global_concurrency);
+        result["default_harness"] = json!(settings.default_harness);
+        result["settings_versions"] = json!(settings.versions);
         result["data_root"] = json!(self.global.root());
         result["execution_mode"] = json!(current.map_or("live", |p| p.execution_mode.as_str()));
         Ok(result)

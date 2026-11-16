@@ -7,6 +7,7 @@ mod catalog_sync;
 pub mod concurrency;
 mod configuration_catalog;
 pub mod rpc_contracts;
+pub mod settings;
 pub use configuration_catalog::*;
 mod default_permissions;
 mod resource_receipts;

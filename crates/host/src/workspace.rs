@@ -44,6 +44,10 @@ pub struct Workspace {
     configuration_views: Mutex<Vec<(String, Arc<ConfigurationCatalogSnapshot>)>>,
     catalog_instance: String,
 }
+pub struct RpcOutcome {
+    pub value: Value,
+    pub commit: Option<Value>,
+}
 pub(super) fn engine(
     store: Arc<dyn EngineeringStore>,
     adapters: &ports::ExecutionAdapters,
@@ -273,7 +277,57 @@ impl Workspace {
             serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?,
         )
     }
+    #[cfg(test)]
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        self.dispatch_with_receipt(method, params)
+            .map(|outcome| outcome.value)
+    }
+    pub fn dispatch_with_receipt(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+        if method == "query.settings" {
+            return Ok(RpcOutcome {
+                value: json!(devdesk_core::settings::read(self.global.as_ref())?),
+                commit: None,
+            });
+        }
+        if method == "settings.update" {
+            require(
+                params.as_object().is_some_and(|fields| {
+                    fields.keys().all(|key| {
+                        [
+                            "command_id",
+                            "target",
+                            "expected_revision",
+                            "payload",
+                            "preconditions",
+                        ]
+                        .contains(&key.as_str())
+                    })
+                }),
+                "设置请求包含未知字段",
+            )?;
+            let preconditions = devdesk_core::settings::preconditions(&params)?;
+            let command: Command =
+                serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
+            let receipt = devdesk_core::settings::save(
+                self.global.as_ref(),
+                &command,
+                &preconditions,
+                &InvocationContext::human(None),
+            )?;
+            return Ok(RpcOutcome {
+                value: receipt.result,
+                commit: Some(
+                    json!({"namespace":self.global.namespace(),"versions":receipt.versions,"cursor":receipt.cursor}),
+                ),
+            });
+        }
+        self.dispatch_legacy(method, params)
+            .map(|value| RpcOutcome {
+                value,
+                commit: None,
+            })
+    }
+    fn dispatch_legacy(&self, method: &str, params: Value) -> Result<Value> {
         if method == "query.ui_bootstrap" {
             return self.ui_bootstrap(&params);
         }
@@ -550,32 +604,10 @@ impl Workspace {
                 _ => Err(err("method_not_found", "未知 Codex 认证命令")),
             };
         }
-        if method == "settings.update" {
-            let n = params
-                .get("global_concurrency")
-                .map(|v| {
-                    v.as_u64()
-                        .filter(|n| (1..=32).contains(n))
-                        .ok_or_else(|| err("invalid_params", "全局并发额度需为 1—32"))
-                })
-                .transpose()?;
-            let provider = params
-                .get("default_harness")
-                .map(|v| {
-                    serde_json::from_value::<HarnessProvider>(v.clone())
-                        .map_err(|_| err("invalid_params", "默认 Harness 需为 codex 或 dsh"))
-                })
-                .transpose()?;
-            self.global
-                .update_preferences(n.map(|n| n as usize), provider)?;
-            return Ok(
-                json!({"global_concurrency":self.global.concurrency()?, "default_harness":self.global.default_harness()?}),
-            );
-        }
         if method == "query.runtime_installations" {
-            return Ok(
-                json!({"installations":self.global.runtime_installations()?, "default_harness":self.global.default_harness()?}),
-            );
+            let settings = devdesk_core::settings::read(self.global.as_ref())?;
+            return Ok(json!({"installations":self.global.runtime_installations()?,
+                "default_harness":settings.default_harness,"settings_versions":settings.versions}));
         }
         if method == "query.runtime_options" {
             let installations: Vec<_> = self
@@ -815,8 +847,10 @@ impl Workspace {
                 result["global_database"] =
                     json!(PathBuf::from(self.global.root()).join("global.sqlite3"));
                 result["data_root"] = json!(self.global.root());
-                result["global_concurrency"] = json!(global_limit);
-                result["default_harness"] = json!(self.global.default_harness()?);
+                let settings = devdesk_core::settings::read(self.global.as_ref())?;
+                result["global_concurrency"] = json!(settings.global_concurrency);
+                result["default_harness"] = json!(settings.default_harness);
+                result["settings_versions"] = json!(settings.versions);
                 result["runtime_installations"] = json!(self.global.runtime_installations()?);
                 let state = e.store.snapshot()?;
                 let project = e.store.project_id();
@@ -1164,8 +1198,14 @@ mod tests {
         let mut data = old.data.clone();
         data["body"] = json!("共享新修订");
         let new=w.dispatch("skill.revise",json!({"command_id":"global-definition","target":old.id,"expected_revision":old.revision,"payload":{"name":old.name,"data":data}})).unwrap();
-        w.dispatch("settings.update", json!({"global_concurrency":3}))
-            .unwrap();
+        let versions = devdesk_core::settings::read(w.global.as_ref())
+            .unwrap()
+            .versions;
+        let versions: Vec<_> = versions
+            .into_iter()
+            .filter(|v| v.resource.id == "global_concurrency")
+            .collect();
+        w.dispatch("settings.update", json!({"command_id":"set-limit","preconditions":versions,"payload":{"global_concurrency":3}})).unwrap();
         select(&w, &a);
         let a_state = w.active_engine(None).unwrap().store.snapshot().unwrap();
         assert!(

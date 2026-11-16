@@ -77,24 +77,19 @@ impl GlobalStore {
     }
 
     pub fn concurrency(&self) -> Result<usize> {
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read().map_err(storage)?;
         Ok(setting(&conn, "global_concurrency")?
             .and_then(|v| v.as_u64())
             .unwrap_or(4) as usize)
     }
 
     pub fn set_concurrency(&self, value: usize) -> Result<()> {
-        require((1..=32).contains(&value), "全局并发额度需为 1—32")?;
-        put_setting(
-            &*self.connection.lock().map_err(storage)?,
-            "global_concurrency",
-            &json!(value),
-        )
+        self.update_preferences(Some(value), None)
     }
 
     pub fn default_harness(&self) -> Result<HarnessProvider> {
         let value = setting(
-            &*self.connection.lock().map_err(storage)?,
+            &*self.connection.read().map_err(storage)?,
             "default_harness",
         )?
         .unwrap_or(json!("codex"));
@@ -114,16 +109,33 @@ impl GlobalStore {
         if let Some(n) = concurrency {
             require((1..=32).contains(&n), "全局并发额度需为 1—32")?;
         }
-        let _writer = self.writer.lock().map_err(storage)?;
-        let mut conn = self.connection.lock().map_err(storage)?;
-        let tx = conn.transaction().map_err(storage)?;
+        // Trusted bootstrap/test convenience. RPC saves use the client's original
+        // versions directly and must never refresh their baseline through here.
+        let settings = devdesk_core::settings::read(self)?;
+        let mut payload = serde_json::Map::new();
         if let Some(n) = concurrency {
-            put_setting(&tx, "global_concurrency", &json!(n))?;
+            payload.insert("global_concurrency".into(), json!(n));
         }
         if let Some(p) = provider {
-            put_setting(&tx, "default_harness", &json!(p))?;
+            payload.insert("default_harness".into(), json!(p));
         }
-        tx.commit().map_err(storage)
+        let versions = settings
+            .versions
+            .into_iter()
+            .filter(|version| payload.contains_key(&version.resource.id))
+            .collect();
+        devdesk_core::settings::save(
+            self,
+            &Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: Value::Object(payload),
+            },
+            &concurrency::ReadSet::new(versions)?,
+            &InvocationContext::human(None),
+        )?;
+        Ok(())
     }
 
     pub fn active_project(&self) -> Result<Option<String>> {
@@ -372,6 +384,9 @@ impl GlobalStore {
 }
 
 impl EngineeringStore for GlobalStore {
+    fn namespace(&self) -> concurrency::StoreNamespace {
+        concurrency::StoreNamespace::Configuration
+    }
     fn read_resources(
         &self,
         keys: &[concurrency::ResourceKey],

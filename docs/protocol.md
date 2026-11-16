@@ -2,7 +2,7 @@
 
 JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 19 / project 49；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
-本文记录现行协议。已确认的下一步设计将以显式作用域替代共享活动项目，并为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。接口迁移尚未完成；资源级提交端口已在实施分支验证，本页仍记录现行 RPC 行为。
+本文记录实施分支的协议。重构将以显式作用域替代共享活动项目，并为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
 ## HTTP 与命令
 
@@ -18,6 +18,10 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 19 / project 
 | POST /shutdown | 可信人类会话退出 Host。 |
 
 命令参数包含 `command_id`、`target`、`expected_revision`、`payload`；有版本的目标要求确切修订。相同 ID 与相同参数重放首次结果，检查早于版本冲突；不同参数复用 ID 拒绝。客户端不提交 actor 或已解析执行 binding。工程请求携带 `project_id` 固定请求作用域，过期选择返回 `project_changed`，查询不会隐式切换项目。
+
+`query.settings` 从一个已提交快照返回 `global_concurrency`、`default_harness` 和 `versions`。`settings.update` 参数为 `{command_id,preconditions,payload}`，其中 `preconditions` 是 `{resource:{kind:"setting",id},revision}` 数组，只包含本次修改项，`payload` 包含 `global_concurrency` 和/或 `default_harness`。缺少原始版本返回 `precondition_required`，过期返回 `revision_conflict`；两个设置项的版本互不影响。`query.ui_bootstrap`、`query.workspace` 和 `query.runtime_installations` 也返回 `settings_versions`，值与版本在同一读取快照内取得。
+
+资源提交的 JSON-RPC 成功响应保留 `result` 的领域形状，并在顶层增加 `meta.commit={namespace,versions,cursor}`。设置作用域为 `{kind:"configuration"}`；游标属于该库事件流。相同设置命令重放原结果、原版本及原游标，即使设置后来再次修改。客户端发生冲突后保留编辑草稿及其原版本；重新读取不会自动改写已打开草稿的保存条件。
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"query.workspace","params":{}}

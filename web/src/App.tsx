@@ -30,7 +30,7 @@ import React, {
   FormEvent,
 } from "react";
 import { MarkdownField, MarkdownPreview } from "./components/configuration-ui";
-import { type Row } from "./components/rpc-types";
+import { type ResourceVersion, type Row } from "./components/rpc-types";
 import {
   Layers3,
   LayoutDashboard,
@@ -83,6 +83,7 @@ type DialogSpec = {
   payload?: Row;
   fields: Field[];
   revision?: number;
+  preconditions?: ResourceVersion[];
   feedbackTarget?: ActionTarget | null;
 };
 const labels: Record<string, string> = {
@@ -625,6 +626,12 @@ function App() {
     setDialog({
       ...spec,
       revision: getRevision(spec.target),
+      preconditions:
+        spec.method === "settings.update"
+          ? (data?.settings_versions || []).filter((version: ResourceVersion) =>
+              spec.fields.some((field) => field.key === version.resource.id),
+            )
+          : spec.preconditions,
       feedbackTarget: spec.feedbackTarget ?? currentActionTarget(),
     });
   const command = async (
@@ -1662,6 +1669,7 @@ function App() {
                 <RuntimeSettings
                   provider={data.default_harness || "codex"}
                   installations={data.runtime_installations || []}
+                  settingsVersions={data.settings_versions || []}
                   request={rpc}
                   refresh={load}
                 />
@@ -1787,7 +1795,11 @@ function App() {
               setCaps(undefined);
               setData(undefined);
             } else if (dialog.method === "settings.update") {
-              result = await rpc(dialog.method, payload);
+              result = await rpc(dialog.method, {
+                command_id: crypto.randomUUID(),
+                preconditions: dialog.preconditions,
+                payload,
+              });
               await load();
             } else {
               result = await command(

@@ -356,6 +356,11 @@ pub trait PullRequests: Send + Sync {
 }
 
 pub trait EngineeringStore: Send + Sync {
+    fn namespace(&self) -> crate::concurrency::StoreNamespace {
+        crate::concurrency::StoreNamespace::Engineering {
+            project_id: self.project_id(),
+        }
+    }
     /// A bounded, committed resource batch; implementations must not restore history.
     fn read_resources(
         &self,

@@ -1,6 +1,6 @@
 import { ActionButton, ActionSelect } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
-import { type Request } from "./rpc-types";
+import { type ResourceVersion, type Request } from "./rpc-types";
 import { useEffect, useState } from "react";
 import { DshProviderSettings } from "./DshProviderSettings";
 
@@ -18,6 +18,7 @@ type Installation = {
 type Props = {
   provider: Provider;
   installations: Installation[];
+  settingsVersions: ResourceVersion[];
   request: Request;
   refresh: () => Promise<void>;
 };
@@ -25,6 +26,7 @@ type Props = {
 export function RuntimeSettings({
   provider,
   installations,
+  settingsVersions,
   request,
   refresh,
 }: Props) {
@@ -117,14 +119,24 @@ export function RuntimeSettings({
             setMessage("");
             try {
               await request("settings.update", {
-                default_harness: event.target.value,
+                command_id: crypto.randomUUID(),
+                preconditions: settingsVersions.filter(
+                  (version) =>
+                    version.resource.kind === "setting" &&
+                    version.resource.id === "default_harness",
+                ),
+                payload: { default_harness: event.target.value },
               });
               await refresh();
               window.dispatchEvent(
                 new Event("devdesk:runtime-options-changed"),
               );
-            } catch {
-              setMessage("默认 Harness 保存失败");
+            } catch (error) {
+              setMessage(
+                error instanceof Error
+                  ? `默认 Harness 保存失败：${error.message}`
+                  : "默认 Harness 保存失败",
+              );
             } finally {
               endFeedback();
               setBusy(false);

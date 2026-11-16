@@ -87,14 +87,20 @@ def run():
                 assert 'error' not in result, result
                 return result['result']
             assert rpc('query.workspace', {})['repository_ready'] is False
+            def settings_command(payload, command_id):
+                versions = rpc('query.settings', {})['versions']
+                return {'command_id':command_id, 'preconditions':[v for v in versions if v['resource']['id'] in payload], 'payload':payload}
+            unguarded = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'settings.update',
+                'params':{'command_id':'unguarded-settings','payload':{'default_harness':'dsh'}}}))
+            assert unguarded['error']['data']['code'] == 'precondition_required', unguarded
             preferences = rpc('query.runtime_installations', {})
             assert preferences['default_harness'] == 'codex' and preferences['installations'] == []
-            rpc('settings.update', {'default_harness':'dsh'})
+            rpc('settings.update', settings_command({'default_harness':'dsh'}, 'settings-dsh'))
             assert rpc('query.workspace', {})['default_harness'] == 'dsh'
-            invalid = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'settings.update','params':{'default_harness':'codex','global_concurrency':0}}))
+            invalid = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'settings.update','params':settings_command({'default_harness':'codex','global_concurrency':0}, 'settings-invalid')}))
             assert 'error' in invalid
             assert rpc('query.workspace', {})['default_harness'] == 'dsh'
-            rpc('settings.update', {'default_harness':'codex'})
+            rpc('settings.update', settings_command({'default_harness':'codex'}, 'settings-codex'))
             project = rpc('project.create', {'command_id':'same-id','payload':{'title':'HTTP 持久化'}})
             assert project == rpc('project.create', {'command_id':'same-id','payload':{'title':'HTTP 持久化'}})
             assert len(rpc('query.workspace', {})['projects'])==1
@@ -126,7 +132,7 @@ def run():
             assert req('/artifacts/' + artifact_a + '?project_id=' + project_b).status == 404
             stale = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'feature.create','params':{'project_id':pid,'command_id':'stale-project','payload':{'project_id':pid,'title':'不能串写'}}}))
             assert stale['error']['data']['code'] == 'project_changed', stale
-            rpc('settings.update', {'global_concurrency':7})
+            rpc('settings.update', settings_command({'global_concurrency':7}, 'settings-concurrency'))
             assert not (dataset / 'runtime.json').exists()
             with sqlite3.connect(dataset / 'global.sqlite3') as global_db:
                 assert json.loads(global_db.execute("SELECT value FROM settings WHERE key='global_concurrency'").fetchone()[0]) == 7
