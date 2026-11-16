@@ -298,7 +298,8 @@ impl EngineeringStore for GlobalStore {
     ) -> Result<concurrency::CommitReceipt> {
         let (receipt, changed) = resource_commits::commit(&self.connection, changes)?;
         if changed {
-            self.catalog_cache.invalidate()?;
+            // The persisted catalog clock already identifies invalidation.
+            // Runtime/pref commits must keep the immutable source view alive.
             self.changes.notify();
         }
         Ok(receipt)

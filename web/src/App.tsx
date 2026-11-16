@@ -623,13 +623,24 @@ function App() {
       try {
         const value: Row = JSON.parse(message.data);
         observeConfigurationVersion(value.configuration_version, projectId);
+        let resourceShellChanged = false;
         if (value.kind === "resource.changed") {
           const versions: Row[] = JSON.parse(value.detail);
+          resourceShellChanged = versions.some(
+            ({ resource }) =>
+              resource?.kind === "runtime_installation" ||
+              (resource?.kind === "setting" &&
+                ["global_concurrency", "default_harness"].includes(
+                  resource.id,
+                )),
+          );
           if (
             versions.some(
-              (version) =>
-                version.resource?.kind === "setting" &&
-                version.resource.id.startsWith("credentials.dsh."),
+              ({ resource }) =>
+                resource?.kind === "runtime_installation" ||
+                (resource?.kind === "setting" &&
+                  (resource.id.startsWith("credentials.dsh.") ||
+                    resource.id === "default_harness")),
             )
           )
             invalidateModelCatalogs();
@@ -661,6 +672,7 @@ function App() {
           const changed = version && version !== configurationVersion.current;
           if (
             !changed &&
+            !resourceShellChanged &&
             !["stream.ready", "stream.reset"].includes(value.kind) &&
             !/^(project|repository|workspace|runtime|settings)\./.test(
               value.kind || "",
