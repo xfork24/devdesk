@@ -276,3 +276,43 @@ fn finite_dispatch_ignores_unrelated_history_and_never_guesses_legacy_actor() {
         Err(error) if error.code == "provenance_required"
     ));
 }
+
+#[test]
+fn observation_recovery_rejects_missing_or_overflowed_dispatch_versions() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, id, connection) = fixture(root.path());
+    let dispatch = match RepositoryDispatchContext::read(store.as_ref(), &id)
+        .unwrap()
+        .prepare("version-fault-fixture")
+        .unwrap()
+        .submit(store.as_ref())
+        .unwrap()
+    {
+        DispatchAdmission::Admitted(dispatch) => dispatch,
+        _ => panic!("expected new dispatch"),
+    };
+    let original = store
+        .read_resources(&[ResourceKey::new("governance", dispatch.claim_id())])
+        .unwrap()
+        .remove(0)
+        .value
+        .unwrap();
+    for (index, expected, dispatched) in [
+        (0, json!(u64::MAX), Value::Null),
+        (1, json!(0), json!(1)),
+        (2, json!(1), Value::Null),
+    ] {
+        let mut row = devdesk_domain::ConfigurationRecord::from_storage(original.clone()).unwrap();
+        row.id = format!("malformed-version-{index}");
+        row.data["expected_operation_revision"] = expected;
+        row.data["dispatched_operation_revision"] = dispatched;
+        row.content_hash = devdesk_domain::content_digest(&row.refs, &row.data);
+        // A well-hashed but structurally invalid journal is a corruption fixture,
+        // not an external receipt or a production dispatch admission.
+        connection.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES(?1,'repository_dispatch',?2,?3,'version fault',1,?4,'{}',?5,1,1,1)",params![row.id,row.definition_id,json!(row.scope).to_string(),row.content_hash,row.data.to_string()]).unwrap();
+        assert!(matches!(
+            RepositoryObservationContext::read(store.as_ref(), &row.id),
+            Err(error) if error.code == "storage"
+        ));
+    }
+}

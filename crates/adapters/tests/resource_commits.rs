@@ -64,6 +64,47 @@ fn one_hundred_same_version_writes_have_one_winner() {
 }
 
 #[test]
+fn exhausted_versions_remain_readable_and_cannot_overflow_or_partially_commit() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = GlobalStore::open(directory.path()).unwrap();
+    store
+        .commit_changes(&prepared("seed", "exhausted", 0, json!(1)))
+        .unwrap();
+    let connection = rusqlite::Connection::open(directory.path().join("global.sqlite3")).unwrap();
+    connection.execute("UPDATE resource_versions SET revision=?1 WHERE kind='setting' AND resource_id='exhausted'",[i64::MAX]).unwrap();
+    let cursor = store.event_cursor().unwrap();
+    assert_eq!(
+        store
+            .commit_changes(&prepared(
+                "overflow-attempt",
+                "exhausted",
+                i64::MAX as u64,
+                json!(2),
+            ))
+            .unwrap_err()
+            .code,
+        "resource_exhausted"
+    );
+    let row = store
+        .read_resources(&[ResourceKey::new("setting", "exhausted")])
+        .unwrap()
+        .remove(0);
+    assert_eq!(row.revision, i64::MAX as u64);
+    assert_eq!(row.value, Some(json!(1)));
+    assert_eq!(store.event_cursor().unwrap(), cursor);
+    let kind: String = connection.query_row("SELECT typeof(revision) FROM resource_versions WHERE kind='setting' AND resource_id='exhausted'",[],|r|r.get(0)).unwrap();
+    assert_eq!(kind, "integer");
+    let count: u64 = connection
+        .query_row(
+            "SELECT count(*) FROM operations WHERE id='overflow-attempt'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
 fn independent_targets_do_not_share_a_project_wide_revision() {
     let directory = tempfile::tempdir().unwrap();
     let store = Arc::new(GlobalStore::open(directory.path()).unwrap());

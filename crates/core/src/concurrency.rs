@@ -134,7 +134,9 @@ impl PreparedChangeSet {
         let mut changed = BTreeMap::new();
         for change in &self.changes {
             change.resource.validate()?;
-            self.read_set.require(&change.resource)?;
+            if self.read_set.require(&change.resource)? == i64::MAX as u64 {
+                return Err(err("resource_exhausted", "资源版本已用尽，禁止溢出更新"));
+            }
             if changed.insert(&change.resource, ()).is_some() {
                 return Err(err("invalid_params", "同一资源不能重复提交变化"));
             }

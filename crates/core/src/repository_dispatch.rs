@@ -345,7 +345,12 @@ impl RepositoryObservationContext {
         let context = immutable_record(&inputs[1], "command_context", &project_id)?;
         let expected = claim.data["expected_operation_revision"]
             .as_u64()
+            .filter(|revision| *revision > 0 && *revision < i64::MAX as u64)
             .ok_or_else(|| err("storage", "仓库派发缺少原始操作版本"))?;
+        let dispatched = claim.data["dispatched_operation_revision"]
+            .as_u64()
+            .filter(|revision| *revision <= i64::MAX as u64)
+            .ok_or_else(|| err("storage", "仓库派发缺少有效提交版本"))?;
         require(
             claim.data["operation_id"] == operation_id
                 && intent.definition_id == operation_id
@@ -358,7 +363,7 @@ impl RepositoryObservationContext {
                 && context.data["context"]["project_id"] == project_id
                 && claim.data["action_digest"] == intent.data["action_digest"]
                 && claim.data["actor"] == context.data["context"]["actor"]
-                && expected.checked_add(1) == claim.data["dispatched_operation_revision"].as_u64(),
+                && expected.checked_add(1) == Some(dispatched),
             "仓库观察恢复与原始派发来源不符",
         )?;
         let _: WorkflowActor = serde_json::from_value(context.data["context"]["actor"].clone())
