@@ -668,9 +668,9 @@
       "method": "integration.test",
       "access": "mutation",
       "scope": "explicit",
-      "precondition": "intent_revision",
+      "precondition": "absent_call_and_original_source_authority",
       "sites": [
-        "crates/core/src/integrations.rs",
+        "crates/core/src/tool_creation.rs",
         "crates/host/src/integrations.rs"
       ]
     },

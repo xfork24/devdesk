@@ -828,13 +828,101 @@ fn registered_invocation(root: &std::path::Path) -> (Engine, ToolInvocation) {
     };
     (e, i)
 }
-fn test_command() -> Command {
+fn test_command(invocation: &ToolInvocation) -> Command {
     Command {
         command_id: id(),
         target: None,
-        expected_revision: None,
-        payload: json!({}),
+        expected_revision: Some(0),
+        payload: json!({"binding_ref":invocation.tool.binding_ref,"tool_ref":invocation.tool.revision_id,"arguments":invocation.arguments}),
     }
+}
+// A test-only admitted native observation, independent from the human RPC API.
+fn seed_provider_call(engine: &Engine, invocation: &ToolInvocation) {
+    engine.store.transact(None,&mut |state|{
+        let data=json!({"status":"prepared","remote_effect":"not_applied","invocation":invocation,"created_at":1,"cancel_requested":false,"reply_sent":false});
+        state.governance.push(ConfigurationRecord{id:invocation.id.clone(),r#type:"tool_call".into(),definition_id:invocation.id.clone(),scope:invocation.project_id.as_ref().map_or_else(Scope::global,Scope::project),name:invocation.tool.definition.qualified_name.clone(),version:1,supersedes:None,content_hash:content_digest(&References::new(),&data),refs:References::new(),data,immutable:false,revision:1,created_at:1});
+        Ok(Value::Null)
+    }).unwrap();
+}
+fn select_write_tool(engine: &Engine, invocation: &mut ToolInvocation) {
+    let mut definition = json!(invocation.tool.definition);
+    definition["qualified_name"] = json!("ticket_write");
+    definition["effect"] = json!("write");
+    let tool = command(
+        engine,
+        "integration.tool.create",
+        None,
+        json!({"name":"Explicit write fixture","data":definition}),
+    )
+    .unwrap();
+    let mut binding = invocation.tool.binding.clone();
+    binding.allowed_tools = vec![tool["id"].as_str().unwrap().into()];
+    let binding = command(
+        engine,
+        "integration.binding.create",
+        None,
+        json!({"name":"Write fixture account","data":binding}),
+    )
+    .unwrap();
+    invocation.tool.revision_id = tool["id"].as_str().unwrap().into();
+    invocation.tool.content_hash = tool["content_hash"].as_str().unwrap().into();
+    invocation.tool.definition = serde_json::from_value(tool["data"].clone()).unwrap();
+    invocation.tool.binding_ref = binding["id"].as_str().unwrap().into();
+    invocation.tool.binding_hash = binding["content_hash"].as_str().unwrap().into();
+    invocation.tool.binding = serde_json::from_value(binding["data"].clone()).unwrap();
+}
+fn select_tool_approval(
+    engine: &Engine,
+    invocation: &mut ToolInvocation,
+    approval: ApprovalPolicy,
+) {
+    let state = engine.store.snapshot().unwrap();
+    let mut policy = state
+        .configuration(
+            &invocation
+                .permissions
+                .binding_lock
+                .as_ref()
+                .unwrap()
+                .harness
+                .profile
+                .id,
+        )
+        .unwrap()
+        .data["policy"]
+        .clone();
+    policy["approval"] = json!(approval);
+    let profile=command(engine,"permission.profile.create",None,json!({"identity":format!("fixture-test-approval-{}",id()),"name":"Test call approval","target_kind":"harness","policy":policy})).unwrap();
+    let target = permission_target(
+        &state,
+        PermissionTargetKind::Harness,
+        &invocation.tool.binding.harness_ref,
+    )
+    .unwrap();
+    let revision = active_permission_binding(&state, &target).map_or(0, |r| r.version);
+    let profile = source_reference(
+        profile["identity"].as_str().unwrap(),
+        profile["revision"].as_u64().unwrap(),
+    )
+    .unwrap();
+    command(engine,"permission.bindings.apply",None,json!({"bindings":[{"target":target,"permission_revision_id":profile,"expected_revision":revision,"enforcement_contract":devdesk_adapters::permission_profiles::permission_contract(&state,&target).unwrap()}]})).unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let lock = resolve_permission_lock(
+        &state,
+        &invocation.tool.binding.harness_ref,
+        &ExecutionPermissionSelection {
+            sandbox_ref: invocation.tool.binding.sandbox_ref.clone(),
+            harness: PermissionSelection::FollowTarget,
+            sandbox: PermissionSelection::FollowTarget,
+        },
+    )
+    .unwrap();
+    invocation.permissions = devdesk_adapters::permission_profiles::compile_permission_profiles(
+        &state,
+        &lock,
+        Some(invocation.permissions.scope.clone()),
+    )
+    .unwrap();
 }
 fn observed(root: &std::path::Path) -> (Arc<Engine>, ToolInvocation, Arc<ObservedExecutor>) {
     let (engine, invocation) = registered_invocation(root);
@@ -845,7 +933,11 @@ fn observed(root: &std::path::Path) -> (Arc<Engine>, ToolInvocation, Arc<Observe
     });
     let engine = Arc::new(engine.with_tool_executor(executor.clone()));
     engine
-        .enqueue_tool_test(&test_command(), &invocation)
+        .enqueue_tool_test(
+            &test_command(&invocation),
+            &invocation,
+            &InvocationContext::human(engine.store.project_id()),
+        )
         .unwrap();
     engine.store.configuration_snapshot().unwrap();
     (engine, invocation, executor)
@@ -1125,9 +1217,7 @@ fn uncertain_native_replies_are_journaled_and_never_automatically_resent() {
     invocation.turn_id = Some(turn);
     invocation.operation_id = Some(worker.operation_id.clone());
     invocation.request_id = Some(json!({"id":"native-tool-request"}));
-    engine
-        .enqueue_tool_test(&test_command(), &invocation)
-        .unwrap();
+    seed_provider_call(&engine, &invocation);
     let reply = Arc::new(UncertainReply(Default::default()));
     engine.harness = reply.clone();
     let dispatch = ToolCall::read(engine.store.as_ref(), &invocation.id)
@@ -1167,9 +1257,7 @@ fn uncertain_native_replies_are_journaled_and_never_automatically_resent() {
     );
     let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
     invocation.id = id();
-    engine
-        .enqueue_tool_test(&test_command(), &invocation)
-        .unwrap();
+    seed_provider_call(&engine, &invocation);
     let before_revocation = ToolCall::read(engine.store.as_ref(), &invocation.id).unwrap();
     conn.execute(
         "UPDATE executions SET writer_revoked=1 WHERE operation_id=?1",
@@ -1237,9 +1325,7 @@ fn workflow_tool_dispatch_respects_ancestor_pause_and_original_execution_fences(
     invocation.id = id();
     invocation.project_id = Some(project.clone());
     invocation.operation_id = Some("child-execution".into());
-    engine
-        .enqueue_tool_test(&test_command(), &invocation)
-        .unwrap();
+    seed_provider_call(&engine, &invocation);
     let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
     for (id, execution, paused, parent) in [
         ("child", "child-execution", false, Some("parent-execution")),
@@ -1378,6 +1464,215 @@ fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
     );
 }
 #[test]
+fn manual_tool_creation_replays_original_packed_result_and_does_not_wait_for_old_writer() {
+    let root = tempfile::tempdir().unwrap();
+    let (engine, invocation) = registered_invocation(root.path());
+    let engine = Arc::new(engine);
+    let original = test_command(&invocation);
+    let context = InvocationContext::human(None);
+    engine.store.configuration_snapshot().unwrap();
+    let (ready, wait) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let old = engine.clone();
+    let writer = std::thread::spawn(move || {
+        old.store.transact(None, &mut |_| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            Ok(Value::Null)
+        })
+    });
+    wait.recv().unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let trace = devdesk_adapters::performance::Trace::start();
+    let threads = (0..100)
+        .map(|_| {
+            let (engine, invocation, original, context, barrier) = (
+                engine.clone(),
+                invocation.clone(),
+                original.clone(),
+                context.clone(),
+                barrier.clone(),
+            );
+            std::thread::spawn(move || {
+                barrier.wait();
+                engine.enqueue_tool_test(&original, &invocation, &context)
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    release.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+    let report = trace.finish();
+    let first = results[0].as_ref().unwrap();
+    for result in &results {
+        assert_eq!(result.as_ref().unwrap(), first);
+    }
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    let packed: String = conn
+        .query_row(
+            "SELECT result FROM operations WHERE id=?1",
+            [&original.command_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let packed: Value = serde_json::from_str(&packed).unwrap();
+    assert_eq!(
+        packed["data"]["invocation"]["tool"]["$source"],
+        "bound_tool"
+    );
+    assert_eq!(
+        packed["data"]["invocation"]["permissions"]["$source"],
+        "execution_permissions"
+    );
+    assert!(packed["data"]["invocation"]["tool"]["definition"].is_null());
+    assert_eq!(
+        conn.query_row(
+            "SELECT count(*) FROM governance_records WHERE type='tool_call'",
+            [],
+            |r| r.get::<_, u64>(0)
+        )
+        .unwrap(),
+        1
+    );
+    let observed = Arc::new(ObservedExecutor {
+        native: NativeTools::new(root.path()).unwrap(),
+        starts: Default::default(),
+        receipts: Default::default(),
+    });
+    // The stored creation result survives later dispatch and source-head changes.
+    let dispatch = devdesk_core::tool_calls::ToolCall::read(engine.store.as_ref(), &invocation.id)
+        .unwrap()
+        .claim(engine.store.as_ref())
+        .unwrap()
+        .unwrap();
+    devdesk_core::ports::ToolExecutor::start(observed.as_ref(), dispatch.invocation()).unwrap();
+    command(
+        &engine,
+        "integration.revise",
+        Some(&invocation.tool.definition.integration_ref),
+        json!({"name":"Newer service presentation","data":invocation.tool.integration}),
+    )
+    .unwrap();
+    assert_eq!(
+        engine
+            .replay_tool_test(&original, &context)
+            .unwrap()
+            .unwrap(),
+        *first
+    );
+    let mut changed = original;
+    changed.payload["arguments"] = json!({"id":"different"});
+    assert!(engine.replay_tool_test(&changed, &context).is_err());
+    assert!(
+        report["spans"]["project.full_snapshot"].is_null(),
+        "{report}"
+    );
+}
+#[test]
+fn manual_tool_creation_rejects_missing_absence_original_source_or_permission_drift() {
+    let root = tempfile::tempdir().unwrap();
+    let (engine, mut invocation) = registered_invocation(root.path());
+    let context = InvocationContext::human(None);
+    let mut original = test_command(&invocation);
+    original.expected_revision = None;
+    assert_eq!(
+        engine
+            .enqueue_tool_test(&original, &invocation, &context)
+            .unwrap_err()
+            .code,
+        "precondition_required"
+    );
+    original.expected_revision = Some(0);
+    let original_invocation = invocation.clone();
+    invocation.tool.definition.effect = "write".into();
+    assert!(
+        engine
+            .enqueue_tool_test(&original, &invocation, &context)
+            .is_err()
+    );
+    invocation = original_invocation.clone();
+    select_tool_approval(&engine, &mut invocation, ApprovalPolicy::OnRequest);
+    assert_eq!(
+        engine
+            .enqueue_tool_test(
+                &test_command(&original_invocation),
+                &original_invocation,
+                &context
+            )
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+}
+#[test]
+fn one_hundred_independent_manual_calls_share_read_only_configuration_guards() {
+    let root = tempfile::tempdir().unwrap();
+    let (engine, invocation) = registered_invocation(root.path());
+    let engine = Arc::new(engine);
+    engine.store.configuration_snapshot().unwrap();
+    let clock = engine.store.catalog_revision().unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = (0..100)
+        .map(|_| {
+            let (engine, mut invocation, barrier) =
+                (engine.clone(), invocation.clone(), barrier.clone());
+            invocation.id = id();
+            std::thread::spawn(move || {
+                let request = test_command(&invocation);
+                barrier.wait();
+                let trace = devdesk_adapters::performance::Trace::start();
+                let result = engine.enqueue_tool_test(
+                    &request,
+                    &invocation,
+                    &InvocationContext::human(None),
+                );
+                (result, trace.finish())
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    let failed = results
+        .iter()
+        .filter_map(|(r, _)| r.as_ref().err())
+        .collect::<Vec<_>>();
+    for stage in [
+        "resource.sql_transaction",
+        "resource.commit",
+        "sqlite.pool_wait",
+        "catalog.build",
+        "resource.busy_retry",
+    ] {
+        let mut values = results
+            .iter()
+            .map(|(_, report)| report["spans"][stage]["total_ms"].as_f64().unwrap_or(0.0))
+            .collect::<Vec<_>>();
+        values.sort_by(f64::total_cmp);
+        eprintln!(
+            "{stage}: p50={} p95={} max={}",
+            values[49], values[94], values[99]
+        );
+    }
+    assert!(failed.is_empty(), "{failed:?}");
+    assert_eq!(engine.store.catalog_revision().unwrap(), clock);
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    assert_eq!(
+        conn.query_row(
+            "SELECT count(*) FROM governance_records WHERE type='tool_call'",
+            [],
+            |r| r.get::<_, u64>(0)
+        )
+        .unwrap(),
+        100
+    );
+    assert_eq!(conn.query_row("SELECT count(*) FROM governance_records WHERE type='command_context' AND name='integration.test'",[],|r|r.get::<_,u64>(0)).unwrap(),100);
+}
+#[test]
 fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls() {
     let root = tempfile::tempdir().unwrap();
     let (e, mut i) = registered_invocation(root.path());
@@ -1387,7 +1682,12 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
         receipts: Default::default(),
     });
     let e = e.with_tool_executor(observed.clone());
-    e.enqueue_tool_test(&test_command(), &i).unwrap();
+    e.enqueue_tool_test(
+        &test_command(&i),
+        &i,
+        &InvocationContext::human(e.store.project_id()),
+    )
+    .unwrap();
     command(&e, "tool.call.cancel", Some(&i.id), json!({})).unwrap();
     e.drive_tool_calls().unwrap();
     assert_eq!(observed.starts.load(std::sync::atomic::Ordering::SeqCst), 0);
@@ -1401,9 +1701,14 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
         "not_applied"
     );
     i.id = id();
-    i.permissions.approval = ApprovalPolicy::OnRequest;
-    i.tool.definition.effect = "write".into();
-    e.enqueue_tool_test(&test_command(), &i).unwrap();
+    select_tool_approval(&e, &mut i, ApprovalPolicy::OnRequest);
+    select_write_tool(&e, &mut i);
+    e.enqueue_tool_test(
+        &test_command(&i),
+        &i,
+        &InvocationContext::human(e.store.project_id()),
+    )
+    .unwrap();
     e.drive_tool_calls().unwrap();
     assert_eq!(observed.starts.load(std::sync::atomic::Ordering::SeqCst), 0);
     command(
@@ -1424,8 +1729,13 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
         "cancelled"
     );
     i.id = id();
-    i.permissions.approval = ApprovalPolicy::Never;
-    e.enqueue_tool_test(&test_command(), &i).unwrap();
+    select_tool_approval(&e, &mut i, ApprovalPolicy::Never);
+    e.enqueue_tool_test(
+        &test_command(&i),
+        &i,
+        &InvocationContext::human(e.store.project_id()),
+    )
+    .unwrap();
     e.drive_tool_calls().unwrap();
     assert_eq!(observed.starts.load(std::sync::atomic::Ordering::SeqCst), 1);
     e.bootstrap().unwrap();
@@ -1475,7 +1785,12 @@ fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls(
         "settled manual calls return the project to idle"
     );
     i.id = id();
-    e.enqueue_tool_test(&test_command(), &i).unwrap();
+    e.enqueue_tool_test(
+        &test_command(&i),
+        &i,
+        &InvocationContext::human(e.store.project_id()),
+    )
+    .unwrap();
     e.drive_tool_calls().unwrap();
     e.bootstrap().unwrap();
     runtime::bind_default_permissions(&e);

@@ -363,6 +363,10 @@ impl Workspace {
                 if let Some(value) = e.replay_integration_operation(method, &c, &context)? {
                     return Ok(value);
                 }
+            } else if method == "integration.test" {
+                if let Some(value) = e.replay_tool_test(&c, &context)? {
+                    return Ok(value);
+                }
             } else if !method.starts_with("tool.call.")
                 && let Some(previous) = e.store.replay(&c.command_id, &fp)?
             {
@@ -563,7 +567,7 @@ impl Workspace {
                     worktree: String::new(),
                     input_hash: configuration_hash(&arguments),
                 };
-                let result = e.enqueue_tool_test(&c, &invocation)?;
+                let result = e.enqueue_tool_test(&c, &invocation, &context)?;
                 e.drive_tool_calls()?;
                 return Ok(result);
             }
@@ -673,6 +677,29 @@ fn serde_yaml_value(s: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn tool_test_preconditions_reject_before_source_resolution_or_runtime_preparation() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let before = workspace.global.event_cursor().unwrap();
+        let params = json!({"command_id":"test-call-missing-absence","payload":{"binding_ref":"absent-binding:1","tool_ref":"absent-tool:1","arguments":{}}});
+        let error = workspace
+            .dispatch("integration.test", params.clone())
+            .unwrap_err();
+        assert_eq!(error.code, "precondition_required");
+        let mut guarded = params;
+        guarded["expected_revision"] = json!(0);
+        assert_eq!(
+            workspace
+                .dispatch("integration.test", guarded)
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+        assert_eq!(workspace.global.event_cursor().unwrap(), before);
+        assert!(workspace.global.runtime_installations().unwrap().is_empty());
+    }
     #[test]
     fn skill_package_completion_replays_without_restoring_or_reimporting() {
         let root = tempfile::tempdir().unwrap();

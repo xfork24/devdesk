@@ -34,6 +34,7 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         // Collection tokens have no entity payload. Their version is maintained
         // by fact-table triggers and is read atomically with the selected facts.
         "collection" => Ok(None),
+        "catalog_clock" => Ok(None),
         "tool_worker" => conn.query_row("SELECT session_id,writer_revoked=0 FROM executions WHERE operation_id=?1",[&key.id],|r|Ok(json!({"session_id":r.get::<_,String>(0)?,"active":r.get::<_,bool>(1)?}))).optional().map_err(storage),
         "tool_turn" => conn.query_row("SELECT session_id,status FROM turns WHERE id=?1",[&key.id],|r|Ok(json!({"session_id":r.get::<_,String>(0)?,"status":r.get::<_,String>(1)?}))).optional().map_err(storage),
         "tool_session" => Ok(None),
@@ -81,6 +82,10 @@ fn snapshot(conn: &Connection, key: &ResourceKey) -> Result<ResourceSnapshot> {
 
 fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     key.validate()?;
+    if key.kind == "catalog_clock" {
+        require(key.id == "configuration", "无效配置快照条件")?;
+        return configuration_cache::revision(conn);
+    }
     // These read-only predicates track native facts even while their creation
     // families still use legacy insertion. They can never be written as rows.
     if key.kind == "tool_worker" {
@@ -482,23 +487,31 @@ pub(super) fn commit(
     require(prepared.changes.len() <= 4096, "一次提交的资源过多")?;
     let _span = performance::Span::new("resource.commit");
     let writes = prepare_writes(pool, prepared)?;
-    let started = Instant::now();
+    let checkout_deadline = Instant::now() + Duration::from_secs(2);
+    let mut technical_spent = Duration::ZERO;
     for attempt in 0..3 {
         // Return the submit connection before backing off. A busy caller must
         // not occupy one of the bounded handles while other independent
         // commits wait for it; every attempt retains the original read set.
         let result = {
-            let mut conn = pool.lock()?;
-            commit_once(&mut conn, prepared, &writes)
+            let waiting = performance::Span::new("resource.submit_pool_wait");
+            let mut conn = pool.lock_until(checkout_deadline)?;
+            drop(waiting);
+            let started = Instant::now();
+            let result = commit_once(&mut conn, prepared, &writes);
+            technical_spent += started.elapsed();
+            result
         };
         match result {
             Err(error)
                 if error.code == "storage_busy"
                     && attempt < 2
-                    && started.elapsed() < Duration::from_millis(100) =>
+                    && technical_spent < Duration::from_millis(100) =>
             {
                 performance::record("resource.busy_retry", 0.0);
-                std::thread::sleep(Duration::from_millis(2 + attempt));
+                let backoff = Duration::from_millis(2 + attempt);
+                std::thread::sleep(backoff);
+                technical_spent += backoff;
             }
             result => return result,
         }

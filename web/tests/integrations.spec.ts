@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Route } from "@playwright/test";
 import { test } from "./support/kernel";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -518,6 +518,34 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
       { timeout: 60000 },
     )
     .toBe("succeeded");
+  const retried: any[] = [];
+  const lostCreationResponse = async (route: Route) => {
+    const call = route.request().postDataJSON();
+    if (call.method !== "integration.test") return route.fallback();
+    retried.push(call.params);
+    return route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        error: {
+          code: -32000,
+          message: "fixture: 创建响应未确认",
+          data: { code: "revision_conflict" },
+        },
+      },
+    });
+  };
+  await page.route("**/rpc", lostCreationResponse);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await account
+      .getByRole("button", { name: "执行测试调用", exact: true })
+      .click();
+    await expect(account.getByRole("alert")).toContainText("创建响应未确认");
+  }
+  expect(retried).toHaveLength(2);
+  expect(retried[0].expected_revision).toBe(0);
+  expect(retried[0]).toEqual(retried[1]);
+  await page.unroute("**/rpc", lostCreationResponse);
   await page.getByRole("button", { name: "历史记录", exact: true }).click();
   await page.getByLabel("历史范围", { exact: true }).selectOption("global");
   const history = page.getByRole("region", { name: "历史记录" });

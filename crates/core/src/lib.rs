@@ -20,6 +20,7 @@ pub mod rpc_contracts;
 pub mod runtime_registry;
 pub mod settings;
 pub mod tool_calls;
+mod tool_creation;
 pub use configuration_catalog::*;
 mod configuration_queries;
 pub use configuration_queries::{

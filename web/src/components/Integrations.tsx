@@ -2399,6 +2399,9 @@ function ToolTest({
   const [tool, setTool] = useState(""),
     [args, setArgs] = useState("{}"),
     [busy, setBusy] = useState(false);
+  const attempt = useRef<{ fingerprint: string; id: string } | undefined>(
+    undefined,
+  );
   return (
     <div className="integration-content">
       <h3>实际测试调用</h3>
@@ -2421,11 +2424,24 @@ function ToolTest({
           setBusy(true);
           setError("");
           try {
-            const result = await command(request, "integration.test", project, {
-              binding_ref: binding.id,
-              tool_ref: tool,
-              arguments: JSON.parse(args),
+            const params = {
+              local: !!project?.id,
+              project_id: project?.id,
+              expected_revision: 0,
+              payload: {
+                binding_ref: binding.id,
+                tool_ref: tool,
+                arguments: JSON.parse(args),
+              },
+            };
+            const fingerprint = JSON.stringify(params);
+            if (attempt.current?.fingerprint !== fingerprint)
+              attempt.current = { fingerprint, id: crypto.randomUUID() };
+            const result = await request("integration.test", {
+              ...params,
+              command_id: attempt.current!.id,
             });
+            attempt.current = undefined;
             setMessage(`调用已登记：${result.id}，请在调用记录查看实际回执。`);
           } catch (e) {
             setError(String(e));

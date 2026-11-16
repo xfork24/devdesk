@@ -128,7 +128,7 @@ pub(super) fn save_records(
     save_table(conn, "governance_records", &runtime, &[])
 }
 
-fn pack_record(
+pub(super) fn pack_record(
     state: &EngineeringState,
     record: &ConfigurationRecord,
 ) -> Result<ConfigurationRecord> {

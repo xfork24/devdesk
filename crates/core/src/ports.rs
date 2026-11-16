@@ -610,6 +610,16 @@ pub trait EngineeringStore: Send + Sync {
     fn tool_call_facts(&self, _id: &str) -> Result<crate::tool_calls::ToolCallFacts> {
         Err(err("unsupported", "存储未实现工具调用有限上下文"))
     }
+    /// One runtime record against exact immutable sources, without runtime history.
+    fn encode_runtime_record(
+        &self,
+        _record: &devdesk_domain::ConfigurationRecord,
+    ) -> Result<Value> {
+        Err(err("unsupported", "存储未实现运行记录源编码"))
+    }
+    fn restore_runtime_record(&self, _value: &Value) -> Result<Value> {
+        Err(err("unsupported", "存储未实现运行记录源恢复"))
+    }
     /// Scalar invalidation clock; concrete stores must not restore catalog bodies here.
     fn catalog_revision(&self) -> Result<u64> {
         Ok(self.configuration_snapshot()?.revision)

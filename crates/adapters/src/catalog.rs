@@ -363,6 +363,12 @@ impl EngineeringStore for GlobalStore {
             id,
         )
     }
+    fn encode_runtime_record(&self, record: &ConfigurationRecord) -> Result<Value> {
+        tool_calls::encode(self.configuration_snapshot()?.as_ref(), record)
+    }
+    fn restore_runtime_record(&self, value: &Value) -> Result<Value> {
+        tool_calls::restore(self.configuration_snapshot()?.as_ref(), value)
+    }
     fn catalog_revision(&self) -> Result<u64> {
         configuration_cache::revision(&*self.connection.read()?)
     }

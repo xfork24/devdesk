@@ -190,6 +190,8 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 `tool.call.approve/cancel/reconcile` 对外部 `tool_call` 要求客户端读取的原始 expected_revision，以调用资源版本和实际人类命令来源同事务提交。缺版本返回 precondition_required，过期返回 revision_conflict；同命令同参数返回原结果。人工核对证据与首次编辑版本保留，轮询不替换基线，冲突重试沿用原命令 ID。派发与后台回执均不进入旧工具业务写事务；原始外部观察先保留，再校验原版本。原生回复结果未知时显示待核对且不自动重复投递。平台工具取消仍由其所属平台族处理，不据此宣称该族已经迁移。
 
+人工 `integration.test` 创建调用要求 expected_revision=0、确切 binding_ref/tool_ref 与原 arguments。入口在运行准备前核对原不存在条件、可选源、作用域、认证和参数；创建再验证原权限绑定及配置读谓词，原子保存调用、实际人类来源和幂等回执，不使用旧工具业务写事务。回执只保存可按原不可变源重建的编码，重复请求返回原创建结果，即使调用已派发或源有后继修订，也不会重新做运行准备。浏览器对未确认的同一请求保留命令 ID。工作流与原生会话内部调用的创建仍属于后续迁移范围。
+
 全局角色讨论使用 `scope: "global"`，`session.open` 的目标为 `global`，不得同时提供 `project_id`。数据单独保存在 `conversations/global/engineering.sqlite3`；不创建 Project。Session 的 `scope` 为 `global`，其 `project_id` 列保留固定的执行命名空间 `00000000-0000-4000-8000-000000000000`，用于容器归属和 Session/Turn 外键；它不属于项目目录。全局 Session 仅接受全局 AgentID，消息、快照及经验仍按该身份保存。全局讨论中的方案须切换到具体项目后再进入工程采纳流程。
 
 权限合同 v2 绑定权限语义、实际运行配方与策略资产；普通 UI、模型目录及非权限 schema 更新不等于权限语义变化。适配器内容身份在运行绑定中独立冻结，Feature 冻结确切权限闭包，不生成旧权限转换记录。

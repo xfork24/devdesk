@@ -10,7 +10,7 @@ fn live(s: &EngineeringState, r: &ConfigurationRecord) -> Result<()> {
     enabled(s, r)?;
     require(!crate::configuration::retired(s, r), "接入已停用新的选择")
 }
-fn enabled(s: &EngineeringState, r: &ConfigurationRecord) -> Result<()> {
+pub(crate) fn enabled(s: &EngineeringState, r: &ConfigurationRecord) -> Result<()> {
     require(
         !s.governance
             .iter()
@@ -424,6 +424,18 @@ impl Engine {
             )?;
             return Ok(json!(old));
         }
+        let row = self.tool_call_record(s, i)?;
+        let result = json!(row);
+        s.governance.push(row);
+        Ok(result)
+    }
+    /// This validation reads the complete configuration graph only; execution
+    /// ownership and authority are separate, explicit admission guards.
+    pub(crate) fn tool_call_record(
+        &self,
+        s: &EngineeringState,
+        i: &ToolInvocation,
+    ) -> Result<ConfigurationRecord> {
         enabled(s, s.configuration(&i.tool.revision_id)?)?;
         enabled(s, s.configuration(&i.tool.definition.integration_ref)?)?;
         enabled(s, s.configuration(&i.tool.binding_ref)?)?;
@@ -501,16 +513,16 @@ impl Engine {
             false,
         );
         r.id = i.id.clone();
-        let result = json!(r);
-        s.governance.push(r);
-        Ok(result)
+        Ok(r)
     }
     /// Trusted coordinator entry: the browser never supplies the resolved invocation.
-    pub fn enqueue_tool_test(&self, c: &Command, invocation: &ToolInvocation) -> Result<Value> {
-        let fp = command_fingerprint("integration.test", c);
-        self.store.transact(Some((&c.command_id, &fp)), &mut |s| {
-            self.insert_tool_invocation(s, invocation)
-        })
+    pub fn enqueue_tool_test(
+        &self,
+        c: &Command,
+        invocation: &ToolInvocation,
+        context: &InvocationContext,
+    ) -> Result<Value> {
+        self.create_manual_tool_call(c, invocation, context)
     }
     pub fn enqueue_configured_tool(
         &self,

@@ -2,6 +2,21 @@
 use crate::{connection_pool::ConnectionPool, *};
 use devdesk_core::{concurrency::*, tool_calls::*};
 
+pub(super) fn encode(
+    catalog: &ConfigurationCatalogSnapshot,
+    record: &ConfigurationRecord,
+) -> Result<Value> {
+    require(!source_store::is_source(record), "运行编码不能发布配置源")?;
+    source_store::pack_record(&catalog.state, record).map(|row| row.to_storage())
+}
+pub(super) fn restore(catalog: &ConfigurationCatalogSnapshot, value: &Value) -> Result<Value> {
+    let mut row = ConfigurationRecord::from_storage(value.clone())?;
+    require(!source_store::is_source(&row), "运行恢复不能替换配置源")?;
+    row.data = source_views::restore_with(&catalog.state, &row.data, &mut Default::default())?;
+    row.content_hash = content_digest(&row.refs, &row.data);
+    Ok(json!(row))
+}
+
 pub(super) fn page(pool: &ConnectionPool, after: Option<&str>) -> Result<ToolCallPage> {
     let _span = performance::Span::new("tool_calls.page");
     let conn = pool.read()?;

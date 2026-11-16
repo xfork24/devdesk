@@ -3,6 +3,7 @@ use crate::{performance, storage};
 use devdesk_domain::{Result, err};
 use rusqlite::{Connection, OpenFlags};
 use std::{
+    cell::Cell,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
     sync::{
@@ -15,6 +16,27 @@ use std::{
 const HOST_CONNECTIONS: usize = 64;
 static OPEN: AtomicUsize = AtomicUsize::new(0);
 static POOLS: OnceLock<Mutex<Vec<Weak<PoolInner>>>> = OnceLock::new();
+thread_local! {
+    static BUSY_UNTIL: Cell<Option<Instant>> = const { Cell::new(None) };
+}
+// SQLite's default millisecond backoff can repeatedly miss the short gaps
+// between a burst of independent WAL commits. Poll the physical lock at a
+// finer, bounded cadence; no business operation or connection is serialized.
+fn bounded_busy(attempt: i32) -> bool {
+    BUSY_UNTIL.with(|deadline| {
+        if attempt == 0 {
+            deadline.set(Some(Instant::now() + Duration::from_millis(25)));
+        }
+        let Some(until) = deadline.get() else {
+            return false;
+        };
+        if Instant::now() >= until {
+            return false;
+        }
+        std::thread::sleep(Duration::from_micros(100 + (attempt as u64 % 7) * 25));
+        Instant::now() < until
+    })
+}
 
 struct Permit;
 impl Permit {
@@ -126,9 +148,7 @@ impl ConnectionPool {
 
     fn with_initial(path: &Path, initial: ManagedConnection, read_only: bool) -> Result<Self> {
         // Schema initialization may use a longer busy timeout; runtime leases do not.
-        initial
-            .busy_timeout(Duration::from_millis(25))
-            .map_err(storage)?;
+        initial.busy_handler(Some(bounded_busy)).map_err(storage)?;
         let inner = Arc::new(PoolInner {
             path: path.to_owned(),
             readers: Lane::new(4),
@@ -158,20 +178,28 @@ impl ConnectionPool {
     pub fn lock(&self) -> Result<PooledConnection> {
         self.checkout(false)
     }
+    pub fn lock_until(&self, deadline: Instant) -> Result<PooledConnection> {
+        self.checkout_until(false, deadline)
+    }
 
     pub fn read(&self) -> Result<PooledConnection> {
         self.checkout(true)
     }
 
     fn checkout(&self, read_only: bool) -> Result<PooledConnection> {
+        self.checkout_until(read_only, Instant::now() + Duration::from_secs(2))
+    }
+    fn checkout_until(&self, read_only: bool, deadline: Instant) -> Result<PooledConnection> {
         let _span = performance::Span::new("sqlite.pool_wait");
         let lane = if read_only {
             &self.0.readers
         } else {
             &self.0.submitters
         };
-        let deadline = Instant::now() + Duration::from_secs(2);
         loop {
+            if Instant::now() >= deadline {
+                return Err(err("storage_busy", "等待数据库连接超时"));
+            }
             let mut available = lane.available.lock().map_err(storage)?;
             if let Some(connection) = available.idle.pop() {
                 return Ok(PooledConnection {
@@ -198,6 +226,7 @@ impl ConnectionPool {
                             conn.execute_batch("PRAGMA query_only=ON;")
                                 .map_err(storage)?;
                         }
+                        conn.busy_handler(Some(bounded_busy)).map_err(storage)?;
                         Ok(conn)
                     })();
                     match opened {
