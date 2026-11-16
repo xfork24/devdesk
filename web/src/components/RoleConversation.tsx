@@ -57,7 +57,7 @@ export function RoleConversation({
   const [agent, setAgent] = useState("");
   const [editing, setEditing] = useState<Row>();
   const [sessions, setSessions] = useState<Row[]>([]);
-  const [sessionId, setSessionId] = useState("");
+  const [sessionId, setSessionId] = useState(initialSession || "");
   const [detail, setDetail] = useState<Row>();
   const currentBinding =
     detail?.current_runtime_binding || detail?.session.runtime_binding;
@@ -320,6 +320,7 @@ export function RoleConversation({
     (detail?.output_contract?.id &&
       detail.output_contract.id !== "proposal-content/v1"),
   );
+  const controller = detail?.controller;
   const scopedRequest = useCallback(
     (method: string, params: Row = {}) =>
       request(method, {
@@ -345,13 +346,19 @@ export function RoleConversation({
     const current = ++listGeneration.current;
     const result = await scopedRequest("query.sessions", {
       owner_id: owner,
-      agent_instance_id: instanceId || undefined,
+      agent_instance_id: sessionAnchor ? undefined : instanceId || undefined,
       workflow_session_id: sessionAnchor || undefined,
       step_execution_id: sessionAnchor ? undefined : recommendedStepId,
-      agent: agent || undefined,
+      agent: sessionAnchor ? undefined : agent || undefined,
     });
     if (current === listGeneration.current) {
       setSessions(result.sessions);
+      // A deep link pins the requested session before role/instance discovery.
+      // Neither a recommended worker nor a newer session may replace it.
+      if (sessionAnchor) {
+        if (!manualSession.current) setSessionId(sessionAnchor);
+        return;
+      }
       if (!manualSession.current && (instanceId || agent || sessionAnchor)) {
         const latest = result.sessions.find((s: Row) =>
           instanceId
@@ -514,6 +521,20 @@ export function RoleConversation({
     event.preventDefault();
     if (!detail || !input.trim()) return;
     await action(async () => {
+      if (controller) {
+        await command(
+          "orchestration.input",
+          controller.id,
+          controller.revision,
+          {
+            epoch: controller.data.epoch,
+            input,
+          },
+        );
+        setInput("");
+        await refresh();
+        return;
+      }
       const result = await command(
         "conversation.send",
         sessionId,
@@ -1150,7 +1171,7 @@ export function RoleConversation({
           <ActionForm onSubmit={send}>
             <MarkdownField
               label="讨论输入"
-              disabled={formalOutput}
+              disabled={formalOutput && !controller}
               value={input}
               onChange={(value) => {
                 captureFeedback();
@@ -1164,19 +1185,28 @@ export function RoleConversation({
               className="primary"
               disabled={
                 busy ||
-                formalOutput ||
-                !!active ||
-                [
-                  "needs_reconciliation",
-                  "requires_successor",
-                  "closed",
-                ].includes(detail.session.lifecycle)
+                (controller
+                  ? !["active", "budget_exhausted"].includes(
+                      controller.data.status,
+                    )
+                  : formalOutput ||
+                    !!active ||
+                    [
+                      "needs_reconciliation",
+                      "requires_successor",
+                      "closed",
+                    ].includes(detail.session.lifecycle))
               }
             >
               发送
             </ActionButton>
           </ActionForm>
-          {formalOutput && (
+          {controller && (
+            <p className="muted">
+              消息会交给项目经理处理；需求澄清可直接在此回答，经理会转交你的原话并推进流程。
+            </p>
+          )}
+          {formalOutput && !controller && (
             <p className="muted">
               该会话用于正式执行或校验。请在“执行与交付”的对应步骤查看模型结论并执行人类
               Approve。

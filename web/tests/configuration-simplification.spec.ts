@@ -9,6 +9,145 @@ async function rpc(page: Page, method: string, params: object = {}) {
   expect(value.error, JSON.stringify(value)).toBeUndefined();
   return value.result;
 }
+test("OAuth 登录组件诊断与执行镜像分别展示", async ({
+  page,
+  context,
+}, info) => {
+  let installed = false;
+  let imagesPrepared = false;
+  const native = {
+    id: "native-auth",
+    key: {
+      provider: "codex",
+      version: "0.167.0",
+      os: "macos",
+      arch: "aarch64",
+    },
+    artifact: { kind: "executable", canonical_path: "/fixture/login/codex" },
+  };
+  const images = [
+    {
+      id: "codex-image",
+      key: {
+        provider: "codex",
+        version: "0.167.0",
+        os: "linux",
+        arch: "aarch64",
+      },
+      artifact: {
+        kind: "docker_image",
+        image_id: "sha256:fixture-codex-image",
+      },
+    },
+    {
+      id: "dsh-image",
+      key: {
+        provider: "dsh",
+        version: "fixture",
+        os: "linux",
+        arch: "aarch64",
+      },
+      artifact: {
+        kind: "oci_image",
+        reference: "registry.example/dsh@sha256:fixture",
+      },
+    },
+  ];
+  await context.route("https://auth.openai.com/**", (route) =>
+    route.fulfill({
+      body: "Official authorization fixture",
+      contentType: "text/html",
+    }),
+  );
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.workspace") {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.result.runtime_installations = [
+        ...(installed ? [native] : []),
+        ...(imagesPrepared ? images : []),
+      ];
+      await route.fulfill({ json: body });
+      return;
+    }
+    let result;
+    if (call.method === "codex.auth.status") result = { authenticated: false };
+    else if (call.method === "codex.auth.start") {
+      installed = true;
+      result = {
+        loginId: "fixture-login",
+        authUrl: "https://auth.openai.com/authorize?fixture=settings-assets",
+      };
+    } else if (call.method === "runtime.prepare") {
+      imagesPrepared = true;
+      result = images[0];
+    } else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto("/?tab=settings");
+  const oauth = page.locator(".setting-row").filter({
+    has: page.getByRole("heading", {
+      name: "Codex · ChatGPT OAuth",
+      exact: true,
+    }),
+  });
+  const execution = page.locator(".setting-row").filter({
+    has: page.getByRole("heading", { name: "执行镜像", exact: true }),
+  });
+  await expect(
+    page.getByText("本地安装与执行镜像", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    oauth.getByText("登录组件尚未准备，网页登录时自动准备", { exact: true }),
+  ).toBeVisible();
+  await expect(oauth.locator("details")).toHaveCount(0);
+  await expect(
+    execution.getByText("尚未准备执行镜像；首次执行时自动准备", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const opened = page.waitForEvent("popup");
+  await oauth.getByRole("button", { name: "网页登录", exact: true }).click();
+  const authorization = await opened;
+  await expect(authorization).toHaveURL(/auth\.openai\.com\/authorize/);
+  await authorization.close();
+  await expect(
+    oauth.getByText("登录组件已安装", { exact: true }),
+  ).toBeVisible();
+  for (const text of ["0.167.0", "macos/aarch64", "/fixture/login/codex"])
+    await expect(oauth.getByText(text, { exact: true })).toBeHidden();
+  await expect(execution).not.toContainText(/macos|\/fixture\/login\/codex/);
+  await expect(
+    execution.getByText("尚未准备执行镜像；首次执行时自动准备", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const diagnostic = oauth.getByText("登录组件诊断详情", { exact: true });
+  await diagnostic.click();
+  for (const text of ["0.167.0", "macos/aarch64", "/fixture/login/codex"])
+    await expect(oauth.getByText(text, { exact: true })).toBeVisible();
+  await diagnostic.click();
+  await expect(
+    oauth.getByText("/fixture/login/codex", { exact: true }),
+  ).toBeHidden();
+  await execution
+    .getByRole("button", { name: "准备所选 Harness 执行镜像", exact: true })
+    .click();
+  await expect(execution).toContainText("sha256:fixture-codex-image");
+  await expect(execution).toContainText("registry.example/dsh@sha256:fixture");
+  await expect(execution).not.toContainText(
+    /macos|\/fixture\/login\/codex|尚未准备执行镜像/,
+  );
+  await expect(oauth).not.toContainText(/fixture-codex-image|registry.example/);
+  await expect(
+    oauth.getByText("登录组件已安装", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("settings-assets.png"),
+    fullPage: true,
+  });
+});
 test("配置归属与权限工具行，Workflow 内嵌调度", async ({ page }, info) => {
   await page.goto("/?tab=components&config_tab=permission");
   await expect(page.getByLabel("统一权限 JSON")).toBeVisible();

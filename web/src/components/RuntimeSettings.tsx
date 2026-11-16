@@ -40,6 +40,14 @@ export function RuntimeSettings({
   const [preparing, setPreparing] = useState(false);
   const [runtimePreparing, setRuntimePreparing] = useState(false);
   const [phase, setPhase] = useState("");
+  const loginComponents = installations.filter(
+    (runtime) =>
+      runtime.key.provider === "codex" &&
+      runtime.artifact.kind === "executable",
+  );
+  const executionImages = installations.filter((runtime) =>
+    ["docker_image", "oci_image"].includes(runtime.artifact.kind),
+  );
   useEffect(() => {
     if (!preparing && !runtimePreparing) return;
     let active = true;
@@ -132,8 +140,40 @@ export function RuntimeSettings({
           <h3>Codex · ChatGPT OAuth</h3>
           <p className="muted">
             登录组件由 DevDesk
-            自动准备，通过官方网页授权；登录信息保存在此数据集的独立目录。
+            自动准备，用于官方网页授权、登录状态检查与模型目录查询；登录信息保存在此数据集的独立目录。
           </p>
+          <p className="muted">
+            {preparing
+              ? "正在准备登录组件…"
+              : loginComponents.length > 0
+                ? "登录组件已安装"
+                : "登录组件尚未准备，网页登录时自动准备"}
+          </p>
+          {loginComponents.length > 0 && (
+            <details>
+              <summary>登录组件诊断详情</summary>
+              {loginComponents.map((runtime) => (
+                <dl className="readable-fields" key={runtime.id}>
+                  <div>
+                    <dt>版本</dt>
+                    <dd>{runtime.key.version}</dd>
+                  </div>
+                  <div>
+                    <dt>平台</dt>
+                    <dd>
+                      {runtime.key.os}/{runtime.key.arch}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>路径</dt>
+                    <dd>
+                      <code>{runtime.artifact.canonical_path}</code>
+                    </dd>
+                  </div>
+                </dl>
+              ))}
+            </details>
+          )}
           <div className="actions">
             <ActionButton
               disabled={busy}
@@ -273,7 +313,7 @@ export function RuntimeSettings({
       <DshProviderSettings request={request} />
       <div className="setting-row">
         <div>
-          <h3>本地安装与执行镜像</h3>
+          <h3>执行镜像</h3>
           <ActionButton
             disabled={busy}
             onClick={async () => {
@@ -299,12 +339,12 @@ export function RuntimeSettings({
             准备所选 Harness 执行镜像
           </ActionButton>
           <p className="muted">
-            固定版本程序与镜像在本机保存复用；只有缺少匹配资产时才下载或构建。
+            执行镜像在本机保存复用；只有缺少匹配镜像时才下载或构建。
           </p>
-          {installations.length === 0 ? (
-            <p className="muted">尚未准备项目执行运行时；首次执行时自动准备</p>
+          {executionImages.length === 0 ? (
+            <p className="muted">尚未准备执行镜像；首次执行时自动准备</p>
           ) : (
-            installations.map((runtime) => (
+            executionImages.map((runtime) => (
               <p key={runtime.id}>
                 {runtime.key.provider} · {runtime.key.version} ·{" "}
                 {runtime.key.os}/{runtime.key.arch}

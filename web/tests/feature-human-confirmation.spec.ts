@@ -248,7 +248,15 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
   await expect(
     start.getByText("Feature 尚未启动", { exact: true }),
   ).toBeVisible();
+  await expect(page.locator(".work-standard")).toHaveCount(0);
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  await expect(
+    page.getByRole("tablist", { name: "执行详情" }).getByRole("tab"),
+  ).toHaveText(["项目经理", "工作流程", "材料", "上下文", "执行记录"]);
+  await expect(page.locator(".work-standard")).toBeVisible();
+  await expect(start).toHaveCount(0);
   expect(submitted).toBeUndefined();
+  await page.getByRole("tab", { name: "工作流程", exact: true }).click();
   await start
     .getByRole("button", { name: "启动 Feature", exact: true })
     .click();

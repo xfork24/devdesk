@@ -44,7 +44,7 @@ test("没有项目时可以选择 Agent 并查看完整能力和经验入口", a
   await page
     .getByText("Agent 经验 · 项目 / Feature / 时间", { exact: true })
     .click();
-  await expect(page.getByText(/0\s*条快照/)).toBeVisible();
+  await expect(page.getByText(/0\s*条经验/)).toBeVisible();
   const workspace = await rpc(page, "query.workspace");
   expect(workspace.active_project).toBeNull();
   await page.screenshot({

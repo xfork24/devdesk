@@ -122,16 +122,29 @@ impl Engine {
             return Ok(());
         }
         let known = global.snapshot()?;
-        if records
-            .iter()
-            .all(|r| known.governance.iter().any(|old| old.id == r.id))
-        {
+        if records.iter().all(|r| {
+            known
+                .governance
+                .iter()
+                .any(|old| old.id == r.id && old.revision >= r.revision)
+        }) {
             return Ok(());
         }
         global.transact(None, &mut |s| {
             for r in &records {
-                if let Some(old) = s.governance.iter().find(|old| old.id == r.id) {
-                    require(old == r, "经验目录摘要冲突")?;
+                if let Some(old) = s.governance.iter_mut().find(|old| old.id == r.id) {
+                    if !old.immutable
+                        && !r.immutable
+                        && old.definition_id == r.definition_id
+                        && r.revision > old.revision
+                    {
+                        *old = r.clone();
+                    } else {
+                        require(
+                            old == r || (!old.immutable && old.revision > r.revision),
+                            "经验目录摘要冲突",
+                        )?;
+                    }
                 } else {
                     s.governance.push(r.clone());
                 }

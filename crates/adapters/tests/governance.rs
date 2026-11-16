@@ -427,6 +427,90 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         )
         .is_err()
     );
+    // A current Feature index can advance while old sealed references stay readable.
+    let source_engine = Engine::new(
+        Arc::new(SqliteStore::open_project(root.path(), &projects[0]).unwrap()),
+        Arc::new(FileArtifacts::new(
+            SqliteStore::project_path(root.path(), &projects[0]).unwrap(),
+        )),
+        runtime::adapters(),
+    );
+    let mut current = source_engine
+        .store
+        .snapshot()
+        .unwrap()
+        .governance
+        .into_iter()
+        .find(|row| row.r#type == "experience" && row.data["agent_instance_id"] == instance)
+        .unwrap();
+    current.id = "feature-experience-index".into();
+    current.definition_id = "feature-experience".into();
+    current.immutable = false;
+    current.data["feature_id"] = json!("feature-experience");
+    current.content_hash = content_digest(&current.refs, &current.data);
+    source_engine
+        .store
+        .transact(None, &mut |state| {
+            state.governance.push(current.clone());
+            Ok(Value::Null)
+        })
+        .unwrap();
+    source_engine.publish_experience_index(&*global).unwrap();
+    let next_snapshot = command(
+        &source_engine,
+        "snapshot.save",
+        Some(&projects[0]),
+        json!({}),
+    )
+    .unwrap()["id"]
+        .clone();
+    source_engine
+        .store
+        .transact(None, &mut |state| {
+            let row = state
+                .governance
+                .iter_mut()
+                .find(|row| row.id == current.id)
+                .unwrap();
+            let previous = row.data.clone();
+            row.data["history"] = json!([previous]);
+            row.data["snapshot_id"] = next_snapshot.clone();
+            row.data["captured_at"] = json!(2000);
+            row.content_hash = content_digest(&row.refs, &row.data);
+            row.revision += 1;
+            Ok(Value::Null)
+        })
+        .unwrap();
+    source_engine.publish_experience_index(&*global).unwrap();
+    assert_eq!(
+        global
+            .snapshot()
+            .unwrap()
+            .configuration(&current.id)
+            .unwrap()
+            .revision,
+        2
+    );
+    let grouped = lookup(
+        &projects[0],
+        &instance,
+        json!({"feature_id":"feature-experience"}),
+    )
+    .unwrap();
+    assert_eq!(grouped["total"], 1);
+    assert_eq!(grouped["records"][0]["snapshot_id"], next_snapshot);
+    assert_eq!(grouped["records"][0]["snapshot_count"], 2);
+    assert!(grouped["records"][0].get("history").is_none());
+    assert_eq!(
+        lookup(
+            &projects[0],
+            &instance,
+            json!({"feature_id":"feature-experience","snapshot_id":sid})
+        )
+        .unwrap()["integrity"],
+        "verified"
+    );
+
     std::fs::write(
         SqliteStore::project_path(root.path(), &pid)
             .unwrap()
@@ -447,7 +531,7 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
         .join("engineering.sqlite3");
     std::fs::rename(&db, db.with_extension("offline")).unwrap();
     let offline = lookup(&projects[0], &instance, json!({})).unwrap();
-    assert_eq!(offline["total"], 2);
+    assert_eq!(offline["total"], 3);
     assert!(
         offline["records"]
             .as_array()
