@@ -193,6 +193,7 @@ impl SqliteStore {
         memo: &mut std::collections::BTreeMap<String, Value>,
     ) -> Result<EngineeringState> {
         let _span = performance::Span::new("project.full_snapshot");
+        source_views::begin_snapshot(memo);
         let mut s = EngineeringState::default();
         s.governance = source_store::load_records(conn)?;
         s.orchestration_wakeups = load_table(conn, "orchestration_wakeups")?;
