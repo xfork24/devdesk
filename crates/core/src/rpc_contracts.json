@@ -1333,6 +1333,24 @@
       ]
     },
     {
+      "method": "query.orchestration_decision",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
+      "method": "query.orchestration_summary",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "query.permission_resources",
       "access": "read",
       "scope": "explicit",
@@ -1667,6 +1685,15 @@
       "sites": [
         "crates/core/src/lib.rs",
         "crates/host/src/governance.rs"
+      ]
+    },
+    {
+      "method": "query.workflow_driver_summary",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
       ]
     },
     {
@@ -2356,7 +2383,7 @@
       "method": "workflow.driver.select",
       "access": "mutation",
       "scope": "explicit",
-      "precondition": "resource_read_set",
+      "precondition": "root_revision_and_driver_epoch",
       "sites": [
         "crates/core/src/workflow_driver.rs"
       ]

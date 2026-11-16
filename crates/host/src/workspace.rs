@@ -272,6 +272,33 @@ impl Workspace {
             .map(|outcome| outcome.value)
     }
     pub fn dispatch_with_receipt(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+        if [
+            "query.orchestration_summary",
+            "query.workflow_driver_summary",
+            "query.orchestration_decision",
+        ]
+        .contains(&method)
+        {
+            let project = devdesk_core::read_models::identifier(&params, "project_id")?;
+            let engine = self.project_engine(Some(&project))?;
+            let value = match method {
+                "query.orchestration_summary" => json!(engine.store.orchestration_summary(
+                    &devdesk_core::read_models::ControllerQuery::parse(&params)?
+                )?),
+                "query.workflow_driver_summary" => json!(engine.store.workflow_driver_summary(
+                    &devdesk_core::read_models::identifier(&params, "id")?
+                )?),
+                _ => {
+                    json!(engine.store.workflow_decision(
+                        &devdesk_core::read_models::identifier(&params, "id")?
+                    )?)
+                }
+            };
+            return Ok(RpcOutcome {
+                value,
+                commit: None,
+            });
+        }
         if method == "query.settings" {
             return Ok(RpcOutcome {
                 value: json!(devdesk_core::settings::read(self.global.as_ref())?),
@@ -1032,6 +1059,68 @@ mod tests {
     pub(super) fn read_project(w: &Workspace, id: &str) -> Value {
         w.dispatch("query.workspace", json!({"project_id":id}))
             .unwrap()
+    }
+
+    #[test]
+    fn execution_summaries_bypass_the_catalog_gate_and_legacy_project_writer() {
+        use std::{sync::mpsc, time::Duration};
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = Arc::new(
+            Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap(),
+        );
+        let project = create(&workspace, "Read admission");
+        let engine = workspace.project_engine(Some(&project)).unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            engine.store.transact(None, &mut |_| {
+                ready_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                Ok(Value::Null)
+            })
+        });
+        ready_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        let gate = workspace.template_gate.lock().unwrap();
+        let (result_tx, result_rx) = mpsc::channel();
+        let reader_workspace = workspace.clone();
+        let reader = std::thread::spawn(move || {
+            let trace = performance::Trace::start();
+            let summary = reader_workspace.dispatch(
+                "query.orchestration_summary",
+                json!({"project_id":project,"id":"missing"}),
+            );
+            let driver = reader_workspace.dispatch(
+                "query.workflow_driver_summary",
+                json!({"project_id":project,"id":"missing"}),
+            );
+            let decision = reader_workspace.dispatch(
+                "query.orchestration_decision",
+                json!({"project_id":project,"id":"missing"}),
+            );
+            result_tx
+                .send((summary, driver, decision, trace.finish()))
+                .unwrap();
+        });
+        // Test admission independently of the locks; this is not a latency benchmark.
+        let result = result_rx.recv_timeout(Duration::from_secs(2));
+        drop(gate);
+        release_tx.send(()).unwrap();
+        writer.join().unwrap().unwrap();
+        reader.join().unwrap();
+        let (summary, driver, decision, trace) =
+            result.expect("summary reads waited for a business lock");
+        assert!(summary.unwrap()["record"].is_null());
+        assert_eq!(driver.unwrap_err().code, "not_found");
+        assert_eq!(decision.unwrap_err().code, "not_found");
+        for span in [
+            "catalog.gate_wait",
+            "project.full_snapshot",
+            "project.transaction",
+            "source.restore_records",
+            "source.restore_reference",
+        ] {
+            assert!(trace["spans"][span].is_null(), "{span}: {trace}");
+        }
     }
 
     #[test]

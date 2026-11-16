@@ -3,6 +3,7 @@ mod configuration_backend;
 mod configuration_cache;
 mod connection_pool;
 pub mod performance;
+mod read_models;
 mod resource_commits;
 mod runtime_queries;
 mod store_changes;
@@ -417,7 +418,7 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 50,
+        version == 0 || version == 51,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -596,6 +597,39 @@ impl EngineeringStore for SqliteStore {
             self.changes.notify();
         }
         Ok(receipt)
+    }
+    fn orchestration_summary(
+        &self,
+        query: &devdesk_core::read_models::ControllerQuery,
+    ) -> Result<devdesk_core::read_models::OrchestrationSummary> {
+        read_models::orchestration(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "经理摘要需要明确项目"))?,
+            query,
+        )
+    }
+    fn workflow_driver_summary(
+        &self,
+        id: &str,
+    ) -> Result<devdesk_core::read_models::WorkflowDriverSummary> {
+        read_models::driver(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "驱动摘要需要明确项目"))?,
+            id,
+        )
+    }
+    fn workflow_decision(&self, id: &str) -> Result<devdesk_core::read_models::DecisionDetail> {
+        read_models::decision(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "决定请求需要明确项目"))?,
+            id,
+        )
     }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)

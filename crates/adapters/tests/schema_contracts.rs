@@ -378,6 +378,58 @@ fn settings_request_requires_an_explicit_resource_version_envelope() {
 }
 
 #[test]
+fn execution_summary_reads_are_scoped_and_driver_selection_requires_both_versions() {
+    let validator = SCHEMAS.validator("rpc.schema.json");
+    for (method, params) in [
+        (
+            "query.orchestration_summary",
+            json!({"project_id":"project", "root_instance_id":"root"}),
+        ),
+        (
+            "query.orchestration_summary",
+            json!({"project_id":"project", "owner_id":"owner", "workspace_only":true,"decision_before":123}),
+        ),
+        (
+            "query.workflow_driver_summary",
+            json!({"project_id":"project", "id":"root"}),
+        ),
+        (
+            "query.orchestration_decision",
+            json!({"project_id":"project", "id":"decision"}),
+        ),
+        (
+            "workflow.driver.select",
+            json!({"project_id":"project", "command_id":"select", "target":"root", "expected_revision":7,"payload":{"mode":"rust", "expected_driver_epoch":0}}),
+        ),
+    ] {
+        let mut request = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
+        assert!(validator.is_valid(&request), "{request}");
+        request["params"]
+            .as_object_mut()
+            .unwrap()
+            .remove("project_id");
+        assert!(!validator.is_valid(&request), "{request}");
+    }
+    for params in [
+        json!({"project_id":"project", "root_instance_id":"root", "owner_id":"owner"}),
+        json!({"project_id":"project", "root_instance_id":"root", "decision_before":0}),
+        json!({"project_id":"project", "root_instance_id":"root", "workspace_only":null}),
+    ] {
+        assert!(!validator.is_valid(
+            &json!({"jsonrpc":"2.0","id":1,"method":"query.orchestration_summary","params":params})
+        ));
+    }
+    for params in [
+        json!({"project_id":"project", "command_id":"select", "target":"root", "payload":{"mode":"rust", "expected_driver_epoch":0}}),
+        json!({"project_id":"project", "command_id":"select", "target":"root", "expected_revision":7,"payload":{"mode":"rust"}}),
+    ] {
+        assert!(!validator.is_valid(
+            &json!({"jsonrpc":"2.0","id":1,"method":"workflow.driver.select","params":params})
+        ));
+    }
+}
+
+#[test]
 fn rpc_request_dispatch_validates_the_current_parameter_contracts() {
     let validator = SCHEMAS.validator("rpc.schema.json");
     for method in [

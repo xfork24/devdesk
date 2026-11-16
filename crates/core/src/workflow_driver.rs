@@ -17,6 +17,15 @@ fn driver<'a>(s: &'a EngineeringState, root: &str) -> Option<&'a ConfigurationRe
         .iter()
         .find(|r| r.r#type == "workflow_driver" && r.definition_id == root)
 }
+fn driver_epoch(row: Option<&ConfigurationRecord>) -> Result<u64> {
+    row.map(|row| {
+        row.data["epoch"]
+            .as_u64()
+            .ok_or_else(|| err("storage", "驱动缺少有效控制代次"))
+    })
+    .transpose()
+    .map(|value| value.unwrap_or(0))
+}
 fn operation(method: &str) -> &str {
     method.rsplit('.').next().unwrap_or(method)
 }
@@ -30,11 +39,19 @@ impl Engine {
         if value.is_null() || value["mode"] == "manual" {
             return Ok(());
         }
+        let mut payload = value
+            .as_object()
+            .cloned()
+            .ok_or_else(|| err("invalid_params", "驱动选择必须是对象"))?;
+        payload.insert(
+            "expected_driver_epoch".into(),
+            json!(driver_epoch(driver(s, &root.id))?),
+        );
         let c = Command {
             command_id: format!("{}:driver", root.id),
             target: Some(root.id.clone()),
             expected_revision: Some(root.revision),
-            payload: value.clone(),
+            payload: Value::Object(payload),
         };
         self.workflow_driver_command("workflow.driver.select", &c, s, &WorkflowActor::Human)?;
         Ok(())
@@ -58,18 +75,46 @@ impl Engine {
             root.r#type == "workflow_instance" && root.data["root_instance_id"] == root.id,
             "只能为根实例选择驱动",
         )?;
-        require(c.expected_revision == Some(root.revision), "流程修订冲突")?;
+        require(
+            c.payload.as_object().is_some_and(|fields| {
+                fields.keys().all(|key| {
+                    ["mode", "expected_driver_epoch", "plan_revision_id"].contains(&key.as_str())
+                })
+            }),
+            "驱动选择包含未知字段",
+        )?;
+        if let Some(plan) = c.payload.get("plan_revision_id") {
+            require(
+                plan.as_str().is_some_and(|plan| !plan.is_empty()),
+                "计划引用需要字符串",
+            )?;
+            if plan != &root.data["active_plan_revision_id"] {
+                return Err(err("revision_conflict", "流程计划已改变"));
+            }
+        }
+        let expected_epoch = c.payload["expected_driver_epoch"]
+            .as_u64()
+            .ok_or_else(|| err("precondition_required", "缺少驱动控制代次"))?;
+        let previous = driver(s, &root.id).cloned();
+        let actual_epoch = driver_epoch(previous.as_ref())?;
+        if expected_epoch != actual_epoch {
+            return Err(err("revision_conflict", "驱动控制代次已改变"));
+        }
+        if c.expected_revision.is_none() {
+            return Err(err("precondition_required", "缺少流程版本"));
+        }
+        if c.expected_revision != Some(root.revision) {
+            return Err(err("revision_conflict", "流程修订冲突"));
+        }
         require(
             !["completed", "cancelled"].contains(&root.data["status"].as_str().unwrap_or("")),
             "流程已结束",
         )?;
         let selection = validate_selection(s, &json!({"mode":c.payload["mode"]}), &root.scope)?;
-        let previous = driver(s, &root.id).cloned();
-        let epoch = previous
-            .as_ref()
-            .and_then(|r| r.data["epoch"].as_u64())
-            .unwrap_or(0)
-            + 1;
+        let epoch = actual_epoch
+            .checked_add(1)
+            .filter(|value| *value <= i64::MAX as u64)
+            .ok_or_else(|| err("resource_exhausted", "驱动控制代次超出范围"))?;
         // Revoke old controller calls and segments, while preserving every business worker.
         let controllers: Vec<_> = s
             .governance

@@ -244,7 +244,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            50,
+            51,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -269,7 +269,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
             db.prepare("SELECT revision FROM resource_versions WHERE kind=?1 AND resource_id=?2")
                 .is_ok()
         );
-        if version == 50 {
+        if version == 51 {
             for table in ["projects", "features", "tasks", "snapshots"] {
                 let columns: Vec<String> = db
                     .prepare(&format!("PRAGMA table_info({table})"))
@@ -287,6 +287,30 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
         }
         assert_eq!(db.query_row("SELECT count(*) FROM sqlite_master WHERE name IN ('permissions','idx_governance_conversion_source','idx_execution_task')", [], |r|r.get::<_, u32>(0)).unwrap(), 0);
     }
+}
+
+#[test]
+fn the_previous_project_database_is_rejected_without_conversion() {
+    let directory = tempfile::tempdir().unwrap();
+    let project = id();
+    let root = SqliteStore::project_path(directory.path(), &project).unwrap();
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join(".devdesk-dataset"),
+        "devdesk-profile-runtime-v2\n",
+    )
+    .unwrap();
+    let path = root.join("engineering.sqlite3");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("CREATE TABLE sentinel(value TEXT); INSERT INTO sentinel VALUES ('retained'); PRAGMA user_version=50;").unwrap();
+    drop(conn);
+    let before = std::fs::read(&path).unwrap();
+    let error = SqliteStore::open_project(directory.path(), &project)
+        .err()
+        .unwrap();
+    assert!(error.message.contains("数据集协议不兼容"));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(!root.join("engineering.sqlite3-wal").exists());
 }
 
 #[cfg(unix)]

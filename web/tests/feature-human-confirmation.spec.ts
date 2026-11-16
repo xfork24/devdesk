@@ -447,10 +447,10 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
       case "query.configurations":
         result = { records: [] };
         break;
-      case "query.orchestration":
+      case "query.orchestration_summary":
         result = { record: null, decisions: [], calls: [] };
         break;
-      case "query.workflow_driver":
+      case "query.workflow_driver_summary":
         result = { driver: null };
         break;
       case "workflow.step.confirm":

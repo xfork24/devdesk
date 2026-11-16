@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 20 / project 50；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 20 / project 51；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
@@ -190,9 +190,13 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 ## 编排与运行计划
 
-项目和工作选择中的 `orchestration` 为 `{mode:"manual"|"rust"|"agent"}`。每个 Workflow 的 scheduling 包含并发、每轮动作、租约、技术重试和 agent 唤醒预算，随工作流和 Standard 冻结。`workflow.driver.select` 是人类命令，target 为根实例，expected_revision 为其当前修订，payload 只选择模式。它撤销旧控制代次和未派发控制意图，不停止业务 worker。`query.workflow_driver` 返回实际模式、冻结调度参数、epoch 与等待门禁。
+项目和工作选择中的 `orchestration` 为 `{mode:"manual"|"rust"|"agent"}`。每个 Workflow 的 scheduling 包含并发、每轮动作、租约、技术重试和 agent 唤醒预算，随工作流和 Standard 冻结。`workflow.driver.select` 是人类命令，显式携带 project_id，target 为根实例，expected_revision 为编辑时的根修订，payload 为 `{mode,expected_driver_epoch}`，可附原 `plan_revision_id`。不存在驱动时 epoch 为 0；命令同时核对根修订和驱动代次，缺失前置条件拒绝，过期返回 revision_conflict。它撤销旧控制代次和未派发控制意图，不停止业务 worker。`query.workflow_driver` 保留冻结调度参数与动作资格的完整查询语义。
 
 `orchestration.open/input/takeover/resume` 管理项目经理及后继会话；`query.orchestration` 返回对话、实际控制调用和待人类决定请求。输入是用户自然语言，只有冻结 Capability/Permission 允许的原生工具调用才产生控制效果。
+
+Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_summary`。两者要求 project_id，在独立只读快照中读取原生运行元数据，不取得模板门闩、不同步配置、不恢复完整工程状态或编译计划。前者用 id/root_instance_id/owner_id 唯一定位经理，可附 workspace_only；返回最近 10 条消息节选（每条 512 字符）、5 条调用状态、10 条待决定摘要和 more 标记，待决定项按 next_decision_before 翻页。后者用实例 id 定位根驱动，返回当前根代次、所查实例的原生修订与至多 20 条等待节选；observed_only=true，不能据此推导动作授权。两者 cursor 是各自读快照内的项目事件游标，不是跨查询的原子快照。
+
+`query.orchestration_decision({project_id,id})` 按需返回待决定项的确切修订、状态、计划引用与 request_json；请求以 JSON 字符串传输，避免浏览器 Number 将大整数舍入。普通摘要不携带完整请求。界面先显示并核对确切请求，再允许决定，提交使用已读修订；后续摘要发现更新时保留原内容并要求重新读取，不自动替换签署依据。待决定/人类决定记录的 request 是原始输入事实，不进入配置源的展开/引用编解码。
 
 控制工具：`workflow.inspect/events.read/outputs.read/execution.inspect`，`step.dispatch/accept/input/retry/rework`，`execution.stop/reconcile`，`pause/resume/cancel/complete`，`change.preview/apply`，`materials.import`，`decision.request` 和 `segment.dispatch`（均带 workflow 前缀）。人类通过 `workflow.decision.resolve` 签署确切请求。写入绑定活动 plan_revision_id；接纳还绑定 execution_id、input_digest 及输出 ID，变更绑定预演哈希。
 
@@ -210,7 +214,7 @@ interaction 包含 title、background、requested_action、completed_work、revi
 
 ## 独立经理工作台
 
-`manager.open` 的 target 是项目 ID，payload 可指定精确 `agent_ref` 与 Harness Profile 的 `harness_permission_ref`；它可以在没有 Feature 或使用 Rust 根驱动时建立工作台。`query.orchestration({owner_id:project_id,workspace_only:true,project_id})` 读取工作台；已建立 Controller 的输入、接管与恢复沿用 `orchestration.input/takeover/resume`。
+`manager.open` 的 target 是项目 ID，payload 可指定精确 `agent_ref` 与 Harness Profile 的 `harness_permission_ref`；它可以在没有 Feature 或使用 Rust 根驱动时建立工作台。Web 使用 `query.orchestration_summary({owner_id:project_id,workspace_only:true,project_id})` 读取工作台；已建立 Controller 的输入、接管与恢复沿用 `orchestration.input/takeover/resume`。
 
 经理原生工具包括 `project.overview/records.list/record.read/artifact.read/resources`、`configuration.catalog/read/usage/change.preview/change.apply/transfer.stage/transfer.apply/transfer.cancel/transfer.status` 和 `spec.lint`。概览只给摘要；列表与正文提供有界分页/分块、value_digest、next_offset。工具绑定固定项目，不接受任意 RPC、SQL、文件路径或改项目参数。已知凭据字段遮蔽；共享配置写入另需 `configuration.global.write`。
 

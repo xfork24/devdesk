@@ -1,0 +1,231 @@
+//! SQL projection fixtures deliberately contain an unreadable historical plan.
+//! They do not represent a dispatched worker or a workflow acceptance run.
+use devdesk_adapters::{FileArtifacts, SqliteStore, performance};
+use devdesk_core::{Command, Engine, EngineeringStore, read_models::*};
+use std::sync::Arc;
+#[path = "../../../tests/support/runtime.rs"]
+mod runtime;
+use devdesk_domain::{References, content_digest};
+use rusqlite::{Connection, params};
+use serde_json::{Value, json};
+
+const PROJECT: &str = "c8516249-60a3-444a-988d-e5bf0e257611";
+const OTHER: &str = "f62ddc57-2b83-4c67-b8d6-a7dbbfaaeea8";
+fn record(conn: &Connection, project: &str, id: &str, kind: &str, definition: &str, data: Value) {
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,supersedes,content_hash,refs,data,immutable,revision,created_at) VALUES(?1,?2,?3,?4,?1,1,NULL,?5,'{}',?6,0,7,1)",
+        params![id,kind,definition,json!(format!("project:{project}")).to_string(),content_digest(&References::new(),&data),data.to_string()]).unwrap();
+}
+fn fixture(
+    root: &std::path::Path,
+    project: &str,
+    text: &str,
+) -> (Arc<SqliteStore>, Connection, Value) {
+    let store = Arc::new(SqliteStore::open_project(root, project).unwrap());
+    let engine = Engine::new(
+        store.clone(),
+        Arc::new(FileArtifacts::new(std::path::PathBuf::from(store.root()))),
+        runtime::adapters(),
+    );
+    engine.bootstrap().unwrap();
+    engine
+        .execute(
+            "project.create",
+            Command {
+                command_id: "fixture-project".into(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"title":"Fixture"}),
+            },
+        )
+        .unwrap();
+    let (session, turn) = runtime::queue_conversation(&engine, project);
+    let conn = Connection::open(
+        SqliteStore::project_path(root, project)
+            .unwrap()
+            .join("engineering.sqlite3"),
+    )
+    .unwrap();
+    // Runtime rows below are projection/fault fixtures, not accepted worker receipts.
+    let steps=(0..30).map(|n|json!({"id":format!("execution-{n}"),"step":format!("step-{n}"),"path":format!("work/{n}"),"status":"waiting_input","reason":"需补充输入"})).collect::<Vec<_>>();
+    record(
+        &conn,
+        project,
+        "root",
+        "workflow_instance",
+        "root",
+        json!({"owner_id":project,"root_instance_id":"root","status":"running","steps":steps,"plan":{"$source":"not-a-restorable-plan","large_history":"x".repeat(100_000)}}),
+    );
+    record(
+        &conn,
+        project,
+        "controller",
+        "workflow_controller",
+        "root",
+        json!({"project_id":project,"owner_id":project,"root_instance_id":"root","role_ref":"role:1","agent_revision_id":"agent:1","harness_permission_ref":"permission:1","session_id":session,"epoch":3,"status":"active","reason":text}),
+    );
+    record(
+        &conn,
+        project,
+        "driver",
+        "workflow_driver",
+        "root",
+        json!({"mode":"rust","epoch":4,"reason":text}),
+    );
+    for n in 0..35 {
+        conn.execute("INSERT INTO conversation_events(id,session_id,turn_id,sequence,deduplication_key,kind,content,time) VALUES(?1,?2,?3,?4,?1,'assistant',?5,1)",params![format!("message-{n}"),session,turn,n,text]).unwrap();
+        record(
+            &conn,
+            project,
+            &format!("call-{n}"),
+            "controller_tool_call",
+            "controller",
+            json!({"method":"workflow.inspect","status":"succeeded","receipt":{"status":"applied","body":"x".repeat(10_000)}}),
+        );
+    }
+    let request = json!({"operation":"apply","arguments":{"exact_content":"原始内容".repeat(10_000),"wide_integer":u64::MAX},"reason":"需要明确决定"});
+    for n in 0..15 {
+        record(
+            &conn,
+            project,
+            &format!("decision-{n}"),
+            "workflow_pending_decision",
+            "root",
+            json!({"status":"pending","plan_revision_id":"plan:1","request":request}),
+        );
+    }
+    conn.execute(
+        "INSERT INTO events(target,kind,detail,time) VALUES('root','fixture','',1)",
+        [],
+    )
+    .unwrap();
+    (store, conn, request)
+}
+
+#[test]
+fn summaries_are_bounded_and_never_restore_unreadable_history_or_authorize_actions() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, conn, original) = fixture(directory.path(), PROJECT, &"甲".repeat(5000));
+    let query = ControllerQuery::parse(&json!({"root_instance_id":"root"})).unwrap();
+    let trace = performance::Trace::start();
+    let controller = store.orchestration_summary(&query).unwrap();
+    let driver = store.workflow_driver_summary("root").unwrap();
+    let measurement = trace.finish();
+    for stage in [
+        "project.full_snapshot",
+        "project.transaction",
+        "source.restore_reference",
+        "source.restore_records",
+    ] {
+        assert!(
+            measurement["spans"][stage].is_null(),
+            "{stage}: {measurement}"
+        );
+    }
+    assert_eq!(controller.cursor, conn.last_insert_rowid() as u64);
+    assert_eq!(controller.messages.len(), 10);
+    assert!(
+        controller
+            .messages
+            .iter()
+            .all(|m| m.truncated && m.content_excerpt.chars().count() == 512)
+    );
+    assert!(controller.more.messages && controller.more.calls && controller.more.decisions);
+    assert_eq!(controller.calls.len(), 5);
+    assert_eq!(controller.decisions.len(), 10);
+    let older=store.orchestration_summary(&ControllerQuery::parse(&json!({"root_instance_id":"root","decision_before":controller.next_decision_before})).unwrap()).unwrap();
+    assert_eq!(older.decisions.len(), 5);
+    assert!(!older.more.decisions);
+    assert!(
+        older
+            .decisions
+            .iter()
+            .all(|row| !controller.decisions.iter().any(|newer| newer.id == row.id))
+    );
+    assert!(serde_json::to_vec(&controller).unwrap().len() <= 64 * 1024);
+    assert!(serde_json::to_vec(&driver).unwrap().len() <= 64 * 1024);
+    assert!(driver.observed_only && driver.waiting_more);
+    assert_eq!(driver.waiting.len(), 20);
+    assert_eq!(driver.instance_revision, 7);
+    let detail = store
+        .workflow_decision(&controller.decisions[0].id)
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&detail.data.request_json).unwrap(),
+        original
+    );
+    assert_eq!(detail.revision, controller.decisions[0].revision);
+}
+
+#[test]
+fn identities_are_scoped_and_a_global_session_cannot_leak_through_a_controller_reference() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(directory.path(), PROJECT, "Project A");
+    let (other, _other_conn, _) = fixture(directory.path(), OTHER, "Project B");
+    let query = ControllerQuery::parse(&json!({"id":"controller"})).unwrap();
+    assert_eq!(
+        store.orchestration_summary(&query).unwrap().messages[0].content_excerpt,
+        "Project A"
+    );
+    assert_eq!(
+        other.orchestration_summary(&query).unwrap().messages[0].content_excerpt,
+        "Project B"
+    );
+    record(
+        &conn,
+        OTHER,
+        "foreign-controller",
+        "workflow_controller",
+        "root",
+        json!({"project_id":PROJECT,"owner_id":PROJECT,"epoch":1}),
+    );
+    assert!(
+        store
+            .orchestration_summary(
+                &ControllerQuery::parse(&json!({"id":"foreign-controller"})).unwrap()
+            )
+            .unwrap()
+            .record
+            .is_none()
+    );
+    record(
+        &conn,
+        OTHER,
+        "foreign-decision",
+        "workflow_pending_decision",
+        "root",
+        json!({"status":"pending","plan_revision_id":"plan:1","request":{}}),
+    );
+    assert_eq!(
+        store
+            .workflow_decision("foreign-decision")
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+    conn.execute("INSERT INTO sessions(id,owner_id,agent,harness,sandbox,origin,project_id,runtime_binding,scope) VALUES('global-session','global','builtin-agent-sol-high-analyst:6','fixture','fixture','external','00000000-0000-4000-8000-000000000000','{}','global')",[]).unwrap();
+    conn.execute("INSERT INTO turns(id,project_id,session_id,client_message_id,input,input_digest,status,consumed,revision) VALUES('global-turn','00000000-0000-4000-8000-000000000000','global-session','global-message','fixture','digest','queued',0,1)",[]).unwrap();
+    conn.execute("INSERT INTO conversation_events(id,session_id,turn_id,sequence,deduplication_key,kind,content,time) VALUES('global-event','global-session','global-turn',1,'global-event','assistant','Global secret',1)",[]).unwrap();
+    conn.execute("UPDATE governance_records SET data=json_set(data,'$.session_id','global-session') WHERE id='controller'",[]).unwrap();
+    assert!(
+        store
+            .orchestration_summary(&query)
+            .unwrap()
+            .messages
+            .is_empty()
+    );
+}
+
+#[test]
+fn an_uncommitted_writer_does_not_hold_up_committed_summary_reads() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(directory.path(), PROJECT, "Committed");
+    conn.execute_batch("BEGIN IMMEDIATE; UPDATE governance_records SET revision=8,data=json_set(data,'$.status','closed') WHERE id='controller';").unwrap();
+    let view = store
+        .orchestration_summary(&ControllerQuery::parse(&json!({"owner_id":PROJECT})).unwrap())
+        .unwrap();
+    assert_eq!(view.record.as_ref().unwrap().revision, 7);
+    assert_eq!(view.record.as_ref().unwrap().data.status, "active");
+    conn.execute_batch("ROLLBACK;").unwrap();
+    assert!(ControllerQuery::parse(&json!({"id":"controller","owner_id":PROJECT})).is_err());
+    assert!(ControllerQuery::parse(&json!({"owner_id":PROJECT,"workspace_only":"false"})).is_err());
+}

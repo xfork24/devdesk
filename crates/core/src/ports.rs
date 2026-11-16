@@ -395,6 +395,21 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<Vec<crate::concurrency::ResourceSnapshot>> {
         Err(err("unsupported", "存储未实现资源读取"))
     }
+    fn orchestration_summary(
+        &self,
+        _query: &crate::read_models::ControllerQuery,
+    ) -> Result<crate::read_models::OrchestrationSummary> {
+        Err(err("unsupported", "存储未实现经理摘要读取"))
+    }
+    fn workflow_driver_summary(
+        &self,
+        _id: &str,
+    ) -> Result<crate::read_models::WorkflowDriverSummary> {
+        Err(err("unsupported", "存储未实现驱动摘要读取"))
+    }
+    fn workflow_decision(&self, _id: &str) -> Result<crate::read_models::DecisionDetail> {
+        Err(err("unsupported", "存储未实现确切决定读取"))
+    }
     /// Core-prepared changes and every business read dependency commit atomically.
     fn commit_changes(
         &self,

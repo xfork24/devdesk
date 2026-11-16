@@ -127,9 +127,9 @@ ChangeSet 当前提供 13 类类型化操作：adopt_standard、revert_change、
 
 项目/工作选择的 `orchestration` 只含 `mode: manual | rust | agent`。Workflow.scheduling 保存每轮动作、根/实例并发、租约、技术重试与 Agent 唤醒预算，随 Workflow 和 Standard 修订发布并冻结。缺少可信错误码、未知副作用、业务拒绝或人工门禁时等待；默认不自动技术重试。所有自动动作还须满足 Harness Profile 的平台操作权限、步骤预算和共同执行内核。
 
-根实例的 `workflow_driver` 保存策略快照、来源和 epoch；子实例继承该控制归属。`workflow.driver.select` 是人类入口，使用根实例 revision CAS；切换撤销原经理控制代次、未派发控制意图和委托，不停止业务 worker。已有运行 worker/结果继续通过实际回执接纳。Rust tick 从分页的共同 inspect/ready 投影稳定选择动作，事务内保存决定及外部 worker 意图；外部效果由现有 intent/receipt 管线执行。每项逻辑动作有幂等键，计划和代次变化后旧动作不能生效。
+根实例的 `workflow_driver` 保存策略快照、来源和 epoch；子实例继承该控制归属。`workflow.driver.select` 是人类入口，必须同时核对原根实例 revision 与 payload.expected_driver_epoch（不存在驱动时为 0）；驱动变化未必改变根实例 revision，二者不能互相替代。界面保留开始编辑时的两个值，冲突后不在保存前刷新版本。切换撤销原经理控制代次、未派发控制意图和委托，不停止业务 worker。已有运行 worker/结果继续通过实际回执接纳。Rust tick 从分页的共同 inspect/ready 投影稳定选择动作，事务内保存决定及外部 worker 意图；外部效果由现有 intent/receipt 管线执行。每项逻辑动作有幂等键，计划和代次变化后旧动作不能生效。
 
-`query.workflow_driver` 展示模式、冻结调度参数、epoch 和等待事项。项目管理可选择未来默认模式，流程的经理协作面可切换当前根实例。没有选择驱动的已有实例维持明确的人工控制行为。经理工作台查询/配置创作与根实例调度授权分别处理。
+Web 经理面板用 `query.workflow_driver_summary` 展示模式、epoch 和有界等待节选，`query.orchestration_summary` 展示有界消息、控制调用及待决定摘要；均按显式项目作用域直接只读查询。节选只表达观察，不提供动作资格；完整 `query.workflow_driver` 和 workflow.inspect 保留原控制查询语义。人工决定前按需读取确切请求与修订，不用节选代替签署依据，协议见 [本地协议](protocol.md)。项目管理可选择未来默认模式，流程的经理协作面可切换当前根实例。没有选择驱动的已有实例维持明确的人工控制行为。经理工作台查询/配置创作与根实例调度授权分别处理。
 
 Agent 的实际任务包含冻结的 `runtime_context`：`runtime_context.binding` 是本次 Session 选择的执行安装身份；`runtime_context.inputs.<input>.runtime_executions` 来自对应上游 Turn 的真实 Harness 执行和停止证明，包含镜像、operation 与执行身份，并以 source_output_id 关联产物。同一运行事实也出现在 `input_sources.<input>.runtime_executions`。前者是选择，后者是已观察到的外层执行事实，均不能证明任意嵌套或远程程序的环境。该投影排除凭据、模型连接、模型参数与宿主可执行路径；不会从模型自述推导环境事实。旧任务仍按实际发送的历史合同读取。
 

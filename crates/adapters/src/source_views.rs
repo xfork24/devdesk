@@ -10,6 +10,10 @@ pub(super) fn begin_snapshot(memo: &mut BTreeMap<String, Value>) {
     memo.retain(|key, _| !key.starts_with(SNAPSHOT_PERMISSIONS));
 }
 
+pub(super) fn is_encoded_text(text: &str) -> bool {
+    text.starts_with(SOURCE_TEXT)
+}
+
 fn factual_field(key: &str) -> bool {
     [
         "inputs",

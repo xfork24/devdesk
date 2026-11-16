@@ -135,6 +135,23 @@ fn pack_record(
     let mut stored = record.clone();
     if record.r#type == "skill_package" {
         stored.data.as_object_mut().unwrap().remove("body");
+    } else if matches!(
+        record.r#type.as_str(),
+        "workflow_pending_decision" | "workflow_human_decision"
+    ) {
+        // The submitted decision request is an immutable input fact.
+        let request = stored
+            .data
+            .as_object_mut()
+            .and_then(|data| data.remove("request"));
+        stored.data = source_views::pack(state, &stored.data)?;
+        if let Some(request) = request {
+            stored
+                .data
+                .as_object_mut()
+                .ok_or_else(|| err("storage", "决定记录需要对象正文"))?
+                .insert("request".into(), request);
+        }
     } else {
         stored.data = source_views::pack(state, &record.data)?;
     }
@@ -155,9 +172,71 @@ pub(super) fn restore_records(
     let snapshot = state.clone();
     for record in &mut state.governance {
         if !is_source(record) {
+            let request = if matches!(
+                record.r#type.as_str(),
+                "workflow_pending_decision" | "workflow_human_decision"
+            ) {
+                record
+                    .data
+                    .as_object_mut()
+                    .and_then(|data| data.remove("request"))
+            } else {
+                None
+            };
             record.data = source_views::restore_with(&snapshot, &record.data, memo)?;
+            if let Some(request) = request {
+                record
+                    .data
+                    .as_object_mut()
+                    .ok_or_else(|| err("storage", "决定记录需要对象正文"))?
+                    .insert("request".into(), request);
+            }
             record.content_hash = content_digest(&record.refs, &record.data);
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_decision_inputs_do_not_enter_the_configuration_codec() {
+        let request = json!({
+            "operation":"apply",
+            "reason":"\u{1e}devdesk-source-text:{\"$source\":\"source\",\"ref\":\"missing:1\"}",
+            "prospective_input":{"$source":"source","ref":"missing:1"},
+            "arguments":{"wide_integer":u64::MAX}
+        });
+        for kind in ["workflow_pending_decision", "workflow_human_decision"] {
+            let record = ConfigurationRecord {
+                id: "decision".into(),
+                r#type: kind.into(),
+                definition_id: "root".into(),
+                scope: Scope::global(),
+                name: "Exact decision".into(),
+                version: 1,
+                supersedes: None,
+                content_hash: String::new(),
+                refs: References::new(),
+                data: json!({"status":"pending","request":request}),
+                immutable: true,
+                revision: 1,
+                created_at: 1,
+            };
+            let mut state = EngineeringState::default();
+            let packed = pack_record(&state, &record).unwrap();
+            assert_eq!(packed.data["request"], request);
+            // Exercise the persisted JSON representation, then normal historical restore.
+            state.governance.push(
+                ConfigurationRecord::from_storage(
+                    serde_json::from_str(&packed.to_storage().to_string()).unwrap(),
+                )
+                .unwrap(),
+            );
+            restore_records(&mut state, &mut Default::default()).unwrap();
+            assert_eq!(state.governance[0].data, record.data);
+        }
+    }
 }

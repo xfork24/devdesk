@@ -59,6 +59,17 @@ fn command(
     }
 
     let state = engine.store.snapshot()?;
+    if method == "workflow.driver.select" {
+        payload["expected_driver_epoch"] = json!(
+            state
+                .governance
+                .iter()
+                .find(|row| row.r#type == "workflow_driver"
+                    && Some(row.definition_id.as_str()) == target)
+                .and_then(|row| row.data["epoch"].as_u64())
+                .unwrap_or(0)
+        );
+    }
     let revision = target.and_then(|target| {
         state
             .configuration(target)

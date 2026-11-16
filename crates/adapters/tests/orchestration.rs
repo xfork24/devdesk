@@ -75,6 +75,16 @@ fn cmd(e: &Engine, method: &str, target: Option<&str>, mut p: Value) -> Result<V
         )?);
     }
     let s = e.store.snapshot()?;
+    if method == "workflow.driver.select" {
+        p["expected_driver_epoch"] = json!(
+            s.governance
+                .iter()
+                .find(|row| row.r#type == "workflow_driver"
+                    && Some(row.definition_id.as_str()) == target)
+                .and_then(|row| row.data["epoch"].as_u64())
+                .unwrap_or(0)
+        );
+    }
     let r = target.and_then(|id| {
         s.configuration(id)
             .ok()
@@ -126,6 +136,81 @@ fn start(e: &Engine, doc: Value) -> String {
 }
 fn document() -> Value {
     json!({"schema_version":6,"stages":[{"key":"work","name":"工作"}],"steps":[{"key":"one","name":"第一步","stage":"work","executor":{"type":"control"}},{"key":"two","name":"第二步","stage":"work","dependencies":["one"],"executor":{"type":"control"}}]})
+}
+
+#[test]
+fn concurrent_driver_changes_require_the_original_control_epoch() {
+    let directory = tempfile::tempdir().unwrap();
+    let e = Arc::new(engine(directory.path()));
+    let root = start(&e, document());
+    let before = e.store.snapshot().unwrap();
+    let revision = before.configuration(&root).unwrap().revision;
+    let epoch = before
+        .governance
+        .iter()
+        .find(|row| row.r#type == "workflow_driver" && row.definition_id == root)
+        .and_then(|row| row.data["epoch"].as_u64())
+        .unwrap_or(0);
+    let unguarded = Command {
+        command_id: "missing-driver-epoch".into(),
+        target: Some(root.clone()),
+        expected_revision: Some(revision),
+        payload: json!({"mode":"manual"}),
+    };
+    assert_eq!(
+        e.execute("workflow.driver.select", unguarded)
+            .unwrap_err()
+            .code,
+        "precondition_required"
+    );
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = (0..100)
+        .map(|n| {
+            let e = e.clone();
+            let barrier = barrier.clone();
+            let command = Command {
+                command_id: format!("driver-race-{n}"),
+                target: Some(root.clone()),
+                expected_revision: Some(revision),
+                payload: json!({"mode":"manual","expected_driver_epoch":epoch}),
+            };
+            std::thread::spawn(move || {
+                barrier.wait();
+                let result = e.execute("workflow.driver.select", command.clone());
+                (command, result)
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        results.iter().filter(|(_, result)| result.is_ok()).count(),
+        1
+    );
+    assert!(
+        results
+            .iter()
+            .filter_map(|(_, result)| result.as_ref().err())
+            .all(|error| error.code == "revision_conflict")
+    );
+    let (winner, receipt) = results.iter().find(|(_, result)| result.is_ok()).unwrap();
+    assert_eq!(
+        e.execute("workflow.driver.select", winner.clone()).unwrap(),
+        *receipt.as_ref().unwrap()
+    );
+    let after = e.store.snapshot().unwrap();
+    assert_eq!(after.configuration(&root).unwrap().revision, revision);
+    assert_eq!(
+        after
+            .governance
+            .iter()
+            .find(|row| row.r#type == "workflow_driver" && row.definition_id == root)
+            .unwrap()
+            .data["epoch"],
+        epoch + 1
+    );
 }
 fn runtime(e: &Engine, id: &str) -> Value {
     e.query("workflow.inspect", &json!({"id":id}), 4).unwrap()
