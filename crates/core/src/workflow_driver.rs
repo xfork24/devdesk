@@ -320,7 +320,7 @@ impl Engine {
                             | StepExecutionStatus::NeedsReconciliation
                     )
                 {
-                    waiting.push(json!({"instance_id":row.id,"execution_id":execution.id,"step":execution.step,"path":execution.path,"status":execution.status,"reason":execution.reason,"waiting_for":gates,"actions":actions}));
+                    waiting.push(json!({"instance_id":row.id,"owner_id":instance.owner_id,"execution_id":execution.id,"step":execution.step,"step_name":step.name,"path":execution.path,"status":execution.status,"reason":execution.reason,"waiting_for":gates,"actions":actions}));
                 }
             }
         }

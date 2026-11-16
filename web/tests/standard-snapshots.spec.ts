@@ -466,7 +466,7 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   });
   const tb = workspace.detail.tasks.find((t: any) => t.title === "Task B");
   await page.goto(
-    `/?tab=execution&project_id=${project.id}&feature_id=${feature.id}`,
+    `/?tab=execution&detail=manager&project_id=${project.id}&feature_id=${feature.id}`,
   );
   const card = page
     .locator(".task-grid article")

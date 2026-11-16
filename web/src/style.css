@@ -347,6 +347,55 @@ main {
 .toolbar:has(> label) {
   align-items: flex-end;
 }
+.manager-configuration-row,
+.manager-scheduling-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin-top: 16px;
+}
+:root
+  :is(.manager-configuration-row, .manager-scheduling-row)
+  > label:has(
+    > :is(select, input:not([type="checkbox"], [type="radio"], [type="file"]))
+  ) {
+  width: 100%;
+  margin: 0;
+}
+.manager-configuration-row button,
+.manager-scheduling-row button {
+  min-height: 41px;
+}
+.manager-scheduling-row {
+  grid-template-columns: minmax(180px, 320px) auto;
+  justify-content: start;
+}
+.manager-configuration-row select,
+.manager-scheduling-row select {
+  width: 100%;
+  margin: 0;
+}
+.manager-blockers {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #e2d9bb;
+  border-radius: 10px;
+  background: #fffcf3;
+}
+.manager-blockers h4 {
+  margin: 0 0 8px;
+}
+.manager-blockers li + li {
+  margin-top: 12px;
+}
+@media (max-width: 760px) {
+  .manager-configuration-row,
+  .manager-scheduling-row {
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+}
 .metrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

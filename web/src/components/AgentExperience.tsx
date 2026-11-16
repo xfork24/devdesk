@@ -161,7 +161,10 @@ export function AgentExperience({
             {instanceId} · {data?.scope || ""}
           </p>
           {filters}
-          <p>{data?.total || 0} 条快照 · 时间按当前时区显示</p>
+          <p>
+            {data?.total || 0} 条经验 · 同一 Feature 持续更新一条记录 ·
+            时间按当前时区显示
+          </p>
           {data?.records.map((entry: Row) => (
             <article key={entry.snapshot_id + entry.session_id}>
               <strong>

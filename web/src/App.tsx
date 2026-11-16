@@ -75,6 +75,7 @@ import { CallHistory } from "./components/Integrations";
 import { AgentCatalog } from "./components/AgentCatalog";
 import { WorkStandard } from "./components/WorkStandard";
 import { WorkflowInstanceView } from "./components/WorkflowInstanceView";
+import { WorkflowProjectManager } from "./components/WorkflowProjectManager";
 import { WorkflowMaterials } from "./components/WorkflowMaterials";
 import { RepositorySettings } from "./components/RepositorySettings";
 import { RoleConversation } from "./components/RoleConversation";
@@ -239,6 +240,13 @@ function routeTabValue(p: URLSearchParams) {
     : "overview";
 }
 const routeTab = routeTabValue(route);
+const executionTabs = [
+  ["manager", "项目经理"],
+  ["overview", "工作流程"],
+  ["documents", "材料"],
+  ["context", "上下文"],
+  ["records", "执行记录"],
+];
 
 function App() {
   const catalogGeneration = useCatalogGeneration();
@@ -1390,12 +1398,7 @@ function App() {
                   role="tablist"
                   aria-label="执行详情"
                 >
-                  {[
-                    ["overview", "工作流程"],
-                    ["documents", "材料"],
-                    ["context", "上下文"],
-                    ["records", "执行记录"],
-                  ].map(([key, label]) => (
+                  {executionTabs.map(([key, label]) => (
                     <ActionButton
                       key={key}
                       role="tab"
@@ -1432,15 +1435,23 @@ function App() {
                           启动 Feature
                         </ActionButton>
                       </div>
-                      <WorkStandard
-                        request={rpc}
-                        projectId={projectId}
-                        owner={f}
-                        refresh={load}
-                      />
                     </section>
                   )}
-                {executionTab === "overview" &&
+                {executionTab === "manager" &&
+                  !data?.configurations?.some(
+                    (r: Row) =>
+                      r.type === "workflow_instance" &&
+                      r.data.owner_id === f.id &&
+                      r.data.parent_execution_id == null,
+                  ) && (
+                    <WorkStandard
+                      request={rpc}
+                      projectId={projectId}
+                      owner={f}
+                      refresh={load}
+                    />
+                  )}
+                {["manager", "overview"].includes(executionTab) &&
                   data?.configurations
                     ?.filter(
                       (r: Row) =>
@@ -1448,44 +1459,56 @@ function App() {
                         r.data.owner_id === f.id &&
                         r.data.parent_execution_id == null,
                     )
-                    .map((r: Row) => (
-                      <WorkflowInstanceView
-                        key={r.id}
-                        record={r}
-                        projectId={projectId}
-                        request={rpc}
-                        refresh={load}
-                        onDiscussion={(id, owner) => {
-                          setFocusedSession({
-                            id,
-                            owner_id: owner,
-                            project_id: projectId,
-                          });
-                          setTab("discussion");
-                        }}
-                      />
-                    ))}
-                {executionTab === "overview" && (
+                    .map((r: Row) =>
+                      executionTab === "manager" ? (
+                        <WorkflowProjectManager
+                          key={r.id}
+                          record={r}
+                          projectId={projectId}
+                          request={rpc}
+                          refresh={load}
+                        />
+                      ) : (
+                        <WorkflowInstanceView
+                          key={r.id}
+                          record={r}
+                          projectId={projectId}
+                          request={rpc}
+                          refresh={load}
+                          onDiscussion={(id, owner) => {
+                            setFocusedSession({
+                              id,
+                              owner_id: owner,
+                              project_id: projectId,
+                            });
+                            setTab("discussion");
+                          }}
+                        />
+                      ),
+                    )}
+                {["manager", "overview"].includes(executionTab) && (
                   <div className="task-grid">
                     {detail.tasks.map((task: Row) => (
                       <article key={task.id}>
                         <strong>{task.title}</strong>
                         <Badge value={task.status} />
                         <p>{task.dependencies.length} 个依赖</p>
-                        <WorkStandard
-                          request={rpc}
-                          projectId={projectId}
-                          owner={task}
-                          instance={data?.configurations
-                            ?.filter(
-                              (r: Row) =>
-                                r.type === "workflow_instance" &&
-                                r.work_root !== false &&
-                                r.data.owner_id === task.id,
-                            )
-                            .at(-1)}
-                          refresh={load}
-                        />
+                        {executionTab === "manager" && (
+                          <WorkStandard
+                            request={rpc}
+                            projectId={projectId}
+                            owner={task}
+                            instance={data?.configurations
+                              ?.filter(
+                                (r: Row) =>
+                                  r.type === "workflow_instance" &&
+                                  r.work_root !== false &&
+                                  r.data.owner_id === task.id,
+                              )
+                              .at(-1)}
+                            refresh={load}
+                          />
+                        )}
                       </article>
                     ))}
                   </div>
@@ -1570,12 +1593,7 @@ function App() {
           {tab === "execution" && !f && projectId && (
             <section className="panel">
               <div className="detail-tabs" role="tablist" aria-label="执行详情">
-                {[
-                  ["overview", "工作流程"],
-                  ["documents", "材料"],
-                  ["context", "上下文"],
-                  ["records", "执行记录"],
-                ].map(([key, label]) => (
+                {executionTabs.map(([key, label]) => (
                   <ActionButton
                     key={key}
                     role="tab"
@@ -1616,7 +1634,7 @@ function App() {
             </section>
           )}
           {tab === "execution" &&
-            executionTab === "overview" &&
+            ["manager", "overview"].includes(executionTab) &&
             !f &&
             data?.configurations
               ?.filter(
@@ -1625,23 +1643,33 @@ function App() {
                   r.data.owner_id === projectId &&
                   r.data.parent_execution_id == null,
               )
-              .map((r: Row) => (
-                <WorkflowInstanceView
-                  key={r.id}
-                  record={r}
-                  projectId={projectId}
-                  request={rpc}
-                  refresh={load}
-                  onDiscussion={(id, owner) => {
-                    setFocusedSession({
-                      id,
-                      owner_id: owner,
-                      project_id: projectId,
-                    });
-                    setTab("discussion");
-                  }}
-                />
-              ))}
+              .map((r: Row) =>
+                executionTab === "manager" ? (
+                  <WorkflowProjectManager
+                    key={r.id}
+                    record={r}
+                    projectId={projectId}
+                    request={rpc}
+                    refresh={load}
+                  />
+                ) : (
+                  <WorkflowInstanceView
+                    key={r.id}
+                    record={r}
+                    projectId={projectId}
+                    request={rpc}
+                    refresh={load}
+                    onDiscussion={(id, owner) => {
+                      setFocusedSession({
+                        id,
+                        owner_id: owner,
+                        project_id: projectId,
+                      });
+                      setTab("discussion");
+                    }}
+                  />
+                ),
+              )}
           {tab === "execution" && !f && executionTab === "overview" && (
             <section className="panel">
               <h2>Feature 工作队列{workFilter ? ` · ${workFilter}` : ""}</h2>

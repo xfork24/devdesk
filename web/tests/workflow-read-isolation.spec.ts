@@ -142,7 +142,7 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
     }
     await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
-  return "/?tab=execution&project_id=read-project&feature_id=read-feature";
+  return "/?tab=execution&detail=manager&project_id=read-project&feature_id=read-feature";
 }
 
 test("slow controller polling renders its result without overlapping requests and stops on unmount", async ({
@@ -187,10 +187,236 @@ test("slow controller polling renders its result without overlapping requests an
       .getByText("slow controller observed"),
   ).toBeVisible({ timeout: 6500 });
   expect(maximum).toBe(1);
-  await page.getByRole("button", { name: "工作总览", exact: true }).click();
+  await page.getByRole("tab", { name: "工作流程", exact: true }).click();
   const before = calls;
   await page.waitForTimeout(3000);
   expect(calls).toBe(before);
+});
+
+test("manager context pins its session through delayed role discovery and accepts manager messages", async ({
+  page,
+}) => {
+  page.on("pageerror", (error) => {
+    throw error;
+  });
+  const url = await fixture(page);
+  const manager = {
+    id: "manager-agent:1",
+    type: "agent",
+    definition_id: "manager-agent",
+    name: "项目经理",
+    version: 1,
+    role_ref: "manager-role:1",
+    capability_ref: "manager-capability:1",
+    data: {},
+  };
+  const instance = {
+    id: "manager-instance:1",
+    type: "agent_instance",
+    definition_id: "manager-instance",
+    name: "项目经理实例",
+    scope: "global",
+    data: { agent_revision_id: manager.id },
+  };
+  const binding = {
+    installation: { key: { provider: "codex" } },
+    agent_configuration: { agent_instance_id: instance.id },
+    model: "fixture-model",
+  };
+  const session = {
+    id: "manager-session",
+    owner_id: "read-feature",
+    agent: manager.id,
+    runtime_binding: binding,
+    lifecycle: "idle",
+  };
+  const controller = {
+    id: "manager-controller",
+    revision: 3,
+    data: { epoch: 1, status: "active" },
+  };
+  let submitted: any;
+  const lookups: any[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    switch (call.method) {
+      case "query.workflow_contexts":
+        result = {
+          agents: [
+            {
+              id: instance.id,
+              actor: { name: manager.name, agent_revision_id: manager.id },
+              entries: [
+                {
+                  kind: "controller",
+                  owner_id: "read-feature",
+                  session_id: session.id,
+                  turn_id: "manager-turn",
+                  status: "completed",
+                  actor: { agent_revision_id: manager.id },
+                  historical: false,
+                },
+              ],
+            },
+          ],
+        };
+        break;
+      case "query.configurations":
+        result = {
+          records: [
+            {
+              ...manager,
+              id: "worker:1",
+              definition_id: "worker",
+              name: "需求分析师",
+            },
+            manager,
+            instance,
+            {
+              id: "manager-role:1",
+              type: "role",
+              definition_id: "manager-role",
+            },
+            { id: "manager-capability:1", type: "capability", data: {} },
+          ],
+          total: 5,
+        };
+        break;
+      case "query.sessions":
+        lookups.push(call.params);
+        result = {
+          sessions: [{ ...session, id: "newer-manager-session" }, session],
+        };
+        break;
+      case "query.session":
+        expect(call.params.id).toBe(session.id);
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        result = {
+          session,
+          controller,
+          turns: [],
+          events: [
+            {
+              id: "manager-response",
+              kind: "assistant",
+              content: "经理会话已正确加载",
+              sequence: 1,
+            },
+          ],
+          next_cursor: 1,
+          interactions: [],
+          proposals: [],
+          executions: [],
+          formal_execution: true,
+        };
+        break;
+      case "query.agent_experience":
+        result = { records: [], total: 0, unavailable: [] };
+        break;
+      case "orchestration.input":
+        submitted = call.params;
+        result = { accepted: true };
+        break;
+      default:
+        return route.fallback();
+    }
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url.replace("detail=manager", "detail=context"));
+  await page.getByRole("link", { name: "查看此轮会话", exact: true }).click();
+  await expect(page.getByRole("log", { name: "讨论记录" })).toContainText(
+    "经理会话已正确加载",
+  );
+  await expect(page.getByLabel("讨论角色", { exact: true })).toHaveValue(
+    manager.id,
+  );
+  await expect(page.getByLabel("Agent", { exact: true })).toHaveValue(
+    instance.id,
+  );
+  await expect(page.getByLabel("讨论会话", { exact: true })).toHaveValue(
+    session.id,
+  );
+  expect(
+    lookups.every((params) => !params.agent && !params.agent_instance_id),
+  ).toBe(true);
+  await page.getByRole("button", { name: "讨论输入", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "讨论输入", exact: true })
+    .fill("只导出 ID 和名称。");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect
+    .poll(() => submitted)
+    .toMatchObject({
+      target: controller.id,
+      payload: { epoch: 1, input: "只导出 ID 和名称。" },
+    });
+});
+
+test("manager shows the current blocker and aligns configuration controls at desktop and mobile widths", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    let result: any;
+    if (call.method === "query.orchestration")
+      result = { record: { id: "controller", data: { status: "active" } } };
+    else if (call.method === "query.workflow_driver")
+      result = {
+        driver: { data: { mode: "agent", epoch: 1 } },
+        waiting: [
+          {
+            instance_id: "read-instance",
+            execution_id: "requirements-execution",
+            step: "requirements",
+            step_name: "澄清需求与PRD",
+            status: "waiting_input",
+            reason: "需要导出哪些字段？",
+            actions: {},
+            waiting_for: [],
+          },
+        ],
+      };
+    else return route.fallback();
+    await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
+  });
+  await page.goto(url);
+  const manager = page.getByRole("region", {
+    name: "项目经理协作",
+    exact: true,
+  });
+  await expect(
+    manager.getByRole("region", { name: "当前阻塞点" }),
+  ).toContainText("需要导出哪些字段？");
+  await manager.getByText("调度与经理管理", { exact: true }).click();
+  await expect(manager.getByLabel("切换调度模式", { exact: true })).toHaveValue(
+    "agent",
+  );
+  const row = manager.locator(".manager-configuration-row");
+  const boxes = await row.locator("select, button").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const r = node.getBoundingClientRect();
+      return { bottom: r.bottom, x: r.x };
+    }),
+  );
+  expect(boxes).toHaveLength(3);
+  expect(
+    Math.max(...boxes.map((box) => box.bottom)) -
+      Math.min(...boxes.map((box) => box.bottom)),
+  ).toBeLessThan(2);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrow = await row
+    .locator("select, button")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect().x),
+    );
+  expect(Math.max(...narrow) - Math.min(...narrow)).toBeLessThan(2);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });
 
 test("paused root manager adopts exact successor sources through the Human resume entry", async ({
@@ -295,7 +521,7 @@ for (const failure of ["catalog", "defaults"] as const) {
     const url = await fixture(page, failure);
     await page.goto(url);
     const standard = page
-      .getByRole("region", { name: "当前工作流", exact: true })
+      .getByRole("region", { name: "项目经理", exact: true })
       .locator(".work-standard");
     await standard.locator(":scope > summary").click();
     await standard.getByText("规范采用历史（2）", { exact: true }).click();
@@ -353,7 +579,7 @@ test("a late defaults read preserves an already displayed Standard comparison", 
   });
   await page.goto(url);
   const standard = page
-    .getByRole("region", { name: "当前工作流", exact: true })
+    .getByRole("region", { name: "项目经理", exact: true })
     .locator(".work-standard");
   await standard.locator(":scope > summary").click();
   await standard.getByText("与其他工作比较规范", { exact: true }).click();

@@ -105,7 +105,14 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     },
   });
   await page.goto(`/?tab=execution&project_id=${project.id}`);
+  await expect(
+    page.getByRole("tablist", { name: "执行详情" }).getByRole("tab"),
+  ).toHaveText(["项目经理", "工作流程", "材料", "上下文", "执行记录"]);
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
+  await expect(runtime.locator(".work-standard")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "项目经理协作" })).toHaveCount(
+    0,
+  );
   // 阶段与子流程默认折叠，仅分层头部可见。
   const stageOne = runtime.getByRole("button", { name: /业务阶段一/ });
   const stageTwo = runtime.getByRole("button", { name: /业务阶段二/ });
@@ -133,6 +140,24 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
   await expect(childRegion).toBeVisible();
   // 子流程实例内的阶段同样默认折叠。
   await childRegion.locator(".workflow-stage-toggle").first().click();
+  await expect(
+    page.getByRole("button", { name: /检查原始材料/ }),
+  ).toBeVisible();
+  await expect(childRegion.locator(".work-standard")).toHaveCount(0);
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  const manager = page.getByRole("region", { name: "项目经理", exact: true });
+  await expect(manager.locator(":scope > .work-standard")).toBeVisible();
+  await expect(
+    manager.getByRole("region", { name: "项目经理协作" }),
+  ).toBeVisible();
+  await expect(page.locator(".workflow-stage-row")).toHaveCount(0);
+  await manager.getByText(/^子流程 ·/).click();
+  await expect(
+    manager
+      .getByRole("region", { name: "子流程管理" })
+      .locator(".work-standard"),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "工作流程", exact: true }).click();
   await expect(
     page.getByRole("button", { name: /检查原始材料/ }),
   ).toBeVisible();
@@ -213,9 +238,12 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   });
   await page.goto(`/?tab=execution&project_id=${project.id}`);
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  const manager = page.getByRole("region", { name: "项目经理", exact: true });
   await expect(
-    runtime.getByRole("region", { name: "项目经理协作" }),
+    manager.getByRole("region", { name: "项目经理协作" }),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "工作流程", exact: true }).click();
   await runtime.getByRole("button", { name: /材料处理/ }).click();
   const collect = runtime.getByRole("article", {
     name: "步骤 · 整理材料",
@@ -239,7 +267,8 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     project_id: project.id,
     id: started.id,
   });
-  const editor = runtime
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  const editor = manager
     .locator("details")
     .filter({ has: page.getByText("调整当前运行计划", { exact: true }) });
   await editor.locator("summary").click();
@@ -253,8 +282,14 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   await editor
     .getByRole("button", { name: "应用此计划调整", exact: true })
     .click();
+  await expect(
+    editor.getByRole("button", { name: "应用此计划调整", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("tab", { name: "工作流程", exact: true }).click();
   await runtime.getByRole("button", { name: /可选复核/ }).click();
   await expect(runtime.getByRole("button", { name: /可选检查/ })).toBeVisible();
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  await editor.locator("summary").click();
   await editor.getByLabel("计划调整方式").selectOption("add");
   await editor.getByLabel("计划调整对象").selectOption("collect");
   await editor.getByLabel("新增步骤名称").fill("补充交接");
@@ -263,6 +298,10 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   await editor
     .getByRole("button", { name: "应用此计划调整", exact: true })
     .click();
+  await expect(
+    editor.getByRole("button", { name: "应用此计划调整", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("tab", { name: "工作流程", exact: true }).click();
   const added = runtime.getByRole("article", {
     name: "步骤 · 补充交接",
     exact: true,
@@ -299,14 +338,18 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     before.runtime.active_plan_revision_id,
   );
   expect(after.history.length).toBeGreaterThan(before.history.length);
+  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
+  await expect(
+    page.getByRole("tab", { name: "项目经理", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   const reloaded = await rpc(page, "query.workflow_instance", {
     project_id: project.id,
     id: started.id,
   });
   expect(reloaded.history).toEqual(after.history);
-  const history = runtime.locator("details").filter({
+  const history = manager.locator("details").filter({
     has: page.getByText(/^计划与执行历史 · \d+ 条$/),
   });
   await history.locator("summary").click();

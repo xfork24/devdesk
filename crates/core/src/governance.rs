@@ -321,6 +321,39 @@ pub(crate) fn install_agent_profile(
     });
 }
 
+// Experience is a current Feature index; sealed snapshots retain the evidence history.
+fn store_experience(state: &mut EngineeringState, mut entry: ConfigurationRecord) {
+    if let Some(feature) = entry.data["feature_id"].as_str() {
+        entry.id = format!(
+            "experience:{}",
+            configuration_hash(&json!([
+                entry.data["agent_instance_id"],
+                entry.data["project_id"],
+                feature
+            ]))
+        );
+        entry.definition_id = feature.into();
+        entry.immutable = false;
+        if let Some(previous) = state.governance.iter_mut().find(|row| row.id == entry.id) {
+            if previous.data["snapshot_id"] == entry.data["snapshot_id"] {
+                return;
+            }
+            let mut old = previous.data.clone();
+            let mut history = old
+                .as_object_mut()
+                .unwrap()
+                .remove("history")
+                .and_then(|value| value.as_array().cloned())
+                .unwrap_or_default();
+            history.push(old);
+            entry.data["history"] = json!(history);
+            update_record(previous, entry.data);
+            return;
+        }
+    }
+    state.governance.push(entry);
+}
+
 impl Engine {
     pub(crate) fn index_experience(
         &self,
@@ -374,7 +407,22 @@ impl Engine {
                 let workflow = crate::agent_tasks::session_binding(s, session_id)
                     .map(|r| r.data.clone())
                     .unwrap_or(Value::Null);
-                s.governance.push(record("experience",snapshot_id.into(),if pid==GLOBAL_DISCUSSION_NAMESPACE {Scope::global()}else{Scope::project(pid.clone())},feature_name.clone().unwrap_or(project_title.clone()),1,None,json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(&snap),"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind}),true));
+                let data = json!({"agent_instance_id":link.data["agent_instance_id"],"agent_revision_id":link.data["agent_revision_id"],"snapshot_id":snapshot_id,"session_id":session_id,"project_id":pid,"project_name":project_title,"feature_id":snap.feature_id,"feature_name":feature_name.clone().unwrap_or_default(),"task_id":snap.task_id,"workflow_instance_id":workflow["instance_id"],"step_execution_id":workflow["execution_id"],"plan_revision_id":workflow["plan_revision_id"],"content_digest":configuration_hash(&snap),"captured_at":snap.capture.captured_at,"work_time":work,"binding":link.data["binding"],"kind":snap.kind});
+                let entry = record(
+                    "experience",
+                    snapshot_id.into(),
+                    if pid == GLOBAL_DISCUSSION_NAMESPACE {
+                        Scope::global()
+                    } else {
+                        Scope::project(pid.clone())
+                    },
+                    feature_name.clone().unwrap_or(project_title.clone()),
+                    1,
+                    None,
+                    data,
+                    true,
+                );
+                store_experience(s, entry);
             }
         }
         Ok(())
@@ -934,5 +982,41 @@ impl Engine {
                 json!({"records":rows.iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":rows.len()}),
             )
         })())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_experience_updates_one_record_across_sessions_and_preserves_snapshots() {
+        let mut state = EngineeringState::default();
+        let entry = |agent: &str, feature: &str, snapshot: &str| {
+            record(
+                "experience",
+                snapshot.into(),
+                Scope::project("project"),
+                "Feature".into(),
+                1,
+                None,
+                json!({"agent_instance_id":agent,"project_id":"project","feature_id":feature,"snapshot_id":snapshot,"session_id":format!("session-{snapshot}")}),
+                true,
+            )
+        };
+        store_experience(&mut state, entry("agent", "feature", "first"));
+        let identity = state.governance[0].id.clone();
+        store_experience(&mut state, entry("agent", "feature", "second"));
+        store_experience(&mut state, entry("agent", "feature", "second"));
+        assert_eq!(state.governance.len(), 1);
+        let current = &state.governance[0];
+        assert_eq!(current.id, identity);
+        assert_eq!(current.revision, 2);
+        assert_eq!(current.data["snapshot_id"], "second");
+        assert_eq!(current.data["history"][0]["snapshot_id"], "first");
+        assert_eq!(current.data["history"].as_array().unwrap().len(), 1);
+        store_experience(&mut state, entry("other-agent", "feature", "third"));
+        store_experience(&mut state, entry("agent", "other-feature", "fourth"));
+        assert_eq!(state.governance.len(), 3);
     }
 }

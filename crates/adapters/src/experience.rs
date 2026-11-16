@@ -85,6 +85,22 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
             r["session_id"].to_string(),
         ))
     });
+    // Historical snapshot references remain readable even though a Feature
+    // has one current experience entry for this Agent.
+    if let Some(snapshot) = params["snapshot_id"].as_str() {
+        let historical: Vec<_> = rows
+            .iter()
+            .flat_map(|row| {
+                row["history"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|entry| entry["snapshot_id"] == snapshot)
+                    .cloned()
+            })
+            .collect();
+        rows.extend(historical);
+    }
     rows.retain(|r| {
         ["feature_id", "task_id", "workflow_instance_id"]
             .iter()
@@ -210,6 +226,16 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
         return Ok(
             json!({"entry":entry,"snapshot":snapshot,"documents":s.documents.iter().filter(|d|snapshot.documents.contains(&d.id)).collect::<Vec<_>>(),"evidence":s.artifacts.iter().filter(|a|evidence.contains(&a.id)).map(|a|json!({"id":a.id,"path":a.relative_path,"hash":a.sha256})).collect::<Vec<_>>(),"integrity":"verified"}),
         );
+    }
+    let mut features = std::collections::BTreeSet::new();
+    rows.retain(|row| {
+        row["feature_id"].as_str().is_none_or(|feature| {
+            features.insert((row["project_id"].to_string(), feature.to_owned()))
+        })
+    });
+    for row in &mut rows {
+        row["snapshot_count"] = json!(1 + row["history"].as_array().map_or(0, Vec::len));
+        row.as_object_mut().unwrap().remove("history");
     }
     let offset = params["offset"].as_u64().unwrap_or(0) as usize;
     let limit = params["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize;

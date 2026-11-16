@@ -1,4 +1,4 @@
-import { ReadableValue } from "./reading";
+import { DiscussionLink, ReadableValue, ReadingLink } from "./reading";
 import { StandardDiff } from "./StandardManager";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
@@ -26,7 +26,7 @@ export function WorkflowController({
   const [catalogError, setCatalogError] = useState("");
   const [managerAgent, setManagerAgent] = useState("");
   const [managerPermission, setManagerPermission] = useState("");
-  const [mode, setMode] = useState("manual");
+  const [mode, setMode] = useState("");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -180,7 +180,7 @@ export function WorkflowController({
         command_id: crypto.randomUUID(),
         target: instance.id,
         expected_revision: current.record.revision,
-        payload: { mode },
+        payload: { mode: mode || data?.driver?.data.mode || "manual" },
       });
       await Promise.all([load(), refresh()]);
     } catch (e) {
@@ -243,6 +243,14 @@ export function WorkflowController({
     budget_exhausted: "等待恢复",
     closed: "已结束",
   };
+  const waitingLabels: Record<string, string> = {
+    waiting_input: "等待你的回答",
+    waiting_confirmation: "等待确认当前产物",
+    awaiting_acceptance: "等待接纳结果",
+    failed: "执行失败",
+    needs_reconciliation: "执行结果需要核对",
+    queued: "等待执行条件",
+  };
   return (
     <section
       aria-label={workspaceOnly ? "项目经理工作台" : "项目经理协作"}
@@ -263,56 +271,95 @@ export function WorkflowController({
             : data.driver.data.reason.message}
         </p>
       )}
+      {data?.driverWaiting?.length > 0 && (
+        <section
+          className="manager-blockers"
+          aria-label="当前阻塞点"
+          aria-live="polite"
+        >
+          <h4>当前阻塞点</h4>
+          <p className="muted">
+            可直接在下方回复项目经理，由经理转交你的回答并协调后续执行。需要确认的产物或计划会在这里请求你的决定。
+          </p>
+          <ul aria-label="调度等待条件">
+            {((data?.driverWaiting || []) as Row[]).map((item) => {
+              const gate = (Object.values(item.actions || {}) as Row[]).find(
+                (action) => item.waiting_for?.includes(action.code),
+              );
+              return (
+                <li key={item.execution_id}>
+                  <strong>
+                    {item.step_name || item.path || item.step} ·{" "}
+                    {waitingLabels[item.status] || item.status}
+                  </strong>
+                  <p>
+                    {gate?.reason || item.reason || "正在等待执行条件就绪。"}
+                  </p>
+                  <ReadingLink
+                    detail="records"
+                    projectId={projectId}
+                    ownerId={
+                      item.owner_id || instance.data.owner_id || projectId
+                    }
+                    target={{
+                      instance_id: item.instance_id,
+                      execution_id: item.execution_id,
+                    }}
+                  >
+                    查看执行详情
+                  </ReadingLink>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
       <details open={workspaceOnly || undefined}>
         <summary>
           {workspaceOnly ? "工作台配置与沟通" : "调度与经理管理"}
         </summary>
-        {
-          <>
-            <RevisionSelect
-              label={
-                workspaceOnly ? "工作台 Agent 精确修订" : "经理 Agent 精确修订"
-              }
-              records={managerAgents}
-              value={managerAgent}
-              onChange={(value) => setManagerAgent(value)}
-            />
-            <RevisionSelect
-              label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
-              records={catalog.filter(
-                (row) => row.type === "permission_profile",
-              )}
-              value={managerPermission}
-              onChange={(value) => setManagerPermission(value)}
-            />
-            <ActionButton
-              disabled={
-                busy ||
-                !data ||
-                (!managerAgent && !managerPermission) ||
-                (!workspaceOnly && data?.record?.data.status === "active")
-              }
-              onClick={() =>
-                void (workspaceOnly
-                  ? adoptManager()
-                  : act("orchestration.resume"))
-              }
-            >
-              {workspaceOnly ? "采用工作台配置" : "采用并恢复经理"}
-            </ActionButton>
-            <p className="muted">
-              默认使用项目配置中的编排
-              Agent。更换组合前先暂停当前经理会话；后继会话使用所选配置。
-            </p>
-          </>
-        }
+        <div className="manager-configuration-row">
+          <RevisionSelect
+            label={
+              workspaceOnly ? "工作台 Agent 精确修订" : "经理 Agent 精确修订"
+            }
+            records={managerAgents}
+            value={managerAgent}
+            onChange={(value) => setManagerAgent(value)}
+          />
+          <RevisionSelect
+            label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
+            records={catalog.filter((row) => row.type === "permission_profile")}
+            value={managerPermission}
+            onChange={(value) => setManagerPermission(value)}
+          />
+          <ActionButton
+            disabled={
+              busy ||
+              !data ||
+              (!managerAgent && !managerPermission) ||
+              (!workspaceOnly && data?.record?.data.status === "active")
+            }
+            onClick={() =>
+              void (workspaceOnly
+                ? adoptManager()
+                : act("orchestration.resume"))
+            }
+          >
+            {workspaceOnly ? "采用工作台配置" : "采用并恢复经理"}
+          </ActionButton>
+        </div>
+        <p className="muted">
+          默认使用项目配置中的编排
+          Agent。更换组合前先暂停当前经理会话；后继会话使用所选配置。
+        </p>
         {!workspaceOnly && (
-          <>
+          <div className="manager-scheduling-row">
             <label>
               切换调度模式
               <ActionSelect
                 aria-label="切换调度模式"
-                value={mode}
+                value={mode || data?.driver?.data.mode || "manual"}
                 onChange={(e) => setMode(e.target.value)}
               >
                 <option value="manual">人工控制</option>
@@ -326,24 +373,9 @@ export function WorkflowController({
             >
               采用调度模式
             </ActionButton>
-          </>
+          </div>
         )}
       </details>
-      {data?.driverWaiting?.length > 0 && (
-        <ul aria-label="调度等待条件">
-          {(data?.driverWaiting || []).slice(0, 12).map((item: Row) => {
-            const gate = (Object.values(item.actions || {}) as Row[]).find(
-              (action) => item.waiting_for?.includes(action.code),
-            );
-            return (
-              <li key={item.execution_id}>
-                {item.path || item.step}：
-                {gate?.reason || item.reason || item.status}
-              </li>
-            );
-          })}
-        </ul>
-      )}
       <p>
         {controller
           ? statuses[controller.status] || controller.status
@@ -352,6 +384,17 @@ export function WorkflowController({
             : ""}
       </p>
       {controller?.reason && <p role="status">{controller.reason}</p>}
+      {controller?.session_id && (
+        <p>
+          <DiscussionLink
+            projectId={projectId}
+            ownerId={controller.owner_id}
+            sessionId={controller.session_id}
+          >
+            与项目经理继续讨论
+          </DiscussionLink>
+        </p>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();

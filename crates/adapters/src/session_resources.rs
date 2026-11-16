@@ -135,6 +135,14 @@ impl ports::SessionResources for SessionResourceAdapter<'_> {
     }
     fn validate_installation(&self, i: &RuntimeInstallation) -> Result<()> {
         permissions::validate_runtime_version(i)?;
+        if self.global.runtime_verification(i)?.is_none() {
+            // A Host rebuild changes the driver digest, not the selected image.
+            // Re-probe that exact installation without model inference or replacement.
+            self.preparation.run(i.key.provider.as_str(), |progress| {
+                progress("正在验证当前驱动与运行环境的协议");
+                self.global.verify_runtime_protocol(i)
+            })?;
+        }
         self.global.require_runtime_verification(i)
     }
     fn verify_permissions(

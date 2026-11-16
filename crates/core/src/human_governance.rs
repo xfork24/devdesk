@@ -29,6 +29,66 @@ fn governed_owner(state: &EngineeringState, owner: &str) -> bool {
     })
 }
 
+// A manager may relay an answer, but only verbatim from the human input
+// frozen into this exact controller Turn. Model text never grants authority.
+fn relays_human_input(
+    state: &EngineeringState,
+    instance: &ConfigurationRecord,
+    command: &Command,
+    actor: &WorkflowActor,
+) -> bool {
+    let WorkflowActor::Controller {
+        controller_id,
+        session_id,
+        turn_id,
+        epoch,
+    } = actor
+    else {
+        return false;
+    };
+    let Some(input) = command.payload["input"]
+        .as_str()
+        .filter(|text| !text.trim().is_empty())
+    else {
+        return false;
+    };
+    let Some(controller) = state.governance.iter().find(|row| {
+        row.id == *controller_id
+            && row.r#type == "workflow_controller"
+            && row.data["session_id"] == *session_id
+            && row.data["epoch"] == *epoch
+            && row.data["root_instance_id"] == instance.data["root_instance_id"]
+    }) else {
+        return false;
+    };
+    let Some(turn) = state
+        .turns
+        .iter()
+        .find(|turn| turn.id == *turn_id && turn.session_id == *session_id)
+    else {
+        return false;
+    };
+    state.governance.iter().any(|intent| {
+        let payload = &intent.data["command"]["payload"];
+        intent.r#type == "workflow_intent"
+            && intent.definition_id == controller.id
+            && intent.data["method"] == "conversation.send"
+            && intent.data["command"]["target"] == *session_id
+            && payload["controller_epoch"] == *epoch
+            && payload["client_message_id"] == turn.client_message_id
+            && payload["controller_input_refs"]
+                .as_array()
+                .is_some_and(|refs| {
+                    state.governance.iter().any(|source| {
+                        source.r#type == "controller_input"
+                            && source.definition_id == controller.id
+                            && refs.contains(&json!(source.id))
+                            && source.data["input"] == input
+                    })
+                })
+    })
+}
+
 pub(crate) fn authorize(
     state: &EngineeringState,
     method: &str,
@@ -67,9 +127,12 @@ pub(crate) fn authorize(
         return Ok(());
     }
     if method == "workflow.step.input" {
+        if relays_human_input(state, instance, command, actor) {
+            return Ok(());
+        }
         return Err(err(
             "human_input_required",
-            "澄清问题必须由人类回答，请等待用户提交补充输入；Agent 不能代答",
+            "澄清问题必须由人类回答；项目经理可原样转交本轮收到的用户指令，不能代答或改写",
         ));
     }
     if method == "workflow.change.apply" {
@@ -234,6 +297,82 @@ mod tests {
                 assert!(authorize(&state, method, &command(owner), &WorkflowActor::Human).is_ok());
             }
         }
+    }
+
+    #[test]
+    fn manager_relays_only_verbatim_human_input_bound_to_the_current_turn() {
+        let mut state = state();
+        let mut controller = record(
+            "workflow_controller",
+            "feature".into(),
+            Scope::global(),
+            "manager".into(),
+            1,
+            None,
+            json!({"root_instance_id":"root","session_id":"session","epoch":1}),
+            false,
+        );
+        controller.id = "manager".into();
+        let source = record(
+            "controller_input",
+            "manager".into(),
+            Scope::global(),
+            "human".into(),
+            1,
+            None,
+            json!({"input":"只导出 ID 和名称。","consumed":true}),
+            false,
+        );
+        let intent = record(
+            "workflow_intent",
+            "manager".into(),
+            Scope::global(),
+            "send".into(),
+            1,
+            None,
+            json!({"method":"conversation.send","command":{"target":"session","payload":{"controller_epoch":1,"client_message_id":"message","controller_input_refs":[source.id]}}}),
+            false,
+        );
+        state.governance.extend([controller, source, intent]);
+        state.turns.push(serde_json::from_value(json!({"id":"turn","project_id":"project","session_id":"session","client_message_id":"message","input":"frozen snapshot","input_digest":"digest","status":"running","external_message":null,"external_turn":null,"consumed":true,"started":1,"finished":null,"revision":1})).unwrap());
+        let mut c = command("root");
+        c.payload["input"] = json!("只导出 ID 和名称。");
+        let actor = actors().remove(0);
+        assert!(authorize(&state, "workflow.step.input", &c, &actor).is_ok());
+        c.target = Some("child".into());
+        assert!(authorize(&state, "workflow.step.input", &c, &actor).is_ok());
+        c.payload["input"] = json!("额外导出电话。");
+        assert!(authorize(&state, "workflow.step.input", &c, &actor).is_err());
+        c.payload["input"] = json!("只导出 ID 和名称。");
+        state.turns[0].client_message_id = "another-turn".into();
+        assert!(authorize(&state, "workflow.step.input", &c, &actor).is_err());
+        state.turns[0].client_message_id = "message".into();
+        state
+            .governance
+            .iter_mut()
+            .find(|row| row.id == "manager")
+            .unwrap()
+            .data["epoch"] = json!(2);
+        assert!(authorize(&state, "workflow.step.input", &c, &actor).is_err());
+        state
+            .governance
+            .iter_mut()
+            .find(|row| row.id == "manager")
+            .unwrap()
+            .data["epoch"] = json!(1);
+        state
+            .governance
+            .iter_mut()
+            .find(|row| row.id == "child")
+            .unwrap()
+            .data["root_instance_id"] = json!("foreign-root");
+        state
+            .governance
+            .iter_mut()
+            .find(|row| row.id == "child")
+            .unwrap()
+            .data["human_governance"] = json!(true);
+        assert!(authorize(&state, "workflow.step.input", &c, &actor).is_err());
     }
 
     #[test]

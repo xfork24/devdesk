@@ -1,11 +1,9 @@
-import { WorkStandard } from "./WorkStandard";
-import { WorkflowController, WorkflowPlanChanges } from "./WorkflowController";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { ActionButton } from "./ActionFeedback";
 import { useActionFeedback } from "./action-feedback";
 import { type Request, type Row } from "./rpc-types";
-import { ReadingLink, RawJsonLink } from "./reading";
+import { ReadingLink } from "./reading";
 
 type Props = {
   nested?: boolean;
@@ -86,8 +84,21 @@ export function WorkflowInstanceView({
     if (epoch.current === current) setData(result);
   }, [request, record.id, projectId]);
   useEffect(() => {
-    void load().catch((error) => setError(String(error)));
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        await load();
+      } catch (error) {
+        if (active) setError(String(error));
+      } finally {
+        if (active) timer = setTimeout(() => void poll(), 2500);
+      }
+    }
+    void poll();
     return () => {
+      active = false;
+      clearTimeout(timer);
       invalidate();
     };
   }, [record, projectId, request, load, setError, invalidate]);
@@ -200,69 +211,6 @@ export function WorkflowInstanceView({
           ) : null}
         </div>
       </div>
-      <WorkStandard
-        request={request}
-        projectId={projectId}
-        owner={{ id: runtime.owner_id }}
-        instance={current}
-        refresh={async () => {
-          await load();
-          await refresh();
-        }}
-      />
-      {!nested && (
-        <WorkflowController
-          request={request}
-          instance={current}
-          projectId={projectId}
-          refresh={async () => {
-            await load();
-            await refresh();
-          }}
-        />
-      )}
-      {!runtime.cancel_requested &&
-        !["completed", "cancelled"].includes(runtime.status) && (
-          <WorkflowPlanChanges
-            request={request}
-            instance={current}
-            projectId={projectId}
-            refresh={async () => {
-              await load();
-              await refresh();
-            }}
-          />
-        )}
-      {!!data?.history?.length && (
-        <details className="panel">
-          <summary>计划与执行历史 · {data.history.length} 条</summary>
-          {data.history.map((r: Row) => (
-            <p key={r.id}>
-              {r.name} ·{" "}
-              {r.type === "workflow_execution_history" ? (
-                <ReadingLink
-                  detail="records"
-                  projectId={projectId}
-                  ownerId={runtime.owner_id}
-                  target={{ instance_id: current.id, execution_id: r.data.id }}
-                >
-                  查看历史执行
-                </ReadingLink>
-              ) : (
-                <RawJsonLink
-                  source="record"
-                  params={{
-                    project_id: projectId,
-                    owner_id: runtime.owner_id,
-                    record_id: r.id,
-                  }}
-                  title="查看计划/变更原始记录"
-                />
-              )}
-            </p>
-          ))}
-        </details>
-      )}
       {(plan?.stages || []).map((stage: Row) => {
         const definitions = plan.steps.filter(
           (step: Row) => step.stage === stage.key,
