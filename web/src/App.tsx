@@ -176,7 +176,7 @@ const routeTab = routeTabValue(route);
 function App() {
   const catalogGeneration = useCatalogGeneration();
   const requestGeneration = useRef(0);
-  const activePage = useRef({ tab: routeTab, featureId: "" });
+  const activePage = useRef({ tab: routeTab, featureId: "", taskFilter: "" });
   const configurationVersion = useRef("");
   const workspaceLoads = useRef(0);
   const workspaceRefreshQueued = useRef(false);
@@ -185,11 +185,22 @@ function App() {
   const kernelStopped = useRef(false);
   const [detailPages, setDetailPages] = useState<Record<string, number>>({});
   const [data, setData] = useState<Row>();
+  const configurationReadVersion = JSON.stringify(data?.catalog_version);
+  // Refresh editor reads on a committed configuration change while retaining their draft/feedback state.
+  const configurationReader = useRef({
+    version: configurationReadVersion,
+    request: rpc,
+  });
+  if (configurationReader.current.version !== configurationReadVersion)
+    configurationReader.current = {
+      version: configurationReadVersion,
+      request: (method: string, params: Row = {}) => rpc(method, params),
+    };
+  const configurationRequest = configurationReader.current.request;
   const [caps, setCaps] = useState<Row>();
   const [projectId, setProjectId] = useState("");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
-  activePage.current = { tab, featureId };
   const [error, setError] = useState("");
   const [connection, setConnection] = useState("连接中");
   const [dialog, setDialog] = useState<DialogSpec>();
@@ -220,6 +231,7 @@ function App() {
       : undefined,
   );
   const [taskFilter, setTaskFilter] = useState(route.get("task_id") || "");
+  activePage.current = { tab, featureId, taskFilter };
   const [readingTarget, setReadingTarget] = useState<Row>(() => ({
     ...Object.fromEntries(
       readingKeys.map((key) => [key, route.get(key) || ""]),
@@ -420,15 +432,8 @@ function App() {
             return;
           }
           const configurationPage =
-            [
-              "projects",
-              "workflows",
-              "actors",
-              "components",
-              "discussion",
-            ].includes(tab) &&
-            !featureId &&
-            !taskFilter;
+            ["projects", "workflows", "actors", "components"].includes(tab) ||
+            (tab === "discussion" && !featureId && !taskFilter);
           const d = await rpc(
             configurationPage ? "query.ui_bootstrap" : "query.workspace",
             {
@@ -488,7 +493,7 @@ function App() {
     if (caps?.setup_required !== false) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const stream = new EventSource(
-      `/events${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+      `/events?configuration=true${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ""}`,
     );
     stream.onopen = () => {
       if (!kernelStopped.current) setConnection("已连接");
@@ -498,14 +503,10 @@ function App() {
         const value: Row = JSON.parse(message.data);
         const page = activePage.current;
         if (
-          [
-            "projects",
-            "workflows",
-            "actors",
-            "components",
-            "discussion",
-          ].includes(page.tab) &&
-          !page.featureId
+          ["projects", "workflows", "actors", "components"].includes(
+            page.tab,
+          ) ||
+          (page.tab === "discussion" && !page.featureId && !page.taskFilter)
         ) {
           const version = value.configuration_version
             ? JSON.stringify(value.configuration_version)
@@ -1233,7 +1234,7 @@ function App() {
                 setExecutionTab("context");
                 setTab("execution");
               }}
-              request={rpc}
+              request={configurationRequest}
               refresh={load}
             />
           )}
@@ -1521,7 +1522,7 @@ function App() {
             <ConfigurationPage
               key={`${tab}:${projectId}:${catalogGeneration}`}
               group={tab === "workflows" ? "processes" : "foundations"}
-              request={rpc}
+              request={configurationRequest}
               project={project}
               installations={data.runtime_installations || []}
               refresh={load}
@@ -1530,7 +1531,7 @@ function App() {
           {data && ["actors", "definitions"].includes(tab) && (
             <AgentCatalog
               key={`actors:${projectId}:${catalogGeneration}`}
-              request={rpc}
+              request={configurationRequest}
               project={project}
               installations={data.runtime_installations || []}
               group="actors"
@@ -1539,7 +1540,7 @@ function App() {
           {data && tab === "projects" && (
             <ProjectManager
               key={`project-manager:${projectId || "global"}:${catalogGeneration}`}
-              request={rpc}
+              request={configurationRequest}
               project={project}
               refresh={load}
               onOpen={async (id) => {

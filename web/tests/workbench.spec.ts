@@ -73,6 +73,8 @@ async function githubFixture(page: Page) {
         };
         result = { id: project.id };
         break;
+      case "query.ui_bootstrap":
+      case "query.project_directory":
       case "query.workspace":
         result = {
           ...base,

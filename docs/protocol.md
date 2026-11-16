@@ -23,6 +23,12 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 18 / project 
 
 `query.workspace` 返回项目目录及活动工程，`query.history` / `query.events` / `query.artifact` 读取对应事实。分页参数有界；SSE 只通知变化，客户端重新查询权威状态。没有通用 `set_status`。
 
+`query.ui_bootstrap` 返回活动项目、项目目录、配置新鲜度、配置健康摘要和页面必须的运行安装信息，不返回工程详情或历史快照；`query.project_directory` 只读取项目目录，支持 `project_offset`、`limit` 和 `github_only`。配置页面使用这两个入口，执行和历史页面继续读取 `query.workspace`。配置目录、默认选择、权限资源等查询保留原有响应内容，并附带 `catalog_version={host,global,project,project_sources}`；该版本不作为执行授权或并发写入令牌，模板重置仍使用 `catalog_generation`。
+
+SSE 可显式传入 `configuration=true`，接收无持久化事件 ID 的 `configuration.changed` 版本通知，普通事件同时附带 `configuration_version`。只有持久化事件推进 `ID:cursor`，通知不改变游标和重放语义。不传该参数时保留原事件流合同。
+
+设置 `DEVDESK_PERF_LOG=1` 可输出启动和 RPC 的 JSON 性能日志，包含请求编号、队列等待、连接等待、源解码/校验、恢复、编译、响应编码、字节数与阶段调用次数；嵌套阶段为包含关系，不能直接相加。RPC 同时返回 `Server-Timing` 和 `X-DevDesk-Request-Id`。日志不包含请求参数或响应正文，默认关闭。
+
 历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，当前项目读取对应活动项目库；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。
 
 JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.message`，领域代码位于 `error.data.code`，常见为 invalid_params、not_found、blocked、revision_conflict、project_changed、project_required、configuration_required、dataset_locked 和 storage。

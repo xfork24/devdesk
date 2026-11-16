@@ -19,10 +19,19 @@ struct Entry {
     snapshot: Arc<ConfigurationCatalogSnapshot>,
     _reservation: Reservation,
 }
-#[derive(Default)]
 pub(super) struct CatalogCache {
     entry: Mutex<Option<Entry>>,
     revision: AtomicU64,
+    data_version: AtomicU64,
+}
+impl Default for CatalogCache {
+    fn default() -> Self {
+        Self {
+            entry: Default::default(),
+            revision: AtomicU64::new(1),
+            data_version: AtomicU64::new(0),
+        }
+    }
 }
 impl CatalogCache {
     pub fn current(&self) -> Result<Option<Arc<ConfigurationCatalogSnapshot>>> {
@@ -34,6 +43,7 @@ impl CatalogCache {
         Ok(None)
     }
     pub fn invalidate(&self) -> Result<()> {
+        self.revision.fetch_add(1, Ordering::Relaxed);
         *self.entry.lock().map_err(storage)? = None;
         Ok(())
     }
@@ -46,6 +56,10 @@ impl CatalogCache {
         let version = conn
             .query_row("PRAGMA data_version", [], |r| r.get::<_, u64>(0))
             .map_err(storage)?;
+        let previous = self.data_version.swap(version, Ordering::Relaxed);
+        if previous != 0 && previous != version {
+            self.invalidate()?;
+        }
         if let Some(entry) = self
             .entry
             .lock()
@@ -80,7 +94,7 @@ impl CatalogCache {
                 .map_err(storage)?;
         transaction.commit().map_err(storage)?;
         let bytes = serde_json::to_vec(&state).map_err(storage)?.len();
-        let revision = self.revision.fetch_add(1, Ordering::Relaxed) + 1;
+        let revision = self.revision.load(Ordering::Relaxed);
         let snapshot = Arc::new(ConfigurationCatalogSnapshot::new(state, revision, ready)?);
         // Account for the state and its auxiliary indexes conservatively. Readers may pin an old Arc.
         let retained = bytes.saturating_mul(2);
@@ -151,4 +165,23 @@ pub(super) fn read_only(path: &Path, project: bool) -> Result<Arc<ConfigurationC
     reader
         .cache
         .read(&*reader.connection.lock().map_err(storage)?, project)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn cache_admission_and_eviction_do_not_change_the_committed_catalog_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../../../sql/global/schema.sql"))
+            .unwrap();
+        let cache = CatalogCache::default();
+        let first = cache.read(&conn, false).unwrap();
+        *cache.entry.lock().unwrap() = None;
+        let rebuilt = cache.read(&conn, false).unwrap();
+        assert_eq!(first.revision, rebuilt.revision);
+        assert!(!Arc::ptr_eq(&first, &rebuilt));
+        cache.invalidate().unwrap();
+        assert!(cache.read(&conn, false).unwrap().revision > first.revision);
+    }
 }

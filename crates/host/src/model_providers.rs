@@ -7,13 +7,13 @@ impl Workspace {
     /// catalog capacities attached when a harness covers them.
     pub(super) fn model_provider_facts(&self) -> Result<Vec<(Id, ProviderFacts)>> {
         let catalog = self.configuration.store.configuration_snapshot()?;
-        let state = &catalog.state;
+        let state = catalog.state.as_ref();
         let mut facts = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
         for r in state.governance.iter().filter(|r| {
             r.r#type == "model_provider"
-                && template_record_current(&state, r)
-                && !devdesk_core::configuration_retired(&state, r)
+                && template_record_current(state, r)
+                && !devdesk_core::configuration_retired(state, r)
                 && !state.governance.iter().any(|next| {
                     next.r#type == r.r#type
                         && next.definition_id == r.definition_id

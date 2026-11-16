@@ -5,7 +5,13 @@ const [origin, output, count, serverPid] = process.argv.slice(2);
 const samples = Number(count);
 const browser = await chromium.launch({ channel: 'chromium', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-const trace = [], navigation = [], errors = [];
+const cdp=await page.context().newCDPSession(page);
+await cdp.send('Performance.enable');
+await page.addInitScript(()=>{
+  window.__configurationLongTasks=[];
+  new PerformanceObserver(list=>{for(const item of list.getEntries()) if(window.__configurationLongTasks.length<500) window.__configurationLongTasks.push({start_ms:item.startTime,ms:item.duration});}).observe({type:'longtask',buffered:true});
+});
+const trace = [], navigation = [], errors = [], consoleErrors=[];
 let phase = { sample: -1, page: 'cold' }, start = Date.now();
 const pending = new Set();
 const polls = new Set(['runtime.preparation_status', 'query.session', 'query.agent_experience']);
@@ -16,6 +22,7 @@ await page.route('**/rpc', async route => {
   } else await route.continue();
 });
 page.on('pageerror', e => errors.push(String(e)));
+page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text().slice(0,500));});
 page.on('request', r => {
   if (!r.url().endsWith('/rpc')) return;
   const data = r.postDataJSON();
@@ -45,7 +52,7 @@ async function settle() {
   }
   throw Error('configuration requests did not settle: ' + JSON.stringify(phase));
 }
-function save() { fs.writeFileSync(output + '/browser.json', JSON.stringify({ trace, navigation, errors, realtime_models: 'explicit fixture; excluded', scheduler: false }, null, 2)); }
+function save() { fs.writeFileSync(output + '/browser.json', JSON.stringify({ trace, navigation, errors, consoleErrors, realtime_models: 'explicit fixture; excluded', scheduler: false }, null, 2)); }
 try {
   await page.goto(origin + '/?tab=discussion'); await settle();
   const names = ['项目管理', '流程与规范', '角色与Agent', '基础组件', '角色讨论'];
@@ -59,6 +66,8 @@ try {
     save();
   }
   await page.screenshot({ path: output + '/page.png', fullPage: true });
+  const metrics=(await cdp.send('Performance.getMetrics')).metrics.filter(item=>['TaskDuration','ScriptDuration','LayoutDuration','RecalcStyleDuration','JSHeapUsedSize'].includes(item.name));
+  fs.writeFileSync(output+'/main-thread.json',JSON.stringify({metrics,longtasks:await page.evaluate(()=>window.__configurationLongTasks)},null,2));
   function cpu() {
     if (process.platform !== 'darwin') return null;
     const value = execFileSync('ps',['-p',serverPid,'-o','time='],{encoding:'utf8'}).trim().split(':');

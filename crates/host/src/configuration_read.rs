@@ -23,14 +23,72 @@ pub(super) fn directory_query(method: &str) -> bool {
 }
 
 impl Workspace {
-    pub(crate) fn configuration_version(&self, engine: &Engine) -> Result<Value> {
+    fn configuration_bundle(&self) -> Result<(Arc<ConfigurationCatalogSnapshot>, String)> {
         let global = self.global.configuration_snapshot()?;
+        let engines: Vec<_> = self
+            .opened
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(id, _)| id.as_str() != GLOBAL_DISCUSSION_NAMESPACE)
+            .map(|(id, e)| (id.clone(), e.clone()))
+            .collect();
+        let mut projects = vec![];
+        let mut clocks = vec![];
+        for (id, engine) in engines {
+            let catalog = engine.store.configuration_snapshot()?;
+            clocks.push((id, catalog.revision));
+            projects.push(catalog);
+        }
+        let clock = configuration_hash(&clocks);
+        let key = format!("roles:{}:{clock}", global.revision);
+        if let Some((_, snapshot)) = self
+            .configuration_views
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(k, _)| k == &key)
+        {
+            return Ok((snapshot.clone(), clock));
+        }
+        let snapshot = if projects.is_empty() {
+            global
+        } else {
+            Arc::new(compose_role_directory(&global, &projects)?)
+        };
+        self.retain_configuration_view(key, snapshot.clone())?;
+        Ok((snapshot, clock))
+    }
+    fn retain_configuration_view(
+        &self,
+        key: String,
+        view: Arc<ConfigurationCatalogSnapshot>,
+    ) -> Result<()> {
+        if serde_json::to_vec(view.state.as_ref())
+            .map_err(|e| err("storage", e.to_string()))?
+            .len()
+            <= 4 * 1024 * 1024
+        {
+            let mut views = self.configuration_views.lock().unwrap();
+            if !views.iter().any(|(k, _)| k == &key) {
+                if views.len() >= 8 {
+                    views.remove(0);
+                }
+                views.push((key, view));
+            }
+        }
+        Ok(())
+    }
+    pub(crate) fn configuration_version(&self, engine: &Engine) -> Result<Value> {
+        let (global, clock) = self.configuration_bundle()?;
         let project = if engine.store.project_id().is_some() {
             engine.store.configuration_snapshot()?.revision
         } else {
             0
         };
-        Ok(json!({"host":self.catalog_instance,"global":global.revision,"project":project}))
+        Ok(
+            json!({"host":self.catalog_instance,"global":global.revision,"project":project,"project_sources":clock}),
+        )
     }
     pub(super) fn project_directory(&self, params: &Value) -> Result<Value> {
         let offset = params["project_offset"].as_u64().unwrap_or(0) as usize;
@@ -40,11 +98,20 @@ impl Workspace {
         } else {
             self.global.projects(offset, limit)?
         };
+        let mut projects = projects;
+        if let Ok(engine) = self.active_engine(None) {
+            let catalog = engine.store.configuration_snapshot()?;
+            if let Some(current) = catalog.state.projects.first()
+                && let Some(summary) = projects.iter_mut().find(|p| p.id == current.id)
+            {
+                *summary = current.clone();
+            }
+        }
         Ok(json!({"projects":projects,"total_projects":total}))
     }
     pub(super) fn ui_bootstrap(&self, params: &Value) -> Result<Value> {
         let _span = performance::Span::new("ui.bootstrap");
-        let global = self.global.configuration_snapshot()?;
+        let (global, clock) = self.configuration_bundle()?;
         let engine = match self.active_engine(params["project_id"].as_str()) {
             Ok(engine) => engine,
             Err(e) if e.code == "project_required" => self.configuration.clone(),
@@ -53,7 +120,7 @@ impl Workspace {
         let project_id = engine.store.project_id();
         let view = if let Some(project) = project_id.as_deref() {
             let local = engine.store.configuration_snapshot()?;
-            self.configuration_view(&global, &local, project)?
+            self.configuration_view(&global, &local, project, &clock)?
         } else {
             global.clone()
         };
@@ -64,6 +131,12 @@ impl Workspace {
             json!({"ready":false,"issues":[]})
         };
         let mut result = self.project_directory(params)?;
+        if let Some(current) = current
+            && let Some(rows) = result["projects"].as_array_mut()
+            && let Some(summary) = rows.iter_mut().find(|row| row["id"] == current.id)
+        {
+            *summary = json!(current);
+        }
         result["kind"] = json!("ui_bootstrap");
         result["active_project"] = json!(current);
         result["active_project_id"] = json!(project_id);
@@ -71,7 +144,7 @@ impl Workspace {
         result["configuration_ready"] = health["ready"].clone();
         result["configuration_status"] = health;
         result["catalog_generation"] = json!(template_catalog_generation(&global.state));
-        result["catalog_version"] = json!({"host":self.catalog_instance,"global":global.revision,"project":if project_id.is_some(){view.revision}else{0}});
+        result["catalog_version"] = json!({"host":self.catalog_instance,"global":global.revision,"project":if project_id.is_some(){view.revision}else{0},"project_sources":clock});
         result["definitions"]=json!(view.state.definitions.iter().filter(|d|template_projection_current(&view.state,d)).map(|d|json!({"id":d.id,"name":d.name,"family":d.family,"version":d.version,"supersedes":d.supersedes,"agent_profile":d.agent_profile})).collect::<Vec<_>>());
         result["configurations"] = json!(
             view.state
@@ -97,8 +170,9 @@ impl Workspace {
         global: &Arc<ConfigurationCatalogSnapshot>,
         local: &Arc<ConfigurationCatalogSnapshot>,
         project: &str,
+        clock: &str,
     ) -> Result<Arc<ConfigurationCatalogSnapshot>> {
-        let key = format!("{project}:{}:{}", global.revision, local.revision);
+        let key = format!("{project}:{}:{}:{clock}", global.revision, local.revision);
         if let Some((_, view)) = self
             .configuration_views
             .lock()
@@ -109,39 +183,8 @@ impl Workspace {
             return Ok(view.clone());
         }
         let _span = performance::Span::new("catalog.compose");
-        let mut state = local.state.as_ref().clone();
-        if state.projects.iter().all(|p| p.execution_mode == "live") {
-            for record in global.state.governance.iter().filter(|r| {
-                r.immutable
-                    && (r.r#type == "role"
-                        || r.r#type == "role_retirement"
-                        || configuration_visible(&global.state, r, Some(project)))
-            }) {
-                if let Some(old) = local.record(&record.id) {
-                    require(old.content_hash == record.content_hash, "共享配置摘要冲突")?;
-                } else {
-                    state.governance.push(record.clone());
-                }
-            }
-            copy_template_catalog(&global.state, &mut state)?;
-        }
-        let view = Arc::new(ConfigurationCatalogSnapshot::new(
-            state,
-            local.revision,
-            local.repository_ready,
-        )?);
-        if serde_json::to_vec(view.state.as_ref())
-            .map_err(|e| err("storage", e.to_string()))?
-            .len()
-            > 4 * 1024 * 1024
-        {
-            return Ok(view);
-        }
-        let mut views = self.configuration_views.lock().unwrap();
-        if views.len() >= 8 {
-            views.remove(0);
-        }
-        views.push((key, view.clone()));
+        let view = Arc::new(compose_configuration_catalog(global, local, project)?);
+        self.retain_configuration_view(key, view.clone())?;
         Ok(view)
     }
 
@@ -156,7 +199,7 @@ impl Workspace {
         }
         Some((|| {
             let _span = performance::Span::new("catalog.query");
-            let global = self.global.configuration_snapshot()?;
+            let (global, clock) = self.configuration_bundle()?;
             let target = params["id"].as_str().or_else(|| params["target"].as_str());
             let project = params["project_id"].as_str();
             let local = match method {
@@ -184,6 +227,7 @@ impl Workspace {
                     &global,
                     &local,
                     engine.store.project_id().as_deref().unwrap_or("global"),
+                    &clock,
                 )?
             } else {
                 global.clone()
@@ -222,7 +266,7 @@ impl Workspace {
                     json!(template_catalog_generation(&global.state)),
                 );
                 object.insert("template_sources".into(), json!(sources));
-                object.insert("catalog_version".into(),json!({"host":self.catalog_instance,"global":global.revision,"project":view.revision}));
+                object.insert("catalog_version".into(),json!({"host":self.catalog_instance,"global":global.revision,"project":if local {view.revision}else{0},"project_sources":clock}));
             }
             Ok(result)
         })())
@@ -395,5 +439,104 @@ mod tests {
         assert!(measurement["spans"]["project.full_snapshot"].is_null());
         assert!(measurement["spans"]["global.full_snapshot"].is_null());
         assert!(bootstrap.get("project_snapshots").is_none());
+    }
+
+    #[test]
+    fn project_owned_role_is_discoverable_without_query_publishing_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "project role source");
+        let engine = w.active_engine(Some(&project)).unwrap();
+        let before = w.configuration_version(&engine).unwrap();
+        let role = engine.execute("role.create", Command {
+            command_id: id(), target: None, expected_revision: None,
+            payload: json!({"name":"Project role","scope":format!("project:{project}"),"data":{"instructions":"Project owned instructions"}}),
+        }).unwrap();
+        let trace = performance::Trace::start();
+        let directory = w
+            .dispatch("query.roles", json!({"include_history":true,"limit":100}))
+            .unwrap();
+        let after = w.configuration_version(&engine).unwrap();
+        let measurement = trace.finish();
+        assert_ne!(before, after);
+        assert!(
+            directory["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == role["id"])
+        );
+        assert!(
+            w.global
+                .configuration_snapshot()
+                .unwrap()
+                .record(role["id"].as_str().unwrap())
+                .is_none()
+        );
+        for name in [
+            "project.full_snapshot",
+            "global.full_snapshot",
+            "project.transaction",
+            "global.transaction",
+        ] {
+            assert!(measurement["spans"][name].is_null(), "{measurement}");
+        }
+    }
+
+    #[test]
+    fn pinned_directory_queries_preserve_existing_query_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
+        let project = create(&w, "read contract parity");
+        let cases = [
+            (
+                "query.configurations",
+                json!({"local":true,"project_id":project,"limit":100,"include_history":true}),
+            ),
+            (
+                "query.configurations",
+                json!({"local":true,"project_id":project,"limit":100,"offset":100,"include_history":true}),
+            ),
+            ("query.configurations", json!({"limit":100})),
+            (
+                "query.configurations",
+                json!({"local":true,"project_id":project,"kind":"role","include_history":false}),
+            ),
+            (
+                "query.roles",
+                json!({"local":true,"project_id":project,"include_history":true}),
+            ),
+            ("query.capabilities", json!({"project_id":project})),
+            (
+                "query.workflows",
+                json!({"project_id":project,"local":true,"include_history":true}),
+            ),
+            ("query.standard_catalog", json!({"project_id":project})),
+            ("query.project_configuration", json!({"project_id":project})),
+            (
+                "query.configuration_defaults",
+                json!({"project_id":project}),
+            ),
+            (
+                "query.integrations",
+                json!({"project_id":project,"local":true,"include_history":true}),
+            ),
+            (
+                "query.integration_bindings",
+                json!({"project_id":project,"local":true,"include_history":true}),
+            ),
+            ("query.permission_resources", json!({"project_id":project})),
+        ];
+        for (method, params) in cases {
+            let old = w.dispatch_inner(method, params.clone()).unwrap();
+            let mut current = w.dispatch(method, params).unwrap();
+            let object = current.as_object_mut().unwrap();
+            object.remove("catalog_version");
+            object.remove("template_sources");
+            if old.get("catalog_generation").is_none() {
+                object.remove("catalog_generation");
+            }
+            assert_eq!(current, old, "read response changed for {method}");
+        }
     }
 }
