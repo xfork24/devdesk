@@ -63,7 +63,10 @@ export function ProjectManager({
       source_configuration_id: "",
     }),
   );
+  const loadGeneration = useRef(0);
+  const previewScope = useRef("");
   const load = useCallback(async () => {
+    const ticket = ++loadGeneration.current;
     const [workspace, records, configuration, preset] = await Promise.all([
       request("query.ui_bootstrap", { limit: 100, project_id: project?.id }),
       loadCatalog(request, project?.id),
@@ -74,6 +77,15 @@ export function ProjectManager({
         project_id: project?.id,
       }).catch(() => undefined),
     ]);
+    if (ticket !== loadGeneration.current) return;
+    const saved = configuration.configuration?.data.standard_ref
+      ? await request("query.standard", {
+          id: configuration.configuration.data.standard_ref,
+          project_id: project?.id,
+          limit: 1000,
+        })
+      : undefined;
+    if (ticket !== loadGeneration.current) return;
     setProjects(workspace.projects || []);
     if (!orchestrationEdited.current)
       setOrchestration(
@@ -101,13 +113,6 @@ export function ProjectManager({
     );
     setDefaults(preset);
     setHealth(workspace);
-    const saved = configuration.configuration?.data.standard_ref
-      ? await request("query.standard", {
-          id: configuration.configuration.data.standard_ref,
-          project_id: project?.id,
-          limit: 1000,
-        })
-      : undefined;
     setSavedStandard(saved);
     if (configuration.configuration?.data.workflow_ref)
       setDraft((current) =>
@@ -163,14 +168,24 @@ export function ProjectManager({
     });
     return () => {
       active = false;
+      loadGeneration.current += 1;
     };
   }, [load, project?.revision, setError]);
   useEffect(() => {
     let active = true;
-    setRequirements(undefined);
-    setPreview(undefined);
+    const scope = JSON.stringify([
+      project?.id,
+      draft.standard_ref,
+      draft.standard_overrides,
+      draft.harness_permission_ref,
+    ]);
+    if (previewScope.current !== scope) {
+      previewScope.current = scope;
+      setRequirements(undefined);
+      setPreview(undefined);
+      setBaseline(undefined);
+    }
     setPreviewError("");
-    setBaseline(undefined);
     if (!project?.id || !draft.standard_ref) return;
     void Promise.all([
       request("query.standard", {
@@ -215,6 +230,7 @@ export function ProjectManager({
     captureFeedback();
 
     if (!project) return;
+    loadGeneration.current += 1;
     beginFeedback();
     setBusy(true);
     setError("");
