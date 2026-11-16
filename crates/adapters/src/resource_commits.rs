@@ -446,10 +446,16 @@ pub(super) fn commit(
     require(prepared.changes.len() <= 4096, "一次提交的资源过多")?;
     let _span = performance::Span::new("resource.commit");
     let writes = prepare_writes(pool, prepared)?;
-    let mut conn = pool.lock()?;
     let started = Instant::now();
     for attempt in 0..3 {
-        match commit_once(&mut conn, prepared, &writes) {
+        // Return the submit connection before backing off. A busy caller must
+        // not occupy one of the bounded handles while other independent
+        // commits wait for it; every attempt retains the original read set.
+        let result = {
+            let mut conn = pool.lock()?;
+            commit_once(&mut conn, prepared, &writes)
+        };
+        match result {
             Err(error)
                 if error.code == "storage_busy"
                     && attempt < 2

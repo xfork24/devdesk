@@ -480,22 +480,33 @@ fn durable_external_operation_replays_intent_without_running_io_again() {
         expected_revision: None,
         payload: json!({"binding_ref":"fixture"}),
     };
-    let first = e
-        .prepare_integration_operation("integration.discover", &c, json!({"frozen":"input"}))
+    let context = devdesk_core::InvocationContext::human(None);
+    let input =
+        json!({"package_hash":devdesk_domain::configuration_hash(&c.payload),"frozen":"input"});
+    let first = match e
+        .prepare_integration_operation("skill.import_package", &c, input, &context)
+        .unwrap()
+    {
+        devdesk_core::integration_operations::IntegrationOperationAdmission::Admitted(
+            operation,
+        ) => operation,
+        _ => panic!("first intent must authorize one external attempt"),
+    };
+    assert!(
+        matches!(e.prepare_integration_operation("skill.import_package",&c,json!({"different":"ignored"}),&context),Err(error) if error.code=="needs_reconciliation")
+    );
+    e.finish_integration_operation(&first, &Ok(json!({"catalog":"actual receipt"})))
         .unwrap();
-    let replay = e
-        .prepare_integration_operation("integration.discover", &c, json!({"different":"ignored"}))
-        .unwrap();
-    assert_eq!(first, replay);
-    e.finish_integration_operation(
-        first["id"].as_str().unwrap(),
-        &Ok(json!({"catalog":"actual receipt"})),
-    )
-    .unwrap();
+    assert_eq!(
+        e.replay_integration_operation("skill.import_package", &c, &context)
+            .unwrap()
+            .unwrap(),
+        json!({"catalog":"actual receipt"})
+    );
     let state = e.store.snapshot().unwrap();
-    let r = state.configuration(first["id"].as_str().unwrap()).unwrap();
+    let r = state.configuration(first.id()).unwrap();
     assert_eq!(r.data["status"], "succeeded");
-    assert_eq!(r.data["input"]["frozen"], "input");
+    assert_eq!(r.data["inputs"]["frozen"], "input");
 }
 #[derive(Default)]
 struct MemorySecrets(std::sync::Mutex<std::collections::BTreeMap<String, String>>);

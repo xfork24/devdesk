@@ -7,6 +7,7 @@ mod catalog_sync;
 pub mod concurrency;
 mod configuration_catalog;
 pub mod credential_updates;
+pub mod integration_operations;
 pub mod project_creation;
 pub mod project_reservation;
 pub mod project_updates;

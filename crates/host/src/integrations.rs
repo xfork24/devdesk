@@ -2,6 +2,7 @@ use super::*;
 use devdesk_adapters::integrations::{
     NativeTools, import_openapi_with_auth, import_skill_zip, parse_skill_markdown,
 };
+use devdesk_core::integration_operations::IntegrationOperationAdmission;
 use devdesk_core::ports::ToolExecutor;
 fn text(v: &Value, k: &str) -> Result<String> {
     v[k].as_str()
@@ -174,6 +175,51 @@ impl Workspace {
         )?;
         Ok(json!({"state":result.id,"status":result.status,"credential_ref":result.credential_ref}))
     }
+    pub(super) fn integration_engine(&self, method: &str, params: &Value) -> Result<Arc<Engine>> {
+        let definition_write = [
+            "integration.create",
+            "integration.revise",
+            "integration.binding.create",
+            "integration.binding.revise",
+            "integration.tool.create",
+            "integration.tool.revise",
+            "integration.openapi.import",
+            "integration.openapi.preview",
+            "skill.import",
+            "skill.import_package",
+        ]
+        .contains(&method);
+        let local = (!definition_write
+            && (params["local"] == true || params["project_id"].is_string()))
+            || params["payload"]["scope"]
+                .as_str()
+                .is_some_and(|s| s.starts_with("project:"))
+            || method == "integration.project.bind";
+        let target = params["target"].as_str().or(params["id"].as_str());
+        let target_local = target
+            .map(|id| -> Result<bool> {
+                let mut keys = vec![devdesk_core::concurrency::ResourceKey::new(
+                    "governance",
+                    id,
+                )];
+                if parse_source_reference(id).is_ok() {
+                    keys.push(devdesk_core::concurrency::ResourceKey::new("source", id));
+                }
+                Ok(!self
+                    .global
+                    .read_resources(&keys)?
+                    .iter()
+                    .any(|row| row.value.is_some()))
+            })
+            .transpose()?
+            .unwrap_or(false);
+        if (local && !(method == "integration.delete" && !target_local)) || target_local {
+            let e = self.project_engine(params["project_id"].as_str())?;
+            Ok(e)
+        } else {
+            Ok(self.configuration.clone())
+        }
+    }
     pub(super) fn integration_dispatch(
         &self,
         method: &str,
@@ -196,37 +242,10 @@ impl Workspace {
             return None;
         }
         Some((|| {
-            let definition_write = [
-                "integration.create",
-                "integration.revise",
-                "integration.binding.create",
-                "integration.binding.revise",
-                "integration.tool.create",
-                "integration.tool.revise",
-                "integration.openapi.import",
-                "integration.openapi.preview",
-                "skill.import",
-                "skill.import_package",
-            ]
-            .contains(&method);
-            let local = (!definition_write
-                && (params["local"] == true || params["project_id"].is_string()))
-                || params["payload"]["scope"]
-                    .as_str()
-                    .is_some_and(|s| s.starts_with("project:"))
-                || method == "integration.project.bind";
-            let global = self.global.snapshot()?;
-            let target = params["target"].as_str().or(params["id"].as_str());
-            let target_local =
-                target.is_some_and(|id| !global.governance.iter().any(|r| r.id == id));
-            let e = if (local && !(method == "integration.delete" && !target_local)) || target_local
-            {
-                let e = self.project_engine(params["project_id"].as_str())?;
+            let e = self.integration_engine(method, params)?;
+            if e.store.project_id().is_some() {
                 self.sync_configuration(&e)?;
-                e
-            } else {
-                self.configuration.clone()
-            };
+            }
             if method == "tool.call.artifact" {
                 let s = e.store.snapshot()?;
                 let r = s.configuration(params["target"].as_str().unwrap_or(""))?;
@@ -339,18 +358,12 @@ impl Workspace {
             let mut c: Command = serde_json::from_value(params.clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
             let fp = command_fingerprint(method, &c);
-            if let Some(previous) = e.store.replay(&c.command_id, &fp)? {
-                if previous["type"] == "integration_operation" {
-                    let state = e.store.snapshot()?;
-                    let operation = state.configuration(previous["id"].as_str().unwrap_or(""))?;
-                    if operation.data["status"] == "succeeded" {
-                        return Ok(operation.data["result"].clone());
-                    }
-                    return Err(err(
-                        "needs_reconciliation",
-                        "先前接入操作已记录，未自动重复外部 I/O；请检查操作状态后以新操作重试",
-                    ));
+            let context = InvocationContext::human(e.store.project_id());
+            if ["skill.import_package", "integration.discover"].contains(&method) {
+                if let Some(value) = e.replay_integration_operation(method, &c, &context)? {
+                    return Ok(value);
                 }
+            } else if let Some(previous) = e.store.replay(&c.command_id, &fp)? {
                 return Ok(previous);
             }
             if method == "integration.openapi.preview" || method == "integration.openapi.import" {
@@ -408,8 +421,10 @@ impl Workspace {
                 return e.execute_resolved("integration.tools.publish", c, &fp);
             }
             if method == "skill.import_package" {
-                let operation = e.prepare_integration_operation(method, &c, json!({"source":c.payload["source"],"git_url":c.payload["git_url"],"commit":c.payload["commit"],"package_hash":configuration_hash(&c.payload)}))?;
-                let operation_id = text(&operation, "id")?;
+                let operation = match e.prepare_integration_operation(method, &c, json!({"source":c.payload["source"],"git_url":c.payload["git_url"],"commit":c.payload["commit"],"package_hash":configuration_hash(&c.payload)}), &context)? {
+                    IntegrationOperationAdmission::Admitted(operation) => operation,
+                    IntegrationOperationAdmission::Replay(result) => return Ok(result),
+                };
                 let result = (|| {
                     let mut package = if c.payload["git_url"].is_string() {
                         devdesk_adapters::integrations::import_skill_git(
@@ -467,7 +482,7 @@ impl Workspace {
                         &command_fingerprint("skill.import_package.adopt", &c),
                     )
                 })();
-                e.finish_integration_operation(&operation_id, &result)?;
+                e.finish_integration_operation(&operation, &result)?;
                 return result;
             }
             if method == "integration.discover" || method == "integration.test" {
@@ -493,14 +508,21 @@ impl Workspace {
                 )?;
                 let executor = NativeTools::new(e.store.root())?;
                 if method == "integration.discover" {
-                    let operation = e.prepare_integration_operation(method, &c, json!({"binding_ref":key,"binding_hash":record.content_hash,"source_hash":source.content_hash,"image_id":image,"permissions":permissions}))?;
+                    let lock = permissions.binding_lock.as_ref().ok_or_else(|| {
+                        err("permission_unconfigured", "工具发现缺少冻结权限引用")
+                    })?;
+                    let selection = json!({"harness_choice":devdesk_core::frozen_views::permission_choice(&lock.harness),"sandbox_choice":devdesk_core::frozen_views::permission_choice(&lock.sandbox),"scope":permissions.scope,"digest":configuration_hash(&permissions)});
+                    let operation = match e.prepare_integration_operation(method, &c, json!({"binding_ref":key,"binding_hash":record.content_hash,"source_ref":source.id,"source_hash":source.content_hash,"image_id":image,"permission_selection":selection}), &context)? {
+                        IntegrationOperationAdmission::Admitted(operation) => operation,
+                        IntegrationOperationAdmission::Replay(result) => return Ok(result),
+                    };
                     let result = executor
                         .discover(&definition, &binding, &image, &permissions)
                         .and_then(|result| {
                             require(result["tools"].is_array(), "发现服务未返回有效工具目录")?;
                             e.record_tool_discovery(&c, &key, result)
                         });
-                    e.finish_integration_operation(&text(&operation, "id")?, &result)?;
+                    e.finish_integration_operation(&operation, &result)?;
                     return result;
                 }
                 let tool_id = text(&c.payload, "tool_ref")?;
@@ -659,6 +681,42 @@ fn serde_yaml_value(s: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn skill_package_completion_replays_without_restoring_or_reimporting() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let params = json!({"command_id":"static-package","payload":{"name":"Explicit static method","markdown":"# Static method\n\nRead the original evidence before making a decision."}});
+        let first = workspace
+            .dispatch("skill.import_package", params.clone())
+            .unwrap();
+        assert_eq!(first["type"], "skill");
+        let state = workspace.global.snapshot().unwrap();
+        let operation = state
+            .governance
+            .iter()
+            .find(|row| row.r#type == "integration_operation")
+            .unwrap();
+        assert_eq!(operation.data["value"]["kind"], "source");
+        assert_eq!(operation.data["value"]["reference"], first["id"]);
+        assert!(operation.data["value"].get("data").is_none());
+        let cursor = workspace.global.event_cursor().unwrap();
+        let trace = performance::Trace::start();
+        let replay = workspace.dispatch("skill.import_package", params).unwrap();
+        let report = trace.finish();
+        assert_eq!(replay, first);
+        assert_eq!(workspace.global.event_cursor().unwrap(), cursor);
+        for stage in [
+            "global.full_snapshot",
+            "global.transaction",
+            "project.full_snapshot",
+            "source.restore_records",
+            "workflow.compile",
+        ] {
+            assert!(report["spans"][stage].is_null(), "{report}");
+        }
+    }
+
     #[test]
     fn project_scoped_integrations_do_not_leak_and_global_creates_use_the_global_catalog() {
         let root = tempfile::tempdir().unwrap();

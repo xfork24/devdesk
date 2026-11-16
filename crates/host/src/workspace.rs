@@ -469,7 +469,18 @@ impl Workspace {
             return result;
         }
         if template_definition_write(method) {
-            if let Ok(command) = serde_json::from_value::<Command>(params.clone()) {
+            if method == "skill.import_package" {
+                let command: Command = serde_json::from_value(params.clone())
+                    .map_err(|e| err("invalid_params", e.to_string()))?;
+                let engine = self.integration_engine(method, &params)?;
+                if let Some(value) = engine.replay_integration_operation(
+                    method,
+                    &command,
+                    &InvocationContext::human(engine.store.project_id()),
+                )? {
+                    return Ok(value);
+                }
+            } else if let Ok(command) = serde_json::from_value::<Command>(params.clone()) {
                 let fingerprint = command_fingerprint(method, &command);
                 if let Some(saved) = self.global.replay(&command.command_id, &fingerprint)? {
                     return Ok(saved);
@@ -480,7 +491,17 @@ impl Workspace {
                     return Ok(saved);
                 }
             }
-            let generation = template_catalog_generation(&self.global.snapshot()?);
+            let state =
+                self.global
+                    .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+                        "governance",
+                        TEMPLATE_CATALOG_STATE,
+                    )])?;
+            let generation = state[0]
+                .value
+                .as_ref()
+                .and_then(|row| row["data"]["generation"].as_u64())
+                .unwrap_or(TEMPLATE_INITIAL_GENERATION);
             if (params.get("expected_catalog_generation").is_some()
                 || generation > TEMPLATE_INITIAL_GENERATION)
                 && params["expected_catalog_generation"].as_u64() != Some(generation)

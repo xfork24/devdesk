@@ -565,61 +565,6 @@ impl Engine {
             Ok(value)
         })
     }
-    /// Persist an external operation before any discovery or Git import I/O.
-    pub fn prepare_integration_operation(
-        &self,
-        method: &str,
-        c: &Command,
-        input: Value,
-    ) -> Result<Value> {
-        let fp = command_fingerprint(method, c);
-        self.store.transact(Some((&c.command_id, &fp)), &mut |s| {
-            let mut r = record(
-                "integration_operation",
-                c.command_id.clone(),
-                self.store
-                    .project_id()
-                    .map(Scope::project)
-                    .unwrap_or(Scope::global()),
-                method.into(),
-                1,
-                None,
-                json!({"status":"prepared", "input":input, "created_at":now()}),
-                false,
-            );
-            r.id = format!(
-                "integration-op-{}",
-                &configuration_hash(&json!([c.command_id, self.store.root()]))[..32]
-            );
-            let value = json!(r);
-            s.governance.push(r);
-            Ok(value)
-        })
-    }
-    pub fn finish_integration_operation(&self, key: &str, result: &Result<Value>) -> Result<()> {
-        self.store.transact(None, &mut |s| {
-            let r = s
-                .governance
-                .iter_mut()
-                .find(|r| r.id == key && r.r#type == "integration_operation")
-                .ok_or_else(|| err("not_found", "接入操作意图缺失"))?;
-            let mut data = r.data.clone();
-            match result {
-                Ok(result) => {
-                    data["status"] = json!("succeeded");
-                    data["result"] = result.clone();
-                }
-                Err(error) => {
-                    data["status"] = json!("failed");
-                    data["error"] = json!({"code":error.code,"message":error.message});
-                }
-            }
-            data["finished_at"] = json!(now());
-            update_record(r, data);
-            Ok(json!({}))
-        })?;
-        Ok(())
-    }
     pub fn recover_tool_receipts(&self) -> Result<()> {
         let Some(executor) = &self.tool_executor else {
             return Ok(());
