@@ -90,13 +90,15 @@ import {
 function ConfigurationMain({
   scope,
   children,
+  className,
 }: {
   scope: React.ContextType<typeof ConfigurationScope>;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
     <ConfigurationScope.Provider value={scope}>
-      <main>{children}</main>
+      <main className={className}>{children}</main>
     </ConfigurationScope.Provider>
   );
 }
@@ -244,6 +246,7 @@ function routeTabValue(p: URLSearchParams) {
     : "overview";
 }
 const routeTab = routeTabValue(route);
+const defaultExecutionTab = "manager";
 const executionTabs = [
   ["manager", "项目经理"],
   ["overview", "工作流程"],
@@ -358,7 +361,7 @@ function App() {
   }));
   const [executionTab, setExecutionTab] = useState(
     route.get("detail") ||
-      (route.get("tab") === "documents" ? "documents" : "overview"),
+      (route.get("tab") === "documents" ? "documents" : defaultExecutionTab),
   );
   const activeReadingTarget =
     readingTarget._project === projectId && readingTarget._feature === featureId
@@ -439,7 +442,7 @@ function App() {
       );
       setFeatureId(p.get("feature_id") || "");
       setTaskFilter(p.get("task_id") || "");
-      setExecutionTab(p.get("detail") || "overview");
+      setExecutionTab(p.get("detail") || defaultExecutionTab);
       setReadingTarget({
         ...Object.fromEntries(
           readingKeys.map((key) => [key, p.get(key) || ""]),
@@ -1011,7 +1014,10 @@ function App() {
             <ActionButton
               key={id}
               className={tab === id ? "nav active" : "nav"}
-              onClick={() => setTab(id)}
+              onClick={() => {
+                if (id === "execution") setExecutionTab(defaultExecutionTab);
+                setTab(id);
+              }}
               onMouseEnter={() => {
                 if (
                   [
@@ -1082,7 +1088,10 @@ function App() {
             </span>
           </div>
         </header>
-        <ConfigurationMain scope={configurationScope}>
+        <ConfigurationMain
+          scope={configurationScope}
+          className={tab === "execution" ? "execution-page" : undefined}
+        >
           {error && (
             <div className="error" role="alert">
               <AlertTriangle size={16} />
@@ -1186,7 +1195,7 @@ function App() {
                     setFeatureId("");
                     setTaskFilter("");
                     setFeaturePage(0);
-                    setExecutionTab("overview");
+                    setExecutionTab(defaultExecutionTab);
                   }}
                 />
                 <Metric
@@ -1199,7 +1208,7 @@ function App() {
                     setFeatureId("");
                     setTaskFilter("");
                     setFeaturePage(0);
-                    setExecutionTab("overview");
+                    setExecutionTab(defaultExecutionTab);
                   }}
                 />
                 <Metric
@@ -1212,7 +1221,7 @@ function App() {
                     setFeatureId("");
                     setTaskFilter("");
                     setFeaturePage(0);
-                    setExecutionTab("overview");
+                    setExecutionTab(defaultExecutionTab);
                   }}
                 />
                 <Metric
@@ -1225,7 +1234,7 @@ function App() {
                     setFeatureId("");
                     setTaskFilter("");
                     setFeaturePage(0);
-                    setExecutionTab("overview");
+                    setExecutionTab(defaultExecutionTab);
                   }}
                 />
                 <Metric
@@ -1238,7 +1247,7 @@ function App() {
                     setFeatureId("");
                     setTaskFilter("");
                     setFeaturePage(0);
-                    setExecutionTab("overview");
+                    setExecutionTab(defaultExecutionTab);
                   }}
                 />
               </div>
@@ -1317,7 +1326,12 @@ function App() {
                     <Badge value={f.status} />
                   </div>
                   <div className="actions">
-                    <ActionButton onClick={() => setTab("execution")}>
+                    <ActionButton
+                      onClick={() => {
+                        setExecutionTab(defaultExecutionTab);
+                        setTab("execution");
+                      }}
+                    >
                       进入执行工作台 <ArrowRight size={15} />
                     </ActionButton>
                   </div>
@@ -1420,7 +1434,7 @@ function App() {
                     </ActionButton>
                   ))}
                 </div>
-                {executionTab === "overview" &&
+                {executionTab === "manager" &&
                   !["completed", "cancelled"].includes(f.status) &&
                   !data?.configurations?.some(
                     (r: Row) =>
@@ -1681,25 +1695,27 @@ function App() {
                   />
                 ),
               )}
-          {tab === "execution" && !f && executionTab === "overview" && (
-            <section className="panel">
-              <h2>Feature 工作队列{workFilter ? ` · ${workFilter}` : ""}</h2>
-              {features.map((feature) => (
-                <ActionButton
-                  className="feature-row"
-                  key={feature.id}
-                  onClick={() => setFeatureId(feature.id)}
-                >
-                  {feature.title} · {labels[feature.status] || feature.status}
-                </ActionButton>
-              ))}
-              <Pagination
-                page={featurePage}
-                setPage={setFeaturePage}
-                hasMore={(featurePage + 1) * 50 < (data?.total_features || 0)}
-              />
-            </section>
-          )}
+          {tab === "execution" &&
+            !f &&
+            ["manager", "overview"].includes(executionTab) && (
+              <section className="panel">
+                <h2>Feature 工作队列{workFilter ? ` · ${workFilter}` : ""}</h2>
+                {features.map((feature) => (
+                  <ActionButton
+                    className="feature-row"
+                    key={feature.id}
+                    onClick={() => setFeatureId(feature.id)}
+                  >
+                    {feature.title} · {labels[feature.status] || feature.status}
+                  </ActionButton>
+                ))}
+                <Pagination
+                  page={featurePage}
+                  setPage={setFeaturePage}
+                  hasMore={(featurePage + 1) * 50 < (data?.total_features || 0)}
+                />
+              </section>
+            )}
           {data && ["workflows", "components"].includes(tab) && (
             <ConfigurationPage
               key={`${tab}:${projectId}:${catalogGeneration}:${configurationSession}`}

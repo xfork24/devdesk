@@ -104,7 +104,7 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
       control_version: current.runtime.control_version,
     },
   });
-  await page.goto(`/?tab=execution&project_id=${project.id}`);
+  await page.goto(`/?tab=execution&detail=overview&project_id=${project.id}`);
   await expect(
     page.getByRole("tablist", { name: "执行详情" }).getByRole("tab"),
   ).toHaveText(["项目经理", "工作流程", "材料", "上下文", "执行记录"]);
@@ -238,7 +238,9 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   });
   await page.goto(`/?tab=execution&project_id=${project.id}`);
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
-  await page.getByRole("tab", { name: "项目经理", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "项目经理", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   const manager = page.getByRole("region", { name: "项目经理", exact: true });
   await expect(
     manager.getByRole("region", { name: "项目经理协作" }),

@@ -2611,6 +2611,7 @@ pre {
     .project-configuration-row,
     .actions,
     .toolbar,
+    .material-search,
     .feature-picker,
     .model-selection-row
   )
@@ -2678,6 +2679,35 @@ pre {
   flex-direction: column;
   gap: 6px;
   margin: 0;
+}
+
+/* Keep execution tabs, readers, and nested cards on consistent content insets. */
+.execution-page {
+  --execution-inset: 21px;
+}
+.execution-page .panel {
+  min-width: 0;
+  padding: 20px var(--execution-inset);
+}
+.execution-page .panel-heading {
+  padding: 0 0 17px;
+  margin-bottom: 18px;
+}
+.execution-page .panel > :is(p, pre, .notice) {
+  margin-inline: 0;
+}
+.execution-page
+  .workflow-instance
+  > :is(.panel, .work-standard, .workflow-stage-row) {
+  margin-inline: 0;
+}
+@media (max-width: 760px) {
+  .execution-page {
+    --execution-inset: 15px;
+  }
+  .execution-page .panel {
+    padding-block: 16px;
+  }
 }
 
 .project-orchestration-agent-fields {
