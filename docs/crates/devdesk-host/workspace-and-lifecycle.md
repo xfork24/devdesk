@@ -26,7 +26,9 @@ Workspace 持有 GlobalStore、全局配置 Engine、已打开工程表、active
 
 开发用 `scripts/dev/run-host.py` 在 macOS 保存独立签名副本，但默认仍是前台启动器，不会脱离调用它的终端或工具进程组。需要跨对话轮次持续运行时，应由独立进程会话或系统服务托管，并持久保存标准输出和错误日志。启动器记录 launcher/Host PID、进程组、收到的信号与子进程退出码，便于区分外部回收和应用崩溃。服务存活须通过 HTTP 核对；SQLite 中的 running 只表示最后保存的状态。恢复中断会话时先核对 writer 停止证明和已发生的工具回执，再建立后继经理会话，不能盲目重发原输入。
 
-文件末集成测试覆盖项目创建/选择失败、请求隔离、恢复、共享预算和关闭等行为。新增入口应复用明确的 global/project 分派，避免 handler 直接操作 active 内部状态。
+HTTP 退出、SIGINT 以及 Unix SIGTERM/SIGHUP 都停止调度准入并广播关闭通知，SSE 连接不会抢走唯一的停机唤醒。退出记录 shutdown_requested 的来源，完成所属 Harness writer 清理后记录 runtime_stopped；清理错误不记录成功终点。SIGKILL 无清理机会，重开后仍须核对，不伪造停止证明。
+
+文件末集成测试覆盖项目创建/选择失败、请求隔离、恢复、共享预算和关闭等行为。`workflow_live.rs` 提供显式、默认忽略的实际 Git/Docker 自动工作流，不使用模型或生产数据。新增入口应复用明确的 global/project 分派，避免 handler 直接操作 active 内部状态。
 
 代码定位：[`Workspace`](../../../crates/host/src/workspace.rs#L32)、[`open_with_adapters`](../../../crates/host/src/workspace.rs#L67)、[`active_engine`](../../../crates/host/src/workspace.rs#L121)、[`dispatch`](../../../crates/host/src/workspace.rs#L253)、[`event_engine`](../../../crates/host/src/workspace.rs#L786)、[`tick`](../../../crates/host/src/workspace.rs#L795)、[`stop_owned_runtime`](../../../crates/host/src/workspace.rs#L880)。
 

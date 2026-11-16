@@ -207,14 +207,18 @@ impl CommandTests {
         if receipt.running && !timed_out {
             return Ok(None);
         }
-        if receipt.running {
+        let stopped = if receipt.running {
             sandbox.stop(&r.operation_id)?;
-        }
-        let stopped = sandbox
-            .inspect(&r.operation_id)?
-            .ok_or_else(|| err("needs_reconciliation", "测试停止回执丢失"))?;
+            sandbox
+                .inspect(&r.operation_id)?
+                .ok_or_else(|| err("needs_reconciliation", "测试停止回执丢失"))?
+        } else {
+            // This poll already obtained the stopped identity and Docker timestamps.
+            // Reuse that proof through log export rather than doing two more CLI inspects.
+            receipt
+        };
         require(!stopped.running, "测试执行者仍未停止")?;
-        let (log, stderr) = sandbox.logs_split(&r.operation_id)?;
+        let (log, stderr) = sandbox.logs_for_stopped(&r.operation_id, &stopped)?;
         let mut result = Self::result(r, &recipe, &stopped, &log, timed_out)?;
         let work = job.join("work").canonicalize().map_err(storage)?;
         let mut files = Vec::new();

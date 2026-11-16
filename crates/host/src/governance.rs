@@ -58,7 +58,9 @@ impl Workspace {
         if should_stop() {
             return Ok(());
         }
-        e.evaluate_workflows()?;
+        // Engine::tick owns evaluation. These two Host passes only deliver the
+        // durable intents around it; re-evaluating here restores the same history
+        // twice more while a native worker is waiting for its next poll.
         for intent in e.pending_workflow_intents()? {
             if should_stop() {
                 return Ok(());

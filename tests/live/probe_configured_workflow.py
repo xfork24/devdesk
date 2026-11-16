@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Explicit real Codex acceptance of a freely configured business workflow; uses an isolated dataset."""
-import argparse,json,os,shutil,subprocess,tempfile,time,uuid,sys
+import argparse,json,os,shutil,subprocess,tempfile,time,uuid,sys,signal
 from pathlib import Path
 from client import Client
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--binary',type=Path,required=True);parser.add_argument('--codex-auth-source',type=Path,required=True);parser.add_argument('--report-directory',type=Path);args=parser.parse_args()
@@ -30,7 +30,8 @@ try:
   {'key':'investigate','name':'按技能分析','stage':'study','executor':{'type':'agent'},'required_skill_refs':[skill['id']],'task_instructions':'按本次加载的顺序分析 Skill 处理 numbers 输入。先实际调用 devdesk_materials_capture 工具，参数为计算结果对象 ordered 与 sum；收到成功回执后，再只输出当前 output_contract 要求的单个 JSON 对象，分析结果写入 result 端口。','inputs':{'numbers':{'type':'constant','value':[3,1,2,3]}},'outputs':{'result':{'delivery_ref':delivery['id']}},'budget':{'max_turns':2,'timeout_seconds':300,'retry_limit':1}},
   {'key':'consume','name':'消费确切材料','stage':'study','executor':{'type':'control'},'dependencies':['investigate'],'inputs':{'analysis':{'type':'source','source':{'step':'investigate','port':'result'}}}}
  ]}
- base_profile=next(r for r in defaults['records'] if r['id']=='builtin-permission-harness-read-only:1')
+ profiles=c.rpc('query.permission_resources')['profiles']
+ base_profile=next(r for r in profiles if r['identity']=='builtin-permission-harness-read-only' and r['revision']==1)
  policy={**base_profile['data']['policy'],'tool_refs':[capture]}
  permission=c.command('permission.profile.create',payload={'name':'Native research Profile','identity':'native-step-'+project,'target_kind':'harness','policy':policy})
  profile_ref=f"{permission['identity']}:{permission['revision']}"
@@ -55,12 +56,23 @@ try:
  task=c.rpc('query.execution_task',{'turn_id':steps[0]['turn_id']});(OUT/'free-task.json').write_text(json.dumps(task,ensure_ascii=False,indent=2));assert task['configured'] and task['task']['renderer_version']=='agent-task/v6'
  calls=c.rpc('query.tool_calls',{'turn_id':steps[0]['turn_id']})['records'];actual=next(call for call in calls if call['type']=='platform_call' and call['data']['status']=='succeeded');assert actual['data']['platform_receipt']['inputs']==output
  (OUT/'native-platform-call.json').write_text(json.dumps(actual,ensure_ascii=False,indent=2))
+ # Workflow completion can precede the manager receiving its last native reply.
+ # Let that real Turn finish and the Host revoke its writer before stopping it.
+ deadline=time.monotonic()+120
+ while time.monotonic()<deadline:
+  manager_view=c.rpc('query.orchestration',{'id':manager})
+  sid=manager_view['record']['data']['session_id']
+  session=c.rpc('query.session',{'id':sid})
+  if not any(t['status'] in ['queued','dispatching','running','waiting_interaction','needs_reconciliation'] for t in session['turns']) and all(e['writer_revoked'] for e in session['executions']):break
+  time.sleep(.5)
+ else:raise TimeoutError('Completed workflow manager did not settle')
+ (OUT/'native-manager.json').write_text(json.dumps(manager_view,ensure_ascii=False,indent=2))
  print('PASS native custom business workflow',run['id'],flush=True)
  (OUT/'report.md').write_text('# Native Workflow v6\n\nFree business workflow: passed through actual Codex, SQLite and Artifact.\n\nWorkflow: '+run['id']+'\n')
 except BaseException as error:
  (OUT/'failure.txt').write_text(str(error));raise
 finally:
- if child.poll() is None:child.terminate();child.wait(timeout=20)
+ if child.poll() is None:child.send_signal(signal.SIGINT);child.wait(timeout=60)
  shutil.rmtree(OUT/'data/credentials',ignore_errors=True)
  for private_auth in (OUT/'data').rglob('auth.json'):private_auth.unlink(missing_ok=True)
  print('Evidence:',OUT,flush=True)

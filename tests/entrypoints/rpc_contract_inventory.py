@@ -17,7 +17,7 @@ def main():
     found = set()
     for base in (ROOT / "crates/host/src", ROOT / "crates/core/src"):
         for path in base.glob("*.rs"):
-            if path.name in {"loading_performance.rs", "history_tests.rs"}:
+            if path.name in {"loading_performance.rs", "history_tests.rs", "workflow_live.rs"}:
                 continue
             content = re.split(r"\n#\[cfg\(test\)\]\s*\nmod tests\b", path.read_text(), maxsplit=1)[0]
             for name in re.findall(r'"([a-z][a-z_]*(?:\.[a-z][a-z_]*)+)"', content):

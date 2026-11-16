@@ -4,7 +4,7 @@
 
 ## 工作区与分工
 
-分支 `codex/workflow-runtime-performance`，工作区 `/Users/hengliu/.codex/worktrees/workflow-runtime-performance/devdesk`。main 起点 `026c05d`；基础整合提交 `d3ae7d4` 包含并发计划已提交至 `35bcaee` 的连接池/资源合同，保留 main 配置加载 W0–W7。
+分支 `codex/workflow-runtime-performance`，工作区 `/Users/hengliu/.codex/worktrees/workflow-runtime-performance/devdesk`。main 起点 `026c05d`；基础整合提交 `d3ae7d4` 包含并发计划已提交至 `35bcaee` 的连接池/资源合同，保留 main 配置加载 W0–W7；`38ec1ff` 整合 main 至 `b75439d`。后续独立修复与真实执行证据见 [运行验收](LIVE.md)，以下组件对照仍按其原构建身份解释。
 
 本次覆盖工作流执行路径的读取/复制、重复驱动、原生平台衔接、经理失败/取消与预算诊断、Docker/Host 故障边界。通用连接池/CAS、项目隔离、SSE、执行页和 100 前端容量属于并发计划，不在此重复建设。文件及接入边界见 [SCOPE.md](SCOPE.md)。对方后续提交仍须在其接口稳定时整合，不能将本次定向测试视为全部并发改造完成。
 
@@ -69,7 +69,7 @@
 
 1. 通用旧 `transact` 的一次全状态加载、克隆、序列化比较仍存在；共享存储迁移就绪后，workflow 用例按完整读写集合接入有限提交，同库一致切换，不能自行添加第二套 CAS 或提前删锁。
 2. 多项目的外部慢 I/O 隔离、公平调度、SSE 和执行页读取仍与并发计划联合推进。本次消除重复阶段与回复多等一轮，不宣称已将所有 Docker/Git I/O 异步化。
-3. 原生 bridge T0 到实际回复写入、真实经理的稳定往返分布、100 前端、历史 10 倍、长稳及资源门禁尚未完成；不能用上表微基准宣布轻量调用 P95 500 ms 或完整容量通过。
+3. 原生 bridge T0 到实际回复写入已有真实 Codex 场景及时间线，见 [运行验收](LIVE.md)；稳定的每类 1000 样本、100 前端、历史 10 倍、长稳及资源门禁仍未完成，不能用组件或单流程样本宣布轻量 SLA 和完整容量通过。
 4. 分段活动预算、平台 deadline/无进展 watchdog 仍需显式配置合同及新修订；本次只改善链路和给出准确的登记口径诊断，不改变旧冻结策略。
 
 原始证据根目录：`/tmp/devdesk-workflow-runtime-performance-20261116`。其中保存源码/二进制身份、r4 样本、完整恢复摘要与备份身份、无效尝试、测试/构建日志；日志和 SQLite 不提交到仓库。临时路径不保证永久可用；复跑入口为两个 ignored Rust 性能测试，实际参数与输入身份由证据文件保留。

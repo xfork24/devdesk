@@ -2037,6 +2037,7 @@ fn a_large_plan_is_inspected_in_explicit_bounded_pages() {
     let mut doc = document();
     doc["steps"]=json!((0..75).map(|i|json!({"key":format!("node_{i}"),"name":format!("材料节点 {i}"),"stage":"work","executor":{"type":"control"}})).collect::<Vec<_>>());
     let root = start(&e, doc);
+    let before = configuration_hash(&e.store.snapshot().unwrap());
     let mut ids = std::collections::BTreeSet::new();
     let mut offset = 0;
     loop {
@@ -2048,6 +2049,21 @@ fn a_large_plan_is_inspected_in_explicit_bounded_pages() {
             )
             .unwrap();
         assert!(page["runtime"]["steps"].as_array().unwrap().len() <= 16);
+        let keys: Vec<_> = page["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["step"].clone())
+            .collect();
+        assert_eq!(
+            keys,
+            page["runtime"]["plan"]["document"]["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["key"].clone())
+                .collect::<Vec<_>>()
+        );
         assert_eq!(page["page"]["total"], 75);
         for step in page["steps"].as_array().unwrap() {
             ids.insert(step["node_id"].as_str().unwrap().to_owned());
@@ -2059,6 +2075,7 @@ fn a_large_plan_is_inspected_in_explicit_bounded_pages() {
         }
     }
     assert_eq!(ids.len(), 75);
+    assert_eq!(before, configuration_hash(&e.store.snapshot().unwrap()));
     assert!(e.store.snapshot().unwrap().turns.is_empty());
 }
 

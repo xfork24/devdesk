@@ -5,6 +5,12 @@ impl Engine {
         self.evaluate_configured_workflows()
     }
     pub fn pending_workflow_intents(&self) -> Result<Vec<ConfigurationRecord>> {
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::WorkflowIntents)?
+        {
+            return Ok(vec![]);
+        }
         let s = self.store.snapshot()?;
         let active: Vec<String> = s
             .governance

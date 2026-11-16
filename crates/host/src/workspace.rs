@@ -19,6 +19,9 @@ mod permission_resources;
 mod runtime_setup;
 #[path = "templates.rs"]
 mod templates;
+#[cfg(test)]
+#[path = "workflow_live.rs"]
+mod workflow_live;
 // Project selection pins every request to one Engine and therefore one database.
 use devdesk_adapters::*;
 use devdesk_core::*;

@@ -23,6 +23,7 @@ struct ReplyHeader {
 
 struct Journal {
     file: Mutex<File>,
+    timing: Option<performance::NativeProtocolTiming>,
     secrets: Vec<String>,
     private_requests: Mutex<HashSet<u64>>,
     stream_tails: Mutex<HashMap<String, String>>,
@@ -247,6 +248,7 @@ impl JsonlProcess {
             }
             Some(Arc::new(Journal {
                 file: Mutex::new(options.open(path).map_err(storage)?),
+                timing: performance::NativeProtocolTiming::new(path),
                 secrets,
                 private_requests: Mutex::new(HashSet::new()),
                 stream_tails: Mutex::new(HashMap::new()),
@@ -328,6 +330,10 @@ impl JsonlProcess {
                 if !matches!(read, Ok(1..)) {
                     break;
                 }
+                let observed = log
+                    .as_ref()
+                    .and_then(|log| log.timing.as_ref())
+                    .map(|_| performance::NativeProtocolTiming::observed());
                 if bytes.len() > RESUME_REPLY_LIMIT {
                     signal.store(true, Ordering::Release);
                     break;
@@ -361,6 +367,9 @@ impl JsonlProcess {
                 if bytes.len() > FRAME_LIMIT && !resume_reply {
                     signal.store(true, Ordering::Release);
                     break;
+                }
+                if let Some(timing) = log.as_ref().and_then(|log| log.timing.as_ref()) {
+                    timing.request(&frame, observed.unwrap());
                 }
                 if log
                     .as_ref()
@@ -452,7 +461,12 @@ impl JsonlProcess {
             .try_send((bytes, tx))
             .map_err(|_| err("needs_reconciliation", "协议发送队列不可用；禁止重发输入"))?;
         match receipt.recv_timeout(Duration::from_secs(5)) {
-            Ok(true) => Ok(()),
+            Ok(true) => {
+                if let Some(timing) = self.journal.as_ref().and_then(|log| log.timing.as_ref()) {
+                    timing.reply(&value);
+                }
+                Ok(())
+            }
             _ => Err(err(
                 "needs_reconciliation",
                 "协议写入结果未知；禁止重发输入",
@@ -669,6 +683,7 @@ mod tests {
         let secret = "HARMLESS_SECRET_CANARY";
         let journal = Journal {
             file: Mutex::new(temp.reopen().unwrap()),
+            timing: None,
             secrets: vec![secret.into()],
             private_requests: Mutex::new(HashSet::new()),
             stream_tails: Mutex::new(HashMap::new()),

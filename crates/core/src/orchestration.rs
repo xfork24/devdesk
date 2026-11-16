@@ -908,7 +908,7 @@ impl Engine {
                     .or_else(|| p["instance_id"].as_str())
                     .unwrap_or(""),
             )?;
-            let instance: ConfiguredWorkflowInstance = row.decode()?;
+            let mut instance: ConfiguredWorkflowInstance = row.decode()?;
             if let Some(pid) = p["project_id"].as_str() {
                 require(instance.project_id == pid, "项目不匹配")?;
             }
@@ -991,13 +991,15 @@ impl Engine {
                 }
                 return Ok(json!(execution));
             }
+            let offset = p["offset"].as_u64().unwrap_or(0) as usize;
+            let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 64) as usize;
             let current = facts(&s, &instance)?;
             let pending = crate::workflow_changes::change_pending(&s, &row.id);
             let terminal = matches!(
                 instance.status,
                 StepExecutionStatus::Completed | StepExecutionStatus::Cancelled
             );
-            let steps=instance.plan.document.steps.iter().map(|step|{
+            let steps=instance.plan.document.steps.iter().skip(offset).take(limit).map(|step|{
                 let e=instance.steps.iter().find(|e|e.step==step.key).unwrap();
                 let dependencies=step.dependencies.iter().all(|k|instance.steps.iter().any(|e|&e.step==k&&matches!(e.status,StepExecutionStatus::Completed|StepExecutionStatus::Skipped)));
                 let inputs=if e.status==StepExecutionStatus::Queued&&dependencies&&step.condition.evaluate(&current){crate::configured_runtime::material_inputs(step,&current).map(|_|()).map_err(|e|e.message)}else{Ok(())};
@@ -1022,11 +1024,14 @@ impl Engine {
                 }
             }
             let children=s.governance.iter().filter(|r|r.r#type=="workflow_instance"&&r.data["root_instance_id"]==instance.root_instance_id&&r.id!=row.id).map(|r|json!({"id":r.id,"parent_execution_id":r.data["parent_execution_id"],"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"],"item_id":r.data["inputs"]["item"]["id"]})).collect::<Vec<_>>();
-            let offset = p["offset"].as_u64().unwrap_or(0) as usize;
-            let limit = p["limit"].as_u64().unwrap_or(32).clamp(1, 64) as usize;
             let total = instance.plan.document.steps.len();
-            let mut runtime = json!(instance);
-            runtime["plan"] = json!({"workflow_revision_id":instance.plan.workflow_revision_id,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"harness_permission_ref":instance.plan.harness_permission_ref,"document":instance.plan.document,"roles":instance.plan.roles});
+            let delivery_types: Vec<_> = instance
+                .plan
+                .definitions
+                .values()
+                .filter(|r| r.r#type == "delivery_type")
+                .cloned()
+                .collect();
             let selected_keys = instance
                 .plan
                 .document
@@ -1034,27 +1039,23 @@ impl Engine {
                 .iter()
                 .skip(offset)
                 .take(limit)
-                .map(|s| s.key.as_str())
+                .map(|s| s.key.clone())
                 .collect::<std::collections::BTreeSet<_>>();
-            runtime["plan"]["document"]["steps"] = json!(
-                instance
-                    .plan
-                    .document
-                    .steps
-                    .iter()
-                    .skip(offset)
-                    .take(limit)
-                    .collect::<Vec<_>>()
-            );
-            runtime["steps"] = json!(
-                instance
-                    .steps
-                    .iter()
-                    .filter(|e| selected_keys.contains(e.step.as_str()))
-                    .collect::<Vec<_>>()
-            );
+            // This is a local response projection, after all authoritative checks.
+            // Do not serialize every frozen source and off-page task just to discard it.
+            instance
+                .plan
+                .document
+                .steps
+                .retain(|step| selected_keys.contains(&step.key));
+            instance
+                .steps
+                .retain(|step| selected_keys.contains(&step.step));
+            instance.plan.definitions.clear();
+            let mut runtime = json!(instance);
+            runtime["plan"] = json!({"workflow_revision_id":instance.plan.workflow_revision_id,"standard_ref":instance.plan.standard_ref,"work_configuration_ref":instance.plan.work_configuration_ref,"harness_permission_ref":instance.plan.harness_permission_ref,"document":instance.plan.document,"roles":instance.plan.roles});
             Ok(
-                json!({"record":{"id":row.id,"revision":row.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total {Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps.into_iter().skip(offset).take(limit).collect::<Vec<_>>(),"allowed_actions":allowed,"children_page":{"offset":offset,"total":children.len(),"next_offset":if offset+limit<children.len(){Some(offset+limit)}else{None}},"delivery_types":instance.plan.definitions.values().filter(|r|r.r#type=="delivery_type").collect::<Vec<_>>(),"children":children.iter().skip(offset).take(limit).collect::<Vec<_>>()}),
+                json!({"record":{"id":row.id,"revision":row.revision},"page":{"offset":offset,"limit":limit,"total":total,"next_offset":if offset+limit<total {Some(offset+limit)}else{None},"document_complete":offset==0&&limit>=total},"runtime":runtime,"steps":steps,"allowed_actions":allowed,"children_page":{"offset":offset,"total":children.len(),"next_offset":if offset+limit<children.len(){Some(offset+limit)}else{None}},"delivery_types":delivery_types,"children":children.iter().skip(offset).take(limit).collect::<Vec<_>>()}),
             )
         })())
     }

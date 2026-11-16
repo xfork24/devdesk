@@ -1195,6 +1195,24 @@
       ]
     },
     {
+      "method": "query.configuration_index",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/configuration_read.rs"
+      ]
+    },
+    {
+      "method": "query.configuration_records",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/configuration_read.rs"
+      ]
+    },
+    {
       "method": "query.configuration_references",
       "access": "read",
       "scope": "explicit",
@@ -1285,6 +1303,15 @@
         "crates/core/src/integrations.rs",
         "crates/host/src/configuration_read.rs",
         "crates/host/src/integrations.rs"
+      ]
+    },
+    {
+      "method": "query.model_catalog_identity",
+      "access": "read",
+      "scope": "global",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/model_providers.rs"
       ]
     },
     {
@@ -2608,6 +2635,17 @@
     "repository.completed",
     "repository.dispatched",
     "repository.needs_reconciliation",
+    "runtime.controller_calls",
+    "runtime.controller_reply",
+    "runtime.controllers",
+    "runtime.conversations",
+    "runtime.drive_workflow_changes",
+    "runtime.drive_workflow_segments",
+    "runtime.evaluate_workflows",
+    "runtime.platform_reply",
+    "runtime.platform_tools",
+    "runtime.rust_driver",
+    "runtime.step_checkpoint",
     "workflow.compile",
     "workflow.decision",
     "workflow.driver.selected",

@@ -801,10 +801,19 @@ impl DockerSandbox {
         let receipt = self
             .inspect(operation)?
             .ok_or_else(|| err("needs_reconciliation", "测试容器已丢失"))?;
+        self.logs_for_stopped(operation, &receipt)
+    }
+    pub(crate) fn logs_for_stopped(
+        &self,
+        operation: &str,
+        receipt: &ContainerReceipt,
+    ) -> Result<(String, String)> {
+        require(receipt.name == Self::name(operation)?, "日志容器归属不符")?;
         require(!receipt.running, "日志仅在执行静止后导出")?;
         let output = crate::process::capture_split(
             "docker",
-            &["logs".into(), receipt.name],
+            // Use the exact inspected container, including if its name is later reused.
+            &["logs".into(), receipt.id.clone()],
             Duration::from_secs(30),
         )?;
         require(

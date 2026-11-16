@@ -200,6 +200,27 @@ def run():
             child.send_signal(signal.SIGINT)
             signal_shutdown = wait_for_shutdown(child, response, started)
             stream.close()
+            if os.name == 'posix':
+                for signum in (signal.SIGTERM, signal.SIGHUP):
+                    child.stdout.close()
+                    child.stderr.close()
+                    child = subprocess.Popen([str(binary),'--data',str(dataset),'--port','0'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=directory,env=env)
+                    child.stdout.readline()
+                    url=child.stdout.readline().strip()
+                    client.open(url).read()
+                    stream = http.client.HTTPConnection(url.removeprefix('http://'), timeout=2)
+                    stream.request('GET', '/events?cursor=999999999', headers={'Cookie':'; '.join(f'{c.name}={c.value}' for c in cookies)})
+                    response=stream.getresponse()
+                    assert response.status == 200
+                    started=time.monotonic()
+                    child.send_signal(signum)
+                    elapsed=wait_for_shutdown(child,response,started)
+                    stream.close()
+                    events=[json.loads(line) for line in child.stderr.read().splitlines() if line.startswith('{')]
+                    lifecycle=[e for e in events if e.get('type')=='host_lifecycle']
+                    assert [e['event'] for e in lifecycle]==['shutdown_requested','runtime_stopped'], lifecycle
+                    assert lifecycle[0]['reason']==signum.name, lifecycle
+                    print(f'PASS real Host {signum.name}, SSE EOF, runtime cleanup, exit 0: {elapsed:.3f}s')
             print(f'PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE EOF and shutdown (HTTP {http_shutdown:.3f}s, SIGINT {signal_shutdown:.3f}s), restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors' + ('; standalone copied binary' if '--standalone' in sys.argv else ''))
         finally:
             if child.poll() is None:

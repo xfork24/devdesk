@@ -1758,6 +1758,43 @@ fn invalid_typed_output_fails_and_retry_creates_a_new_execution_without_changing
 }
 
 #[test]
+fn waiting_for_a_managed_workspace_does_not_rewrite_the_platform_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    let workflow = publish(
+        &engine,
+        json!({"schema_version":6,"stages":[{"key":"work","name":"workspace wait"}],"steps":[{"key":"current","name":"Await managed workspace","stage":"work","executor":{"type":"tool","tool_ref":"builtin-tool-workspace-current:1","arguments":{}},"outputs":{"workspace":{"delivery_ref":"builtin-delivery-workspace-snapshot:1"}}}]}),
+    );
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"No prepared repository"}),
+    )
+    .unwrap();
+    command(
+        &engine,
+        "workflow.start",
+        project["id"].as_str(),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    drive(&engine, 1);
+    let before = engine.store.snapshot().unwrap();
+    let call = before
+        .governance
+        .iter()
+        .find(|r| r.r#type == "platform_call")
+        .unwrap();
+    assert_eq!(call.data["status"], "running");
+    for _ in 0..3 {
+        engine.drive_platform_tools().unwrap();
+    }
+    let after = engine.store.snapshot().unwrap();
+    assert_eq!(configuration_hash(&before), configuration_hash(&after));
+}
+
+#[test]
 fn platform_step_runs_without_a_placeholder_agent_session_and_seals_real_receipt() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());

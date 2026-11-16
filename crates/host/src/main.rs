@@ -555,8 +555,29 @@ async fn events(
 }
 async fn shutdown(State(app): State<Arc<App>>) -> Json<Value> {
     app.stopping.store(true, Ordering::Relaxed);
-    app.shutdown.notify_one();
+    app.shutdown.notify_waiters();
     Json(json!({"ok":true}))
+}
+
+fn termination_signal() -> std::io::Result<impl std::future::Future<Output = &'static str>> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate())?;
+        let mut hup = signal(SignalKind::hangup())?;
+        Ok(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => "SIGINT",
+                _ = term.recv() => "SIGTERM",
+                _ = hup.recv() => "SIGHUP",
+            }
+        })
+    }
+    #[cfg(not(unix))]
+    Ok(async {
+        let _ = tokio::signal::ctrl_c().await;
+        "SIGINT"
+    })
 }
 #[tokio::main]
 async fn main() {
@@ -680,6 +701,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
+    let signal = termination_signal()?;
     println!(
         "DevDesk · engineering kernel\n{origin}\nRuntime: {} / {}",
         std::env::consts::OS,
@@ -688,8 +710,22 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let exit = app.clone();
     axum::serve(listener, router)
         .with_graceful_shutdown(async move {
-            tokio::select! {_=tokio::signal::ctrl_c()=>{},_=exit.shutdown.notified()=>{}}
+            let reason = tokio::select! {
+                reason=signal=>reason,
+                _=async {
+                    // SSE subscribers share the notification. Check the durable process
+                    // predicate as well, including when notification preceded this wait.
+                    while !exit.stopping.load(Ordering::Relaxed) {
+                        tokio::select! {
+                            _=exit.shutdown.notified()=>{},
+                            _=tokio::time::sleep(std::time::Duration::from_secs(1))=>{},
+                        }
+                    }
+                }=>"http",
+            };
+            eprintln!("{}",json!({"type":"host_lifecycle","event":"shutdown_requested","reason":reason,"pid":std::process::id()}));
             exit.stopping.store(true, Ordering::Relaxed);
+            exit.shutdown.notify_waiters();
         })
         .await?;
     app.stopping.store(true, Ordering::Relaxed);
@@ -697,6 +733,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(workspace) = app.workspace() {
         tokio::task::spawn_blocking(move || workspace.stop_owned_runtime()).await??;
     }
+    eprintln!(
+        "{}",
+        json!({"type":"host_lifecycle","event":"runtime_stopped","pid":std::process::id()})
+    );
     Ok(())
 }
 

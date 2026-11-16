@@ -70,3 +70,104 @@ pub fn record(name: &'static str, milliseconds: f64) {
         }
     });
 }
+
+/// Transport boundaries, independent of the scheduler thread's scoped spans.
+/// Only request identities are retained; tool arguments and results never enter metrics.
+pub(crate) struct NativeProtocolTiming {
+    operation: String,
+    sequence: std::sync::atomic::AtomicU64,
+    pending: std::sync::Mutex<BTreeMap<String, (u64, Instant, u64)>>,
+}
+impl NativeProtocolTiming {
+    pub(crate) fn new(path: &std::path::Path) -> Option<Self> {
+        let operation = path.file_stem()?.to_str()?;
+        (std::env::var_os("DEVDESK_PERF_LOG").is_some_and(|v| v == "1")
+            && uuid::Uuid::parse_str(operation).is_ok())
+        .then(|| Self {
+            operation: operation.into(),
+            sequence: Default::default(),
+            pending: Default::default(),
+        })
+    }
+    fn key(frame: &Value) -> Option<String> {
+        use sha2::{Digest, Sha256};
+        let id = frame.get("id")?;
+        if !id.is_string() && !id.is_u64() {
+            return None;
+        }
+        Some(format!("{:x}", Sha256::digest(id.to_string().as_bytes())))
+    }
+    pub(crate) fn observed() -> (Instant, u64) {
+        (
+            Instant::now(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        )
+    }
+    pub(crate) fn request(&self, frame: &Value, (started, wall): (Instant, u64)) {
+        if !["item/tool/call", "devdesk/tool/call"]
+            .contains(&frame["method"].as_str().unwrap_or(""))
+        {
+            return;
+        }
+        let Some(key) = Self::key(frame) else { return };
+        let mut pending = self.pending.lock().unwrap();
+        if pending.len() >= 64 || pending.contains_key(&key) {
+            return;
+        }
+        let sequence = self
+            .sequence
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        pending.insert(key.clone(), (sequence, started, wall));
+        eprintln!(
+            "{}",
+            json!({"type":"native_protocol","phase":"request_observed","operation_id":self.operation,"sequence":sequence,"request_key":key,"timestamp_ms":wall})
+        );
+    }
+    pub(crate) fn reply(&self, frame: &Value) {
+        if frame.get("method").is_some() || frame.get("result").is_none() {
+            return;
+        }
+        let Some(key) = Self::key(frame) else { return };
+        let Some((sequence, started, wall)) = self.pending.lock().unwrap().remove(&key) else {
+            return;
+        };
+        eprintln!(
+            "{}",
+            json!({"type":"native_protocol","phase":"reply_written","operation_id":self.operation,"sequence":sequence,"request_key":key,"observed_at_ms":wall,"roundtrip_ms":started.elapsed().as_secs_f64()*1000.0})
+        );
+    }
+}
+
+#[cfg(test)]
+mod protocol_timing_tests {
+    use super::*;
+    #[test]
+    fn native_timing_is_bounded_and_matches_only_actual_tool_requests() {
+        let timing = NativeProtocolTiming {
+            operation: uuid::Uuid::nil().to_string(),
+            sequence: Default::default(),
+            pending: Default::default(),
+        };
+        timing.request(
+            &json!({"id":0,"method":"account/read","params":{"token":"canary"}}),
+            NativeProtocolTiming::observed(),
+        );
+        assert!(timing.pending.lock().unwrap().is_empty());
+        for id in 0..100 {
+            timing.request(
+                &json!({"id":id,"method":"item/tool/call","params":{"arguments":"canary"}}),
+                NativeProtocolTiming::observed(),
+            );
+        }
+        assert_eq!(timing.pending.lock().unwrap().len(), 64);
+        timing.reply(&json!({"id":0,"method":"other","result":{}}));
+        assert_eq!(timing.pending.lock().unwrap().len(), 64);
+        for id in 0..100 {
+            timing.reply(&json!({"id":id,"result":{"body":"canary"}}));
+        }
+        assert!(timing.pending.lock().unwrap().is_empty());
+    }
+}

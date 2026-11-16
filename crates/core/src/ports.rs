@@ -362,6 +362,8 @@ pub enum WorkflowRuntimeWork {
     Controllers,
     ControllerCalls,
     PlatformTools,
+    AgentReplies,
+    WorkflowIntents,
     Changes,
     Segments,
     RustDrivers,

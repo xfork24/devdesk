@@ -4,9 +4,9 @@
 
 ## 已核对的对方工作
 
-`codex/single-host-concurrency` 位于 `/Users/hengliu/.codex/worktrees/single-host-concurrency/devdesk`。首次核对提交至 `35bcaee`，包含连接池、资源提交合同、CAS/幂等及设置资源族；后续观察到 `7a74308` 的池化目录版本修复，以及 `3ac8486` 的项目路由/Host 生命周期提交。P2 全入口迁移、P4 执行页、P5 公共事件与调度、P6 容量仍未完成。不能把它理解成只做“100 个浏览器的前端优化”。
+`codex/single-host-concurrency` 位于 `/Users/hengliu/.codex/worktrees/single-host-concurrency/devdesk`。最新只读核对到 `b977753`，包含 `03d1e89` 的有界经理/驱动摘要与驱动双版本保护；其工作树正在进行安装登记 CAS 与事件追加，SQL 目标已演进至 global 21 / project 51。P2 全入口迁移、P4 全部执行页、P5 公共事件与调度、P6 容量仍未完成。不能把它理解成只做“100 个浏览器的前端优化”。
 
-本分支位于 `/Users/hengliu/.codex/worktrees/workflow-runtime-performance/devdesk`，分支 `codex/workflow-runtime-performance`；从 main `026c05d` 建立，`d3ae7d4` 只整合对方已经提交的基础并保留 main 配置 W0–W7。对方脏工作树不复制、不改动，main 的未提交产品代码与暂停数据保留。
+本分支位于 `/Users/hengliu/.codex/worktrees/workflow-runtime-performance/devdesk`，分支 `codex/workflow-runtime-performance`；从 main `026c05d` 建立，`d3ae7d4` 整合对方已提交至 `35bcaee` 的基础；`38ec1ff` 整合 main 至 `b75439d`，保留配置 W0–W7、运行诊断和执行页修复。对方后续代码与未提交工作不复制、不改动；暂停数据仍由原 Host 管理，本分支保持 global 19 / project 49 专用测试基线。
 
 ## 责任边界
 
@@ -28,7 +28,7 @@
 
 - 本分支不修改 `connection_pool.rs`、`resource_commits.rs`、`core/concurrency.rs`、`sql/`、Host 项目路由、SSE 和 Web 产品代码。基础整合产生的合并内容单列，不能计成本分支功能。
 - `core/ports.rs` 只增加 workflow 运行提示/计数的薄端口；实现位于新增 `adapters/runtime_queries.rs` 并通过已有连接池读取。`adapters/lib.rs` 只有委托与冻结恢复清理接入，不修改 Store 结构、连接池、事务或 CAS 语义。
-- `Workspace::tick` 只调整 workflow 的重复阶段与本项目额度传递；不重写项目注册/路由和跨项公平队列。`host/main.rs` 仅增加 tick 分段观测与跳过过期补跑，不修改 HTTP/SSE/生命周期 CAS。
+- `Workspace::tick` 调整 workflow 的重复阶段与本项目额度传递，`Engine::tick` 唯一拥有正常轮次评估；不重写项目注册/路由和跨项公平队列。`host/main.rs` 增加阶段观测、跳过过期补跑、Unix 终止信号与广播停止，不改 HTTP/SSE 协议或生命周期 CAS。整合时保留对方 setup/shutdown 的实例与版本校验，在通过校验后接入同一停止路径。
 - 冻结恢复清理在 `adapters/lib.rs` 的加载开始处调用一次 `source_views::begin_snapshot(memo)`，此外只有运行查询薄委托，不修改 Store 结构、连接或提交。若对方替换该加载路径，在新读取上下文入口执行同一清理语义；不复制旧 Store。
 - 共用 `adapters/tests/orchestration.rs` 时只增加经理原生交付/故障用例；fixture 的 transport rejection 属于测试控制，不进入生产。其他共享测试按测试函数区分，不能以整文件覆盖整合。
 - 文档只修改本计划、执行链/启动器说明及必要索引。对方计划的进度由其实施记录维护，不在本分支重新宣布完成。
@@ -53,3 +53,15 @@ F1 的通用存储基础、F2 的有限提交机制和 F5 的执行页归对方�
 | `Workspace::dispatch_with_receipt` 的摘要路由 | 与本分支 `Workspace::tick` 的去重/额度传递分属不同函数；合并时各自保留，不重写另一侧逻辑。 |
 
 这次核对没有发现两边正在实现同一套运行计数、步骤检查点或原生交付逻辑。共享文件仍可能有插入位置的文本冲突；本表不是对方已确认分工或最终合并/联合验收通过的声明。
+
+## 明确等待的依赖与联合验收
+
+| 对方交付 | 本分支接入点 | 联合验收事项 |
+|---|---|---|
+| P1/P2 同库工程资源的完整乐观提交切换 | 会话观察、控制器调用/回复、Workflow 实例/意图/回执；复用同一读写集合与幂等回执 | 切换前后无丢失更新、重复派发、旧 epoch 接纳；正常调用不再完整恢复/复制/比较工程状态。旧 writer 仍在时不提前启用第二条业务写路径。 |
+| 安装登记与事件追加的正式提交 | Host 的 materialize_harness / SessionResources；原生工具启动只消费其冻结结果 | 保留其 CAS、tombstone 和数据库分配游标；重新验证真实 Docker 准备/重启/回执，不覆盖对方 registry 实现。本分支不迁移原暂停数据。 |
+| P4 执行页有界读模型 | 前端消费 peer 摘要；原生 workflow.inspect 的页内计算/响应裁剪保持独立 | 1/100 活跃前端下测 T0→T6、页面可用和事件收敛；步骤与子流程的独立游标合同仍需共同完成，不能将当前 offset 的双用途当作已修复。 |
+| P5 公共调度与通知 | workflow 待办提示、native 收包/回执唤醒与同轮交付；接入有界外部 I/O 完成通知 | 慢 Docker/Git/模型不阻塞其他项目、停止和回执；公平性、全局配额、通知丢失补扫及重启收敛。当前顺序外部 I/O 仍可能排队。 |
+| P6 负载发生器与矩阵 | 本分支的真实 Docker 工作流、原生 Agent 和 Host 故障场景 | 同一冻结 release/数据/预算做 0/1/100 前端、历史 10 倍、长稳；原生每类至少 1000 样本。当前本机探索不等于正式容量或全部 SLA 通过。 |
+
+冻结经理预算本轮保持原墙钟语义。活动预算、平台 deadline 和无进展 watchdog 的新配置合同仍未实施，这是本计划自身的后续策略项，不伪装成对方存储分支的已完成或待提供能力；本轮先用真实时间线降低并定位平台等待。

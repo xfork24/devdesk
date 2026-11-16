@@ -1934,6 +1934,7 @@ impl Engine {
     }
 
     pub fn evaluate_configured_workflows(&self) -> Result<()> {
+        let _span = self.store.observe_query("runtime.evaluate_workflows");
         self.store.transact(None, &mut |state| {
             let rows: Vec<_> = state
                 .governance

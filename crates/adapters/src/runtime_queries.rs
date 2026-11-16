@@ -16,6 +16,7 @@ pub(super) fn pending(conn: &Connection, kind: ports::WorkflowRuntimeWork) -> Re
             WHERE t.status IN ('queued','dispatching','running','waiting_interaction')
             OR (t.status='needs_reconciliation' AND (t.cancel_requested=1
               OR EXISTS(SELECT 1 FROM executions e WHERE e.session_id=t.session_id AND e.writer_revoked=0))))",
+        ports::WorkflowRuntimeWork::WorkflowIntents => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared')",
         ports::WorkflowRuntimeWork::Controllers => "SELECT EXISTS(SELECT 1 FROM governance_records
             WHERE type='workflow_controller' AND json_extract(data,'$.status')='active')",
         ports::WorkflowRuntimeWork::ControllerCalls => "SELECT EXISTS(SELECT 1 FROM governance_records c
@@ -25,10 +26,13 @@ pub(super) fn pending(conn: &Connection, kind: ports::WorkflowRuntimeWork) -> Re
         ports::WorkflowRuntimeWork::Changes => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_change' AND json_extract(data,'$.status') IN ('prepared','waiting_quiescence'))",
         ports::WorkflowRuntimeWork::Segments => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_segment' AND json_extract(data,'$.status')='active')",
         ports::WorkflowRuntimeWork::RustDrivers => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_driver' AND json_extract(data,'$.mode')='rust')",
-        ports::WorkflowRuntimeWork::PlatformTools => "SELECT
+        ports::WorkflowRuntimeWork::PlatformTools => {
+            let active: bool = conn.query_row("SELECT
             EXISTS(SELECT 1 FROM governance_records WHERE type='platform_call' AND json_extract(data,'$.status') IN ('prepared','running')) OR
-            EXISTS(SELECT 1 FROM governance_records WHERE type='agent_context_call' AND coalesce(json_extract(data,'$.reply_sent'),0)!=1) OR
-            EXISTS(SELECT 1 FROM governance_records a WHERE a.type='agent_platform_request'
+            EXISTS(SELECT 1 FROM governance_records WHERE type='agent_context_call' AND coalesce(json_extract(data,'$.reply_sent'),0)!=1)", [], |row| row.get(0)).map_err(storage)?;
+            return Ok(active || pending(conn, ports::WorkflowRuntimeWork::AgentReplies)?);
+        }
+        ports::WorkflowRuntimeWork::AgentReplies => "SELECT EXISTS(SELECT 1 FROM governance_records a WHERE a.type='agent_platform_request'
               AND NOT EXISTS(SELECT 1 FROM governance_records r WHERE r.type='platform_tool_reply' AND r.definition_id=json_extract(a.data,'$.request.execution_id'))
               AND (EXISTS(SELECT 1 FROM governance_records c WHERE c.type='platform_call'
                   AND c.id=json_extract(a.data,'$.request.execution_id') AND json_extract(c.data,'$.status') IN ('succeeded','failed','cancelled','needs_reconciliation'))
@@ -115,6 +119,7 @@ mod tests {
             json!({"request":{"execution_id":"platform"}}),
         );
         assert!(!pending(&conn, PlatformTools).unwrap());
+        assert!(!pending(&conn, AgentReplies).unwrap());
         record(
             &conn,
             "intent",
@@ -123,6 +128,7 @@ mod tests {
             json!({"status":"failed","command":{"payload":{"agent_platform_call_id":"platform"}}}),
         );
         assert!(pending(&conn, PlatformTools).unwrap());
+        assert!(pending(&conn, AgentReplies).unwrap());
         record(
             &conn,
             "platform",

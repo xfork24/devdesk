@@ -1117,6 +1117,14 @@ impl Engine {
             } else {
                 self.poll_platform_tool(&snapshot, &request)
             };
+            // Waiting for an external result is an observation, not a new fact.
+            // Keep the initial prepared -> running transition but do not rewrite
+            // the same running row (or resource_pending) on every Host poll.
+            if (matches!(&result, Ok(None)) && row.data["status"] == "running")
+                || matches!(&result, Err(error) if error.code == "resource_pending")
+            {
+                continue;
+            }
             let persisted = self.store.transact(None, &mut |state| {
                 let mut data = row.data.clone();
                 match &result {
@@ -1268,6 +1276,12 @@ impl Engine {
 
     fn reply_agent_platform_calls(&self) -> Result<()> {
         let _span = self.store.observe_query("runtime.platform_reply");
+        if !self
+            .store
+            .workflow_runtime_pending(ports::WorkflowRuntimeWork::AgentReplies)?
+        {
+            return Ok(());
+        }
         let snapshot = self.store.snapshot()?;
         for source in snapshot
             .governance
