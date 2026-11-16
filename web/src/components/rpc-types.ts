@@ -19,3 +19,5 @@ export type ResourceVersion = {
   resource: { kind: string; id: string };
   revision: number;
 };
+
+export type HostVersion = { instance_id: string; revision: number };

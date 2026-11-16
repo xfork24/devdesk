@@ -49,6 +49,7 @@ import React, {
 } from "react";
 import { MarkdownField, MarkdownPreview } from "./components/configuration-ui";
 import {
+  type HostVersion,
   type ResourceVersion,
   type Row,
   type Request,
@@ -122,6 +123,8 @@ type DialogSpec = {
   fields: Field[];
   revision?: number;
   preconditions?: ResourceVersion[];
+  hostVersion?: HostVersion;
+  commandId?: string;
   feedbackTarget?: ActionTarget | null;
 };
 const labels: Record<string, string> = {
@@ -709,6 +712,8 @@ function App() {
     setDialog({
       ...spec,
       revision: getRevision(spec.target),
+      hostVersion: caps?.lifecycle,
+      commandId: crypto.randomUUID(),
       preconditions:
         spec.method === "settings.update"
           ? (data?.settings_versions || []).filter((version: ResourceVersion) =>
@@ -898,12 +903,23 @@ function App() {
               e.preventDefault();
               try {
                 setBusy(true);
+                const commandId = crypto.randomUUID();
                 const r = await fetch("/setup", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ path: setupPath }),
+                  body: JSON.stringify({
+                    path: setupPath,
+                    command_id: commandId,
+                    instance_id: caps.lifecycle?.instance_id,
+                    expected_revision: caps.lifecycle?.revision,
+                  }),
                 }).then((r) => r.json());
-                if (r.error) throw new Error(r.error);
+                if (r.operation_id === commandId && r.lifecycle)
+                  setCaps((current) => ({
+                    ...current,
+                    lifecycle: r.lifecycle,
+                  }));
+                if (r.error) throw new Error(`${r.code || ""} · ${r.error}`);
                 await load();
               } catch (e) {
                 setError(String(e));
@@ -1869,9 +1885,22 @@ function App() {
           submit={async (payload) => {
             let result;
             if (dialog.method === "shutdown") {
-              const response = await fetch("/shutdown", { method: "POST" });
-              if (!response.ok)
-                throw new Error(`退出失败 HTTP ${response.status}`);
+              const response = await fetch("/shutdown", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  command_id: dialog.commandId,
+                  instance_id: dialog.hostVersion?.instance_id,
+                  expected_revision: dialog.hostVersion?.revision,
+                }),
+              });
+              const outcome = await response.json();
+              if (!response.ok || outcome.error)
+                throw new Error(
+                  outcome.error
+                    ? `${outcome.code} · ${outcome.error}`
+                    : `退出失败 HTTP ${response.status}`,
+                );
               kernelStopped.current = true;
               ++requestGeneration.current;
               ++projectGeneration.current;
@@ -1881,7 +1910,7 @@ function App() {
               setData(undefined);
             } else if (dialog.method === "settings.update") {
               result = await rpc(dialog.method, {
-                command_id: crypto.randomUUID(),
+                command_id: dialog.commandId,
                 preconditions: dialog.preconditions,
                 payload,
               });

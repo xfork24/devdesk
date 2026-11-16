@@ -15,6 +15,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT / 'target/debug/devdesk-host'
@@ -25,6 +26,10 @@ def wait_for_shutdown(child, response, started):
     response.close()
     assert child.wait(timeout=max(0, 4 - (time.monotonic() - started))) == 0
     return time.monotonic() - started
+
+def lifecycle_command(req):
+    state = json.load(req('/capabilities'))['lifecycle']
+    return {'command_id':str(uuid.uuid4()), 'instance_id':state['instance_id'], 'expected_revision':state['revision']}
 
 def run():
     with tempfile.TemporaryDirectory(prefix='devdesk-http-') as directory:
@@ -182,7 +187,7 @@ def run():
             response = stream.getresponse()
             assert response.status==200
             started = time.monotonic()
-            assert json.load(req('/shutdown', {}))['ok']
+            assert json.load(req('/shutdown', lifecycle_command(req)))['ok']
             http_shutdown = wait_for_shutdown(child, response, started)
             stream.close()
             child.stdout.close()
@@ -285,7 +290,7 @@ def connection_contract():
             assert req('/session',{'access_token':token}).status==200
             assert len(cookies)==2
             assert json.loads(req('/capabilities').read())['setup_required'] is False
-            assert json.load(req('/shutdown',{}))['ok']
+            assert json.load(req('/shutdown',lifecycle_command(req)))['ok']
             assert peer.wait(timeout=5)==0
             url = original_url
             assert req('/capabilities').status==200
@@ -294,7 +299,7 @@ def connection_contract():
             assert json.load(rpc)['result']['projects']==[]
             assert req('/rpc',{}, {'Origin':'http://evil.invalid'}).status==403
             assert req('/connection').headers.get('Set-Cookie') is None
-            assert json.load(req('/shutdown',{}))['ok']
+            assert json.load(req('/shutdown',lifecycle_command(req)))['ok']
             assert child.wait(timeout=5)==0
             print('PASS connection: discovery-only CORS, no anonymous remote session, key authentication, Host/Origin protection, HttpOnly cookies with separate port names, remote opt-in before dataset initialization')
         finally:

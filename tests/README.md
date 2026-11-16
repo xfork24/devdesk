@@ -12,6 +12,7 @@
 | 其他 `crates/adapters/tests/` | SQLite、Artifact、配置修订、Git、运行安装、Tool/Skill、权限及 Docker 资源边界。 |
 | `web/tests/` | 浏览器编辑/保存/发布/重载、任务上下文、输入输出引用、阶段与真实子流程、确认规则、配置导航、权限、接入和历史。 |
 | `tests/entrypoints/` | 真实 Host 的 HTTP、安全、SQLite 分库、幂等、模板重置、延迟环境准备、退出与重启。 |
+| `tests/entrypoints/lifecycle_contract.py` | 100 次同版本初始化竞争、Host 实例围栏、原回执重放、失败重试及响应丢失恢复；独立临时数据，不代表 100 前端容量验收。 |
 | `tests/fixtures/` / `tests/support/` | 协议样本、固定数据和只编译进测试的接口替身。业务示例不是产品限制。 |
 | `tests/reporters/node-reporter.mjs` | 随产品嵌入的 Node 测试报告器，返回真实分类、错误消息/堆栈/原因链及隔离测试的 stdout/stderr；测试输出始终作为数据封装，不能伪造顶层分类。 |
 

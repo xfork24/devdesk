@@ -155,7 +155,9 @@ def main():
                 assert [t['id'] for t in old['turns']] == [t['id'] for t in before['turns']]
                 report.update(passed=True, successor_adopted=True, history_preserved=True,
                               native_session_changed=True, host_restarted=False)
-                req = urllib.request.Request(url + '/shutdown', data=b'{}',
+                lifecycle = json.load(c.http.open(url + '/capabilities', timeout=10))['lifecycle']
+                body = {'command_id':str(uuid.uuid4()), 'instance_id':lifecycle['instance_id'], 'expected_revision':lifecycle['revision']}
+                req = urllib.request.Request(url + '/shutdown', data=json.dumps(body).encode(),
                                              headers={'Content-Type': 'application/json'})
                 c.http.open(req, timeout=10).close()
                 assert child.wait(timeout=10) == 0

@@ -23,6 +23,9 @@ test("两个前端独立切换和编辑项目，刷新继续使用标签页 URL"
       .fill(mkdtempSync(join(tmpdir(), "devdesk-project-isolation-")));
     await page.getByRole("button", { name: "初始化 / 打开数据集" }).click();
   }
+  await expect(
+    page.getByRole("button", { name: "设置", exact: true }),
+  ).toBeVisible();
   const projects = await Promise.all(
     ["A", "B"].map((name) =>
       rpc(page, "project.create", {

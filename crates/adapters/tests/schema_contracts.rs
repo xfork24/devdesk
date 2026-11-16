@@ -339,6 +339,28 @@ fn compiled_native_permissions_match_the_published_execution_contract() {
 }
 
 #[test]
+fn host_lifecycle_requests_carry_instance_and_version_preconditions() {
+    for (name, mut request) in [
+        (
+            "SetupRequest",
+            json!({"command_id":"setup","instance_id":"instance","expected_revision":0,"path":"dataset"}),
+        ),
+        (
+            "ShutdownRequest",
+            json!({"command_id":"stop","instance_id":"instance","expected_revision":2}),
+        ),
+    ] {
+        let validator = SCHEMAS.validator(&format!("host-lifecycle.schema.json#/$defs/{name}"));
+        assert!(validator.is_valid(&request));
+        request.as_object_mut().unwrap().remove("expected_revision");
+        assert!(!validator.is_valid(&request));
+        request["expected_revision"] = json!(2);
+        request.as_object_mut().unwrap().remove("instance_id");
+        assert!(!validator.is_valid(&request));
+    }
+}
+
+#[test]
 fn settings_request_requires_an_explicit_resource_version_envelope() {
     let validator = SCHEMAS.validator("rpc.schema.json#/$defs/SettingsUpdate");
     let valid = json!({"command_id":"settings-1", "preconditions":[{

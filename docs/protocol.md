@@ -14,12 +14,16 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 20 / project 
 | POST /session | 验证连接密钥并建立 HttpOnly / SameSite=Strict 同源会话；本机未配置密钥时可提交空对象。 |
 | POST /rpc | JSON-RPC 2.0，要求 request id，不支持 batch 或 notification。 |
 | GET /events?project_id=ID&cursor=N | 固定项目的 SSE；事件 ID 为 `ID:cursor`，支持同项目 Last-Event-ID。 |
-| GET /artifacts/{id}?project_id=ID | 按活动数据库 ID 读取并校验 SHA-256，客户端不能指定宿主路径。 |
+| GET /artifacts/{id}?project_id=ID | 按明确的项目数据库读取并校验 SHA-256，客户端不能指定宿主路径。 |
 | GET /capabilities | 协议、版本、setup_required、供应商及平台能力声明；不代替 Docker 连通或真实推理验证。 |
-| POST /setup | 打开数据集；非空非 DevDesk 目录拒绝，打开后不能热切换。 |
-| POST /shutdown | 可信人类会话退出 Host。 |
+| POST /setup | 带 Host 版本前置条件打开数据集；非空非 DevDesk 目录拒绝，打开后不能热切换。 |
+| POST /shutdown | 带 Host 版本前置条件的可信人类退出请求。 |
 
 命令参数包含 `command_id`、`target`、`expected_revision`、`payload`；有版本的目标要求确切修订。相同 ID 与相同参数重放首次结果，检查早于版本冲突；不同参数复用 ID 拒绝。客户端不提交 actor 或已解析执行 binding。工程请求携带 `project_id` 指定本次请求的权威项目库。Host 不保存共享选择，另一前端的查询或切换不会使该 ID 过期。缺少必需项目返回 `project_required`，未知项目返回 `not_found`，不回退到另一个项目。
+
+`/capabilities.lifecycle` 为 `{instance_id,revision,status}`。`/setup` 参数为 `{command_id,instance_id,expected_revision,path}`，`/shutdown` 为 `{command_id,instance_id,expected_revision}`；缺少版本为 `precondition_required`，旧实例或旧版本为 `revision_conflict`。HTTP 拒绝响应含 `error`、`code` 和当前 `lifecycle`，成功或已受理操作完成的响应另含 `operation_id`。初始化失败仍返回明确错误与该次完成版本，允许重新选择路径，不改写不兼容目录。
+
+初始化先原子取得生命周期意图，事务外加载数据，结束时再次校验原意图；期间其他 HTTP 读取可继续返回已提交状态。客户端断开不取消 Host 持有的完成任务，停止会围栏迟到初始化。相同命令完成后重放原回执，进行中返回 `operation_in_progress`，使用原命令核对；本 Host 内最多保留 128 条已受理生命周期回执。重启生成新实例身份，旧页面不能继续初始化或停止新 Host。生命周期回执属于当前进程，不能代替 SQLite 中的持久化业务回执。会话建立及其他修改入口的迁移仍待完成。
 
 `query.settings` 从一个已提交快照返回 `global_concurrency`、`default_harness` 和 `versions`。`settings.update` 参数为 `{command_id,preconditions,payload}`，其中 `preconditions` 是 `{resource:{kind:"setting",id},revision}` 数组，只包含本次修改项，`payload` 包含 `global_concurrency` 和/或 `default_harness`。缺少原始版本返回 `precondition_required`，过期返回 `revision_conflict`；两个设置项的版本互不影响。`query.ui_bootstrap`、`query.workspace` 和 `query.runtime_installations` 也返回 `settings_versions`，值与版本在同一读取快照内取得。
 

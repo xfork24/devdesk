@@ -18,7 +18,7 @@ class Client:
  def command(self,method,target=None,revision=None,payload=None,command_id=None):
   return self.rpc(method,{'command_id':command_id or str(uuid.uuid4()),'target':target,'expected_revision':revision,'payload':payload or {}})
  def open(self,project):
-  self.command('project.open',project);self.project=project
+  self.rpc('query.ui_bootstrap',{'project_id':project});self.project=project
  def feature(self,feature):return self.rpc('query.workspace',{'feature_id':feature,'limit':100})['detail']
  def discuss(self,owner,revision,role,provider,prompt,timeout=240,work_type='discussion'):
   records=self.rpc('query.configurations',{'include_history':False,'limit':1000})['records'];by_id={r['id']:r for r in records}

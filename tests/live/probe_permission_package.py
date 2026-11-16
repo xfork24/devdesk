@@ -60,8 +60,12 @@ try:
         http = urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                           urllib.request.HTTPCookieProcessor(CookieJar()))
         http.open(url + '/', timeout=10).close()
+        project = None
         def request(method, params=None):
-            body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params or {}}).encode()
+            params = dict(params or {})
+            if project and params.get('scope') != 'global':
+                params.setdefault('project_id', project)
+            body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode()
             req = urllib.request.Request(url + '/rpc', data=body, headers={'Content-Type': 'application/json'})
             return json.load(http.open(req, timeout=20))
         def rpc(method, params=None):
@@ -223,7 +227,9 @@ try:
         with sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True) as conn:
             assert conn.execute('PRAGMA user_version').fetchone()[0] == expected_schema
         assert rpc('query.runtime_installations')['installations'] == []
-        req = urllib.request.Request(url + '/shutdown', data=b'{}', headers={'Content-Type': 'application/json'})
+        lifecycle = json.load(http.open(url + '/capabilities', timeout=10))['lifecycle']
+        body = {'command_id':str(uuid.uuid4()), 'instance_id':lifecycle['instance_id'], 'expected_revision':lifecycle['revision']}
+        req = urllib.request.Request(url + '/shutdown', data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
         http.open(req, timeout=10).close()
         assert child.wait(timeout=10) == 0
         # Reopen the source-free package and reconstruct the archived execution basis.

@@ -3,6 +3,7 @@
 #[cfg(test)]
 #[path = "../../../tests/support/defaults.rs"]
 mod default_fixture;
+mod lifecycle;
 #[cfg(test)]
 #[path = "../../../tests/support/runtime.rs"]
 mod test_runtime;
@@ -35,6 +36,7 @@ use workspace::Workspace;
 #[folder = "../../web/dist/"]
 struct Web;
 struct App {
+    lifecycle: lifecycle::Lifecycle,
     workspace: RwLock<Option<Arc<Workspace>>>,
     cookie: String,
     authority: String,
@@ -354,22 +356,71 @@ async fn rpc(
         Err(e) => Json(json!({"jsonrpc":"2.0","id":fallback_id,"error":failure(err("internal",e.to_string()))})).into_response(),
     }
 }
-async fn setup(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Json<Value> {
-    let mut current = app.workspace.write().unwrap();
-    if current.is_some() {
-        return Json(json!({"error":"已有数据集已打开；更改路径需退出后使用 --data 重启"}));
-    }
-    let Some(path) = p["path"].as_str().filter(|s| !s.trim().is_empty()) else {
-        return Json(json!({"error":"请输入数据目录"}));
+fn lifecycle_error(app: &App, error: Error) -> Response {
+    let status = if [
+        "revision_conflict",
+        "operation_in_progress",
+        "invalid_state",
+    ]
+    .contains(&error.code.as_str())
+    {
+        StatusCode::CONFLICT
+    } else {
+        StatusCode::BAD_REQUEST
     };
-    match Workspace::open(&PathBuf::from(path)) {
-        Ok(workspace) => {
-            let root = devdesk_core::EngineeringStore::root(&*workspace.global);
-            *current = Some(workspace);
-            Json(json!({"root":root}))
-        }
-        Err(e) => Json(json!({"error":e.message})),
+    (
+        status,
+        Json(json!({"error":error.message,"code":error.code,"lifecycle":app.lifecycle.snapshot()})),
+    )
+        .into_response()
+}
+async fn setup(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Response {
+    let Some(path) = p["path"]
+        .as_str()
+        .filter(|path| !path.trim().is_empty() && path.len() <= 4096)
+    else {
+        return lifecycle_error(&app, err("invalid_params", "请输入有效的数据目录"));
+    };
+    let ticket = match app.lifecycle.begin(true, &p) {
+        Ok(lifecycle::Admission::Replay(result)) => return Json(result).into_response(),
+        Ok(lifecycle::Admission::New(ticket)) => ticket,
+        Err(error) => return lifecycle_error(&app, error),
+    };
+    let path = PathBuf::from(path);
+    // This task owns completion even if the requesting connection disappears.
+    let operation = tokio::spawn(open_dataset(app.clone(), ticket, path));
+    match operation.await {
+        Ok(Ok(result)) => Json(result).into_response(),
+        Ok(Err(error)) => lifecycle_error(&app, error),
+        Err(error) => lifecycle_error(&app, err("internal", error.to_string())),
     }
+}
+async fn open_dataset(
+    app: Arc<App>,
+    ticket: lifecycle::Ticket,
+    path: PathBuf,
+) -> devdesk_domain::Result<Value> {
+    let opened = tokio::task::spawn_blocking(move || Workspace::open(&path))
+        .await
+        .unwrap_or_else(|error| Err(err("internal", error.to_string())));
+    let result = match opened {
+        Ok(workspace) => {
+            let mut current = app.workspace.write().unwrap();
+            match app.lifecycle.finish_setup(&ticket, true) {
+                Ok(()) => {
+                    let root = workspace.global.root();
+                    *current = Some(workspace);
+                    json!({"root":root})
+                }
+                Err(error) => json!({"error":error.message,"code":error.code}),
+            }
+        }
+        Err(error) => {
+            let _ = app.lifecycle.finish_setup(&ticket, false);
+            json!({"error":error.message,"code":error.code})
+        }
+    };
+    app.lifecycle.record(ticket, result)
 }
 async fn integration_oauth_callback(
     State(app): State<Arc<App>>,
@@ -408,10 +459,13 @@ async fn integration_oauth_callback(
     }
 }
 async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
-    let workspace = app.workspace.read().unwrap().clone();
+    let (workspace, lifecycle) = {
+        let current = app.workspace.read().unwrap();
+        (current.clone(), app.lifecycle.snapshot())
+    };
     let providers: Vec<&str> = HARNESS_PROVIDERS.iter().map(|p| p.as_str()).collect();
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"lifecycle":lifecycle,"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -553,10 +607,19 @@ async fn events(
         .keep_alive(KeepAlive::default())
         .into_response()
 }
-async fn shutdown(State(app): State<Arc<App>>) -> Json<Value> {
+async fn shutdown(State(app): State<Arc<App>>, Json(p): Json<Value>) -> Response {
+    let ticket = match app.lifecycle.begin(false, &p) {
+        Ok(lifecycle::Admission::Replay(result)) => return Json(result).into_response(),
+        Ok(lifecycle::Admission::New(ticket)) => ticket,
+        Err(error) => return lifecycle_error(&app, error),
+    };
+    let result = match app.lifecycle.record(ticket, json!({"ok":true})) {
+        Ok(result) => result,
+        Err(error) => return lifecycle_error(&app, error),
+    };
     app.stopping.store(true, Ordering::Relaxed);
     app.shutdown.notify_waiters();
-    Json(json!({"ok":true}))
+    Json(result).into_response()
 }
 
 fn termination_signal() -> std::io::Result<impl std::future::Future<Output = &'static str>> {
@@ -663,6 +726,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .port_or_known_default()
         .expect("HTTP origin has a port");
     let app = Arc::new(App {
+        lifecycle: lifecycle::Lifecycle::new(workspace.is_some()),
         workspace: RwLock::new(workspace),
         cookie: format!("devdesk_session_{session_port}={}", uuid::Uuid::new_v4()),
         authority: authority.clone(),
@@ -724,6 +788,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }=>"http",
             };
             eprintln!("{}",json!({"type":"host_lifecycle","event":"shutdown_requested","reason":reason,"pid":std::process::id()}));
+            exit.lifecycle.stop_from_signal();
             exit.stopping.store(true, Ordering::Relaxed);
             exit.shutdown.notify_waiters();
         })

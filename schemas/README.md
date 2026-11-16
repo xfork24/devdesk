@@ -6,6 +6,7 @@
 |---|---|
 | `orchestration.schema.json` | Workflow 内嵌 scheduling、控制权限执行视图、actor、ChangeSet、typed material 和运行时变更。 |
 | `rpc.schema.json` | JSON-RPC、配置修订、原生执行，以及 Workflow 运行实例和 StepExecution。 |
+| `host-lifecycle.schema.json` | 初始化与退出的 Host 实例、版本前置条件和生命周期快照。 |
 | `workflow.schema.json` | Workflow v6：Stage、四种执行器、显式端口、访问范围、预算与有界完成规则。 |
 | `agent-task.schema.json` | `ConfiguredAgentTask`，renderer `agent-task/v6`；保存实际 Turn、Agent、输入正文、来源与摘要。 |
 | `spec.schema.json` / `standard.schema.json` | Spec v3 / Standard v4，动态内容检查项和不可变规范快照。 |

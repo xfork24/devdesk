@@ -36,6 +36,12 @@ HTTP 退出、SIGINT 以及 Unix SIGTERM/SIGHUP 都停止调度准入并广播�
 
 关联阅读：[adapters/src/catalog.rs](../devdesk-adapters/storage-and-source-codecs.md#file-src-catalog-rs)、[adapters/src/session_resources.rs](../devdesk-adapters/runtime-preparation.md#file-src-session-resources-rs)、[host/src/governance.rs](rpc-and-configuration.md#file-src-governance-rs)、[host/src/github_projects.rs](workspace-and-lifecycle.md#file-src-github-projects-rs)、[core/src/lib.rs](../devdesk-core/engine-and-ports.md#file-src-lib-rs)。
 
+## src/lifecycle.rs：Host 实例版本
+
+`/setup` 和 `/shutdown` 校验 `instance_id`、`expected_revision`、`command_id`。短临界区仅登记命令与回执，生命周期切换通过 CAS；初始化 I/O 在工作线程执行，不持有 workspace 锁。完成任务由 Host 持有，客户端断开不会丢弃完成处理；停止改变代次，迟到初始化不能接入。重启产生新的实例身份，旧页面请求被拒绝。进程内回执不代替数据库业务回执。
+
+源码：[crates/host/src/lifecycle.rs](../../../crates/host/src/lifecycle.rs)。
+
 <a id="file-src-github-projects-rs"></a>
 
 ## src/github_projects.rs：GitHub 项目身份与异步仓库准备

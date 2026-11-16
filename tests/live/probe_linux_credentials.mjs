@@ -2,7 +2,7 @@
 // No model credentials are used. Secret values never enter argv or the report.
 import { chromium } from '../../web/node_modules/playwright/index.mjs';
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -70,7 +70,8 @@ const rpc = async (method, params = {}, allowError = false) => {
 const stop = async () => {
   if (!host || host.exitCode !== null) return;
   const exited = once(host, 'exit');
-  await page.request.post(url + '/shutdown', { data: {} });
+  const lifecycle = (await (await page.request.get(url + '/capabilities')).json()).lifecycle;
+  await page.request.post(url + '/shutdown', { data: { command_id:randomUUID(), instance_id:lifecycle.instance_id, expected_revision:lifecycle.revision } });
   const [code] = await exited;
   check(code === 0, 'owned_host_gracefully_stopped');
   await page.close();

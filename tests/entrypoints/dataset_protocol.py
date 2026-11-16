@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import uuid
 
 binary = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/devdesk-host").resolve()
 environment = dict(os.environ)
@@ -57,13 +58,16 @@ with tempfile.TemporaryDirectory(prefix="devdesk-protocol-") as temp:
                     urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
                 )
                 def post(path, body):
+                    if path in ('/setup','/shutdown'):
+                        state = json.load(client.open(url+'/capabilities', timeout=10))['lifecycle']
+                        body = {**body, 'command_id':str(uuid.uuid4()), 'instance_id':state['instance_id'], 'expected_revision':state['revision']}
                     request = urllib.request.Request(url + path, json.dumps(body).encode(),
                                                      {"Content-Type": "application/json"})
                     return json.load(client.open(request, timeout=20))
                 post("/session", {})
                 if not reopening:
                     result = post("/setup", {"path": str(data)})
-                    assert result == {"root": str(data.resolve())}, result
+                    assert result["root"] == str(data.resolve()), result
                 capabilities = json.load(client.open(url + "/capabilities", timeout=10))
                 assert capabilities["setup_required"] is False
                 assert (data / ".devdesk-dataset").read_text() == "devdesk-profile-runtime-v2\n"

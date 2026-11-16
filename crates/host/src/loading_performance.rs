@@ -135,6 +135,7 @@ fn configuration_load_server() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let app = Arc::new(App {
+            lifecycle: lifecycle::Lifecycle::new(true),
             workspace: RwLock::new(Some(w)),
             cookie: format!("devdesk_session_{}=profile", address.port()),
             authority: address.to_string(),

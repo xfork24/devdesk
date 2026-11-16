@@ -3,6 +3,7 @@
 import { chromium, expect } from '../../web/node_modules/@playwright/test/index.mjs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -96,7 +97,8 @@ try {
 } finally {
   if (page && host.exitCode === null) {
     const exited = once(host, 'exit');
-    await page.request.post(url + '/shutdown', { data: {} });
+    const lifecycle = (await (await page.request.get(url + '/capabilities')).json()).lifecycle;
+    await page.request.post(url + '/shutdown', { data: { command_id:randomUUID(), instance_id:lifecycle.instance_id, expected_revision:lifecycle.revision } });
     const [code] = await exited;
     report.host_released = code === 0;
   } else if (host.exitCode === null) {

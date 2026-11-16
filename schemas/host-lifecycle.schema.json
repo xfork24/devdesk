@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devdesk.invalid/schemas/host-lifecycle.schema.json",
+  "title": "Host instance lifecycle requests",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SetupRequest"
+    },
+    {
+      "$ref": "#/$defs/ShutdownRequest"
+    }
+  ],
+  "$defs": {
+    "SetupRequest": {
+      "type": "object",
+      "required": [
+        "command_id",
+        "instance_id",
+        "expected_revision",
+        "path"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4611686018427387903
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    "ShutdownRequest": {
+      "type": "object",
+      "required": [
+        "command_id",
+        "instance_id",
+        "expected_revision"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4611686018427387903
+        }
+      },
+      "additionalProperties": false
+    },
+    "LifecycleSnapshot": {
+      "type": "object",
+      "required": [
+        "instance_id",
+        "revision",
+        "status"
+      ],
+      "properties": {
+        "instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4611686018427387903
+        },
+        "status": {
+          "enum": [
+            "uninitialized",
+            "initializing",
+            "ready",
+            "stopping"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
