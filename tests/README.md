@@ -35,6 +35,16 @@ DEVDESK_E2E_PORT=4329 npm --prefix web run test:e2e
 
 删除的 v3 动作/配方测试由当前执行合同回归替代。当前测试不创建占位 Agent/Session，不将端口替身结果宣称为真实模型或外部系统验收。
 
+## 配置加载性能
+
+配置加载性能使用 `tests/performance/configuration_loading.py`，显式传入冻结的 Host 测试二进制、源数据库副本、全新输出目录和样本数。该入口在线备份 SQLite 并添加 `.performance-copy` 标记，只装配查询，不运行调度器、模型或 Git；普通配置与 SQLite 路径为真实实现。浏览器模式使用明确的实时模型目录夹具，配置查询不模拟，保存原始请求、导航、主线程/空闲 CPU 证据。构建、基线和优化测量应顺序执行。
+
+```bash
+cargo test --locked -p devdesk-host --no-run
+python3 tests/performance/configuration_loading.py --test-binary target/debug/deps/devdesk_host-实际摘要 --dataset /独立数据库副本 --output /全新证据目录 --samples 30
+# 浏览器采样增加 --browser；release 使用 cargo test --release --no-run 产生的测试二进制。
+```
+
 ## 真实资源检查
 
 ```bash

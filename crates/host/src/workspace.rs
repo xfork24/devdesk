@@ -864,6 +864,14 @@ impl Workspace {
         }
         Ok(result)
     }
+    pub(crate) fn subscribe_configuration_changes(
+        &self,
+        listener: std::sync::Weak<dyn Fn() + Send + Sync>,
+    ) {
+        for engine in self.opened.lock().unwrap().values() {
+            engine.store.subscribe_changes(listener.clone());
+        }
+    }
     pub fn event_engine(&self, expected: Option<&str>) -> Result<(String, Arc<Engine>)> {
         match self.active_engine(expected) {
             Ok(e) => Ok((e.store.project_id().unwrap(), e)),

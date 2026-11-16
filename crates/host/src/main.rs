@@ -405,16 +405,18 @@ async fn events(
         .and_then(|(_, n)| n.parse::<u64>().ok())
         .or_else(|| p.get("cursor").and_then(|s| s.parse().ok()))
         .unwrap_or(0);
+    let configuration_events = p.get("configuration").is_some_and(|value| value == "true");
     let notify = Arc::new(tokio::sync::Notify::new());
     let listener: Arc<dyn Fn() + Send + Sync> = {
         let notify = notify.clone();
         Arc::new(move || notify.notify_one())
     };
     engine.store.subscribe_changes(Arc::downgrade(&listener));
-    if let Ok(workspace) = app.workspace() {
+    if configuration_events && let Ok(workspace) = app.workspace() {
         workspace
             .global
             .subscribe_changes(Arc::downgrade(&listener));
+        workspace.subscribe_configuration_changes(Arc::downgrade(&listener));
     }
     let stream = stream::unfold(
         (
@@ -427,7 +429,7 @@ async fn events(
             listener,
             None::<Value>,
         ),
-        |(app, engine, scope, mut cursor, mut queue, notify, listener, mut last_version)| async move {
+        move |(app, engine, scope, mut cursor, mut queue, notify, listener, mut last_version)| async move {
             loop {
                 if app.stopping.load(Ordering::Relaxed) {
                     return None;
@@ -457,12 +459,16 @@ async fn events(
                 let read_app = app.clone();
                 let read = tokio::task::spawn_blocking(move || -> devdesk_domain::Result<_> {
                     let values = read_engine.store.events_after(cursor, 100)?;
-                    let version = read_app.workspace()?.configuration_version(&read_engine)?;
+                    let version = if configuration_events {
+                        read_app.workspace()?.configuration_version(&read_engine)?
+                    } else {
+                        Value::Null
+                    };
                     Ok((values, version))
                 })
                 .await;
                 if let Ok(Ok((values, version))) = read {
-                    if last_version.as_ref() != Some(&version) {
+                    if configuration_events && last_version.as_ref() != Some(&version) {
                         queue.push_back(
                             json!({"kind":"configuration.changed","configuration_version":version}),
                         );
@@ -470,7 +476,9 @@ async fn events(
                     }
                     for value in values {
                         let mut value = json!(value);
-                        value["configuration_version"] = version.clone();
+                        if configuration_events {
+                            value["configuration_version"] = version.clone();
+                        }
                         queue.push_back(value);
                     }
                     if !queue.is_empty() {

@@ -30,8 +30,8 @@ fn instance(root: &Path, current_project: &str, id: &str) -> Result<AgentInstanc
             s.state
                 .governance
                 .iter()
-                .cloned()
-                .filter(|r| r.r#type == "agent_instance"),
+                .filter(|r| r.r#type == "agent_instance")
+                .cloned(),
         );
     }
     let r = records

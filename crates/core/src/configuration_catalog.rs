@@ -20,6 +20,7 @@ pub const CATALOG_RECORD_KINDS: &[&str] = &[
     "integration_disabled",
     "integration_operation",
     "harness_materialization",
+    "permission_origin",
     "permission_file_origin",
     "permission_source_selection",
 ];
@@ -207,4 +208,64 @@ impl Engine {
             pull_requests: self.pull_requests.clone(),
         }
     }
+}
+
+pub fn compose_configuration_catalog(
+    global: &ConfigurationCatalogSnapshot,
+    local: &ConfigurationCatalogSnapshot,
+    project: &str,
+) -> Result<ConfigurationCatalogSnapshot> {
+    let mut state = local.state.as_ref().clone();
+    if state.projects.iter().all(|p| p.execution_mode == "live") {
+        for record in global.state.governance.iter().filter(|r| {
+            r.immutable
+                && (r.r#type == "role"
+                    || r.r#type == "role_retirement"
+                    || configuration_visible(&global.state, r, Some(project)))
+        }) {
+            if let Some(old) = local.record(&record.id) {
+                require(old.content_hash == record.content_hash, "共享配置摘要冲突")?;
+            } else {
+                state.governance.push(record.clone());
+            }
+        }
+        copy_template_catalog(&global.state, &mut state)?;
+    }
+
+    ConfigurationCatalogSnapshot::new(state, local.revision, local.repository_ready)
+}
+
+/// Project-owned Role identities remain globally discoverable without publishing from a query.
+pub fn compose_role_directory(
+    global: &ConfigurationCatalogSnapshot,
+    projects: &[Arc<ConfigurationCatalogSnapshot>],
+) -> Result<ConfigurationCatalogSnapshot> {
+    let mut state = global.state.as_ref().clone();
+    let mut known: BTreeMap<String, String> = state
+        .governance
+        .iter()
+        .map(|r| (r.id.clone(), r.content_hash.clone()))
+        .collect();
+    for project in projects {
+        for role in project
+            .state
+            .governance
+            .iter()
+            .filter(|r| matches!(r.r#type.as_str(), "role" | "role_retirement"))
+        {
+            if let Some(hash) = known.get(&role.id) {
+                require(hash == &role.content_hash, "Role 目录摘要冲突")?;
+            } else {
+                known.insert(role.id.clone(), role.content_hash.clone());
+                state.governance.push(role.clone());
+            }
+            if let Some(member) = template_catalog_member(&project.state, role)
+                && !known.contains_key(&member.id)
+            {
+                known.insert(member.id.clone(), member.content_hash.clone());
+                state.governance.push(member.clone());
+            }
+        }
+    }
+    ConfigurationCatalogSnapshot::new(state, global.revision, false)
 }
