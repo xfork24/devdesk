@@ -34,8 +34,7 @@ impl Workspace {
             let pid = previous["id"]
                 .as_str()
                 .ok_or_else(|| err("storage", "项目打开回执无效"))?;
-            let e = self.load_project(pid, false)?;
-            self.select(pid, e)?;
+            self.load_project(pid, false)?;
             return Ok(previous);
         }
         let existing = c
@@ -138,7 +137,6 @@ impl Workspace {
         }
         self.global
             .publish_project(e.store.snapshot()?.projects.first().unwrap())?;
-        self.select(&pid, e)?;
         self.global
             .transact(Some((&c.command_id, &fingerprint)), &mut |_| {
                 Ok(json!({"id":pid,"repository":repository,"mainline":mainline}))
@@ -196,7 +194,12 @@ mod tests {
             .is_err()
         );
         assert_eq!(w.global.github_projects(0, 50).unwrap().1, 1);
-        let state = w.active_engine(None).unwrap().store.snapshot().unwrap();
+        let state = w
+            .project_engine(first["id"].as_str())
+            .unwrap()
+            .store
+            .snapshot()
+            .unwrap();
         assert_eq!(state.repository_operations.len(), 1);
         assert!(matches!(
             state.repository_operations[0].action,
@@ -214,7 +217,7 @@ mod tests {
             .unwrap();
         assert_eq!(first["id"], resumed["id"]);
         assert_eq!(
-            w.active_engine(None)
+            w.project_engine(first["id"].as_str())
                 .unwrap()
                 .store
                 .snapshot()
@@ -229,14 +232,15 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let w =
             Workspace::open_with_adapters(temp.path(), crate::test_runtime::adapters()).unwrap();
-        w.dispatch(
-            "project.open_github",
-            json!({"command_id":"open","payload":{"repository":"owner/repo"}}),
-        )
-        .unwrap();
+        let project = w
+            .dispatch(
+                "project.open_github",
+                json!({"command_id":"open","payload":{"repository":"owner/repo"}}),
+            )
+            .unwrap();
         // This fixture has no repository adapter: first dispatch fails without external I/O.
         w.tick(|| false).unwrap();
-        let e = w.active_engine(None).unwrap();
+        let e = w.project_engine(project["id"].as_str()).unwrap();
         let state = e.store.snapshot().unwrap();
         let op = state.repository_operations.first().unwrap();
         assert_eq!(op.status, RepositoryOperationStatus::NeedsReconciliation);
@@ -255,14 +259,14 @@ mod tests {
         let w =
             Workspace::open_with_adapters(temp.path(), crate::test_runtime::adapters()).unwrap();
         assert!(
-            w.active_engine(None)
+            w.project_engine(project["id"].as_str())
                 .unwrap()
                 .store
                 .has_pending_work()
                 .unwrap()
         );
         w.tick(|| false).unwrap();
-        let e = w.active_engine(None).unwrap();
+        let e = w.project_engine(project["id"].as_str()).unwrap();
         let state = e.store.snapshot().unwrap();
         let retried = &state.repository_operations[0];
         assert!(

@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--test-binary", type=Path, required=True)
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--project", help="Explicit project fixture ID")
     parser.add_argument("--clients", default="1,2,10")
     parser.add_argument("--samples", type=int, default=3)
     args = parser.parse_args()
@@ -77,9 +78,12 @@ def main():
             cookie = "; ".join(f"{item.name}={item.value}" for item in jar)
             with sqlite3.connect(dataset / "global.sqlite3") as conn:
                 row = conn.execute("SELECT value FROM settings WHERE key='active_project'").fetchone()
-                if not row:
-                    raise RuntimeError("baseline dataset needs a selected project")
-                project = json.loads(row[0])
+                first = conn.execute("SELECT id FROM project_catalog WHERE project IS NOT NULL ORDER BY id LIMIT 1").fetchone()
+                project = args.project or (json.loads(row[0]) if row else first[0] if first else None)
+                if not project:
+                    raise RuntimeError("baseline dataset needs a project fixture")
+            metadata["project_id"] = project
+            (output / "identity.json").write_text(json.dumps(metadata, indent=2))
             with sqlite3.connect(dataset / "projects" / project / "engineering.sqlite3") as conn:
                 feature = conn.execute("SELECT id FROM features ORDER BY rowid DESC LIMIT 1").fetchone()
             params = {"project_id": project, "limit": 50}

@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--test-binary", type=Path, required=True)
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--project", help="Explicit project fixture ID; defaults to the backup selection or first project")
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--cold-browser", action="store_true", help="Reload JavaScript/configuration cache on every navigation")
@@ -53,9 +54,17 @@ def main():
     binary.chmod(0o700)
     dataset = args.output / "dataset"
     copy_dataset(args.dataset.resolve(), dataset)
+    with sqlite3.connect(dataset / "global.sqlite3") as conn:
+        selected = conn.execute("SELECT CAST(value AS TEXT) FROM settings WHERE key='active_project'").fetchone()
+        first = conn.execute("SELECT id FROM project_catalog WHERE project IS NOT NULL ORDER BY id LIMIT 1").fetchone()
+        project = args.project or (json.loads(selected[0]) if selected else first[0] if first else None)
+        if project and not conn.execute("SELECT 1 FROM project_catalog WHERE id=? AND project IS NOT NULL",(project,)).fetchone():
+            raise RuntimeError("selected performance project is absent from the copied dataset")
     env = {**os.environ, "DEVDESK_PERF_DATASET": str(dataset.resolve()), "DEVDESK_PERF_OUTPUT": str((args.output / "rpc.jsonl").resolve()), "DEVDESK_PERF_SAMPLES": str(args.samples)}
+    if project:
+        env["DEVDESK_PERF_PROJECT"] = project
     env.pop("DEVDESK_ACCESS_TOKEN", None)
-    metadata = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "source_dataset": str(args.dataset.resolve()), "samples": args.samples, "offline": True, "scheduler": False, "node": subprocess.check_output(["node", "--version"], text=True).strip()}
+    metadata = {"binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(), "source_dataset": str(args.dataset.resolve()), "samples": args.samples, "project_id": project, "offline": True, "scheduler": False, "node": subprocess.check_output(["node", "--version"], text=True).strip()}
     (args.output / "identity.json").write_text(json.dumps(metadata, indent=2))
     if not (args.browser or args.cold_browser or args.model_conditions):
         subprocess.run([str(binary.resolve()), "loading_performance::configuration_load_profile", "--ignored", "--exact", "--nocapture"], env=env, check=True)
@@ -92,7 +101,7 @@ def main():
             if not origin:
                 raise RuntimeError("benchmark server failed to start")
             script = "model-loading.mjs" if args.model_conditions else "execution-loading.mjs" if args.browser_page == "execution" else "configuration-loading.mjs"
-            subprocess.run(["node", str(Path(__file__).with_name(script)), origin, str(args.output.resolve()), str(args.samples), str(server.pid), "cold" if args.cold_browser else "warm"], check=True)
+            subprocess.run(["node", str(Path(__file__).with_name(script)), origin, str(args.output.resolve()), str(args.samples), str(server.pid), "cold" if args.cold_browser else "warm", project or ""], check=True)
         finally:
             server.send_signal(__import__("signal").SIGINT)
             try:

@@ -109,12 +109,18 @@ impl Workspace {
             self.global.projects(offset, limit)?
         };
         let mut projects = projects;
-        if let Ok(engine) = self.active_engine(None) {
-            let catalog = engine.store.configuration_snapshot()?;
-            if let Some(current) = catalog.state.projects.first()
-                && let Some(summary) = projects.iter_mut().find(|p| p.id == current.id)
-            {
-                *summary = current.clone();
+        for summary in &mut projects {
+            let engine = self
+                .opened
+                .lock()
+                .map_err(|e| err("storage", e.to_string()))?
+                .get(&summary.id)
+                .cloned();
+            if let Some(engine) = engine {
+                let catalog = engine.store.configuration_snapshot()?;
+                if let Some(current) = catalog.state.projects.first() {
+                    *summary = current.clone();
+                }
             }
         }
         Ok(json!({"projects":projects,"total_projects":total}))
@@ -122,7 +128,7 @@ impl Workspace {
     pub(super) fn ui_bootstrap(&self, params: &Value) -> Result<Value> {
         let _span = performance::Span::new("ui.bootstrap");
         let (global, clock, source_epochs) = self.configuration_bundle()?;
-        let engine = match self.active_engine(params["project_id"].as_str()) {
+        let engine = match self.project_engine(params["project_id"].as_str()) {
             Ok(engine) => engine,
             Err(e) if e.code == "project_required" => self.configuration.clone(),
             Err(e) => return Err(e),
@@ -232,7 +238,7 @@ impl Workspace {
                 }
             };
             let engine = if local {
-                self.active_engine(project)?
+                self.project_engine(project)?
             } else {
                 self.configuration.clone()
             };
@@ -547,7 +553,7 @@ mod tests {
         let params = json!({"project_id":project,"local":true,"kind":"role","include_history":true,"limit":100});
         let before = w.dispatch("query.configurations", params.clone()).unwrap();
         let published=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"new role","data":{"instructions":"new role instructions"},"scope":"global"}})).unwrap();
-        let engine = w.active_engine(Some(&project)).unwrap();
+        let engine = w.project_engine(Some(&project)).unwrap();
         assert!(
             engine
                 .store
@@ -584,7 +590,7 @@ mod tests {
             )
             .unwrap_err()
             .code,
-            "project_changed"
+            "not_found"
         );
     }
 
@@ -617,7 +623,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
         let project = create(&w, "project role source");
-        let engine = w.active_engine(Some(&project)).unwrap();
+        let engine = w.project_engine(Some(&project)).unwrap();
         let before = w.configuration_version(&engine).unwrap();
         let role = engine.execute("role.create", Command {
             command_id: id(), target: None, expected_revision: None,

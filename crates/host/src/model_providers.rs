@@ -315,7 +315,7 @@ mod tests {
                 json!({"command_id":id(),"payload":{"title":"Agent source editing"}}),
             )
             .unwrap();
-        let engine = w.active_engine(project["id"].as_str()).unwrap();
+        let engine = w.project_engine(project["id"].as_str()).unwrap();
         let before = engine.store.snapshot().unwrap();
         for method in ["agent.connection.check", "agent.model.verify"] {
             let params = json!({"project_id":project["id"],"agent_revision_id":default_configured_agent_id("analyst")});

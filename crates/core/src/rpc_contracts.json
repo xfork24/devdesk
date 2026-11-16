@@ -1002,9 +1002,9 @@
     },
     {
       "method": "project.open",
-      "access": "mutation",
+      "access": "retired",
       "scope": "global",
-      "precondition": "resource_read_set",
+      "precondition": "rejected",
       "sites": [
         "crates/host/src/workspace.rs"
       ]

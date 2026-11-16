@@ -273,7 +273,7 @@ function App() {
   const configurationReadVersion = JSON.stringify(data?.catalog_version);
   // Refresh editor reads on a committed configuration change while retaining their draft/feedback state.
   const [caps, setCaps] = useState<Row>();
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(route.get("project_id") || "");
   const [featureId, setFeatureId] = useState(route.get("feature_id") || "");
   const [tab, setTab] = useState(routeTab);
   const configurationSession = useSyncExternalStore(
@@ -372,7 +372,6 @@ function App() {
       ? readingTarget
       : {};
   const [workFilter, setWorkFilter] = useState(route.get("filter") || "");
-  const routeApplied = useRef(false);
   useEffect(() => {
     const params = new URLSearchParams();
     for (const key of [
@@ -425,20 +424,13 @@ function App() {
   useEffect(() => {
     const pop = () => {
       const p = new URLSearchParams(location.search);
-      const pid = p.get("project_id");
-      if (pid && pid !== projectId) {
-        void rpc("project.open_github", {
-          command_id: crypto.randomUUID(),
-          target: pid,
-          payload: {},
-        })
-          .then(() => {
-            ++requestGeneration.current;
-            setProjectId(pid);
-            setFeatureId(p.get("feature_id") || "");
-            setTaskFilter(p.get("task_id") || "");
-          })
-          .catch((e) => setError(String(e)));
+      const pid = p.get("project_id") || "";
+      if (pid !== projectId) {
+        ++requestGeneration.current;
+        ++projectGeneration.current;
+        setProjectId(pid);
+        setData(undefined);
+        setView(undefined);
       }
       setTab(routeTabValue(p));
       setHistoryScope(
@@ -509,53 +501,6 @@ function App() {
         setCaps(c);
         setConnection("已连接");
         if (!c.setup_required) {
-          let active = c.active_project_id || "";
-          let obsoleteRoute = false;
-          if (!routeApplied.current) {
-            routeApplied.current = true;
-            const requested = route.get("project_id");
-            if (requested && requested !== active) {
-              try {
-                await rpc("project.open_github", {
-                  command_id: crypto.randomUUID(),
-                  target: requested,
-                  payload: {},
-                });
-                active = requested;
-              } catch (error) {
-                if (
-                  !(error instanceof Error) ||
-                  !error.message.startsWith("not_found ·")
-                )
-                  throw error;
-                obsoleteRoute = true;
-                for (const key of [
-                  "project_id",
-                  "feature_id",
-                  "task_id",
-                  "session_id",
-                ])
-                  route.delete(key);
-                window.history.replaceState(null, "", `?${route}`);
-                setFeatureId("");
-                setTaskFilter("");
-              }
-            }
-          }
-
-          if (projectId !== active) {
-            ++projectGeneration.current;
-            setProjectId(active);
-            setFeatureId(
-              route.get("project_id") === active || !route.get("project_id")
-                ? route.get("feature_id") || ""
-                : "",
-            );
-            setFeaturePage(Number(route.get("page") || 0));
-            setDetailPages({});
-            setData(undefined);
-            return;
-          }
           const configurationPage =
             ["projects", "workflows", "actors", "components"].includes(tab) ||
             (tab === "discussion" && !featureId && !taskFilter);
@@ -563,14 +508,14 @@ function App() {
             configurationPage ? "query.ui_bootstrap" : "query.workspace",
             {
               project_id: projectId || undefined,
-              feature_id: obsoleteRoute ? undefined : featureId || undefined,
+              feature_id: featureId || undefined,
               offset: featurePage * 50,
               project_offset: projectPage * 50,
               github_only: true,
               limit: 50,
               detail_pages: detailPages,
               work_filter: workFilter,
-              task_id: obsoleteRoute ? undefined : taskFilter || undefined,
+              task_id: taskFilter || undefined,
             },
           );
           if (generation !== requestGeneration.current) return;
@@ -579,6 +524,30 @@ function App() {
           setData(d);
         }
       } catch (e) {
+        if (
+          generation === requestGeneration.current &&
+          projectId &&
+          e instanceof Error &&
+          e.message.startsWith("not_found ·")
+        ) {
+          ++requestGeneration.current;
+          ++projectGeneration.current;
+          setProjectId("");
+          setFeatureId("");
+          setTaskFilter("");
+          setData(undefined);
+          setView(undefined);
+          const url = new URL(location.href);
+          for (const key of [
+            "project_id",
+            "feature_id",
+            "task_id",
+            "session_id",
+          ])
+            url.searchParams.delete(key);
+          history.replaceState(null, "", `${url.pathname}${url.search}`);
+          return;
+        }
         if (generation === requestGeneration.current) {
           setError(String(e));
           setConnection("连接失败");
@@ -703,24 +672,9 @@ function App() {
     setView(undefined);
     setData(undefined);
   };
-  const openProject = async (id: string) => {
-    const feedbackTarget = currentActionTarget();
-    setBusy(true);
-    setError("");
-    try {
-      await rpc("project.open_github", {
-        command_id: crypto.randomUUID(),
-        target: id,
-        payload: {},
-      });
-      resetProjectView(id);
-      setDialog(undefined);
-    } catch (e) {
-      if (!publishActionFeedback(feedbackTarget, String(e), true))
-        setError(String(e));
-    } finally {
-      setBusy(false);
-    }
+  const openProject = (id: string) => {
+    resetProjectView(id);
+    setDialog(undefined);
   };
   const pager = (key: string) => {
     const page = detailPages[key] || 0;
@@ -996,11 +950,13 @@ function App() {
           <span>当前项目</span>
           <ActionSelect
             aria-label="当前项目"
-            value={projectId || project?.id || ""}
+            value={projectId}
             disabled={busy}
             onChange={(e) => openProject(e.target.value)}
           >
-            {projects.length === 0 && <option value="">尚无项目</option>}
+            <option value="">
+              {projects.length === 0 ? "尚无项目" : "选择项目"}
+            </option>
             {projectOptions.map((p) => (
               <option key={p.id} value={p.id}>
                 {displayText(p.title)}

@@ -235,7 +235,7 @@ impl Workspace {
             let local = if catalog.is_some() {
                 None
             } else if let Some(pid) = params["project_id"].as_str() {
-                let e = self.active_engine(Some(pid))?;
+                let e = self.project_engine(Some(pid))?;
                 self.sync_configuration(&e)?;
                 Some(e)
             } else {
@@ -730,7 +730,7 @@ mod tests {
         }
         let capability = w.dispatch("capability.create", payload).unwrap();
         let agent=w.dispatch("agent.create",json!({"command_id":id(),"payload":{"name":"Followed runtime analyst","role_ref":data["role_ref"],"capability_ref":capability["id"],"data":{}}})).unwrap()["id"].as_str().unwrap().to_owned();
-        let e = w.active_engine(Some(&project)).unwrap();
+        let e = w.project_engine(Some(&project)).unwrap();
         w.sync_configuration(&e).unwrap();
         let state = e.store.snapshot().unwrap();
         let lock = resolve_permission_lock(&state, DEFAULT_HARNESS_ID, &selection).unwrap();

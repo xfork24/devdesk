@@ -1,7 +1,7 @@
 import { chromium } from "../../web/node_modules/playwright-core/index.mjs";
 import fs from "node:fs";
 
-const [origin, output, count] = process.argv.slice(2);
+const [origin, output, count, , selectedProject] = process.argv.slice(2);
 const browser = await chromium.launch({ channel: "chromium", headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const trace = [], navigation = [], errors = [], consoleErrors = [];
@@ -54,13 +54,14 @@ function save() {
 }
 try {
   await page.goto(origin);
-  const bootstrap = await page.evaluate(async () => {
+  const bootstrap = await page.evaluate(async (selectedProject) => {
     const capabilities = await (await fetch("/capabilities")).json();
-    const response = await fetch("/rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "execution-profile", method: "query.workspace", params: { project_id: capabilities.active_project_id, limit: 1 } }) });
+    const project = selectedProject || capabilities.active_project_id;
+    const response = await fetch("/rpc", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: "execution-profile", method: "query.workspace", params: { project_id: project, limit: 1 } }) });
     const value = await response.json();
     if (value.error) throw Error(JSON.stringify(value.error));
-    return { project: capabilities.active_project_id, feature: value.result.features?.[0]?.id };
-  });
+    return { project, feature: value.result.features?.[0]?.id };
+  }, selectedProject);
   if (!bootstrap.project || !bootstrap.feature) throw Error("execution baseline needs a project and Feature");
   await page.goto(`${origin}/?tab=overview&detail=manager&project_id=${encodeURIComponent(bootstrap.project)}&feature_id=${encodeURIComponent(bootstrap.feature)}`);
   const execution = page.getByRole("button", { name: "执行与交付", exact: true });

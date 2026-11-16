@@ -35,7 +35,7 @@ fn combined_history_keeps_global_and_each_project_in_their_own_database() {
         .as_str()
         .unwrap()
         .to_owned();
-    let engine = w.active_engine(Some(&project)).unwrap();
+    let engine = w.project_engine(Some(&project)).unwrap();
     add_history(&engine, "project-one");
     let global = w
         .dispatch(
@@ -70,7 +70,7 @@ fn combined_history_keeps_global_and_each_project_in_their_own_database() {
         .as_str()
         .unwrap()
         .to_owned();
-    add_history(&w.active_engine(Some(&second)).unwrap(), "project-two");
+    add_history(&w.project_engine(Some(&second)).unwrap(), "project-two");
     let other = w
         .dispatch(
             "query.history",
@@ -85,9 +85,8 @@ fn combined_history_keeps_global_and_each_project_in_their_own_database() {
             "query.history",
             json!({"scope":"project","project_id":project,"include_tool_calls":true})
         )
-        .unwrap_err()
-        .code,
-        "project_changed"
+        .unwrap(),
+        local
     );
     assert_eq!(
         w.dispatch(

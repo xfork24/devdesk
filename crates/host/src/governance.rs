@@ -132,7 +132,7 @@ impl Workspace {
     ) -> Option<Result<Value>> {
         if method.starts_with("configuration.transfer.") {
             return Some((|| {
-                let project = self.active_engine(params["project_id"].as_str())?;
+                let project = self.project_engine(params["project_id"].as_str())?;
                 let command: Command = serde_json::from_value(params.clone())
                     .map_err(|e| err("invalid_params", e.to_string()))?;
                 match method {
@@ -393,7 +393,7 @@ impl Workspace {
                     || (!target_global && target.is_some())
                     || params["local"] == true);
             let engine = if local {
-                let e = self.active_engine(params["project_id"].as_str())?;
+                let e = self.project_engine(params["project_id"].as_str())?;
                 self.sync_configuration(&e)?;
                 e
             } else {
@@ -553,7 +553,7 @@ impl Workspace {
 #[cfg(test)]
 mod role_discussion_instance_loading {
     use super::*;
-    use crate::workspace::tests::{create, select};
+    use crate::workspace::tests::{create, read_project};
     /// The discussion page lists Agent instances by agent definition, while
     /// instances pin the exact revision they were created with. Revising an
     /// agent must keep both the instance and its superseded revision visible
@@ -565,7 +565,7 @@ mod role_discussion_instance_loading {
         let w =
             Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
         let pid = create(&w, "Role discussion");
-        select(&w, &pid);
+        read_project(&w, &pid);
         let page = w
             .dispatch(
                 "query.configurations",
@@ -634,7 +634,7 @@ mod role_discussion_instance_loading {
 #[cfg(test)]
 mod standard_comparison_tests {
     use super::*;
-    use crate::workspace::tests::{create, select};
+    use crate::workspace::tests::{create, read_project};
     #[test]
     fn cross_project_standard_comparison_ignores_default_entry_metadata() {
         let root = tempfile::tempdir().unwrap();
@@ -686,7 +686,7 @@ mod standard_comparison_tests {
             features.push(feature["id"].as_str().unwrap().to_owned());
             standards.push(configuration["data"]["standard_ref"].clone());
         }
-        select(&w, &projects[1]);
+        read_project(&w, &projects[1]);
         assert_ne!(standards[0], standards[1]);
         let snapshots = w
             .dispatch(
@@ -711,7 +711,10 @@ mod standard_comparison_tests {
             .unwrap();
         assert_eq!(executed["before"]["basis"], "execution");
         assert_eq!(executed["entry_diff"]["equal"], true);
-        assert_eq!(w.active_id(), Some(projects[1].clone()));
+        assert_eq!(
+            read_project(&w, &projects[1])["active_project_id"],
+            projects[1]
+        );
         let choices = w
             .dispatch("query.work_standard_choices", json!({"limit":100}))
             .unwrap();

@@ -19,7 +19,17 @@ fn dataset() -> PathBuf {
 #[ignore = "explicit offline benchmark, requires a marked dataset copy"]
 fn configuration_load_profile() {
     let w = Workspace::loading_profile(&dataset()).unwrap();
-    let pid = w.active_id().expect("benchmark needs an active project");
+    let pid = std::env::var("DEVDESK_PERF_PROJECT")
+        .ok()
+        .or_else(|| {
+            w.global
+                .projects(0, 1)
+                .unwrap()
+                .0
+                .first()
+                .map(|p| p.id.clone())
+        })
+        .expect("benchmark needs an explicit project fixture");
     let output = std::env::var("DEVDESK_PERF_OUTPUT").expect("set DEVDESK_PERF_OUTPUT");
     let mut file = std::fs::File::create(output).unwrap();
     let samples = std::env::var("DEVDESK_PERF_SAMPLES")
@@ -106,7 +116,7 @@ fn configuration_load_profile() {
             writeln!(file,"{}",json!({"method":method,"params":params,"sample":sample,"ms":start.elapsed().as_secs_f64()*1000.0,"bytes":bytes,"measurement":trace.finish()})).unwrap();
         }
     }
-    let e = w.active_engine(Some(&pid)).unwrap();
+    let e = w.project_engine(Some(&pid)).unwrap();
     for sample in 0..samples {
         let trace = performance::Trace::start();
         let start = Instant::now();

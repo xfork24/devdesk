@@ -111,7 +111,7 @@ def run():
             assert not (dataset / 'engineering.sqlite3').exists()
             def configure(project_id):
                 defaults = rpc('query.configuration_defaults', {})
-                workspace = rpc('query.workspace', {})
+                workspace = rpc('query.workspace', {'project_id':project_id})
                 rpc('project.configuration.update', {'project_id':project_id,'command_id':'configure-'+project_id,'target':project_id,'expected_revision':workspace['active_project']['revision'],'payload':{'workflow_ref':defaults['workflow_ref'],'role_agent_bindings':defaults['role_agent_bindings']}})
             configure(pid)
             feature_a = rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}})
@@ -129,9 +129,17 @@ def run():
             view_b = rpc('query.workspace', {'project_id':project_b})
             assert view_b['active_project_id'] == project_b
             assert len(view_b['features']) == 1 and view_b['features'][0]['title'] == '仅属于 B'
+            assert rpc('query.workspace', {})['active_project_id'] is None
+            assert req('/events?project_id=missing-project').status == 409
+            retired = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'project.open',
+                'params':{'command_id':'retired-open','target':pid,'payload':{}}}))
+            assert retired['error']['data']['code'] == 'method_not_found', retired
             assert req('/artifacts/' + artifact_a + '?project_id=' + project_b).status == 404
-            stale = json.load(req('/rpc', {'jsonrpc':'2.0','id':2,'method':'feature.create','params':{'project_id':pid,'command_id':'stale-project','payload':{'project_id':pid,'title':'不能串写'}}}))
-            assert stale['error']['data']['code'] == 'project_changed', stale
+            assert rpc('query.workspace', {'project_id':pid})['active_project_id'] == pid
+            original = rpc('query.workspace', {'project_id':pid})['active_project']
+            rpc('project.update', {'project_id':pid,'command_id':'independent-a','target':pid,
+                'expected_revision':original['revision'],'payload':{'concurrency':3}})
+            assert rpc('query.workspace', {'project_id':project_b})['active_project']['concurrency'] == 2
             rpc('settings.update', settings_command({'global_concurrency':7}, 'settings-concurrency'))
             assert not (dataset / 'runtime.json').exists()
             with sqlite3.connect(dataset / 'global.sqlite3') as global_db:
@@ -142,7 +150,6 @@ def run():
                     assert project_db.execute('SELECT id FROM projects').fetchall() == [(project_id,)]
                     assert project_db.execute('SELECT count(*) FROM features').fetchone()[0] == 1
                     assert not project_db.execute('PRAGMA foreign_key_check').fetchall()
-            rpc('project.open', {'command_id':'open-a','target':pid,'payload':{}})
             assert rpc('feature.create', {'project_id':pid,'command_id':'same-feature-id','payload':{'project_id':pid,'title':'仅属于 A'}}) == feature_a
             assert req('/artifacts/' + artifact_a + '?project_id=' + pid).read().decode() == 'A 的独立产物'
             # SSE is pinned to the project selected when connecting; its cursor is namespaced.
@@ -152,7 +159,6 @@ def run():
             old_stream.request('GET', '/events?project_id=' + pid + '&cursor=' + str(latest_a), headers={'Cookie':cookie_header})
             old_response = old_stream.getresponse()
             assert old_response.status == 200
-            rpc('project.open', {'command_id':'open-b','target':project_b,'payload':{}})
             rpc('feature.create', {'project_id':project_b,'command_id':'b-event','payload':{'project_id':project_b,'title':'只通知 B'}})
             old_stream.sock.settimeout(0.3)
             try:
@@ -169,7 +175,6 @@ def run():
             assert scoped_response.readline().decode().strip().startswith('id: ' + project_b + ':')
             scoped_response.close()
             scoped_stream.close()
-            rpc('project.open', {'command_id':'restore-a','target':pid,'payload':{}})
             assert req('/artifacts/unknown').status==404
             # SSE stays connected while the host shuts down.
             stream = http.client.HTTPConnection(authority, timeout=2)
@@ -186,7 +191,8 @@ def run():
             child.stdout.readline()
             url=child.stdout.readline().strip()
             client.open(url).read()
-            restored = rpc('query.workspace', {})
+            assert rpc('query.workspace', {})['active_project_id'] is None
+            restored = rpc('query.workspace', {'project_id':pid})
             assert restored['projects'][0]['title']=='HTTP 持久化'
             assert restored['active_project_id'] == pid
             assert restored['global_concurrency'] == 7
@@ -221,7 +227,7 @@ def run():
                     assert [e['event'] for e in lifecycle]==['shutdown_requested','runtime_stopped'], lifecycle
                     assert lifecycle[0]['reason']==signum.name, lifecycle
                     print(f'PASS real Host {signum.name}, SSE EOF, runtime cleanup, exit 0: {elapsed:.3f}s')
-            print(f'PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE EOF and shutdown (HTTP {http_shutdown:.3f}s, SIGINT {signal_shutdown:.3f}s), restart persistence, project database isolation/switching, global SQLite settings, scoped SSE cursors' + ('; standalone copied binary' if '--standalone' in sys.argv else ''))
+            print(f'PASS HTTP: auth, Host/Origin, JS/CSS, capabilities, Unicode/space path, process lock, idempotence, Artifact access, SSE EOF and shutdown (HTTP {http_shutdown:.3f}s, SIGINT {signal_shutdown:.3f}s), restart persistence, explicit project routing without shared selection, global SQLite settings, scoped SSE cursors' + ('; standalone copied binary' if '--standalone' in sys.argv else ''))
         finally:
             if child.poll() is None:
                 child.terminate()

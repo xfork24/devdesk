@@ -411,7 +411,7 @@ async fn capabilities(State(app): State<Arc<App>>) -> Json<Value> {
     let workspace = app.workspace.read().unwrap().clone();
     let providers: Vec<&str> = HARNESS_PROVIDERS.iter().map(|p| p.as_str()).collect();
     Json(
-        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"active_project_id":workspace.as_ref().and_then(|w|w.active_id()),"storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
+        json!({"version":"0.2.0","protocol_version":1,"setup_required":workspace.is_none(),"project_selection":"frontend","storage_layout":"global-and-project-databases","execution_mode":"live","live":"requires_registered_runtime_and_credentials","conversations":{"providers":providers,"managed_linux_workers":true,"engineering_run_contract":true},"platform":{"linux":"runtime_verified_by_reports","macos":"runtime_verified_by_reports"},"runtime":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH},"harness":{"providers":providers,"capabilities":["structured-output","cancel","poll"]},"sandbox":{"provider":"docker","capabilities":["managed-container","resource-cleanup"]}}),
     )
 }
 async fn artifact(
@@ -422,7 +422,7 @@ async fn artifact(
     let result = (|| {
         let e = app
             .workspace()?
-            .active_engine(p.get("project_id").map(String::as_str))?;
+            .project_engine(p.get("project_id").map(String::as_str))?;
         let v = e.query("query.artifact", &json!({"id":id}), 4)?;
         let a: devdesk_domain::Artifact =
             serde_json::from_value(v).map_err(|e| err("internal", e.to_string()))?;

@@ -2,7 +2,7 @@
 
 JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 20 / project 50；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
-本文记录实施分支的协议。重构将以显式作用域替代共享活动项目，并为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
+本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
 本文记录现行协议。已确认的下一步设计将以显式作用域替代共享活动项目，并为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。本轮仅确定方案，尚未修改 RPC Schema 或运行行为。
 
@@ -19,7 +19,7 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 20 / project 
 | POST /setup | 打开数据集；非空非 DevDesk 目录拒绝，打开后不能热切换。 |
 | POST /shutdown | 可信人类会话退出 Host。 |
 
-命令参数包含 `command_id`、`target`、`expected_revision`、`payload`；有版本的目标要求确切修订。相同 ID 与相同参数重放首次结果，检查早于版本冲突；不同参数复用 ID 拒绝。客户端不提交 actor 或已解析执行 binding。工程请求携带 `project_id` 固定请求作用域，过期选择返回 `project_changed`，查询不会隐式切换项目。
+命令参数包含 `command_id`、`target`、`expected_revision`、`payload`；有版本的目标要求确切修订。相同 ID 与相同参数重放首次结果，检查早于版本冲突；不同参数复用 ID 拒绝。客户端不提交 actor 或已解析执行 binding。工程请求携带 `project_id` 指定本次请求的权威项目库。Host 不保存共享选择，另一前端的查询或切换不会使该 ID 过期。缺少必需项目返回 `project_required`，未知项目返回 `not_found`，不回退到另一个项目。
 
 `query.settings` 从一个已提交快照返回 `global_concurrency`、`default_harness` 和 `versions`。`settings.update` 参数为 `{command_id,preconditions,payload}`，其中 `preconditions` 是 `{resource:{kind:"setting",id},revision}` 数组，只包含本次修改项，`payload` 包含 `global_concurrency` 和/或 `default_harness`。缺少原始版本返回 `precondition_required`，过期返回 `revision_conflict`；两个设置项的版本互不影响。`query.ui_bootstrap`、`query.workspace` 和 `query.runtime_installations` 也返回 `settings_versions`，值与版本在同一读取快照内取得。
 
@@ -31,7 +31,7 @@ JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 20 / project 
 
 `query.workspace` 返回项目目录及活动工程，`query.history` / `query.events` / `query.artifact` 读取对应事实。分页参数有界；SSE 只通知变化，客户端重新查询权威状态。没有通用 `set_status`。
 
-`query.ui_bootstrap` 返回活动项目、项目目录、配置新鲜度、配置健康摘要和页面必须的运行安装信息，不返回工程详情或历史快照；`query.project_directory` 只读取项目目录，支持 `project_offset`、`limit` 和 `github_only`。配置页面使用这两个入口，执行和历史页面继续读取 `query.workspace`。配置目录、默认选择、权限资源等查询保留原有响应内容，并附带 `catalog_version={host,global,project,project_sources}`；该版本不作为执行授权或并发写入令牌，模板重置仍使用 `catalog_generation`。
+`query.ui_bootstrap` 返回本请求所选项目、项目目录、配置新鲜度、配置健康摘要和页面必须的运行安装信息，不返回工程详情或历史快照；`query.project_directory` 只读取项目目录，支持 `project_offset`、`limit` 和 `github_only`。配置页面使用这两个入口，执行和历史页面继续读取 `query.workspace`。配置目录、默认选择、权限资源等查询保留原有响应内容，并附带 `catalog_version={host,global,project,project_sources}`；该版本不作为执行授权或并发写入令牌，模板重置仍使用 `catalog_generation`。
 
 SSE 可显式传入 `configuration=true`，接收无持久化事件 ID 的 `configuration.changed` 版本通知，普通事件同时附带 `configuration_version`。只有持久化事件推进 `ID:cursor`，通知不改变游标和重放语义。不传该参数时保留原事件流合同。
 
@@ -39,7 +39,7 @@ SSE 可显式传入 `configuration=true`，接收无持久化事件 ID 的 `conf
 
 历史记录页使用 `query.history({scope,project_id?,include_tool_calls:true,offset,limit})`：Global 读取全局配置库，当前项目读取对应活动项目库；先合并持久化事件、外部工具及平台工具调用，按事件 time / 调用 created_at 倒序排列，再统一分页，默认每页 50 条、上限 100 条。返回 `{records,total}`，每条为 `{type:"event",time,event}` 或 `{type:"tool_call",time,call}`；调用沿用 `query.tool_calls` 的来源投影和敏感参数脱敏。不传 include_tool_calls 时仍返回 `{events,total}`，`query.events` 的 SSE 游标语义不变。
 
-JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.message`，领域代码位于 `error.data.code`，常见为 invalid_params、not_found、blocked、revision_conflict、project_changed、project_required、configuration_required、dataset_locked 和 storage。
+JSON-RPC 使用 -32600 / -32601 / -32602 / -32000；领域说明位于 `error.message`，领域代码位于 `error.data.code`，常见为 invalid_params、not_found、blocked、revision_conflict、project_required、configuration_required、dataset_locked 和 storage。
 
 Web 的 `feature.create` 显式提交 `payload.start_workflow=false`：保存草稿、初始需求、流程输入及冻结的工作配置，不创建 Workflow、Driver 或经理会话。之后在执行与交付页以 `workflow.start` 启动该 Feature；不传 `inputs` 时使用创建时保存的 `workflow_inputs`。旧 API 调用省略 `start_workflow` 时保留创建并初始化流程的行为。
 
@@ -113,7 +113,7 @@ Capability 可通过根级 `spec_refs` 引用 Agent 自身规范，业务能力�
 
 ## 项目、运行时与凭据
 
-Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和 title，再次可指定项目 target；接入意图、克隆及回执异步完成。`project.open` 切换已登记项目，`project.create` 保留为后端元数据入口。仓库实际就绪前不能启动工程执行。
+Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和 title，再次可指定项目 target；接入意图、克隆及回执异步完成。`project.open` 已撤销；选择已有项目只改变前端 URL，随后使用明确的 `project_id` 查询。`project.create` 保留为后端元数据入口。仓库实际就绪前不能启动工程执行。
 
 `runtime.prepare({provider})` 准备当前默认 Harness 与 Sandbox 的组合镜像；`runtime.prepare_harness({id,project_id?})` 的 id 是确切 Harness 源引用，正常会话也可按需物化。构建/拉取在事务外执行，核验实际镜像后保留 managed 配方标签，保存固定 Image ID 的安装和协议报告；替换配方标签时按需归档旧产物，不再额外创建 prepared 标签。`runtime.preparation_status` 同时返回当前准备状态及持久化 intents；`runtime.preparation_cancel({recipe_digest})` 在检查点生效，`runtime.preparation_reconcile({recipe_digest})` 核对未知准备结果。运行和重试不按新标签替换原冻结安装。
 

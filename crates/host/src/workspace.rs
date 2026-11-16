@@ -30,16 +30,14 @@ use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 
-type Active = Option<(String, Arc<Engine>)>;
 pub struct Workspace {
     pub global: Arc<GlobalStore>,
     codex_auth: codex_auth::CodexAuthentication,
     configuration: Arc<Engine>,
     adapters: ports::ExecutionAdapters,
-    active: RwLock<Active>,
     opened: Mutex<BTreeMap<String, Arc<Engine>>>,
     switching: Mutex<()>,
     template_gate: Arc<Mutex<()>>,
@@ -109,7 +107,6 @@ impl Workspace {
             global,
             configuration,
             adapters,
-            active: RwLock::new(None),
             opened: Mutex::new(BTreeMap::new()),
             switching: Mutex::new(()),
             template_gate: Arc::new(Mutex::new(())),
@@ -128,30 +125,24 @@ impl Workspace {
                 break;
             }
         }
-        if let Some(id) = workspace.global.active_project()? {
-            let e = workspace.load_project(&id, false)?;
-            *workspace.active.write().unwrap() = Some((id, e));
-        }
         Ok(workspace)
     }
-    pub fn active_id(&self) -> Option<String> {
-        self.active
-            .read()
-            .unwrap()
-            .as_ref()
-            .map(|(id, _)| id.clone())
-    }
-    pub fn active_engine(&self, expected: Option<&str>) -> Result<Arc<Engine>> {
-        let active = self.active.read().unwrap();
-        if let Some(expected) = expected
-            && active.as_ref().is_none_or(|(id, _)| id != expected)
-        {
-            return Err(err("project_changed", "活动项目已改变，请刷新后重试"));
+    pub fn project_engine(&self, project_id: Option<&str>) -> Result<Arc<Engine>> {
+        let project_id =
+            project_id.ok_or_else(|| err("project_required", "请求需要明确的 project_id"))?;
+        require(
+            project_id != GLOBAL_DISCUSSION_NAMESPACE,
+            "全局讨论需要明确的讨论作用域",
+        )?;
+        if self.global.project(project_id)?.is_none() {
+            return Err(err("not_found", "项目不存在或尚未创建完成"));
         }
-        active
-            .as_ref()
-            .map(|(_, e)| e.clone())
-            .ok_or_else(|| err("project_required", "请先创建或打开项目"))
+        self.opened
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .get(project_id)
+            .cloned()
+            .ok_or_else(|| err("not_found", "项目尚未打开"))
     }
     fn sync_configuration(&self, e: &Engine) -> Result<()> {
         e.sync_shared_configuration(self.global.as_ref())
@@ -209,11 +200,6 @@ impl Workspace {
         }
         self.opened.lock().unwrap().insert(id.into(), e.clone());
         Ok(e)
-    }
-    fn select(&self, id: &str, e: Arc<Engine>) -> Result<()> {
-        self.global.activate(id)?;
-        *self.active.write().unwrap() = Some((id.into(), e));
-        Ok(())
     }
     fn global_conversation_dispatch(&self, method: &str, params: Value) -> Result<Value> {
         require(params["project_id"].is_null(), "全局讨论不能同时指定项目")?;
@@ -347,11 +333,7 @@ impl Workspace {
             || ["project.configuration.update", "work.configuration.update"].contains(&method)
             || matches!(
                 method,
-                "project.create"
-                    | "project.open"
-                    | "project.open_github"
-                    | "workflow.start"
-                    | "feature.create"
+                "project.create" | "project.open_github" | "workflow.start" | "feature.create"
             );
         let _guard = if coordinated {
             let _waiting = performance::Span::new("catalog.gate_wait");
@@ -372,7 +354,7 @@ impl Workspace {
                 if let Some(saved) = self.global.replay(&command.command_id, &fingerprint)? {
                     return Ok(saved);
                 }
-                if let Ok(engine) = self.active_engine(params["project_id"].as_str())
+                if let Ok(engine) = self.project_engine(params["project_id"].as_str())
                     && let Some(saved) = engine.store.replay(&command.command_id, &fingerprint)?
                 {
                     return Ok(saved);
@@ -393,7 +375,7 @@ impl Workspace {
             let local = if params_for_sources["local"] == true
                 || params_for_sources["project_id"].is_string()
             {
-                self.active_engine(params_for_sources["project_id"].as_str())
+                self.project_engine(params_for_sources["project_id"].as_str())
                     .ok()
                     .and_then(|e| e.store.snapshot().ok())
             } else {
@@ -513,7 +495,7 @@ impl Workspace {
             {
                 self.configuration.clone()
             } else {
-                self.active_engine(params["project_id"].as_str())?
+                self.project_engine(params["project_id"].as_str())?
             };
             let state = engine.store.snapshot()?;
             let harness = state.configuration(id)?;
@@ -660,12 +642,12 @@ impl Workspace {
                 let status=vault.status_model_reference(&p,reference.as_deref()).ok();
                 json!({"id":p.id,"label":p.label,"configured":status.as_ref().is_some_and(|s|s.configured),"available":status.as_ref().is_some_and(|s|s.available),"auth_kind":if p.requires_key{"api_key"}else{"none"}})
             }).collect();
-            let recipe_state = if let Ok(engine) = self.active_engine(params["project_id"].as_str())
-            {
-                engine.store.snapshot()?
-            } else {
-                self.global.snapshot()?
-            };
+            let recipe_state =
+                if let Ok(engine) = self.project_engine(params["project_id"].as_str()) {
+                    engine.store.snapshot()?
+                } else {
+                    self.global.snapshot()?
+                };
             let recipes: Vec<_> = recipe_state.governance.iter().filter(|r|r.r#type == "harness" && !devdesk_core::configuration_retired(&recipe_state, r))
                 .filter_map(|r| harness_execution_recipe(&recipe_state,r).ok().map(|d|json!({"reference":r.id,"name":r.name,"provider":d.provider,"version":d.version,"recipe_digest":d.recipe_digest(),"os":"linux","arch":std::env::consts::ARCH}))).collect();
             return Ok(
@@ -699,24 +681,13 @@ impl Workspace {
                     .first()
                     .ok_or_else(|| err("storage", "项目未创建"))?,
             )?;
-            self.select(&id, e)?;
             return Ok(result);
         }
         if method == "project.open" {
-            let c: Command =
-                serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
-            require(!c.command_id.is_empty(), "command_id 不能为空")?;
-            let id = c
-                .target
-                .as_deref()
-                .ok_or_else(|| err("invalid_params", "需要 Project target"))?;
-            let _switch = self.switching.lock().unwrap();
-            self.global.validate_open_command(&c)?;
-            let e = self.load_project(id, false)?;
-            self.sync_configuration(&e)?;
-            self.global.activate_command(&c)?;
-            *self.active.write().unwrap() = Some((id.into(), e));
-            return Ok(json!({"id":id}));
+            return Err(err(
+                "method_not_found",
+                "项目选择属于前端；请用 project_id 发起查询或命令",
+            ));
         }
         if ["agent.create", "agent.revise"].contains(&method) {
             let c =
@@ -726,7 +697,7 @@ impl Workspace {
         let expected = params["project_id"]
             .as_str()
             .or_else(|| params["payload"]["project_id"].as_str());
-        let e = match self.active_engine(expected) {
+        let e = match self.project_engine(expected) {
             Ok(e) => e,
             Err(error)
                 if error.code == "project_required"
@@ -927,7 +898,7 @@ impl Workspace {
         }
     }
     pub fn event_engine(&self, expected: Option<&str>) -> Result<(String, Arc<Engine>)> {
-        match self.active_engine(expected) {
+        match self.project_engine(expected) {
             Ok(e) => Ok((e.store.project_id().unwrap(), e)),
             Err(error) if error.code == "project_required" => {
                 Ok(("global".into(), self.configuration.clone()))
@@ -1058,15 +1029,9 @@ mod tests {
             .unwrap()
             .into()
     }
-    pub(super) fn select(w: &Workspace, id: &str) {
-        cmd(
-            w,
-            "project.open",
-            None,
-            Some(id),
-            &devdesk_core::id(),
-            json!({}),
-        );
+    pub(super) fn read_project(w: &Workspace, id: &str) -> Value {
+        w.dispatch("query.workspace", json!({"project_id":id}))
+            .unwrap()
     }
 
     #[test]
@@ -1081,7 +1046,7 @@ mod tests {
             assert!(w.dispatch("project.update",json!({"project_id":project,"command_id":id(),"target":project,"expected_revision":1,"payload":payload})).is_err());
         }
         let state = w
-            .active_engine(Some(&project))
+            .project_engine(Some(&project))
             .unwrap()
             .store
             .snapshot()
@@ -1099,7 +1064,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open(dir.path()).unwrap();
         let a = create(&w, "项目 A");
-        let engine_a = w.active_engine(Some(&a)).unwrap();
+        let engine_a = w.project_engine(Some(&a)).unwrap();
         crate::test_runtime::configure_project(&engine_a, &a);
         let fa = cmd(
             &w,
@@ -1113,7 +1078,7 @@ mod tests {
         w.dispatch("document.revise",json!({"project_id":a,"command_id":"doc-a","target":fid,"expected_revision":engine_a.store.snapshot().unwrap().feature(fid).unwrap().revision,"payload":{"kind":"requirement","title":"A 需求","body":"项目 A 专属内容"}})).unwrap();
         let artifact = engine_a.store.snapshot().unwrap().artifacts[0].clone();
         let b = create(&w, "项目 B");
-        let engine_b = w.active_engine(Some(&b)).unwrap();
+        let engine_b = w.project_engine(Some(&b)).unwrap();
         crate::test_runtime::configure_project(&engine_b, &b);
         let fb = cmd(
             &w,
@@ -1143,12 +1108,9 @@ mod tests {
                 .query("query.artifact", &json!({"id":artifact.id}), 4)
                 .is_err()
         );
-        assert!(
-            w.dispatch("query.workspace", json!({"project_id":a}))
-                .is_err()
-        );
-        assert!(w.dispatch("feature.create",json!({"project_id":a,"command_id":"stale","payload":{"project_id":a,"title":"不能串写"}})).is_err());
-        // A previously pinned request still writes to A after the active pointer changes to B.
+        assert_eq!(read_project(&w, &a)["active_project_id"], a);
+        w.dispatch("feature.create",json!({"project_id":a,"command_id":"independent-a","payload":{"project_id":a,"title":"A 的独立请求"}})).unwrap();
+        // Requests for A keep writing to A while another frontend reads B.
         engine_a
             .execute(
                 "feature.create",
@@ -1161,7 +1123,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(engine_b.store.snapshot().unwrap().features.len(), 1);
-        select(&w, &a);
+        read_project(&w, &a);
         assert_eq!(
             cmd(
                 &w,
@@ -1183,11 +1145,15 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            2
+            0
+        );
+        assert_eq!(
+            read_project(&w, &a)["features"].as_array().unwrap().len(),
+            3
         );
     }
     #[test]
-    fn global_settings_definitions_and_active_project_survive_restart() {
+    fn global_settings_definitions_and_project_routing_survive_restart() {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open(dir.path()).unwrap();
         let a = create(&w, "A");
@@ -1212,8 +1178,13 @@ mod tests {
             .filter(|v| v.resource.id == "global_concurrency")
             .collect();
         w.dispatch("settings.update", json!({"command_id":"set-limit","preconditions":versions,"payload":{"global_concurrency":3}})).unwrap();
-        select(&w, &a);
-        let a_state = w.active_engine(None).unwrap().store.snapshot().unwrap();
+        read_project(&w, &a);
+        let a_state = w
+            .project_engine(Some(&a))
+            .unwrap()
+            .store
+            .snapshot()
+            .unwrap();
         assert!(
             a_state
                 .definitions
@@ -1231,15 +1202,15 @@ mod tests {
         );
         drop(w);
         let w = Workspace::open(dir.path()).unwrap();
-        assert_eq!(w.active_id().as_deref(), Some(a.as_str()));
+        assert_eq!(read_project(&w, &a)["active_project_id"], a);
         assert_eq!(w.global.concurrency().unwrap(), 3);
         assert_eq!(
             w.dispatch("query.workspace", json!({})).unwrap()["total_projects"],
             2
         );
-        select(&w, &b);
+        read_project(&w, &b);
         assert!(
-            w.active_engine(None)
+            w.project_engine(Some(&b))
                 .unwrap()
                 .store
                 .snapshot()
@@ -1252,7 +1223,7 @@ mod tests {
         assert!(!dir.path().join("engineering.sqlite3").exists());
     }
     #[test]
-    fn failed_open_preserves_active_project_and_creation_resumes_reserved_identity() {
+    fn invalid_project_reads_preserve_other_projects_and_creation_resumes_reserved_identity() {
         let dir = tempfile::tempdir().unwrap();
         let w = Workspace::open(dir.path()).unwrap();
         let a = create(&w, "A");
@@ -1276,15 +1247,12 @@ mod tests {
             )["id"],
             reserved
         );
-        select(&w, &a);
+        read_project(&w, &a);
         assert!(
-            w.dispatch(
-                "project.open",
-                json!({"command_id":"missing","target":devdesk_core::id(),"payload":{}})
-            )
-            .is_err()
+            w.dispatch("query.workspace", json!({"project_id":devdesk_core::id()}))
+                .is_err()
         );
-        assert_eq!(w.active_id().as_deref(), Some(a.as_str()));
+        assert_eq!(read_project(&w, &a)["active_project_id"], a);
         std::fs::rename(
             dir.path()
                 .join("projects")
@@ -1293,20 +1261,29 @@ mod tests {
             dir.path().join("missing.sqlite3"),
         )
         .unwrap();
+        assert_eq!(read_project(&w, &a)["active_project_id"], a);
+        drop(w);
+        assert!(Workspace::open(dir.path()).is_err());
         assert!(
-            w.dispatch(
-                "project.open",
-                json!({"command_id":"deleted","target":reserved,"payload":{}})
-            )
-            .is_err()
+            !dir.path()
+                .join("projects")
+                .join(&reserved)
+                .join("engineering.sqlite3")
+                .exists()
         );
-        assert_eq!(w.active_id().as_deref(), Some(a.as_str()));
+        assert!(
+            dir.path()
+                .join("projects")
+                .join(&a)
+                .join("engineering.sqlite3")
+                .is_file()
+        );
     }
 }
 
 #[cfg(test)]
 mod adapter_injection_tests {
-    use super::tests::{cmd, create, select};
+    use super::tests::{cmd, create, read_project};
     use super::*;
     #[test]
     fn shutdown_during_tick_preserves_queued_work_and_cleans_up_the_started_writer() {
@@ -1363,7 +1340,7 @@ mod adapter_injection_tests {
         let mut engines = vec![];
         for title in ["A", "B"] {
             let pid = create(&w, title);
-            let engine = w.active_engine(Some(&pid)).unwrap();
+            let engine = w.project_engine(Some(&pid)).unwrap();
             crate::test_runtime::queue_conversation(&engine, &pid);
             engines.push(engine);
         }
@@ -1420,7 +1397,7 @@ mod adapter_injection_tests {
                 .as_str()
                 .unwrap()
                 .to_string();
-            let e = w.active_engine(Some(&pid)).unwrap();
+            let e = w.project_engine(Some(&pid)).unwrap();
             let (_, tid) = crate::test_runtime::queue_conversation(&e, &pid);
             w.tick(|| false).unwrap();
             assert!(e.store.snapshot().unwrap().turns.iter().any(|t| t.id == tid
@@ -1447,7 +1424,7 @@ mod adapter_injection_tests {
                 .as_str()
                 .unwrap()
                 .to_string();
-            let e = w.active_engine(Some(&pid)).unwrap();
+            let e = w.project_engine(Some(&pid)).unwrap();
             crate::test_runtime::queue_conversation(&e, &pid);
             w.tick(|| false).unwrap();
             engines.push(e);
@@ -1468,7 +1445,7 @@ mod adapter_injection_tests {
         let other = create(&w, "Other");
         let role=w.dispatch("role.create",json!({"command_id":id(),"payload":{"name":"Shared specialist","scope":format!("project:{one}"),"data":{"instructions":"# Shared duty","visibility":{"kind":"projects","project_ids":[one,two]}}}})).unwrap();
         for pid in [&one, &two, &other] {
-            select(&w, pid);
+            read_project(&w, pid);
             let roles = w
                 .dispatch(
                     "query.roles",
@@ -1485,7 +1462,7 @@ mod adapter_injection_tests {
             );
         }
         let revised=w.dispatch("role.revise",json!({"command_id":id(),"target":role["id"],"expected_revision":role["revision"],"payload":{"name":"Narrowed specialist","data":{"instructions":"# Shared duty v2","visibility":{"kind":"projects","project_ids":[one]}}}})).unwrap();
-        select(&w, &two);
+        read_project(&w, &two);
         let roles = w
             .dispatch(
                 "query.roles",
@@ -1527,7 +1504,7 @@ mod adapter_injection_tests {
         };
         let harness = create_resource(
             "harness.create",
-            json!({"name":"Explicit pinned Harness","model_providers":["builtin-model-provider-openai:1"],"data":w.active_engine(Some(&pid)).unwrap().store.snapshot().unwrap().configuration("builtin-harness-codex-managed:1").unwrap().data}),
+            json!({"name":"Explicit pinned Harness","model_providers":["builtin-model-provider-openai:1"],"data":w.project_engine(Some(&pid)).unwrap().store.snapshot().unwrap().configuration("builtin-harness-codex-managed:1").unwrap().data}),
         );
         let capability = create_resource(
             "capability.create",
@@ -1537,7 +1514,7 @@ mod adapter_injection_tests {
             "agent.create",
             json!({"name":"Permission pair","role_ref":default_role_id("analyst"),"capability_ref":capability["id"],"data":{}}),
         );
-        let e = w.active_engine(Some(&pid)).unwrap();
+        let e = w.project_engine(Some(&pid)).unwrap();
         w.sync_configuration(&e).unwrap();
         let mut command = Command {
             command_id: id(),
@@ -1563,7 +1540,7 @@ mod adapter_injection_tests {
         let w = Workspace::open_with_adapters(dir.path(), crate::test_runtime::adapters()).unwrap();
         let one = create(&w, "Visible");
         let two = create(&w, "Frozen");
-        let e = w.active_engine(Some(&two)).unwrap();
+        let e = w.project_engine(Some(&two)).unwrap();
         crate::test_runtime::configure_project(&e, &two);
         let feature = cmd(
             &w,
@@ -1646,7 +1623,7 @@ mod global_discussion_tests {
             )
             .unwrap();
         assert_eq!(empty["total"], 0);
-        assert!(w.active_id().is_none());
+        assert!(w.project_engine(None).is_err());
         assert!(
             SqliteStore::read_global_discussion_snapshot(root.path())
                 .unwrap()
@@ -1664,7 +1641,10 @@ mod global_discussion_tests {
             .to_owned();
         w.dispatch("query.sessions", json!({"scope":"global"}))
             .unwrap();
-        assert_eq!(w.active_id().as_deref(), Some(project.as_str()));
+        assert_eq!(
+            w.project_engine(Some(&project)).unwrap().store.project_id(),
+            Some(project.clone())
+        );
         assert!(
             w.dispatch(
                 "query.sessions",
@@ -1716,15 +1696,11 @@ impl Workspace {
             let store = Arc::new(SqliteStore::open_project(root, &project.id)?);
             opened.insert(project.id, engine(store, &adapters));
         }
-        let active = global
-            .active_project()?
-            .and_then(|id| opened.get(&id).cloned().map(|e| (id, e)));
         Ok(Arc::new(Self {
             global,
             configuration,
             codex_auth: devdesk_adapters::codex_auth::CodexAuthentication::new(root)?,
             adapters,
-            active: RwLock::new(active),
             opened: Mutex::new(opened),
             switching: Mutex::new(()),
             template_gate: Arc::new(Mutex::new(())),

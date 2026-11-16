@@ -127,7 +127,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::tests::{create, select};
+    use crate::workspace::tests::{create, read_project};
     fn workspace(root: &Path) -> Arc<Workspace> {
         Workspace::open_with_adapters(root, crate::test_runtime::adapters()).unwrap()
     }
@@ -205,13 +205,13 @@ mod tests {
         let w = workspace(dir.path());
         let a = create(&w, "Project A");
         let b = create(&w, "Project B");
-        select(&w, &a);
+        read_project(&w, &a);
         let local=write(&w,"delivery_type.create",None,json!({"name":"Local custom delivery","scope":format!("project:{a}"),"spec_refs":["builtin-spec-stage-prd:2"],"data":{"format":"markdown","body":"custom delivery"}}),Some(&a)).unwrap();
         let role=write(&w,"role.revise",Some(&default_role_id("analyst")),json!({"name":"Edited analyst","data":{"instructions":"custom responsibility","visibility":{"kind":"global"}}}),None).unwrap();
         let defaults = w
             .dispatch("query.configuration_defaults", json!({"project_id":a}))
             .unwrap();
-        let engine = w.active_engine(Some(&a)).unwrap();
+        let engine = w.project_engine(Some(&a)).unwrap();
         let project = engine.store.snapshot().unwrap().projects[0].clone();
         let saved=w.dispatch("project.configuration.update",json!({"command_id":id(),"project_id":a,"target":a,"expected_revision":project.revision,"payload":{"workflow_ref":defaults["workflow_ref"],"standard_ref":null,"role_agent_bindings":defaults["role_agent_bindings"]}})).unwrap();
         let feature = engine
@@ -341,7 +341,7 @@ mod tests {
             ));
         }
 
-        select(&w, &b);
+        read_project(&w, &b);
         let second = w
             .dispatch(
                 "query.configurations",
@@ -357,7 +357,7 @@ mod tests {
         drop(engine);
         drop(w);
         let w = workspace(dir.path());
-        select(&w, &a);
+        read_project(&w, &a);
         assert_eq!(
             w.dispatch("query.roles", json!({"limit":100})).unwrap()["total"],
             6

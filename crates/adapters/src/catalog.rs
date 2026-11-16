@@ -138,104 +138,8 @@ impl GlobalStore {
         Ok(())
     }
 
-    pub fn active_project(&self) -> Result<Option<String>> {
-        Ok(
-            setting(&*self.connection.lock().map_err(storage)?, "active_project")?
-                .and_then(|v| v.as_str().map(str::to_owned)),
-        )
-    }
-
-    pub fn activate(&self, id: &str) -> Result<()> {
-        require(self.project(id)?.is_some(), "项目尚未创建完成")?;
-        put_setting(
-            &*self.connection.lock().map_err(storage)?,
-            "active_project",
-            &json!(id),
-        )
-    }
-
-    pub fn activate_command(&self, command: &Command) -> Result<()> {
-        let id = command
-            .target
-            .as_deref()
-            .ok_or_else(|| err("invalid_params", "需要 Project target"))?;
-        require(self.project(id)?.is_some(), "项目不存在")?;
-        let fp = serde_json::to_string(&(
-            "project.open",
-            &command.target,
-            &command.expected_revision,
-            &command.payload,
-        ))
-        .map_err(storage)?;
-        let _writer = self.writer.lock().map_err(storage)?;
-        let mut conn = self.connection.lock().map_err(storage)?;
-        let tx = conn.transaction().map_err(storage)?;
-        let previous: Option<String> = tx
-            .query_row(
-                "SELECT fingerprint FROM operations WHERE id=?1",
-                [&command.command_id],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(storage)?;
-        if let Some(previous) = previous {
-            require(previous == fp, "command_id 被不同参数复用")?;
-        } else {
-            require(
-                !tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM project_catalog WHERE command_id=?1)",
-                    [&command.command_id],
-                    |r| r.get::<_, bool>(0),
-                )
-                .map_err(storage)?,
-                "command_id 被不同参数复用",
-            )?;
-            tx.execute(
-                "INSERT INTO operations(id,fingerprint,result) VALUES(?1,?2,?3)",
-                params![command.command_id, fp, json!({"id":id}).to_string()],
-            )
-            .map_err(storage)?;
-        }
-        put_setting(&tx, "active_project", &json!(id))?;
-        tx.commit().map_err(storage)?;
-        Ok(())
-    }
-
-    /// Reject reused global command keys before opening a project can run recovery hooks.
-    pub fn validate_open_command(&self, command: &Command) -> Result<()> {
-        let fp = serde_json::to_string(&(
-            "project.open",
-            &command.target,
-            &command.expected_revision,
-            &command.payload,
-        ))
-        .map_err(storage)?;
-        let conn = self.connection.lock().map_err(storage)?;
-        let old: Option<String> = conn
-            .query_row(
-                "SELECT fingerprint FROM operations WHERE id=?1",
-                [&command.command_id],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(storage)?;
-        if let Some(old) = old {
-            require(old == fp, "command_id 被不同参数复用")?;
-        }
-        require(
-            !conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM project_catalog WHERE command_id=?1)",
-                    [&command.command_id],
-                    |r| r.get::<_, bool>(0),
-                )
-                .map_err(storage)?,
-            "command_id 被不同参数复用",
-        )
-    }
-
     pub fn project(&self, id: &str) -> Result<Option<Project>> {
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read().map_err(storage)?;
         let body: Option<String> = conn
             .query_row(
                 "SELECT project FROM project_catalog WHERE id=?1 AND project IS NOT NULL",
@@ -260,7 +164,7 @@ impl GlobalStore {
         limit: usize,
         github_only: bool,
     ) -> Result<(Vec<Project>, usize)> {
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read().map_err(storage)?;
         let filter = if github_only {
             "project IS NOT NULL AND json_extract(project,'$.execution_mode')='live' AND coalesce(json_extract(project,'$.workspace_definition.repository'),'') <> ''"
         } else {

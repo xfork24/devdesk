@@ -154,7 +154,7 @@ impl Workspace {
         let root = PathBuf::from(self.global.root());
         let flow = devdesk_adapters::integration_oauth::read_flow(&root, state)?;
         let e = if let Some(pid) = &flow.project_id {
-            let e = self.active_engine(Some(pid))?;
+            let e = self.project_engine(Some(pid))?;
             self.sync_configuration(&e)?;
             e
         } else {
@@ -221,7 +221,7 @@ impl Workspace {
                 target.is_some_and(|id| !global.governance.iter().any(|r| r.id == id));
             let e = if (local && !(method == "integration.delete" && !target_local)) || target_local
             {
-                let e = self.active_engine(params["project_id"].as_str())?;
+                let e = self.project_engine(params["project_id"].as_str())?;
                 self.sync_configuration(&e)?;
                 e
             } else {
@@ -682,11 +682,6 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        w.dispatch(
-            "project.open",
-            json!({"command_id":id(),"target":a,"payload":{}}),
-        )
-        .unwrap();
         let source=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Project A service","scope":format!("project:{a}"),"data":{"source":{"kind":"http_api","base_url":"https://a.example.test"}}}})).unwrap();
         let visible = w
             .dispatch("query.integrations", json!({"project_id":a}))
@@ -698,11 +693,6 @@ mod tests {
                 .iter()
                 .any(|r| r["id"] == source["id"])
         );
-        w.dispatch(
-            "project.open",
-            json!({"command_id":id(),"target":b,"payload":{}}),
-        )
-        .unwrap();
         let hidden = w
             .dispatch("query.integrations", json!({"project_id":b}))
             .unwrap();
@@ -713,11 +703,6 @@ mod tests {
                 .iter()
                 .any(|r| r["id"] == source["id"])
         );
-        w.dispatch(
-            "project.open",
-            json!({"command_id":id(),"target":a,"payload":{}}),
-        )
-        .unwrap();
         let shared=w.dispatch("integration.create",json!({"project_id":a,"local":true,"command_id":id(),"payload":{"name":"Shared service","scope":"global","data":{"source":{"kind":"http_api","base_url":"https://shared.example.test"}}}})).unwrap();
         assert!(
             w.global
@@ -726,11 +711,6 @@ mod tests {
                 .configuration(shared["id"].as_str().unwrap())
                 .is_ok()
         );
-        w.dispatch(
-            "project.open",
-            json!({"command_id":id(),"target":b,"payload":{}}),
-        )
-        .unwrap();
         let other = w
             .dispatch("query.integrations", json!({"project_id":b}))
             .unwrap();
