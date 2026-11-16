@@ -3,6 +3,7 @@ import { useActionFeedback } from "./action-feedback";
 import {
   useEffect,
   useState,
+  useRef,
   useSyncExternalStore,
   type FormEvent,
   type ReactNode,
@@ -277,6 +278,7 @@ export function ModelFields({
   const [error, setError] = useState("");
   const [source, setSource] = useState("");
   const [revision, setRevision] = useState(0);
+  const consumedRefresh = useRef(0);
   const modelEpoch = useSyncExternalStore(subscribeModels, getModelEpoch);
   const [readAt, setReadAt] = useState(0);
   const codex = data.provider === "openai";
@@ -285,6 +287,8 @@ export function ModelFields({
 
   useEffect(() => {
     const controller = new AbortController();
+    const forceRefresh = revision !== consumedRefresh.current;
+    consumedRefresh.current = revision;
     setLoading(true);
     setCandidates([]);
     setError("");
@@ -326,7 +330,7 @@ export function ModelFields({
               ollama ? data.endpoint : undefined,
               identity.identity,
               identity.installation_id,
-              { signal: controller.signal, fresh: revision > 0 },
+              { signal: controller.signal, fresh: forceRefresh },
               accept,
             );
             accept(result);

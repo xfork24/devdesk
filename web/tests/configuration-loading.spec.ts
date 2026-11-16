@@ -273,4 +273,8 @@ test("模型目录慢或失败时仍能编辑；切回复用，换账号隔离",
   await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
     "目录未完成仍可编辑",
   );
+  await page.getByLabel("模型后端", { exact: true }).selectOption("minimax-cn");
+  await page.getByLabel("模型后端", { exact: true }).selectOption("openai");
+  await expect(page.getByText(/offline/)).toBeVisible();
+  expect(calls).toBe(failed);
 });
