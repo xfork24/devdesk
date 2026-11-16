@@ -1,5 +1,8 @@
 mod catalog;
 mod configuration_backend;
+mod configuration_cache;
+pub mod performance;
+mod store_changes;
 pub use configuration_backend::ConfigurationBackend;
 mod factory_bundle;
 pub mod session_resources;
@@ -12,6 +15,7 @@ pub mod credentials;
 mod credentials_macos;
 pub mod docker;
 pub mod experience;
+mod experience_index;
 pub mod git;
 pub mod github;
 pub mod integration_oauth;
@@ -53,6 +57,8 @@ pub struct SqliteStore {
     connection: Mutex<Connection>,
     writer: Mutex<()>,
     source_views: Mutex<std::collections::BTreeMap<String, Value>>,
+    catalog_cache: configuration_cache::CatalogCache,
+    changes: store_changes::StoreChanges,
     root: PathBuf,
     _lock: File,
     project_id: Option<String>,
@@ -78,6 +84,8 @@ impl SqliteStore {
             connection: Mutex::new(connection),
             writer: Mutex::new(()),
             source_views: Mutex::new(Default::default()),
+            catalog_cache: Default::default(),
+            changes: Default::default(),
             root,
             _lock: lock,
             project_id: None,
@@ -111,6 +119,26 @@ impl SqliteStore {
             "历史项目身份不符",
         )?;
         Ok(state)
+    }
+    pub fn read_project_catalog(
+        data_root: &Path,
+        project_id: &str,
+    ) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
+        let root = Self::project_path(data_root, project_id)?;
+        let catalog = configuration_cache::read_only(&root.join("engineering.sqlite3"), true)?;
+        require(
+            catalog.state.projects.iter().all(|p| p.id == project_id),
+            "历史项目身份不符",
+        )?;
+        Ok(catalog)
+    }
+    pub fn read_global_discussion_catalog(
+        data_root: &Path,
+    ) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
+        configuration_cache::read_only(
+            &Self::global_discussion_path(data_root)?.join("engineering.sqlite3"),
+            true,
+        )
     }
     pub fn global_discussion_path(data_root: &Path) -> Result<PathBuf> {
         let parent = data_root.join("conversations");
@@ -164,6 +192,7 @@ impl SqliteStore {
         conn: &Connection,
         memo: &mut std::collections::BTreeMap<String, Value>,
     ) -> Result<EngineeringState> {
+        let _span = performance::Span::new("project.full_snapshot");
         let mut s = EngineeringState::default();
         s.governance = source_store::load_records(conn)?;
         s.orchestration_wakeups = load_table(conn, "orchestration_wakeups")?;
@@ -408,9 +437,19 @@ fn columns(conn: &Connection, table: &str) -> Result<Vec<(String, String)>> {
         .map_err(storage)
 }
 fn load_table<T: DeserializeOwned>(conn: &Connection, table: &str) -> Result<Vec<T>> {
+    load_table_filtered(conn, table, "1")
+}
+fn load_table_filtered<T: DeserializeOwned>(
+    conn: &Connection,
+    table: &str,
+    predicate: &str,
+) -> Result<Vec<T>> {
+    let _span = performance::Span::new("sqlite.table_read_decode");
     let columns = columns(conn, table)?;
     let mut q = conn
-        .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
+        .prepare(&format!(
+            "SELECT * FROM {table} WHERE {predicate} ORDER BY rowid"
+        ))
         .map_err(storage)?;
     let rows = q
         .query_map([], |r| {
@@ -516,6 +555,25 @@ fn save_table<T: Serialize>(
     Ok(())
 }
 impl EngineeringStore for SqliteStore {
+    fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
+        performance::observe(stage)
+    }
+    fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
+        store_changes::events_after(&*self.connection.lock().map_err(storage)?, cursor, limit)
+    }
+    fn subscribe_changes(&self, listener: std::sync::Weak<dyn Fn() + Send + Sync>) {
+        self.changes.subscribe(listener);
+    }
+    fn has_pending_tool_calls(&self) -> Result<bool> {
+        store_changes::pending_tools(&*self.connection.lock().map_err(storage)?)
+    }
+    fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
+        if let Some(snapshot) = self.catalog_cache.current()? {
+            return Ok(snapshot);
+        }
+        self.catalog_cache
+            .read(&*self.connection.lock().map_err(storage)?, true)
+    }
     fn has_pending_work(&self) -> Result<bool> {
         // Idle projects must not deserialize their complete protocol history on every tick.
         let conn = self.connection.lock().map_err(storage)?;
@@ -536,13 +594,17 @@ impl EngineeringStore for SqliteStore {
         self.root.to_string_lossy().into_owned()
     }
     fn snapshot(&self) -> Result<EngineeringState> {
-        self.load_cached(&*self.connection.lock().map_err(storage)?)
+        let waiting = performance::Span::new("project.connection_wait");
+        let conn = self.connection.lock().map_err(storage)?;
+        drop(waiting);
+        self.load_cached(&conn)
     }
     fn transact(
         &self,
         key: Option<(&str, &str)>,
         action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
     ) -> Result<Value> {
+        let _span = performance::Span::new("project.transaction");
         // Serialize writers, but release the DB connection and transaction during
         // adapter calls. Read-only queries remain available while an adapter polls.
         let _writer = self.writer.lock().map_err(storage)?;
@@ -595,6 +657,14 @@ impl EngineeringStore for SqliteStore {
             .map_err(storage)?;
         }
         tx.commit().map_err(storage)?;
+        if catalog_changed(&before, &state) {
+            self.catalog_cache.invalidate()?;
+        }
+        drop(conn);
+        drop(_writer);
+        if changed {
+            self.changes.notify();
+        }
         Ok(result)
     }
 }

@@ -1,5 +1,7 @@
 #[cfg(test)]
 use crate::default_fixture::*;
+#[path = "configuration_read.rs"]
+mod configuration_read;
 #[path = "github_projects.rs"]
 mod github_projects;
 #[path = "governance.rs"]
@@ -39,8 +41,13 @@ pub struct Workspace {
     switching: Mutex<()>,
     template_gate: Arc<Mutex<()>>,
     runtime_setup: session_resources::RuntimePreparation,
+    configuration_views: Mutex<Vec<(String, Arc<ConfigurationCatalogSnapshot>)>>,
+    catalog_instance: String,
 }
-fn engine(store: Arc<dyn EngineeringStore>, adapters: &ports::ExecutionAdapters) -> Arc<Engine> {
+pub(super) fn engine(
+    store: Arc<dyn EngineeringStore>,
+    adapters: &ports::ExecutionAdapters,
+) -> Arc<Engine> {
     let root = PathBuf::from(store.root());
     let data_root = root
         .ancestors()
@@ -100,6 +107,8 @@ impl Workspace {
             switching: Mutex::new(()),
             template_gate: Arc::new(Mutex::new(())),
             runtime_setup: session_resources::RuntimePreparation::default(),
+            configuration_views: Default::default(),
+            catalog_instance: id(),
         });
         let mut offset = 0;
         loop {
@@ -141,6 +150,7 @@ impl Workspace {
         e.sync_shared_configuration(self.global.as_ref())
     }
     fn load_project(&self, id: &str, creating: bool) -> Result<Arc<Engine>> {
+        let _span = performance::Span::new("project.open");
         let root = PathBuf::from(self.global.root());
         if !creating {
             require(self.global.project(id)?.is_some(), "项目不存在")?;
@@ -264,6 +274,16 @@ impl Workspace {
         )
     }
     pub fn dispatch(&self, method: &str, params: Value) -> Result<Value> {
+        if method == "query.ui_bootstrap" {
+            return self.ui_bootstrap(&params);
+        }
+        if method == "query.project_directory" {
+            return self.project_directory(&params);
+        }
+        if let Some(result) = self.configuration_read(method, &params) {
+            return result;
+        }
+
         let coordinated = template_definition_write(method)
             || template_catalog_query(method)
             || method == "configuration.templates.reset"
@@ -277,6 +297,7 @@ impl Workspace {
                     | "feature.create"
             );
         let _guard = if coordinated {
+            let _waiting = performance::Span::new("catalog.gate_wait");
             Some(
                 self.template_gate
                     .lock()
@@ -1625,5 +1646,37 @@ impl Workspace {
             codex_auth: &self.codex_auth,
             preparation: &self.runtime_setup,
         }
+    }
+}
+
+#[cfg(test)]
+impl Workspace {
+    pub(super) fn loading_profile(root: &Path) -> devdesk_domain::Result<Arc<Self>> {
+        let global = Arc::new(GlobalStore::open(root)?);
+        let adapters = crate::test_runtime::adapters();
+        let configuration = engine(global.clone(), &adapters);
+        let mut opened = std::collections::BTreeMap::new();
+        let (projects, total) = global.projects(0, 100)?;
+        devdesk_domain::require(total <= 100, "性能入口最多打开 100 个项目")?;
+        for project in projects {
+            let store = Arc::new(SqliteStore::open_project(root, &project.id)?);
+            opened.insert(project.id, engine(store, &adapters));
+        }
+        let active = global
+            .active_project()?
+            .and_then(|id| opened.get(&id).cloned().map(|e| (id, e)));
+        Ok(Arc::new(Self {
+            global,
+            configuration,
+            codex_auth: devdesk_adapters::codex_auth::CodexAuthentication::new(root)?,
+            adapters,
+            active: RwLock::new(active),
+            opened: Mutex::new(opened),
+            switching: Mutex::new(()),
+            template_gate: Arc::new(Mutex::new(())),
+            runtime_setup: Default::default(),
+            configuration_views: Default::default(),
+            catalog_instance: id(),
+        }))
     }
 }

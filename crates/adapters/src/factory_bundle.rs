@@ -17,6 +17,7 @@ fn resource(path: &str) -> Result<&'static str> {
         .ok_or_else(|| err("invalid_template", format!("缺少模板文件 {path}")))
 }
 pub fn initialize() -> Result<()> {
+    let _span = performance::Span::new("factory.initialize");
     static READY: std::sync::OnceLock<Result<()>> = std::sync::OnceLock::new();
     READY
         .get_or_init(|| {

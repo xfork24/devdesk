@@ -3,23 +3,35 @@ impl Engine {
     pub fn sync_shared_configuration(&self, global: &dyn EngineeringStore) -> Result<()> {
         let e = self;
 
-        let existing = e.store.snapshot()?;
+        let existing = e.store.configuration_snapshot()?.state.clone();
+        let known = global.configuration_snapshot()?;
         // One global directory indexes project-owned Role identities without changing their owner or revision.
-        global.transact(None, &mut |directory| {
-            for role in existing
-                .governance
-                .iter()
-                .filter(|r| r.r#type == "role" || r.r#type == "role_retirement")
-            {
-                if let Some(old) = directory.governance.iter().find(|r| r.id == role.id) {
-                    require(old.content_hash == role.content_hash, "Role 目录摘要冲突")?;
-                } else {
-                    directory.governance.push(role.clone());
+        let missing_roles = existing
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "role" || r.r#type == "role_retirement")
+            .any(|r| {
+                known
+                    .record(&r.id)
+                    .is_none_or(|old| old.content_hash != r.content_hash)
+            });
+        if missing_roles {
+            global.transact(None, &mut |directory| {
+                for role in existing
+                    .governance
+                    .iter()
+                    .filter(|r| r.r#type == "role" || r.r#type == "role_retirement")
+                {
+                    if let Some(old) = directory.governance.iter().find(|r| r.id == role.id) {
+                        require(old.content_hash == role.content_hash, "Role 目录摘要冲突")?;
+                    } else {
+                        directory.governance.push(role.clone());
+                    }
                 }
-            }
-            Ok(Value::Null)
-        })?;
-        let shared = global.snapshot()?;
+                Ok(Value::Null)
+            })?;
+        }
+        let shared = global.configuration_snapshot()?.state.clone();
         if existing.projects.iter().any(|p| p.execution_mode != "live") {
             return Ok(());
         }

@@ -2,16 +2,6 @@
 use super::*;
 use rusqlite::OpenFlags;
 
-fn global_records(root: &Path) -> Result<Vec<ConfigurationRecord>> {
-    let conn = Connection::open_with_flags(
-        root.join("global.sqlite3"),
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(storage)?;
-    conn.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000; BEGIN;")
-        .map_err(storage)?;
-    source_store::load_records(&conn)
-}
 fn projects(root: &Path) -> Result<Vec<Project>> {
     let conn = Connection::open_with_flags(
         root.join("global.sqlite3"),
@@ -28,14 +18,19 @@ fn projects(root: &Path) -> Result<Vec<Project>> {
         .collect()
 }
 fn instance(root: &Path, current_project: &str, id: &str) -> Result<AgentInstance> {
-    let mut records = global_records(root)?;
-    if let Ok(s) = SqliteStore::read_project_snapshot(root, current_project) {
-        records.extend(s.governance);
+    let mut records = GlobalStore::read_configuration(root)?
+        .state
+        .governance
+        .clone();
+    if let Ok(s) = SqliteStore::read_project_catalog(root, current_project) {
+        records.extend(s.state.governance.clone());
     }
-    if let Ok(s) = SqliteStore::read_global_discussion_snapshot(root) {
+    if let Ok(s) = SqliteStore::read_global_discussion_catalog(root) {
         records.extend(
-            s.governance
-                .into_iter()
+            s.state
+                .governance
+                .iter()
+                .cloned()
                 .filter(|r| r.r#type == "agent_instance"),
         );
     }
@@ -55,40 +50,30 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
         .as_str()
         .ok_or_else(|| err("invalid_params", "需要 Agent"))?;
     let i = instance(root, current_project, id)?;
-    let mut rows: Vec<Value> = global_records(root)?
+    let mut rows: Vec<Value> = experience_index::entries(root, None, id, false)?
         .into_iter()
         .filter(|r| {
-            r.r#type == "experience"
-                && r.data["agent_instance_id"] == id
-                && i.scope
-                    .project_id()
-                    .is_none_or(|pid| r.data["project_id"] == pid)
+            i.scope
+                .project_id()
+                .is_none_or(|pid| r["project_id"] == pid)
         })
-        .map(|r| {
-            let mut data = r.data;
+        .map(|mut data| {
             data["availability"] = json!("unavailable");
             data
         })
         .collect();
-    if let Ok(s) = SqliteStore::read_global_discussion_snapshot(root) {
-        rows.extend(
-            s.governance
-                .into_iter()
-                .filter(|r| r.r#type == "experience" && r.data["agent_instance_id"] == id)
-                .map(|r| {
-                    let mut data = r.data;
-                    data["availability"] = json!("available");
-                    data
-                }),
-        );
+    if let Ok(entries) =
+        experience_index::entries(root, Some(GLOBAL_DISCUSSION_NAMESPACE), id, false)
+    {
+        rows.extend(entries);
     }
     let mut unavailable = vec![];
     for project in projects(root)? {
         if i.scope.project_id().is_some_and(|pid| pid != project.id) {
             continue;
         }
-        match SqliteStore::read_project_snapshot(root,&project.id){Ok(s)=>{
-            rows.extend(s.governance.iter().filter(|r|r.r#type=="experience"&&r.data["agent_instance_id"]==id).map(|r|enrich_entry(&s,&r.data)));
+        match experience_index::entries(root,Some(&project.id),id,true){Ok(entries)=>{
+            rows.extend(entries);
         },Err(_)=>unavailable.push(json!({"project_id":project.id,"project_name":project.title,"availability":"unavailable"}))}
     }
     let mut seen = std::collections::BTreeSet::new();
@@ -233,6 +218,7 @@ pub fn query(root: &Path, current_project: &str, params: &Value) -> Result<Value
     )
 }
 
+#[cfg(test)]
 fn enrich_entry(state: &EngineeringState, value: &Value) -> Value {
     let mut entry = value.clone();
     entry["availability"] = json!("available");
@@ -300,7 +286,10 @@ impl Reader {
 
 /// Agent identities and their immutable dependency closure, read without activation.
 pub fn discussion_catalog(root: &Path) -> Result<Vec<ConfigurationRecord>> {
-    let global = global_records(root)?;
+    let global = GlobalStore::read_configuration(root)?
+        .state
+        .governance
+        .clone();
     let global_instances: std::collections::BTreeSet<_> = global
         .iter()
         .filter(|r| r.r#type == "agent_instance")
@@ -309,12 +298,13 @@ pub fn discussion_catalog(root: &Path) -> Result<Vec<ConfigurationRecord>> {
     let mut readable_projects = std::collections::BTreeSet::new();
     let mut states = Vec::new();
     for project in projects(root)? {
-        if let Ok(state) = SqliteStore::read_project_snapshot(root, &project.id) {
+        if let Ok(catalog) = SqliteStore::read_project_catalog(root, &project.id) {
             readable_projects.insert(project.id.clone());
-            states.push(state);
+            states.push(catalog.state.as_ref().clone());
         }
     }
-    if let Ok(mut cached) = SqliteStore::read_global_discussion_snapshot(root) {
+    if let Ok(catalog) = SqliteStore::read_global_discussion_catalog(root) {
+        let mut cached = catalog.state.as_ref().clone();
         cached.governance.retain(|r| {
             r.r#type != "agent_instance"
                 || r.scope

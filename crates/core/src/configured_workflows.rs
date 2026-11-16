@@ -68,6 +68,7 @@ impl Engine {
         scope: &Scope,
         bindings: Option<&BTreeMap<Id, Id>>,
     ) -> Result<ConfiguredWorkflowPlan> {
+        let _span = self.store.observe_query("workflow.compile");
         compile_workflow_sources(
             self.tool_executor.as_deref(),
             state,

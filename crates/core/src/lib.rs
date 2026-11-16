@@ -4,6 +4,8 @@ mod agent_tasks;
 mod invocation;
 pub use invocation::InvocationContext;
 mod catalog_sync;
+mod configuration_catalog;
+pub use configuration_catalog::*;
 mod default_permissions;
 mod resource_receipts;
 mod session_assembly;
@@ -772,6 +774,12 @@ impl Engine {
         self.drive_controllers()
     }
     pub fn query(&self, method: &str, p: &Value, global_limit: usize) -> Result<Value> {
+        if method == "query.events" {
+            return Ok(json!(self.store.events_after(
+                p["cursor"].as_u64().unwrap_or(0),
+                p["limit"].as_u64().unwrap_or(50).clamp(1, 100) as usize
+            )?));
+        }
         if method == "query.workflow_executions" {
             return self.workflow_executions(p);
         }

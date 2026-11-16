@@ -206,6 +206,14 @@ impl Workspace {
         method: &str,
         params: &Value,
     ) -> Option<Result<Value>> {
+        self.permission_resource_api_at(method, params, None)
+    }
+    pub(super) fn permission_resource_api_at(
+        &self,
+        method: &str,
+        params: &Value,
+        catalog: Option<Arc<ConfigurationCatalogSnapshot>>,
+    ) -> Option<Result<Value>> {
         if ![
             "query.permission_resources",
             "permission.profile.create",
@@ -223,14 +231,18 @@ impl Workspace {
             return None;
         }
         Some((|| {
-            let local = if let Some(pid) = params["project_id"].as_str() {
+            let local = if catalog.is_some() {
+                None
+            } else if let Some(pid) = params["project_id"].as_str() {
                 let e = self.active_engine(Some(pid))?;
                 self.sync_configuration(&e)?;
                 Some(e)
             } else {
                 None
             };
-            let s = if let Some(e) = &local {
+            let s = if let Some(catalog) = &catalog {
+                catalog.state.as_ref().clone()
+            } else if let Some(e) = &local {
                 e.store.snapshot()?
             } else {
                 self.global.snapshot()?

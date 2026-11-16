@@ -5,11 +5,18 @@ use rusqlite::{OptionalExtension, params};
 pub struct GlobalStore {
     pub(super) connection: Mutex<Connection>,
     pub(super) writer: Mutex<()>,
+    catalog_cache: configuration_cache::CatalogCache,
+    changes: store_changes::StoreChanges,
     root: PathBuf,
     _lock: File,
 }
 
 impl GlobalStore {
+    pub fn read_configuration(
+        data_root: &Path,
+    ) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
+        configuration_cache::read_only(&data_root.join("global.sqlite3"), false)
+    }
     pub fn model_credential_reference(&self, provider: &ProviderFacts) -> Result<Option<String>> {
         Ok(setting(
             &*self.connection.lock().map_err(storage)?,
@@ -58,6 +65,8 @@ impl GlobalStore {
         let store = Self {
             connection: Mutex::new(connection),
             writer: Mutex::new(()),
+            catalog_cache: Default::default(),
+            changes: Default::default(),
             root,
             _lock: lock,
         };
@@ -338,6 +347,7 @@ impl GlobalStore {
     }
 
     fn configuration(conn: &Connection) -> Result<EngineeringState> {
+        let _span = performance::Span::new("global.full_snapshot");
         let mut state = EngineeringState {
             governance: source_store::load_records(conn)?,
             events: load_table(conn, "events")?,
@@ -359,17 +369,40 @@ impl GlobalStore {
 }
 
 impl EngineeringStore for GlobalStore {
+    fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
+        performance::observe(stage)
+    }
+    fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
+        store_changes::events_after(&*self.connection.lock().map_err(storage)?, cursor, limit)
+    }
+    fn subscribe_changes(&self, listener: std::sync::Weak<dyn Fn() + Send + Sync>) {
+        self.changes.subscribe(listener);
+    }
+    fn has_pending_tool_calls(&self) -> Result<bool> {
+        store_changes::pending_tools(&*self.connection.lock().map_err(storage)?)
+    }
+    fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
+        if let Some(snapshot) = self.catalog_cache.current()? {
+            return Ok(snapshot);
+        }
+        self.catalog_cache
+            .read(&*self.connection.lock().map_err(storage)?, false)
+    }
     fn root(&self) -> String {
         self.root.to_string_lossy().into_owned()
     }
     fn snapshot(&self) -> Result<EngineeringState> {
-        Self::configuration(&*self.connection.lock().map_err(storage)?)
+        let waiting = performance::Span::new("global.connection_wait");
+        let conn = self.connection.lock().map_err(storage)?;
+        drop(waiting);
+        Self::configuration(&conn)
     }
     fn transact(
         &self,
         key: Option<(&str, &str)>,
         action: &mut dyn FnMut(&mut EngineeringState) -> Result<Value>,
     ) -> Result<Value> {
+        let _span = performance::Span::new("global.transaction");
         let _writer = self.writer.lock().map_err(storage)?;
         let conn = self.connection.lock().map_err(storage)?;
         if let Some((id, fp)) = key {
@@ -406,6 +439,7 @@ impl EngineeringStore for GlobalStore {
         state.validate_governance(&before)?;
         state.validate_conversations(&before)?;
         let value = serde_json::to_value(&state).map_err(storage)?;
+        let changed = serde_json::to_value(&before).map_err(storage)? != value;
         require(
             value.as_object().unwrap().iter().all(|(key, items)| {
                 [
@@ -432,6 +466,14 @@ impl EngineeringStore for GlobalStore {
             .map_err(storage)?;
         }
         tx.commit().map_err(storage)?;
+        if catalog_changed(&before, &state) {
+            self.catalog_cache.invalidate()?;
+        }
+        drop(conn);
+        drop(_writer);
+        if changed {
+            self.changes.notify();
+        }
         Ok(result)
     }
 }

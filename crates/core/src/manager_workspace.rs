@@ -19,6 +19,7 @@ pub const MANAGER_TOOLS: &[&str] = &[
     "configuration.transfer.cancel",
     "configuration.transfer.status",
 ];
+#[derive(Clone)]
 pub struct ManagerServices {
     pub shared: Arc<Engine>,
     pub inventory: Arc<dyn ports::ProjectInventory>,

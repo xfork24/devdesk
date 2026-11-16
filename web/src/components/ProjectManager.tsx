@@ -64,7 +64,7 @@ export function ProjectManager({
   );
   const load = useCallback(async () => {
     const [workspace, records, configuration, preset] = await Promise.all([
-      request("query.workspace", { limit: 100 }),
+      request("query.ui_bootstrap", { limit: 100, project_id: project?.id }),
       loadCatalog(request, project?.id),
       project?.id
         ? request("query.project_configuration", { project_id: project?.id })
