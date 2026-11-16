@@ -97,3 +97,68 @@ test("配置页保留未保存草稿，导航与事件更新不重置输入", as
     .click();
   await expect(title).toHaveValue("尚未保存的角色");
 });
+
+test("项目预览后台刷新保留可操作表单与角色绑定", async ({ page }) => {
+  await page.goto("/");
+  const created = await page.request.post("/rpc", {
+    data: {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "project.create",
+      params: {
+        command_id: crypto.randomUUID(),
+        payload: {
+          title: "Refresh preview",
+          repository: "fixture/refresh-preview",
+        },
+      },
+    },
+  });
+  expect((await created.json()).error).toBeUndefined();
+  await page.goto("/?tab=projects");
+  const panel = page.getByRole("region", { name: "项目配置" });
+  const save = panel.getByRole("button", { name: "保存项目配置", exact: true });
+  await expect(save).toBeEnabled();
+  let release = () => {};
+  let pending = 0;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/rpc", async (route) => {
+    if (
+      route.request().postDataJSON().method !== "query.project_standard_preview"
+    )
+      return route.continue();
+    const response = await route.fetch();
+    pending += 1;
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.request.post("/rpc", {
+      data: {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "role.create",
+        params: {
+          command_id: crypto.randomUUID(),
+          payload: {
+            name: "Refresh signal",
+            scope: "global",
+            data: { instructions: "Refresh saved configuration" },
+          },
+        },
+      },
+    });
+    await expect.poll(() => pending).toBeGreaterThan(0);
+    await expect(save).toBeEnabled();
+    await expect(
+      panel
+        .getByRole("group", { name: "流程所需 Role → Agent", exact: true })
+        .getByRole("combobox"),
+    ).toHaveCount(6);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
