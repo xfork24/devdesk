@@ -122,58 +122,94 @@ pub(super) fn facts(
             authority.execution_id == *operation,
             "工具步骤缺少原工作流资格",
         )?;
-        let ids = &authority.instances;
-        require(
-            !ids.is_empty() && ids.len() <= 9 && ids.len() == authority.executions.len(),
-            "工具步骤祖先范围无效",
-        )?;
-        let keys = ids
-            .iter()
-            .map(|id| ResourceKey::new("tool_workflow", id))
-            .collect::<Vec<_>>();
-        let rows = resource_commits::read_on(&tx, &keys)?;
-        let mut valid = true;
-        let mut paused = false;
-        for (index, row) in rows.into_iter().enumerate() {
-            let value = row
-                .value
-                .as_ref()
-                .ok_or_else(|| err("not_found", "工具步骤工作流缺失"))?;
-            require(
-                value["project_id"].as_str() == result.invocation.project_id.as_deref(),
-                "工具步骤跨项目",
-            )?;
-            valid &= value["cancel_requested"] != true
-                && !matches!(value["status"].as_str(), Some("completed" | "cancelled"));
-            paused |= value["paused"] == true;
-            let mut query=tx.prepare_cached("SELECT value FROM json_each((SELECT data FROM governance_records WHERE id=?1),'$.steps') WHERE json_extract(value,'$.id')=?2 LIMIT 1").map_err(storage)?;
-            use rusqlite::OptionalExtension;
-            let step: Option<String> = query
-                .query_row(
-                    rusqlite::params![ids[index], authority.executions[index]],
-                    |r| r.get(0),
-                )
-                .optional()
-                .map_err(storage)?;
-            let step = step
-                .map(|s| serde_json::from_str::<Value>(&s).map_err(storage))
-                .transpose()?
-                .unwrap_or(Value::Null);
-            valid &= step["status"] == "running";
-            if index == 0 {
-                valid &= step["plan_revision_id"] == authority.plan_revision_id
-                    && step["input_digest"] == authority.input_digest
-                    && step["contract_digest"] == authority.contract_digest
-                    && step["node_id"] == authority.node_id;
-            }
-            result.worker_guards.push(ResourceVersion {
-                resource: row.resource,
-                revision: row.revision,
-            });
-        }
-        result.dispatch_suspended = valid && paused;
-        result.dispatch_allowed = valid && !paused;
+        let project = result
+            .invocation
+            .project_id
+            .as_deref()
+            .ok_or_else(|| err("invalid_scope", "工具步骤缺少项目"))?;
+        let facts = workflow_on(&tx, &authority, project)?;
+        result.worker_guards.extend(facts.versions);
+        result.dispatch_suspended = facts.suspended;
+        result.dispatch_allowed = facts.allowed;
     }
     tx.commit().map_err(storage)?;
     Ok(result)
+}
+
+pub(super) fn workflow(
+    pool: &ConnectionPool,
+    authority: &WorkflowToolAuthority,
+    project: &str,
+) -> Result<WorkflowToolFacts> {
+    let conn = pool.read()?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let facts = workflow_on(&tx, authority, project)?;
+    tx.commit().map_err(storage)?;
+    Ok(facts)
+}
+fn workflow_on(
+    conn: &Connection,
+    authority: &WorkflowToolAuthority,
+    project: &str,
+) -> Result<WorkflowToolFacts> {
+    let mut versions = vec![];
+    let ids = &authority.instances;
+    require(
+        !ids.is_empty() && ids.len() <= 9 && ids.len() == authority.executions.len(),
+        "工具步骤祖先范围无效",
+    )?;
+    let keys = ids
+        .iter()
+        .map(|id| ResourceKey::new("tool_workflow", id))
+        .collect::<Vec<_>>();
+    let rows = resource_commits::read_on(conn, &keys)?;
+    let mut valid = true;
+    let mut paused = false;
+    for (index, row) in rows.into_iter().enumerate() {
+        let value = row
+            .value
+            .as_ref()
+            .ok_or_else(|| err("not_found", "工具步骤工作流缺失"))?;
+        require(
+            value["project_id"].as_str() == Some(project)
+                && serde_json::from_value::<Scope>(value["scope"].clone())
+                    .map_err(storage)?
+                    .project_id()
+                    == Some(project),
+            "工具步骤跨项目",
+        )?;
+        valid &= value["cancel_requested"] != true
+            && !matches!(value["status"].as_str(), Some("completed" | "cancelled"));
+        paused |= value["paused"] == true;
+        let mut query=conn.prepare_cached("SELECT value FROM json_each((SELECT data FROM governance_records WHERE id=?1),'$.steps') WHERE json_extract(value,'$.id')=?2 LIMIT 1").map_err(storage)?;
+        use rusqlite::OptionalExtension;
+        let step: Option<String> = query
+            .query_row(
+                rusqlite::params![ids[index], authority.executions[index]],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        let step = step
+            .map(|s| serde_json::from_str::<Value>(&s).map_err(storage))
+            .transpose()?
+            .unwrap_or(Value::Null);
+        valid &= step["status"] == "running";
+        if index == 0 {
+            valid &= step["plan_revision_id"] == authority.plan_revision_id
+                && step["input_digest"] == authority.input_digest
+                && step["contract_digest"] == authority.contract_digest
+                && step["node_id"] == authority.node_id;
+        }
+        versions.push(ResourceVersion {
+            resource: row.resource,
+            revision: row.revision,
+        });
+    }
+
+    Ok(WorkflowToolFacts {
+        versions,
+        allowed: valid && !paused,
+        suspended: valid && paused,
+    })
 }

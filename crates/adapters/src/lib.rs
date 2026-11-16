@@ -833,6 +833,17 @@ impl EngineeringStore for SqliteStore {
     fn restore_runtime_record(&self, value: &Value) -> Result<Value> {
         tool_calls::restore(self.configuration_snapshot()?.as_ref(), value)
     }
+    fn workflow_tool_facts(
+        &self,
+        authority: &devdesk_core::tool_calls::WorkflowToolAuthority,
+        project: &str,
+    ) -> Result<devdesk_core::tool_calls::WorkflowToolFacts> {
+        require(
+            self.project_id.as_deref().is_none_or(|id| id == project),
+            "工具步骤跨项目",
+        )?;
+        tool_calls::workflow(&self.connection, authority, project)
+    }
     fn catalog_revision(&self) -> Result<u64> {
         configuration_cache::revision(&*self.connection.read()?)
     }

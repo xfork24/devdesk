@@ -620,6 +620,14 @@ pub trait EngineeringStore: Send + Sync {
     fn restore_runtime_record(&self, _value: &Value) -> Result<Value> {
         Err(err("unsupported", "存储未实现运行记录源恢复"))
     }
+    /// Native step and ancestor witnesses; no partial business state.
+    fn workflow_tool_facts(
+        &self,
+        _authority: &crate::tool_calls::WorkflowToolAuthority,
+        _project: &str,
+    ) -> Result<crate::tool_calls::WorkflowToolFacts> {
+        Err(err("unsupported", "存储未实现工具步骤资格上下文"))
+    }
     /// Scalar invalidation clock; concrete stores must not restore catalog bodies here.
     fn catalog_revision(&self) -> Result<u64> {
         Ok(self.configuration_snapshot()?.revision)

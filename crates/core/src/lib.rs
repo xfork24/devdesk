@@ -22,6 +22,7 @@ pub mod settings;
 pub mod tool_calls;
 mod tool_creation;
 pub use configuration_catalog::*;
+pub use tool_creation::PreparedConfiguredTool;
 mod configuration_queries;
 pub use configuration_queries::{
     configuration_index, configuration_records, configuration_selection_record,

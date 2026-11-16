@@ -33,6 +33,7 @@ pub struct ConfiguredWorkflowInstance {
 #[derive(Debug, Clone)]
 pub struct ConfiguredToolRequest {
     pub authority: crate::tool_calls::WorkflowToolAuthority,
+    pub provenance: crate::tool_calls::WorkflowToolProvenance,
     pub execution_id: Id,
     pub owner_id: Id,
     pub project_id: Id,
@@ -1075,6 +1076,13 @@ impl Engine {
             .collect::<Result<_>>()?;
         Ok(ConfiguredToolRequest {
             authority: crate::tool_calls::workflow_authority(&state, row, &execution_id)?,
+            provenance: crate::tool_calls::workflow_tool_provenance(
+                &state,
+                row,
+                &execution_id,
+                &execution.plan_revision_id,
+                command,
+            )?,
             execution_id,
             owner_id: instance.owner_id,
             project_id: instance.project_id,

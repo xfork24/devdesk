@@ -50,6 +50,35 @@ impl Engine {
             .collect())
     }
     pub fn observe_workflow_intent(&self, intent: &str, result: &Result<Value>) -> Result<()> {
+        // This code is emitted only before tool admission, with no tool attempt.
+        // A pause must preserve the original pending intent for a later resume.
+        if result
+            .as_ref()
+            .is_err_and(|error| error.code == "workflow_tool_suspended")
+        {
+            let key = concurrency::ResourceKey::new("governance", intent);
+            let rows = self.store.read_resources(std::slice::from_ref(&key))?;
+            require(
+                rows.len() == 1 && rows[0].resource == key,
+                "暂停意图读取不完整",
+            )?;
+            let old = ConfigurationRecord::from_storage(
+                rows[0]
+                    .value
+                    .clone()
+                    .ok_or_else(|| err("not_found", "暂停的工作流意图缺失"))?,
+            )?;
+            require(
+                old.r#type == "workflow_intent"
+                    && old.data["method"] == "workflow.tool.execute"
+                    && self
+                        .store
+                        .project_id()
+                        .is_none_or(|project| old.scope.project_id() == Some(project.as_str())),
+                "暂停结果不属于原工具意图",
+            )?;
+            return Ok(());
+        }
         self.store.transact(None, &mut |s| {
             let old = s.configuration(intent)?.clone();
             require(old.r#type == "workflow_intent", "不是工作流动作")?;

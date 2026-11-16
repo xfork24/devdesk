@@ -1383,9 +1383,15 @@ fn workflow_tool_dispatch_respects_ancestor_pause_and_original_execution_fences(
         "child-execution"
     );
 }
-#[test]
-fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
-    use devdesk_core::tool_calls::ToolCall;
+fn configured_tool_fixture(
+    rust_driver: bool,
+) -> (
+    tempfile::TempDir,
+    Engine,
+    ToolInvocation,
+    Command,
+    PreparedConfiguredTool,
+) {
     let root = tempfile::tempdir().unwrap();
     let (engine, mut invocation) = registered_invocation(root.path());
     let project = command(
@@ -1409,7 +1415,7 @@ fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
         &engine,
         "workflow.start",
         Some(project),
-        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{},"orchestration":{"mode":if rust_driver {"rust"}else{"manual"}}}),
     )
     .unwrap();
     let baseline = engine
@@ -1419,13 +1425,17 @@ fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
         .configuration(run["id"].as_str().unwrap())
         .unwrap()
         .clone();
-    command(
+    if rust_driver {
+        engine.drive_rust_workflows().unwrap();
+    } else {
+        command(
         &engine,
         "workflow.step.dispatch",
         run["id"].as_str(),
         json!({"step":"lookup","plan_revision_id":baseline.data["active_plan_revision_id"],"control_version":baseline.data["control_version"]}),
     )
     .unwrap();
+    }
     let state = engine.store.snapshot().unwrap();
     let intent = state
         .governance
@@ -1433,7 +1443,8 @@ fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
         .find(|r| r.r#type == "workflow_intent" && r.data["method"] == "workflow.tool.execute")
         .unwrap();
     let original: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
-    let request = engine.configured_tool_request(&original).unwrap();
+    let prepared = engine.prepare_configured_tool(&original).unwrap();
+    let request = prepared.request().clone();
     invocation.id = id();
     invocation.operation_id = Some(request.execution_id.clone());
     invocation.project_id = Some(project.into());
@@ -1448,6 +1459,13 @@ fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
         }),
     )
     .unwrap();
+    (root, engine, invocation, original, prepared)
+}
+#[test]
+fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
+    use devdesk_core::tool_calls::ToolCall;
+    let (_root, engine, invocation, original, prepared) = configured_tool_fixture(false);
+    let request = prepared.request();
     let admitted = engine
         .enqueue_configured_tool(&original, &invocation)
         .unwrap();
@@ -1462,6 +1480,168 @@ fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
             .unwrap()
             .is_some()
     );
+}
+#[test]
+fn workflow_tool_creation_preserves_actual_driver_actor_and_one_hundred_replays() {
+    let (root, engine, invocation, original, prepared) = configured_tool_fixture(true);
+    let engine = Arc::new(engine);
+    let prepared = Arc::new(prepared);
+    let actor = json!(prepared.request().provenance.context)["actor"].clone();
+    assert_eq!(actor["kind"], "driver");
+    engine.store.configuration_snapshot().unwrap();
+    let (ready, wait) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let old = engine.clone();
+    let writer = std::thread::spawn(move || {
+        old.store.transact(None, &mut |_| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            Ok(Value::Null)
+        })
+    });
+    wait.recv().unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = (0..100)
+        .map(|_| {
+            let (engine, invocation, original, prepared, barrier) = (
+                engine.clone(),
+                invocation.clone(),
+                original.clone(),
+                prepared.clone(),
+                barrier.clone(),
+            );
+            std::thread::spawn(move || {
+                barrier.wait();
+                engine.enqueue_prepared_configured_tool(&original, &invocation, &prepared)
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    release.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+    let first = results[0].as_ref().unwrap();
+    for result in &results {
+        assert_eq!(result.as_ref().unwrap(), first);
+    }
+    let context = first["data"]["origin_context"].as_str().unwrap();
+    let state = engine.store.snapshot().unwrap();
+    assert_eq!(
+        state.configuration(context).unwrap().data["context"]["actor"],
+        actor
+    );
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "tool_call")
+            .count(),
+        1
+    );
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('unrestorable-history','workflow_instance','fixture',?1,'History',1,'fixture','{}',?2,0,1,1)",rusqlite::params![serde_json::to_string(&Scope::project(invocation.project_id.as_ref().unwrap())).unwrap(),json!({"plan":{"$source":"absent-history"}}).to_string()]).unwrap();
+    let trace = devdesk_adapters::performance::Trace::start();
+    assert_eq!(
+        engine
+            .enqueue_configured_tool(&original, &invocation)
+            .unwrap(),
+        *first
+    );
+    let report = trace.finish();
+    assert!(
+        report["spans"]["project.full_snapshot"].is_null(),
+        "{report}"
+    );
+}
+fn workflow_control(engine: &Engine, method: &str, instance: &str) {
+    let row = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(instance)
+        .unwrap()
+        .clone();
+    command(engine,method,Some(instance),json!({"plan_revision_id":row.data["active_plan_revision_id"],"control_version":row.data["control_version"]})).unwrap();
+}
+#[test]
+fn prepared_workflow_tools_defer_pause_and_reject_cancellation_or_rebound_requests() {
+    let (_root, engine, invocation, original, prepared) = configured_tool_fixture(false);
+    let instance = &prepared.request().authority.instances[0];
+    let mut changed = original.clone();
+    changed.payload["execution_id"] = json!("other-execution");
+    assert!(
+        engine
+            .enqueue_prepared_configured_tool(&changed, &invocation, &prepared)
+            .is_err()
+    );
+    workflow_control(&engine, "workflow.pause", instance);
+    let deferred = engine
+        .enqueue_prepared_configured_tool(&original, &invocation, &prepared)
+        .unwrap_err();
+    assert_eq!(deferred.code, "workflow_tool_suspended");
+    engine
+        .observe_workflow_intent(&prepared.request().provenance.intent.id, &Err(deferred))
+        .unwrap();
+    assert_eq!(
+        engine
+            .store
+            .snapshot()
+            .unwrap()
+            .configuration(&prepared.request().provenance.intent.id)
+            .unwrap()
+            .data["status"],
+        "prepared"
+    );
+    workflow_control(&engine, "workflow.resume", instance);
+    assert!(
+        engine
+            .enqueue_prepared_configured_tool(&original, &invocation, &prepared)
+            .is_ok()
+    );
+    let (_other, engine, invocation, original, prepared) = configured_tool_fixture(false);
+    workflow_control(
+        &engine,
+        "workflow.cancel",
+        &prepared.request().authority.instances[0],
+    );
+    assert_eq!(
+        engine
+            .enqueue_prepared_configured_tool(&original, &invocation, &prepared)
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+    assert!(
+        !engine
+            .store
+            .snapshot()
+            .unwrap()
+            .governance
+            .iter()
+            .any(|r| r.id == invocation.id)
+    );
+}
+#[test]
+fn prepared_workflow_tool_authority_cannot_be_used_in_another_project_namespace() {
+    let (_root, _engine, invocation, original, prepared) = configured_tool_fixture(false);
+    let other = tempfile::tempdir().unwrap();
+    devdesk_adapters::GlobalStore::open(other.path()).unwrap();
+    let store = Arc::new(SqliteStore::open_project(other.path(), &id()).unwrap());
+    let engine = Engine::new(
+        store.clone(),
+        Arc::new(FileArtifacts::new(store.root().into())),
+        runtime::adapters(),
+    );
+    assert_eq!(
+        engine
+            .enqueue_prepared_configured_tool(&original, &invocation, &prepared)
+            .unwrap_err()
+            .code,
+        "invalid_scope"
+    );
+    assert_eq!(store.event_cursor().unwrap(), 0);
 }
 #[test]
 fn manual_tool_creation_replays_original_packed_result_and_does_not_wait_for_old_writer() {

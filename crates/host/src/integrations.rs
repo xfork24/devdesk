@@ -12,8 +12,7 @@ fn text(v: &Value, k: &str) -> Result<String> {
 }
 impl Workspace {
     pub(super) fn execute_configured_tool(&self, e: &Engine, command: Command) -> Result<Value> {
-        let fingerprint = command_fingerprint("workflow.tool.execute", &command);
-        if let Some(result) = e.store.replay(&command.command_id, &fingerprint)? {
+        if let Some(result) = e.replay_workflow_tool(&command)? {
             return Ok(result);
         }
         if let Some(mut request) = e.configured_platform_request(&command)? {
@@ -68,7 +67,8 @@ impl Workspace {
             }
             return e.enqueue_platform_tool(&command, &request);
         }
-        let request = e.configured_tool_request(&command)?;
+        let prepared = e.prepare_configured_tool(&command)?;
+        let request = prepared.request().clone();
         let state = e.store.snapshot()?;
         let harness = state.configuration(&request.tool.binding.harness_ref)?;
         let installation = self.materialize_harness(e, harness)?;
@@ -115,7 +115,7 @@ impl Workspace {
             image_id,
             worktree: String::new(),
         };
-        e.enqueue_configured_tool(&command, &invocation)
+        e.enqueue_prepared_configured_tool(&command, &invocation, &prepared)
     }
 
     fn integration_permissions(

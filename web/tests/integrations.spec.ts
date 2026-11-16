@@ -546,6 +546,110 @@ test("MCP 页面实际发现 stdio 服务、只授权选中工具并查看 Docke
   expect(retried[0].expected_revision).toBe(0);
   expect(retried[0]).toEqual(retried[1]);
   await page.unroute("**/rpc", lostCreationResponse);
+  // Exercise the Host's prepared workflow creator with the same real MCP tool.
+  const binding = (
+    await rpc(page, "query.integrations", { include_history: true })
+  ).records.find(
+    (r: any) =>
+      r.type === "integration_binding" &&
+      r.data.integration_ref === src.id &&
+      r.data.allowed_tools.includes(tool.id),
+  );
+  expect(binding).toBeTruthy();
+  const project = await rpc(page, "project.create", {
+    command_id: crypto.randomUUID(),
+    payload: { title: "MCP workflow component" },
+  });
+  await rpc(page, "integration.project.bind", {
+    project_id: project.id,
+    local: true,
+    command_id: crypto.randomUUID(),
+    payload: {
+      project_id: project.id,
+      bindings: { [src.id]: binding.id },
+    },
+  });
+  const draft = await rpc(page, "workflow.create", {
+    command_id: crypto.randomUUID(),
+    payload: {
+      name: "MCP workflow component",
+      document: {
+        schema_version: 6,
+        stages: [{ key: "work", name: "MCP sum" }],
+        steps: [
+          {
+            key: "sum",
+            name: "Sum",
+            stage: "work",
+            executor: {
+              type: "tool",
+              tool_ref: tool.id,
+              arguments: {
+                a: { type: "constant", value: 4 },
+                b: { type: "constant", value: 9 },
+              },
+            },
+          },
+        ],
+      },
+    },
+  });
+  const workflow = await rpc(page, "workflow.publish", {
+    command_id: crypto.randomUUID(),
+    target: draft.id,
+    expected_revision: draft.revision,
+    payload: {},
+  });
+  const run = await rpc(page, "workflow.start", {
+    project_id: project.id,
+    command_id: crypto.randomUUID(),
+    target: project.id,
+    expected_revision: (
+      await rpc(page, "query.workspace", { project_id: project.id })
+    ).active_project.revision,
+    payload: {
+      workflow_ref: workflow.id,
+      role_agent_bindings: {},
+      orchestration: { mode: "manual" },
+    },
+  });
+  const management = await rpc(page, "query.workflow_management_summary", {
+    project_id: project.id,
+    id: run.id,
+  });
+  await rpc(page, "workflow.step.dispatch", {
+    project_id: project.id,
+    command_id: crypto.randomUUID(),
+    target: run.id,
+    expected_revision: management.record.revision,
+    payload: {
+      step: "sum",
+      plan_revision_id: management.record.data.active_plan_revision_id,
+      control_version: management.record.data.control_version,
+    },
+  });
+  let workflowCall: any;
+  await expect
+    .poll(
+      async () => {
+        const calls = await rpc(page, "query.tool_calls", {
+          project_id: project.id,
+          local: true,
+          tool_ref: tool.id,
+        });
+        workflowCall = calls.records.find(
+          (r: any) => r.data.invocation.operation_id,
+        );
+        return workflowCall?.data.status;
+      },
+      { timeout: 60000 },
+    )
+    .toBe("succeeded");
+  expect(workflowCall.data.workflow_authority.execution_id).toBe(
+    workflowCall.data.invocation.operation_id,
+  );
+  expect(workflowCall.data.origin_proof.decision_id).toBeTruthy();
+  expect(JSON.stringify(workflowCall.data.receipt)).toContain("13");
   await page.getByRole("button", { name: "历史记录", exact: true }).click();
   await page.getByLabel("历史范围", { exact: true }).selectOption("global");
   const history = page.getByRole("region", { name: "历史记录" });

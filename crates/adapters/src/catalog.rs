@@ -369,6 +369,13 @@ impl EngineeringStore for GlobalStore {
     fn restore_runtime_record(&self, value: &Value) -> Result<Value> {
         tool_calls::restore(self.configuration_snapshot()?.as_ref(), value)
     }
+    fn workflow_tool_facts(
+        &self,
+        _: &devdesk_core::tool_calls::WorkflowToolAuthority,
+        _: &str,
+    ) -> Result<devdesk_core::tool_calls::WorkflowToolFacts> {
+        Err(err("invalid_scope", "工作流工具不能写入全局配置库"))
+    }
     fn catalog_revision(&self) -> Result<u64> {
         configuration_cache::revision(&*self.connection.read()?)
     }

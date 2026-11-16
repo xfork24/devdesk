@@ -20,6 +20,76 @@ pub struct WorkflowToolAuthority {
     pub contract_digest: String,
     pub node_id: Id,
 }
+#[derive(Debug, Clone)]
+pub struct WorkflowToolProvenance {
+    pub intent: ConfigurationRecord,
+    pub dispatch: ConfigurationRecord,
+    pub decision: ConfigurationRecord,
+    pub context: InvocationContext,
+}
+pub struct WorkflowToolFacts {
+    pub versions: Vec<ResourceVersion>,
+    pub allowed: bool,
+    pub suspended: bool,
+}
+pub(crate) fn workflow_tool_provenance(
+    state: &EngineeringState,
+    row: &ConfigurationRecord,
+    execution: &str,
+    plan: &str,
+    command: &Command,
+) -> Result<WorkflowToolProvenance> {
+    let intent = state
+        .governance
+        .iter()
+        .find(|r| {
+            r.r#type == "workflow_intent"
+                && r.definition_id == execution
+                && r.data["method"] == "workflow.tool.execute"
+                && r.data["command"] == json!(command)
+        })
+        .ok_or_else(|| err("permission_denied", "工具缺少原工作流意图"))?;
+    require(
+        row.scope.project_id() == row.data["project_id"].as_str()
+            && row.scope.project_id().is_some(),
+        "工具工作流的范围与项目不符",
+    )?;
+    let dispatch = state
+        .governance
+        .iter()
+        .rev()
+        .find(|r| {
+            r.r#type == "workflow_dispatch"
+                && r.definition_id == execution
+                && r.data["plan_revision_id"] == plan
+        })
+        .ok_or_else(|| err("permission_denied", "工具缺少原步骤派发"))?;
+    let decision = state.configuration(&text(&dispatch.data, "decision_id")?)?;
+    require(
+        decision.r#type == "workflow_decision"
+            && dispatch.immutable
+            && decision.immutable
+            && intent.scope == row.scope
+            && dispatch.scope == row.scope
+            && decision.scope == row.scope,
+        "工具原始决定范围或性质不符",
+    )?;
+    let decided: WorkflowDecision = decision.decode()?;
+    require(
+        decided.instance_id == row.id
+            && decided.execution_id.as_deref() == Some(execution)
+            && decided.plan_revision_id == plan
+            && decided.operation == "dispatch"
+            && row.data["root_instance_id"] == decided.root_instance_id,
+        "工具派发决定不属于原执行",
+    )?;
+    Ok(WorkflowToolProvenance {
+        intent: intent.clone(),
+        dispatch: dispatch.clone(),
+        decision: decision.clone(),
+        context: InvocationContext::workflow(decided.actor, Some(text(&row.data, "project_id")?)),
+    })
+}
 pub(crate) fn workflow_authority(
     state: &EngineeringState,
     row: &ConfigurationRecord,

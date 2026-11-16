@@ -529,59 +529,11 @@ impl Engine {
         command: &Command,
         invocation: &ToolInvocation,
     ) -> Result<Value> {
-        let expected = self.configured_tool_request(command)?;
-        require(
-            invocation.operation_id.as_ref() == Some(&expected.execution_id)
-                && invocation.arguments == expected.arguments
-                && json!(invocation.tool) == json!(expected.tool)
-                && invocation.project_id.as_ref() == Some(&expected.project_id)
-                && invocation.session_id.is_none()
-                && invocation.turn_id.is_none(),
-            "工具调用改变了冻结步骤、参数或归属",
-        )?;
-        require(
-            invocation.permissions.binding_lock.as_ref() == Some(&expected.permissions),
-            "工具权限与冻结步骤不一致",
-        )?;
-        let fingerprint = command_fingerprint("workflow.tool.execute", command);
-        self.store
-            .transact(Some((&command.command_id, &fingerprint)), &mut |state| {
-                let execution = invocation.operation_id.as_deref().unwrap();
-                let row = state
-                    .governance
-                    .iter()
-                    .find(|r| {
-                        r.r#type == "workflow_instance"
-                            && r.data["steps"].as_array().is_some_and(|steps| {
-                                steps.iter().any(|step| step["id"] == execution)
-                            })
-                    })
-                    .ok_or_else(|| err("not_found", "工具步骤已被替换"))?;
-                let step = row.data["steps"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .find(|step| step["id"] == execution)
-                    .unwrap();
-                require(
-                    step["status"] == "running"
-                        && !state.workflow_instance_suspended(&row.id)
-                        && row.data["cancel_requested"] != true,
-                    "工具步骤资格已变化",
-                )?;
-                let authority = crate::tool_calls::workflow_authority(state, row, execution)?;
-                require(authority == expected.authority, "工具原始执行资格已变化")?;
-                self.insert_tool_invocation(state, invocation)?;
-                let call = state
-                    .governance
-                    .iter_mut()
-                    .find(|r| r.id == invocation.id)
-                    .unwrap();
-                let mut data = call.data.clone();
-                data["workflow_authority"] = json!(authority);
-                update_record(call, data);
-                Ok(json!(call))
-            })
+        if let Some(value) = self.replay_workflow_tool(command)? {
+            return Ok(value);
+        }
+        let prepared = self.prepare_configured_tool(command)?;
+        self.enqueue_prepared_configured_tool(command, invocation, &prepared)
     }
     pub fn record_tool_discovery(
         &self,
