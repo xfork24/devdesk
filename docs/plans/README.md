@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [Workflow 执行性能与运行稳定性](workflow-runtime-performance/PLAN.md) | [分工边界](workflow-runtime-performance/SCOPE.md)、[验收](workflow-runtime-performance/ACCEPTANCE.md) | 独立 worktree 实施中；经理/Agent 原生回执、冻结恢复、Docker/Host 故障及预算诊断；公共存储、调度、执行页与 100 前端容量归并发计划 |
 | [单 Host SQLite 底层并发重构](single-host-concurrency/PLAN.md) | [工作流运行时 100 前端验收合同](single-host-concurrency/ACCEPTANCE.md) | P0/P1 实施中，P2–P6 待实施、待验收；独立前端项目上下文、并发读、所有修改入口的资源级乐观校验、SQLite 短事务、最终一致视图与事件分发 |
 | [配置加载优化](configuration-loading-performance/PLAN.md) | [性能分析](configuration-loading-performance/ANALYSIS.md)、[W0–W3 验收](configuration-loading-performance/EXECUTION.md)、[W4–W7 验收](configuration-loading-performance/W4-W7.md) | W0–W7 已完成；轻量索引/正文、版本缓存与取消、后台模型目录、编译与成员索引；debug/release 同条件各场景 30 次对比及回归通过 |
 | [配置归属、权限简化、本地安装与讨论展示](configuration-permissions-runtime-discussion/PLAN.md) | [实施与定向验收](configuration-permissions-runtime-discussion/EXECUTION.md)；已实施 | 整合六项需求及两项调整：项目工具接入说明、Profile 直用并删除执行授权、Harness/Sandbox 拆分及运行资源删除、本地安装与登录反馈、Workflow 内嵌调度、讨论原始信息新标签页及增量消息简化 |
