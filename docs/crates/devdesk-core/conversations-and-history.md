@@ -35,6 +35,8 @@
 
 `tick_conversations` 在并发额度内处理 queued 输入和活动会话，持久化 dispatch 意图后在事务外打开/恢复 worker、发 Turn 并轮询。原生接纳、输入消费和终态分别投影为事件与执行事实，不能把模型普通文本中的“成功”当协议终态。
 
+真实启动采用 begin/poll：queued 先成为 Dispatching、execution 成为 Prepared 并占额度，适配器只后台启动原操作。核心轮询启动回执，重新核对当前 Turn 未取消、execution 未撤权及操作/镜像身份，提交后才发送输入；启动未完成也继续观察其他会话。取消仍须取得真实停止证明。没有新 queued 输入或没有剩余额度时，不额外恢复准入历史。
+
 并发额度限制新 queued Turn，已有活动 Turn 仍会被观察。可写 Turn 另按实际 code_view 的 source.worktree 排队：同一 worktree 有未撤销 writer 时不再启动第二个写者；只读 Turn 不进入该写者集合。这个工作副本边界与项目配额、Rust 根额度和 foreach 调用槽位分别判断。
 
 project_conversation 将端口观察转成领域消息、工具调用、交互及执行事实，commit_conversation_batch 以原身份接纳批量事件。正常 Terminal 路径先提交此前观察，再核对本 Turn、quiescent 和 consumed，然后调用 finish_conversation；取消或派发前失败则不要求输入已经消费。finish_conversation 对原 operation 调用 stop_session，核对 writer_revoked，封存可取得的协议日志，并更新 Turn、SessionLifecycle、RuntimeExecution 和停止事件。只有符合条件的成功会话才自动捕获经验快照；清理失败单独记为 CleanupFailed，不抹掉已接纳的 Turn 结果。

@@ -2,6 +2,8 @@
 
 2026-11-16。本报告是独立技术场景的实施验证，不是原 Feature 的完成报告。原 Feature、根/子流程与项目经理保持暂停，未派发其 Agent、重发其输入、生成其业务文档或改变审批。数据集与本地仓库全部新建；真实模型认证仅用于这些明确的原生执行场景，临时副本在退出时删除。
 
+后续 611 ms 分解、原生启动阻塞及第二轮实际结果见 [INDEPENDENT.md](INDEPENDENT.md)。本页保留第一轮原构建成绩，不倒填新实现的效果。
+
 ## 源码与环境
 
 分支 `codex/workflow-runtime-performance`；main 已整合到 `b75439d`（合并提交 `38ec1ff`）。本分支沿用已整合的并发基础 global 19 / project 49；对方正在实施 global 21 / project 51，不将候选程序部署到原运行中的 global 18 / project 48。

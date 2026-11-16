@@ -24,6 +24,137 @@ fn engine(path: &std::path::Path) -> Engine {
     runtime::bind_default_permissions(&e);
     e
 }
+
+#[test]
+fn pending_startups_reserve_slots_and_cancel_without_sending_input() {
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    #[derive(Default)]
+    struct Deferred {
+        ready: AtomicBool,
+        starts: Mutex<Vec<ports::SessionStart>>,
+        sent: Mutex<Vec<Id>>,
+        stopped: Mutex<Vec<Id>>,
+    }
+    impl ports::Harness for Deferred {
+        fn begin_session(&self, r: &ports::SessionStart) -> Result<Option<ports::SessionReceipt>> {
+            self.starts.lock().unwrap().push(r.clone());
+            Ok(None)
+        }
+        fn poll_session_start(
+            &self,
+            _: &Session,
+            e: &RuntimeExecution,
+        ) -> Result<Option<ports::SessionReceipt>> {
+            if !self.ready.load(Ordering::Acquire) {
+                return Ok(None);
+            }
+            Ok(Some(ports::SessionReceipt {
+                external_session: format!("native-{}", e.session_id),
+                container_id: format!("container-{}", e.id),
+                image_digest: e.image_digest.clone(),
+                operation_id: e.operation_id.clone(),
+            }))
+        }
+        fn dispatch_turn(&self, r: &ports::TurnDispatch) -> Result<()> {
+            self.sent.lock().unwrap().push(r.turn.id.clone());
+            Ok(())
+        }
+        fn poll_session(&self, _: &Session) -> Result<Vec<ports::ConversationObservation>> {
+            Ok(vec![])
+        }
+        fn stop_session(&self, _: &Session, e: &RuntimeExecution) -> Result<ports::WorkerStop> {
+            self.stopped.lock().unwrap().push(e.operation_id.clone());
+            Ok(ports::WorkerStop {
+                operation_id: e.operation_id.clone(),
+                writer_revoked: true,
+                mode: "explicit deferred fixture".into(),
+                requires_successor: true,
+            })
+        }
+        fn cleanup_worker(&self, _: &Session, _: &RuntimeExecution) -> Result<()> {
+            Ok(())
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let mut e = engine(root.path());
+    let harness = Arc::new(Deferred::default());
+    e.harness = harness.clone();
+    let project = e
+        .execute(
+            "project.create",
+            Command {
+                command_id: id(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"title":"startup quota fixture"}),
+            },
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, first_turn) = runtime::queue_conversation(&e, &project);
+    let (_, cancelled) = runtime::queue_conversation(&e, &project);
+    let (_, third) = runtime::queue_conversation(&e, &project);
+    for _ in 0..3 {
+        e.tick_conversations(2).unwrap();
+    }
+    assert_eq!(harness.starts.lock().unwrap().len(), 2);
+    assert!(harness.sent.lock().unwrap().is_empty());
+    assert_eq!(e.conversation_running().unwrap(), 2);
+    let before = e.store.snapshot().unwrap();
+    let turn = before.turns.iter().find(|t| t.id == cancelled).unwrap();
+    e.execute(
+        "conversation.cancel",
+        Command {
+            command_id: id(),
+            target: Some(cancelled.clone()),
+            expected_revision: Some(turn.revision),
+            payload: json!({}),
+        },
+    )
+    .unwrap();
+    e.tick_conversations(2).unwrap();
+    let after = e.store.snapshot().unwrap();
+    assert_eq!(
+        after
+            .turns
+            .iter()
+            .find(|t| t.id == cancelled)
+            .unwrap()
+            .status,
+        TurnStatus::Cancelled
+    );
+    assert!(
+        !after
+            .turns
+            .iter()
+            .find(|t| t.id == cancelled)
+            .unwrap()
+            .consumed
+    );
+    assert_eq!(
+        after.turns.iter().find(|t| t.id == third).unwrap().status,
+        TurnStatus::Dispatching
+    );
+    assert_eq!(harness.starts.lock().unwrap().len(), 3);
+    harness.ready.store(true, Ordering::Release);
+    for _ in 0..3 {
+        e.tick_conversations(2).unwrap();
+    }
+    let sent = harness.sent.lock().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert!(sent.contains(&first_turn) && sent.contains(&third));
+    assert!(!sent.contains(&cancelled));
+    drop(sent);
+    let state = e.store.snapshot().unwrap();
+    assert_eq!(state.executions.len(), 3);
+    e.stop_owned_runtime().unwrap();
+    assert_eq!(e.conversation_running().unwrap(), 0);
+}
 fn initialize(e: &Engine) -> (Id, Id, Id) {
     let pid = e
         .execute(

@@ -102,8 +102,23 @@ impl Workspace {
                 "session.open" => self.open_conversation(e, command),
                 _ => e.execute(method, command),
             };
+            let ready = if method == "workflow.tool.execute" {
+                result
+                    .as_ref()
+                    .ok()
+                    .and_then(|value| value["id"].as_str())
+                    .map(str::to_owned)
+            } else {
+                None
+            };
             // Persist the dispatched result even if shutdown was requested during the call.
             e.observe_workflow_intent(&intent.id, &result)?;
+            if should_stop() {
+                return Ok(());
+            }
+            if let Some(id) = ready {
+                e.drive_ready_native_platform_tool(&id)?;
+            }
         }
         if should_stop() {
             return Ok(());

@@ -37,6 +37,10 @@ pub fn capabilities(provider: HarnessProvider) -> PermissionCapabilities {
     }
 }
 pub fn asset_digests() -> BTreeMap<String, String> {
+    static DIGESTS: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
+    DIGESTS.get_or_init(embedded_asset_digests).clone()
+}
+fn embedded_asset_digests() -> BTreeMap<String, String> {
     [
         (
             "docker/seccomp/nested-v1.json",
@@ -106,7 +110,7 @@ pub fn compile_resolved_permissions(
         enforcement: PermissionEnforcementPlan {
             native_options: Some(NativePermissionOptions {
                 provider,
-                version: capabilities(provider).version,
+                version: runtime_preparation::default_version(provider),
                 sandbox_mode: match (&harness.policy.filesystem, provider) {
                     (FilesystemPermission::FullAccess, HarnessProvider::Codex)
                         if harness.policy.network == NetworkPermission::Enabled =>

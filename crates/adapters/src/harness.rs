@@ -10,10 +10,13 @@ use ports::{
     WorkerStop,
 };
 use std::{collections::HashMap, sync::Arc};
+#[path = "harness_startup.rs"]
+mod startup;
 
 pub fn managed_adapter_identity(provider: HarnessProvider) -> String {
     let mut hash = Sha256::new();
     hash.update(include_bytes!("harness.rs"));
+    hash.update(include_bytes!("harness_startup.rs"));
     hash.update(include_bytes!("../../domain/src/agent_context.rs"));
     hash.update(include_bytes!("../../domain/src/agent_task.rs"));
     hash.update(include_bytes!("../../core/src/agent_tasks.rs"));
@@ -155,12 +158,14 @@ type Cell = Arc<Mutex<Option<Worker>>>;
 pub struct RuntimeWorkers {
     root: PathBuf,
     cells: Mutex<HashMap<Id, Cell>>,
+    starts: Mutex<HashMap<Id, startup::Start>>,
 }
 impl RuntimeWorkers {
     pub fn new(root: &Path) -> Result<Arc<Self>> {
         Ok(Arc::new(Self {
             root: fs::canonicalize(root).map_err(storage)?,
             cells: Mutex::new(HashMap::new()),
+            starts: Default::default(),
         }))
     }
     fn cell(&self, id: &str) -> Result<Cell> {
@@ -192,8 +197,21 @@ impl RuntimeWorkers {
         Ok(path)
     }
     fn open(&self, r: &SessionStart) -> Result<SessionReceipt> {
+        self.open_guarded(r, None)
+    }
+    fn open_guarded(
+        &self,
+        r: &SessionStart,
+        cancelled: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<SessionReceipt> {
+        let _span = performance::Span::new("native.start.open");
         let cell = self.cell(&r.session.id)?;
         let mut slot = cell.lock().map_err(storage)?;
+        // Checked under the worker cell lock: a stop that wins the race cannot
+        // be followed by a late container creation from the startup thread.
+        if cancelled.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
+            return Err(err("cancelled", "启动已停止，未发送轮次输入").technical_not_applied());
+        }
         if let Some(w) = slot.as_ref() {
             require(
                 w.operation == r.execution.operation_id,
@@ -565,6 +583,10 @@ impl RuntimeWorkers {
             fs::remove_file(path).map_err(storage)?;
         }
         let receipt = created?;
+        if cancelled.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
+            sandbox.stop(&r.execution.operation_id)?;
+            return Err(err("cancelled", "启动已停止，未发送轮次输入").technical_not_applied());
+        }
         require(!receipt.running, "已有 worker 仍在运行，必须先核对并撤销")?;
         let log = meta.join(format!("{}.jsonl", r.execution.operation_id));
         let mut wire = JsonlProcess::managed(
@@ -573,6 +595,7 @@ impl RuntimeWorkers {
             secrets,
         )?;
         let initialized = (|| -> Result<String> {
+            let _span = performance::Span::new("native.start.protocol_initialize");
             match provider {
                 HarnessProvider::Codex => {
                     wire.initialize_codex()?;
@@ -683,6 +706,10 @@ impl RuntimeWorkers {
                 return Err(e);
             }
         };
+        if cancelled.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
+            sandbox.stop(&r.execution.operation_id)?;
+            return Err(err("cancelled", "启动已停止，未发送轮次输入").technical_not_applied());
+        }
         let worker = Worker {
             worktree: work.clone(),
             permissions: binding.permissions.clone(),
@@ -715,6 +742,7 @@ impl RuntimeWorkers {
         })?)
     }
     fn stop(&self, s: &Session, e: &RuntimeExecution) -> Result<WorkerStop> {
+        self.cancel_start(&s.id, &e.operation_id)?;
         let cell = self.cell(&s.id)?;
         let mut slot = cell.lock().map_err(storage)?;
         let base = self.location(s)?;
@@ -758,6 +786,7 @@ impl RuntimeWorkers {
         }
         sandbox.stop(&e.operation_id)?;
         *slot = None;
+        self.stopped_start(&s.id, &e.operation_id)?;
         Ok(WorkerStop {
             operation_id: e.operation_id.clone(),
             writer_revoked: true,
@@ -1366,6 +1395,18 @@ macro_rules! provider {
                 self.check(&r.session)?;
                 self.workers.open(r)
             }
+            fn begin_session(&self, r: &SessionStart) -> Result<Option<SessionReceipt>> {
+                self.check(&r.session)?;
+                self.workers.begin_start(r)
+            }
+            fn poll_session_start(
+                &self,
+                s: &Session,
+                e: &RuntimeExecution,
+            ) -> Result<Option<SessionReceipt>> {
+                self.check(s)?;
+                self.workers.poll_start(s, e)
+            }
             fn dispatch_turn(&self, r: &TurnDispatch) -> Result<()> {
                 self.check(&r.session)?;
                 self.workers.with(&r.session, |w| w.dispatch(r))
@@ -1416,7 +1457,8 @@ macro_rules! provider {
             fn cleanup_worker(&self, s: &Session, e: &RuntimeExecution) -> Result<()> {
                 let base = self.workers.location(s)?;
                 DockerSandbox::new(base.parent().unwrap().parent().unwrap())?
-                    .remove(&e.operation_id)
+                    .remove(&e.operation_id)?;
+                self.workers.release_start(&s.id, &e.operation_id)
             }
         }
     };
@@ -1564,6 +1606,16 @@ impl ports::Harness for RoutingHarness {
 
     fn open_session(&self, r: &SessionStart) -> Result<SessionReceipt> {
         self.route(&r.session)?.open_session(r)
+    }
+    fn begin_session(&self, r: &SessionStart) -> Result<Option<SessionReceipt>> {
+        self.route(&r.session)?.begin_session(r)
+    }
+    fn poll_session_start(
+        &self,
+        s: &Session,
+        e: &RuntimeExecution,
+    ) -> Result<Option<SessionReceipt>> {
+        self.route(s)?.poll_session_start(s, e)
     }
     fn dispatch_turn(&self, r: &TurnDispatch) -> Result<()> {
         self.route(&r.session)?.dispatch_turn(r)

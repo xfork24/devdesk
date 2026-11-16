@@ -13,12 +13,14 @@ import signal
 import sqlite3
 import subprocess
 import time
+import uuid
 from client import Client
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, required=True)
 parser.add_argument('--codex-auth-source', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True, help='Must not exist')
+parser.add_argument('--during-startup', action='store_true', help='Stop an actual running container before the first input is dispatched')
 args = parser.parse_args()
 out = args.output.resolve()
 out.mkdir()
@@ -72,9 +74,18 @@ try:
               'agent_ref': defaults['role_agent_bindings'][defaults['orchestrator_role_ref']],
               'harness_permission_ref': defaults['harness_permission_ref']})['id']
     controller_command(c, 'orchestration.input', manager, {'input': '这是平台停机恢复的技术验收。当前轮次只实际调用一次 workflow.inspect，读取计划后结束当前 Turn。不要派发、接纳或完成任何节点，不修改计划。'})
+    database = out / 'data/projects' / project / 'engineering.sqlite3'
     deadline = time.monotonic() + 240
     while time.monotonic() < deadline:
-        if '"phase":"request_observed"' in (out / 'host-before.log').read_text():
+        if args.during_startup:
+            with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as db:
+                pending=db.execute("SELECT e.operation_id FROM executions e JOIN turns t ON t.session_id=e.session_id WHERE e.status='prepared' AND e.writer_revoked=0 AND t.status='dispatching' AND t.consumed=0").fetchall()
+            if pending:
+                name='devdesk-'+uuid.UUID(pending[0][0]).hex
+                state=subprocess.run(['docker','inspect','--format','{{.State.Running}}',name], capture_output=True, text=True)
+                if state.returncode==0 and state.stdout.strip()=='true':
+                    break
+        elif '"phase":"request_observed"' in (out / 'host-before.log').read_text():
             break
         assert process.poll() is None
         time.sleep(.01)
@@ -87,6 +98,8 @@ try:
         turns_before = db.execute('SELECT id,session_id,status,consumed FROM turns').fetchall()
         assert turns_before and any(row[2] == 'needs_reconciliation' for row in turns_before), turns_before
         assert db.execute('SELECT count(*) FROM executions WHERE writer_revoked=0').fetchone()[0] == 0
+        if args.during_startup:
+            assert all(row[3]==0 for row in turns_before), 'Input was consumed during startup cancellation'
     lifecycle = [json.loads(s) for s in (out / 'host-before.log').read_text().splitlines() if s.startswith('{')]
     assert any(e.get('event') == 'runtime_stopped' for e in lifecycle)
     c = boot('after')
@@ -125,6 +138,7 @@ try:
     (out / 'proof.json').write_text(json.dumps({'workflow': run, 'manager': manager, 'old_turns': turns_before,
         'old_session': old_session, 'new_session': after['record']['data']['session_id'],
         'actual_sigterm_exit': 0, 'original_writers_revoked': True, 'restart_replayed_input': False,
+        'during_startup':args.during_startup,
         'successor_completed_technical_workflow': True}, indent=2) + '\n')
     print('PASS actual Codex/Host SIGTERM, writer stop proof, no replay, successor workflow completion')
 finally:

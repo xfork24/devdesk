@@ -28,6 +28,8 @@ Workspace 持有 GlobalStore、全局配置 Engine、已打开工程表、active
 
 HTTP 退出、SIGINT 以及 Unix SIGTERM/SIGHUP 都停止调度准入并广播关闭通知，SSE 连接不会抢走唯一的停机唤醒。退出记录 shutdown_requested 的来源，完成所属 Harness writer 清理后记录 runtime_stopped；清理错误不记录成功终点。SIGKILL 无清理机会，重开后仍须核对，不伪造停止证明。
 
+原生 worker 的 Docker/SDK 启动由适配器后台完成，核心只轮询已经占用额度的原 execution。Host 退出同样停止这些 Prepared/Dispatching 执行；启动线程不写数据库或发送业务输入，停止与创建通过同一 worker 锁协调。专用真实探针可在容器已启动而输入尚未发送时终止 Host，验证未消费、未重发及后继恢复。该边界不表示强制 SIGKILL 的在途 Docker 子进程已被验证安全回收，也不将所有外部工具 I/O 声明为异步。
+
 文件末集成测试覆盖项目创建/选择失败、请求隔离、恢复、共享预算和关闭等行为。`workflow_live.rs` 提供显式、默认忽略的实际 Git/Docker 自动工作流，不使用模型或生产数据。新增入口应复用明确的 global/project 分派，避免 handler 直接操作 active 内部状态。
 
 代码定位：[`Workspace`](../../../crates/host/src/workspace.rs#L32)、[`open_with_adapters`](../../../crates/host/src/workspace.rs#L67)、[`active_engine`](../../../crates/host/src/workspace.rs#L121)、[`dispatch`](../../../crates/host/src/workspace.rs#L253)、[`event_engine`](../../../crates/host/src/workspace.rs#L786)、[`tick`](../../../crates/host/src/workspace.rs#L795)、[`stop_owned_runtime`](../../../crates/host/src/workspace.rs#L880)。

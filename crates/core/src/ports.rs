@@ -35,6 +35,18 @@ pub trait Harness: Send + Sync {
             "供应商不提供持久讨论会话",
         ))
     }
+    /// The execution and quota reservation are durable before this call. None
+    /// means preparation is pending; no conversation input has been submitted.
+    fn begin_session(&self, request: &SessionStart) -> Result<Option<SessionReceipt>> {
+        self.open_session(request).map(Some)
+    }
+    fn poll_session_start(
+        &self,
+        _session: &devdesk_domain::Session,
+        _execution: &devdesk_domain::RuntimeExecution,
+    ) -> Result<Option<SessionReceipt>> {
+        Err(err("unsupported", "Harness 没有可核对的启动操作"))
+    }
     fn dispatch_turn(&self, _request: &TurnDispatch) -> Result<()> {
         Err(devdesk_domain::err(
             "unsupported",
@@ -359,6 +371,7 @@ pub trait PullRequests: Send + Sync {
 #[derive(Clone, Copy)]
 pub enum WorkflowRuntimeWork {
     Conversations,
+    QueuedConversations,
     Controllers,
     ControllerCalls,
     PlatformTools,
@@ -392,6 +405,14 @@ pub trait EngineeringStore: Send + Sync {
     fn observe_query(&self, _stage: &'static str) -> Box<dyn QueryObservation> {
         Box::new(())
     }
+    /// Correlate native scheduling/processing stages without exposing tool arguments.
+    fn observe_native_call(
+        &self,
+        _call_id: &str,
+        stage: &'static str,
+    ) -> Box<dyn QueryObservation> {
+        self.observe_query(stage)
+    }
     /// Lookup through the same idempotency contract without creating a missing operation.
     fn replay(&self, id: &str, fingerprint: &str) -> Result<Option<Value>> {
         let mut missing = false;
@@ -406,6 +427,10 @@ pub trait EngineeringStore: Send + Sync {
         Ok(true)
     }
     fn workflow_runtime_pending(&self, _kind: WorkflowRuntimeWork) -> Result<bool> {
+        Ok(true)
+    }
+    /// Advisory lookup for one durable native call; authorization is checked by its executor.
+    fn native_platform_tool_prepared(&self, _id: &str) -> Result<bool> {
         Ok(true)
     }
     fn conversation_running_count(&self) -> Result<usize> {

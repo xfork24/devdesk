@@ -113,7 +113,7 @@ Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_pe
 实际执行链另有三种显式入口，不使用暂停的业务 Feature：
 
 - `DEVDESK_WORKFLOW_LIVE_OUTPUT=/新的证据目录 cargo test --release -p devdesk-host actual_git_docker_workflow_handoffs -- --ignored --nocapture`：真实 Host 调度、SQLite、Git、Artifact、6 次 Docker Node 测试。初始化场景用实际本地 Git 回执登记工作空间，生产推进使用正常 Rust driver；不模拟 Docker/工具/接纳，不调用模型或 GitHub。
-- `python3 tests/performance/workflow_runtime.py --binary /冻结的/devdesk-host --codex-auth-source /专用认证源/auth.json --output /新的证据目录`：实际 Codex 经理与 Agent 完成独立流程，输出原生收包到写入及耐久登记时间线。需开启对应源码测点；认证只用于显式真实模型验收，退出删除临时副本。样本不足不视为 SLA/100 前端通过。
-- `python3 tests/live/probe_native_shutdown.py --binary /冻结的/devdesk-host --codex-auth-source /专用认证源/auth.json --output /新的证据目录`：实际经理原生请求时发送 SIGTERM，验证 Host 清理、旧 writer 撤权、重启不重发原输入，随后由后继经理自主完成独立技术流程。它不是业务 Feature 的恢复入口。
+- `python3 tests/performance/workflow_runtime.py --binary /冻结的/devdesk-host --codex-auth-source /专用认证源/auth.json --output /新的证据目录`：实际 Codex 经理与 Agent 完成独立流程，输出原生收包到写入、经理/Agent 耐久登记、逐调用 native_phase 及启动时间线。需开启对应源码测点；认证只用于显式真实模型验收，退出删除临时副本。样本不足不视为 SLA/100 前端通过。
+- `python3 tests/live/probe_native_shutdown.py --binary /冻结的/devdesk-host --codex-auth-source /专用认证源/auth.json --output /新的证据目录`：实际经理原生请求时发送 SIGTERM，验证 Host 清理、旧 writer 撤权、重启不重发原输入，随后由后继经理自主完成独立技术流程。加 `--during-startup` 在实际容器运行、首条输入尚未消费时停机，另核对 consumed=0。它不是业务 Feature 的恢复入口。
 
 `python3 tests/entrypoints/host_launcher.py` 在 macOS 以一次性 worker 验证独立进程组、SIGTERM/SIGHUP 转发、退出日志和子进程清理；其他系统显式跳过。签名验证在此测试中替换，实际子进程和信号使用生产启动器。

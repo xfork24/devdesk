@@ -42,7 +42,19 @@ pub fn permission_contract(s: &EngineeringState, target: &PermissionTargetRef) -
     }
 }
 
-fn permission_semantics_digest(provider: HarnessProvider) -> String {
+fn permission_semantics_digest(provider: HarnessProvider) -> &'static str {
+    // Only the expected contract compiled into this binary is shared. Source
+    // revisions, bindings, scopes and live assets are still checked on each use.
+    static CODEX: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static DSH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    match provider {
+        HarnessProvider::Codex => &CODEX,
+        HarnessProvider::Dsh => &DSH,
+    }
+    .get_or_init(|| compute_permission_semantics_digest(provider))
+}
+
+fn compute_permission_semantics_digest(provider: HarnessProvider) -> String {
     let mut supported = json!(permissions::capabilities(provider));
     supported.as_object_mut().unwrap().remove("version");
     supported.as_object_mut().unwrap().remove("recipe_digest");
@@ -521,5 +533,27 @@ impl GlobalStore {
             devdesk_core::register_template_members(s, template_catalog_generation(s));
             Ok(result)
         })
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn shared_embedded_contract_matches_each_provider_without_sharing_policy() {
+        for provider in [HarnessProvider::Codex, HarnessProvider::Dsh] {
+            assert_eq!(
+                permission_semantics_digest(provider),
+                compute_permission_semantics_digest(provider)
+            );
+        }
+        assert_ne!(
+            permission_semantics_digest(HarnessProvider::Codex),
+            permission_semantics_digest(HarnessProvider::Dsh)
+        );
+        let mut caller_assets = permissions::asset_digests();
+        caller_assets.clear();
+        assert!(!permissions::asset_digests().is_empty());
     }
 }

@@ -45,6 +45,37 @@ pub fn observe(stage: &'static str) -> Box<dyn devdesk_core::ports::QueryObserva
         Box::new(())
     }
 }
+struct NativePhase {
+    call_id: String,
+    stage: &'static str,
+    started: Instant,
+    aggregate: Span,
+}
+impl devdesk_core::ports::QueryObservation for NativePhase {}
+pub(crate) fn observe_native(
+    call_id: &str,
+    stage: &'static str,
+) -> Box<dyn devdesk_core::ports::QueryObservation> {
+    if CURRENT.with(|current| current.borrow().is_some()) {
+        Box::new(NativePhase {
+            call_id: call_id.into(),
+            stage,
+            started: Instant::now(),
+            aggregate: Span::new(stage),
+        })
+    } else {
+        Box::new(())
+    }
+}
+impl Drop for NativePhase {
+    fn drop(&mut self) {
+        let _ = &self.aggregate;
+        eprintln!(
+            "{}",
+            json!({"type":"native_phase","call_id":self.call_id,"phase":self.stage,"elapsed_ms":self.started.elapsed().as_secs_f64()*1000.0})
+        );
+    }
+}
 impl Span {
     pub fn new(name: &'static str) -> Self {
         let active = CURRENT.with(|current| current.borrow().is_some());

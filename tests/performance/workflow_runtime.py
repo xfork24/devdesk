@@ -28,11 +28,17 @@ def summarize(values):
 
 def read_timings(directory):
     events = []
+    phases = []
+    startups = []
     for line in (directory / "host.log").read_text().splitlines():
         if line.startswith("{"):
             item = json.loads(line)
             if item.get("type") == "native_protocol":
                 events.append(item)
+            elif item.get("type") == "native_phase":
+                phases.append(item)
+            elif item.get("type") == "native_startup":
+                startups.append(item)
     requests = {(e["operation_id"], e.get("sequence", e["request_key"])): e for e in events
                 if e["phase"] == "request_observed"}
     replies = {(e["operation_id"], e.get("sequence", e["request_key"])): e for e in events
@@ -52,6 +58,7 @@ def read_timings(directory):
     transport = [{**reply, "method": methods.get((reply["operation_id"], reply["request_key"]), "unknown")}
                  for key, reply in replies.items()]
     durable = []
+    agent_durable = []
     actions = []
     for database in (directory / "data/projects").glob("*/engineering.sqlite3"):
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
@@ -64,6 +71,23 @@ def read_timings(directory):
                                 "registered_at_ms": created, "result_record_at_ms": data.get('finished_at'),
                                 "registered_to_result_ms": data.get("finished_at", created) - created,
                                 "registered_to_reply_record_ms": row[0] - created if row else None})
+            sources={}
+            for body, created in db.execute("SELECT data,created_at FROM governance_records WHERE type='agent_platform_request'"):
+                request=json.loads(body)['request']
+                sources[request['execution_id']]=created
+            for call_id, body, created in db.execute("SELECT id,data,created_at FROM governance_records WHERE type='platform_call'"):
+                data=json.loads(body)
+                caller=data['request'].get('caller')
+                if not caller:
+                    continue
+                row=db.execute("SELECT created_at FROM governance_records WHERE type='platform_tool_reply' AND definition_id=?",(call_id,)).fetchone()
+                registered=sources[call_id]
+                key=hashlib.sha256(json.dumps(caller['request_id'],ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+                agent_durable.append({'call_id':call_id,'method':data['request']['definition']['qualified_name'],'status':data['status'],
+                    'operation_id':caller['operation_id'],'request_key':key,'registered_at_ms':registered,'result_record_at_ms':data.get('finished'),
+                    'registered_to_enqueue_ms':created-registered,'enqueue_to_result_record_ms':data.get('finished',created)-created,
+                    'registered_to_result_ms':data.get('finished',registered)-registered,
+                    'registered_to_reply_record_ms':row[0]-registered if row else None})
             active = db.execute("SELECT count(*) FROM turns WHERE status IN ('queued','dispatching','running','waiting_interaction','needs_reconciliation')").fetchone()[0]
             writers = db.execute("SELECT count(*) FROM executions WHERE writer_revoked=0").fetchone()[0]
             assert active == writers == 0, (active, writers)
@@ -73,9 +97,9 @@ def read_timings(directory):
                     actions.append({'operation':decision['operation'],'actor':decision['actor']['kind']})
     assert actions and all(item['actor']=='controller' for item in actions), 'Business advancement bypassed the actual manager'
     assert requests and requests.keys() == replies.keys(), "Missing actual protocol reply-write boundaries"
-    assert all(item["status"] == "succeeded" for item in durable), "Native call failures are preserved"
+    assert all(item["status"] == "succeeded" for item in durable+agent_durable), "Native call failures are preserved"
     for sample in transport:
-        matches = [item for item in durable if item['operation_id'] == sample['operation_id']
+        matches = [item for item in durable+agent_durable if item['operation_id'] == sample['operation_id']
                    and item['request_key'] == sample['request_key']
                    and item['registered_at_ms'] >= sample['observed_at_ms']
                    and item['registered_at_ms'] <= sample['observed_at_ms'] + sample['roundtrip_ms'] + 1]
@@ -84,7 +108,12 @@ def read_timings(directory):
             sample['observed_to_registered_ms'] = item['registered_at_ms'] - sample['observed_at_ms']
             sample['registered_to_result_record_ms'] = item['registered_to_result_ms']
             sample['result_record_to_written_ms'] = sample['roundtrip_ms'] - (item['result_record_at_ms'] - sample['observed_at_ms'])
-    return {"transport": transport, "durable": durable, "business_actions":actions,
+            sample['call_id']=item['call_id']
+            sample['phases']=[phase for phase in phases if phase['call_id']==item['call_id']]
+            if 'registered_to_enqueue_ms' in item:
+                sample['registered_to_enqueue_ms']=item['registered_to_enqueue_ms']
+                sample['enqueue_to_result_record_ms']=item['enqueue_to_result_record_ms']
+    return {"transport": transport, "durable": durable, "agent_durable":agent_durable, "business_actions":actions, "startups":startups,
             "transport_summary": summarize([x["roundtrip_ms"] for x in transport]),
             "durable_summary": summarize([x["registered_to_reply_record_ms"] for x in durable]),
             "correlation_boundary": "registration/result timestamps are wall-clock fields before commit; transport total uses a monotonic clock; correlated segments have millisecond rounding and are not exact SQL commit spans",

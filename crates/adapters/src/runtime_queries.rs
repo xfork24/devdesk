@@ -8,6 +8,10 @@ pub(super) fn running(conn: &Connection) -> Result<usize> {
         AND EXISTS(SELECT 1 FROM executions e WHERE e.session_id=t.session_id AND e.writer_revoked=0)",
         [], |row| row.get(0)).map_err(storage)
 }
+pub(super) fn native_prepared(conn: &Connection, id: &str) -> Result<bool> {
+    let _span = performance::Span::new("runtime.pending_read");
+    conn.query_row("SELECT EXISTS(SELECT 1 FROM governance_records WHERE id=?1 AND type='platform_call' AND json_extract(data,'$.status')='prepared' AND json_type(data,'$.request.caller')='object')",[id],|row|row.get(0)).map_err(storage)
+}
 
 pub(super) fn pending(conn: &Connection, kind: ports::WorkflowRuntimeWork) -> Result<bool> {
     let _span = performance::Span::new("runtime.pending_read");
@@ -16,6 +20,7 @@ pub(super) fn pending(conn: &Connection, kind: ports::WorkflowRuntimeWork) -> Re
             WHERE t.status IN ('queued','dispatching','running','waiting_interaction')
             OR (t.status='needs_reconciliation' AND (t.cancel_requested=1
               OR EXISTS(SELECT 1 FROM executions e WHERE e.session_id=t.session_id AND e.writer_revoked=0))))",
+        ports::WorkflowRuntimeWork::QueuedConversations => "SELECT EXISTS(SELECT 1 FROM turns WHERE status='queued')",
         ports::WorkflowRuntimeWork::WorkflowIntents => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared')",
         ports::WorkflowRuntimeWork::Controllers => "SELECT EXISTS(SELECT 1 FROM governance_records
             WHERE type='workflow_controller' AND json_extract(data,'$.status')='active')",
@@ -62,6 +67,41 @@ mod tests {
             rusqlite::params![id, kind, parent, data.to_string()],
         )
         .unwrap();
+    }
+    #[test]
+    fn native_ready_hint_distinguishes_prepared_callers_from_workflow_tools_and_replays() {
+        let conn = database();
+        record(
+            &conn,
+            "native",
+            "platform_call",
+            "step",
+            json!({"status":"prepared","request":{"caller":{"request_id":7}}}),
+        );
+        record(
+            &conn,
+            "workflow",
+            "platform_call",
+            "step",
+            json!({"status":"prepared","request":{"caller":null}}),
+        );
+        record(
+            &conn,
+            "done",
+            "platform_call",
+            "step",
+            json!({"status":"succeeded","request":{"caller":{"request_id":8}}}),
+        );
+        assert!(native_prepared(&conn, "native").unwrap());
+        for id in ["workflow", "done", "missing"] {
+            assert!(!native_prepared(&conn, id).unwrap());
+        }
+        conn.execute(
+            "UPDATE governance_records SET data=?1 WHERE id='native'",
+            [json!({"status":"running","request":{"caller":{"request_id":7}}}).to_string()],
+        )
+        .unwrap();
+        assert!(!native_prepared(&conn, "native").unwrap());
     }
     #[test]
     fn count_preserves_unknown_writer_slots_without_multiplying_execution_joins() {

@@ -1064,6 +1064,17 @@ impl Engine {
         Ok(receipt)
     }
     pub fn drive_platform_tools(&self) -> Result<()> {
+        self.drive_platform_tools_inner(None)
+    }
+    /// Drain the platform-local call just admitted by the Host, after its durable
+    /// intent receipt. Git/Docker/network work stays in the normal scheduler.
+    pub fn drive_ready_native_platform_tool(&self, id: &str) -> Result<()> {
+        if !self.store.native_platform_tool_prepared(id)? {
+            return Ok(());
+        }
+        self.drive_platform_tools_inner(Some(id))
+    }
+    fn drive_platform_tools_inner(&self, ready: Option<&str>) -> Result<()> {
         let _span = self.store.observe_query("runtime.platform_tools");
         if !self
             .store
@@ -1072,20 +1083,35 @@ impl Engine {
             return Ok(());
         }
         let mut snapshot = self.store.snapshot()?;
-        if snapshot
-            .governance
-            .iter()
-            .any(|r| r.r#type == "agent_context_call" && r.data["reply_sent"] != true)
+        if ready.is_none()
+            && snapshot
+                .governance
+                .iter()
+                .any(|r| r.r#type == "agent_context_call" && r.data["reply_sent"] != true)
         {
             self.drive_agent_context_calls(&snapshot)?;
             snapshot = self.store.snapshot()?;
         }
         for row in snapshot.governance.iter().filter(|r| {
             r.r#type == "platform_call"
+                && ready.is_none_or(|id| r.id == id)
                 && ["prepared", "running"].contains(&r.data["status"].as_str().unwrap_or(""))
         }) {
             let request: PlatformToolRequest = serde_json::from_value(row.data["request"].clone())
                 .map_err(|e| err("storage", e.to_string()))?;
+            if ready.is_some()
+                && (request.caller.is_none()
+                    || row.data["status"] != "prepared"
+                    || !matches!(
+                        request.definition.qualified_name.as_str(),
+                        "materials.capture" | "spec.lint" | "workflow.outputs.read"
+                    ))
+            {
+                continue;
+            }
+            let _call = self
+                .store
+                .observe_native_call(&row.id, "native.platform.total");
             let instance = snapshot.configuration(&request.instance_id)?;
             if snapshot.workflow_instance_suspended(&request.instance_id)
                 && row.data["status"] == "prepared"
@@ -1115,6 +1141,9 @@ impl Engine {
                     "平台工具已停止；取消不会撤销已完成的外部副作用",
                 ))
             } else {
+                let _span = self
+                    .store
+                    .observe_native_call(&row.id, "native.platform.execute");
                 self.poll_platform_tool(&snapshot, &request)
             };
             // Waiting for an external result is an observation, not a new fact.
@@ -1125,6 +1154,9 @@ impl Engine {
             {
                 continue;
             }
+            let _commit = self
+                .store
+                .observe_native_call(&row.id, "native.platform.result_commit");
             let persisted = self.store.transact(None, &mut |state| {
                 let mut data = row.data.clone();
                 match &result {
@@ -1251,6 +1283,7 @@ impl Engine {
                 );
                 Ok(Value::Null)
             });
+            drop(_commit);
             if let Err(error) = persisted {
                 self.store.transact(None, &mut |state| {
                     let call = state
@@ -1283,14 +1316,24 @@ impl Engine {
             return Ok(());
         }
         let snapshot = self.store.snapshot()?;
-        for source in snapshot
+        let replied: std::collections::BTreeSet<_> = snapshot
             .governance
             .iter()
-            .filter(|record| record.r#type == "agent_platform_request")
-        {
+            .filter(|r| r.r#type == "platform_tool_reply")
+            .map(|r| r.definition_id.as_str())
+            .collect();
+        for source in snapshot.governance.iter().filter(|record| {
+            record.r#type == "agent_platform_request"
+                && !record.data["request"]["execution_id"]
+                    .as_str()
+                    .is_some_and(|id| replied.contains(id))
+        }) {
             let request: PlatformToolRequest =
                 serde_json::from_value(source.data["request"].clone())
                     .map_err(|error| err("storage", error.to_string()))?;
+            let _span = self
+                .store
+                .observe_native_call(&request.execution_id, "native.platform.reply");
             let Some(caller) = &request.caller else {
                 continue;
             };
@@ -1310,10 +1353,7 @@ impl Engine {
                 continue;
             }
             let Some(result) = result else { continue };
-            if snapshot.governance.iter().any(|record| {
-                record.r#type == "platform_tool_reply"
-                    && record.definition_id == request.execution_id
-            }) || !["succeeded", "failed", "cancelled", "needs_reconciliation"]
+            if !["succeeded", "failed", "cancelled", "needs_reconciliation"]
                 .contains(&result.data["status"].as_str().unwrap_or(""))
             {
                 continue;

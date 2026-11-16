@@ -557,6 +557,44 @@ fn non_manager_agents_cannot_open_project_management_controllers() {
 }
 
 #[test]
+fn native_manager_reads_do_not_wait_for_the_configuration_write_gate() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, h, project) = setup(dir.path());
+    h.actions.lock().unwrap().extend([
+        (
+            "configuration.read".into(),
+            json!({"id":"builtin-role-project-manager:1","pointer":"/data"}),
+        ),
+        ("project.overview".into(), json!({})),
+    ]);
+    let manager = cmd(&e, "manager.open", Some(&project), json!({}));
+    cmd(
+        &e,
+        "orchestration.input",
+        manager["id"].as_str(),
+        json!({"input":"Read-only context probe"}),
+    );
+    let gate = e.manager_services.as_ref().unwrap().gate.clone();
+    let held = gate.lock().unwrap();
+    std::thread::scope(|scope| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let engine = &e;
+        scope.spawn(move || {
+            drive(engine, 12);
+            tx.send(()).unwrap();
+        });
+        let completed = rx.recv_timeout(std::time::Duration::from_secs(10));
+        drop(held);
+        assert!(
+            completed.is_ok(),
+            "read-only native calls waited on the configuration write gate"
+        );
+    });
+    assert_eq!(h.replies.lock().unwrap().len(), 2);
+    assert!(h.replies.lock().unwrap().iter().all(|r| r.success));
+}
+
+#[test]
 fn project_records_are_paginated_chunked_and_cross_project_queries_are_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let (e, _, project) = setup(dir.path());

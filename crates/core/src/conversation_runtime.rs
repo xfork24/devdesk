@@ -119,6 +119,18 @@ impl Engine {
                 continue;
             }
             let work = (|| -> Result<()> {
+                if turn.status == TurnStatus::Dispatching
+                    && let Some(execution) = state.executions.iter().find(|e| {
+                        e.session_id == session.id
+                            && e.status == Status::Prepared
+                            && !e.writer_revoked
+                    })
+                {
+                    if let Some(receipt) = self.harness.poll_session_start(session, execution)? {
+                        self.accept_session_runtime(&state, session, turn, execution, receipt)?;
+                    }
+                    return Ok(());
+                }
                 for interaction in state
                     .interactions
                     .iter()
@@ -191,8 +203,20 @@ impl Engine {
                 }
             }
         }
-        let snapshot = self.store.snapshot()?;
+        // Polling a running worker does not imply there is a new input to admit.
+        // Recheck the durable queue, then restore admission dependencies only if needed.
+        if limit == 0
+            || !self
+                .store
+                .workflow_runtime_pending(ports::WorkflowRuntimeWork::QueuedConversations)?
+        {
+            return Ok(());
+        }
         let occupied = self.conversation_running()?;
+        if occupied >= limit {
+            return Ok(());
+        }
+        let snapshot = self.store.snapshot()?;
         let project_limit = snapshot
             .projects
             .first()
@@ -284,147 +308,7 @@ impl Engine {
                     .lifecycle = Some(SessionLifecycle::Active);
                 Ok(json!({"ok":true}))
             })?;
-            let result = (|| -> Result<()> {
-                let request = SessionStart {
-                    specifications: snapshot
-                        .resolve_agent(&session.agent)?
-                        .spec_refs
-                        .iter()
-                        .map(|reference| snapshot.configuration(reference).cloned())
-                        .collect::<Result<Vec<_>>>()?,
-                    configured_task: self.configured_task(&snapshot, &turn.id)?,
-                    code_view: turn.code_view.clone(),
-                    session: session.clone(),
-                    agent: snapshot
-                        .definitions
-                        .iter()
-                        .find(|d| d.id == session.agent)
-                        .cloned()
-                        .ok_or_else(|| err("blocked", "缺少 Agent 修订"))?,
-                    skills: snapshot
-                        .definitions
-                        .iter()
-                        .filter(|d| {
-                            snapshot
-                                .definitions
-                                .iter()
-                                .find(|a| a.id == session.agent)
-                                .and_then(|a| a.agent_profile.as_ref())
-                                .is_some_and(|a| a.skill_revisions.contains(&d.id))
-                        })
-                        .cloned()
-                        .collect(),
-                    execution: execution.clone(),
-                    project_root: self.store.root(),
-                    snapshot: turn
-                        .input_snapshot
-                        .as_ref()
-                        .or(session.snapshot_id.as_ref())
-                        .and_then(|id| snapshot.snapshots.iter().find(|v| &v.id == id))
-                        .cloned(),
-                    documents: snapshot
-                        .documents
-                        .iter()
-                        .filter(|d| {
-                            turn.input_snapshot.as_ref().is_none_or(|id| {
-                                snapshot
-                                    .snapshots
-                                    .iter()
-                                    .find(|snap| &snap.id == id)
-                                    .is_some_and(|snap| snap.documents.contains(&d.id))
-                            })
-                        })
-                        .filter(|d| match session.scope.unwrap() {
-                            SessionScope::Global => {
-                                d.project_id.is_none()
-                                    && d.feature_id.is_none()
-                                    && d.task_id.is_none()
-                            }
-                            SessionScope::Project => d.project_id == session.project_id,
-                            SessionScope::Feature | SessionScope::Task => snapshot
-                                .document_in_feature(d, session.feature_id.as_deref().unwrap()),
-                        })
-                        .cloned()
-                        .collect(),
-                    reconciliation_turn: None,
-                };
-                let receipt = self.harness.open_session(&request)?;
-                self.store.transact(None, &mut |s| {
-                    let row = s.sessions.iter_mut().find(|s| s.id == session.id).unwrap();
-                    require(
-                        row.external_session
-                            .as_ref()
-                            .is_none_or(|id| id == &receipt.external_session),
-                        "原生 Session 身份漂移",
-                    )?;
-                    row.external_session = Some(receipt.external_session.clone());
-                    row.revision += 1;
-                    let e = s
-                        .executions
-                        .iter_mut()
-                        .find(|e| e.id == execution.id)
-                        .unwrap();
-                    require(
-                        e.operation_id == receipt.operation_id
-                            && e.image_digest == receipt.image_digest,
-                        "执行回执身份不符",
-                    )?;
-                    e.container_id = Some(receipt.container_id.clone());
-                    e.status = Status::Running;
-                    Ok(json!({"ok":true}))
-                })?;
-                let current = self.store.snapshot()?;
-                let t = current.turns.iter().find(|t| t.id == turn.id).unwrap();
-                if t.cancel_requested {
-                    return self.finish_conversation(
-                        &session,
-                        &t.id,
-                        TurnStatus::Cancelled,
-                        "cancelled_before_dispatch",
-                        true,
-                    );
-                }
-                let updated = current
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == session.id)
-                    .unwrap();
-                let specifications = turn
-                    .input_snapshot
-                    .as_ref()
-                    .and_then(|id| snapshot.snapshots.iter().find(|s| &s.id == id))
-                    .map(|s| serde_json::from_str::<Value>(&s.content))
-                    .transpose()
-                    .map_err(|e| err("invalid_configuration", e.to_string()))?
-                    .and_then(|v| v.get("specifications").cloned())
-                    .unwrap_or(json!([]));
-                let specifications = serde_json::from_value(specifications)
-                    .map_err(|e| err("invalid_configuration", e.to_string()))?;
-                self.harness.dispatch_turn(&TurnDispatch {
-                    context_references: current
-                        .governance
-                        .iter()
-                        .find(|r| r.r#type == "conversation_context" && r.definition_id == turn.id)
-                        .and_then(|r| r.data["experience_refs"].as_array())
-                        .cloned()
-                        .unwrap_or_default(),
-                    configured_task: self.configured_task(&snapshot, &turn.id)?,
-                    specifications,
-                    session: {
-                        let mut effective = updated.clone();
-                        effective.runtime_binding = Some(current.turn_runtime_binding(t)?);
-                        effective
-                    },
-                    turn: t.clone(),
-                })?;
-                self.store.transact(None, &mut |s| {
-                    let t = s.turns.iter_mut().find(|t| t.id == turn.id).unwrap();
-                    t.status = TurnStatus::Running;
-                    t.revision += 1;
-                    Ok(json!({"ok":true}))
-                })?;
-                Ok(())
-            })();
+            let result = self.begin_conversation_runtime(&snapshot, &session, turn, &execution);
             if let Err(error) = result {
                 if error.execution_failure.is_some_and(|f| {
                     f.kind == ExecutionFailureKind::Technical
@@ -443,6 +327,178 @@ impl Engine {
                 self.record_conversation_failure(&session, &turn.id, &error)?;
             }
         }
+        Ok(())
+    }
+    fn begin_conversation_runtime(
+        &self,
+        snapshot: &EngineeringState,
+        session: &Session,
+        turn: &ConversationTurn,
+        execution: &RuntimeExecution,
+    ) -> Result<()> {
+        let request = SessionStart {
+            specifications: snapshot
+                .resolve_agent(&session.agent)?
+                .spec_refs
+                .iter()
+                .map(|reference| snapshot.configuration(reference).cloned())
+                .collect::<Result<Vec<_>>>()?,
+            configured_task: self.configured_task(snapshot, &turn.id)?,
+            code_view: turn.code_view.clone(),
+            session: session.clone(),
+            agent: snapshot
+                .definitions
+                .iter()
+                .find(|d| d.id == session.agent)
+                .cloned()
+                .ok_or_else(|| err("blocked", "缺少 Agent 修订"))?,
+            skills: snapshot
+                .definitions
+                .iter()
+                .filter(|d| {
+                    snapshot
+                        .definitions
+                        .iter()
+                        .find(|a| a.id == session.agent)
+                        .and_then(|a| a.agent_profile.as_ref())
+                        .is_some_and(|a| a.skill_revisions.contains(&d.id))
+                })
+                .cloned()
+                .collect(),
+            execution: execution.clone(),
+            project_root: self.store.root(),
+            snapshot: turn
+                .input_snapshot
+                .as_ref()
+                .or(session.snapshot_id.as_ref())
+                .and_then(|id| snapshot.snapshots.iter().find(|v| &v.id == id))
+                .cloned(),
+            documents: snapshot
+                .documents
+                .iter()
+                .filter(|d| {
+                    turn.input_snapshot.as_ref().is_none_or(|id| {
+                        snapshot
+                            .snapshots
+                            .iter()
+                            .find(|snap| &snap.id == id)
+                            .is_some_and(|snap| snap.documents.contains(&d.id))
+                    })
+                })
+                .filter(|d| match session.scope.unwrap() {
+                    SessionScope::Global => {
+                        d.project_id.is_none() && d.feature_id.is_none() && d.task_id.is_none()
+                    }
+                    SessionScope::Project => d.project_id == session.project_id,
+                    SessionScope::Feature | SessionScope::Task => {
+                        snapshot.document_in_feature(d, session.feature_id.as_deref().unwrap())
+                    }
+                })
+                .cloned()
+                .collect(),
+            reconciliation_turn: None,
+        };
+        if let Some(receipt) = self.harness.begin_session(&request)? {
+            self.accept_session_runtime(snapshot, session, turn, execution, receipt)?;
+        }
+        Ok(())
+    }
+    fn accept_session_runtime(
+        &self,
+        snapshot: &EngineeringState,
+        session: &Session,
+        turn: &ConversationTurn,
+        execution: &RuntimeExecution,
+        receipt: ports::SessionReceipt,
+    ) -> Result<()> {
+        self.store.transact(None, &mut |s| {
+            let current = s
+                .turns
+                .iter()
+                .find(|t| t.id == turn.id)
+                .ok_or_else(|| err("not_found", "轮次不存在"))?;
+            require(
+                current.status == TurnStatus::Dispatching && !current.cancel_requested,
+                "轮次已停止或启动回执已接纳",
+            )?;
+            require(
+                s.executions.iter().any(|e| {
+                    e.id == execution.id && e.status == Status::Prepared && !e.writer_revoked
+                }),
+                "启动执行已失效",
+            )?;
+            let row = s.sessions.iter_mut().find(|s| s.id == session.id).unwrap();
+            require(
+                row.external_session
+                    .as_ref()
+                    .is_none_or(|id| id == &receipt.external_session),
+                "原生 Session 身份漂移",
+            )?;
+            row.external_session = Some(receipt.external_session.clone());
+            row.revision += 1;
+            let e = s
+                .executions
+                .iter_mut()
+                .find(|e| e.id == execution.id)
+                .unwrap();
+            require(
+                e.operation_id == receipt.operation_id && e.image_digest == receipt.image_digest,
+                "执行回执身份不符",
+            )?;
+            e.container_id = Some(receipt.container_id.clone());
+            e.status = Status::Running;
+            Ok(json!({"ok":true}))
+        })?;
+        let current = self.store.snapshot()?;
+        let t = current.turns.iter().find(|t| t.id == turn.id).unwrap();
+        if t.cancel_requested {
+            return self.finish_conversation(
+                session,
+                &t.id,
+                TurnStatus::Cancelled,
+                "cancelled_before_dispatch",
+                true,
+            );
+        }
+        let updated = current
+            .sessions
+            .iter()
+            .find(|s| s.id == session.id)
+            .unwrap();
+        let specifications = turn
+            .input_snapshot
+            .as_ref()
+            .and_then(|id| snapshot.snapshots.iter().find(|s| &s.id == id))
+            .map(|s| serde_json::from_str::<Value>(&s.content))
+            .transpose()
+            .map_err(|e| err("invalid_configuration", e.to_string()))?
+            .and_then(|v| v.get("specifications").cloned())
+            .unwrap_or(json!([]));
+        let specifications = serde_json::from_value(specifications)
+            .map_err(|e| err("invalid_configuration", e.to_string()))?;
+        self.harness.dispatch_turn(&TurnDispatch {
+            context_references: current
+                .governance
+                .iter()
+                .find(|r| r.r#type == "conversation_context" && r.definition_id == turn.id)
+                .and_then(|r| r.data["experience_refs"].as_array())
+                .cloned()
+                .unwrap_or_default(),
+            configured_task: self.configured_task(snapshot, &turn.id)?,
+            specifications,
+            session: {
+                let mut effective = updated.clone();
+                effective.runtime_binding = Some(current.turn_runtime_binding(t)?);
+                effective
+            },
+            turn: t.clone(),
+        })?;
+        self.store.transact(None, &mut |s| {
+            let t = s.turns.iter_mut().find(|t| t.id == turn.id).unwrap();
+            t.status = TurnStatus::Running;
+            t.revision += 1;
+            Ok(json!({"ok":true}))
+        })?;
         Ok(())
     }
     fn record_conversation_failure(

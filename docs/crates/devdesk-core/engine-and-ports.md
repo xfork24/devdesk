@@ -36,6 +36,8 @@
 
 此文件是 core 与外层的连接面。EngineeringStore 提供带重放键的事务、快照与项目根；ArtifactStore 提供封存和校验读取。Harness 提供会话打开、Turn 派发、观察、交互回答、工具回复、日志、停止和清理；观察类型把消费、终态和停止证据分开。
 
+Harness 的 begin_session 可返回尚未完成，poll_session_start 只查询已预约原 execution 的启动；真实适配器在后台创建并初始化，默认测试适配器可同步返回。核心先持久化额度占位和操作身份，接纳实际回执后才 dispatch_turn；丢失原任务、取消及未知效果不能靠再次 begin 重发恢复。EngineeringStore 的 workflow_runtime_pending/native_platform_tool_prepared 仅为调度提示，observe_native_call 仅为无参数阶段观测，均不授予业务执行权。
+
 Git 接收明确 GitContext、仓库操作及候选/目标，不使用全局 cwd；Tests 接收冻结 TestRequest，并异步 poll/stop/cleanup/reconcile；PullRequests 通过稳定请求查找或创建确切 PR。ToolExecutor 同时承担离线 Schema/参数校验和实际外部工具生命周期，校验调用不等于执行副作用。
 
 SessionResources 将安装准备、完整性/协议验证、权限编译、模型 profile 摘要和凭据引用提供给会话装配。ApplicationEnvironment 提供 ID/时间；ProjectInventory 提供可访问项目快照与资源事实；ConfigurationBackend 提供权限绑定的可行性准备。ExecutionAdapters 将可共享的原生执行端口打包。

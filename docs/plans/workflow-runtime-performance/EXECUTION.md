@@ -4,7 +4,7 @@
 
 ## 工作区与分工
 
-分支 `codex/workflow-runtime-performance`，工作区 `/Users/hengliu/.codex/worktrees/workflow-runtime-performance/devdesk`。main 起点 `026c05d`；基础整合提交 `d3ae7d4` 包含并发计划已提交至 `35bcaee` 的连接池/资源合同，保留 main 配置加载 W0–W7；`38ec1ff` 整合 main 至 `b75439d`。后续独立修复与真实执行证据见 [运行验收](LIVE.md)，以下组件对照仍按其原构建身份解释。
+分支 `codex/workflow-runtime-performance`，工作区 `/Users/hengliu/.codex/worktrees/workflow-runtime-performance/devdesk`。main 起点 `026c05d`；基础整合提交 `d3ae7d4` 包含并发计划已提交至 `35bcaee` 的连接池/资源合同，保留 main 配置加载 W0–W7；`38ec1ff` 整合 main 至 `b75439d`。后续独立修复与真实执行证据见 [运行验收](LIVE.md) 和 [611 ms 分解及第二轮优化](INDEPENDENT.md)，以下组件对照仍按其原构建身份解释。
 
 本次覆盖工作流执行路径的读取/复制、重复驱动、原生平台衔接、经理失败/取消与预算诊断、Docker/Host 故障边界。通用连接池/CAS、项目隔离、SSE、执行页和 100 前端容量属于并发计划，不在此重复建设。文件及接入边界见 [SCOPE.md](SCOPE.md)。对方后续提交仍须在其接口稳定时整合，不能将本次定向测试视为全部并发改造完成。
 

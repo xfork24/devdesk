@@ -45,6 +45,39 @@ fn native_reply_value(method: &str, call_id: &str, value: Value) -> Value {
     }
 }
 
+struct ControllerReply {
+    call: ConfigurationRecord,
+    session: Session,
+    active: bool,
+}
+fn controller_reply(
+    state: &EngineeringState,
+    call: &ConfigurationRecord,
+) -> Result<Option<ControllerReply>> {
+    if !matches!(call.data["status"].as_str(), Some("succeeded" | "failed"))
+        || state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "controller_tool_reply" && r.definition_id == call.id)
+    {
+        return Ok(None);
+    }
+    let session = state
+        .sessions
+        .iter()
+        .find(|s| s.id == call.data["session_id"])
+        .ok_or_else(|| err("storage", "编排会话缺失"))?;
+    Ok(Some(ControllerReply {
+        call: call.clone(),
+        session: session.clone(),
+        active: state.executions.iter().any(|e| {
+            e.session_id == session.id
+                && e.operation_id == call.data["worker_operation_id"]
+                && !e.writer_revoked
+        }),
+    }))
+}
+
 fn operation(method: &str) -> &str {
     match method {
         "workflow.events.read" | "workflow.outputs.read" | "workflow.execution.inspect" => {
@@ -914,17 +947,30 @@ impl Engine {
             return Ok(());
         }
         let snapshot = self.store.snapshot()?;
-        for call in snapshot
+        let replied: std::collections::BTreeSet<_> = snapshot
             .governance
             .iter()
-            .filter(|r| r.r#type == "controller_tool_call")
-        {
+            .filter(|r| r.r#type == "controller_tool_reply")
+            .map(|r| r.definition_id.as_str())
+            .collect();
+        for call in snapshot.governance.iter().filter(|r| {
+            r.r#type == "controller_tool_call"
+                && (r.data["status"] == "prepared"
+                    || (!replied.contains(r.id.as_str())
+                        && matches!(r.data["status"].as_str(), Some("succeeded" | "failed"))))
+        }) {
+            let _call_span = self
+                .store
+                .observe_native_call(&call.id, "native.call.total");
             let controller: WorkflowController =
                 snapshot.configuration(&call.definition_id)?.decode()?;
             if call.data["status"] == "prepared" {
                 let method = call.data["method"].as_str().unwrap_or("");
                 let args = call.data["arguments"].clone();
                 let result = (|| -> Result<Value> {
+                    let _span = self
+                        .store
+                        .observe_native_call(&call.id, "native.call.action");
                     // A Host can exit after committing the action and before recording
                     // its native result. Recover that exact receipt even after takeover;
                     // never relabel a committed action as not applied or re-execute it.
@@ -1081,6 +1127,10 @@ impl Engine {
                         Ok(result)
                     })
                 })();
+                let _commit = self
+                    .store
+                    .observe_native_call(&call.id, "native.call.result_commit");
+                let mut delivery = None;
                 self.store.transact(None, &mut |s| {
                     let row = s.governance.iter_mut().find(|r| r.id == call.id).unwrap();
                     let mut d = row.data.clone();
@@ -1097,12 +1147,18 @@ impl Engine {
                         }
                     }
                     update_record(row, d);
+                    // Derive this small delivery context from the same complete,
+                    // authoritative transaction that records the result. It is
+                    // usable only after commit succeeds, never as validator input.
+                    delivery = controller_reply(s, s.configuration(&call.id)?)?;
                     Ok(Value::Null)
                 })?;
+                drop(_commit);
                 // The durable result is authoritative before any native reply. Deliver it
                 // in this drive, rather than waiting behind the remaining scheduler stages.
-                let current = self.store.snapshot()?;
-                self.deliver_controller_call(&current, current.configuration(&call.id)?)?;
+                if let Some(delivery) = delivery {
+                    self.deliver_controller_reply(delivery)?;
+                }
                 continue;
             }
             self.deliver_controller_call(&snapshot, call)?;
@@ -1114,25 +1170,21 @@ impl Engine {
         snapshot: &EngineeringState,
         call: &ConfigurationRecord,
     ) -> Result<()> {
-        let _span = self.store.observe_query("runtime.controller_reply");
-        if !["succeeded", "failed"].contains(&call.data["status"].as_str().unwrap_or(""))
-            || snapshot
-                .governance
-                .iter()
-                .any(|r| r.r#type == "controller_tool_reply" && r.definition_id == call.id)
-        {
-            return Ok(());
+        if let Some(delivery) = controller_reply(snapshot, call)? {
+            self.deliver_controller_reply(delivery)?;
         }
-        let session = snapshot
-            .sessions
-            .iter()
-            .find(|s| s.id == call.data["session_id"])
-            .ok_or_else(|| err("storage", "编排会话缺失"))?;
-        let active = snapshot.executions.iter().any(|e| {
-            e.session_id == session.id
-                && e.operation_id == call.data["worker_operation_id"]
-                && !e.writer_revoked
-        });
+        Ok(())
+    }
+    fn deliver_controller_reply(&self, delivery: ControllerReply) -> Result<()> {
+        let ControllerReply {
+            call,
+            session,
+            active,
+        } = delivery;
+        let _span = self.store.observe_query("runtime.controller_reply");
+        let _delivery = self
+            .store
+            .observe_native_call(&call.id, "native.call.delivery");
         let success = call.data["status"] == "succeeded";
         let value = if success {
             call.data["receipt"].clone()
@@ -1162,7 +1214,7 @@ impl Engine {
         if !active
             || self
                 .harness
-                .answer_tool_call(session, &call.data["request_id"], &receipt)
+                .answer_tool_call(&session, &call.data["request_id"], &receipt)
                 .is_ok()
         {
             self.store.transact(None,&mut|s|{if !s.governance.iter().any(|r|r.r#type=="controller_tool_reply"&&r.definition_id==call.id){s.governance.push(record("controller_tool_reply",call.id.clone(),call.scope.clone(),"编排原生回复".into(),1,None,json!({"status":if active{"delivered"}else{"worker_unavailable"},"receipt":receipt}),true));}Ok(Value::Null)})?;

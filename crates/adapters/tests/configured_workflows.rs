@@ -3013,7 +3013,7 @@ impl ports::Harness for PlatformCallingAgent {
     }
 }
 
-fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) {
+fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool, ready: bool) {
     let directory = tempfile::tempdir().unwrap();
     let mut engine = engine(directory.path());
     let harness = Arc::new(PlatformCallingAgent::default());
@@ -3101,9 +3101,30 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
                 engine.execute(method, invocation)
             };
             engine.observe_workflow_intent(&intent.id, &result).unwrap();
-            result.unwrap();
+            let value = result.unwrap();
+            if ready && method == "workflow.tool.execute" {
+                assert!(harness.replies.lock().unwrap().is_empty());
+                engine
+                    .drive_ready_native_platform_tool(value["id"].as_str().unwrap())
+                    .unwrap();
+                assert_eq!(
+                    harness.replies.lock().unwrap().len(),
+                    1,
+                    "reply before the next platform scheduler stage"
+                );
+                engine
+                    .drive_ready_native_platform_tool(value["id"].as_str().unwrap())
+                    .unwrap();
+                assert_eq!(
+                    harness.replies.lock().unwrap().len(),
+                    1,
+                    "same durable call is not executed or replied twice"
+                );
+            }
         }
-        engine.drive_platform_tools().unwrap();
+        if !ready {
+            engine.drive_platform_tools().unwrap();
+        }
         engine.tick_conversations(4).unwrap();
     }
     assert_eq!(checked, !reject_schema);
@@ -3171,20 +3192,27 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
 
 #[test]
 fn agent_and_workflow_use_the_same_platform_handler_with_exact_native_call_identity() {
-    agent_platform_case(false, false, false);
+    agent_platform_case(false, false, false, false);
 }
 #[test]
 fn agent_platform_schema_rejection_returns_an_error_without_executing_the_handler() {
-    agent_platform_case(true, false, false);
+    agent_platform_case(true, false, false, false);
 }
 #[test]
 fn cancelling_an_agent_platform_call_prevents_dispatch_and_returns_the_cancelled_receipt() {
-    agent_platform_case(false, true, false);
+    agent_platform_case(false, true, false, false);
 }
 
 #[test]
 fn rejected_platform_receipt_fails_promptly_and_keeps_the_observed_evidence() {
-    agent_platform_case(false, false, true);
+    agent_platform_case(false, false, true, false);
+}
+
+#[test]
+fn a_ready_native_local_call_replies_before_the_next_scheduler_stage() {
+    agent_platform_case(false, false, false, true);
+    agent_platform_case(false, true, false, true);
+    agent_platform_case(false, false, true, true);
 }
 
 #[test]

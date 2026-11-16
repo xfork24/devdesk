@@ -606,6 +606,13 @@ impl EngineeringStore for SqliteStore {
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
     }
+    fn observe_native_call(
+        &self,
+        call_id: &str,
+        stage: &'static str,
+    ) -> Box<dyn ports::QueryObservation> {
+        performance::observe_native(call_id, stage)
+    }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
         store_changes::events_after(&*self.connection.read()?, cursor, limit)
     }
@@ -623,6 +630,9 @@ impl EngineeringStore for SqliteStore {
     }
     fn workflow_runtime_pending(&self, kind: ports::WorkflowRuntimeWork) -> Result<bool> {
         runtime_queries::pending(&*self.connection.read()?, kind)
+    }
+    fn native_platform_tool_prepared(&self, id: &str) -> Result<bool> {
+        runtime_queries::native_prepared(&*self.connection.read()?, id)
     }
     fn conversation_running_count(&self) -> Result<usize> {
         runtime_queries::running(&*self.connection.read()?)

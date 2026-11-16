@@ -132,25 +132,156 @@ fn record_kinds() -> &'static [&'static str] {
         "orchestration_wakeups",
     ]
 }
-fn rows(s: &EngineeringState, kind: &str, project: &str) -> Result<Vec<Value>> {
-    require(record_kinds().contains(&kind), "未知项目资料类型")?;
-    let value = serde_json::to_value(s).map_err(|e| err("serialization", e.to_string()))?;
-    let mut rows = value[kind].as_array().cloned().unwrap_or_default();
-    if kind == "governance" {
-        rows.retain(|r| {
-            serde_json::from_value::<ConfigurationRecord>(r.clone()).is_ok_and(|r| {
-                if r.is_definition() {
-                    configuration_visible(s, &r, Some(project))
-                } else {
-                    r.scope.visible_from(&Scope::project(project))
-                }
-            })
-        });
+// Select the requested family before encoding any data. In particular, an exact
+// configuration read must never serialize conversation history or frozen plans.
+macro_rules! with_rows {
+    ($s:expr, $kind:expr, $rows:ident => $body:expr) => {
+        match $kind {
+            "projects" => {
+                let $rows = &$s.projects;
+                $body
+            }
+            "features" => {
+                let $rows = &$s.features;
+                $body
+            }
+            "tasks" => {
+                let $rows = &$s.tasks;
+                $body
+            }
+            "documents" => {
+                let $rows = &$s.documents;
+                $body
+            }
+            "sessions" => {
+                let $rows = &$s.sessions;
+                $body
+            }
+            "contexts" => {
+                let $rows = &$s.contexts;
+                $body
+            }
+            "snapshots" => {
+                let $rows = &$s.snapshots;
+                $body
+            }
+            "heads" => {
+                let $rows = &$s.heads;
+                $body
+            }
+            "artifacts" => {
+                let $rows = &$s.artifacts;
+                $body
+            }
+            "events" => {
+                let $rows = &$s.events;
+                $body
+            }
+            "turns" => {
+                let $rows = &$s.turns;
+                $body
+            }
+            "conversation_events" => {
+                let $rows = &$s.conversation_events;
+                $body
+            }
+            "interactions" => {
+                let $rows = &$s.interactions;
+                $body
+            }
+            "proposals" => {
+                let $rows = &$s.proposals;
+                $body
+            }
+            "executions" => {
+                let $rows = &$s.executions;
+                $body
+            }
+            "repository_operations" => {
+                let $rows = &$s.repository_operations;
+                $body
+            }
+            "repository_worktrees" => {
+                let $rows = &$s.repository_worktrees;
+                $body
+            }
+            "governance" => {
+                let $rows = &$s.governance;
+                $body
+            }
+            "orchestration_leases" => {
+                let $rows = &$s.orchestration_leases;
+                $body
+            }
+            "orchestration_wakeups" => {
+                let $rows = &$s.orchestration_wakeups;
+                $body
+            }
+            _ => Err(err("invalid_params", "未知项目资料类型")),
+        }
+    };
+}
+fn visible(s: &EngineeringState, r: &ConfigurationRecord, project: &str) -> bool {
+    if r.is_definition() {
+        configuration_visible(s, r, Some(project))
+    } else {
+        r.scope.visible_from(&Scope::project(project))
     }
+}
+fn rows(s: &EngineeringState, kind: &str, project: &str) -> Result<Vec<Value>> {
+    let encode = |r| serde_json::to_value(r).map_err(|e| err("serialization", e.to_string()));
+    let mut rows = if kind == "governance" {
+        s.governance
+            .iter()
+            .filter(|r| visible(s, r, project))
+            .map(encode)
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        with_rows!(s,kind,items => items.iter().map(|r|serde_json::to_value(r).map_err(|e|err("serialization",e.to_string()))).collect::<Result<Vec<_>>>())?
+    };
     for row in &mut rows {
         sanitize(row);
     }
     Ok(rows)
+}
+fn row_count(s: &EngineeringState, kind: &str, project: &str) -> Result<usize> {
+    if kind == "governance" {
+        Ok(s.governance
+            .iter()
+            .filter(|r| visible(s, r, project))
+            .count())
+    } else {
+        with_rows!(s,kind,items => Ok(items.len()))
+    }
+}
+trait RowId {
+    fn matches(&self, wanted: &str) -> bool;
+}
+impl RowId for String {
+    fn matches(&self, wanted: &str) -> bool {
+        self == wanted
+    }
+}
+impl RowId for u64 {
+    fn matches(&self, wanted: &str) -> bool {
+        let current = self.to_string();
+        current == wanted
+    }
+}
+fn row(s: &EngineeringState, kind: &str, project: &str, id: &str) -> Result<Value> {
+    let record = if kind == "governance" {
+        s.governance
+            .iter()
+            .find(|r| r.id == id && visible(s, r, project))
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| err("serialization", e.to_string()))?
+    } else {
+        with_rows!(s,kind,items => items.iter().find(|r|r.id.matches(id)).map(serde_json::to_value).transpose().map_err(|e|err("serialization",e.to_string())))?
+    };
+    let mut record = record.ok_or_else(|| err("not_found", "项目记录不存在或不可见"))?;
+    sanitize(&mut record);
+    Ok(record)
 }
 fn summary(row: &Value) -> Value {
     json!({"id":row["id"],"type":row["type"],"name":row.get("name").or_else(||row.get("title")),"revision":row.get("revision").or_else(||row.get("version")),"status":row.get("status").or_else(||row["data"].get("status")),"content_hash":row["content_hash"],"value_digest":configuration_hash(row)})
@@ -170,7 +301,16 @@ impl Engine {
     }
     pub fn manager_knowledge(&self, method: &str, project: &str, p: &Value) -> Result<Value> {
         let s = self.store.snapshot()?;
-        self.manager_project(&s, project, p)?;
+        self.manager_knowledge_at(&s, method, project, p)
+    }
+    fn manager_knowledge_at(
+        &self,
+        s: &EngineeringState,
+        method: &str,
+        project: &str,
+        p: &Value,
+    ) -> Result<Value> {
+        self.manager_project(s, project, p)?;
         let actual = if method == "project.resources" {
             self.manager_services
                 .as_ref()
@@ -180,7 +320,7 @@ impl Engine {
         } else {
             json!({"available":false})
         };
-        read_project_knowledge(&s, self.artifacts.as_ref(), actual, method, project, p)
+        read_project_knowledge(s, self.artifacts.as_ref(), actual, method, project, p)
     }
 
     fn manager_live(
@@ -307,16 +447,38 @@ impl Engine {
         method: &str,
         p: &Value,
     ) -> Result<Value> {
+        let read_only = matches!(
+            method,
+            "spec.lint"
+                | "project.overview"
+                | "project.records.list"
+                | "project.record.read"
+                | "project.artifact.read"
+                | "project.resources"
+                | "configuration.catalog"
+                | "configuration.read"
+                | "configuration.usage"
+        );
+        let _waiting = self
+            .store
+            .observe_native_call(&call.id, "native.manager.gate_wait");
         let _gate = self
             .manager_services
             .as_ref()
+            .filter(|_| !read_only)
             .map(|v| {
                 v.gate
                     .lock()
                     .map_err(|_| err("storage", "配置写入锁不可用"))
             })
             .transpose()?;
-        let snapshot = self.store.snapshot()?;
+        drop(_waiting);
+        let snapshot = {
+            let _span = self
+                .store
+                .observe_native_call(&call.id, "native.manager.snapshot");
+            self.store.snapshot()?
+        };
         self.manager_project(&snapshot, &controller.project_id, p)?;
         let actor = WorkflowActor::Controller {
             controller_id: call.definition_id.clone(),
@@ -405,7 +567,10 @@ impl Engine {
             };
         }
         if !["configuration.change.preview", "configuration.change.apply"].contains(&method) {
-            return self.manager_knowledge(method, &controller.project_id, p);
+            let _span = self
+                .store
+                .observe_native_call(&call.id, "native.manager.read");
+            return self.manager_knowledge_at(&snapshot, method, &controller.project_id, p);
         }
         let change: ConfigurationChangeSet = serde_json::from_value(p["changeset"].clone())
             .map_err(|e| err("invalid_params", e.to_string()))?;
@@ -485,7 +650,7 @@ pub fn read_project_knowledge(
         "project.overview" => {
             let counts = record_kinds()
                 .iter()
-                .map(|kind| Ok((kind.to_string(), json!(rows(s, kind, project)?.len()))))
+                .map(|kind| Ok((kind.to_string(), json!(row_count(s, kind, project)?))))
                 .collect::<Result<serde_json::Map<String, Value>>>()?;
             Ok(
                 json!({"project":s.projects[0],"counts":counts,"record_kinds":record_kinds(),"overview_only":true,
@@ -531,17 +696,7 @@ pub fn read_project_knowledge(
                 p["kind"].as_str().unwrap_or("")
             };
             let id = text(p, "id")?;
-            let records = rows(s, kind, project)?;
-            let record = records
-                .iter()
-                .find(|r| {
-                    r["id"]
-                        .as_str()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| r["id"].to_string())
-                        == id
-                })
-                .ok_or_else(|| err("not_found", "项目记录不存在或不可见"))?;
+            let record = row(s, kind, project, &id)?;
             let pointer = p["pointer"].as_str().unwrap_or("");
             let value = record
                 .pointer(pointer)
@@ -576,5 +731,96 @@ pub fn read_project_knowledge(
             json!({"reference":text(p,"id")?,"users":configuration_usage(s,&text(p,"id")?)?,"identity_users":configuration_identity_usage(s,&text(p,"id")?)?}),
         ),
         _ => Err(err("method_not_found", "未知经理查询")),
+    }
+}
+
+#[cfg(test)]
+mod read_contract_tests {
+    use super::*;
+    #[test]
+    fn direct_records_preserve_family_shape_visibility_redaction_and_numeric_ids() {
+        let mut state = EngineeringState::default();
+        state.projects.push(Project {
+            id: "p".into(),
+            title: "project".into(),
+            workspace: String::new(),
+            workspace_definition: None,
+            execution_mode: "live".into(),
+            concurrency: 1,
+            revision: 1,
+        });
+        state.contexts.push(Context {
+            id: "history".into(),
+            owner_id: "p".into(),
+            content: "unrelated-history".repeat(10000),
+            revision: 1,
+        });
+        state.events.push(Event {
+            id: 7,
+            target: "p".into(),
+            kind: "test".into(),
+            detail: "event".into(),
+            time: 1,
+        });
+        for scope in [
+            Scope::project("p"),
+            Scope::project("other"),
+            Scope::global(),
+        ] {
+            state.governance.push(record("manager_note","note".into(),scope,"note".into(),1,None,json!({"public":"value","api_key":"private-canary","nested":{"authorization":"private-canary"}}),false));
+        }
+        let encoded = serde_json::to_value(&state).unwrap();
+        for kind in record_kinds() {
+            let mut expected = encoded[*kind].as_array().unwrap().clone();
+            if *kind == "governance" {
+                expected
+                    .retain(|r| visible(&state, &serde_json::from_value(r.clone()).unwrap(), "p"));
+            }
+            for r in &mut expected {
+                sanitize(r);
+            }
+            assert_eq!(rows(&state, kind, "p").unwrap(), expected, "{kind}");
+            assert_eq!(
+                row_count(&state, kind, "p").unwrap(),
+                expected.len(),
+                "{kind}"
+            );
+            for r in expected {
+                let id = r["id"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| r["id"].to_string());
+                assert_eq!(row(&state, kind, "p", &id).unwrap(), r, "{kind}: {id}");
+            }
+        }
+        let hidden = &state.governance[1].id;
+        assert!(row(&state, "governance", "p", hidden).is_err());
+        assert!(row(&state, "events", "p", "007").is_err());
+        let selected = row(&state, "governance", "p", &state.governance[0].id).unwrap();
+        assert!(!selected.to_string().contains("private-canary"));
+        assert!(row_count(&state, "unregistered", "p").is_err());
+    }
+    #[test]
+    fn record_chunks_keep_exact_redacted_digest_and_utf8_boundaries() {
+        let value = json!({"body":"示例😀".repeat(2000),"secret":"redacted-value"});
+        let mut body = String::new();
+        let mut offset = 0;
+        let mut digest = Value::Null;
+        loop {
+            let mut p = json!({"offset":offset,"max_bytes":1024});
+            if !digest.is_null() {
+                p["value_digest"] = digest.clone();
+            }
+            let page = chunk(&value, &p).unwrap();
+            digest = page["value_digest"].clone();
+            body.push_str(page["value_chunk"].as_str().unwrap());
+            if let Some(next) = page["next_offset"].as_u64() {
+                offset = next;
+            } else {
+                break;
+            }
+        }
+        assert_eq!(serde_json::from_str::<Value>(&body).unwrap(), value);
+        assert!(chunk(&value, &json!({"value_digest":"stale"})).is_err());
     }
 }
