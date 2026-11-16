@@ -90,14 +90,32 @@ impl Workspace {
         Ok(())
     }
     pub(crate) fn configuration_version(&self, engine: &Engine) -> Result<Value> {
-        let (global, clock, source_epochs) = self.configuration_bundle()?;
+        let global = self.global.catalog_revision()?;
+        let engines: Vec<_> = self
+            .opened
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .iter()
+            .filter(|(id, _)| id.as_str() != GLOBAL_DISCUSSION_NAMESPACE)
+            .map(|(id, engine)| (id.clone(), engine.clone()))
+            .collect();
+        let mut clocks = Vec::with_capacity(engines.len());
+        for (id, engine) in engines {
+            clocks.push((id, engine.store.catalog_revision()?));
+        }
+        let clock = configuration_hash(&clocks);
+        let source_epochs = json!(
+            clocks
+                .into_iter()
+                .collect::<std::collections::BTreeMap<_, _>>()
+        );
         let project = if engine.store.project_id().is_some() {
-            engine.store.configuration_snapshot()?.revision
+            engine.store.catalog_revision()?
         } else {
             0
         };
         Ok(
-            json!({"host":self.catalog_instance,"global":global.revision,"project":project,"project_sources":clock,"source_epochs":source_epochs}),
+            json!({"host":self.catalog_instance,"global":global,"project":project,"project_sources":clock,"source_epochs":source_epochs}),
         )
     }
     pub(super) fn project_directory(&self, params: &Value) -> Result<Value> {
@@ -117,13 +135,35 @@ impl Workspace {
                 .get(&summary.id)
                 .cloned();
             if let Some(engine) = engine {
-                let catalog = engine.store.configuration_snapshot()?;
-                if let Some(current) = catalog.state.projects.first() {
-                    *summary = current.clone();
-                }
+                *summary = engine.store.project_metadata()?;
             }
         }
         Ok(json!({"projects":projects,"total_projects":total}))
+    }
+    pub(super) fn execution_workspace(&self, params: &Value) -> Result<Value> {
+        let project = devdesk_core::read_models::identifier(params, "project_id")?;
+        let query = devdesk_core::read_models::ExecutionWorkspaceQuery::parse(params)?;
+        let engine = self.project_engine(Some(&project))?;
+        let mut result = json!(engine.store.execution_workspace(&query)?);
+        let directory = self.project_directory(params)?;
+        result["projects"] = directory["projects"].clone();
+        result["total_projects"] = directory["total_projects"].clone();
+        result["active_project_id"] = json!(project);
+        result["catalog_version"] = self.configuration_version(&engine)?;
+        let settings = devdesk_core::settings::read(self.global.as_ref())?;
+        result["global_concurrency"] = json!(settings.global_concurrency);
+        result["default_harness"] = json!(settings.default_harness);
+        result["settings_versions"] = json!(settings.versions);
+        result["data_root"] = json!(self.global.root());
+        result["execution_mode"] = result["active_project"]["execution_mode"].clone();
+        if serde_json::to_vec(&result)
+            .map_err(|e| err("storage", e.to_string()))?
+            .len()
+            > 128 * 1024
+        {
+            return Err(err("read_model_limit", "执行摘要超过预算，请缩小分页"));
+        }
+        Ok(result)
     }
     pub(super) fn ui_bootstrap(&self, params: &Value) -> Result<Value> {
         let _span = performance::Span::new("ui.bootstrap");

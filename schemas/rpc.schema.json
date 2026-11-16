@@ -6363,6 +6363,57 @@
         }
       },
       "additionalProperties": false
+    },
+    "ExecutionWorkspaceQuery": {
+      "type": "object",
+      "required": [
+        "project_id"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "feature_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "task_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "project_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "github_only": {
+          "type": "boolean"
+        },
+        "work_filter": {
+          "enum": [
+            "",
+            "tasks",
+            "running",
+            "waiting_confirmation",
+            "blocked"
+          ]
+        }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -6871,6 +6922,25 @@
         "required": [
           "params"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "query.execution_workspace"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "params"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/ExecutionWorkspaceQuery"
+          }
+        }
       }
     }
   ]

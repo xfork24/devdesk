@@ -272,8 +272,8 @@ function App() {
   const projectGeneration = useRef(0);
   const kernelStopped = useRef(false);
   const [detailPages, setDetailPages] = useState<Record<string, number>>({});
-  const [data, setData] = useState<Row>();
-  const configurationReadVersion = JSON.stringify(data?.catalog_version);
+  const [loadedData, setData] = useState<Row>();
+  const configurationReadVersion = JSON.stringify(loadedData?.catalog_version);
   // Refresh editor reads on a committed configuration change while retaining their draft/feedback state.
   const [caps, setCaps] = useState<Row>();
   const [projectId, setProjectId] = useState(route.get("project_id") || "");
@@ -370,6 +370,14 @@ function App() {
     route.get("detail") ||
       (route.get("tab") === "documents" ? "documents" : defaultExecutionTab),
   );
+  const summaryPage =
+    tab === "execution" && executionTab === "manager" && !!projectId;
+  // Summary DTOs are display-only. Hide them while navigating to a view that
+  // needs exact details; keep header metadata and editor lifetimes stable.
+  const data =
+    loadedData?.kind === "execution_workspace" && !summaryPage
+      ? undefined
+      : loadedData;
   const activeReadingTarget =
     readingTarget._project === projectId && readingTarget._feature === featureId
       ? readingTarget
@@ -508,18 +516,33 @@ function App() {
             ["projects", "workflows", "actors", "components"].includes(tab) ||
             (tab === "discussion" && !featureId && !taskFilter);
           const d = await rpc(
-            configurationPage ? "query.ui_bootstrap" : "query.workspace",
-            {
-              project_id: projectId || undefined,
-              feature_id: featureId || undefined,
-              offset: featurePage * 50,
-              project_offset: projectPage * 50,
-              github_only: true,
-              limit: 50,
-              detail_pages: detailPages,
-              work_filter: workFilter,
-              task_id: taskFilter || undefined,
-            },
+            summaryPage
+              ? "query.execution_workspace"
+              : configurationPage
+                ? "query.ui_bootstrap"
+                : "query.workspace",
+            summaryPage
+              ? {
+                  project_id: projectId,
+                  feature_id: featureId || undefined,
+                  offset: featurePage * 50,
+                  task_offset: (detailPages.tasks || 0) * 50,
+                  project_offset: projectPage * 50,
+                  github_only: true,
+                  limit: 50,
+                  work_filter: workFilter,
+                }
+              : {
+                  project_id: projectId || undefined,
+                  feature_id: featureId || undefined,
+                  offset: featurePage * 50,
+                  project_offset: projectPage * 50,
+                  github_only: true,
+                  limit: 50,
+                  detail_pages: detailPages,
+                  work_filter: workFilter,
+                  task_id: taskFilter || undefined,
+                },
           );
           if (generation !== requestGeneration.current) return;
           if (d.catalog_version)
@@ -572,6 +595,7 @@ function App() {
       workFilter,
       taskFilter,
       tab,
+      summaryPage,
     ],
   );
   refreshWorkspace.current = () => {
@@ -649,17 +673,17 @@ function App() {
   }, [projectId, caps?.setup_required]);
   const detail = data?.detail;
   const f = detail?.feature;
-  const projects: Row[] = (data?.projects || []).filter(
+  const projects: Row[] = (loadedData?.projects || []).filter(
     (p: Row) => p.workspace_definition?.repository,
   );
   const features: Row[] = data?.features || [];
   const definitions: Row[] = (data?.definitions || []).filter(
     (d: Row) => d.family !== "agent" || d.agent_profile,
   );
-  const project = data?.active_project?.workspace_definition?.repository
-    ? data.active_project
+  const project = loadedData?.active_project?.workspace_definition?.repository
+    ? loadedData.active_project
     : undefined;
-  const repositoryReady = data?.repository_ready === true;
+  const repositoryReady = loadedData?.repository_ready === true;
   const projectOptions =
     project && !projects.some((p) => p.id === project.id)
       ? [project, ...projects]
@@ -1108,7 +1132,7 @@ function App() {
           )}
           {project &&
             repositoryReady &&
-            !data?.configuration_ready &&
+            data?.configuration_ready === false &&
             tab !== "projects" && (
               <div className="notice">
                 项目待配置：已提供默认 Workflow、Role Agent
@@ -1295,7 +1319,7 @@ function App() {
                       (r: Row) =>
                         r.type === "workflow_instance" &&
                         r.data.parent_execution_id == null,
-                    )?.data.plan.document.stages || []
+                    )?.data.plan?.document?.stages || []
                   ).map((stage: Row) => (
                     <div className="journey-step" key={stage.key}>
                       <strong>{displayText(stage.name)}</strong>

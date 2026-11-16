@@ -6,20 +6,99 @@ import { RevisionSelect } from "./configuration-ui";
 import { type Request, type Row } from "./rpc-types";
 import { StandardDiff } from "./StandardManager";
 
-/** One consumer UI for every work kind; the Standard itself has no work owner. */
-export function WorkStandard({
-  request,
-  projectId,
-  owner,
-  instance,
-  refresh,
-}: {
+type WorkStandardProps = {
   request: Request;
   projectId: string;
   owner: Row;
   instance?: Row;
   refresh: () => Promise<void>;
-}) {
+};
+
+/** A folded work card does not read catalogs, configuration or history. */
+export function WorkStandard(props: WorkStandardProps) {
+  return (
+    <LazyWorkStandard key={`${props.projectId}:${props.owner.id}`} {...props} />
+  );
+}
+
+function LazyWorkStandard(props: WorkStandardProps) {
+  const [snapshot, setSnapshot] = useState<WorkStandardProps>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const details = useRef<HTMLDetailsElement>(null);
+  const lifetime = useRef(0);
+  useEffect(
+    () => () => {
+      lifetime.current++;
+    },
+    [],
+  );
+  async function open() {
+    if (snapshot || loading) return;
+    const epoch = lifetime.current;
+    const base = { ...props };
+    setLoading(true);
+    setError("");
+    try {
+      if (base.instance?.metadata_only) {
+        const value = await props.request("query.workflow_management_summary", {
+          project_id: props.projectId,
+          id: base.instance.id,
+        });
+        base.instance = value.record;
+      }
+      if (base.instance?.data.configuration_truncated) {
+        base.instance = (
+          await props.request("query.workflow_instance", {
+            project_id: props.projectId,
+            id: base.instance.id,
+          })
+        ).record;
+      }
+      if (epoch === lifetime.current) setSnapshot(base);
+    } catch (e) {
+      if (epoch === lifetime.current) setError(String(e));
+    } finally {
+      if (epoch === lifetime.current) setLoading(false);
+    }
+  }
+  return (
+    <details
+      className="work-standard"
+      ref={details}
+      onToggle={(event) => {
+        if (event.currentTarget.open) void open();
+      }}
+    >
+      <summary>
+        采用的规范 · {props.instance?.data.plan?.standard_name || "展开查看"}
+      </summary>
+      {loading ? <p role="status">正在读取执行配置…</p> : null}
+      {error ? <p role="alert">{error}</p> : null}
+      {snapshot ? (
+        <WorkStandardEditor
+          {...snapshot}
+          refresh={async () => {
+            await props.refresh();
+            // A successful edit ends this baseline. Reopening captures new versions;
+            // failures keep the mounted editor, original versions and draft intact.
+            if (details.current) details.current.open = false;
+            setSnapshot(undefined);
+          }}
+        />
+      ) : null}
+    </details>
+  );
+}
+
+/** An opened editor owns its original input and version until it succeeds. */
+function WorkStandardEditor({
+  request,
+  projectId,
+  owner,
+  instance,
+  refresh,
+}: WorkStandardProps) {
   const [records, setRecords] = useState<Row[]>([]),
     [configuration, setConfiguration] = useState<Row>(),
     [history, setHistory] = useState<Row[]>([]),
@@ -39,6 +118,13 @@ export function WorkStandard({
   const [compareOwner, setCompareOwner] = useState("");
   const [workComparison, setWorkComparison] = useState<Row>();
   const [selectionVersion, setSelectionVersion] = useState(0);
+  const command = useRef<{ fingerprint: string; id: string }>(undefined);
+  function commandId(value: Row) {
+    const fingerprint = JSON.stringify(value);
+    if (command.current?.fingerprint !== fingerprint)
+      command.current = { fingerprint, id: crypto.randomUUID() };
+    return command.current.id;
+  }
   const comparisonGeneration = useRef(0);
   useEffect(() => {
     comparisonGeneration.current++;
@@ -160,15 +246,7 @@ export function WorkStandard({
   }
   const ended = runtime && ["completed", "cancelled"].includes(runtime.status);
   return (
-    <details className="work-standard">
-      <summary>
-        采用的规范 ·{" "}
-        {displayText(
-          records.find((r) => r.id === activeStandard)?.name ||
-            activeStandard ||
-            "待配置",
-        )}
-      </summary>
+    <>
       {activeStandard ? (
         <p>
           <a
@@ -290,7 +368,14 @@ export function WorkStandard({
                 } else {
                   await request("work.configuration.update", {
                     project_id: projectId,
-                    command_id: crypto.randomUUID(),
+                    command_id: commandId({
+                      owner: owner.id,
+                      revision: owner.revision,
+                      selected,
+                      workflow,
+                      bindings,
+                      permission,
+                    }),
                     target: owner.id,
                     expected_revision: owner.revision,
                     payload: {
@@ -318,15 +403,15 @@ export function WorkStandard({
                 disabled={busy}
                 onClick={() =>
                   void run(async () => {
-                    const fresh = await request("query.workflow_instance", {
-                      project_id: projectId,
-                      id: instance!.id,
-                    });
                     await request("workflow.change.apply", {
                       project_id: projectId,
-                      command_id: crypto.randomUUID(),
+                      command_id: commandId({
+                        instance: instance!.id,
+                        revision: instance!.revision,
+                        preview,
+                      }),
                       target: instance!.id,
-                      expected_revision: fresh.record.revision,
+                      expected_revision: instance!.revision,
                       payload: {
                         plan_revision_id: runtime.active_plan_revision_id,
                         changeset: preview.changeset,
@@ -492,6 +577,6 @@ export function WorkStandard({
         </ul>
         {historyDiff ? <StandardDiff diff={historyDiff} /> : null}
       </details>
-    </details>
+    </>
   );
 }

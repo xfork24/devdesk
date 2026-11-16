@@ -200,6 +200,12 @@ Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_
 
 `query.workflow_management_summary({project_id,id,child_offset?})` 为经理页上层提供实例原生版本、运行状态、控制代次与规范/工作流引用，以及每页 20 个子流程标识。子流程页偏移范围为 0–1000000，后续页用 next_child_offset。摘要不包含展开计划、输出正文、历史或派发资格；配置绑定超过 8192 字节时 configuration_truncated=true，必须明确读取完整执行配置后才能编辑。经理页的计划调整在首次展开时读取确切计划，折叠及后续摘要刷新保留原编辑版本与草稿；历史展开仍使用旧详情路径，独立分页迁移尚未完成。普通驱动切换只使用驱动摘要内配套读取的实例修订和代次，不以父组件版本替补缺失前置条件。
 
+`query.execution_workspace({project_id,feature_id?,offset?,task_offset?,limit?,work_filter?,project_offset?,github_only?})` 是执行页经理视图的只读入口。Feature 与 Task 分别分页，limit 为 1–100，偏移不超过 1000000；默认每页 50。返回标题节选、状态、原生修订、任务依赖数和总数，以及当前项目、所选 Feature、当前 Task 页的最新工作根元数据；Task 工作根仍核对 workflow_invocation 的成员身份，嵌套流程不替代工作根。工作筛选按当前 Feature 根流程的步骤状态计算，历史嵌套实例不会使已结束的工作保留在运行队列。
+
+该响应 kind 为 execution_workspace，实例 metadata_only=true，observed_only=true，不包含完整任务/计划、绑定或历史。面板编辑前按需读取管理配置；摘要不能被用作完整对象保存或动作授权。Host 将整个响应限制在 128 KiB，超限要求缩小分页，不静默删字段。该查询不计算配置健康或产生业务写入；未返回的 configuration_ready 表示未在此查询求值。工作总览及执行页其他详情仍保留旧入口，不能将这一接口的优化扩大描述为全部热查询已完成迁移。
+
+“采用规范”面板折叠时不请求目录、工作配置或采用历史。首次展开后保留独立编辑基线，摘要更新及折叠不覆盖草稿；规范切换使用原实例修订，失败重试保留同一命令身份，提交前不刷新版本。成功后结束该编辑基线，重新展开读取新状态。配置版本通知只查询 catalog_clock 标量，不为版本比较组装目录或角色闭包。
+
 以上运行摘要按 Scope 的所属项目过滤，同时覆盖 project 与 feature 归属，不把 Feature 工作流误当成另一个项目；只读查询不会把 Scope 可见性用作执行授权。
 
 `query.orchestration_decision({project_id,id})` 按需返回待决定项的确切修订、状态、计划引用与 request_json；请求以 JSON 字符串传输，避免浏览器 Number 将大整数舍入。普通摘要不携带完整请求。界面先显示并核对确切请求，再允许决定，提交使用已读修订；后续摘要发现更新时保留原内容并要求重新读取，不自动替换签署依据。待决定/人类决定记录的 request 是原始输入事实，不进入配置源的展开/引用编解码。

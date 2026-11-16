@@ -2,6 +2,7 @@ mod catalog;
 mod configuration_backend;
 mod configuration_cache;
 mod connection_pool;
+mod execution_read;
 pub mod performance;
 mod read_models;
 mod resource_commits;
@@ -707,6 +708,26 @@ impl EngineeringStore for SqliteStore {
     ) -> Box<dyn ports::QueryObservation> {
         performance::observe_native(call_id, stage)
     }
+    fn project_metadata(&self) -> Result<Project> {
+        execution_read::project(
+            &*self.connection.read()?,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "项目元数据需要明确项目"))?,
+        )
+    }
+    fn execution_workspace(
+        &self,
+        query: &devdesk_core::read_models::ExecutionWorkspaceQuery,
+    ) -> Result<devdesk_core::read_models::ExecutionWorkspace> {
+        execution_read::workspace(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "执行工作台需要明确项目"))?,
+            query,
+        )
+    }
     fn events_after(&self, cursor: u64, limit: usize) -> Result<Vec<Event>> {
         store_changes::events_after(&*self.connection.read()?, cursor, limit)
     }
@@ -715,6 +736,9 @@ impl EngineeringStore for SqliteStore {
     }
     fn has_pending_tool_calls(&self) -> Result<bool> {
         store_changes::pending_tools(&*self.connection.read()?)
+    }
+    fn catalog_revision(&self) -> Result<u64> {
+        configuration_cache::revision(&*self.connection.read()?)
     }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         self.catalog_cache.read(&*self.connection.read()?, true)

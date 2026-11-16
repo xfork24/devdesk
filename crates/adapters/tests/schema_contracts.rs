@@ -414,6 +414,10 @@ fn execution_summary_reads_are_scoped_and_driver_selection_requires_both_version
             json!({"project_id":"project", "id":"root"}),
         ),
         (
+            "query.execution_workspace",
+            json!({"project_id":"project","feature_id":"feature","offset":50,"task_offset":100,"limit":50,"github_only":true,"work_filter":"running"}),
+        ),
+        (
             "query.workflow_management_summary",
             json!({"project_id":"project","id":"root","child_offset":20}),
         ),
@@ -723,4 +727,25 @@ fn trusted_execution_failure_fields_and_unknown_effects_round_trip() {
         "WorkflowFailure",
         json!({"code":"fixture_unknown","message":"result unavailable","source_ref":"operation-id","kind":"technical","effect":"unknown"}),
     );
+}
+
+#[test]
+fn execution_workspace_schema_matches_strict_pagination() {
+    let validator = SCHEMAS.validator("rpc.schema.json");
+    for params in [
+        json!({"project_id":"project","limit":0}),
+        json!({"project_id":"project","limit":101}),
+        json!({"project_id":"project","feature_id":null}),
+        json!({"project_id":"project","task_offset":-1}),
+        json!({"project_id":"project","offset":1000001}),
+        json!({"project_id":"project","github_only":null}),
+        json!({"project_id":"project","work_filter":"unknown"}),
+        json!({"project_id":"project","detail_pages":{}}),
+    ] {
+        assert!(!validator.is_valid(&json!({"jsonrpc":"2.0","id":1,"method":"query.execution_workspace","params":params})),"{params}");
+        assert!(
+            devdesk_core::read_models::ExecutionWorkspaceQuery::parse(&params).is_err(),
+            "{params}"
+        );
+    }
 }

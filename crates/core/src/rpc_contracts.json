@@ -1272,6 +1272,15 @@
       ]
     },
     {
+      "method": "query.execution_workspace",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "query.history",
       "access": "read",
       "scope": "explicit",

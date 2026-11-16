@@ -327,6 +327,9 @@ impl EngineeringStore for GlobalStore {
     fn has_pending_tool_calls(&self) -> Result<bool> {
         store_changes::pending_tools(&*self.connection.read()?)
     }
+    fn catalog_revision(&self) -> Result<u64> {
+        configuration_cache::revision(&*self.connection.read()?)
+    }
     fn configuration_snapshot(&self) -> Result<std::sync::Arc<ConfigurationCatalogSnapshot>> {
         self.catalog_cache.read(&*self.connection.read()?, false)
     }

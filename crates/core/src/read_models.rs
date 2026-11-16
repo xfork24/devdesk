@@ -222,3 +222,136 @@ pub struct WorkflowManagementSummary {
     pub next_child_offset: Option<u64>,
     pub observed_only: bool,
 }
+
+#[derive(Debug)]
+pub struct ExecutionWorkspaceQuery {
+    pub feature_id: Option<String>,
+    pub feature_offset: u64,
+    pub task_offset: u64,
+    pub limit: u64,
+    pub work_filter: String,
+}
+impl ExecutionWorkspaceQuery {
+    pub fn parse(params: &Value) -> Result<Self> {
+        fields(
+            params,
+            &[
+                "project_id",
+                "feature_id",
+                "offset",
+                "task_offset",
+                "limit",
+                "work_filter",
+                "project_offset",
+                "github_only",
+            ],
+        )?;
+        fn offset(params: &Value, name: &str, default: u64, maximum: u64) -> Result<u64> {
+            params
+                .get(name)
+                .map(|value| {
+                    value
+                        .as_u64()
+                        .filter(|n| *n <= maximum)
+                        .ok_or_else(|| err("invalid_params", format!("无效的 {name}")))
+                })
+                .transpose()
+                .map(|value| value.unwrap_or(default))
+        }
+        // Directory pagination is validated even though it is read by the Host.
+        offset(params, "project_offset", 0, 1_000_000)?;
+        if params
+            .get("github_only")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Err(err("invalid_params", "github_only 需要布尔值"));
+        }
+        let limit = offset(params, "limit", 50, 100)?;
+        if limit == 0 {
+            return Err(err("invalid_params", "limit 必须大于 0"));
+        }
+        let work_filter = params
+            .get("work_filter")
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| {
+                        ["", "tasks", "running", "waiting_confirmation", "blocked"].contains(value)
+                    })
+                    .map(str::to_owned)
+                    .ok_or_else(|| err("invalid_params", "无效的工作筛选"))
+            })
+            .transpose()?
+            .unwrap_or_default();
+        Ok(Self {
+            feature_id: params
+                .get("feature_id")
+                .map(|_| identifier(params, "feature_id"))
+                .transpose()?,
+            feature_offset: offset(params, "offset", 0, 1_000_000)?,
+            task_offset: offset(params, "task_offset", 0, 1_000_000)?,
+            limit,
+            work_filter,
+        })
+    }
+}
+#[derive(Debug, Serialize)]
+pub struct FeatureBrief {
+    pub id: String,
+    pub project_id: String,
+    pub title: String,
+    pub title_truncated: bool,
+    pub status: String,
+    pub revision: u64,
+    pub input_version: u64,
+}
+#[derive(Debug, Serialize)]
+pub struct TaskBrief {
+    pub id: String,
+    pub feature_id: String,
+    pub title: String,
+    pub title_truncated: bool,
+    pub status: String,
+    pub revision: u64,
+    pub dependency_count: u64,
+}
+#[derive(Debug, Serialize)]
+pub struct ExecutionFeatureDetail {
+    pub feature: FeatureBrief,
+    pub tasks: Vec<TaskBrief>,
+    pub total_tasks: u64,
+}
+/// Display metadata only. Editing requires an explicit management/configuration read.
+#[derive(Debug, Serialize)]
+pub struct WorkRootMetadata {
+    pub id: String,
+    pub name: String,
+    pub revision: u64,
+    pub r#type: &'static str,
+    pub work_root: bool,
+    pub metadata_only: bool,
+    pub data: WorkRootState,
+}
+#[derive(Debug, Serialize)]
+pub struct WorkRootState {
+    pub owner_id: String,
+    pub root_instance_id: String,
+    pub parent_execution_id: Option<String>,
+    pub active_plan_revision_id: Option<String>,
+    pub workflow_ref: Option<String>,
+    pub status: String,
+    pub plan: PlanSelectionSummary,
+}
+#[derive(Debug, Serialize)]
+pub struct ExecutionWorkspace {
+    pub kind: &'static str,
+    pub project_id: String,
+    pub cursor: u64,
+    pub active_project: devdesk_domain::Project,
+    pub repository_ready: bool,
+    pub features: Vec<FeatureBrief>,
+    pub total_features: u64,
+    pub detail: Option<ExecutionFeatureDetail>,
+    pub configurations: Vec<WorkRootMetadata>,
+    pub observed_only: bool,
+}

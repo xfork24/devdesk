@@ -75,6 +75,7 @@ async function githubFixture(page: Page) {
         break;
       case "query.ui_bootstrap":
       case "query.project_directory":
+      case "query.execution_workspace":
       case "query.workspace":
         result = {
           ...base,

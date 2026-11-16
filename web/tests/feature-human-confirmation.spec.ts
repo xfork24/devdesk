@@ -34,7 +34,9 @@ async function creationFixture(page: Page, inputs: Record<string, unknown>) {
   await page.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result: any;
-    if (call.method === "query.workspace") {
+    if (
+      ["query.workspace", "query.execution_workspace"].includes(call.method)
+    ) {
       result = {
         active_project: project,
         projects: [project],
@@ -173,6 +175,7 @@ test("已有 Feature 只在执行与交付显式启动，创建入口仍在工�
     const call = route.request().postDataJSON();
     let result: any;
     switch (call.method) {
+      case "query.execution_workspace":
       case "query.workspace":
         result = {
           active_project: project,
@@ -396,6 +399,7 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
     const call = route.request().postDataJSON();
     let result: any;
     switch (call.method) {
+      case "query.execution_workspace":
       case "query.workspace":
         result = {
           active_project: project,

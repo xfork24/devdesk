@@ -6,6 +6,12 @@ use std::sync::{
 };
 
 const CACHE_BYTES: usize = 128 * 1024 * 1024;
+pub(super) fn revision(conn: &Connection) -> Result<u64> {
+    conn.query_row("SELECT revision FROM catalog_clock WHERE id=1", [], |row| {
+        row.get(0)
+    })
+    .map_err(storage)
+}
 const ENTRY_BYTES: usize = 32 * 1024 * 1024;
 static RETAINED_BYTES: AtomicUsize = AtomicUsize::new(0);
 struct Reservation(usize);
@@ -36,11 +42,7 @@ impl CatalogCache {
         // Clock and rows must come from the same committed snapshot. PRAGMA
         // data_version is connection-local and cannot identify pooled snapshots.
         let transaction = conn.unchecked_transaction().map_err(storage)?;
-        let revision = transaction
-            .query_row("SELECT revision FROM catalog_clock WHERE id=1", [], |r| {
-                r.get::<_, u64>(0)
-            })
-            .map_err(storage)?;
+        let revision = revision(&transaction)?;
         let cached = self
             .entry
             .lock()

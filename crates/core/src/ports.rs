@@ -425,6 +425,15 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::WorkflowManagementSummary> {
         Err(err("unsupported", "存储未实现流程管理摘要"))
     }
+    fn project_metadata(&self) -> Result<devdesk_domain::Project> {
+        Err(err("unsupported", "存储未实现项目元数据读取"))
+    }
+    fn execution_workspace(
+        &self,
+        _query: &crate::read_models::ExecutionWorkspaceQuery,
+    ) -> Result<crate::read_models::ExecutionWorkspace> {
+        Err(err("unsupported", "存储未实现执行工作台摘要"))
+    }
     /// Core-prepared changes and every business read dependency commit atomically.
     fn commit_changes(
         &self,
@@ -492,6 +501,10 @@ pub trait EngineeringStore: Send + Sync {
     fn subscribe_changes(&self, _listener: std::sync::Weak<dyn Fn() + Send + Sync>) {}
     fn has_pending_tool_calls(&self) -> Result<bool> {
         Ok(true)
+    }
+    /// Scalar invalidation clock; concrete stores must not restore catalog bodies here.
+    fn catalog_revision(&self) -> Result<u64> {
+        Ok(self.configuration_snapshot()?.revision)
     }
     /// Adapters override this with a configuration-only, immutable cached read model.
     fn configuration_snapshot(&self) -> Result<Arc<crate::ConfigurationCatalogSnapshot>> {

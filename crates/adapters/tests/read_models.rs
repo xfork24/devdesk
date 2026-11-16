@@ -380,3 +380,138 @@ fn a_real_feature_root_and_its_driver_are_read_without_restoring_the_plan() {
     assert!(measurement["spans"]["project.full_snapshot"].is_null());
     assert!(measurement["spans"]["source.restore_reference"].is_null());
 }
+
+#[test]
+fn execution_workspace_pages_native_facts_and_excludes_unrelated_history() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(root.path(), PROJECT, "excerpt");
+    // SQL-only large-history/fault fixtures; no worker or external action is claimed.
+    for n in 0..101 {
+        conn.execute("INSERT INTO features(id,project_id,title,status,revision,input_version,predecessor,source_materials) VALUES(?1,?2,?3,'running',3,2,NULL,?4)",params![format!("f-{n}"),PROJECT,"title".repeat(100),json!(vec!["large".repeat(10_000)]).to_string()]).unwrap();
+    }
+    for n in 0..101 {
+        conn.execute("INSERT INTO tasks(id,feature_id,title,status,revision,inherited_snapshot,dependencies,worktree,scope) VALUES(?1,'f-0','Task','pending',4,NULL,?2,'',?3)",params![format!("task-{n}"),json!(vec!["dependency";1000]).to_string(),json!({"input_refs":[],"acceptance":["large".repeat(10000)]}).to_string()]).unwrap();
+    }
+    let data = |owner: &str, parent: Option<&str>| json!({"owner_id":owner,"root_instance_id":"feature-root","parent_execution_id":parent,"status":"running","steps":[{"id":"invoke","status":"running"}],"plan":{"$source":"cannot-be-restored","standard_ref":"standard:1"},"role_agent_bindings":{"enormous":"x".repeat(100_000)}});
+    record_in_scope(
+        &conn,
+        &format!("feature:{PROJECT}:f-0"),
+        "feature-root",
+        "workflow_instance",
+        "f-0",
+        data("f-0", None),
+    );
+    record(
+        &conn,
+        PROJECT,
+        "task-root",
+        "workflow_instance",
+        "task-0",
+        data("task-0", Some("invoke")),
+    );
+    record(
+        &conn,
+        PROJECT,
+        "invocation",
+        "workflow_invocation",
+        "invoke",
+        json!({"child_instance_id":"task-root","member_identity":"task-0"}),
+    );
+    // A later nested child shares its owner, but it is not a work root.
+    record(
+        &conn,
+        PROJECT,
+        "nested",
+        "workflow_instance",
+        "task-0",
+        data("task-0", Some("nested-call")),
+    );
+    record_in_scope(
+        &conn,
+        "global",
+        "leak",
+        "workflow_instance",
+        "task-0",
+        data("task-0", None),
+    );
+    record(
+        &conn,
+        OTHER,
+        "other",
+        "workflow_instance",
+        "f-0",
+        data("f-0", None),
+    );
+    let request = ExecutionWorkspaceQuery::parse(
+        &json!({"project_id":PROJECT,"feature_id":"f-0","limit":50}),
+    )
+    .unwrap();
+    let trace = performance::Trace::start();
+    let first = store.execution_workspace(&request).unwrap();
+    let trace = trace.finish();
+    assert_eq!(first.total_features, 101);
+    assert_eq!(first.features.len(), 50);
+    assert!(
+        first
+            .features
+            .iter()
+            .all(|row| row.title_truncated && row.title.len() <= 128)
+    );
+    let detail = first.detail.as_ref().unwrap();
+    assert_eq!(detail.total_tasks, 101);
+    assert_eq!(detail.tasks.len(), 50);
+    assert_eq!(detail.tasks[0].dependency_count, 1000);
+    assert_eq!(
+        first
+            .configurations
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["feature-root", "task-root"]
+    );
+    assert!(first.configurations.iter().all(|row| row.metadata_only));
+    assert!(serde_json::to_vec(&first).unwrap().len() < 64 * 1024);
+    for name in [
+        "project.full_snapshot",
+        "source.restore_records",
+        "catalog.build",
+        "project.transaction",
+    ] {
+        assert!(trace["spans"][name].is_null(), "{trace}");
+    }
+    let second = store
+        .execution_workspace(&ExecutionWorkspaceQuery {
+            feature_offset: 50,
+            task_offset: 50,
+            ..request
+        })
+        .unwrap();
+    assert!(
+        first
+            .features
+            .iter()
+            .all(|a| second.features.iter().all(|b| a.id != b.id))
+    );
+    assert!(detail.tasks.iter().all(|a| {
+        second
+            .detail
+            .as_ref()
+            .unwrap()
+            .tasks
+            .iter()
+            .all(|b| a.id != b.id)
+    }));
+    let filter =
+        ExecutionWorkspaceQuery::parse(&json!({"project_id":PROJECT,"work_filter":"running"}))
+            .unwrap();
+    assert_eq!(
+        store.execution_workspace(&filter).unwrap().total_features,
+        1
+    );
+    let mut foreign = filter;
+    foreign.feature_id = Some("missing".into());
+    assert_eq!(
+        store.execution_workspace(&foreign).unwrap_err().code,
+        "not_found"
+    );
+}

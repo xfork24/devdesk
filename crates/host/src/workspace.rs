@@ -272,6 +272,12 @@ impl Workspace {
             .map(|outcome| outcome.value)
     }
     pub fn dispatch_with_receipt(&self, method: &str, params: Value) -> Result<RpcOutcome> {
+        if method == "query.execution_workspace" {
+            return self.execution_workspace(&params).map(|value| RpcOutcome {
+                value,
+                commit: None,
+            });
+        }
         if [
             "query.orchestration_summary",
             "query.workflow_driver_summary",
@@ -1188,8 +1194,17 @@ mod tests {
                 "query.workflow_management_summary",
                 json!({"project_id":project,"id":"missing"}),
             );
+            let execution = reader_workspace
+                .dispatch("query.execution_workspace", json!({"project_id":project}));
             result_tx
-                .send((summary, driver, decision, management, trace.finish()))
+                .send((
+                    summary,
+                    driver,
+                    decision,
+                    management,
+                    execution,
+                    trace.finish(),
+                ))
                 .unwrap();
         });
         // Test admission independently of the locks; this is not a latency benchmark.
@@ -1198,13 +1213,15 @@ mod tests {
         release_tx.send(()).unwrap();
         writer.join().unwrap().unwrap();
         reader.join().unwrap();
-        let (summary, driver, decision, management, trace) =
+        let (summary, driver, decision, management, execution, trace) =
             result.expect("summary reads waited for a business lock");
         assert!(summary.unwrap()["record"].is_null());
         assert_eq!(driver.unwrap_err().code, "not_found");
         assert_eq!(decision.unwrap_err().code, "not_found");
         assert_eq!(management.unwrap_err().code, "not_found");
+        assert_eq!(execution.unwrap()["kind"], "execution_workspace");
         for span in [
+            "catalog.build",
             "catalog.gate_wait",
             "project.full_snapshot",
             "project.transaction",
