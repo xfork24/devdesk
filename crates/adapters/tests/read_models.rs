@@ -12,8 +12,25 @@ use serde_json::{Value, json};
 const PROJECT: &str = "c8516249-60a3-444a-988d-e5bf0e257611";
 const OTHER: &str = "f62ddc57-2b83-4c67-b8d6-a7dbbfaaeea8";
 fn record(conn: &Connection, project: &str, id: &str, kind: &str, definition: &str, data: Value) {
+    record_in_scope(
+        conn,
+        &format!("project:{project}"),
+        id,
+        kind,
+        definition,
+        data,
+    );
+}
+fn record_in_scope(
+    conn: &Connection,
+    scope: &str,
+    id: &str,
+    kind: &str,
+    definition: &str,
+    data: Value,
+) {
     conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,supersedes,content_hash,refs,data,immutable,revision,created_at) VALUES(?1,?2,?3,?4,?1,1,NULL,?5,'{}',?6,0,7,1)",
-        params![id,kind,definition,json!(format!("project:{project}")).to_string(),content_digest(&References::new(),&data),data.to_string()]).unwrap();
+        params![id,kind,definition,json!(scope).to_string(),content_digest(&References::new(),&data),data.to_string()]).unwrap();
 }
 fn fixture(
     root: &std::path::Path,
@@ -93,6 +110,16 @@ fn fixture(
             json!({"status":"pending","plan_revision_id":"plan:1","request":request}),
         );
     }
+    for n in 0..25 {
+        record(
+            &conn,
+            project,
+            &format!("child-{n}"),
+            "workflow_instance",
+            "child",
+            json!({"owner_id":project,"root_instance_id":"root","parent_execution_id":"execution-0","status":"running"}),
+        );
+    }
     conn.execute(
         "INSERT INTO events(target,kind,detail,time) VALUES('root','fixture','',1)",
         [],
@@ -109,6 +136,7 @@ fn summaries_are_bounded_and_never_restore_unreadable_history_or_authorize_actio
     let trace = performance::Trace::start();
     let controller = store.orchestration_summary(&query).unwrap();
     let driver = store.workflow_driver_summary("root").unwrap();
+    let management = store.workflow_management_summary("root", 0).unwrap();
     let measurement = trace.finish();
     for stage in [
         "project.full_snapshot",
@@ -146,6 +174,15 @@ fn summaries_are_bounded_and_never_restore_unreadable_history_or_authorize_actio
     assert!(driver.observed_only && driver.waiting_more);
     assert_eq!(driver.waiting.len(), 20);
     assert_eq!(driver.instance_revision, 7);
+    assert_eq!(management.record.revision, 7);
+    assert!(management.observed_only && management.children_more);
+    assert_eq!(management.children.len(), 20);
+    assert!(serde_json::to_vec(&management).unwrap().len() <= 64 * 1024);
+    let older = store
+        .workflow_management_summary("root", management.next_child_offset.unwrap())
+        .unwrap();
+    assert_eq!(older.children.len(), 5);
+    assert!(!older.children_more);
     let detail = store
         .workflow_decision(&controller.decisions[0].id)
         .unwrap();
@@ -228,4 +265,118 @@ fn an_uncommitted_writer_does_not_hold_up_committed_summary_reads() {
     conn.execute_batch("ROLLBACK;").unwrap();
     assert!(ControllerQuery::parse(&json!({"id":"controller","owner_id":PROJECT})).is_err());
     assert!(ControllerQuery::parse(&json!({"owner_id":PROJECT,"workspace_only":"false"})).is_err());
+    assert!(ControllerQuery::parse(&json!({"id":"controller","decision_before":null})).is_err());
+    assert!(ControllerQuery::parse(&json!({"id":"controller","owner_id":null})).is_err());
+    assert!(ControllerQuery::parse(&json!({"id":"controller","other_project":OTHER})).is_err());
+}
+
+#[test]
+fn large_configuration_bindings_are_marked_without_expanding_the_plan() {
+    let directory = tempfile::tempdir().unwrap();
+    let (store, conn, _) = fixture(directory.path(), PROJECT, "Committed");
+    let bindings = json!({"long-role":"x".repeat(9000)});
+    conn.execute("UPDATE governance_records SET data=json_set(data,'$.role_agent_bindings',json(?1)) WHERE id='root'",[bindings.to_string()]).unwrap();
+    let view = store.workflow_management_summary("root", 0).unwrap();
+    assert!(view.record.data.configuration_truncated);
+    assert!(view.record.data.role_agent_bindings.is_empty());
+    assert!(serde_json::to_vec(&view).unwrap().len() <= 64 * 1024);
+}
+
+#[test]
+fn a_real_feature_root_and_its_driver_are_read_without_restoring_the_plan() {
+    let root = tempfile::tempdir().unwrap();
+    let store = Arc::new(SqliteStore::open_project(root.path(), PROJECT).unwrap());
+    let engine = Engine::new(
+        store.clone(),
+        Arc::new(FileArtifacts::new(std::path::PathBuf::from(store.root()))),
+        runtime::adapters(),
+    );
+    engine.bootstrap().unwrap();
+    let command = |key: &str,
+                   target: Option<String>,
+                   expected_revision: Option<u64>,
+                   payload: Value| Command {
+        command_id: key.into(),
+        target,
+        expected_revision,
+        payload,
+    };
+    engine
+        .execute(
+            "project.create",
+            command(
+                "project",
+                None,
+                None,
+                json!({"title":"Real feature source scope"}),
+            ),
+        )
+        .unwrap();
+    runtime::bind_default_permissions(&engine);
+    runtime::configure_project(&engine, PROJECT);
+    let feature = engine
+        .execute(
+            "feature.create",
+            command(
+                "feature",
+                None,
+                None,
+                json!({"project_id":PROJECT,"title":"Feature metadata"}),
+            ),
+        )
+        .unwrap();
+    let fid = feature["id"].as_str().unwrap();
+    let state = store.snapshot().unwrap();
+    let instance = state
+        .governance
+        .iter()
+        .find(|row| row.r#type == "workflow_instance" && row.data["owner_id"] == fid)
+        .unwrap()
+        .clone();
+    let id = instance.id.as_str();
+    assert!(instance.scope.is_feature());
+    let epoch = state
+        .governance
+        .iter()
+        .find(|row| row.r#type == "workflow_driver" && row.definition_id == id)
+        .and_then(|row| row.data["epoch"].as_u64())
+        .unwrap_or(0);
+    engine
+        .execute(
+            "workflow.driver.select",
+            command(
+                "driver",
+                Some(id.into()),
+                Some(instance.revision),
+                json!({"mode":"rust","expected_driver_epoch":epoch}),
+            ),
+        )
+        .unwrap();
+    // Read projection fixture, not a signed decision or worker acceptance.
+    let conn = Connection::open(
+        SqliteStore::project_path(root.path(), PROJECT)
+            .unwrap()
+            .join("engineering.sqlite3"),
+    )
+    .unwrap();
+    record_in_scope(
+        &conn,
+        &instance.scope.0,
+        "feature-decision",
+        "workflow_pending_decision",
+        id,
+        json!({"status":"pending","plan_revision_id":instance.data["active_plan_revision_id"],"request":{"operation":"pause","arguments":{}}}),
+    );
+    let trace = performance::Trace::start();
+    let management = store.workflow_management_summary(id, 0).unwrap();
+    let driver = store.workflow_driver_summary(id).unwrap();
+    let decision = store.workflow_decision("feature-decision").unwrap();
+    let measurement = trace.finish();
+    assert_eq!(management.record.data.owner_id, fid);
+    assert_eq!(management.record.data.project_id, PROJECT);
+    assert_eq!(driver.root_instance_id, id);
+    assert_eq!(driver.driver.unwrap().data.mode, "rust");
+    assert_eq!(decision.revision, 7);
+    assert!(measurement["spans"]["project.full_snapshot"].is_null());
+    assert!(measurement["spans"]["source.restore_reference"].is_null());
 }

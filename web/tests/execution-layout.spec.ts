@@ -360,7 +360,7 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
   });
   expect(reloaded.history).toEqual(after.history);
   const history = manager.locator("details").filter({
-    has: page.getByText(/^计划与执行历史 · \d+ 条$/),
+    has: page.getByText(/^计划与执行历史(?: · \d+ 条)?$/),
   });
   await history.locator("summary").click();
   for (const entry of reloaded.history) {

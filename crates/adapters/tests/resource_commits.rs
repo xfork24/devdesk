@@ -257,6 +257,32 @@ fn project_resource_reads_are_finite_and_cannot_insert_a_different_project() {
     other.changes[0].resource.id = "f62ddc57-2b83-4c67-b8d6-a7dbbfaaeea8".into();
     other.changes[0].value["id"] = json!(other.changes[0].resource.id);
     assert!(store.commit_changes(&other).is_err());
+    for (scope, body_project) in [
+        ("project:f62ddc57-2b83-4c67-b8d6-a7dbbfaaeea8", project),
+        ("global", project),
+        (
+            "project:c8516249-60a3-444a-988d-e5bf0e257611",
+            "foreign-body",
+        ),
+    ] {
+        let key = ResourceKey::new("governance", "cross-scope");
+        let invalid = PreparedChangeSet {
+            command_id: "cross-scope".into(),
+            fingerprint: "cross-scope".into(),
+            read_set: ReadSet::new(vec![ResourceVersion {
+                resource: key.clone(),
+                revision: 0,
+            }])
+            .unwrap(),
+            changes: vec![ResourceChange {
+                resource: key,
+                value: json!({"id":"cross-scope","type":"workflow_driver","scope":scope,"data":{"project_id":body_project}}),
+            }],
+            result: Value::Null,
+            time: 1,
+        };
+        assert!(store.commit_changes(&invalid).is_err());
+    }
     assert_eq!(store.events_after(0, 100).unwrap().len(), 1);
 }
 

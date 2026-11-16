@@ -95,6 +95,10 @@ CREATE TABLE governance_records (
  type TEXT NOT NULL,
  definition_id TEXT NOT NULL,
  scope JSON NOT NULL CHECK(json_valid(scope)),
+ owner_project TEXT GENERATED ALWAYS AS (CASE
+   WHEN substr(json_extract(scope,'$'),1,8)='project:' THEN substr(json_extract(scope,'$'),9)
+   WHEN substr(json_extract(scope,'$'),1,8)='feature:' THEN substr(json_extract(scope,'$'),9,instr(substr(json_extract(scope,'$'),9),':')-1)
+ END) VIRTUAL,
  name TEXT NOT NULL,
  version INTEGER NOT NULL CHECK(version > 0),
  supersedes TEXT,
@@ -310,15 +314,17 @@ CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(
 CREATE INDEX events_workflow_root ON events(
  json_extract(CASE WHEN kind='workflow.runtime' THEN detail ELSE '{}' END,'$.root_instance_id'),id
 ) WHERE kind='workflow.runtime';
-CREATE INDEX idx_controller_owner ON governance_records(json_extract(data,'$.owner_id')) WHERE type='workflow_controller';
-CREATE INDEX idx_controller_root ON governance_records(json_extract(data,'$.root_instance_id')) WHERE type='workflow_controller';
-CREATE INDEX idx_controller_calls ON governance_records(definition_id) WHERE type='controller_tool_call';
-CREATE INDEX idx_workflow_root ON governance_records(json_extract(data,'$.root_instance_id'),json_extract(scope,'$'),id) WHERE type='workflow_instance';
-CREATE INDEX idx_workflow_active_root ON governance_records(json_extract(data,'$.root_instance_id'),json_extract(scope,'$')) WHERE type='workflow_instance' AND coalesce(json_extract(data,'$.status'),'') NOT IN ('completed','cancelled');
-CREATE INDEX idx_pending_decisions ON governance_records(definition_id,json_extract(scope,'$')) WHERE type='workflow_pending_decision' AND json_extract(data,'$.status')='pending';
+CREATE INDEX idx_controller_owner ON governance_records(json_extract(data,'$.owner_id'),owner_project) WHERE type='workflow_controller';
+CREATE INDEX idx_controller_root ON governance_records(json_extract(data,'$.root_instance_id'),owner_project) WHERE type='workflow_controller';
+CREATE INDEX idx_controller_calls ON governance_records(definition_id,owner_project) WHERE type='controller_tool_call';
+CREATE INDEX idx_workflow_root ON governance_records(json_extract(data,'$.root_instance_id'),owner_project,id) WHERE type='workflow_instance';
+CREATE INDEX idx_workflow_active_root ON governance_records(json_extract(data,'$.root_instance_id'),owner_project) WHERE type='workflow_instance' AND coalesce(json_extract(data,'$.status'),'') NOT IN ('completed','cancelled');
+CREATE INDEX idx_pending_decisions ON governance_records(definition_id,owner_project) WHERE type='workflow_pending_decision' AND json_extract(data,'$.status')='pending';
 CREATE INDEX idx_conversation_session_kind ON conversation_events(session_id,kind);
 
-PRAGMA user_version=51;
+CREATE INDEX idx_workflow_parent_execution ON governance_records(json_extract(data,'$.parent_execution_id'),owner_project) WHERE type='workflow_instance';
+
+PRAGMA user_version=52;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,

@@ -423,6 +423,7 @@ test("Spec 验收后展示待确认产物，人工确认绑定当前执行和输
         };
         break;
       case "query.workflow_instance":
+      case "query.workflow_management_summary":
         result = {
           record: instance,
           runtime: instance.data,

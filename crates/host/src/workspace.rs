@@ -276,9 +276,15 @@ impl Workspace {
             "query.orchestration_summary",
             "query.workflow_driver_summary",
             "query.orchestration_decision",
+            "query.workflow_management_summary",
         ]
         .contains(&method)
         {
+            if method == "query.workflow_management_summary" {
+                devdesk_core::read_models::fields(&params, &["project_id", "id", "child_offset"])?;
+            } else if method != "query.orchestration_summary" {
+                devdesk_core::read_models::fields(&params, &["project_id", "id"])?;
+            }
             let project = devdesk_core::read_models::identifier(&params, "project_id")?;
             let engine = self.project_engine(Some(&project))?;
             let value = match method {
@@ -288,6 +294,22 @@ impl Workspace {
                 "query.workflow_driver_summary" => json!(engine.store.workflow_driver_summary(
                     &devdesk_core::read_models::identifier(&params, "id")?
                 )?),
+                "query.workflow_management_summary" => {
+                    let offset = params
+                        .get("child_offset")
+                        .map(|value| {
+                            value
+                                .as_u64()
+                                .filter(|offset| *offset <= 1_000_000)
+                                .ok_or_else(|| err("invalid_params", "子流程页偏移无效"))
+                        })
+                        .transpose()?
+                        .unwrap_or(0);
+                    json!(engine.store.workflow_management_summary(
+                        &devdesk_core::read_models::identifier(&params, "id")?,
+                        offset
+                    )?)
+                }
                 _ => {
                     json!(engine.store.workflow_decision(
                         &devdesk_core::read_models::identifier(&params, "id")?
@@ -1162,8 +1184,12 @@ mod tests {
                 "query.orchestration_decision",
                 json!({"project_id":project,"id":"missing"}),
             );
+            let management = reader_workspace.dispatch(
+                "query.workflow_management_summary",
+                json!({"project_id":project,"id":"missing"}),
+            );
             result_tx
-                .send((summary, driver, decision, trace.finish()))
+                .send((summary, driver, decision, management, trace.finish()))
                 .unwrap();
         });
         // Test admission independently of the locks; this is not a latency benchmark.
@@ -1172,11 +1198,12 @@ mod tests {
         release_tx.send(()).unwrap();
         writer.join().unwrap().unwrap();
         reader.join().unwrap();
-        let (summary, driver, decision, trace) =
+        let (summary, driver, decision, management, trace) =
             result.expect("summary reads waited for a business lock");
         assert!(summary.unwrap()["record"].is_null());
         assert_eq!(driver.unwrap_err().code, "not_found");
         assert_eq!(decision.unwrap_err().code, "not_found");
+        assert_eq!(management.unwrap_err().code, "not_found");
         for span in [
             "catalog.gate_wait",
             "project.full_snapshot",

@@ -16,7 +16,7 @@ Agent 只组合 Role 与 Capability；任务属于 Step，方法属于 Skill，�
 |---|---|
 | 业务 schema_version、renderer_version | 标记记录的生成合同；业务读取按实际结构和规则校验，不统一按版本常量拒绝。 |
 | ConfiguredAgentTask | 校验外层与 task 内的 renderer_version 一致、内容摘要一致、来源一致；历史任务按实际冻结合同读取。 |
-| 数据集标记与 SQLite user_version | 明确校验 `devdesk-profile-runtime-v2`、global 21 / project 51；不兼容数据集拒绝，不自动迁移或重建。 |
+| 数据集标记与 SQLite user_version | 明确校验 `devdesk-profile-runtime-v2`、global 21 / project 52；不兼容数据集拒绝，不自动迁移或重建。 |
 | RuntimeInstallation 版本 | 仅是标签；安装来源、镜像内容、协议验证与权限资产另行核验。 |
 | macOS 凭据助手协议 | 当前要求协议 2、实际二进制摘要与同证书签名；目录名 v1 不是协议版本。 |
 | HTTP、Codex/DSH、MCP 等外部协议 | 由实际适配器实现和探测结果限定，源配置不能凭空增加协议支持。 |

@@ -414,6 +414,10 @@ fn execution_summary_reads_are_scoped_and_driver_selection_requires_both_version
             json!({"project_id":"project", "id":"root"}),
         ),
         (
+            "query.workflow_management_summary",
+            json!({"project_id":"project","id":"root","child_offset":20}),
+        ),
+        (
             "query.orchestration_decision",
             json!({"project_id":"project", "id":"decision"}),
         ),

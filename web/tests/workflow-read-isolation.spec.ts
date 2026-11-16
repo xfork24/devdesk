@@ -90,6 +90,7 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
         };
         break;
       case "query.workflow_instance":
+      case "query.workflow_management_summary":
         result = {
           record: instance,
           runtime: instance.data,
@@ -562,6 +563,97 @@ test("manager collects child confirmations and tool approvals, with errors besid
       answer: { kind: "tool_approval", outcome: "allowed_once" },
     },
   });
+});
+
+test("manager loads an exact plan only on expansion and retains its draft through summary refreshes", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let revision = 1,
+    fullReads = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const record = () => ({
+    id: "read-instance",
+    name: "Summary-only manager",
+    revision,
+    data: {
+      owner_id: "read-feature",
+      status: "running",
+      root_instance_id: "read-instance",
+      active_plan_revision_id: "plan-current",
+      control_version: 1,
+      role_agent_bindings: {},
+      plan: { standard_ref: "standard-current:1" },
+    },
+  });
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.workflow_management_summary")
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: { record: record(), children: [], observed_only: true },
+        },
+      });
+    if (call.method !== "query.workflow_instance") return route.fallback();
+    fullReads++;
+    expect(call.params).toEqual({
+      project_id: "read-project",
+      id: "read-instance",
+    });
+    await held;
+    const exact = record();
+    await route.fulfill({
+      json: {
+        jsonrpc: "2.0",
+        id: call.id,
+        result: {
+          record: {
+            ...exact,
+            data: {
+              ...exact.data,
+              plan: { ...exact.data.plan, document: { stages: [], steps: [] } },
+            },
+          },
+        },
+      },
+    });
+  });
+  try {
+    await page.goto(url);
+    const manager = page.getByRole("region", { name: "项目经理", exact: true });
+    await expect(
+      manager.getByRole("heading", {
+        name: "Summary-only manager",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(fullReads).toBe(0);
+    await manager.getByText("调整当前运行计划", { exact: true }).click();
+    await expect(
+      manager.getByRole("status").filter({ hasText: "正在读取确切执行计划" }),
+    ).toBeVisible();
+    expect(fullReads).toBe(1);
+    release();
+    const reason = manager.getByLabel("计划调整理由", { exact: true });
+    await reason.fill("保留原计划基线和未保存理由");
+    revision = 2;
+    await manager
+      .getByRole("button", { name: "刷新管理状态", exact: true })
+      .click();
+    await expect(reason).toHaveValue("保留原计划基线和未保存理由");
+    expect(fullReads).toBe(1);
+    await manager.getByText("调整当前运行计划", { exact: true }).click();
+    await manager.getByText("调整当前运行计划", { exact: true }).click();
+    await expect(reason).toHaveValue("保留原计划基线和未保存理由");
+    expect(fullReads).toBe(1);
+  } finally {
+    release();
+  }
 });
 
 test("slow controller polling renders its result without overlapping requests and stops on unmount", async ({

@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 51；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 52；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
@@ -197,6 +197,10 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 `orchestration.open/input/takeover/resume` 管理项目经理及后继会话；`query.orchestration` 返回对话、实际控制调用和待人类决定请求。输入是用户自然语言，只有冻结 Capability/Permission 允许的原生工具调用才产生控制效果。
 
 Web 经理面板改用 `query.orchestration_summary` 与 `query.workflow_driver_summary`。两者要求 project_id，在独立只读快照中读取原生运行元数据，不取得模板门闩、不同步配置、不恢复完整工程状态或编译计划。前者用 id/root_instance_id/owner_id 唯一定位经理，可附 workspace_only；返回最近 10 条消息节选（每条 512 字符）、5 条调用状态、10 条待决定摘要和 more 标记，待决定项按 next_decision_before 翻页。后者用实例 id 定位根驱动，返回当前根代次、所查实例的原生修订与至多 20 条等待节选；observed_only=true，不能据此推导动作授权。两者 cursor 是各自读快照内的项目事件游标，不是跨查询的原子快照。
+
+`query.workflow_management_summary({project_id,id,child_offset?})` 为经理页上层提供实例原生版本、运行状态、控制代次与规范/工作流引用，以及每页 20 个子流程标识。子流程页偏移范围为 0–1000000，后续页用 next_child_offset。摘要不包含展开计划、输出正文、历史或派发资格；配置绑定超过 8192 字节时 configuration_truncated=true，必须明确读取完整执行配置后才能编辑。经理页的计划调整在首次展开时读取确切计划，折叠及后续摘要刷新保留原编辑版本与草稿；历史展开仍使用旧详情路径，独立分页迁移尚未完成。普通驱动切换只使用驱动摘要内配套读取的实例修订和代次，不以父组件版本替补缺失前置条件。
+
+以上运行摘要按 Scope 的所属项目过滤，同时覆盖 project 与 feature 归属，不把 Feature 工作流误当成另一个项目；只读查询不会把 Scope 可见性用作执行授权。
 
 `query.orchestration_decision({project_id,id})` 按需返回待决定项的确切修订、状态、计划引用与 request_json；请求以 JSON 字符串传输，避免浏览器 Number 将大整数舍入。普通摘要不携带完整请求。界面先显示并核对确切请求，再允许决定，提交使用已读修订；后续摘要发现更新时保留原内容并要求重新读取，不自动替换签署依据。待决定/人类决定记录的 request 是原始输入事实，不进入配置源的展开/引用编解码。
 

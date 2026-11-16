@@ -36,7 +36,7 @@
 
 ## 配置的唯一存储
 
-配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 21 / project 51。
+配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 21 / project 52。
 
 配置目录另有可丢弃的进程内快照，不新增展开配置投影。`catalog_clock` 只保存目录快照时钟，由源、目录治理、Project 和 mainline 工作副本的 SQL 触发器在同一事务中推进；它只用于读取新鲜度，不是项目写入乐观锁。读取在同一 SQLite 快照内取得时钟与目录事实，热读返回该版本的不可变 Arc，不跨连接比较 `PRAGMA data_version`。慢读取不能以新版本标记旧数据或覆盖更高版本的缓存。
 
@@ -64,7 +64,9 @@ SSE 按事件主键和游标读取 `events`，提交后通知唤醒读取，低�
 
 源描述的文件/SQL 编解码在 adapters；冻结计划与任务选择的纯重建在 core/frozen_views。两者共享精确源引用，不以当前目录最新版重选执行依赖。`command_context` 保留由可信入口构造的 Actor/项目归属与原请求指纹，不接受客户端提供的解析后身份。
 
-经理与驱动的显示摘要通过项目只读连接直接查询原生元数据，并使用 controller 归属、根实例、调用归属、活动根与待决定项索引；不新增展开配置表。消息、调用、待决定项和等待条件都有限额，完整决定请求另按需读取。workflow_pending_decision / workflow_human_decision 的 request 原样保存为输入事实，不将其中用户提供的 `$source` 或保留文本解释为配置引用；全量恢复与精确详情读取遵守同一事实边界。该编解码和索引使用 project 51，project 50 明确拒绝打开。
+经理与驱动的显示摘要通过项目只读连接直接查询原生元数据，并使用 controller 归属、根实例、调用归属、活动根与待决定项索引；不新增展开配置表。消息、调用、待决定项和等待条件都有限额，完整决定请求另按需读取。workflow_pending_decision / workflow_human_decision 的 request 原样保存为输入事实，不将其中用户提供的 `$source` 或保留文本解释为配置引用；全量恢复与精确详情读取遵守同一事实边界。该输入事实编解码与当前项目基线一致，不转换旧记录。
+
+项目库的 governance_records.owner_project 是从 Scope 计算的虚拟列，统一提取 project/feature 的所属项目，供运行摘要与子流程分页索引使用；global 归属为空，不进入项目运行摘要。它不保存第二份可编辑配置。事实表通用读写明确列出物理列，避免虚拟列改变 SELECT * 的列序后误解码；虚拟归属列不参与事实写入。当前使用 project 52，project 51 及更旧基线拒绝打开。
 
 ## 幂等与恢复模型
 

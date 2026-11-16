@@ -1,6 +1,6 @@
 //! Bounded display projections. These values never authorize workflow actions.
 use devdesk_domain::{Result, err};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
@@ -22,11 +22,31 @@ pub fn identifier(params: &Value, key: &str) -> Result<String> {
         .map(str::to_owned)
         .ok_or_else(|| err("invalid_params", format!("需要有效的 {key}")))
 }
+pub fn fields(params: &Value, allowed: &[&str]) -> Result<()> {
+    if !params
+        .as_object()
+        .is_some_and(|fields| fields.keys().all(|key| allowed.contains(&key.as_str())))
+    {
+        return Err(err("invalid_params", "摘要请求包含未知字段"));
+    }
+    Ok(())
+}
 impl ControllerQuery {
     pub fn parse(params: &Value) -> Result<Self> {
+        fields(
+            params,
+            &[
+                "project_id",
+                "id",
+                "root_instance_id",
+                "owner_id",
+                "workspace_only",
+                "decision_before",
+            ],
+        )?;
         let mut selectors = vec![];
         for (key, kind) in [("id", 0), ("root_instance_id", 1), ("owner_id", 2)] {
-            if !params[key].is_null() {
+            if params.get(key).is_some() {
                 let id = identifier(params, key)?;
                 selectors.push(match kind {
                     0 => ControllerSelector::Id(id),
@@ -51,7 +71,6 @@ impl ControllerQuery {
             .transpose()?;
         let decision_before = params
             .get("decision_before")
-            .filter(|value| !value.is_null())
             .map(|value| {
                 value
                     .as_u64()
@@ -165,3 +184,41 @@ pub struct DecisionRequest {
     pub request_json: String,
 }
 pub type DecisionDetail = RuntimeSummary<DecisionRequest>;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlanSelectionSummary {
+    pub standard_ref: Option<String>,
+    pub harness_permission_ref: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InstanceManagementState {
+    pub project_id: String,
+    pub owner_id: String,
+    pub root_instance_id: String,
+    pub parent_execution_id: Option<String>,
+    pub workflow_ref: Option<String>,
+    pub active_plan_revision_id: Option<String>,
+    pub control_version: u64,
+    pub status: String,
+    pub paused: bool,
+    pub cancel_requested: bool,
+    pub plan: PlanSelectionSummary,
+    pub role_agent_bindings: std::collections::BTreeMap<String, String>,
+    pub configuration_truncated: bool,
+}
+#[derive(Debug, Serialize)]
+pub struct WorkflowChildSummary {
+    pub id: String,
+    pub name: String,
+    pub revision: u64,
+}
+#[derive(Debug, Serialize)]
+pub struct WorkflowManagementSummary {
+    pub project_id: String,
+    pub cursor: u64,
+    pub record: RuntimeSummary<InstanceManagementState>,
+    pub children: Vec<WorkflowChildSummary>,
+    pub children_more: bool,
+    pub next_child_offset: Option<u64>,
+    pub observed_only: bool,
+}

@@ -472,6 +472,9 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
   await page.goto(
     `/?tab=execution&detail=manager&project_id=${project.id}&feature_id=${feature.id}`,
   );
+  await expect(
+    page.getByRole("region", { name: "项目经理协作", exact: true }),
+  ).toBeVisible();
   const card = page
     .locator(".task-grid article")
     .filter({ has: page.getByText("Task B", { exact: true }) });

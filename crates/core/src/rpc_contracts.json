@@ -1716,6 +1716,15 @@
       ]
     },
     {
+      "method": "query.workflow_management_summary",
+      "access": "read",
+      "scope": "explicit",
+      "precondition": "none",
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
+    },
+    {
       "method": "query.workflow_materials",
       "access": "read",
       "scope": "explicit",

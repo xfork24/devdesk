@@ -52,7 +52,7 @@ Web 和出厂资源嵌入 Host，界面更新后重新构建并重启。发行�
 <data>/projects/<id>/execution/                    # 会话、测试、工具、Git 意图与工作副本
 ```
 
-数据集标记为 `devdesk-profile-runtime-v2`，当前 SQLite 基线为 **global 21 / project 51**，同一数据集只有一个可写 Host。不兼容旧数据集直接拒绝，不自动转换、删库或重建；兼容数据集可重开，验证新代码使用独立空目录。
+数据集标记为 `devdesk-profile-runtime-v2`，当前 SQLite 基线为 **global 21 / project 52**，同一数据集只有一个可写 Host。不兼容旧数据集直接拒绝，不自动转换、删库或重建；兼容数据集可重开，验证新代码使用独立空目录。
 
 配置唯一存储在 `source_definitions`，执行视图按原源引用恢复，不存第二份展开闭包。权限与能力分开：Agent 只引用 Role/Capability，Profile 落实 Harness/Sandbox 策略，步骤直接引用所需 Profile，显式选择替换同层默认绑定。真实 worker 在 Linux 容器运行，宿主登录组件不作为工程执行环境。
 

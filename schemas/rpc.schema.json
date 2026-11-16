@@ -6338,6 +6338,31 @@
         }
       },
       "additionalProperties": false
+    },
+    "WorkflowManagementQuery": {
+      "type": "object",
+      "required": [
+        "project_id",
+        "id"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "child_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -6827,6 +6852,25 @@
             "$ref": "#/$defs/DriverSelectRequest"
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "method": {
+            "const": "query.workflow_management_summary"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/WorkflowManagementQuery"
+          }
+        },
+        "required": [
+          "params"
+        ]
       }
     }
   ]

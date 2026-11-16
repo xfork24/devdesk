@@ -418,7 +418,7 @@ fn open_engineering_connection(path: &Path) -> Result<connection_pool::ManagedCo
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 51,
+        version == 0 || version == 52,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -461,9 +461,14 @@ fn load_table_filtered_params<T: DeserializeOwned>(
 ) -> Result<Vec<T>> {
     let _span = performance::Span::new("sqlite.table_read_decode");
     let columns = columns(conn, table)?;
+    let selection = columns
+        .iter()
+        .map(|(name, _)| format!("\"{}\"", name.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(",");
     let mut q = conn
         .prepare(&format!(
-            "SELECT * FROM {table} WHERE {predicate} ORDER BY rowid"
+            "SELECT {selection} FROM {table} WHERE {predicate} ORDER BY rowid"
         ))
         .map_err(storage)?;
     let rows = q
@@ -609,6 +614,26 @@ impl EngineeringStore for SqliteStore {
     ) -> Result<concurrency::CommitReceipt> {
         if let Some(project) = &self.project_id {
             for change in &changes.changes {
+                if change.resource.kind == "governance" {
+                    let scope: Scope = serde_json::from_value(change.value["scope"].clone())
+                        .map_err(|error| err("invalid_params", error.to_string()))?;
+                    let catalog = change.value["type"]
+                        .as_str()
+                        .is_some_and(devdesk_core::catalog_kind);
+                    require(
+                        scope.project_id() == Some(project.as_str())
+                            || (scope.is_global() && catalog),
+                        "项目数据库不能提交其他项目或全局的运行事实",
+                    )?;
+                    if !catalog {
+                        require(
+                            change.value["data"]
+                                .get("project_id")
+                                .is_none_or(|value| value.as_str() == Some(project.as_str())),
+                            "运行事实正文与项目归属不一致",
+                        )?;
+                    }
+                }
                 require(
                     (change.resource.kind != "project" || &change.resource.id == project)
                         && change.value.get("project_id").is_none_or(|value| {
@@ -656,6 +681,20 @@ impl EngineeringStore for SqliteStore {
                 .as_deref()
                 .ok_or_else(|| err("project_required", "决定请求需要明确项目"))?,
             id,
+        )
+    }
+    fn workflow_management_summary(
+        &self,
+        id: &str,
+        child_offset: u64,
+    ) -> Result<devdesk_core::read_models::WorkflowManagementSummary> {
+        read_models::management(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "流程摘要需要明确项目"))?,
+            id,
+            child_offset,
         )
     }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {

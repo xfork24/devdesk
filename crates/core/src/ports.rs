@@ -418,6 +418,13 @@ pub trait EngineeringStore: Send + Sync {
     fn workflow_decision(&self, _id: &str) -> Result<crate::read_models::DecisionDetail> {
         Err(err("unsupported", "存储未实现确切决定读取"))
     }
+    fn workflow_management_summary(
+        &self,
+        _id: &str,
+        _child_offset: u64,
+    ) -> Result<crate::read_models::WorkflowManagementSummary> {
+        Err(err("unsupported", "存储未实现流程管理摘要"))
+    }
     /// Core-prepared changes and every business read dependency commit atomically.
     fn commit_changes(
         &self,
