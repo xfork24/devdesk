@@ -288,7 +288,6 @@ export function ModelFields({
   useEffect(() => {
     const controller = new AbortController();
     const forceRefresh = revision !== consumedRefresh.current;
-    consumedRefresh.current = revision;
     setLoading(true);
     setCandidates([]);
     setError("");
@@ -324,6 +323,8 @@ export function ModelFields({
               setSource("已保存标识与版本声明目录；登录或配置凭据后可刷新");
               return;
             }
+            // Keep the explicit refresh pending across an aborted identity read.
+            consumedRefresh.current = revision;
             const result = await readModelCatalog(
               request,
               data.provider,
