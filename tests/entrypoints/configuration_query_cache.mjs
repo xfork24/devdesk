@@ -92,3 +92,10 @@ test('read-only permission browsing and runtime status polls do not invalidate c
  assert.equal(client.modelMutation('runtime.prepare'),true);
  assert.equal(client.configurationMutation('permission.source.select'),true);
 });
+test('bursts of committed versions retry reads within a bounded budget',async()=>{
+ client.invalidateConfigurationQueries();let attempts=0;
+ const result=await client.readConfiguration('query.configuration_index',{kind:'role'},async()=>{
+  attempts++;if(attempts<4){client.invalidateConfigurationQueries();throw new DOMException('changed','AbortError');}return 'fresh';
+ });
+ assert.equal(result,'fresh');assert.equal(attempts,4);
+});

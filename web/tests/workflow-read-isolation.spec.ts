@@ -262,6 +262,7 @@ test("manager context pins its session through delayed role discovery and accept
           ],
         };
         break;
+      case "query.configuration_index":
       case "query.configurations":
         result = {
           records: [

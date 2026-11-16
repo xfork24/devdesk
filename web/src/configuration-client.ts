@@ -154,7 +154,7 @@ export async function readConfiguration<T>(
 ): Promise<T> {
   if (!host || !cachedMethods.has(method) || options.fresh)
     return load(options.signal || new AbortController().signal);
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     const epoch = serial;
     try {
       const result = await queries.read(
@@ -169,11 +169,12 @@ export async function readConfiguration<T>(
       if (
         options.signal?.aborted ||
         options.prefetch ||
-        attempt ||
+        attempt === 3 ||
         !(error instanceof DOMException) ||
         error.name !== "AbortError"
       )
         throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
     }
   }
   throw new Error("配置已变化，请重试");

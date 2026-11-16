@@ -1,7 +1,7 @@
 import { chromium } from '../../web/node_modules/playwright-core/index.mjs';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
-const [origin, output, count, serverPid] = process.argv.slice(2);
+const [origin, output, count, serverPid, mode = "warm"] = process.argv.slice(2);
 const samples = Number(count);
 const browser = await chromium.launch({ channel: 'chromium', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -54,13 +54,14 @@ async function settle() {
   }
   throw Error('configuration requests did not settle: ' + JSON.stringify(phase));
 }
-function save() { fs.writeFileSync(output + '/browser.json', JSON.stringify({ trace, navigation, errors, consoleErrors, realtime_models: 'explicit fixture; excluded', scheduler: false }, null, 2)); }
+function save() { fs.writeFileSync(output + '/browser.json', JSON.stringify({ trace, navigation, errors, consoleErrors, realtime_models: 'explicit fixture; excluded', scheduler: false, mode }, null, 2)); }
 try {
   await page.goto(origin + '/?tab=discussion'); await settle();
   const names = ['项目管理', '流程与规范', '角色与Agent', '基础组件', '角色讨论'];
   for (let sample = 0; sample < samples; sample++) for (const name of names) {
     phase = { sample, page: name }; start = Date.now();
-    await page.getByRole('button', { name: name === '角色与Agent' ? /^角色与(?:Agent|代理)$/ : name, exact: true }).click();
+    if (mode === 'cold') await page.goto(origin+'/?tab='+({'项目管理':'projects','流程与规范':'workflows','角色与Agent':'actors','基础组件':'components','角色讨论':'discussion'}[name]));
+    else await page.getByRole('button', { name: name === '角色与Agent' ? /^角色与(?:Agent|代理)$/ : name, exact: true }).click();
     if (name === '项目管理') await page.waitForFunction(()=>[...document.querySelectorAll('[aria-label="项目配置"] button')].some(b=>b.textContent.includes('保存项目配置') && !b.disabled));
     else if (name === '角色讨论') await page.locator('select[aria-label="讨论角色"] option[value]:not([value=""])').first().waitFor({state:'attached'});
     else await page.getByRole('region',{name: name === '流程与规范' ? '工作流程管理' : name === '角色与Agent' ? '角色管理' : 'Model 管理', exact:true}).locator('.configuration-list button strong').first().waitFor();
