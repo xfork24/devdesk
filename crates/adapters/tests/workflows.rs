@@ -239,12 +239,12 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
     let project = id();
     let _project = SqliteStore::open_project(dir.path(), &project).unwrap();
     for (path, version) in [
-        (dir.path().join("global.sqlite3"), 21),
+        (dir.path().join("global.sqlite3"), 22),
         (
             SqliteStore::project_path(dir.path(), &project)
                 .unwrap()
                 .join("engineering.sqlite3"),
-            55,
+            56,
         ),
     ] {
         let db = rusqlite::Connection::open(path).unwrap();
@@ -269,7 +269,7 @@ fn current_databases_exclude_retired_permission_storage_and_conversion_indexes()
             db.prepare("SELECT revision FROM resource_versions WHERE kind=?1 AND resource_id=?2")
                 .is_ok()
         );
-        if version == 55 {
+        if version == 56 {
             for table in ["projects", "features", "tasks", "snapshots"] {
                 let columns: Vec<String> = db
                     .prepare(&format!("PRAGMA table_info({table})"))
@@ -302,7 +302,7 @@ fn the_previous_project_database_is_rejected_without_conversion() {
     .unwrap();
     let path = root.join("engineering.sqlite3");
     let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("CREATE TABLE sentinel(value TEXT); INSERT INTO sentinel VALUES ('retained'); PRAGMA user_version=54;").unwrap();
+    conn.execute_batch("CREATE TABLE sentinel(value TEXT); INSERT INTO sentinel VALUES ('retained'); PRAGMA user_version=55;").unwrap();
     drop(conn);
     let before = std::fs::read(&path).unwrap();
     let error = SqliteStore::open_project(directory.path(), &project)

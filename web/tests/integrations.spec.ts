@@ -5,6 +5,87 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useMockCodexCatalog } from "./support/model-catalog";
 useMockCodexCatalog();
+test("工具核对保留首次编辑版本、证据和冲突请求身份", async ({ page }) => {
+  let revision = 1;
+  let readsAtNewRevision = 0;
+  const attempts: any[] = [];
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.history" && call.params.scope === "global") {
+      if (revision === 2) readsAtNewRevision += 1;
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            records: [
+              {
+                type: "tool_call",
+                time: 1000,
+                call: {
+                  id: "call-draft",
+                  name: "原版本工具调用",
+                  revision,
+                  created_at: 1000,
+                  data: {
+                    status: "needs_reconciliation",
+                    remote_effect: "unknown",
+                    invocation: {
+                      tool: { revision_id: "tool:1", binding_ref: "binding:1" },
+                    },
+                  },
+                },
+              },
+            ],
+            total: 1,
+          },
+        },
+      });
+    }
+    if (call.method === "tool.call.reconcile") {
+      attempts.push(call.params);
+      return route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          error: {
+            code: "revision_conflict",
+            message: "fixture: 原始调用已变化",
+          },
+        },
+      });
+    }
+    return route.fallback();
+  });
+  await page.goto("/?tab=history&history_scope=global");
+  await page.getByRole("button", { name: "历史记录", exact: true }).click();
+  await page.getByLabel("历史范围", { exact: true }).selectOption("global");
+  const history = page.getByRole("region", { name: "历史记录", exact: true });
+  await history
+    .getByRole("button", { name: "原版本工具调用", exact: true })
+    .click();
+  await history
+    .getByRole("textbox", { name: "核对证据", exact: true })
+    .fill("保留原证据");
+  revision = 2;
+  await history
+    .getByRole("button", { name: "刷新历史记录", exact: true })
+    .click();
+  await expect.poll(() => readsAtNewRevision).toBeGreaterThan(0);
+  await history
+    .getByRole("button", { name: "核对调用事实", exact: true })
+    .click();
+  await expect(history.getByRole("alert")).toContainText("原始调用已变化");
+  await expect(
+    history.getByRole("textbox", { name: "核对证据", exact: true }),
+  ).toHaveValue("保留原证据");
+  await history
+    .getByRole("button", { name: "核对调用事实", exact: true })
+    .click();
+  await expect.poll(() => attempts.length).toBe(2);
+  expect(attempts[0].expected_revision).toBe(1);
+  expect(attempts[0]).toEqual(attempts[1]);
+});
 async function setup(page: Page) {
   await page.goto("/");
   if (

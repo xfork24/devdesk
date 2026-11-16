@@ -836,6 +836,547 @@ fn test_command() -> Command {
         payload: json!({}),
     }
 }
+fn observed(root: &std::path::Path) -> (Arc<Engine>, ToolInvocation, Arc<ObservedExecutor>) {
+    let (engine, invocation) = registered_invocation(root);
+    let executor = Arc::new(ObservedExecutor {
+        native: NativeTools::new(root).unwrap(),
+        starts: Default::default(),
+        receipts: Default::default(),
+    });
+    let engine = Arc::new(engine.with_tool_executor(executor.clone()));
+    engine
+        .enqueue_tool_test(&test_command(), &invocation)
+        .unwrap();
+    engine.store.configuration_snapshot().unwrap();
+    (engine, invocation, executor)
+}
+fn success(id: &str) -> ToolReceipt {
+    ToolReceipt {
+        invocation_id: id.into(),
+        success: true,
+        content: vec![],
+        structured_content: Some(json!({"$source":"literal-remote-value","ref":"not-a-source"})),
+        remote_effect: "applied".into(),
+        error: None,
+        origin: Origin::External,
+    }
+}
+#[test]
+fn one_hundred_parallel_dispatch_claims_grant_one_external_start_without_old_writer() {
+    use devdesk_core::tool_calls::ToolCall;
+    let root = tempfile::tempdir().unwrap();
+    let (engine, invocation, executor) = observed(root.path());
+    let calls = (0..100)
+        .map(|_| ToolCall::read(engine.store.as_ref(), &invocation.id).unwrap())
+        .collect::<Vec<_>>();
+    let (ready, wait) = std::sync::mpsc::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let old = engine.clone();
+    let legacy = std::thread::spawn(move || {
+        old.store.transact(None, &mut |_| {
+            ready.send(()).unwrap();
+            blocked.recv().unwrap();
+            Ok(Value::Null)
+        })
+    });
+    wait.recv().unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = calls
+        .into_iter()
+        .map(|call| {
+            let (engine, executor, barrier) = (engine.clone(), executor.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                let grant = call.claim(engine.store.as_ref())?;
+                if let Some(grant) = grant {
+                    devdesk_core::ports::ToolExecutor::start(
+                        executor.as_ref(),
+                        grant.invocation(),
+                    )?;
+                }
+                Ok::<_, Error>(())
+            })
+        })
+        .collect::<Vec<_>>();
+    let results = threads
+        .into_iter()
+        .map(|t| t.join().unwrap())
+        .collect::<Vec<_>>();
+    release.send(()).unwrap();
+    legacy.join().unwrap().unwrap();
+    for result in results {
+        result.unwrap();
+    }
+    assert_eq!(executor.starts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let state = engine.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "tool_dispatch")
+            .count(),
+        1
+    );
+    assert_eq!(
+        state.configuration(&invocation.id).unwrap().data["status"],
+        "dispatched"
+    );
+}
+#[test]
+fn duplicate_receipts_commit_once_and_conflicting_callbacks_keep_all_original_facts() {
+    use devdesk_core::tool_calls::ToolCall;
+    let root = tempfile::tempdir().unwrap();
+    let (engine, invocation, _) = observed(root.path());
+    let dispatch = ToolCall::read(engine.store.as_ref(), &invocation.id)
+        .unwrap()
+        .claim(engine.store.as_ref())
+        .unwrap()
+        .unwrap();
+    let receipt = success(&invocation.id);
+    let calls = (0..100)
+        .map(|_| ToolCall::read(engine.store.as_ref(), &invocation.id).unwrap())
+        .collect::<Vec<_>>();
+    let before = engine.store.event_cursor().unwrap();
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let threads = calls
+        .into_iter()
+        .map(|call| {
+            let (engine, receipt, barrier) = (engine.clone(), receipt.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                call.observe(engine.store.as_ref(), &receipt)
+            })
+        })
+        .collect::<Vec<_>>();
+    for thread in threads {
+        thread.join().unwrap().unwrap();
+    }
+    assert_eq!(engine.store.event_cursor().unwrap(), before + 2);
+    let mut different = receipt.clone();
+    different.structured_content = Some(json!({"other":"original-observation"}));
+    assert_eq!(
+        dispatch
+            .observe(engine.store.as_ref(), &different)
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+    let state = engine.store.snapshot().unwrap();
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "tool_observation")
+            .count(),
+        2
+    );
+    assert_eq!(
+        state.configuration(&invocation.id).unwrap().data["receipt"],
+        json!(receipt)
+    );
+}
+#[test]
+fn original_callback_cannot_overwrite_later_cancel_or_human_reconciliation() {
+    use devdesk_core::tool_calls::ToolCall;
+    let root = tempfile::tempdir().unwrap();
+    let (engine, invocation, executor) = observed(root.path());
+    let dispatch = ToolCall::read(engine.store.as_ref(), &invocation.id)
+        .unwrap()
+        .claim(engine.store.as_ref())
+        .unwrap()
+        .unwrap();
+    let receipt = success(&invocation.id);
+    command(&engine, "tool.call.cancel", Some(&invocation.id), json!({})).unwrap();
+    assert_eq!(
+        dispatch
+            .observe(engine.store.as_ref(), &receipt)
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+    engine.drive_tool_calls().unwrap();
+    let stale = ToolCall::read(engine.store.as_ref(), &invocation.id).unwrap();
+    command(
+        &engine,
+        "tool.call.reconcile",
+        Some(&invocation.id),
+        json!({"remote_effect":"applied","evidence":"operator observation"}),
+    )
+    .unwrap();
+    assert_eq!(
+        stale
+            .observe(engine.store.as_ref(), &receipt)
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+    executor
+        .receipts
+        .lock()
+        .unwrap()
+        .insert(invocation.id.clone(), receipt);
+    engine.drive_tool_calls().unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let row = state.configuration(&invocation.id).unwrap();
+    assert_eq!(row.data["status"], "failed");
+    assert_eq!(row.data["receipt"]["origin"], "human");
+    assert_eq!(row.data["cancel_requested"], true);
+    assert_eq!(executor.starts.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+#[test]
+fn native_tool_controls_require_original_versions_and_replay_the_exact_result() {
+    let root = tempfile::tempdir().unwrap();
+    let (engine, invocation, _) = observed(root.path());
+    let mut request = Command {
+        command_id: id(),
+        target: Some(invocation.id.clone()),
+        expected_revision: None,
+        payload: json!({}),
+    };
+    assert_eq!(
+        engine
+            .execute("tool.call.cancel", request.clone())
+            .unwrap_err()
+            .code,
+        "precondition_required"
+    );
+    request.expected_revision = Some(1);
+    let first = engine.execute("tool.call.cancel", request.clone()).unwrap();
+    assert_eq!(
+        engine.execute("tool.call.cancel", request.clone()).unwrap(),
+        first
+    );
+    request.command_id = id();
+    assert_eq!(
+        engine
+            .execute("tool.call.cancel", request)
+            .unwrap_err()
+            .code,
+        "revision_conflict"
+    );
+}
+#[test]
+fn drivable_tool_pages_seek_an_index_and_skip_unrestorable_settled_history() {
+    let root = tempfile::tempdir().unwrap();
+    let (engine, invocation, _) = observed(root.path());
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES('settled-unreadable','tool_call','fixture','\"global\"','History',1,'fixture','{}',?1,0,1,1)",[json!({"status":"succeeded","reply_sent":true,"invocation":{"$source":"missing-historical-source"},"large":"x".repeat(1_000_000)}).to_string()]).unwrap();
+    let mut query=conn.prepare("EXPLAIN QUERY PLAN SELECT id FROM governance_records INDEXED BY idx_tool_call_drivable WHERE type='tool_call' AND id>?1 AND (json_extract(data,'$.status') IN ('prepared','dispatched','needs_reconciliation') OR (json_extract(data,'$.status') IN ('succeeded','failed','cancelled') AND coalesce(json_extract(data,'$.reply_sent'),0)=0 AND json_extract(data,'$.invocation.session_id') IS NOT NULL)) ORDER BY id LIMIT 17").unwrap();
+    let plan = query
+        .query_map([""], |r| r.get::<_, String>(3))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        plan.contains("idx_tool_call_drivable") && !plan.contains("TEMP B-TREE"),
+        "{plan}"
+    );
+    let trace = devdesk_adapters::performance::Trace::start();
+    assert_eq!(
+        engine.store.tool_call_page(None).unwrap().ids,
+        vec![invocation.id]
+    );
+    engine.drive_tool_calls().unwrap();
+    let report = trace.finish();
+    for stage in [
+        "project.full_snapshot",
+        "project.transaction",
+        "source.restore_records",
+    ] {
+        assert!(report["spans"][stage].is_null(), "{report}");
+    }
+}
+struct UncertainReply(std::sync::atomic::AtomicUsize);
+impl ports::Harness for UncertainReply {
+    fn answer_tool_call(&self, _: &Session, _: &Value, _: &ToolReceipt) -> Result<()> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err(err(
+            "needs_reconciliation",
+            "fixture acknowledgement lost after delivery",
+        ))
+    }
+}
+#[test]
+fn uncertain_native_replies_are_journaled_and_never_automatically_resent() {
+    use devdesk_core::tool_calls::ToolCall;
+    let root = tempfile::tempdir().unwrap();
+    let (mut engine, mut invocation) = registered_invocation(root.path());
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"Native reply fixture"}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (session, turn) = runtime::queue_conversation(&engine, &project);
+    engine.tick_conversations(4).unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let worker = state
+        .executions
+        .iter()
+        .find(|e| e.session_id == session && !e.writer_revoked)
+        .unwrap();
+    invocation.project_id = Some(project);
+    invocation.session_id = Some(session);
+    invocation.turn_id = Some(turn);
+    invocation.operation_id = Some(worker.operation_id.clone());
+    invocation.request_id = Some(json!({"id":"native-tool-request"}));
+    engine
+        .enqueue_tool_test(&test_command(), &invocation)
+        .unwrap();
+    let reply = Arc::new(UncertainReply(Default::default()));
+    engine.harness = reply.clone();
+    let dispatch = ToolCall::read(engine.store.as_ref(), &invocation.id)
+        .unwrap()
+        .claim(engine.store.as_ref())
+        .unwrap()
+        .unwrap();
+    dispatch
+        .observe(engine.store.as_ref(), &success(&invocation.id))
+        .unwrap();
+    for _ in 0..5 {
+        ToolCall::read(engine.store.as_ref(), &invocation.id)
+            .unwrap()
+            .deliver(engine.store.as_ref(), reply.as_ref())
+            .unwrap();
+    }
+    assert_eq!(reply.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let state = engine.store.snapshot().unwrap();
+    let row = state.configuration(&invocation.id).unwrap();
+    assert_eq!(row.data["reply_status"], "needs_reconciliation");
+    assert_eq!(row.data["reply_sent"], false);
+    assert_eq!(
+        state
+            .governance
+            .iter()
+            .filter(|r| r.r#type == "tool_reply_intent")
+            .count(),
+        1
+    );
+    assert!(
+        state
+            .governance
+            .iter()
+            .any(|r| r.r#type == "tool_observation"
+                && r.name == "reply"
+                && r.data["value"]["error"]["code"] == "needs_reconciliation")
+    );
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    invocation.id = id();
+    engine
+        .enqueue_tool_test(&test_command(), &invocation)
+        .unwrap();
+    let before_revocation = ToolCall::read(engine.store.as_ref(), &invocation.id).unwrap();
+    conn.execute(
+        "UPDATE executions SET writer_revoked=1 WHERE operation_id=?1",
+        [&worker.operation_id],
+    )
+    .unwrap();
+    assert!(
+        before_revocation
+            .claim(engine.store.as_ref())
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        ToolCall::read(engine.store.as_ref(), &invocation.id)
+            .unwrap()
+            .claim(engine.store.as_ref())
+            .unwrap()
+            .is_none()
+    );
+    let stopped = engine
+        .store
+        .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+            "governance",
+            &invocation.id,
+        )])
+        .unwrap()
+        .remove(0)
+        .value
+        .unwrap();
+    assert_eq!(stopped["data"]["status"], "cancelled");
+    assert_eq!(stopped["data"]["remote_effect"], "not_applied");
+    assert!(
+        conn.execute(
+            "UPDATE executions SET writer_revoked=0 WHERE operation_id=?1",
+            [&worker.operation_id]
+        )
+        .is_err()
+    );
+    assert!(
+        conn.execute(
+            "DELETE FROM executions WHERE operation_id=?1",
+            [&worker.operation_id]
+        )
+        .is_err()
+    );
+}
+#[test]
+fn workflow_tool_dispatch_respects_ancestor_pause_and_original_execution_fences() {
+    use devdesk_core::{
+        concurrency::ResourceKey,
+        tool_calls::{ToolCall, WorkflowToolAuthority},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let (engine, mut invocation, _) = observed(root.path());
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"Frozen tool authority"}),
+    )
+    .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    invocation.id = id();
+    invocation.project_id = Some(project.clone());
+    invocation.operation_id = Some("child-execution".into());
+    engine
+        .enqueue_tool_test(&test_command(), &invocation)
+        .unwrap();
+    let conn = rusqlite::Connection::open(root.path().join("engineering.sqlite3")).unwrap();
+    for (id, execution, paused, parent) in [
+        ("child", "child-execution", false, Some("parent-execution")),
+        ("root", "parent-execution", true, None),
+    ] {
+        let data = json!({"project_id":project,"status":"running","paused":paused,"cancel_requested":false,"parent_execution_id":parent,"steps":[{"id":execution,"status":"running","plan_revision_id":"plan","node_id":"node","input_digest":"input","contract_digest":"contract"}]});
+        conn.execute("INSERT INTO governance_records(id,type,definition_id,scope,name,version,content_hash,refs,data,immutable,revision,created_at) VALUES(?1,'workflow_instance',?2,?3,'Unrestored workflow',1,'fixture','{}',?4,0,1,1)",rusqlite::params![id,project,serde_json::to_string(&Scope::project(&project)).unwrap(),data.to_string()]).unwrap();
+    }
+    let authority = WorkflowToolAuthority {
+        instances: vec!["child".into(), "root".into()],
+        executions: vec!["child-execution".into(), "parent-execution".into()],
+        execution_id: "child-execution".into(),
+        plan_revision_id: "plan".into(),
+        node_id: "node".into(),
+        input_digest: "input".into(),
+        contract_digest: "contract".into(),
+    };
+    conn.execute("UPDATE governance_records SET data=json_set(data,'$.workflow_authority',json(?1)),revision=revision+1 WHERE id=?2",rusqlite::params![serde_json::to_string(&authority).unwrap(),invocation.id]).unwrap();
+    assert!(
+        ToolCall::read(engine.store.as_ref(), &invocation.id)
+            .unwrap()
+            .claim(engine.store.as_ref())
+            .unwrap()
+            .is_none()
+    );
+    let saved = engine
+        .store
+        .read_resources(&[ResourceKey::new("governance", &invocation.id)])
+        .unwrap()
+        .remove(0)
+        .value
+        .unwrap();
+    assert_eq!(saved["data"]["status"], "prepared");
+    conn.execute("UPDATE governance_records SET data=json_set(data,'$.paused',json('false')),revision=2 WHERE id='root'",[]).unwrap();
+    let original = ToolCall::read(engine.store.as_ref(), &invocation.id).unwrap();
+    conn.execute("UPDATE governance_records SET data=json_set(data,'$.steps[0].id','replacement-execution'),revision=3 WHERE id='root'",[]).unwrap();
+    assert!(original.claim(engine.store.as_ref()).unwrap().is_none());
+    assert!(
+        ToolCall::read(engine.store.as_ref(), &invocation.id)
+            .unwrap()
+            .claim(engine.store.as_ref())
+            .unwrap()
+            .is_none()
+    );
+    let saved = engine
+        .store
+        .read_resources(&[ResourceKey::new("governance", &invocation.id)])
+        .unwrap()
+        .remove(0)
+        .value
+        .unwrap();
+    assert_eq!(saved["data"]["status"], "cancelled");
+    assert_eq!(
+        saved["data"]["local_pre_dispatch_stop"]["operation_id"],
+        "child-execution"
+    );
+}
+#[test]
+fn configured_tool_enqueue_preserves_the_actual_frozen_execution_authority() {
+    use devdesk_core::tool_calls::ToolCall;
+    let root = tempfile::tempdir().unwrap();
+    let (engine, mut invocation) = registered_invocation(root.path());
+    let project = command(
+        &engine,
+        "project.create",
+        None,
+        json!({"title":"Configured external tool"}),
+    )
+    .unwrap();
+    let project = project["id"].as_str().unwrap();
+    command(&engine,"integration.project.bind",None,json!({"project_id":project,"bindings":{invocation.tool.binding.integration_ref.clone():invocation.tool.binding_ref.clone()}})).unwrap();
+    let workflow=command(&engine,"workflow.create",None,json!({"name":"External lookup","document":{"schema_version":6,"stages":[{"key":"work","name":"Lookup"}],"steps":[{"key":"lookup","name":"Lookup","stage":"work","executor":{"type":"tool","tool_ref":invocation.tool.revision_id,"arguments":{"id":{"type":"constant","value":"A-1"}}}}]}})).unwrap();
+    let workflow = command(
+        &engine,
+        "workflow.publish",
+        workflow["id"].as_str(),
+        json!({}),
+    )
+    .unwrap();
+    let run = command(
+        &engine,
+        "workflow.start",
+        Some(project),
+        json!({"workflow_ref":workflow["id"],"role_agent_bindings":{}}),
+    )
+    .unwrap();
+    let baseline = engine
+        .store
+        .snapshot()
+        .unwrap()
+        .configuration(run["id"].as_str().unwrap())
+        .unwrap()
+        .clone();
+    command(
+        &engine,
+        "workflow.step.dispatch",
+        run["id"].as_str(),
+        json!({"step":"lookup","plan_revision_id":baseline.data["active_plan_revision_id"],"control_version":baseline.data["control_version"]}),
+    )
+    .unwrap();
+    let state = engine.store.snapshot().unwrap();
+    let intent = state
+        .governance
+        .iter()
+        .find(|r| r.r#type == "workflow_intent" && r.data["method"] == "workflow.tool.execute")
+        .unwrap();
+    let original: Command = serde_json::from_value(intent.data["command"].clone()).unwrap();
+    let request = engine.configured_tool_request(&original).unwrap();
+    invocation.id = id();
+    invocation.operation_id = Some(request.execution_id.clone());
+    invocation.project_id = Some(project.into());
+    invocation.tool = request.tool;
+    invocation.permissions = devdesk_adapters::permission_profiles::compile_permission_profiles(
+        &state,
+        &request.permissions,
+        Some(ExecutionScope {
+            work_type: WorkType::Discussion,
+            writable_paths: vec![],
+            read_only_paths: vec![],
+        }),
+    )
+    .unwrap();
+    let admitted = engine
+        .enqueue_configured_tool(&original, &invocation)
+        .unwrap();
+    assert_eq!(
+        admitted["data"]["workflow_authority"],
+        json!(request.authority)
+    );
+    assert!(
+        ToolCall::read(engine.store.as_ref(), &invocation.id)
+            .unwrap()
+            .claim(engine.store.as_ref())
+            .unwrap()
+            .is_some()
+    );
+}
 #[test]
 fn cancel_approval_restart_and_human_reconciliation_do_not_resend_unknown_calls() {
     let root = tempfile::tempdir().unwrap();

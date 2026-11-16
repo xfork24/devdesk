@@ -534,7 +534,41 @@ impl Engine {
         let fingerprint = command_fingerprint("workflow.tool.execute", command);
         self.store
             .transact(Some((&command.command_id, &fingerprint)), &mut |state| {
-                self.insert_tool_invocation(state, invocation)
+                let execution = invocation.operation_id.as_deref().unwrap();
+                let row = state
+                    .governance
+                    .iter()
+                    .find(|r| {
+                        r.r#type == "workflow_instance"
+                            && r.data["steps"].as_array().is_some_and(|steps| {
+                                steps.iter().any(|step| step["id"] == execution)
+                            })
+                    })
+                    .ok_or_else(|| err("not_found", "工具步骤已被替换"))?;
+                let step = row.data["steps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|step| step["id"] == execution)
+                    .unwrap();
+                require(
+                    step["status"] == "running"
+                        && !state.workflow_instance_suspended(&row.id)
+                        && row.data["cancel_requested"] != true,
+                    "工具步骤资格已变化",
+                )?;
+                let authority = crate::tool_calls::workflow_authority(state, row, execution)?;
+                require(authority == expected.authority, "工具原始执行资格已变化")?;
+                self.insert_tool_invocation(state, invocation)?;
+                let call = state
+                    .governance
+                    .iter_mut()
+                    .find(|r| r.id == invocation.id)
+                    .unwrap();
+                let mut data = call.data.clone();
+                data["workflow_authority"] = json!(authority);
+                update_record(call, data);
+                Ok(json!(call))
             })
     }
     pub fn record_tool_discovery(
@@ -565,189 +599,136 @@ impl Engine {
             Ok(value)
         })
     }
+    pub(crate) fn recover_tool_dispatches(&self) -> Result<()> {
+        let mut after = None;
+        loop {
+            let page = self.store.tool_call_page(after.as_deref())?;
+            for id in page.ids {
+                let call = crate::tool_calls::ToolCall::read(self.store.as_ref(), &id)?;
+                if call.data()["status"] == "dispatched" {
+                    match call.mark_unknown(
+                        self.store.as_ref(),
+                        "restart",
+                        &err("needs_reconciliation", "restart_after_dispatch"),
+                    ) {
+                        Err(error) if error.code == "revision_conflict" => {}
+                        result => result?,
+                    }
+                }
+            }
+            let Some(next) = page.next_after else { break };
+            after = Some(next);
+        }
+        Ok(())
+    }
     pub fn recover_tool_receipts(&self) -> Result<()> {
         let Some(executor) = &self.tool_executor else {
             return Ok(());
         };
-        for r in self
-            .store
-            .snapshot()?
-            .governance
-            .iter()
-            .filter(|r| r.r#type == "tool_call" && r.data["status"] == "needs_reconciliation")
-        {
-            let i: ToolInvocation = decode(&r.data["invocation"])?;
-            if let Ok(Some(receipt)) = executor.poll(&i)
-                && r.data["receipt"] != json!(receipt)
+        // Opening may observe persisted calls, never grant another start. The
+        // normal rotating driver subsequently covers the remaining pages.
+        for id in self.store.tool_call_page(None)?.ids {
+            let call = crate::tool_calls::ToolCall::read(self.store.as_ref(), &id)?;
+            if call.data()["status"] == "needs_reconciliation"
+                && call.data()["dispatch_id"].is_string()
+                && let Some(receipt) = executor.poll(call.invocation())?
             {
-                self.accept_tool_receipt(&r.id, &receipt)?;
+                match call.observe(self.store.as_ref(), &receipt) {
+                    Err(error) if error.code == "revision_conflict" => {}
+                    result => result?,
+                }
             }
         }
         Ok(())
     }
     pub fn drive_tool_calls(&self) -> Result<()> {
-        if !self.store.has_pending_tool_calls()? {
-            return Ok(());
-        }
-        // Reconcile late persisted receipts on every tick; never redispatch an unknown call.
-        self.recover_tool_receipts()?;
+        use crate::tool_calls::ToolCall;
         let Some(executor) = &self.tool_executor else {
             return Ok(());
         };
-        let calls: Vec<_> = self
-            .store
-            .snapshot()?
-            .governance
-            .into_iter()
-            .filter(|r| {
-                r.r#type == "tool_call"
-                    && ([
-                        "awaiting_approval",
-                        "prepared",
-                        "dispatched",
-                        "succeeded",
-                        "failed",
-                        "cancelled",
-                    ]
-                    .contains(&r.data["status"].as_str().unwrap_or(""))
-                        || (r.data["status"] == "needs_reconciliation"
-                            && r.data["receipt"].is_object()
-                            && r.data["reply_sent"] != true))
-            })
-            .collect();
-        for r in calls {
-            let invocation: ToolInvocation = decode(&r.data["invocation"])?;
-            if ["succeeded", "failed", "cancelled"]
-                .contains(&r.data["status"].as_str().unwrap_or(""))
-                || (r.data["status"] == "needs_reconciliation" && r.data["receipt"].is_object())
-            {
-                if r.data["reply_sent"] != true
-                    && let (Some(sid), Some(request)) =
-                        (&invocation.session_id, &invocation.request_id)
-                {
-                    let state = self.store.snapshot()?;
-                    let session = state
-                        .sessions
-                        .iter()
-                        .find(|s| &s.id == sid)
-                        .ok_or_else(|| err("not_found", "调用 Session 缺失"))?;
-                    let receipt: ToolReceipt = decode(&r.data["receipt"])?;
-                    let active = state
-                        .executions
-                        .iter()
-                        .any(|e| e.session_id == *sid && !e.writer_revoked);
-                    if !active {
-                        self.tool_record_update(&r.id, |d| {
-                            d["reply_sent"] = json!(true);
-                            d["reply_status"] = json!("worker_unavailable");
-                        })?;
-                    } else if self
-                        .harness
-                        .answer_tool_call(session, request, &receipt)
-                        .is_ok()
-                    {
-                        self.tool_record_update(&r.id, |d| {
-                            d["reply_sent"] = json!(true);
-                        })?;
-                    }
-                }
-                continue;
-            }
-            if r.data["cancel_requested"] == true {
-                if r.data["status"] != "dispatched" {
-                    let receipt = ToolReceipt {
-                        invocation_id: invocation.id.clone(),
-                        success: false,
-                        content: vec![
-                            json!({"type":"text", "text":"Tool call cancelled before dispatch"}),
-                        ],
-                        structured_content: None,
-                        remote_effect: "not_applied".into(),
-                        error: Some(json!({"code":"cancelled"})),
-                        origin: Origin::External,
-                    };
-                    self.accept_tool_receipt(&r.id, &receipt)?;
-                    self.tool_record_update(&r.id, |d| d["status"] = json!("cancelled"))?;
-                    continue;
-                }
-                executor.cancel(&invocation)?;
-                self.tool_record_update(&r.id, |d| {
-                    d["status"] = json!("needs_reconciliation");
-                    d["remote_effect"] = json!("unknown");
-                })?;
-                continue;
-            }
-            if r.data["status"] == "awaiting_approval" {
-                continue;
-            }
-            if r.data["status"] == "prepared" {
-                self.tool_record_update(&r.id, |d| {
-                    d["status"] = json!("dispatched");
-                    d["dispatched_at"] = json!(now());
-                })?;
-                if let Err(error) = executor.start(&invocation) {
-                    if error.code == "needs_reconciliation" {
-                        self.tool_record_update(&r.id, |d| {
-                            d["status"] = json!("needs_reconciliation");
-                            d["remote_effect"] = json!("unknown");
-                        })?;
-                        continue;
-                    }
-                    let receipt = ToolReceipt {
-                        invocation_id: invocation.id.clone(),
-                        success: false,
-                        content: vec![json!({"type":"text","text":error.message})],
-                        structured_content: None,
-                        remote_effect: "not_applied".into(),
-                        error: Some(json!(error)),
-                        origin: Origin::External,
-                    };
-                    self.accept_tool_receipt(&r.id, &receipt)?;
-                }
-                continue;
-            }
-            match executor.poll(&invocation) {
-                Ok(Some(receipt)) => self.accept_tool_receipt(&r.id, &receipt)?,
-                Ok(None) => {}
-                Err(_) => self.tool_record_update(&r.id, |d| {
-                    d["status"] = json!("needs_reconciliation");
-                    d["remote_effect"] = json!("unknown");
-                })?,
-            }
+        if !self.store.has_pending_tool_calls()? {
+            return Ok(());
         }
-        Ok(())
-    }
-    fn tool_record_update(&self, key: &str, mut f: impl FnMut(&mut Value)) -> Result<()> {
-        self.store.transact(None, &mut |s| {
-            let r = s
-                .governance
-                .iter_mut()
-                .find(|r| r.id == key && r.r#type == "tool_call")
-                .ok_or_else(|| err("not_found", "ToolCall 缺失"))?;
-            let mut data = r.data.clone();
-            f(&mut data);
-            update_record(r, data);
-            Ok(json!({}))
-        })?;
-        Ok(())
-    }
-    fn accept_tool_receipt(&self, key: &str, receipt: &ToolReceipt) -> Result<()> {
-        require(
-            receipt.invocation_id == key && receipt.origin == Origin::External,
-            "工具回执身份或来源不符",
-        )?;
-        self.tool_record_update(key, |d| {
-            d["status"] = json!(if receipt.success {
-                "succeeded"
-            } else if receipt.remote_effect == "unknown" {
-                "needs_reconciliation"
-            } else {
-                "failed"
-            });
-            d["remote_effect"] = json!(receipt.remote_effect);
-            d["receipt"] = json!(receipt);
-            d["finished_at"] = json!(now());
-        })
+        let after = self
+            .tool_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))?
+            .clone();
+        let page = self.store.tool_call_page(after.as_deref())?;
+        let started = std::time::Instant::now();
+        let mut visited = 0;
+        let mut last = None;
+        let mut failure = None;
+        for id in &page.ids {
+            if visited > 0 && started.elapsed() >= std::time::Duration::from_millis(25) {
+                break;
+            }
+            let result = (|| {
+                let call = ToolCall::read(self.store.as_ref(), id)?;
+                if call.ended() {
+                    return call.deliver(self.store.as_ref(), self.harness.as_ref());
+                }
+                if call.data()["status"] == "needs_reconciliation"
+                    && call.data()["receipt"].is_object()
+                {
+                    call.deliver(self.store.as_ref(), self.harness.as_ref())?;
+                }
+                if call.data()["status"] == "prepared" && call.data()["cancel_requested"] != true {
+                    if let Some(dispatch) = call.claim(self.store.as_ref())?
+                        && let Err(error) = executor.start(dispatch.invocation())
+                    {
+                        if error.code == "needs_reconciliation" {
+                            dispatch.unknown(self.store.as_ref(), &error)?;
+                        } else {
+                            let receipt = ToolReceipt {
+                                invocation_id: dispatch.invocation().id.clone(),
+                                success: false,
+                                content: vec![json!({"type":"text","text":error.message})],
+                                structured_content: None,
+                                remote_effect: "not_applied".into(),
+                                error: Some(json!(error)),
+                                origin: Origin::External,
+                            };
+                            dispatch.observe(self.store.as_ref(), &receipt)?;
+                        }
+                    }
+                    return Ok(());
+                }
+                if call.data()["cancel_requested"] == true
+                    && let Some(cancellation) = call.claim_cancel(self.store.as_ref())?
+                {
+                    // The stop attempt is durable before external I/O. Even an
+                    // acknowledgement is not proof that the remote effect is absent.
+                    let cancelled = executor.cancel(cancellation.invocation());
+                    cancellation.observe(self.store.as_ref(), &cancelled)?;
+                    return Ok(());
+                }
+                match executor.poll(call.invocation()) {
+                    Ok(Some(receipt)) => call.observe(self.store.as_ref(), &receipt),
+                    Ok(None) => Ok(()),
+                    Err(error) => call.mark_unknown(self.store.as_ref(), "poll", &error),
+                }
+            })();
+            // A concurrent control/claim invalidates this original observation;
+            // its immutable receipt remains recorded. Do not rebase the callback.
+            if let Err(error) = result
+                && error.code != "revision_conflict"
+            {
+                failure.get_or_insert(error);
+            }
+            visited += 1;
+            last = Some(id.clone());
+        }
+        let next = if visited < page.ids.len() {
+            last
+        } else {
+            page.next_after
+        };
+        *self
+            .tool_cursor
+            .lock()
+            .map_err(|e| err("storage", e.to_string()))? = next;
+        failure.map_or(Ok(()), Err)
     }
     pub fn with_tool_executor(mut self, executor: Arc<dyn ports::ToolExecutor>) -> Self {
         self.tool_executor = Some(executor);
@@ -945,102 +926,6 @@ impl Engine {
             data["cancel_requested"] = json!(true);
             update_record(call, data);
             return Ok(Some(json!(call)));
-        }
-        if method == "tool.call.cancel" || method == "tool.call.reconcile" {
-            let index = s
-                .governance
-                .iter()
-                .position(|r| r.id == c.target.as_deref().unwrap_or("") && r.r#type == "tool_call")
-                .ok_or_else(|| err("not_found", "ToolCall 不存在"))?;
-            let mut data = s.governance[index].data.clone();
-            if method.ends_with("reconcile") {
-                require(
-                    data["status"] == "needs_reconciliation",
-                    "仅允许核对未确认调用",
-                )?;
-                let effect = text(p, "remote_effect")?;
-                require(
-                    ["not_applied", "applied", "unknown"].contains(&effect.as_str()),
-                    "无效远端事实",
-                )?;
-                data["reconciliation"] =
-                    json!({"effect":effect,"evidence":text(p,"evidence")?,"time":now()});
-                data["remote_effect"] = json!(effect);
-                if effect != "unknown" {
-                    if data["receipt"].is_object() {
-                        data["original_receipt"] = data["receipt"].clone();
-                    }
-                    data["status"] = json!("failed");
-                    data["receipt"] = json!(ToolReceipt {
-                        invocation_id: s.governance[index].id.clone(),
-                        success: false,
-                        content: vec![
-                            json!({"type":"text", "text":"An operator reconciled this uncertain call. No automatic retry was performed."})
-                        ],
-                        structured_content: None,
-                        remote_effect: effect,
-                        error: Some(json!({"code":"human_reconciled"})),
-                        origin: Origin::Human
-                    });
-                }
-            } else {
-                require(
-                    !["succeeded", "failed", "cancelled"]
-                        .contains(&data["status"].as_str().unwrap_or("")),
-                    "调用已经结束",
-                )?;
-                data["cancel_requested"] = json!(true);
-                if ["prepared", "awaiting_approval"]
-                    .contains(&data["status"].as_str().unwrap_or(""))
-                {
-                    data["status"] = json!("cancelled");
-                    data["finished_at"] = json!(now());
-                    data["receipt"] = json!(ToolReceipt {
-                        invocation_id: s.governance[index].id.clone(),
-                        success: false,
-                        content: vec![
-                            json!({"type":"text","text":"User cancelled tool call before dispatch"})
-                        ],
-                        structured_content: None,
-                        remote_effect: "not_applied".into(),
-                        error: Some(json!({"code":"cancelled"})),
-                        origin: Origin::Human
-                    });
-                }
-            }
-            update_record(&mut s.governance[index], data);
-            return Ok(Some(json!(s.governance[index])));
-        }
-        if method == "tool.call.approve" {
-            let r = s
-                .governance
-                .iter_mut()
-                .find(|r| r.id == c.target.as_deref().unwrap_or("") && r.r#type == "tool_call")
-                .ok_or_else(|| err("not_found", "ToolCall 不存在"))?;
-            require(
-                r.data["status"] == "awaiting_approval",
-                "该调用不在等待批准",
-            )?;
-            let mut data = r.data.clone();
-            data["status"] = json!(if p["approve"] == true {
-                "prepared"
-            } else {
-                "cancelled"
-            });
-            data["approved_input_hash"] = data["invocation"]["input_hash"].clone();
-            if p["approve"] != true {
-                data["receipt"] = json!(ToolReceipt {
-                    invocation_id: r.id.clone(),
-                    success: false,
-                    content: vec![json!({"type":"text","text":"User declined tool call"})],
-                    structured_content: None,
-                    remote_effect: "not_applied".into(),
-                    error: Some(json!({"code":"declined"})),
-                    origin: Origin::External
-                });
-            }
-            update_record(r, data);
-            return Ok(Some(json!(r)));
         }
         if method == "skill.import" {
             let package: SkillPackage = decode(p.get("package").unwrap_or(p))?;

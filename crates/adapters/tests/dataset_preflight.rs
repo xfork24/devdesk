@@ -27,7 +27,7 @@ fn incompatible_registered_projects_are_rejected_before_global_writes() {
     drop(store);
     reserve(root.path(), &project, true);
     let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("PRAGMA user_version=54;").unwrap();
+    conn.execute_batch("PRAGMA user_version=55;").unwrap();
     drop(conn);
     let before = std::fs::read(&path).unwrap();
     reject_unchanged(root.path(), "数据集协议不兼容");
@@ -45,7 +45,7 @@ fn incomplete_reservations_are_reopenable_but_existing_incompatible_files_are_no
     drop(store);
     GlobalStore::open(root.path()).unwrap();
     let conn = rusqlite::Connection::open(path).unwrap();
-    conn.execute_batch("PRAGMA user_version=54;").unwrap();
+    conn.execute_batch("PRAGMA user_version=55;").unwrap();
     drop(conn);
     reject_unchanged(root.path(), "数据集协议不兼容");
 }
@@ -58,7 +58,7 @@ fn global_discussion_compatibility_is_checked_before_global_writes() {
     drop(store);
     GlobalStore::open(root.path()).unwrap();
     let conn = rusqlite::Connection::open(path.join("engineering.sqlite3")).unwrap();
-    conn.execute_batch("PRAGMA user_version=54;").unwrap();
+    conn.execute_batch("PRAGMA user_version=55;").unwrap();
     drop(conn);
     reject_unchanged(root.path(), "数据集协议不兼容");
 }

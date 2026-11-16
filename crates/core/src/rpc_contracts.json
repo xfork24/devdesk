@@ -1730,7 +1730,9 @@
       "access": "read",
       "scope": "explicit",
       "precondition": "none",
-      "sites": ["crates/host/src/workspace.rs"]
+      "sites": [
+        "crates/host/src/workspace.rs"
+      ]
     },
     {
       "method": "query.workflow_management_summary",
@@ -2210,9 +2212,9 @@
       "method": "tool.call.approve",
       "access": "mutation",
       "scope": "explicit",
-      "precondition": "catalog_and_head",
+      "precondition": "native_revision_and_resource_read_set",
       "sites": [
-        "crates/core/src/integrations.rs"
+        "crates/core/src/tool_calls.rs"
       ]
     },
     {
@@ -2228,8 +2230,9 @@
       "method": "tool.call.cancel",
       "access": "mutation",
       "scope": "explicit",
-      "precondition": "catalog_and_head",
+      "precondition": "native_revision_and_resource_read_set",
       "sites": [
+        "crates/core/src/tool_calls.rs",
         "crates/core/src/integrations.rs"
       ]
     },
@@ -2237,10 +2240,9 @@
       "method": "tool.call.reconcile",
       "access": "mutation",
       "scope": "explicit",
-      "precondition": "catalog_and_head",
+      "precondition": "native_revision_and_resource_read_set",
       "sites": [
-        "crates/core/src/integrations.rs",
-        "crates/host/src/integrations.rs"
+        "crates/core/src/tool_calls.rs"
       ]
     },
     {

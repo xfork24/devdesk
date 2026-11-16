@@ -363,7 +363,9 @@ impl Workspace {
                 if let Some(value) = e.replay_integration_operation(method, &c, &context)? {
                     return Ok(value);
                 }
-            } else if let Some(previous) = e.store.replay(&c.command_id, &fp)? {
+            } else if !method.starts_with("tool.call.")
+                && let Some(previous) = e.store.replay(&c.command_id, &fp)?
+            {
                 return Ok(previous);
             }
             if method == "integration.openapi.preview" || method == "integration.openapi.import" {
@@ -633,16 +635,6 @@ impl Workspace {
                 }
                 c.payload["tools"] = json!(tools);
                 return e.execute_resolved("integration.tools.publish", c, &fp);
-            }
-            if method == "tool.call.reconcile" {
-                e.recover_tool_receipts()?;
-                if let Some(record) = e.store.snapshot()?.governance.iter().find(|r| {
-                    Some(r.id.as_str()) == c.target.as_deref()
-                        && r.r#type == "tool_call"
-                        && r.data["status"] != "needs_reconciliation"
-                }) {
-                    return Ok(json!(record));
-                }
             }
             if method == "integration.delete" {
                 let state = e.store.snapshot()?;

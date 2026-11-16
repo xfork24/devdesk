@@ -32,6 +32,7 @@ pub struct ConfiguredWorkflowInstance {
 
 #[derive(Debug, Clone)]
 pub struct ConfiguredToolRequest {
+    pub authority: crate::tool_calls::WorkflowToolAuthority,
     pub execution_id: Id,
     pub owner_id: Id,
     pub project_id: Id,
@@ -1073,6 +1074,7 @@ impl Engine {
             })
             .collect::<Result<_>>()?;
         Ok(ConfiguredToolRequest {
+            authority: crate::tool_calls::workflow_authority(&state, row, &execution_id)?,
             execution_id,
             owner_id: instance.owner_id,
             project_id: instance.project_id,
@@ -2738,7 +2740,16 @@ impl Engine {
                         return Ok(());
                     }
 
-                    if call.data["status"] == "needs_reconciliation" {
+                    if call.data["local_pre_dispatch_stop"].is_object() {
+                        require(
+                            call.data["local_pre_dispatch_stop"]["operation_id"] == execution.id
+                                && call.data["remote_effect"] == "not_applied"
+                                && call.data["status"] == "cancelled",
+                            "工具派发前停止依据不符",
+                        )?;
+                        execution.status = StepExecutionStatus::Cancelled;
+                        execution.reason = "工具在派发前失去原执行资格，未执行外部 I/O".into();
+                    } else if call.data["status"] == "needs_reconciliation" {
                         execution.status = StepExecutionStatus::NeedsReconciliation;
                         execution.reason = "工具副作用需要核对".into();
                     } else if ["succeeded", "failed", "cancelled"]

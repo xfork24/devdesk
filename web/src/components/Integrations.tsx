@@ -2685,14 +2685,45 @@ export function CallHistory({
   } = useActionFeedback();
 
   const requestVersion = useRef(0);
+  const actionScopeVersion = useRef(0);
+  const baselines = useRef(new Map<string, number>());
+  const attempts = useRef(
+    new Map<string, { fingerprint: string; id: string }>(),
+  );
   const [rows, setRows] = useState<HistoryEntry[]>([]),
     [selected, setSelected] = useState<Row>(),
     [offset, setOffset] = useState(0),
     [total, setTotal] = useState(0),
-    [evidence, setEvidence] = useState(""),
-    [effect, setEffect] = useState("unknown"),
+    [drafts, setDrafts] = useState<
+      Record<string, { evidence: string; effect: string }>
+    >({}),
     [loaded, setLoaded] = useState(false);
   const noProject = historyScope === "project" && !project?.id;
+  const draftKey = (row: Row) =>
+    `${project?.id || "global"}:${historyScope || "calls"}:${row.id}`;
+  const draft = selected ? drafts[draftKey(selected)] : undefined;
+  const evidence = draft?.evidence || "";
+  const effect = draft?.effect || "unknown";
+  function editDraft(row: Row, patch: { evidence?: string; effect?: string }) {
+    const key = draftKey(row);
+    if (!baselines.current.has(key)) baselines.current.set(key, row.revision);
+    setDrafts((previous) => ({
+      ...previous,
+      [key]: {
+        ...(previous[key] ?? { evidence: "", effect: "unknown" }),
+        ...patch,
+      },
+    }));
+  }
+  useEffect(() => {
+    actionScopeVersion.current += 1;
+    setSelected(undefined);
+    setRows([]);
+    setLoaded(false);
+    return () => {
+      actionScopeVersion.current += 1;
+    };
+  }, [project?.id, historyScope]);
   const load = useCallback(async () => {
     if (historyScope === "project" && !project?.id) {
       setRows([]);
@@ -2758,12 +2789,38 @@ export function CallHistory({
   }, [load, setError]);
   const act = async (method: string, row: Row, payload: Row) => {
     captureFeedback();
-
+    const scopeVersion = actionScopeVersion.current;
+    const key = draftKey(row);
+    if (!baselines.current.has(key)) baselines.current.set(key, row.revision);
+    const params = {
+      local: !!project?.id,
+      project_id: project?.id,
+      target: row.id,
+      expected_revision: baselines.current.get(key),
+      payload,
+    };
+    const attemptKey = `${key}:${method}`;
+    const fingerprint = JSON.stringify(params);
+    if (attempts.current.get(attemptKey)?.fingerprint !== fingerprint)
+      attempts.current.set(attemptKey, {
+        fingerprint,
+        id: crypto.randomUUID(),
+      });
     try {
-      await command(request, method, project, payload, row);
-      await load();
+      await request(method, {
+        ...params,
+        command_id: attempts.current.get(attemptKey)!.id,
+      });
+      attempts.current.delete(attemptKey);
+      baselines.current.delete(key);
+      setDrafts((previous) => {
+        const next = { ...previous };
+        delete next[key];
+        return next;
+      });
+      if (actionScopeVersion.current === scopeVersion) await load();
     } catch (e) {
-      setError(String(e));
+      if (actionScopeVersion.current === scopeVersion) setError(String(e));
     }
   };
   return (
@@ -2909,6 +2966,11 @@ export function CallHistory({
                       </pre>
                     </details>
                     <h4>执行回执</h4>
+                    {selected.data.reply_status === "needs_reconciliation" && (
+                      <p role="status">
+                        原生回复结果待核对，系统不会自动重发。
+                      </p>
+                    )}
                     {selected.data.receipt?.content?.some(
                       (c: Row) =>
                         c.type === "resource_link" &&
@@ -3005,7 +3067,9 @@ export function CallHistory({
                             value={effect}
                             onChange={(e) => {
                               captureFeedback();
-                              return setEffect(e.target.value);
+                              return editDraft(selected, {
+                                effect: e.target.value,
+                              });
                             }}
                           >
                             <option value="unknown">仍不确定</option>
@@ -3019,7 +3083,9 @@ export function CallHistory({
                             value={evidence}
                             onChange={(e) => {
                               captureFeedback();
-                              return setEvidence(e.target.value);
+                              return editDraft(selected, {
+                                evidence: e.target.value,
+                              });
                             }}
                           />
                         </label>

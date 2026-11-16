@@ -604,6 +604,12 @@ pub trait EngineeringStore: Send + Sync {
     fn has_pending_tool_calls(&self) -> Result<bool> {
         Ok(true)
     }
+    fn tool_call_page(&self, _after: Option<&str>) -> Result<crate::tool_calls::ToolCallPage> {
+        Err(err("unsupported", "存储未实现工具调用分页"))
+    }
+    fn tool_call_facts(&self, _id: &str) -> Result<crate::tool_calls::ToolCallFacts> {
+        Err(err("unsupported", "存储未实现工具调用有限上下文"))
+    }
     /// Scalar invalidation clock; concrete stores must not restore catalog bodies here.
     fn catalog_revision(&self) -> Result<u64> {
         Ok(self.configuration_snapshot()?.revision)

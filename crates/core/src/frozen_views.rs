@@ -254,9 +254,11 @@ pub fn restore_plan(
             .ok_or_else(|| err("storage", "源选择缺失"))?;
         row.id = "selected-integrations".into();
         row.r#type = "integration_project_configuration".into();
+        row.scope = scope.clone();
         row.definition_id = format!("project-integrations.{project}");
         row.version = u64::MAX;
         row.data = Value::Object(mapping);
+        row.content_hash = content_digest(&row.refs, &row.data);
         context.governance.push(row);
     }
     context.refresh_configuration_views()?;

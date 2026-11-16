@@ -1180,6 +1180,15 @@ fn permission_switch_survives_process_exit_at_durable_boundaries() {
         boundary: String,
     }
     impl EngineeringStore for CrashStore {
+        fn tool_call_page(
+            &self,
+            after: Option<&str>,
+        ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+            self.inner.tool_call_page(after)
+        }
+        fn tool_call_facts(&self, id: &str) -> Result<devdesk_core::tool_calls::ToolCallFacts> {
+            self.inner.tool_call_facts(id)
+        }
         fn snapshot(&self) -> Result<EngineeringState> {
             self.inner.snapshot()
         }

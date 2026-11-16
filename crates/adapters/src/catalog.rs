@@ -36,10 +36,10 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 21,
+            version == 0 || version == 22,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
-        if version == 21 {
+        if version == 22 {
             preflight_engineering_databases(&root, &connection)?;
         }
         connection
@@ -349,6 +349,19 @@ impl EngineeringStore for GlobalStore {
     }
     fn has_pending_tool_calls(&self) -> Result<bool> {
         store_changes::pending_tools(&*self.connection.read()?)
+    }
+    fn tool_call_page(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        tool_calls::page(&self.connection, after)
+    }
+    fn tool_call_facts(&self, id: &str) -> Result<devdesk_core::tool_calls::ToolCallFacts> {
+        tool_calls::facts(
+            &self.connection,
+            self.configuration_snapshot()?.as_ref(),
+            id,
+        )
     }
     fn catalog_revision(&self) -> Result<u64> {
         configuration_cache::revision(&*self.connection.read()?)

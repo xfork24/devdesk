@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 55；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 22 / project 56；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
@@ -187,6 +187,8 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 项目配置选择 Workflow、Standard、Role→Agent、Sandbox、可选双层 Profile 和驱动模式，不另设项目或角色运行时偏好。模型、连接、容量与参数来自绑定 Agent 的 Model 修订，Harness 与 Sandbox 组合并按内容摘要物化。有效参数冻结在 RuntimeBinding；每个 Agent Step 使用独立 Session，补充输入沿用该 Step 的冻结运行锁。
 
 `integration.delete` 将接入源及所属工具、绑定从后续选择中删除，或单独删除已发布工具。操作原子检查在用引用，拒绝仍被 Capability、Agent、Skill 或项目配置使用的资源；修订和历史调用保留，紧急停用另由 `integration.disable` 处理。
+
+`tool.call.approve/cancel/reconcile` 对外部 `tool_call` 要求客户端读取的原始 expected_revision，以调用资源版本和实际人类命令来源同事务提交。缺版本返回 precondition_required，过期返回 revision_conflict；同命令同参数返回原结果。人工核对证据与首次编辑版本保留，轮询不替换基线，冲突重试沿用原命令 ID。派发与后台回执均不进入旧工具业务写事务；原始外部观察先保留，再校验原版本。原生回复结果未知时显示待核对且不自动重复投递。平台工具取消仍由其所属平台族处理，不据此宣称该族已经迁移。
 
 全局角色讨论使用 `scope: "global"`，`session.open` 的目标为 `global`，不得同时提供 `project_id`。数据单独保存在 `conversations/global/engineering.sqlite3`；不创建 Project。Session 的 `scope` 为 `global`，其 `project_id` 列保留固定的执行命名空间 `00000000-0000-4000-8000-000000000000`，用于容器归属和 Session/Turn 外键；它不属于项目目录。全局 Session 仅接受全局 AgentID，消息、快照及经验仍按该身份保存。全局讨论中的方案须切换到具体项目后再进入工程采纳流程。
 

@@ -11,6 +11,7 @@ mod resource_commits;
 mod runtime_queries;
 mod scheduling_read;
 mod store_changes;
+mod tool_calls;
 pub use configuration_backend::ConfigurationBackend;
 mod factory_bundle;
 pub mod session_resources;
@@ -46,7 +47,7 @@ pub use catalog::GlobalStore;
 use devdesk_core::*;
 use devdesk_domain::*;
 pub use runtime_registry::configuration_digest;
-const PROJECT_SCHEMA_VERSION: u32 = 55;
+const PROJECT_SCHEMA_VERSION: u32 = 56;
 use rusqlite::{
     Connection,
     types::{Value as SqlValue, ValueRef},
@@ -812,6 +813,19 @@ impl EngineeringStore for SqliteStore {
     }
     fn has_pending_tool_calls(&self) -> Result<bool> {
         store_changes::pending_tools(&*self.connection.read()?)
+    }
+    fn tool_call_page(
+        &self,
+        after: Option<&str>,
+    ) -> Result<devdesk_core::tool_calls::ToolCallPage> {
+        tool_calls::page(&self.connection, after)
+    }
+    fn tool_call_facts(&self, id: &str) -> Result<devdesk_core::tool_calls::ToolCallFacts> {
+        tool_calls::facts(
+            &self.connection,
+            self.configuration_snapshot()?.as_ref(),
+            id,
+        )
     }
     fn catalog_revision(&self) -> Result<u64> {
         configuration_cache::revision(&*self.connection.read()?)

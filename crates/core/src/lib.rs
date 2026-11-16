@@ -19,6 +19,7 @@ pub mod repository_updates;
 pub mod rpc_contracts;
 pub mod runtime_registry;
 pub mod settings;
+pub mod tool_calls;
 pub use configuration_catalog::*;
 mod configuration_queries;
 pub use configuration_queries::{
@@ -133,6 +134,7 @@ pub fn command_fingerprint(method: &str, c: &Command) -> String {
 }
 pub struct Engine {
     pub(crate) experience_cursor: std::sync::Mutex<Option<Id>>,
+    pub(crate) tool_cursor: std::sync::Mutex<Option<Id>>,
     pub context_reader: Option<Arc<dyn ports::AgentContextReader>>,
     pub manager_services: Option<ManagerServices>,
     pub configuration_backend: Option<Arc<dyn ports::ConfigurationBackend>>,
@@ -334,6 +336,7 @@ impl Engine {
     ) -> Self {
         Self {
             experience_cursor: std::sync::Mutex::new(None),
+            tool_cursor: std::sync::Mutex::new(None),
             context_reader: None,
             manager_services: None,
             configuration_backend: None,
@@ -373,16 +376,6 @@ impl Engine {
         }
         self.store.transact(None, &mut |s| {
             seed_configuration(s);
-            for r in s
-                .governance
-                .iter_mut()
-                .filter(|r| r.r#type == "tool_call" && r.data["status"] == "dispatched")
-            {
-                let mut d = r.data.clone();
-                d["status"] = json!("needs_reconciliation");
-                d["remote_effect"] = json!("unknown");
-                governance::update_record(r, d);
-            }
             // Reconcile persisted workflow references once after opening, including
             // idle instances left waiting by an older evaluator.
             for record in s.governance.iter_mut().filter(|r| {
@@ -453,6 +446,7 @@ impl Engine {
             }
             Ok(json!({"ok":true}))
         })?;
+        self.recover_tool_dispatches()?;
         Ok(())
     }
     pub fn execute(&self, method: &str, c: Command) -> Result<Value> {
@@ -502,6 +496,9 @@ impl Engine {
         original_fingerprint: Option<&str>,
         context: &InvocationContext,
     ) -> Result<Value> {
+        if let Some(value) = crate::tool_calls::control(self.store.as_ref(), method, &c, context)? {
+            return Ok(value);
+        }
         if method == "project.create" && self.store.project_id().is_some() {
             return crate::project_creation::create(self.store.as_ref(), &c, context)
                 .map(|receipt| receipt.result);
