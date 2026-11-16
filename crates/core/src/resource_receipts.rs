@@ -1,4 +1,27 @@
-use crate::*;
+use crate::{concurrency::*, *};
+
+fn materialization_receipt(
+    store: &dyn EngineeringStore,
+    key: &str,
+) -> Result<Option<ConfigurationRecord>> {
+    let mut rows = store.read_resources(&[ResourceKey::new("governance", key)])?;
+    require(rows.len() == 1, "物化回执读取不完整")?;
+    rows.remove(0)
+        .value
+        .map(ConfigurationRecord::from_storage)
+        .transpose()?
+        .map(|row| {
+            require(
+                row.id == key
+                    && row.r#type == "harness_materialization"
+                    && row.immutable
+                    && row.content_hash == content_digest(&row.refs, &row.data),
+                "物化回执身份或内容不符",
+            )?;
+            Ok(row)
+        })
+        .transpose()
+}
 impl Engine {
     pub fn import_experience(
         &self,
@@ -79,27 +102,57 @@ impl Engine {
         record: &ConfigurationRecord,
         data: &Value,
     ) -> Result<()> {
-        store.transact(None, &mut |s| {
-            if let Some(previous) = s.governance.iter().find(|r| r.id == key) {
-                require(
-                    previous.data == *data,
-                    "此 Harness 已物化为另一个安装，禁止替换",
-                )?;
-            } else {
-                let mut receipt = crate::governance::record(
-                    "harness_materialization",
-                    record.id.clone(),
-                    record.scope.clone(),
-                    format!("{} · 已核验安装", record.name),
-                    1,
-                    None,
-                    data.clone(),
-                    true,
-                );
-                receipt.id = key.into();
-                s.governance.push(receipt);
-            }
-            Ok(Value::Null)
+        // A receipt describes verified content for exact immutable source
+        // revisions. A later default/head selection cannot change these inputs.
+        // Its identity is insert-only; no mutable project predicate is involved.
+        let command_id = format!("materialization-receipt:{}", configuration_hash(&key));
+        let fingerprint = configuration_hash(&(
+            "verified-harness-materialization/v1",
+            key,
+            record.source(),
+            data,
+        ));
+        if store.replay_commit(&command_id, &fingerprint)?.is_some() {
+            return Ok(());
+        }
+        if let Some(previous) = materialization_receipt(store, key)? {
+            require(
+                previous.definition_id == record.id
+                    && previous.scope == record.scope
+                    && previous.data == *data,
+                "此 Harness 已物化为另一个安装，禁止替换",
+            )?;
+            return Ok(());
+        }
+        require(
+            record.r#type == "harness" && data["harness_revision_id"] == record.id,
+            "物化回执与冻结 Harness 不符",
+        )?;
+        let mut receipt = crate::governance::record(
+            "harness_materialization",
+            record.id.clone(),
+            record.scope.clone(),
+            format!("{} · 已核验安装", record.name),
+            1,
+            None,
+            data.clone(),
+            true,
+        );
+        receipt.id = key.into();
+        let resource = ResourceKey::new("governance", key);
+        store.commit_changes(&PreparedChangeSet {
+            command_id,
+            fingerprint,
+            read_set: ReadSet::new(vec![ResourceVersion {
+                resource: resource.clone(),
+                revision: 0,
+            }])?,
+            changes: vec![ResourceChange {
+                resource,
+                value: receipt.to_storage(),
+            }],
+            result: Value::Null,
+            time: now() as i64,
         })?;
         Ok(())
     }
@@ -111,8 +164,8 @@ impl Engine {
         resources: &dyn ports::SessionResources,
         record: &ConfigurationRecord,
     ) -> Result<RuntimeInstallation> {
-        let state = self.store.snapshot()?;
-        let selection = permission_selection(&state)?;
+        let catalog = self.store.configuration_snapshot()?;
+        let selection = permission_selection(&catalog.state)?;
         self.materialize_harness_in_sandbox(resources, record, &selection.sandbox_ref)
     }
     pub fn materialize_harness_in_sandbox(
@@ -124,8 +177,8 @@ impl Engine {
         let h: HarnessDefinition = record.decode()?;
         let provider: HarnessProvider = serde_json::from_value(json!(h.provider))
             .map_err(|e| err("unsupported", e.to_string()))?;
-        let state = self.store.snapshot()?;
-        let selected = state.configuration(sandbox_ref)?.clone();
+        let catalog = self.store.configuration_snapshot()?;
+        let selected = catalog.state.configuration(sandbox_ref)?.clone();
         let runtime = compose_execution_recipe(record, &selected)?;
         let digest = runtime.recipe_digest();
         let store = if record.scope.is_global() {
@@ -138,7 +191,7 @@ impl Engine {
             record.id,
             resources.architecture()
         );
-        if let Some(saved) = store.snapshot()?.governance.iter().find(|r| r.id == key) {
+        if let Some(saved) = materialization_receipt(store, &key)? {
             require(
                 saved.data["recipe_digest"] == digest,
                 "Harness 配方与物化回执不一致",
