@@ -6,6 +6,7 @@ cd "$(dirname "$0")/../.."
 python3 tests/entrypoints/permission_schema.py
 ./scripts/check/check-defaults.sh
 ./scripts/check/check-architecture.sh
+python3 tests/entrypoints/rpc_contract_inventory.py
 node --test tests/entrypoints/ci_workflow_gate.mjs
 ./scripts/check/check-style.sh
 cargo test --workspace --locked

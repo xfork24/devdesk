@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--browser", action="store_true")
+    parser.add_argument("--browser-page", choices=["configuration", "execution"], default="configuration")
     parser.add_argument("--assert-configuration-isolation", action="store_true", help="Fail RPC sampling if configuration/events restore full state or write transactions")
     args = parser.parse_args()
     if not 1 <= args.samples <= 1000:
@@ -86,7 +87,8 @@ def main():
                     break
             if not origin:
                 raise RuntimeError("benchmark server failed to start")
-            subprocess.run(["node", str(Path(__file__).with_name("configuration-loading.mjs")), origin, str(args.output.resolve()), str(args.samples), str(server.pid)], check=True)
+            script = "execution-loading.mjs" if args.browser_page == "execution" else "configuration-loading.mjs"
+            subprocess.run(["node", str(Path(__file__).with_name(script)), origin, str(args.output.resolve()), str(args.samples), str(server.pid)], check=True)
         finally:
             server.send_signal(__import__("signal").SIGINT)
             try:
