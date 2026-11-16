@@ -38,9 +38,12 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--browser", action="store_true")
+    parser.add_argument("--assert-configuration-isolation", action="store_true", help="Fail RPC sampling if configuration/events restore full state or write transactions")
     args = parser.parse_args()
     if not 1 <= args.samples <= 1000:
         parser.error("samples must be 1..1000")
+    if args.browser and args.assert_configuration_isolation:
+        parser.error("configuration isolation assertions apply to the RPC cohort")
     args.output.mkdir(parents=True, exist_ok=False)
     binary = args.output / "host-tests"
     shutil.copy2(args.test_binary, binary)
@@ -63,6 +66,12 @@ def main():
             times = sorted(row["ms"] for row in group)
             summary[key] = {"samples": len(times), "p50_ms": times[len(times)//2], "p95_ms": times[max(0, (95*len(times)+99)//100-1)], "bytes": group[-1]["bytes"], "spans": group[-1]["measurement"]["spans"]}
         (args.output / "summary.json").write_text(json.dumps(summary, indent=2))
+        if args.assert_configuration_isolation:
+            forbidden = {"global.full_snapshot", "project.full_snapshot", "global.transaction", "project.transaction"}
+            violations = [{"method": row["method"], "sample": row["sample"], "stages": sorted(forbidden.intersection(row["measurement"]["spans"]))} for row in rows if row["method"] != "query.workspace" and forbidden.intersection(row["measurement"]["spans"])]
+            (args.output / "configuration-isolation.json").write_text(json.dumps({"samples": sum(row["method"] != "query.workspace" for row in rows), "violations": violations}, indent=2))
+            if violations:
+                raise RuntimeError(f"configuration isolation failed: {violations}")
         print(json.dumps({key: {k: v for k, v in value.items() if k != "spans"} for key, value in summary.items()}, indent=2))
         return
     env["DEVDESK_PERF_LOG"] = "1"

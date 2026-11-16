@@ -239,8 +239,13 @@ impl Workspace {
                 let info = template_bundle_info()?;
                 json!({"generation":template_catalog_generation(&view.state),"bundle_version":info["bundle_version"],"bundle_hash":info["bundle_hash"],"current_bundle_version":template_catalog_state(&view.state).map(|r|&r.data["bundle_version"]),"counts":template_catalog_counts(&view.state)})
             } else if method == "query.permission_resources" {
-                self.permission_resource_api_at(method, params, Some(view.clone()))
-                    .expect("permission read")?
+                self.permission_resource_api_at(
+                    method,
+                    params,
+                    Some(view.clone()),
+                    Some(global.state.as_ref()),
+                )
+                .expect("permission read")?
             } else if local && matches!(method, "query.configurations" | "query.workflows") {
                 local_directory(&view, &global, method, params, project)?
             } else {
@@ -529,7 +534,20 @@ mod tests {
         ];
         for (method, params) in cases {
             let old = w.dispatch_inner(method, params.clone()).unwrap();
+            let trace = performance::Trace::start();
             let mut current = w.dispatch(method, params).unwrap();
+            let measurement = trace.finish();
+            for name in [
+                "project.full_snapshot",
+                "global.full_snapshot",
+                "project.transaction",
+                "global.transaction",
+            ] {
+                assert!(
+                    measurement["spans"][name].is_null(),
+                    "{method}: {measurement}"
+                );
+            }
             let object = current.as_object_mut().unwrap();
             object.remove("catalog_version");
             object.remove("template_sources");
