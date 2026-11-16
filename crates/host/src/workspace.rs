@@ -766,7 +766,9 @@ impl Workspace {
             let command: Command =
                 serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
             let _switch = self.switching.lock().unwrap();
-            let id = self.global.reserve_project(&command)?;
+            let id = self
+                .global
+                .reserve_project(&command, &devdesk_core::InvocationContext::human(None))?;
             let e = self.load_project(&id, true)?;
             self.sync_configuration(&e)?;
             let result = e.execute(method, command)?;
@@ -1558,7 +1560,10 @@ mod tests {
             expected_revision: None,
             payload: json!({"title":"恢复创建"}),
         };
-        let reserved = w.global.reserve_project(&c).unwrap();
+        let reserved = w
+            .global
+            .reserve_project(&c, &devdesk_core::InvocationContext::human(None))
+            .unwrap();
         drop(w);
         let w = Workspace::open(dir.path()).unwrap();
         assert_eq!(

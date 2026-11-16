@@ -336,7 +336,9 @@ fn historical_outputs_are_read_from_the_source_without_starting_its_workflow() {
         expected_revision: None,
         payload: json!({"title":"Historical outputs"}),
     };
-    let project = global.reserve_project(&create).unwrap();
+    let project = global
+        .reserve_project(&create, &devdesk_core::InvocationContext::human(None))
+        .unwrap();
     let path = SqliteStore::project_path(root.path(), &project).unwrap();
     let e = Engine::new(
         Arc::new(SqliteStore::open_project(root.path(), &project).unwrap()),

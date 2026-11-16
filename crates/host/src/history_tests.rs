@@ -88,12 +88,28 @@ fn combined_history_keeps_global_and_each_project_in_their_own_database() {
         .unwrap(),
         local
     );
-    assert_eq!(
-        w.dispatch(
+    let current = w
+        .dispatch(
             "query.history",
-            json!({"scope":"global","include_tool_calls":true})
+            json!({"scope":"global","include_tool_calls":true}),
         )
-        .unwrap(),
-        global
+        .unwrap();
+    // Each project reservation now has an atomic global directory receipt and
+    // event. Project business history still stays in its own database.
+    assert_eq!(
+        current["total"].as_u64().unwrap(),
+        global["total"].as_u64().unwrap() + 1
     );
+    let business = |value: &Value| {
+        value["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["event"]["kind"] != "resource.changed")
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(business(&current), business(&global));
+    assert!(!current.to_string().contains("project-one"));
+    assert!(!current.to_string().contains("project-two"));
 }

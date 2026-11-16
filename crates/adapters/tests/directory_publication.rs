@@ -11,12 +11,15 @@ use std::sync::{
 fn fixture(root: &std::path::Path) -> (Arc<GlobalStore>, Project) {
     let store = Arc::new(GlobalStore::open(root).unwrap());
     let id = store
-        .reserve_project(&Command {
-            command_id: "reserve".into(),
-            target: None,
-            expected_revision: None,
-            payload: json!({"title":"Directory fixture"}),
-        })
+        .reserve_project(
+            &Command {
+                command_id: "reserve".into(),
+                target: None,
+                expected_revision: None,
+                payload: json!({"title":"Directory fixture"}),
+            },
+            &devdesk_core::InvocationContext::human(None),
+        )
         .unwrap();
     let project = Project {
         id,

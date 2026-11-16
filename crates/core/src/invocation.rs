@@ -18,6 +18,12 @@ impl InvocationContext {
     pub(crate) fn actor(&self) -> &WorkflowActor {
         &self.actor
     }
+    pub(crate) fn require_scope(&self, project: Option<&str>) -> Result<()> {
+        if self.project_id.as_deref() != project {
+            return Err(err("invalid_scope", "调用上下文与存储作用域不一致"));
+        }
+        Ok(())
+    }
     pub(crate) fn require_project(&self, project: &str) -> Result<()> {
         if self.project_id.as_deref() != Some(project) {
             return Err(err("invalid_scope", "调用上下文与 Project 不一致"));

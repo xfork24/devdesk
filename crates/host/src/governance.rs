@@ -41,7 +41,14 @@ impl Workspace {
             require(p["snapshot_id"].is_string(), "恢复需要选择具体快照")?;
             let command: Command = serde_json::from_value(params.clone())
                 .map_err(|e| err("invalid_params", e.to_string()))?;
-            let snapid = e.import_experience(&command, &pid, &detail)?;
+            let snapid = e.import_experience(
+                &command,
+                &pid,
+                &detail,
+                &InvocationContext::human(
+                    (pid != GLOBAL_DISCUSSION_NAMESPACE).then(|| pid.clone()),
+                ),
+            )?;
             let mut opened = command;
             opened.command_id = format!("{}:restore-session", opened.command_id);
             opened.payload = json!({"agent_instance_id":p["agent_instance_id"],"snapshot_id":snapid,"work_type":"discussion","force_new":true});

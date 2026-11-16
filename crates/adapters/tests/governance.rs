@@ -206,7 +206,9 @@ fn experience_is_agent_id_scoped_across_read_only_project_stores_and_checks_inte
             expected_revision: None,
             payload: json!({"title":title}),
         };
-        let pid = global.reserve_project(&create).unwrap();
+        let pid = global
+            .reserve_project(&create, &devdesk_core::InvocationContext::human(None))
+            .unwrap();
         let e = Engine::new(
             Arc::new(SqliteStore::open_project(root.path(), &pid).unwrap()),
             Arc::new(FileArtifacts::new(

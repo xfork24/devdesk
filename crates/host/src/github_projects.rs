@@ -108,7 +108,9 @@ impl Workspace {
                 expected_revision: None,
                 payload: json!({"title":c.payload["title"].as_str().filter(|v| !v.trim().is_empty()).unwrap_or(&repository),"repository":repository,"mainline":mainline}),
             };
-            let pid = self.global.reserve_project(&create)?;
+            let pid = self
+                .global
+                .reserve_project(&create, &devdesk_core::InvocationContext::human(None))?;
             let e = self.load_project(&pid, true)?;
             self.sync_configuration(&e)?;
             e.execute("project.create", create)?;

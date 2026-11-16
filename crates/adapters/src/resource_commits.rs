@@ -34,6 +34,11 @@ fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
         // Collection tokens have no entity payload. Their version is maintained
         // by fact-table triggers and is read atomically with the selected facts.
         "collection" => Ok(None),
+        "project_reservation" => conn.query_row(
+            "SELECT id,fingerprint FROM project_catalog WHERE command_id=?1",
+            [&key.id],
+            |row| Ok(json!({"id":row.get::<_,String>(0)?,"fingerprint":row.get::<_,String>(1)?})),
+        ).optional().map_err(storage),
         "runtime_presence" => Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM runtime_installations WHERE id=?1)",[&key.id],|row|row.get::<_,bool>(0)).map_err(storage)?.then_some(json!(true))),
         "setting" => catalog::setting(conn, &key.id),
         "source_head" => conn.query_row(
@@ -72,6 +77,15 @@ fn snapshot(conn: &Connection, key: &ResourceKey) -> Result<ResourceSnapshot> {
 
 fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     key.validate()?;
+    if key.kind == "project_reservation" {
+        return conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM project_catalog WHERE command_id=?1)",
+                [&key.id],
+                |row| row.get(0),
+            )
+            .map_err(storage);
+    }
     if key.kind == "runtime_presence" {
         return conn
             .query_row(

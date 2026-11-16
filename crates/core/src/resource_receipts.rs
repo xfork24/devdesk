@@ -28,71 +28,98 @@ impl Engine {
         command: &Command,
         pid: &str,
         detail: &Value,
+        context: &InvocationContext,
     ) -> Result<String> {
+        let project = (pid != GLOBAL_DISCUSSION_NAMESPACE).then_some(pid);
+        require(
+            self.store.namespace()
+                == StoreNamespace::Engineering {
+                    project_id: project.map(str::to_owned),
+                },
+            "经验导入与目标数据库作用域不一致",
+        )?;
+        context.require_scope(project)?;
+        if !matches!(context.actor(), WorkflowActor::Human) {
+            return Err(err("permission_denied", "经验恢复需要可信人类入口"));
+        }
+        require(
+            !command.command_id.is_empty() && command.command_id.len() <= 512,
+            "经验导入需要稳定命令身份",
+        )?;
+        let snapid = format!("import:{}", command.command_id);
+        let import_id = format!("{}:experience-import", command.command_id);
+        let fingerprint =
+            configuration_hash(&("experience-import/v1", command, pid, detail, context));
+        if let Some(previous) = self.store.replay_commit(&import_id, &fingerprint)? {
+            require(previous.result["id"] == snapid, "经验导入回执身份不符")?;
+            return Ok(snapid);
+        }
         let mut snap: Snapshot = serde_json::from_value(detail["snapshot"].clone())
-            .map_err(|e| err("storage", e.to_string()))?;
-        let original = snap.id.clone();
-        snap.id = format!("import:{}", command.command_id);
-        snap.project_id = (pid != GLOBAL_DISCUSSION_NAMESPACE).then(|| pid.to_owned());
+            .map_err(|e| err("invalid_params", e.to_string()))?;
+        let original = ResourceKey::new("snapshot", &snap.id);
+        require(original.id != snapid, "经验导入不能继承自身")?;
+        let rows = self.store.read_resources(std::slice::from_ref(&original))?;
+        require(
+            rows.len() == 1 && rows[0].resource == original,
+            "经验来源读取不完整",
+        )?;
+        snap.id = snapid.clone();
+        snap.project_id = project.map(str::to_owned);
         snap.feature_id = None;
         snap.task_id = None;
         snap.documents.clear();
-        snap.inherited_from = self
-            .store
-            .snapshot()?
-            .snapshots
-            .iter()
-            .any(|s| s.id == original)
-            .then_some(original.clone());
+        snap.inherited_from = rows[0].value.is_some().then_some(original.id.clone());
         snap.kind = "experience_import".into();
         snap.content = format!(
             "{}\n\nHistorical source (data only): {}",
             snap.content,
-            serde_json::to_string(
-                &json!({"entry":detail["entry"],"documents":detail["documents"]})
-            )
-            .unwrap()
+            json!({"entry":detail["entry"],"documents":detail["documents"]})
         );
-        // Imported historical material is context; it never changes code, governance, or current document revisions.
-        let snapid = snap.id.clone();
-        let import_id = format!("{}:experience-import", command.command_id);
-        let fingerprint = configuration_hash(&(pid, detail));
-        self.store
-            .transact(Some((&import_id, &fingerprint)), &mut |s| {
-                if !s.snapshots.iter().any(|old| old.id == snapid) {
-                    s.snapshots.push(snap.clone());
-                    s.events.push(Event {
-                        id: s.events.last().map_or(1, |e| e.id + 1),
-                        target: snapid.clone(),
-                        kind: "experience.imported".into(),
-                        detail: serde_json::to_string(
-                            &json!({"source":detail["entry"],"new_snapshot":snapid}),
-                        )
-                        .unwrap(),
-                        time: now(),
-                    });
-                    s.governance.push(ConfigurationRecord {
-                        id: format!("source:{}", command.command_id),
-                        r#type: "experience_import".into(),
-                        refs: References::new(),
-                        definition_id: snapid.clone(),
-                        scope: if pid == GLOBAL_DISCUSSION_NAMESPACE {
-                            Scope::global()
-                        } else {
-                            Scope::project(pid)
-                        },
-                        name: "恢复经验场景".into(),
-                        version: 1,
-                        supersedes: None,
-                        data: detail["entry"].clone(),
-                        content_hash: content_digest(&References::new(), &detail["entry"]),
-                        immutable: true,
-                        revision: 1,
-                        created_at: detail["entry"]["captured_at"].as_u64().unwrap_or(0),
-                    });
-                }
-                Ok(Value::Null)
-            })?;
+        let source = ConfigurationRecord {
+            id: format!("source:{}", command.command_id),
+            r#type: "experience_import".into(),
+            refs: References::new(),
+            definition_id: snapid.clone(),
+            scope: project.map_or_else(Scope::global, Scope::project),
+            name: "恢复经验场景".into(),
+            version: 1,
+            supersedes: None,
+            data: detail["entry"].clone(),
+            content_hash: content_digest(&References::new(), &detail["entry"]),
+            immutable: true,
+            revision: 1,
+            created_at: detail["entry"]["captured_at"].as_u64().unwrap_or(0),
+        };
+        let changes = vec![
+            ResourceChange {
+                resource: ResourceKey::new("snapshot", &snapid),
+                value: json!(snap),
+            },
+            ResourceChange {
+                resource: ResourceKey::new("governance", &source.id),
+                value: source.to_storage(),
+            },
+            context.prepare_record("experience.restore", command),
+        ];
+        let mut guards = changes
+            .iter()
+            .map(|change| ResourceVersion {
+                resource: change.resource.clone(),
+                revision: 0,
+            })
+            .collect::<Vec<_>>();
+        guards.push(ResourceVersion {
+            resource: original,
+            revision: rows[0].revision,
+        });
+        self.store.commit_changes(&PreparedChangeSet {
+            command_id: import_id,
+            fingerprint,
+            read_set: ReadSet::new(guards)?,
+            changes,
+            result: json!({"id":snapid}),
+            time: now() as i64,
+        })?;
         Ok(snapid)
     }
     pub fn record_harness_materialization(

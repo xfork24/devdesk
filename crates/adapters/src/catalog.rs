@@ -179,56 +179,12 @@ impl GlobalStore {
     }
 
     /// Reserve an identity before creating its database, so retries after a crash use the same file.
-    pub fn reserve_project(&self, command: &Command) -> Result<String> {
-        require(!command.command_id.is_empty(), "command_id 不能为空")?;
-        require(
-            command.target.is_none() && command.expected_revision.is_none(),
-            "新建项目不能指定 target 或 expected_revision",
-        )?;
-        require(
-            command.payload["title"]
-                .as_str()
-                .is_some_and(|s| !s.trim().is_empty()),
-            "缺少 title",
-        )?;
-        let fp = serde_json::to_string(&(
-            "project.create",
-            &command.target,
-            &command.expected_revision,
-            &command.payload,
-        ))
-        .map_err(storage)?;
-        let _writer = self.writer.lock().map_err(storage)?;
-        let conn = self.connection.lock().map_err(storage)?;
-        require(
-            !conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM operations WHERE id=?1)",
-                    [&command.command_id],
-                    |r| r.get::<_, bool>(0),
-                )
-                .map_err(storage)?,
-            "command_id 被不同参数复用",
-        )?;
-        let old: Option<(String, String)> = conn
-            .query_row(
-                "SELECT id,fingerprint FROM project_catalog WHERE command_id=?1",
-                [&command.command_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .map_err(storage)?;
-        if let Some((id, previous)) = old {
-            require(fp == previous, "command_id 被不同参数复用")?;
-            return Ok(id);
-        }
-        let id = devdesk_core::id();
-        conn.execute(
-            "INSERT INTO project_catalog(id,command_id,fingerprint) VALUES(?1,?2,?3)",
-            params![id, command.command_id, fp],
-        )
-        .map_err(storage)?;
-        Ok(id)
+    pub fn reserve_project(
+        &self,
+        command: &Command,
+        context: &InvocationContext,
+    ) -> Result<String> {
+        devdesk_core::project_reservation::reserve(self, command, context)
     }
 
     /// This is a directory summary; the project database remains authoritative.

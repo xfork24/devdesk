@@ -8,6 +8,7 @@ pub mod concurrency;
 mod configuration_catalog;
 pub mod credential_updates;
 pub mod project_creation;
+pub mod project_reservation;
 pub mod project_updates;
 pub mod read_models;
 pub mod repository_dispatch;

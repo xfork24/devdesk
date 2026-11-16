@@ -181,7 +181,9 @@ fn setup(path: &std::path::Path) -> (Engine, Arc<Scripted>, String) {
         expected_revision: None,
         payload: json!({"title":"Manager workspace"}),
     };
-    let project = global.reserve_project(&creation).unwrap();
+    let project = global
+        .reserve_project(&creation, &devdesk_core::InvocationContext::human(None))
+        .unwrap();
     let store = Arc::new(SqliteStore::open_project(path, &project).unwrap());
     let harness = Arc::new(Scripted::default());
     let mut adapters = runtime::adapters();
