@@ -2271,6 +2271,28 @@
       ]
     },
     {
+      "method": "workflow.controller.notify",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "native_turn_epoch_plan",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/controller_interactions.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
+      "method": "workflow.controller.wait",
+      "access": "platform_mutation",
+      "scope": "explicit",
+      "precondition": "native_turn_epoch_delivery",
+      "sites": [
+        "crates/core/src/controllers.rs",
+        "crates/core/src/controller_events.rs",
+        "crates/core/src/platform_tools.rs"
+      ]
+    },
+    {
       "method": "workflow.create",
       "access": "mutation",
       "scope": "explicit",
@@ -2627,7 +2649,9 @@
     "configuration.changed",
     "configuration.global.write",
     "context.revised",
+    "decision.changed",
     "execution.cleanup_retry_requested",
+    "execution.stopped",
     "experience.imported",
     "harness.native",
     "project.read",
@@ -2646,9 +2670,11 @@
     "runtime.platform_tools",
     "runtime.rust_driver",
     "runtime.step_checkpoint",
+    "workflow.changed",
     "workflow.compile",
     "workflow.decision",
     "workflow.driver.selected",
+    "workflow.runtime",
     "workflow.updated"
   ],
   "http": [

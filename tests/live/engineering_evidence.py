@@ -1,6 +1,7 @@
 """Corroborate frozen contracts, incremental evidence and exact publications."""
 import hashlib,json,os,re,sqlite3,subprocess
 from pathlib import PurePosixPath
+from autonomous_orchestration import verify as verify_autonomy
 
 def frozen_document(connection, frozen):
  """Resolve the immutable Workflow revision selected by the stored plan codec."""
@@ -12,6 +13,29 @@ def frozen_document(connection, frozen):
  assert source is not None, 'Original frozen Workflow source must remain available'
  return json.loads(source[0])
 
+def verify_source_contract(source, plan, unattended=False):
+ """A successful current graph cannot replace the original mandatory contract."""
+ for action,requirements in source.get('action_requirements',{}).items():
+  assert set(requirements)<=set(plan['action_requirements'].get(action,[]))
+ current={s['key']:s for s in plan['steps']}
+ for original in source['steps']:
+  assert original['key'] in current,'A mandatory source node was removed'
+  actual=current[original['key']]
+  if unattended and original['key'].endswith('review'):
+   assert actual['task_instructions']==original.get('task_instructions'), 'Autonomous run rewrote an independent review prompt'
+  assert set(original.get('dependencies',[]))<=set(actual['dependencies'])
+  assert original.get('completion',{'op':'always'})==actual['completion'], 'A mandatory completion rule was changed'
+  assert original.get('confirmation','automatic')==actual['confirmation'], 'A mandatory Human confirmation was changed'
+  assert not actual.get('allow_completion_override',False)
+  assert set(original.get('spec_refs',[]))<=set(actual['spec_refs'])
+  assert set(original.get('required_skill_refs',[]))<=set(actual['required_skill_refs'])
+  for key in ['type','tool_ref','role_ref','workflow_ref']:
+   if key in original['executor']:assert original['executor'][key]==actual['executor'][key]
+  for name,port in original.get('outputs',{}).items():
+   assert name in actual['outputs'] and actual['outputs'][name]['delivery_ref']==port['delivery_ref']
+   assert actual['outputs'][name]['required']==port.get('required',True)
+   assert actual['outputs'][name]['content_checks']==port.get('content_checks',False)
+
 def verify_chunk_reads(reference, expected, output_id, current, calls, wire_items):
  """Reconstruct bytes actually delivered to this turn, including UTF-8 alignment."""
  assert reference['read_tool']=='devdesk_workflow_outputs_read' and reference['complete'] is False
@@ -22,7 +46,8 @@ def verify_chunk_reads(reference, expected, output_id, current, calls, wire_item
  for call in calls:
   request=call['request'];caller=request.get('caller') or {};arguments=request.get('arguments',{})
   if (caller.get('turn_id'),caller.get('session_id'),caller.get('execution_id'))!=(current['turn_id'],current['session_id'],current['id']):continue
-  if request.get('definition',{}).get('qualified_name')!='workflow.outputs.read' or arguments.get('ids')!=[output_id] or arguments.get('pointer','')!='':continue
+  ids=arguments.get('ids',[])
+  if request.get('definition',{}).get('qualified_name')!='workflow.outputs.read' or output_id not in ids or arguments.get('pointer','')!='':continue
   schema_rejection=call['status']=='failed' and call.get('error',{}).get('code')=='schema_validation'
   assert call['status']=='succeeded' or schema_rejection,'Large input read did not succeed'
   observed=None
@@ -44,8 +69,11 @@ def verify_chunk_reads(reference, expected, output_id, current, calls, wire_item
   if schema_rejection:
    rejected.append({'call_id':caller['call_id'],'journal':observed['journal'],'arguments':arguments,'error':call['error']})
    continue
-  receipt=call['receipt'];assert len(receipt['outputs'])==1
-  chunk=receipt['outputs'][0];offset=chunk['offset'];body=chunk['value_chunk']
+  receipt=call['receipt']
+  assert [item['id'] for item in receipt['outputs']]==ids, 'Read receipt outputs differ from requested IDs'
+  selected=[item for item in receipt['outputs'] if item['id']==output_id]
+  assert selected and all(item==selected[0] for item in selected), 'Repeated output ID returned inconsistent chunks'
+  chunk=selected[0];offset=chunk['offset'];body=chunk['value_chunk']
   assert chunk['id']==output_id and chunk['total_bytes']==total
   assert chunk['data']['provenance']['value_digest']==digest,'Input provenance digest differs'
   end=offset+len(body.encode())
@@ -72,7 +100,7 @@ def verify_chunk_reads(reference, expected, output_id, current, calls, wire_item
   return position
  for arguments,offset,end in requests:
   assert offset==boundary(arguments.get('offset',0)),'Returned offset differs from the requested UTF-8 boundary'
-  budget=max(1024,min(65536,arguments.get('max_bytes',16384)))
+  budget=max(1024,min(65536,arguments.get('max_bytes',16384)))//len(arguments['ids'])
   assert end==boundary(offset+budget),'Returned end differs from the requested UTF-8 boundary'
  return {'execution':current['id'],'turn':current['turn_id'],'session':current['session_id'],'source_output_id':output_id,'total_bytes':total,'value_digest':digest,'chunks':proof,'rejected_reads':rejected,'native_delivery_verified':True}
 
@@ -86,7 +114,11 @@ def verify_evidence(client, rows, output):
  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
   assert connection.execute("SELECT count(*) FROM governance_records WHERE type='workflow_waiver'").fetchone()[0]==0
   confirmations={key:json.loads(data) for key,data in connection.execute("SELECT definition_id,data FROM governance_records WHERE type='workflow_confirmation'")}
- if context.get('unattended'):
+ if context.get('autonomous'):
+  with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
+   autonomy=verify_autonomy(connection,root['record']['id'])
+  (output/'autonomous-orchestration-validation.json').write_text(json.dumps(autonomy,ensure_ascii=False,indent=2)+'\n')
+ if context.get('unattended') and not context.get('autonomous'):
   with sqlite3.connect(database.resolve().as_uri()+'?mode=ro',uri=True) as connection:
    assert connection.execute("SELECT count(*) FROM governance_records WHERE type='controller_input'").fetchone()[0]==1, 'Unattended run received additional human steering'
    controller_id,controller=connection.execute("SELECT id,data FROM governance_records WHERE type='workflow_controller' AND json_extract(data,'$.root_instance_id')=?",(root['record']['id'],)).fetchone()
@@ -113,28 +145,9 @@ def verify_evidence(client, rows, output):
     assert original is not None,'Original frozen plan must remain available'
     frozen=json.loads(original[0]);assert frozen['instance_id']==view['record']['id']
     source=frozen_document(connection,frozen);revision=frozen.get('parent_revision_id')
-  if context.get('unattended'):
-   assert view['runtime']['role_agent_bindings']==frozen['role_agent_bindings'], 'Unattended run replaced the default role bindings'
-  for action,requirements in source.get('action_requirements',{}).items():
-   assert set(requirements)<=set(view['plan']['action_requirements'].get(action,[]))
-  current={s['key']:s for s in view['plan']['steps']}
-  for original in source['steps']:
-   assert original['key'] in current,'A mandatory source node was removed'
-   actual=current[original['key']]
-   if context.get('unattended') and original['key'].endswith('review'):
-    assert actual['task_instructions']==original.get('task_instructions'), 'Unattended run rewrote an independent review prompt'
-   assert set(original.get('dependencies',[]))<=set(actual['dependencies'])
-   assert original.get('completion',{'op':'always'})==actual['completion']
-   assert original.get('confirmation','automatic')==actual['confirmation']
-   assert not actual.get('allow_completion_override',False)
-   assert set(original.get('spec_refs',[]))<=set(actual['spec_refs'])
-   assert set(original.get('required_skill_refs',[]))<=set(actual['required_skill_refs'])
-   for key in ['type','tool_ref','role_ref','workflow_ref']:
-    if key in original['executor']:assert original['executor'][key]==actual['executor'][key]
-   for name,port in original.get('outputs',{}).items():
-    assert name in actual['outputs'] and actual['outputs'][name]['delivery_ref']==port['delivery_ref']
-    assert actual['outputs'][name]['required']==port.get('required',True)
-    assert actual['outputs'][name]['content_checks']==port.get('content_checks',False)
+  if context.get('unattended') or context.get('autonomous'):
+   assert view['runtime']['role_agent_bindings']==frozen['role_agent_bindings'], 'Autonomous run replaced the frozen role bindings'
+  verify_source_contract(source,view['plan'],context.get('unattended',False) or context.get('autonomous',False))
   for definition in view['plan']['steps']:
    if definition['confirmation']!='human':continue
    human_confirmations+=1

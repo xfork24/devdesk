@@ -1075,10 +1075,20 @@ impl EngineeringState {
             let controller: WorkflowController = row.decode()?;
             controller.policy.validate()?;
             require(
+                controller.acknowledged_cursor <= controller.source_cursor
+                    && controller.source_cursor <= self.events.last().map_or(0, |e| e.id),
+                "经理事件游标无效",
+            )?;
+            require(
                 controller.policy_digest == configuration_hash(&controller.policy),
                 "编排策略摘要不一致",
             )?;
             if let Some(previous) = before.governance.iter().find(|r| r.id == row.id) {
+                require(
+                    row.data["source_cursor"].as_u64().unwrap_or(0)
+                        >= previous.data["source_cursor"].as_u64().unwrap_or(0),
+                    "经理事件游标不能回退",
+                )?;
                 for key in [
                     "project_id",
                     "owner_id",

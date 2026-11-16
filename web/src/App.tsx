@@ -1639,27 +1639,27 @@ function App() {
               </div>
               {executionTab === "documents" && (
                 <WorkflowMaterials
-                  key={projectId}
+                  key={`${projectId}:${featureId}`}
                   projectId={projectId}
-                  ownerId={projectId}
+                  ownerId={featureId || projectId}
                   request={rpc}
                   target={activeReadingTarget}
                 />
               )}
               {executionTab === "context" && (
                 <WorkflowContexts
-                  key={projectId}
+                  key={`${projectId}:${featureId}`}
                   projectId={projectId}
-                  ownerId={projectId}
+                  ownerId={featureId || projectId}
                   request={rpc}
                   target={activeReadingTarget}
                 />
               )}
               {executionTab === "records" && (
                 <WorkflowExecutionRecords
-                  key={projectId}
+                  key={`${projectId}:${featureId}`}
                   projectId={projectId}
-                  ownerId={projectId}
+                  ownerId={featureId || projectId}
                   request={rpc}
                   target={activeReadingTarget}
                 />

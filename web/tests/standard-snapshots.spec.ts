@@ -268,6 +268,7 @@ test("Standard 内容相同时，默认启动入口未声明或不同均显示�
   await comparison.screenshot({
     path: info.outputPath("standard-comparison-row.png"),
   });
+  await panel.getByLabel("查看 Standard", { exact: true }).focus();
   await panel
     .getByLabel("查看 Standard", { exact: true })
     .selectOption(copies[0].id);
@@ -474,6 +475,9 @@ test("同一 Feature 的 Task 实际采用不同 Standard 且切换保留执行�
     .locator(".task-grid article")
     .filter({ has: page.getByText("Task B", { exact: true }) });
   await card.locator(".work-standard > summary").click();
+  await expect(
+    card.getByRole("button", { name: "保存采用的规范", exact: true }),
+  ).toBeEnabled();
   await card.getByLabel("采用 Standard", { exact: true }).selectOption(sb.id);
   await card
     .getByLabel("采用的入口 Workflow", { exact: true })

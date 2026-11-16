@@ -22,8 +22,17 @@ pub(super) fn pending(conn: &Connection, kind: ports::WorkflowRuntimeWork) -> Re
               OR EXISTS(SELECT 1 FROM executions e WHERE e.session_id=t.session_id AND e.writer_revoked=0))))",
         ports::WorkflowRuntimeWork::QueuedConversations => "SELECT EXISTS(SELECT 1 FROM turns WHERE status='queued')",
         ports::WorkflowRuntimeWork::WorkflowIntents => "SELECT EXISTS(SELECT 1 FROM governance_records WHERE type='workflow_intent' AND json_extract(data,'$.status')='prepared')",
-        ports::WorkflowRuntimeWork::Controllers => "SELECT EXISTS(SELECT 1 FROM governance_records
-            WHERE type='workflow_controller' AND json_extract(data,'$.status')='active')",
+        ports::WorkflowRuntimeWork::Controllers => "SELECT EXISTS(SELECT 1 FROM governance_records c
+            WHERE c.type='workflow_controller' AND json_extract(c.data,'$.status')='active' AND (
+              coalesce(json_extract(c.data,'$.run_state'),'') IN ('','runnable','running')
+              OR EXISTS(SELECT 1 FROM turns t WHERE t.session_id=json_extract(c.data,'$.session_id')
+                AND t.status IN ('queued','dispatching','running','waiting_interaction','needs_reconciliation','failed','cancelled'))
+              OR (coalesce(json_extract(c.data,'$.workspace_only'),0)=0
+                AND json_extract(c.data,'$.bootstrap_epoch')!=json_extract(c.data,'$.epoch'))
+              OR json_extract(c.data,'$.wait_deadline')<=CAST(strftime('%s','now') AS INTEGER)*1000
+              OR EXISTS(SELECT 1 FROM governance_records u WHERE u.type='controller_input' AND u.definition_id=c.id AND json_extract(u.data,'$.consumed')=0)
+              OR EXISTS(SELECT 1 FROM events e WHERE e.kind='workflow.runtime' AND e.id>coalesce(json_extract(c.data,'$.source_cursor'),0)
+                AND json_extract(CASE WHEN e.kind='workflow.runtime' THEN e.detail ELSE '{}' END,'$.root_instance_id')=json_extract(c.data,'$.root_instance_id'))))",
         ports::WorkflowRuntimeWork::ControllerCalls => "SELECT EXISTS(SELECT 1 FROM governance_records c
             WHERE c.type='controller_tool_call' AND (json_extract(c.data,'$.status')='prepared'
               OR (json_extract(c.data,'$.status') IN ('succeeded','failed')
@@ -56,7 +65,8 @@ mod tests {
         conn.execute_batch(
             "CREATE TABLE turns(id TEXT,session_id TEXT,status TEXT,cancel_requested BOOLEAN);
             CREATE TABLE executions(session_id TEXT,writer_revoked BOOLEAN);
-            CREATE TABLE governance_records(id TEXT,type TEXT,definition_id TEXT,data JSON);",
+            CREATE TABLE governance_records(id TEXT,type TEXT,definition_id TEXT,data JSON);
+             CREATE TABLE events(id INTEGER,kind TEXT,detail TEXT);",
         )
         .unwrap();
         conn
@@ -213,5 +223,57 @@ mod tests {
         .unwrap();
         assert!(!pending(&conn, PlatformTools).unwrap());
         assert_eq!(running(&conn).unwrap(), 0);
+    }
+
+    #[test]
+    fn waiting_controller_still_observes_its_live_or_failed_native_turn() {
+        let conn = database();
+        record(
+            &conn,
+            "controller",
+            "workflow_controller",
+            "root",
+            json!({"status":"active","run_state":"waiting","session_id":"manager","epoch":1,"bootstrap_epoch":1,"source_cursor":0}),
+        );
+        assert!(!pending(&conn, Controllers).unwrap());
+        conn.execute("INSERT INTO turns VALUES('turn','manager','running',0)", [])
+            .unwrap();
+        assert!(pending(&conn, Controllers).unwrap());
+        conn.execute("UPDATE turns SET status='completed'", [])
+            .unwrap();
+        assert!(!pending(&conn, Controllers).unwrap());
+        conn.execute("UPDATE turns SET status='failed'", [])
+            .unwrap();
+        assert!(pending(&conn, Controllers).unwrap());
+        conn.execute("UPDATE turns SET status='cancelled'", [])
+            .unwrap();
+        assert!(pending(&conn, Controllers).unwrap());
+    }
+
+    #[test]
+    fn an_unstarted_workbench_waits_without_bootstrap_polling_until_a_real_message() {
+        let conn = database();
+        record(
+            &conn,
+            "workbench",
+            "workflow_controller",
+            "project",
+            json!({"status":"active","workspace_only":true,"run_state":"waiting","epoch":1,"bootstrap_epoch":0}),
+        );
+        assert!(!pending(&conn, Controllers).unwrap());
+        record(
+            &conn,
+            "message",
+            "controller_input",
+            "workbench",
+            json!({"consumed":false}),
+        );
+        assert!(pending(&conn, Controllers).unwrap());
+        conn.execute(
+            "UPDATE governance_records SET data=?1 WHERE id='message'",
+            [json!({"consumed":true}).to_string()],
+        )
+        .unwrap();
+        assert!(!pending(&conn, Controllers).unwrap());
     }
 }

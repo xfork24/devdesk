@@ -1,7 +1,8 @@
-import { DiscussionLink, ReadableValue, ReadingLink } from "./reading";
+import { ManagerInteraction } from "./ManagerInteraction";
+import { DiscussionLink, ReadingLink } from "./reading";
 import { StandardDiff } from "./StandardManager";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActionButton, ActionSelect } from "./ActionFeedback";
+import { ActionButton } from "./ActionFeedback";
 import { MarkdownPreview, RevisionSelect } from "./configuration-ui";
 import { loadCatalog } from "./configuration-state";
 import { type Request, type Row } from "./rpc-types";
@@ -26,7 +27,6 @@ export function WorkflowController({
   const [catalogError, setCatalogError] = useState("");
   const [managerAgent, setManagerAgent] = useState("");
   const [managerPermission, setManagerPermission] = useState("");
-  const [mode, setMode] = useState("");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -79,6 +79,7 @@ export function WorkflowController({
     };
   }, [invalidate, load]);
   useEffect(() => {
+    if (!workspaceOnly) return;
     let active = true;
     setCatalog([]);
     setCatalogError("");
@@ -92,7 +93,7 @@ export function WorkflowController({
     return () => {
       active = false;
     };
-  }, [request, projectId]);
+  }, [request, projectId, workspaceOnly]);
   async function act(method: string) {
     setBusy(true);
     setError("");
@@ -167,29 +168,11 @@ export function WorkflowController({
       setBusy(false);
     }
   }
-  async function selectDriver() {
-    setBusy(true);
-    setError("");
-    try {
-      const current = await request("workflow.inspect", {
-        id: instance.id,
-        project_id: projectId,
-      });
-      await request("workflow.driver.select", {
-        project_id: projectId,
-        command_id: crypto.randomUUID(),
-        target: instance.id,
-        expected_revision: current.record.revision,
-        payload: { mode: mode || data?.driver?.data.mode || "manual" },
-      });
-      await Promise.all([load(), refresh()]);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function resolveDecision(decision: Row, approved: boolean) {
+  async function resolveDecision(
+    decision: Row,
+    approved: boolean,
+    opinion: string,
+  ) {
     setBusy(true);
     setError("");
     try {
@@ -200,7 +183,9 @@ export function WorkflowController({
         expected_revision: decision.revision,
         payload: {
           approved,
-          reason: approved ? "用户批准当前确切请求" : "用户拒绝当前请求",
+          reason:
+            opinion.trim() ||
+            (approved ? "用户批准当前确切请求" : "用户拒绝当前请求"),
         },
       });
       await Promise.all([load(), refresh()]);
@@ -226,15 +211,6 @@ export function WorkflowController({
               role.definition_id === managerRole.definition_id,
           ))),
   );
-  const actionStates: Record<string, string> = {
-    prepared: "已登记",
-    waiting_quiescence: "正在停止受影响的执行",
-    applied: "新计划已生效",
-    active: "已委托",
-    pending: "等待人工决定",
-    stopped: "已停止",
-    completed: "已完成",
-  };
   const statuses: Record<string, string> = {
     active: "协作中",
     paused: "已接管",
@@ -258,12 +234,6 @@ export function WorkflowController({
     >
       <h3>{workspaceOnly ? "项目经理工作台" : "项目经理协作"}</h3>
       {!data && <p role="status">正在读取经理状态…</p>}
-      {!workspaceOnly && data && (
-        <p>
-          当前调度：{data.driver?.data.mode || "未记录根驱动"} · 代次{" "}
-          {data.driver?.data.epoch ?? "未记录"}
-        </p>
-      )}
       {!workspaceOnly && data?.driver?.data.reason && (
         <p role="status">
           {typeof data.driver.data.reason === "string"
@@ -314,73 +284,55 @@ export function WorkflowController({
           </ul>
         </section>
       )}
-      <details open={workspaceOnly || undefined}>
-        <summary>
-          {workspaceOnly ? "工作台配置与沟通" : "调度与经理管理"}
-        </summary>
-        <div className="manager-configuration-row">
-          <RevisionSelect
-            label={
-              workspaceOnly ? "工作台 Agent 精确修订" : "经理 Agent 精确修订"
-            }
-            records={managerAgents}
-            value={managerAgent}
-            onChange={(value) => setManagerAgent(value)}
-          />
-          <RevisionSelect
-            label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
-            records={catalog.filter((row) => row.type === "permission_profile")}
-            value={managerPermission}
-            onChange={(value) => setManagerPermission(value)}
-          />
-          <ActionButton
-            disabled={
-              busy ||
-              !data ||
-              (!managerAgent && !managerPermission) ||
-              (!workspaceOnly && data?.record?.data.status === "active")
-            }
-            onClick={() =>
-              void (workspaceOnly
-                ? adoptManager()
-                : act("orchestration.resume"))
-            }
-          >
-            {workspaceOnly ? "采用工作台配置" : "采用并恢复经理"}
-          </ActionButton>
-        </div>
-        <p className="muted">
-          默认使用项目配置中的编排
-          Agent。更换组合前先暂停当前经理会话；后继会话使用所选配置。
-        </p>
-        {!workspaceOnly && (
-          <div className="manager-scheduling-row">
-            <label>
-              切换调度模式
-              <ActionSelect
-                aria-label="切换调度模式"
-                value={mode || data?.driver?.data.mode || "manual"}
-                onChange={(e) => setMode(e.target.value)}
-              >
-                <option value="manual">人工控制</option>
-                <option value="rust">Rust 自动调度</option>
-                <option value="agent">Agent 调度</option>
-              </ActionSelect>
-            </label>
+      {workspaceOnly && (
+        <details open>
+          <summary>工作台配置与沟通</summary>
+          <div className="manager-configuration-row">
+            <RevisionSelect
+              label={
+                workspaceOnly ? "工作台 Agent 精确修订" : "经理 Agent 精确修订"
+              }
+              records={managerAgents}
+              value={managerAgent}
+              onChange={(value) => setManagerAgent(value)}
+            />
+            <RevisionSelect
+              label={workspaceOnly ? "工作台授权上下文" : "经理授权上下文"}
+              records={catalog.filter(
+                (row) => row.type === "permission_profile",
+              )}
+              value={managerPermission}
+              onChange={(value) => setManagerPermission(value)}
+            />
             <ActionButton
-              disabled={busy || !data}
-              onClick={() => void selectDriver()}
+              disabled={
+                busy ||
+                !data ||
+                (!managerAgent && !managerPermission) ||
+                (!workspaceOnly && data?.record?.data.status === "active")
+              }
+              onClick={() =>
+                void (workspaceOnly
+                  ? adoptManager()
+                  : act("orchestration.resume"))
+              }
             >
-              采用调度模式
+              {workspaceOnly ? "采用工作台配置" : "采用并恢复经理"}
             </ActionButton>
           </div>
-        )}
-      </details>
+          <p className="muted">
+            默认使用项目配置中的编排
+            Agent。更换组合前先暂停当前经理会话；后继会话使用所选配置。
+          </p>
+        </details>
+      )}
       <p>
         {controller
           ? statuses[controller.status] || controller.status
           : data
-            ? "发送指令后启动项目经理"
+            ? workspaceOnly
+              ? "发送消息后开始讨论"
+              : "项目经理会话尚未建立"
             : ""}
       </p>
       {controller?.reason && <p role="status">{controller.reason}</p>}
@@ -402,12 +354,12 @@ export function WorkflowController({
         }}
       >
         <label>
-          给项目经理的指令
+          {workspaceOnly ? "给项目经理的指令" : "回复项目经理"}
           <textarea
-            aria-label="给项目经理的指令"
+            aria-label={workspaceOnly ? "给项目经理的指令" : "回复项目经理"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="例如：采用我提供的设计，调整后续任务并继续执行"
+            placeholder="回答经理的问题，或提供你的业务意见"
           />
         </label>
         <div className="actions">
@@ -420,7 +372,7 @@ export function WorkflowController({
               ["completed", "cancelled"].includes(instance.data.status)
             }
           >
-            {workspaceOnly ? "发送" : "发送并推进"}
+            {workspaceOnly ? "发送" : "发送回复"}
           </ActionButton>
           {controller && (
             <ActionButton
@@ -449,42 +401,31 @@ export function WorkflowController({
           配置选项暂不可用：{catalogError}
         </p>
       )}
-      {(data?.decisions || [])
-        .filter((r: Row) => r.data.status === "pending")
-        .map((r: Row) => (
-          <article key={r.id} aria-label="待决定的操作">
-            <p>{r.name}</p>
-            <p>
-              请求操作：{r.data.request.operation} · 计划{" "}
-              {r.data.plan_revision_id}
-            </p>
-            <details>
-              <summary>查看确切请求</summary>
-              <ReadableValue value={r.data.request.arguments} />
-            </details>
-            <ActionButton
-              disabled={busy}
-              onClick={() => void resolveDecision(r, true)}
-            >
-              批准此请求
-            </ActionButton>
-            <ActionButton
-              disabled={busy}
-              onClick={() => void resolveDecision(r, false)}
-            >
-              拒绝此请求
-            </ActionButton>
-          </article>
-        ))}
-      {(data?.calls || []).slice(0, 5).map((r: Row) => (
-        <p key={r.id}>
-          {r.data.method} ·{" "}
-          {r.data.status === "succeeded"
-            ? actionStates[r.data.receipt?.status] || "已接纳"
-            : r.data.status === "failed"
-              ? r.data.error?.message
-              : "已登记"}
-        </p>
+      {(data?.decisions || []).map((decision: Row) => (
+        <ManagerInteraction
+          key={decision.id}
+          interaction={decision.data.request.interaction || {}}
+          projectId={projectId}
+          ownerId={controller?.owner_id || projectId}
+          status={
+            decision.current === false && decision.data.status === "pending"
+              ? "stale"
+              : decision.data.status
+          }
+          busy={busy}
+          onDecide={(approved, opinion) =>
+            resolveDecision(decision, approved, opinion)
+          }
+        />
+      ))}
+      {(data?.interactions || []).map((notice: Row) => (
+        <ManagerInteraction
+          key={notice.id}
+          interaction={notice.data.interaction}
+          projectId={projectId}
+          ownerId={controller?.owner_id || projectId}
+          busy={busy}
+        />
       ))}
       {(data?.messages || [])
         .slice()

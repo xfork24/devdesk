@@ -9,7 +9,7 @@
   "role_agent_bindings": {
     "builtin-role-analyst:1": "builtin-agent-sol-high-analyst:6",
     "builtin-role-architect:1": "builtin-agent-sol-high-architect:6",
-    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:9",
+    "builtin-role-project-manager:1": "builtin-agent-sol-high-project-manager:10",
     "builtin-role-developer:1": "builtin-agent-sol-high-developer:6",
     "builtin-role-tester:1": "builtin-agent-sol-high-tester:6",
     "builtin-role-reviewer:1": "builtin-agent-sol-high-reviewer:6"

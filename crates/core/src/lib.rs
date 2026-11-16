@@ -29,7 +29,12 @@ pub use configuration_changes::{
 };
 mod configured_runtime;
 mod configured_workflows;
+#[cfg(test)]
+mod controller_event_tests;
+mod controller_events;
+mod controller_interactions;
 mod controllers;
+pub use controller_events::append_workflow_events;
 mod manager_workspace;
 mod spec_lint;
 pub use manager_workspace::{MANAGER_TOOLS, ManagerServices, read_project_knowledge};
@@ -837,7 +842,7 @@ impl Engine {
                 }
                 let sid = row.data["session_id"].as_str();
                 return Ok(
-                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.r#type=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"decisions":s.governance.iter().filter(|r|r.r#type=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|instance| instance.data["root_instance_id"]==row.data["root_instance_id"])).rev().take(20).collect::<Vec<_>>() }),
+                    json!({"record":row,"messages":s.conversation_events.iter().filter(|e|Some(e.session_id.as_str())==sid && e.kind==ConversationEventKind::Assistant).rev().take(20).collect::<Vec<_>>(),"calls":s.governance.iter().filter(|r|r.r#type=="controller_tool_call"&&r.definition_id==row.id).rev().take(30).collect::<Vec<_>>(),"interactions":s.governance.iter().filter(|r|r.r#type=="controller_interaction"&&r.definition_id==row.id).rev().take(20).collect::<Vec<_>>(),"decisions":s.governance.iter().filter(|r|r.r#type=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|instance| instance.data["root_instance_id"]==row.data["root_instance_id"])).rev().take(20).map(|r|controller_interactions::decision_view(&s,r)).collect::<Vec<_>>() }),
                 );
             }
             return Ok(json!({"record":null,"messages":[],"calls":[],"decisions":[]}));

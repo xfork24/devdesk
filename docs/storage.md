@@ -32,7 +32,7 @@
 
 ## 配置的唯一存储
 
-配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 19 / project 49。
+配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 19 / project 50。
 
 配置目录另有可丢弃的进程内快照，不新增持久化投影。单写 Store 在配置提交后失效缓存，热读可直接取得不可变 Arc，避免等待完整工程恢复占用的数据库连接。共享目录与项目目录的只读组合最多保留 8 个视图；底层缓存按估算字节计账，单项 32 MiB、进程合计 128 MiB，过大或预算不足时读取但不保留。跨项目只读目录最多复用 8 个连接，通过 SQLite `data_version` 检测外部提交。 同一快照还保存模板成员、head、来源和停用索引，以及最多 16 项纯查询结果；查询结果按序列化大小的两倍计账，单快照 4 MiB、进程合计 32 MiB，超额逐出或不保留。成功结果才缓存，编译期间不持有 memo 锁。键包含方法、完整参数和快照全部配置输入；权限矩阵额外包含运行程序登记及后端资产摘要。重启与源提交重建视图，命令与执行不使用展示结果替代权威校验。
 

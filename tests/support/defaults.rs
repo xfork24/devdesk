@@ -30,7 +30,7 @@ pub const DEFAULT_CAPABILITY_ID: &str = "builtin-capability-sol-high-codex:4";
 pub fn default_configured_agent_id(role: &str) -> String {
     format!(
         "builtin-agent-sol-high-{role}:{}",
-        if role == "project-manager" { 9 } else { 6 }
+        if role == "project-manager" { 10 } else { 6 }
     )
 }
 

@@ -4,7 +4,7 @@ import copy
 import hashlib
 import sqlite3
 import unittest
-from engineering_evidence import frozen_document, verify_chunk_reads
+from engineering_evidence import frozen_document, verify_chunk_reads, verify_source_contract
 
 
 class FrozenDocumentTests(unittest.TestCase):
@@ -26,6 +26,39 @@ class FrozenDocumentTests(unittest.TestCase):
             connection.execute("DELETE FROM source_definitions WHERE reference='flow:1'")
             with self.assertRaisesRegex(AssertionError, 'must remain available'):
                 frozen_document(connection, frozen)
+
+
+class PreservedContractTests(unittest.TestCase):
+    def setUp(self):
+        self.source = {'steps': [{'key': 'review', 'confirmation': 'human',
+                                 'completion': {'op': 'always'}, 'dependencies': [],
+                                 'spec_refs': [], 'required_skill_refs': [],
+                                 'executor': {'type': 'control'}, 'outputs': {}}]}
+        self.plan = copy.deepcopy(self.source)
+
+    def test_original_human_gate_passes(self):
+        verify_source_contract(self.source, self.plan)
+
+    def test_removing_human_gate_is_rejected(self):
+        self.plan['steps'][0]['confirmation'] = 'automatic'
+        with self.assertRaisesRegex(AssertionError, 'Human confirmation'):
+            verify_source_contract(self.source, self.plan)
+
+    def test_removing_mandatory_node_is_rejected(self):
+        self.plan['steps'] = []
+        with self.assertRaisesRegex(AssertionError, 'mandatory source node'):
+            verify_source_contract(self.source, self.plan)
+
+    def test_replacing_completion_rule_is_rejected(self):
+        self.plan['steps'][0]['completion'] = {'op': 'any', 'rules': []}
+        with self.assertRaisesRegex(AssertionError, 'completion rule'):
+            verify_source_contract(self.source, self.plan)
+
+    def test_altering_an_independent_review_prompt_is_rejected(self):
+        self.source['steps'][0]['task_instructions'] = '独立核对原始材料与证据'
+        self.plan['steps'][0]['task_instructions'] = '无条件批准'
+        with self.assertRaisesRegex(AssertionError, 'review prompt'):
+            verify_source_contract(self.source, self.plan, True)
 
 
 class ChunkReadTests(unittest.TestCase):
@@ -69,6 +102,61 @@ class ChunkReadTests(unittest.TestCase):
         self.assertTrue(proof['native_delivery_verified'])
         self.assertEqual(len(proof['chunks']), 2)
         self.assertEqual(sum(chunk['utf8_bytes'] for chunk in proof['chunks']), self.reference['total_bytes'])
+
+    def batched_first_read(self):
+        raw = json.dumps(self.expected, ensure_ascii=False, separators=(',', ':')).encode()
+        end = 16384
+        while True:
+            try:
+                raw[:end].decode()
+                break
+            except UnicodeDecodeError:
+                end -= 1
+        self.calls[0]['request']['arguments']['ids'].append('another-output')
+        first = self.calls[0]['receipt']['outputs'][0]
+        first.update(value_chunk=raw[:end].decode(), next_offset=end)
+        self.calls[0]['receipt']['outputs'].append({'id': 'another-output', 'data': {'value': True}})
+        self.calls[1]['request']['arguments']['offset'] = end
+        second = self.calls[1]['receipt']['outputs'][0]
+        second.update(offset=end, value_chunk=raw[end:].decode(), next_offset=None)
+        self.sync_wire()
+
+    def sync_wire(self):
+        for call, wire in zip(self.calls, self.wire):
+            wire['item']['arguments'] = copy.deepcopy(call['request']['arguments'])
+            wire['item']['contentItems'][0]['text'] = json.dumps(call['receipt'])
+
+    def test_batched_read_shares_budget_and_reconstructs_complete_input(self):
+        self.batched_first_read()
+        self.assertTrue(self.verify()['native_delivery_verified'])
+
+    def test_batched_read_still_requires_actual_native_delivery(self):
+        self.batched_first_read()
+        self.wire.pop(0)
+        with self.assertRaisesRegex(AssertionError, 'absent from native journal'):
+            self.verify()
+
+    def test_batched_read_cannot_use_the_entire_budget_for_one_input(self):
+        self.batched_first_read()
+        raw = json.dumps(self.expected, ensure_ascii=False, separators=(',', ':')).encode()
+        end = 32768
+        while True:
+            try:
+                raw[:end].decode()
+                break
+            except UnicodeDecodeError:
+                end -= 1
+        self.calls[0]['receipt']['outputs'][0].update(value_chunk=raw[:end].decode(), next_offset=end)
+        self.sync_wire()
+        with self.assertRaisesRegex(AssertionError, 'Returned end differs'):
+            self.verify()
+
+    def test_batched_read_requires_every_requested_output(self):
+        self.batched_first_read()
+        self.calls[0]['receipt']['outputs'].pop()
+        self.sync_wire()
+        with self.assertRaisesRegex(AssertionError, 'outputs differ from requested IDs'):
+            self.verify()
 
     def test_requested_offset_inside_utf8_character_uses_returned_boundary(self):
         self.calls[-1]['request']['arguments']['offset'] += 1

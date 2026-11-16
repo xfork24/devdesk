@@ -158,9 +158,22 @@ pub struct WorkflowController {
     pub status: String,
     pub event_cursor: u64,
     pub wakeup_turns: u64,
-    pub last_state_digest: String,
     #[serde(default)]
-    pub last_result_digest: String,
+    pub source_cursor: u64,
+    #[serde(default)]
+    pub acknowledged_cursor: u64,
+    #[serde(default)]
+    pub delivery_id: String,
+    #[serde(default)]
+    pub run_state: String,
+    #[serde(default)]
+    pub checkpoint: serde_json::Value,
+    #[serde(default)]
+    pub wait_deadline: Option<u64>,
+    #[serde(default)]
+    pub wait_turn_id: Option<Id>,
+    #[serde(default)]
+    pub bootstrap_epoch: u64,
     pub reason: String,
 }
 

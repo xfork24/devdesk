@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "bundle_version": "2026.11.16-profile-installation-workflow-v1",
+  "bundle_version": "2026.11.16-event-driven-project-manager",
   "types": {
     "role": [
       "roles/builtin-role-analyst-v1.json",
@@ -20,7 +20,7 @@
       "skills/builtin-skill-tdd-implementation-v2.json",
       "skills/builtin-skill-release-verification-v2.json",
       "skills/builtin-skill-independent-review-v2.json",
-      "skills/builtin-skill-workflow-orchestration-v2.json",
+      "skills/builtin-skill-workflow-orchestration-v3.json",
       "skills/builtin-skill-project-workbench-v1.json",
       "skills/builtin-skill-delivery-self-check-v1.json"
     ],
@@ -87,7 +87,7 @@
       "capabilities/builtin-capability-sol-high-codex-v4.json",
       "capabilities/builtin-capability-analyst-codex-v5.json",
       "capabilities/builtin-capability-architect-codex-v5.json",
-      "capabilities/builtin-capability-project-manager-codex-v8.json",
+      "capabilities/builtin-capability-project-manager-codex-v9.json",
       "capabilities/builtin-capability-developer-codex-v5.json",
       "capabilities/builtin-capability-tester-codex-v5.json",
       "capabilities/builtin-capability-reviewer-codex-v5.json",
@@ -95,13 +95,13 @@
       "capabilities/builtin-capability-glm-dsh-v2.json",
       "capabilities/builtin-capability-analyst-minimax-dsh-v2.json",
       "capabilities/builtin-capability-architect-minimax-dsh-v2.json",
-      "capabilities/builtin-capability-project-manager-minimax-dsh-v2.json",
+      "capabilities/builtin-capability-project-manager-minimax-dsh-v3.json",
       "capabilities/builtin-capability-developer-minimax-dsh-v2.json",
       "capabilities/builtin-capability-tester-minimax-dsh-v2.json",
       "capabilities/builtin-capability-reviewer-minimax-dsh-v2.json",
       "capabilities/builtin-capability-analyst-glm-dsh-v2.json",
       "capabilities/builtin-capability-architect-glm-dsh-v2.json",
-      "capabilities/builtin-capability-project-manager-glm-dsh-v2.json",
+      "capabilities/builtin-capability-project-manager-glm-dsh-v3.json",
       "capabilities/builtin-capability-developer-glm-dsh-v2.json",
       "capabilities/builtin-capability-tester-glm-dsh-v2.json",
       "capabilities/builtin-capability-reviewer-glm-dsh-v2.json"
@@ -109,19 +109,19 @@
     "agent": [
       "agents/builtin-agent-sol-high-analyst-v6.json",
       "agents/builtin-agent-sol-high-architect-v6.json",
-      "agents/builtin-agent-sol-high-project-manager-v9.json",
+      "agents/builtin-agent-sol-high-project-manager-v10.json",
       "agents/builtin-agent-sol-high-developer-v6.json",
       "agents/builtin-agent-sol-high-tester-v6.json",
       "agents/builtin-agent-sol-high-reviewer-v6.json",
       "agents/builtin-agent-minimax-analyst-v2.json",
       "agents/builtin-agent-minimax-architect-v2.json",
-      "agents/builtin-agent-minimax-project-manager-v2.json",
+      "agents/builtin-agent-minimax-project-manager-v3.json",
       "agents/builtin-agent-minimax-developer-v2.json",
       "agents/builtin-agent-minimax-tester-v2.json",
       "agents/builtin-agent-minimax-reviewer-v2.json",
       "agents/builtin-agent-glm-analyst-v2.json",
       "agents/builtin-agent-glm-architect-v2.json",
-      "agents/builtin-agent-glm-project-manager-v2.json",
+      "agents/builtin-agent-glm-project-manager-v3.json",
       "agents/builtin-agent-glm-developer-v2.json",
       "agents/builtin-agent-glm-tester-v2.json",
       "agents/builtin-agent-glm-reviewer-v2.json"
@@ -167,7 +167,7 @@
       "tools/builtin-tool-workflow-change-preview-v2.json",
       "tools/builtin-tool-workflow-change-apply-v2.json",
       "tools/builtin-tool-workflow-materials-import-v1.json",
-      "tools/builtin-tool-workflow-decision-request-v1.json",
+      "tools/builtin-tool-workflow-decision-request-v2.json",
       "tools/builtin-tool-workflow-execution-reconcile-v1.json",
       "tools/builtin-tool-workflow-complete-v1.json",
       "tools/builtin-tool-workflow-segment-dispatch-v1.json",
@@ -185,7 +185,9 @@
       "tools/builtin-tool-configuration-transfer-apply-v1.json",
       "tools/builtin-tool-configuration-transfer-cancel-v1.json",
       "tools/builtin-tool-configuration-transfer-status-v1.json",
-      "tools/builtin-tool-spec-lint-v1.json"
+      "tools/builtin-tool-spec-lint-v1.json",
+      "tools/builtin-tool-workflow-controller-wait-v1.json",
+      "tools/builtin-tool-workflow-controller-notify-v1.json"
     ],
     "permission_profile": [
       "permissions/profiles/builtin-permission-harness-full-access-v1.json",

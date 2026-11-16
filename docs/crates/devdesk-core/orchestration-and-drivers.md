@@ -35,9 +35,9 @@ inspect 为每步返回 actions.dispatch/accept/retry 及结构化 code/reason�
 
 源码：[crates/core/src/controllers.rs](../../../crates/core/src/controllers.rs)。
 
-`CONTROL_TOOLS` 列出 21 个 workflow 控制工具。`controller_command` 管理根编排或 workspace_only 项目经理的打开、输入、接管、恢复和后继；选择完整 Agent 与 Profile 选择，并检查实际驱动支持 orchestration。
+`CONTROL_TOOLS` 列出可由根经理调用的 workflow 控制工具。`controller_command` 管理根编排或 workspace_only 项目经理的打开、输入、接管、恢复和后继；选择完整 Agent 与 Profile 选择，并检查实际驱动支持 orchestration。
 
-`drive_controllers` 比较持久事件/状态、用户输入和结果摘要，生成有限唤醒和原生 Turn；没有新状态/输入时不反复调用模型。ControllerSessionBinding、epoch、lease 和真实 Session/Turn/worker 共同确定当前权限，接管或后继使旧调用失效。预算围栏与业务步骤预算分开。
+`drive_controllers` 通过耐久源事件位置、真实用户输入及已登记期限生成有因投递；首次上下文之后不拼接重复 instructions 或全图快照。`controller_events` 在提交边界登记事实，并处理原子等待与确切回复合并；无事件/输入时不反复调用模型。ControllerSessionBinding、epoch、lease 和真实 Session/Turn/worker 共同确定当前权限，接管或后继使旧调用失效。预算围栏与业务步骤预算分开。
 
 原生调用先保存请求、工具引用和调用链，再由 project_controller_tool/drive_controller_calls 校验授权并执行；接纳业务回执与把工具回复交回模型是两笔事实，重启不能因为回复丢失就再次执行副作用。超大 inspect 结果采用有界投影，单元测试保护真实 completion/human 门禁不被裁掉。
 
@@ -84,3 +84,5 @@ completion_action 核对全部步骤处置、整体完成规则和最终输出�
 ---
 
 [代码手册总览](../overview.md) · [完整执行链](../execution-flows.md) · [本包概览](overview.md)
+
+经理交互的来源验证和链接补齐由 [controller_interactions.rs](../../../crates/core/src/controller_interactions.rs) 实现。提交时的事件捕获由 [controller_events.rs](../../../crates/core/src/controller_events.rs) 实现，并由现有 Store 事务提交同一日志；后续有限提交适配必须保留这一原子事实边界。

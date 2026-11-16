@@ -39,6 +39,8 @@ pub(crate) const PLATFORM_HANDLERS: &[&str] = &[
     "workflow.execution.reconcile",
     "workflow.complete",
     "workflow.segment.dispatch",
+    "workflow.controller.wait",
+    "workflow.controller.notify",
     "workspace.current",
     "workspace.snapshot",
     "tasks.create",

@@ -145,6 +145,186 @@ async function fixture(page: Page, failure?: "catalog" | "defaults") {
   return "/?tab=execution&detail=manager&project_id=read-project&feature_id=read-feature";
 }
 
+test("a manager material link keeps its Feature scope before workspace loading finishes", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  const owners: string[] = [];
+  let release!: () => void;
+  const workspace = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.workspace") {
+      await workspace;
+      return route.fallback();
+    }
+    if (call.method !== "query.workflow_materials") return route.fallback();
+    owners.push(call.params.owner_id);
+    const result = call.params.output_id
+      ? {
+          record: { delivery_name: "冻结 PRD", round: 1 },
+          output: { delivery_ref: "prd:1", value: "本轮需求正文" },
+          definitions: {},
+        }
+      : { records: [], total: 0 };
+    return route.fulfill({
+      json: { jsonrpc: "2.0", id: call.id, result },
+    });
+  });
+  try {
+    await page.goto(
+      url.replace("detail=manager", "detail=documents") +
+        "&output_id=frozen-prd&execution_id=prd-original",
+    );
+    await expect(
+      page.locator("#material-frozen-prd").getByRole("heading", {
+        name: "冻结 PRD",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(owners.length).toBeGreaterThan(0);
+    expect(owners.every((owner) => owner === "read-feature")).toBe(true);
+  } finally {
+    release();
+  }
+});
+
+test("manager prepares exact materials and review evidence for a human decision", async ({
+  page,
+}) => {
+  const url = await fixture(page);
+  let decision: any;
+  const reference = {
+    label: "本轮 PRD",
+    purpose: "请核对需求范围和验收标准",
+    owner_id: "read-feature",
+    instance_id: "read-instance",
+    execution_id: "prd-original",
+    output_id: "frozen-prd",
+    session_id: "prd-session",
+    turn_id: "prd-turn",
+  };
+  await page.route("**/rpc", async (route) => {
+    const call = route.request().postDataJSON();
+    if (call.method === "query.orchestration") {
+      await route.fulfill({
+        json: {
+          jsonrpc: "2.0",
+          id: call.id,
+          result: {
+            record: {
+              id: "controller",
+              data: { status: "active", owner_id: "read-feature" },
+            },
+            decisions: [
+              {
+                id: "human-request",
+                revision: 7,
+                data: {
+                  status: decision ? "approved" : "pending",
+                  request: {
+                    operation: "workflow.step.confirm",
+                    arguments: { execution_id: "review-original" },
+                    interaction: {
+                      title: "本轮 PRD",
+                      background: "需求文档和独立初审已经完成。",
+                      requested_action:
+                        "请确认范围与验收标准；如需修改可退回并填写意见。",
+                      completed_work:
+                        "已安排需求 Agent 编写 PRD，并由独立审核 Agent 完成初审。",
+                      review_summary: "初审通过，无阻塞问题，尚待你确认。",
+                      materials: [
+                        reference,
+                        {
+                          ...reference,
+                          label: "本轮初审报告",
+                          output_id: "frozen-review",
+                          execution_id: "review-original",
+                          session_id: "review-session",
+                          turn_id: "review-turn",
+                        },
+                      ],
+                      evidence: [
+                        {
+                          ...reference,
+                          label: "独立初审",
+                          execution_id: "review-original",
+                          session_id: "review-session",
+                          turn_id: "review-turn",
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+            calls: [
+              {
+                id: "call",
+                data: { method: "workflow.inspect", status: "succeeded" },
+              },
+            ],
+          },
+        },
+      });
+    } else if (call.method === "workflow.decision.resolve") {
+      decision = call.params;
+      await route.fulfill({
+        json: { jsonrpc: "2.0", id: call.id, result: { id: "human-request" } },
+      });
+    } else return route.fallback();
+  });
+  await page.goto(url);
+  const manager = page.getByRole("region", {
+    name: "项目经理协作",
+    exact: true,
+  });
+  const card = manager.getByRole("article", { name: "本轮 PRD", exact: true });
+  await expect(card).toContainText("需要你做什么");
+  await expect(card).toContainText("独立审核 Agent 完成初审");
+  await expect(card).toContainText("初审通过");
+  await expect(
+    card.getByRole("link", { name: "本轮 PRD", exact: true }),
+  ).toHaveAttribute("href", /output_id=frozen-prd/);
+  await expect(
+    card.getByRole("link", { name: "材料上下文", exact: true }).first(),
+  ).toHaveAttribute("href", /session_id=prd-session/);
+  await expect(
+    card.getByRole("link", { name: "材料执行记录", exact: true }).first(),
+  ).toHaveAttribute("href", /execution_id=prd-original/);
+  await expect(
+    card.getByRole("link", { name: "查看上下文", exact: true }),
+  ).toHaveAttribute("href", /session_id=review-session/);
+  await expect(
+    card.getByRole("link", { name: "查看执行记录", exact: true }),
+  ).toHaveAttribute("href", /execution_id=review-original/);
+  await expect(manager.getByText("查看确切请求", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    manager.getByText("调度与经理管理", { exact: true }),
+  ).toHaveCount(0);
+  await expect(manager.getByText(/workflow\.inspect/)).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    card.getByRole("link", { name: "本轮 PRD", exact: true }),
+  ).toBeVisible();
+  await card
+    .getByLabel("意见或修改要求", { exact: true })
+    .fill("确认当前范围，保留初审记录。");
+  await card
+    .getByRole("button", { name: "确认：本轮 PRD", exact: true })
+    .click();
+  await expect
+    .poll(() => decision?.payload)
+    .toEqual({ approved: true, reason: "确认当前范围，保留初审记录。" });
+  expect(decision.target).toBe("human-request");
+  expect(decision.expected_revision).toBe(7);
+  await expect(card).toContainText("你已确认本轮事项");
+});
+
 test("slow controller polling renders its result without overlapping requests and stops on unmount", async ({
   page,
 }) => {
@@ -354,7 +534,7 @@ test("manager context pins its session through delayed role discovery and accept
     });
 });
 
-test("manager shows the current blocker and aligns configuration controls at desktop and mobile widths", async ({
+test("manager shows the current blocker without scheduling configuration at desktop and mobile widths", async ({
   page,
 }) => {
   const url = await fixture(page);
@@ -390,29 +570,17 @@ test("manager shows the current blocker and aligns configuration controls at des
   await expect(
     manager.getByRole("region", { name: "当前阻塞点" }),
   ).toContainText("需要导出哪些字段？");
-  await manager.getByText("调度与经理管理", { exact: true }).click();
-  await expect(manager.getByLabel("切换调度模式", { exact: true })).toHaveValue(
-    "agent",
+  await expect(
+    manager.getByText("调度与经理管理", { exact: true }),
+  ).toHaveCount(0);
+  await expect(manager.getByLabel("切换调度模式", { exact: true })).toHaveCount(
+    0,
   );
-  const row = manager.locator(".manager-configuration-row");
-  const boxes = await row.locator("select, button").evaluateAll((nodes) =>
-    nodes.map((node) => {
-      const r = node.getBoundingClientRect();
-      return { bottom: r.bottom, x: r.x };
-    }),
-  );
-  expect(boxes).toHaveLength(3);
-  expect(
-    Math.max(...boxes.map((box) => box.bottom)) -
-      Math.min(...boxes.map((box) => box.bottom)),
-  ).toBeLessThan(2);
+  await expect(manager.locator(".manager-configuration-row")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  const narrow = await row
-    .locator("select, button")
-    .evaluateAll((nodes) =>
-      nodes.map((node) => node.getBoundingClientRect().x),
-    );
-  expect(Math.max(...narrow) - Math.min(...narrow)).toBeLessThan(2);
+  await expect(
+    manager.getByLabel("回复项目经理", { exact: true }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -420,7 +588,7 @@ test("manager shows the current blocker and aligns configuration controls at des
   ).toBe(true);
 });
 
-test("paused root manager adopts exact successor sources through the Human resume entry", async ({
+test("paused root manager resumes its frozen sources without configuration controls", async ({
   page,
 }) => {
   const url = await fixture(page);
@@ -488,31 +656,19 @@ test("paused root manager adopts exact successor sources through the Human resum
   });
   await page.goto(url);
   const panel = page.getByRole("region", { name: "项目经理协作" });
-  await panel.getByText("调度与经理管理", { exact: true }).click();
+  await expect(panel.getByText("调度与经理管理", { exact: true })).toHaveCount(
+    0,
+  );
   await expect(
-    panel
-      .getByLabel("经理 Agent 精确修订", { exact: true })
-      .locator('option[value="developer-agent:1"]'),
+    panel.getByLabel("经理 Agent 精确修订", { exact: true }),
   ).toHaveCount(0);
   await panel
-    .getByLabel("经理 Agent 精确修订", { exact: true })
-    .selectOption("manager-new:1");
-  await panel
-    .getByLabel("经理授权上下文", { exact: true })
-    .selectOption("context-new:1");
-  await panel
-    .getByRole("button", { name: "采用并恢复经理", exact: true })
+    .getByRole("button", { name: "恢复项目经理", exact: true })
     .click();
-  await expect
-    .poll(() => adopted)
-    .toEqual({
-      epoch: 3,
-      agent_ref: "manager-new:1",
-      harness_permission_ref: "context-new:1",
-    });
+  await expect.poll(() => adopted).toEqual({ epoch: 3 });
   await expect(
-    panel.getByRole("button", { name: "采用并恢复经理", exact: true }),
-  ).toBeDisabled();
+    panel.getByRole("button", { name: "人工接管", exact: true }),
+  ).toBeVisible();
 });
 
 for (const failure of ["catalog", "defaults"] as const) {
@@ -651,9 +807,9 @@ for (const catalogState of ["pending", "failed"] as const) {
     try {
       await page.goto(url);
       const panel = page.getByRole("region", { name: "项目经理协作" });
-      await expect(
-        panel.getByText("当前调度：agent · 代次 7", { exact: true }),
-      ).toBeVisible({ timeout: 6500 });
+      await expect(panel.getByText("协作中", { exact: true })).toBeVisible({
+        timeout: 6500,
+      });
       await expect(
         panel.getByText("actual manager is active", { exact: true }),
       ).toBeVisible();
@@ -662,10 +818,12 @@ for (const catalogState of ["pending", "failed"] as const) {
       ).toBeEnabled();
       await expect(panel).not.toContainText("当前调度：manual");
       await expect(panel).not.toContainText("发送指令后启动项目经理");
-      if (catalogState === "failed")
-        await expect(panel.getByRole("alert")).toContainText(
-          "配置选项暂不可用",
-        );
+      await expect(
+        panel.getByText("调度与经理管理", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        panel.getByText("配置选项暂不可用", { exact: false }),
+      ).toHaveCount(0);
     } finally {
       release();
     }

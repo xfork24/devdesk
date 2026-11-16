@@ -1,6 +1,6 @@
 # DevDesk 领域规范
 
-当前 SQLite 基线为 global 19 / project 49。出厂 Workflow、Spec、Standard 的 schema_version 分别记录为 6、3、4，Agent 任务记录 `agent-task/v6`，普通 Proposal 记录 v2；这些记录标签不代替结构与业务校验。只接受当前扁平源结构，不升级旧数据集。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [工作流与编排](workflow-orchestration.md)。
+当前 SQLite 基线为 global 19 / project 50。出厂 Workflow、Spec、Standard 的 schema_version 分别记录为 6、3、4，Agent 任务记录 `agent-task/v6`，普通 Proposal 记录 v2；这些记录标签不代替结构与业务校验。只接受当前扁平源结构，不升级旧数据集。完整字段见 [Schema](../schemas/README.md)，编排和运行计划约束见 [工作流与编排](workflow-orchestration.md)。
 
 ## 配置概念
 
@@ -31,7 +31,7 @@ Step 的执行方式仅为 Agent、工具、子流程、控制。Agent Step 必�
 | Feature | 项目内的工作范围，固定所采用的配置与来源材料；业务阶段从 Workflow 投影。 |
 | Task | Feature 下的实际任务、完整业务元数据和依赖 DAG。由明确的创建命令或平台工具产生。 |
 | RepositoryWorktree | 已登记的实际仓库工作副本、owner、分支、路径、基线与操作来源。 |
-| WorkflowController | 一个根实例的编排 Role、确切 Agent、控制策略、持续 Session、epoch 和预算。 |
+| WorkflowController | 一个根实例的编排 Role、确切 Agent、控制策略、持续 Session、epoch、事件投递/处理位置、经理检查点和预算。 |
 | WorkflowDriver | 根实例的 manual / rust / agent 调度选择；Rust 模式固定策略源、epoch、动作预算与租约。 |
 | ExecutionRecipe | 由 Harness 程序安装输入和 Sandbox 基础环境组合生成的内部配方/OCI 身份，不是配置源；不表示已安装或验证。 |
 | WorkflowPlanRevision | 不可变源修订选择及输入、角色绑定、父修订和变更原因；实例只切换活动引用。 |

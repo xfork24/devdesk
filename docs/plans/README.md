@@ -6,6 +6,7 @@
 
 | 计划 | 报告与证据 | 状态与范围 |
 |---|---|---|
+| [项目经理通过事件自主推进工作流](event-driven-project-manager/PLAN.md) | [实施与验证](event-driven-project-manager/EXECUTION.md) | 基于 main aa7328d 的独立 worktree 已实现；真实默认 Feature 22 + Task 20 步通过，外部调度输入为零；最终页面 43 个链接通过，debug 保留 1 项超时见记录 |
 | main 剩余改动整理 | [内容与定向验证](main-uncommitted-review/EXECUTION.md) | 运行诊断、权限恢复与执行页改动已复核；定向回归通过，未运行完整 workflow/Feature 交付回归 |
 | [Workflow 执行性能与运行稳定性](workflow-runtime-performance/PLAN.md) | [分工边界](workflow-runtime-performance/SCOPE.md)、[真实运行验证](workflow-runtime-performance/LIVE.md)、[验收](workflow-runtime-performance/ACCEPTANCE.md) | 独立 worktree 实施中；真实 Git/Docker、Codex 原生衔接与 Host 中断恢复已验证，完整 SLA 未通过；公共存储、调度、执行页与 100 前端容量待联合 |
 | [单 Host SQLite 底层并发重构](single-host-concurrency/PLAN.md) | [工作流运行时 100 前端验收合同](single-host-concurrency/ACCEPTANCE.md) | P0/P1 实施中，P2–P6 待实施、待验收；独立前端项目上下文、并发读、所有修改入口的资源级乐观校验、SQLite 短事务、最终一致视图与事件分发 |

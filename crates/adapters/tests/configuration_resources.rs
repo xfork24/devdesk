@@ -594,7 +594,10 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
             "project-manager",
         ] {
             let composition = state
-                .resolve_agent(&format!("builtin-agent-{vendor}-{role}:2"))
+                .resolve_agent(&format!(
+                    "builtin-agent-{vendor}-{role}:{}",
+                    if role == "project-manager" { 3 } else { 2 }
+                ))
                 .unwrap();
             assert_eq!(
                 composition.harness_ref,
@@ -637,7 +640,7 @@ fn dsh_stacks_publish_recommended_models_and_native_only_capabilities() {
         .unwrap();
     assert!(
         pm.skills
-            .contains(&"builtin-skill-workflow-orchestration:2".to_string())
+            .contains(&"builtin-skill-workflow-orchestration:3".to_string())
     );
 }
 
@@ -803,7 +806,7 @@ fn dsh_agents_cannot_be_bound_as_the_orchestrator() {
     let defaults = e.configuration_defaults(Some(project_id)).unwrap();
     // Binding the PM role to a dsh agent while designating it the orchestrator is rejected.
     let mut bindings = defaults["role_agent_bindings"].clone();
-    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:2");
+    bindings["builtin-role-project-manager:1"] = json!("builtin-agent-minimax-project-manager:3");
     let error = command(
         &e,
         "project.configuration.update",

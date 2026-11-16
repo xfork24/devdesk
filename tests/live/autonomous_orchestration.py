@@ -1,0 +1,83 @@
+"""Audit durable actors and actual turn inputs, independently of final success."""
+import json
+
+
+def verify(connection, root_id):
+    records = {row[0]: (row[1], json.loads(row[2])) for row in connection.execute(
+        "SELECT id,type,data FROM governance_records")}
+    controllers = [(identity, data) for identity, (kind, data) in records.items()
+                   if kind == "workflow_controller" and data.get("root_instance_id") == root_id
+                   and not data.get("workspace_only")]
+    assert len(controllers) == 1, "Expected a single uninterrupted root manager"
+    controller_id, controller = controllers[0]
+    assert controller["epoch"] == 1, "Autonomous baseline cannot be taken over or resumed"
+    assert not any(kind == "controller_input" for kind, _ in records.values()), "Autonomous baseline received external steering"
+    turns = {identity: json.loads(body) for identity, body in connection.execute(
+        "SELECT id,input FROM turns WHERE session_id=?", (controller["session_id"],))}
+    assert turns, "No actual manager turns"
+    bootstraps = 0
+    delivered_events = set()
+    maximum_event_batch_bytes = 0
+    for payload in turns.values():
+        assert "instructions" not in payload, "Runtime repeated orchestration instructions"
+        assert payload.get("user_messages", []) == [], "Unexpected supplemental manager instructions"
+        assert payload["root_instance_id"] == root_id, "Foreign manager delivery"
+        assert payload.get("delivery_id"), "Missing durable manager delivery identity"
+        events = payload.get("events", [])
+        size = len(json.dumps(events, ensure_ascii=False, separators=(',', ':')).encode())
+        maximum_event_batch_bytes = max(maximum_event_batch_bytes, size)
+        assert len(events) <= 32 and size <= 65536, "Event delivery exceeds its count or byte bound"
+        for event in events:
+            assert event['source']['root_instance_id'] == root_id, "Foreign root event delivery"
+            assert event['id'] not in delivered_events, "Source event delivered in multiple manager turns"
+            delivered_events.add(event['id'])
+        if payload.get("bootstrap"):
+            bootstraps += 1
+        else:
+            assert "instances" not in payload, "Repeated graph snapshot instead of events"
+            assert payload.get("events") or payload.get("deadline_reached"), "Wakeup without a cause"
+    assert bootstraps == 1, "Expected one initial manager goal"
+    calls = [(identity, data) for identity, (kind, data) in records.items()
+             if kind == "controller_tool_call" and data.get("status") == "succeeded"]
+    for _, call in calls:
+        assert call["turn_id"] in turns and call["epoch"] == 1, "Native call lacks its manager turn"
+    decisions = 0
+    initial_starts = 0
+    for identity, (kind, data) in records.items():
+        if kind == "command_context":
+            actor = data["context"]["actor"]
+            method = connection.execute(
+                "SELECT name FROM governance_records WHERE id=?", (identity,)).fetchone()[0]
+            if actor["kind"] == "human" and method.startswith(("workflow.", "orchestration.")):
+                assert method in ("workflow.start", "workflow.decision.resolve"), "Human or script performed manager work: " + method
+        if kind == "workflow_decision":
+            actor = data["actor"]
+            if actor["kind"] == "human" and data.get("operation") == "start":
+                assert data.get("instance_id") == root_id and data.get("root_instance_id") == root_id, "Human started another workflow"
+                initial_starts += 1
+                continue
+            if actor["kind"] == "segment":
+                actor = records[actor["authorization_id"]][1]["actor"]
+            assert (actor["kind"] == "controller" and actor["controller_id"] == controller_id
+                    and actor["epoch"] == 1), "Business advancement bypassed the manager"
+            decisions += 1
+        if kind == "workflow_pending_decision":
+            assert data["actor"]["kind"] == "controller", "Approval request was not prepared by manager"
+            assert data["request"].get("interaction"), "Approval lacks materials and explanation"
+            assert any(call["method"] == "workflow.decision.request"
+                       and call.get("receipt", {}).get("id") == identity for _, call in calls), "Approval lacks its actual native manager request"
+        if kind == "workflow_human_decision":
+            assert any(other_kind == "workflow_pending_decision"
+                       and other.get("decision_ref") == identity
+                       for other_kind, other in records.values()), "Human signature lacks manager request"
+        if kind == "controller_interaction":
+            assert data.get('interaction') and data['turn_id'] in turns, "Human notice lacks its manager turn"
+            assert any(call['method'] == 'workflow.controller.notify'
+                       and call.get('receipt', {}).get('id') == identity for _, call in calls), "Human notice lacks its actual native manager call"
+    assert initial_starts == 1, "Expected exactly one initial Human start"
+    assert decisions, "No manager business decisions"
+    return {"passed": True, "controller_id": controller_id, "manager_turns": len(turns),
+            "bootstrap_count": bootstraps, "external_steering_count": 0,
+            "delivered_events": len(delivered_events), "maximum_event_batch_bytes": maximum_event_batch_bytes,
+            "human_feedback_packets": sum(kind == 'controller_interaction' for kind, _ in records.values()),
+            "business_decisions": decisions, "native_calls": len(calls)}

@@ -24,6 +24,8 @@ pub const CONTROL_TOOLS: &[&str] = &[
     "workflow.execution.reconcile",
     "workflow.complete",
     "workflow.segment.dispatch",
+    "workflow.controller.wait",
+    "workflow.controller.notify",
 ];
 
 fn control_query(method: &str) -> bool {
@@ -86,6 +88,7 @@ fn operation(method: &str) -> &str {
         "workflow.materials.import" => "import",
         "workflow.decision.request" => "request_decision",
         "workflow.segment.dispatch" => "segment",
+        "workflow.controller.wait" | "workflow.controller.notify" => "inspect",
         _ => method.rsplit('.').next().unwrap_or(""),
     }
 }
@@ -480,8 +483,14 @@ impl Engine {
                 status: "active".into(),
                 event_cursor: 0,
                 wakeup_turns: 0,
-                last_state_digest: String::new(),
-                last_result_digest: String::new(),
+                source_cursor: 0,
+                acknowledged_cursor: 0,
+                delivery_id: String::new(),
+                run_state: "runnable".into(),
+                checkpoint: Value::Null,
+                wait_deadline: None,
+                wait_turn_id: None,
+                bootstrap_epoch: 0,
                 reason: String::new(),
             };
             let row = record(
@@ -671,7 +680,7 @@ impl Engine {
                 }
                 controller.session_id = None;
                 controller.status = "active".into();
-                controller.last_state_digest.clear();
+                controller.run_state = "runnable".into();
             }
         }
         if let Some(lease) = s
@@ -899,29 +908,58 @@ impl Engine {
                 if s.governance.iter().any(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="conversation.send"&&r.data["status"]=="prepared"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch){continue;}
                 let root=controller.root_instance_id.as_ref().and_then(|id|s.configuration(id).ok());
                 if root.is_some_and(|r|["completed","cancelled"].contains(&r.data["status"].as_str().unwrap_or(""))){controller.status="closed".into();update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
-                let instances:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_instance"&&Some(r.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref()).map(|row|instance_summary(s,row)).collect();
                 let mut input_bytes=0;
                 let user:Vec<_>=s.governance.iter().filter(|r|r.r#type=="controller_input"&&r.definition_id==row.id&&r.data["consumed"]==false).take(8).take_while(|r|{let size=r.data["input"].as_str().unwrap_or("").len();if input_bytes+size>65536{false}else{input_bytes+=size;true}}).cloned().collect();
-                let decisions:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_pending_decision"&&s.configuration(&r.definition_id).is_ok_and(|i|Some(i.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref())).map(|r|json!({"id":r.id,"instance_id":r.definition_id,"status":r.data["status"],"decision_ref":r.data["decision_ref"],"request":r.data["request"]})).collect();
                 if let Some(failed)=s.governance.iter().rev().find(|r|r.r#type=="workflow_intent"&&r.definition_id==row.id&&r.data["method"]=="conversation.send"&&r.data["command"]["payload"]["controller_epoch"]==controller.epoch&&r.data["status"]=="failed").cloned() {
                     let refs=failed.data["command"]["payload"]["controller_input_refs"].as_array().cloned().unwrap_or_default();
                     for input in s.governance.iter_mut().filter(|r|r.r#type=="controller_input"&&r.definition_id==row.id&&refs.contains(&json!(r.id))) {let mut data=input.data.clone();data["consumed"]=json!(false);update_record(input,data);}
                     controller.status="failed".into();controller.reason=failed.data["error"].to_string();
                     update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;
                 }
-                if controller.workspace_only && user.is_empty(){continue;}
-                let digest=configuration_hash(&json!({"instances":instances,"decisions":decisions,"inputs":user.iter().map(|r|&r.id).collect::<Vec<_>>() }));
-                if digest==controller.last_state_digest{continue;}
-                let results=configuration_hash(&instances.iter().flat_map(|i|i["steps"].as_array().into_iter().flatten()).map(|e|json!({"outputs":e["outputs"],"confirmation_ref":e["confirmation_ref"],"confirmation_waiver_ref":e["confirmation_waiver_ref"]})).collect::<Vec<_>>());
-                if results!=controller.last_result_digest||!user.is_empty(){controller.wakeup_turns=0;controller.last_result_digest=results;}
-                if controller.wakeup_turns>=controller.policy.max_turns_per_wakeup{controller.status="budget_exhausted".into();controller.reason="编排唤醒预算已耗尽，请恢复或补充指令".into();update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
-                let mut visible=instances.clone();visible.sort_by_key(|i| (i["id"]!=json!(controller.root_instance_id),["completed","cancelled"].contains(&i["status"].as_str().unwrap_or(""))));visible.truncate(16);
-                for instance in &mut visible {if let Some(steps)=instance["steps"].as_array(){let total=steps.len();let mut shown=steps.clone();shown.sort_by_key(step_attention);shown.truncate(16);for step in &mut shown {if let Some(reason)=step["reason"].as_str(){step["reason"]=json!(reason.chars().take(160).collect::<String>());}}instance["steps"]=json!(shown);instance["step_total"]=json!(total);instance["step_selection"]=json!("attention_then_pending");}}
-                let visible_decisions=decisions.iter().rev().take(32).map(|d|json!({"id":d["id"],"instance_id":d["instance_id"],"status":d["status"],"decision_ref":d["decision_ref"],"operation":d["request"]["operation"]})).collect::<Vec<_>>();
-                let scope_snapshot=json!({"renderer_version":ORCHESTRATION_RENDERER,"controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,"root_instance_id":controller.root_instance_id,"instances":visible,"instance_total":instances.len(),"event_hint":s.events.last().map(|e|e.id),
-                    "workspace_only":controller.workspace_only,"project_id":controller.project_id,"project_tools":MANAGER_TOOLS,"project_overview_only":true,"instructions":if controller.workspace_only {"You are a project-bound manager workspace. Use project.overview and paginated project.records.list/read to obtain facts. Use configuration catalog/read/usage, then change.preview and change.apply with the exact preview hash. Source edits publish new immutable revisions; adoption is explicit. You have no root scheduling lease. Never claim a write succeeded without its tool receipt. Do not change your own current permissions. Shared configuration writes require configuration.global.write; otherwise create project-owned successors. Finish and wait after answering the user's request."}else{"Starting this Feature already authorizes you to advance its frozen plan. Use workflow tools to inspect the current plan and outputs, dispatch and accept every eligible automatic step, and complete workflows. Continue while useful authorized work is available; do not ask the user to start or confirm ordinary automatic steps. Every child also requires explicit dispatch and completion. Projected steps prioritize unresolved and pending work, not authoring order; inspect omitted steps when needed. human_satisfied and confirmation_ref reflect matching recorded decisions; execution.reason is an earlier message. waiting_confirmation does not mean a human decision is still missing: when human_satisfied is true, inspect the current result and accept it if all conditions hold. Do not simulate tool receipts. You are the user's primary contact for progress and blockers. For every unresolved step, inspect and report the concrete question or failure, what you already did, and exactly what the user can provide here. For waiting_input, the user can answer in this manager conversation: call workflow.step.input with input exactly equal to a user_messages entry from this Turn, preserving the human's words verbatim. Never invent or rewrite a human answer, or tell the user they must switch to the worker conversation. If no answer is present, ask the actual clarification question here and wait. Read each frozen step confirmation_policy and completion requirements; the Workflow defines which checkpoints require human confirmation. Before requesting human confirmation, inspect the actual outputs and verify all required Spec and independent review conditions passed. Repair or rework rejected results instead of submitting failed reviews for routine human approval. Request workflow.step.confirm or workflow.step.accept via workflow.decision.request bound to the current execution_id, input_digest and outputs so the user can decide in the manager area; do not require navigation to the workflow. A change to scope, acceptance criteria, key design, inputs or the plan requires change.preview, then decision.request for workflow.change.apply with the exact changeset and preview_hash; wait for approval and call apply with the returned decision_ref. Do not remove, bypass or waive human checkpoints on your own, and do not switch a child work configuration to evade the approved plan. Submit other changes through preview and apply. When only workers or humans can act, finish this turn and wait. Never approve as a human. Use tools for every actual operation."},
-                    "root":root.map(|r|json!({"id":r.id,"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"],"human_governance":r.data["human_governance"],"user_request":r.data["user_request"]})),"policy":controller.policy,"decisions":visible_decisions,"user_messages":user.iter().map(|r|&r.data["input"]).collect::<Vec<_>>()});
-                controller.event_cursor+=1;controller.wakeup_turns+=1;controller.last_state_digest=digest;
+                if controller.workspace_only && user.is_empty(){controller.run_state="waiting".into();update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
+                let bootstrap=controller.bootstrap_epoch!=controller.epoch;
+                let events=if bootstrap {Vec::new()} else {crate::controller_events::pending_events(s,&controller)};
+                let deadline=controller.wait_deadline.is_some_and(|d|d<=now());
+                if !bootstrap && events.is_empty() && user.is_empty() && !deadline {
+                    if let Some(turn)=s.turns.iter().rev().find(|t|t.session_id==sid)
+                        && turn.status==TurnStatus::Completed && controller.wait_turn_id.as_deref()!=Some(&turn.id) {
+                        controller.run_state="needs_attention".into();
+                        controller.reason="项目经理结束本轮但未登记等待；请核对经理工作记录".into();
+                        update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));
+                    }
+                    continue;
+                }
+                let progress=events.iter().any(|e| {
+                    let source=&e["source"];
+                    source["origin_turn_id"].is_null() && (source["change"]["kind"]=="human.confirmed"
+                        || (source["change"]["kind"]=="decision.changed" && source["change"]["status"]!="pending")
+                        || source["change"]["has_outputs"]==true
+                        || source["change"]["changes"].as_array().into_iter().flatten().any(|c|c["execution"]["outputs"].as_object().is_some_and(|v|!v.is_empty())))
+                });
+                if progress||!user.is_empty(){controller.wakeup_turns=0;}
+                if controller.wakeup_turns>=controller.policy.max_turns_per_wakeup{controller.status="budget_exhausted".into();controller.reason="编排唤醒预算已耗尽".into();update_controller(s.governance.iter_mut().find(|r|r.id==row.id).unwrap(),json!(controller));continue;}
+                controller.event_cursor+=1;
+                controller.delivery_id=format!("controller:{}:{}:{}",row.id,controller.epoch,controller.event_cursor);
+                let mut scope_snapshot=json!({"renderer_version":ORCHESTRATION_RENDERER,"delivery_id":controller.delivery_id,
+                    "controller_id":row.id,"epoch":controller.epoch,"owner_id":controller.owner_id,
+                    "root_instance_id":controller.root_instance_id,"project_id":controller.project_id,
+                    "workspace_only":controller.workspace_only,"bootstrap":bootstrap,"events":events,
+                    "deadline_reached":deadline,"user_messages":user.iter().map(|r|&r.data["input"]).collect::<Vec<_>>()});
+                if bootstrap {
+                    scope_snapshot["root"]=root.map(|r|json!({"id":r.id,"plan_revision_id":r.data["active_plan_revision_id"],"status":r.data["status"],"human_governance":r.data["human_governance"],"user_request":r.data["user_request"]})).unwrap_or(Value::Null);
+                    scope_snapshot["policy"]=json!(controller.policy);
+                    scope_snapshot["checkpoint"]=controller.checkpoint.clone();
+                    let mut instances:Vec<_>=s.governance.iter().filter(|r|r.r#type=="workflow_instance"&&Some(r.data["root_instance_id"].as_str().unwrap_or(""))==controller.root_instance_id.as_deref()).take(16).map(|r|instance_summary(s,r)).collect();
+                    for instance in &mut instances {if let Some(steps)=instance["steps"].as_array_mut(){let total=steps.len();steps.sort_by_key(step_attention);steps.truncate(16);instance["step_total"]=json!(total);}}
+                    scope_snapshot["instances"]=json!(instances);
+                    controller.bootstrap_epoch=controller.epoch;
+                    controller.source_cursor=s.events.last().map_or(0,|e|e.id);
+                }
+                if let Some(cursor)=events.last().and_then(|e|e["id"].as_u64()){controller.source_cursor=cursor;}
+                controller.wakeup_turns+=1;
+                controller.run_state="running".into();
+                controller.wait_deadline=None;
+                controller.reason.clear();
                 let payload=json!({"client_message_id":format!("controller:{}:{}:{}",row.id,controller.epoch,controller.event_cursor),"input":scope_snapshot.to_string(),"controller_epoch":controller.epoch,"controller_input_refs":user.iter().map(|r|&r.id).collect::<Vec<_>>()});
                 let wakeup_id=payload["client_message_id"].as_str().unwrap().to_owned();
                 if !s.orchestration_wakeups.iter().any(|w|w.id==wakeup_id){s.orchestration_wakeups.push(OrchestrationWakeup{id:wakeup_id,controller_id:row.id.clone(),event_cursor:controller.event_cursor,status:"prepared".into(),turn_id:None,created_at:now()});}
@@ -1122,7 +1160,7 @@ impl Engine {
                         let c=Command{command_id:format!("{}:action",call.id),target:Some(target.clone()),expected_revision:revision,payload:args.clone()};
                         self.authorize_driver_action(s,method,&c,&actor)?;
                         InvocationContext::workflow(actor.clone(),Some(controller.project_id.clone())).record(s,method,&c)?;
-                        let result=if let Some(v)=self.workflow_control_command(method,&c,s,&actor)?{v}else{require(!["workflow.step.confirm","workflow.step.approve"].contains(&method),"Agent 无权签署人工决定")?;let result=self.configured_runtime_command(if method=="workflow.execution.reconcile"{"workflow.step.reconcile"}else{method},&c,s)?.ok_or_else(||err("method_not_found","未知编排命令"))?;crate::orchestration::record_auxiliary_decision(s,method,&c,&actor,&result)?;result};
+                        let result=if method=="workflow.controller.wait" {crate::controller_events::wait(s,&call.definition_id,&text(&call.data,"turn_id")?,&args)?}else if method=="workflow.controller.notify" {let interaction=crate::controller_interactions::validate(s,s.configuration(&target)?,&args["interaction"],&json!({}))?;let notice=record("controller_interaction",call.definition_id.clone(),call.scope.clone(),text(&args["interaction"],"title")?,1,None,json!({"instance_id":target,"plan_revision_id":args["plan_revision_id"],"turn_id":call.data["turn_id"],"interaction":interaction}),true);let id=notice.id.clone();s.governance.push(notice);json!({"id":id,"status":"published"})}else if let Some(v)=self.workflow_control_command(method,&c,s,&actor)?{v}else{require(!["workflow.step.confirm","workflow.step.approve"].contains(&method),"Agent 无权签署人工决定")?;let result=self.configured_runtime_command(if method=="workflow.execution.reconcile"{"workflow.step.reconcile"}else{method},&c,s)?.ok_or_else(||err("method_not_found","未知编排命令"))?;crate::orchestration::record_auxiliary_decision(s,method,&c,&actor,&result)?;result};
                         if method=="workflow.start"{let mut next=current;next.root_instance_id=Some(text(&result,"id")?);if let Some(lease)=s.orchestration_leases.iter_mut().find(|l|l.controller_id==call.definition_id){lease.root_instance_id=next.root_instance_id.clone();}update_record(s.governance.iter_mut().find(|r|r.id==call.definition_id).unwrap(),json!(next));}
                         Ok(result)
                     })

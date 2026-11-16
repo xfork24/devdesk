@@ -307,7 +307,10 @@ CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(type) W
 CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 
-PRAGMA user_version=49;
+CREATE INDEX events_workflow_root ON events(
+ json_extract(CASE WHEN kind='workflow.runtime' THEN detail ELSE '{}' END,'$.root_instance_id'),id
+) WHERE kind='workflow.runtime';
+PRAGMA user_version=50;
 
 CREATE TABLE orchestration_wakeups (
  id TEXT PRIMARY KEY, controller_id TEXT NOT NULL, event_cursor INTEGER NOT NULL,

@@ -508,12 +508,6 @@
         "status": {
           "type": "string"
         },
-        "last_state_digest": {
-          "type": "string"
-        },
-        "last_result_digest": {
-          "type": "string"
-        },
         "reason": {
           "type": "string"
         },
@@ -563,6 +557,37 @@
         "workspace_only": {
           "type": "boolean",
           "default": false
+        },
+        "source_cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "acknowledged_cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bootstrap_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "delivery_id": {
+          "type": "string"
+        },
+        "run_state": {
+          "type": "string"
+        },
+        "checkpoint": {},
+        "wait_deadline": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "wait_turn_id": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -572,8 +597,6 @@
         "role_ref",
         "policy_digest",
         "status",
-        "last_state_digest",
-        "last_result_digest",
         "reason",
         "root_instance_id",
         "session_id",

@@ -117,3 +117,9 @@ Workflow 执行性能的显式组件入口为 `crates/adapters/tests/workflow_pe
 - `python3 tests/live/probe_native_shutdown.py --binary /冻结的/devdesk-host --codex-auth-source /专用认证源/auth.json --output /新的证据目录`：实际经理原生请求时发送 SIGTERM，验证 Host 清理、旧 writer 撤权、重启不重发原输入，随后由后继经理自主完成独立技术流程。加 `--during-startup` 在实际容器运行、首条输入尚未消费时停机，另核对 consumed=0。它不是业务 Feature 的恢复入口。
 
 `python3 tests/entrypoints/host_launcher.py` 在 macOS 以一次性 worker 验证独立进程组、SIGTERM/SIGHUP 转发、退出日志和子进程清理；其他系统显式跳过。签名验证在此测试中替换，实际子进程和信号使用生产启动器。
+
+## 项目经理自主 Feature 验收
+
+默认工程探针以 start_workflow=false 保存草稿，再通过一次 workflow.start 启动 agent 根驱动。新场景不注入 business_facts、不发送编排指导。人类审批必须由经理先发起并准备材料，操作者在项目经理页面作出决定；探针只观察。严格 unattended 仍单独表示不能出现任何人类决定，不能通过删除默认确认点获得该成绩。
+
+完成后 engineering_evidence 调用 autonomous_orchestration，审计原生 Turn 输入、Controller/Segment 来源、零补充指导、原始人类决定、计划和全部工程证据。其负向回归为 python3 -m unittest discover -s tests/live -p 'test_autonomous_orchestration.py'。真实页面的只读验证入口为 node tests/live/verify_manager_page.mjs /证据目录/human-request-ID.json，检查本轮材料、上下文、执行记录的真实导航及桌面/窄屏截图；不提交人类决定。

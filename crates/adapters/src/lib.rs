@@ -423,7 +423,7 @@ fn open_engineering_connection(path: &Path) -> Result<Connection> {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(storage)?;
     require(
-        version == 0 || version == 49,
+        version == 0 || version == 50,
         "数据集协议不兼容；请使用新的空数据目录",
     )?;
     connection
@@ -694,6 +694,7 @@ impl EngineeringStore for SqliteStore {
         let before = state.clone();
         drop(conn);
         let result = action(&mut state)?;
+        append_workflow_events(&before, &mut state);
         let changed = serde_json::to_vec(&before).map_err(storage)?
             != serde_json::to_vec(&state).map_err(storage)?;
         // Idle observations cannot introduce a new invalid state. Avoid parsing

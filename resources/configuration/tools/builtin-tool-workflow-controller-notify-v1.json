@@ -1,0 +1,130 @@
+{
+  "type": "tool",
+  "identity": "builtin-tool-workflow-controller-notify",
+  "revision": 1,
+  "name": "向人类发布材料与处理说明",
+  "scope": "global",
+  "data": {
+    "qualified_name": "workflow.controller.notify",
+    "implementation": "platform",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "plan_revision_id": {
+          "type": "string"
+        },
+        "interaction": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "background": {
+              "type": "string"
+            },
+            "requested_action": {
+              "type": "string"
+            },
+            "completed_work": {
+              "type": "string"
+            },
+            "review_summary": {
+              "type": "string"
+            },
+            "issues": {
+              "type": "string"
+            },
+            "recommendation": {
+              "type": "string"
+            },
+            "materials": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "instance_id": {
+                    "type": "string"
+                  },
+                  "execution_id": {
+                    "type": "string"
+                  },
+                  "output_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label",
+                  "purpose",
+                  "instance_id",
+                  "execution_id",
+                  "output_id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "instance_id": {
+                    "type": "string"
+                  },
+                  "execution_id": {
+                    "type": "string"
+                  },
+                  "output_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "label",
+                  "purpose",
+                  "instance_id",
+                  "execution_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "title",
+            "background",
+            "requested_action",
+            "completed_work",
+            "review_summary",
+            "materials",
+            "evidence"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "plan_revision_id",
+        "interaction"
+      ],
+      "additionalProperties": false
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "capabilities": []
+  }
+}

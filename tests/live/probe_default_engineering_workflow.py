@@ -23,6 +23,7 @@ parser.add_argument('--manager-profile-source',type=Path,help='Explicit immutabl
 args=parser.parse_args()
 assert args.manager_profile_source is None or args.resume, 'manager context adoption is a resume operation'
 assert args.timeout_seconds>0
+assert not args.guidance, 'Autonomous acceptance cannot receive execution guidance'
 assert not (args.resume and args.unattended), 'unattended acceptance requires a fresh dataset'
 assert not (args.driver=='rust' and args.unattended), 'Rust actor verification is separate from the unattended Agent controller contract'
 assert args.dedicated_repository or 'test' in args.github_repo.lower(), 'designate the dedicated test repository explicitly'
@@ -39,7 +40,7 @@ else:
  binary_archive.parent.mkdir(parents=True)
  shutil.copy2(private_binary,binary_archive)
 attempt=OUT/'attempts'/str(time.time_ns());attempt.mkdir(parents=True)
-for name in [Path(__file__).name,'client.py','engineering_evidence.py','export_evidence.py','summarize_engineering_scene.py']:shutil.copy2(Path(__file__).parent/name,attempt/name)
+for name in [Path(__file__).name,'client.py','engineering_evidence.py','autonomous_orchestration.py','export_evidence.py','summarize_engineering_scene.py']:shutil.copy2(Path(__file__).parent/name,attempt/name)
 (attempt/'ATTEMPT.json').write_text(json.dumps({'resume':args.resume,'unattended':args.unattended,'timeout_seconds':args.timeout_seconds,'binary_sha256':binary_digest,'binary_archive':str(binary_archive.relative_to(OUT)),'guidance':args.guidance,'driver':args.driver},ensure_ascii=False,indent=2))
 def verify_rust_actor(project):
  import sqlite3
@@ -126,48 +127,16 @@ try:
   c.wait(lambda:c.rpc('query.workspace'),lambda v:v['repository_ready'],300)
   runtime=c.rpc('runtime.prepare',{'provider':'codex'});image=runtime['artifact']['image_id']
   defaults=c.rpc('query.configuration_defaults');workflow=c.rpc('query.workflow',{'id':defaults['workflow_ref']})['data'];suffix=uuid.uuid4().hex[:8];module=f'src/workflow-v5-{suffix}/greeting.mjs';task_test=f'tests/workflow-v5-{suffix}-task/behavior.test.mjs';feature_test=f'tests/workflow-v5-{suffix}-feature/behavior.test.mjs';increment_test=f'test/workflow-v5-{suffix}-increments.test.mjs'
-  goal=f'''本次验收事实已经全部确定，无需等待用户补充：在已有仓库新增依赖免费的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 `Hello, <trimmed>!`；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；本次明确两个 TDD 增量：先 AC-GREET 的问候与 trim，再 AC-INVALID 的无效输入拒绝，每个增量分别保留真实 Red 和 Green。独立 tests 断言保持只读，自有增量测试按这两个冻结增量逐步增加并分别采集 Red/Green；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。测试使用 node:test、node:assert/strict，无 npm 安装、无联网、无外部依赖。测试 import 为 ../../{module}。模块或导出缺失属于运行前置条件错误，不使用动态 import 的 catch、assert.fail 或伪造返回值将它包装成业务 Red；由 Task Workflow 的 red_baseline 步骤准备可调用的最小接口，平台 Red 必须来自真实业务断言差异。实施逐次原始日志及测试/源码内容快照通过必需 evidence 输出交付，不能只提交临时路径或摘要。每轮采集真实 run 后，将该轮完整结构化 run JSON 输出到原生命令工具的 stdout，保留在工具观察账本中，再将相同记录汇总到 evidence；不要只在最终模型回答中补写记录。Task 配方仅运行 {task_test}；Feature 和最终候选配方运行 {task_test} 与 {feature_test} 两个文件。固定 Node TestRecipe 的 runner=node_test、image={image}、timeout_seconds=60。测试、实现、文档和独立评审必须按各自 Skill 和当前 Step 合同真实完成，不能把计划、模型自述或未运行内容当作工具回执。业务文档通过当前输出端口交付。README 修改是可选项，不属于本次必填交付物；规划和评审不得把它升级为新增完成条件，文档节点为只读时必须通过 result 端口交付完整文档。'''
+  goal=f'''在已有仓库新增无外部依赖的 ESM 模块 {module}，export greeting(name)。去掉字符串首尾空白，返回 Hello, <trimmed>!；空白字符串或非字符串参数抛出 TypeError。一个 Task 即可完成，稳定 key greeting，依赖为空。验收 AC-GREET：正常及带首尾空白输入返回问候；AC-INVALID：空白与非字符串输入抛出 TypeError。允许新增 {module}、Task 独立测试 {task_test}、Feature 独立测试 {feature_test} 及开发职责自有的增量测试 {increment_test}；可调整 README，禁止修改既有无关文件或增加辅助仓库文档。使用 node:test、node:assert/strict，不安装依赖、不联网。测试 import 为 ../../{module}。按两个功能增量交付：问候与 trim，以及无效输入拒绝；分别保留真实 TDD Red/Green 证据和测试源码快照。Task 配方运行 {task_test}；Feature 及最终候选配方运行 {task_test} 和 {feature_test}。固定 Node TestRecipe runner=node_test，image={image}，timeout_seconds=60。README 修改可选，不属于必填交付物。'''
   assert {step['key'] for step in workflow['steps'] if step.get('confirmation')=='human'}=={'requirements_review','design_review','plan_review'}
   published={'id':defaults['workflow_ref']};p=c.rpc('query.workspace')['active_project']
-  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':'manual'}})
-  feature=c.command('feature.create',payload={'project_id':project,'title':'Core greeting '+suffix,'initial_requirement':goal,'configuration_revision_id':configuration['id']})['id']
-  (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':False,'expected_human_checkpoints':['requirements_review','design_review','plan_review'],'required_increment_pairs':2,'unattended':args.unattended,'driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
+  configuration=c.command('project.configuration.update',project,p['revision'],{'workflow_ref':published['id'],'role_agent_bindings':defaults['role_agent_bindings'],'orchestrator_role_ref':defaults['orchestrator_role_ref'],'harness_permission_ref':defaults['harness_permission_ref'],'orchestration':{'mode':args.driver}})
+  feature=c.command('feature.create',payload={'project_id':project,'title':'Core greeting '+suffix,'initial_requirement':goal,'start_workflow':False,'configuration_revision_id':configuration['id']})['id']
+  (OUT/'context.json').write_text(json.dumps({'url':urls[0],'project':project,'feature':feature,'workflow':published['id'],'suffix':suffix,'goal':goal,'default_automatic_confirmations':False,'expected_human_checkpoints':['requirements_review','design_review','plan_review'],'required_increment_pairs':2,'unattended':args.unattended,'autonomous':args.driver=='agent','driver':args.driver},ensure_ascii=False,indent=2));print('Feature:',feature,flush=True)
+  c.command('workflow.start',feature,c.feature(feature)['feature']['revision'])
   initial=c.rpc('query.workflow_instance',{'owner_id':feature});root_id=initial['record']['id']
-  # Bind actual authorized business facts before either driver starts. This is an
-  # ordinary preview/apply change; it neither writes outputs nor removes gates.
-  first=next(step for step in initial['plan']['steps'] if step['executor']['type']=='agent')
-  first.setdefault('inputs',{})['business_facts']={'type':'constant','value':goal+'\n'+args.guidance}
-  change={'plan_revision_id':initial['runtime']['active_plan_revision_id'],'reason':'Bind the authorized acceptance input before driver start','operations':[{'type':'upsert_step','step':first}]}
-  preview=c.rpc('workflow.change.preview',{'id':root_id,'changeset':change})
-  receipt=c.command('workflow.change.apply',root_id,initial['record']['revision'],{'plan_revision_id':initial['runtime']['active_plan_revision_id'],'control_version':initial['runtime']['control_version'],'changeset':change,'preview_hash':preview['preview_hash']})
-  (attempt/'input-preparation.json').write_text(json.dumps({'changeset':change,'preview':preview,'receipt':receipt},ensure_ascii=False,indent=2))
-  initial=c.wait(lambda:c.rpc('query.workflow_instance',{'id':root_id}),lambda v:v['runtime']['active_plan_revision_id']!=change['plan_revision_id'],120)
-  def select_control(method,payload):
-   attempts=[]
-   for _ in range(4):
-    fresh=c.rpc('query.workflow_instance',{'id':root_id})
-    item={'method':method,'revision':fresh['record']['revision'],'payload':payload}
-    attempts.append(item)
-    try:
-     item['receipt']=c.command(method,root_id,item['revision'],payload)
-     (attempt/'control-selection.json').write_text(json.dumps(attempts,ensure_ascii=False,indent=2))
-     return item['receipt']
-    except RuntimeError as error:
-     item['error']=str(error)
-     (attempt/'control-selection.json').write_text(json.dumps(attempts,ensure_ascii=False,indent=2))
-     # A rejected CAS is known not to have acted. Timeouts/unknown effects are
-     # deliberately not retried by this acceptance runner.
-     if str(error)!=method+': blocked: 流程修订冲突':raise
-     time.sleep(.5)
-   raise RuntimeError('Control selection CAS did not settle')
-  if args.driver=='rust':
-   selection=select_control('workflow.driver.select',{'mode':'rust'})
-   (attempt/'driver-selection.json').write_text(json.dumps(selection,ensure_ascii=False,indent=2));manager=None
-  else:
-   manager=select_control('orchestration.open',{})['id']
-   m=c.rpc('query.orchestration',{'id':manager})['record']
- if manager:c.command('orchestration.input',manager,m['revision'],{'epoch':m['data']['epoch'],'input':'业务 Agent 不会继承你的控制会话。派发需求前先检查输入，必要时通过 workflow.change.preview/apply 将下列完整业务事实绑定到需求节点的明确输入；不得让业务节点因缺少已经给出的事实而等待人工补充。请按当前默认 Feature 工作流组织完整交付，包括 Task 子流程，使用原生工具明确派发、接纳、完成每个实例。遵守全部测试、独立评审及当前 Plan 的确认策略，不绕过、不豁免任何条件。默认 automatic 不创建人工签署，但仍须通过 Harness 显式接纳；只有实际冻结 Plan 为 human 时由验收入口处理精确签署。可使用 workflow.segment.dispatch 有界委托当前已知的自动步骤，逐一列出确切节点；每个子流程仍需你明确 complete。碰到拒绝、人工门禁或异常时重新决策，不得跨过。只运行一个 Task。业务目标：'+goal+'\n补充执行指导：'+args.guidance})
- last=None;confirmed=set();inputs=set();deadline=time.monotonic()+args.timeout_seconds;manager_progress=None;last_manager_progress=time.monotonic()
+  manager=c.rpc('query.orchestration',{'root_instance_id':root_id})['record']['id'] if args.driver=='agent' else None
+ last=None;confirmed=set();shown_requests=set();inputs=set();deadline=time.monotonic()+args.timeout_seconds;manager_progress=None;last_manager_progress=time.monotonic()
  while time.monotonic()<deadline:
   view=c.rpc('query.workspace',{'feature_id':feature});rows=[r for r in view['configurations'] if r['type']=='workflow_instance' and r['data']['root_instance_id']==root_id];root=next(r for r in rows if r['data']['parent_execution_id'] is None)
   status=[(r['id'],s['path'],s['status'],s['reason']) for r in rows for s in r['data']['steps'] if s['status'] not in ['completed','queued','skipped']]
@@ -176,7 +145,7 @@ try:
    manager_view=c.rpc('query.orchestration',{'id':manager});(OUT/'latest-manager.json').write_text(json.dumps(manager_view,ensure_ascii=False,indent=2))
    progress=[(r['id'],r['data'].get('status')) for r in manager_view['calls']]
    if progress!=manager_progress:manager_progress=progress;last_manager_progress=time.monotonic()
-   if manager_view['record']['data']['status'] in ['failed','needs_reconciliation','budget_exhausted']:raise RuntimeError(manager_view['record']['data'])
+   if manager_view['record']['data']['status'] in ['failed','needs_reconciliation','budget_exhausted'] or manager_view['record']['data'].get('run_state')=='needs_attention':raise RuntimeError(manager_view['record']['data'])
    if args.unattended:
     assert manager_view['record']['data']['status'] in ['active','closed'], 'Unattended controller paused for intervention'
     assert not any(r['type']=='workflow_pending_decision' and r['data']['status']=='pending' for r in manager_view['decisions']), 'Unattended workflow requested a Human decision'
@@ -195,24 +164,35 @@ try:
     if step['status']=='waiting_input':
      if args.unattended:raise RuntimeError('Workflow needs an actual human answer: '+step['path'])
      pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-input.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
+     if manager:
+      # The manager prepares the question and its materials; a real answer is
+      # submitted through the manager page. This observer never speaks for it.
+      continue
      answer=input('Human clarification required for '+step['path']+'\n'+step['reason']+'\nAnswer (empty stops acceptance): ').strip()
      if not answer:raise RuntimeError('Human answer was not provided')
-     c.command('workflow.step.input',row['id'],pending['record']['revision'],{'plan_revision_id':pending['runtime']['active_plan_revision_id'],'step':step['step'],'input':answer});inputs.add((step['id'],step['sequence']));break
+     manager_record=c.rpc('query.orchestration',{'id':manager})['record']
+     c.command('orchestration.input',manager,manager_record['revision'],{'epoch':manager_record['data']['epoch'],'input':answer});inputs.add((step['id'],step['sequence']));break
     if step['status']=='waiting_confirmation' and step['id'] not in confirmed:
      pending=c.rpc('query.workflow_instance',{'id':row['id']});(OUT/'pending-confirmation.json').write_text(json.dumps(pending,ensure_ascii=False,indent=2))
      if args.unattended or json.loads((OUT/'context.json').read_text()).get('default_automatic_confirmations'):raise RuntimeError('Workflow requires actual Human confirmation: '+step['path'])
      definition=next(definition for definition in pending['plan']['steps'] if definition['key']==step['step'])
      rejected=[name for name,port in definition.get('outputs',{}).items() if port.get('content_checks') and pending['outputs'][step['outputs'][name]]['value']['approve'] is False]
      if rejected:raise RuntimeError('Content review rejected '+step['path']+': '+step['reason'])
-     if not pending['completion_status'][step['id']]['confirmation']:
-      print('Review exact artifacts at '+urls[0]+'/?tab=execution&project_id='+project+'&feature_id='+feature,flush=True)
-      print('Frozen instance saved at '+str(OUT/'pending-confirmation.json'),flush=True)
-      if input('Human confirmation for '+step['path']+' (type confirm after reviewing this version): ').strip()!='confirm':raise RuntimeError('Human did not confirm the checkpoint')
+     manager_view=c.rpc('query.orchestration',{'id':manager}) if manager else {'decisions':[]}
      requests=[r for r in manager_view['decisions'] if r['definition_id']==row['id'] and r['data']['status']=='pending' and r['data']['plan_revision_id']==pending['runtime']['active_plan_revision_id'] and r['data']['request'].get('operation') in ('workflow.step.accept','workflow.step.confirm') and r['data']['request'].get('arguments',{}).get('execution_id')==step['id']]
-     if requests:
-      for request in requests:c.command('workflow.decision.resolve',request['id'],request['revision'],{'approved':True,'reason':'验收终端的人类明确确认本版本；不覆盖未满足条件。'})
-     elif not pending['completion_status'][step['id']]['confirmation']:
-      c.command('workflow.step.confirm',row['id'],pending['record']['revision'],{'plan_revision_id':pending['runtime']['active_plan_revision_id'],'control_version':pending['runtime']['control_version'],'step':step['step'],'execution_id':step['id'],'input_digest':step['input_digest'],'outputs':step['outputs'],'reason':'验收终端的人类明确确认本版本；不覆盖未满足条件。'})
+     if manager and not requests:continue
+     for request in requests:
+      packet=request['data']['request']['interaction'];assert packet['materials'] and packet['evidence']
+      if request['id'] not in shown_requests:
+       print('MANAGER HUMAN REQUEST '+request['id']+'\n'+json.dumps(packet,ensure_ascii=False,indent=2),flush=True)
+       manager_url=urls[0]+'/?tab=execution&detail=manager&project_id='+project+'&feature_id='+feature
+       print('Human reviews and decides in the manager page: '+manager_url,flush=True)
+       (OUT/('human-request-'+request['id']+'.json')).write_text(json.dumps({'request':request,'manager_url':manager_url},ensure_ascii=False,indent=2))
+       shown_requests.add(request['id'])
+     if manager and not pending['completion_status'][step['id']]['confirmation']:continue
+     if not manager:
+      if input('Human decision for Rust workflow (type confirm): ').strip()!='confirm':raise RuntimeError('Human did not confirm')
+      c.command('workflow.step.confirm',row['id'],pending['record']['revision'],{'plan_revision_id':pending['runtime']['active_plan_revision_id'],'step':step['step'],'execution_id':step['id'],'input_digest':step['input_digest'],'outputs':step['outputs'],'reason':'真实人类确认当前版本'})
      confirmed.add(step['id']);print('Confirmed:',step['path'],flush=True);break
   if root['data']['status']=='completed':
    assert view['detail']['feature']['status']=='completed';assert len(view['detail']['tasks'])==1 and view['detail']['tasks'][0]['status']=='completed'

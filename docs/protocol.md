@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 19 / project 49；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 19 / project 50；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 本文记录实施分支的协议。重构将以显式作用域替代共享活动项目，并为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
@@ -196,9 +196,13 @@ RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服�
 
 `schemas/orchestration.schema.json` 定义类型化 ChangeSet。新增/修改步骤、依赖、输入、角色绑定及整体计划通过预演编译；应用期间根范围禁止新的写入派发，继续收集原运行事实。旧合同和结果保存只读历史。已派发 segment 只推进确切授权节点，遇到人工等待、评审拒绝、异常、预算或计划修改立即停止，不自动完成根实例。
 
-编排封套 `orchestration-task/v2` 携带当前实例摘要、用户指令、策略及待决定项；持久化唤醒、消费游标、lease 和原生调用回执支持重启恢复。业务 `agent-task/v6` 携带计划修订、node_id 和 contract_digest。
+编排封套 `orchestration-task/v2` 记录渲染器身份：首次 bootstrap 携带根目标、冻结策略和有界摘要，后续携带 events、来源引用、delivery_id 和实际 user_messages；不发送重复 instructions 或图快照。持久化唤醒、业务事件游标、lease 和原生调用回执支持重启核对。业务 `agent-task/v6` 携带计划修订、node_id 和 contract_digest。
 
 业务任务的 `runtime_context.binding` 是当前 Session 的冻结资源选择，`runtime_context.inputs.<input>.runtime_executions` 是绑定上游真实 Turn 和停止证明的外层执行事实。渲染器也将同一执行事实附到 `input_sources.<input>.runtime_executions`，与该输入的来源引用/摘要一同提供。冻结选择不等于实际运行观察；公开运行投影不含凭据、模型连接参数或宿主可执行路径。
+
+workflow.controller.wait 接受当前 plan_revision_id、delivery_id、summary、可选 waiting_for（当前根范围的实例或决定记录）和 timeout_seconds；它只保存控制器检查点与等待，不派发业务。等待期限受当前策略限制。workflow.controller.notify 接受 plan_revision_id 与 interaction，持久化经理向人类准备的业务说明。
+
+interaction 包含 title、background、requested_action、completed_work、review_summary、materials、evidence，支持 issues 与 recommendation。材料项有 label、purpose、instance_id、execution_id、output_id；证据项可省略 output_id。后端验证来源并补齐 owner_id、session_id 和 turn_id。decision.request 的新工具修订要求同样的 interaction，同时保留待批准 operation/arguments 的确切绑定；正文不能授予权限。query.orchestration 返回这些已发布交互和决定的 current 状态，原生 calls 仍可用于审计。
 
 ## 独立经理工作台
 

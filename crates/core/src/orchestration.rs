@@ -647,6 +647,17 @@ impl Engine {
                 "不是可请求的工作流操作",
             )?;
             let arguments = &c.payload["arguments"];
+            let mut request = c.payload.clone();
+            if matches!(actor, WorkflowActor::Controller { .. })
+                || !c.payload["interaction"].is_null()
+            {
+                request["interaction"] = crate::controller_interactions::validate(
+                    state,
+                    &row,
+                    &c.payload["interaction"],
+                    arguments,
+                )?;
+            }
             require(
                 arguments.is_object()
                     && arguments["plan_revision_id"] == instance.active_plan_revision_id,
@@ -675,6 +686,23 @@ impl Engine {
                         && arguments["outputs"] == json!(execution.outputs),
                     "决定必须绑定当前可接纳的执行与产物",
                 )?;
+                if matches!(actor, WorkflowActor::Controller { .. }) {
+                    let definition = instance
+                        .plan
+                        .document
+                        .steps
+                        .iter()
+                        .find(|s| s.key == key)
+                        .unwrap();
+                    let eligibility = crate::workflow_eligibility::step_actions(
+                        state, &row.id, &instance, definition, execution,
+                    )?
+                    .accept;
+                    require(
+                        eligibility.allowed || eligibility.code == "human_confirmation",
+                        format!("请先解决实际业务条件：{}", eligibility.reason),
+                    )?;
+                }
             }
             let r = record(
                 "workflow_pending_decision",
@@ -683,7 +711,7 @@ impl Engine {
                 reason,
                 1,
                 None,
-                json!({"status":"pending","plan_revision_id":instance.active_plan_revision_id,"request":c.payload,"actor":actor}),
+                json!({"status":"pending","plan_revision_id":instance.active_plan_revision_id,"request":request,"actor":actor}),
                 false,
             );
             let out = json!({"id":r.id,"status":"pending"});
