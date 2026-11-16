@@ -121,7 +121,7 @@ export function AgentCatalog({
         <div className="panel-heading">
           <h2>
             {group === "actors"
-              ? "角色与Agent"
+              ? "角色与代理"
               : group === "foundations"
                 ? "基础组件"
                 : "规范"}

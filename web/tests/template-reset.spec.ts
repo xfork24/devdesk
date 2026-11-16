@@ -149,7 +149,7 @@ test("UI 编辑保存数据库副本，确认重置恢复默认并隔离旧草�
     limit: 100,
   });
   expect(historical.records.some((r: any) => r.id === edited.id)).toBe(true);
-  await page.getByRole("button", { name: "角色与Agent", exact: true }).click();
+  await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   await expect(page.getByLabel("Role 名称", { exact: true })).toHaveValue("");
   await expect(
     page.getByRole("button", { name: /需求分析师/ }).first(),

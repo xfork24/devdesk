@@ -15,7 +15,7 @@ Web 是构建后嵌入 Host 的 React 单页应用：默认打开 `http://127.0.
 | 角色讨论 | 与 Agent 会话、工具审批与澄清、结构化提案、经验与快照（见 [讨论与经验](conversations.md)） |
 | 项目管理 | 项目列表与 GitHub 接入；基础 Standard、项目规范覆盖、来源差异预览和项目专属快照；Role→Agent、Sandbox 与可选 Profile、项目经理编排 Agent 与默认驱动；项目工具接入绑定。只保存配置，不启动经理会话或流程 |
 | 流程与规范 | Workflow 编辑器、Delivery、Spec 与结构 lint、Standard 快照/比较/采用；配置依赖与精确修订选择 |
-| 角色与Agent | Role 职责编辑；Capability（Model+Harness+Tools+Skills）；Agent（仅 Role+Capability 精确组合） |
+| 角色与代理 | Role 职责编辑；Capability（Model+Harness+Tools+Skills）；Agent（仅 Role+Capability 精确组合） |
 | 基础组件 | Model、Harness、Sandbox、Permission、MCP、Skills、HTTP 工具、Harness 原生工具；Harness/Sandbox 按确切修订绑定权限，Permission 管理 Profile 与预设来源（见 [运行时权限](permissions.md)） |
 | 历史记录 | 当前项目或 Global 的事件与工具调用统一时间线；审批/取消/核对入口；文件结果下载 |
 | 设置 | 内核连接、数据路径、仓库接入状态、模板重置、运行时与凭据、全局并发、退出内核 |
@@ -71,3 +71,5 @@ Harness 编辑版本、来源、许可证、入口、本机登录件和驱动扩
 设置中的 Codex 网页登录展示检查缓存、等待同版本锁、下载、校验解包、启动组件及请求授权地址等实际阶段和耗时；准备阶段可取消。取得官方地址立即打开授权页，工作区刷新随后进行。固定版本程序在用户级安装缓存复用，Docker 镜像独立校验复用，账户凭据不进入共享程序缓存。
 
 角色讨论的一条回复持续更新；完整文本替换增量文本，不展示分片条数。正常完成和停止技术回执收起，需处理的错误、取消、未知结果、审批及澄清仍保留。回复上的“原始事件”在普通新浏览器标签页展示该 Turn 的最终消息、执行身份、停止证明与 JSON，刷新可重建，不逐条罗列增量分片。
+
+工具调用与响应在讨论记录中仅展示工具类型（如 `webSearch`）及“原始事件”链接，不展开请求参数、输出、状态或错误正文。链接在新浏览器标签页读取对应的持久化事件，刷新可恢复；同一工具项合并更新后链接指向最新事件。

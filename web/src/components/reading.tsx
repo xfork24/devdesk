@@ -102,15 +102,13 @@ export function RawJsonReader({ request }: { request: Request }) {
   return (
     <main className="raw-reader">
       <header>
-        <h1>
-          {params.diagnostic_turn_id ? "原始事件" : `原始 JSON · ${source}`}
-        </h1>
+        <h1>{source === "event" ? "原始事件" : `原始 JSON · ${source}`}</h1>
         <p>
           只读来源 ·{" "}
-          {params.diagnostic_turn_id ||
+          {params.event_id ||
+            params.diagnostic_turn_id ||
             params.output_id ||
             params.turn_id ||
-            params.event_id ||
             params.execution_id ||
             params.record_id ||
             params.context_id}

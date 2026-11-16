@@ -78,7 +78,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
   page,
 }) => {
   await setup(page);
-  for (const name of ["项目管理", "流程与规范", "角色与Agent", "基础组件"])
+  for (const name of ["项目管理", "流程与规范", "角色与代理", "基础组件"])
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "项目管理", exact: true }).click();
   await expect(
@@ -127,7 +127,7 @@ test("五组导航与默认配置完整，Role 独立编辑且不派生 Agent", 
     include_history: true,
     limit: 100,
   });
-  await page.getByRole("button", { name: "角色与Agent", exact: true }).click();
+  await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   const role = page.getByRole("region", { name: "角色管理" });
   const name = "安全评审 " + crypto.randomUUID().slice(0, 6);
   await role.getByLabel("Role 名称", { exact: true }).fill(name);
@@ -205,7 +205,7 @@ test("基础组件、Capability 与 Agent 通过精确引用组合，跨 tab 保
   await expect(
     page.getByRole("button", { name: new RegExp(name) }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "角色与Agent", exact: true }).click();
+  await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   await page.getByRole("tab", { name: "Capability", exact: true }).click();
   await page.getByLabel("名称", { exact: true }).fill("Unfinished capability");
   await page.getByRole("tab", { name: "Agent", exact: true }).click();
@@ -848,7 +848,7 @@ test("配置选择器可主动采用未选过的历史中间修订", async ({ pa
       payload: { changeset, preview_hash: preview.preview_hash },
     });
   }
-  await page.getByRole("button", { name: "角色与Agent", exact: true }).click();
+  await page.getByRole("button", { name: "角色与代理", exact: true }).click();
   await page.getByRole("tab", { name: "Capability", exact: true }).click();
   const skills = page.getByLabel("Skills", { exact: true });
   await expect(skills.locator(`option[value^="${identity}:"]`)).toHaveCount(3);

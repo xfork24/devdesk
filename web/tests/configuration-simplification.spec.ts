@@ -163,7 +163,7 @@ test("授权地址返回后立即打开新页，工作区刷新不阻塞", async
     await authorization.close();
   }
 });
-test("流式回复只有一条消息，技术回执在新标签页查看", async ({
+test("流式回复只有一条消息，工具正文与技术回执在新标签页查看", async ({
   page,
   context,
 }, info) => {
@@ -238,6 +238,63 @@ test("流式回复只有一条消息，技术回执在新标签页查看", async
       turn_id: "turn",
     },
   ];
+  const toolEvents = [
+    {
+      id: "search-start",
+      provider_item: "search",
+      content: { type: "webSearch", action: { query: "search-request-body" } },
+    },
+    {
+      id: "search-complete",
+      provider_item: "search",
+      content: {
+        type: "webSearch",
+        status: "completed",
+        action: { query: "search-request-body" },
+        result: "search-response-body",
+      },
+    },
+    {
+      id: "command",
+      provider_item: "command",
+      content: {
+        type: "commandExecution",
+        command: "command-request-body",
+        aggregatedOutput: "command-response-body",
+        error: "command-error-body",
+        status: "failed",
+        exitCode: 1,
+      },
+    },
+    {
+      id: "tool-call",
+      provider_item: "tool/call:read",
+      content: {
+        message: { name: "readFile", arguments: { path: "read-request-body" } },
+      },
+    },
+    {
+      id: "tool-result",
+      provider_item: "tool/result:read",
+      content: { message: { name: "readFile", output: "read-response-body" } },
+    },
+    {
+      id: "plain-tool",
+      provider_item: "plain-tool",
+      content: "plain-tool-body",
+    },
+  ].map((event, index) => ({
+    ...event,
+    content:
+      typeof event.content === "string"
+        ? event.content
+        : JSON.stringify(event.content),
+    sequence: 6 + index,
+    kind: "tool",
+    mode: "full",
+    turn_id: "turn",
+  }));
+  const allEvents = [...events, ...toolEvents];
   await context.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result;
@@ -245,22 +302,28 @@ test("流式回复只有一条消息，技术回执在新标签页查看", async
     else if (call.method === "query.sessions")
       result = { sessions: [session], total: 1 };
     else if (call.method === "query.session")
-      result = call.params.diagnostic_turn_id
+      result = call.params.event_id
         ? {
-            turn: { id: "turn", status: "completed" },
-            stop_receipts: [JSON.parse(events[3].content)],
-            records: [events[2], events[3], events[4]],
+            event: toolEvents.find(
+              (event) => event.id === call.params.event_id,
+            ),
           }
-        : {
-            session,
-            current_runtime_binding: session.runtime_binding,
-            events: call.params.cursor ? [] : events,
-            next_cursor: 5,
-            turns: [],
-            executions: [],
-            interactions: [],
-            proposals: [],
-          };
+        : call.params.diagnostic_turn_id
+          ? {
+              turn: { id: "turn", status: "completed" },
+              stop_receipts: [JSON.parse(events[3].content)],
+              records: [events[2], events[3], events[4]],
+            }
+          : {
+              session,
+              current_runtime_binding: session.runtime_binding,
+              events: call.params.cursor ? [] : allEvents,
+              next_cursor: allEvents.length,
+              turns: [],
+              executions: [],
+              interactions: [],
+              proposals: [],
+            };
     else return route.fallback();
     await route.fulfill({ json: { jsonrpc: "2.0", id: call.id, result } });
   });
@@ -274,7 +337,44 @@ test("流式回复只有一条消息，技术回执在新标签页查看", async
   await expect(page.getByText(/合并展示|writer_revoked|运行状态/)).toHaveCount(
     0,
   );
-  const link = page.getByRole("link", { name: "原始事件 ↗", exact: true });
+  const log = page.getByRole("log", { name: "讨论记录", exact: true });
+  const tools = log.locator(".conversation-message.tool");
+  await expect(tools).toHaveCount(5);
+  await expect(tools.getByRole("heading")).toHaveText([
+    "webSearch",
+    "commandExecution",
+    "readFile",
+    "readFile",
+    "工具事件",
+  ]);
+  await expect(log).not.toContainText(
+    /request-body|response-body|error-body|plain-tool-body|退出码|状态：/,
+  );
+  await expect(tools.locator("details, pre")).toHaveCount(0);
+  for (const [index, event] of toolEvents.slice(1).entries()) {
+    const link = tools
+      .nth(index)
+      .getByRole("link", { name: "原始事件 ↗", exact: true });
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute(
+      "href",
+      new RegExp(`event_id=${event.id}`),
+    );
+    const opened = page.waitForEvent("popup");
+    await link.click();
+    const raw = await opened;
+    await expect(
+      raw.getByRole("heading", { name: "原始事件", exact: true }),
+    ).toBeVisible();
+    const expected = JSON.stringify({ event }, null, 2);
+    await expect(raw.getByLabel("完整原始 JSON")).toHaveText(expected);
+    await raw.reload();
+    await expect(raw.getByLabel("完整原始 JSON")).toHaveText(expected);
+    await raw.close();
+  }
+  const link = log
+    .locator(".conversation-message.assistant")
+    .getByRole("link", { name: "原始事件 ↗", exact: true });
   await expect(link).toHaveAttribute("target", "_blank");
   const opened = page.waitForEvent("popup");
   await link.click();
