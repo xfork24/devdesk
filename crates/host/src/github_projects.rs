@@ -135,8 +135,7 @@ impl Workspace {
                 },
             )?;
         }
-        self.global
-            .publish_project(e.store.snapshot()?.projects.first().unwrap())?;
+        self.global.publish_project(&e.store.project_metadata()?)?;
         self.global
             .transact(Some((&c.command_id, &fingerprint)), &mut |_| {
                 Ok(json!({"id":pid,"repository":repository,"mainline":mainline}))

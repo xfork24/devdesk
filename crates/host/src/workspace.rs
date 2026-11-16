@@ -46,6 +46,7 @@ pub struct Workspace {
     catalog_instance: String,
     event_hubs: Mutex<BTreeMap<String, std::sync::Weak<crate::event_hub::EventHub>>>,
     scheduler_next: std::sync::atomic::AtomicUsize,
+    directory_next: std::sync::atomic::AtomicUsize,
 }
 pub struct RpcOutcome {
     pub value: Value,
@@ -117,6 +118,7 @@ impl Workspace {
             catalog_instance: id(),
             event_hubs: Default::default(),
             scheduler_next: Default::default(),
+            directory_next: Default::default(),
         });
         let mut offset = 0;
         loop {
@@ -199,8 +201,10 @@ impl Workspace {
             e.evaluate_workflows()?;
         }
         // Repair a stale directory summary after a crash between the two independent commits.
-        if let Some(project) = e.store.snapshot()?.projects.first() {
-            self.global.publish_project(project)?;
+        match e.store.project_metadata() {
+            Ok(project) => self.global.publish_project(&project)?,
+            Err(error) if creating && error.code == "not_found" => {}
+            Err(error) => return Err(error),
         }
         self.opened.lock().unwrap().insert(id.into(), e.clone());
         Ok(e)
@@ -891,12 +895,15 @@ impl Workspace {
                 } else {
                     self.global.projects(offset, limit)?
                 };
-                let current = e.store.snapshot()?.projects.first().cloned();
-                if let Some(project) = &current {
-                    self.global.publish_project(project)?;
-                    if let Some(row) = projects.iter_mut().find(|p| p.id == project.id) {
-                        *row = project.clone();
-                    }
+                let current = if e.store.project_id().is_some() {
+                    Some(e.store.project_metadata()?)
+                } else {
+                    None
+                };
+                if let Some(project) = &current
+                    && let Some(row) = projects.iter_mut().find(|p| p.id == project.id)
+                {
+                    *row = project.clone();
                 }
                 result["projects"] = json!(projects);
                 result["total_projects"] = json!(total);
@@ -970,9 +977,7 @@ impl Workspace {
         }
         let c = serde_json::from_value(params).map_err(|e| err("invalid_params", e.to_string()))?;
         let result = e.execute(method, c)?;
-        if let Some(project) = e.store.snapshot()?.projects.first() {
-            self.global.publish_project(project)?;
-        }
+        self.global.publish_project(&e.store.project_metadata()?)?;
         Ok(result)
     }
     pub(crate) fn subscribe_configuration_changes(
@@ -1019,6 +1024,37 @@ impl Workspace {
             return Ok(());
         }
         let opened: Vec<_> = self.opened.lock().unwrap().values().cloned().collect();
+        let mut failure = None;
+        // Repair directory summaries independently of pending workflow work.
+        // The rotation includes idle projects; frontend queries never publish.
+        if !opened.is_empty() {
+            let start = self.directory_next.load(Ordering::Relaxed) % opened.len();
+            let started = std::time::Instant::now();
+            let mut visited = 0;
+            for engine in opened.iter().cycle().skip(start).take(opened.len().min(8)) {
+                if should_stop()
+                    || (visited > 0 && started.elapsed() >= std::time::Duration::from_millis(25))
+                {
+                    break;
+                }
+                visited += 1;
+                if engine.store.project_id().is_none() {
+                    continue;
+                }
+                match engine.store.project_metadata() {
+                    Ok(project) => {
+                        if let Err(error) = self.global.publish_project(&project) {
+                            failure.get_or_insert(error);
+                        }
+                    }
+                    Err(error) if error.code == "not_found" => {}
+                    Err(error) => {
+                        failure.get_or_insert(error);
+                    }
+                }
+            }
+            self.directory_next.fetch_add(visited, Ordering::Relaxed);
+        }
         let mut engines = vec![];
         let mut running = vec![];
         let mut total = 0;
@@ -1041,7 +1077,6 @@ impl Workspace {
             running.rotate_left(start);
         }
         let limit = self.global.concurrency()?;
-        let mut failure = None;
         let started = std::time::Instant::now();
         let mut visited = 0;
         // The scheduler is single-threaded across projects. Other running projects consume quota.
@@ -1079,6 +1114,13 @@ impl Workspace {
             if should_stop() {
                 break;
             }
+            if let Err(error) = e
+                .store
+                .project_metadata()
+                .and_then(|project| self.global.publish_project(&project))
+            {
+                failure.get_or_insert(error);
+            }
             e.publish_experience_index(self.global.as_ref())?;
             let next = e.conversation_running()?;
             total = total - running[index] + next;
@@ -1112,6 +1154,46 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn workspace_reads_do_not_publish_directory_state_and_idle_ticks_repair_it() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let created=workspace.dispatch("project.create",json!({"command_id":"directory-project","payload":{"title":"Original directory title"}})).unwrap();
+        let project = created["id"].as_str().unwrap();
+        let engine = workspace.project_engine(Some(project)).unwrap();
+        let current = engine.store.project_metadata().unwrap();
+        engine
+            .execute(
+                "project.update",
+                Command {
+                    command_id: "background-title".into(),
+                    target: Some(project.into()),
+                    expected_revision: Some(current.revision),
+                    payload: json!({"title":"Background authoritative title"}),
+                },
+            )
+            .unwrap();
+        let trace = performance::Trace::start();
+        let value = workspace
+            .dispatch("query.workspace", json!({"project_id":project}))
+            .unwrap();
+        let report = trace.finish();
+        assert_eq!(
+            value["active_project"]["title"],
+            "Background authoritative title"
+        );
+        assert!(report["spans"]["directory.publish"].is_null(), "{report}");
+        assert_eq!(
+            workspace.global.project(project).unwrap().unwrap().title,
+            "Original directory title"
+        );
+        workspace.tick(|| false).unwrap();
+        assert_eq!(
+            workspace.global.project(project).unwrap().unwrap().title,
+            "Background authoritative title"
+        );
+    }
     pub(super) fn cmd(
         w: &Workspace,
         method: &str,
@@ -2001,6 +2083,7 @@ impl Workspace {
             catalog_instance: id(),
             event_hubs: Default::default(),
             scheduler_next: Default::default(),
+            directory_next: Default::default(),
         }))
     }
 }

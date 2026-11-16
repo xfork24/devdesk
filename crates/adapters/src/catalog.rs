@@ -233,10 +233,22 @@ impl GlobalStore {
 
     /// This is a directory summary; the project database remains authoritative.
     pub fn publish_project(&self, project: &Project) -> Result<()> {
+        let _span = performance::Span::new("directory.publish");
+        if let Some(known) = self.project(&project.id)? {
+            if known.revision > project.revision {
+                return Ok(());
+            }
+            if known.revision == project.revision {
+                return require(
+                    json!(known) == json!(project),
+                    "同一项目修订不能发布不同目录摘要",
+                );
+            }
+        }
         let conn = self.connection.lock().map_err(storage)?;
         let updated = conn
             .execute(
-                "UPDATE project_catalog SET project=?1 WHERE id=?2 AND (project IS NULL OR json_extract(project,'$.revision')<=?3)",
+                "UPDATE project_catalog SET project=?1 WHERE id=?2 AND (project IS NULL OR json_extract(project,'$.revision')<?3)",
                 params![serde_json::to_string(project).map_err(storage)?, project.id, project.revision],
             )
             .map_err(storage)?;
@@ -250,7 +262,17 @@ impl GlobalStore {
                     )
                     .map_err(storage)?,
             "项目未登记",
-        )
+        )?;
+        drop(conn);
+        if updated == 1 {
+            self.changes.notify();
+        } else if let Some(current) = self.project(&project.id)? {
+            require(
+                current.revision > project.revision || json!(current) == json!(project),
+                "同一项目修订不能发布不同目录摘要",
+            )?;
+        }
+        Ok(())
     }
 
     fn configuration(conn: &Connection) -> Result<EngineeringState> {
