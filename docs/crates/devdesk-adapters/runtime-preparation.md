@@ -8,6 +8,7 @@
 
 - [src/runtime_registry.rs](#file-src-runtime-registry-rs)：注册不可变安装并发现内容漂移
 - [src/runtime_preparation.rs](#file-src-runtime-preparation-rs)：按冻结配方准备镜像与认证组件
+- [src/runtime_images.rs](../../../crates/adapters/src/runtime_images.rs)：跨数据集准备锁、配方标签与旧镜像保留
 - [src/runtime_verification.rs](#file-src-runtime-verification-rs)：按实际驱动与权限资产验证原生协议
 - [src/session_resources.rs](#file-src-session-resources-rs)：把运行准备、凭据和权限接成会话资源端口
 
@@ -33,9 +34,9 @@ Codex 认证组件与容器工作运行时分别发现和记录。发现本机�
 
 源码：[crates/adapters/src/runtime_preparation.rs](../../../crates/adapters/src/runtime_preparation.rs)。
 
-默认安装从确切 Harness 与 Sandbox 组合。准备核对 Docker、实际镜像内容和 recipe 标签，可恢复登记丢失但内容吻合的本机镜像；缺少时才拉取或构建，再保留内容标签、登记并验证协议。本机登录件按平台、下载摘要和成员存入用户级程序缓存，以同版本锁串行准备；命中缓存不下载，凭据仍留在数据集。
+默认安装从确切 Harness 与 Sandbox 组合。准备核对 Docker、实际镜像内容和 recipe 标签，可恢复登记丢失但内容吻合的本机镜像；缺少时才拉取或构建，再保留 managed 配方标签、登记并验证协议。相同配方通过用户级文件锁跨数据集串行准备。本机登录件按平台、下载摘要和成员存入用户级程序缓存，以同版本锁串行准备；命中缓存不下载，凭据仍留在数据集。
 
-准备过程保存 intent、阶段 checkpoint 与结果。完成镜像加上 devdesk/prepared-* 保留标签，供同一内容后续复用；标签本身不作为内容身份。断点或取消交由恢复路径核对，不因客户端断开就认定构建没有发生。
+准备过程保存 intent、阶段 checkpoint 与结果。正常情况下每个产物只有 devdesk/managed-* 配方标签，安装与会话使用实际 Image ID 作为内容身份。构建先产生未命名产物，再核验并发布配方标签；若替换会使旧产物失去最后一个 managed 标签，先创建同仓库的配方加完整 image digest 归档标签。恢复旧安装不改写当前配方标签。旧版 prepared 标签在核验等价 managed 引用后移除。断点或取消交由恢复路径核对，不因客户端断开就认定构建没有发生。
 
 Codex 登录用的原生组件单独准备：按系统/架构选 HTTPS 发行文件，核对下载摘要和压缩包成员，提取到数据集私有运行目录。它不修改用户全局 CODEX_HOME，也不把登录组件当作 Linux worker 镜像。
 

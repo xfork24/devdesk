@@ -67,7 +67,7 @@ Harness 的 `runtime_version` 是程序版本的唯一声明；`installation` �
 
 安装以独立 `recipe_digest` 保存来源，版本仅为标签。同一驱动允许多个不同配方。`runtime.prepare_harness` 构建/拉取后核验实际镜像：Codex 探测 initialize、thread/start 与动态工具注册，DSH 探测 initialize，均不调用模型。报告绑定实际产物、driver 和权限资产，明确 `inference_verified=false`、`tool_execution_verified=false`。准备完成不证明推理或工具执行成功；真实会话另做权限、认证及执行边界验证。准备意图可通过 `runtime.preparation_status` 查询，`runtime.preparation_cancel` 在检查点生效，未知结果须先 `runtime.preparation_reconcile`。
 
-准备器把实际镜像额外标记为 `devdesk/prepared-<provider>:<image-digest>`，再登记安装和协议验证。该内容标签保护已经冻结的 OCI 产物，不能仅凭另一个数据集重建后的 managed 标签判断旧运行使用的镜像。
+准备器只保留 `devdesk/managed-<provider>:<recipe_digest 前 24 位>` 配方标签，安装与会话仍冻结实际 Image ID。同一配方的准备操作使用跨数据集的用户级文件锁串行执行；构建完成后才发布配方标签。替换标签前，若旧产物没有其他 managed 标签，先将其保留为 `<配方标签>-<完整 image digest>`；恢复旧安装使用已有标签或归档标签，不回退当前配方标签。旧版 prepared 标签在核验等价 managed 引用后移除，正常情况一个产物只有一个 managed 标签。
 
 配置变更集补充 `manage_instance`（create/rebind/remove）、`permission_bindings`、`import_skill`，与源修订、项目/工作选择使用同一候选状态和依赖诊断。实例换绑创建后继引用，移除记录停用事实，旧会话/实例修订仍可读；预演中的身份由逻辑操作稳定生成。权限绑定通过注入的后端纯可行性校验，Skill 包路径/引用按既有约束验证，预演不执行包或外部工具。
 
@@ -81,4 +81,4 @@ Harness 的 `runtime_version` 是程序版本的唯一声明；`installation` �
 
 检查器有内容/数量/深度/工作量边界；JSON Schema 只接受有界的非递归本地引用展开，pattern 使用线性 regex 引擎及编译内存边界，不支持回溯式反向引用。规范不会执行任意命令；测试/Git/发布事实继续走实际平台用例和回执。
 
-实现依据：[源协议与引用白名单](../crates/domain/src/source.rs)、[安装组合](../crates/domain/src/execution_recipe.rs)、[配置变更](../crates/core/src/configuration_changes.rs)、[冻结视图](../crates/core/src/frozen_views.rs)、[准备与内容标签](../crates/adapters/src/runtime_preparation.rs)、[机器检查](../crates/domain/src/spec_checks.rs)。
+实现依据：[源协议与引用白名单](../crates/domain/src/source.rs)、[安装组合](../crates/domain/src/execution_recipe.rs)、[配置变更](../crates/core/src/configuration_changes.rs)、[冻结视图](../crates/core/src/frozen_views.rs)、[运行准备](../crates/adapters/src/runtime_preparation.rs)、[镜像标签与保留](../crates/adapters/src/runtime_images.rs)、[机器检查](../crates/domain/src/spec_checks.rs)。

@@ -51,6 +51,20 @@ pub fn adapters() -> ports::ExecutionAdapters {
         pull_requests: None,
     }
 }
+/// Apply the compiler's effective scope, as production Session assembly does.
+pub fn set_permissions(binding: &mut RuntimeBinding, permissions: ExecutionPermissions) {
+    binding.work_type = permissions.scope.work_type;
+    binding.writable_paths = permissions.scope.writable_paths.clone();
+    binding.read_only_paths = permissions.scope.read_only_paths.clone();
+    binding.tool_policy = if binding.writable_paths.is_empty() {
+        ToolPolicy::ReadOnly
+    } else if binding.writable_paths == ["."] {
+        ToolPolicy::WorkspaceWrite
+    } else {
+        ToolPolicy::ScopedWrite
+    };
+    binding.permissions = Some(permissions);
+}
 /// Explicit queued conversation facts for scheduler/quota tests, without the Host credential preflight.
 pub fn queue_conversation(e: &Engine, project: &str) -> (Id, Id) {
     queue_conversation_with(e, project, |_, _| Ok(()))

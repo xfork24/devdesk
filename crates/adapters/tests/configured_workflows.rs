@@ -3025,7 +3025,7 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
                     model_parameters: Default::default(),
                     tool_revisions: composition.tools,
                 });
-                binding.permissions = Some(
+                let permissions =
                     devdesk_adapters::permission_profiles::compile_permission_profiles(
                         &state,
                         &configured.permissions,
@@ -3035,8 +3035,8 @@ fn agent_platform_case(reject_schema: bool, cancel: bool, reject_receipt: bool) 
                             read_only_paths: vec![],
                         }),
                     )
-                    .unwrap(),
-                );
+                    .unwrap();
+                runtime::set_permissions(&mut binding, permissions);
                 invocation.payload["binding"] = json!(binding);
                 engine.execute(method, invocation)
             } else if method == "workflow.tool.execute" {
@@ -3910,18 +3910,17 @@ fn fixture_binding_for_platform_agent(e: &Engine, c: &Command) -> RuntimeBinding
         model_parameters: Default::default(),
         tool_revisions: composition.tools,
     });
-    binding.permissions = Some(
-        devdesk_adapters::permission_profiles::compile_permission_profiles(
-            &state,
-            &configured.permissions,
-            Some(ExecutionScope {
-                work_type: WorkType::Workflow,
-                writable_paths: vec![],
-                read_only_paths: vec![],
-            }),
-        )
-        .unwrap(),
-    );
+    let permissions = devdesk_adapters::permission_profiles::compile_permission_profiles(
+        &state,
+        &configured.permissions,
+        Some(ExecutionScope {
+            work_type: WorkType::Workflow,
+            writable_paths: vec![],
+            read_only_paths: vec![],
+        }),
+    )
+    .unwrap();
+    runtime::set_permissions(&mut binding, permissions);
     binding
 }
 #[test]

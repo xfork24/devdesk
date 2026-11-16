@@ -69,26 +69,26 @@ impl GlobalStore {
                 daemon.code == 0 && String::from_utf8_lossy(&daemon.stdout).trim() == "linux",
                 "需要已启动的 Linux Docker Engine",
             )?;
+            let _image_lock = runtime_images::lock(resource.provider, &digest, || {
+                self.preparation_checkpoint(&digest)
+            })?;
             let registered = self.runtime_installations()?.into_iter().find(|i| {
                 i.key.provider == resource.provider
                     && i.recipe_digest.as_deref() == Some(digest.as_str())
                     && matches!(&i.artifact, RuntimeArtifact::DockerImage { .. })
                     && self.runtime_integrity(&i.id).is_ok_and(|r| r.verified)
             });
-            let tag = registered
+            let mut tag = registered
                 .as_ref()
                 .and_then(|i| match &i.artifact {
                     RuntimeArtifact::DockerImage { image_id } => Some(image_id.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| {
-                    resource.image.clone().unwrap_or_else(|| {
-                        format!(
-                            "devdesk/managed-{}:{}",
-                            resource.provider.as_str(),
-                            &digest[..24]
-                        )
-                    })
+                    resource
+                        .image
+                        .clone()
+                        .unwrap_or_else(|| runtime_images::recipe_tag(resource.provider, &digest))
                 });
             let local = runtime_registry::docker_image_info(&tag)
                 .ok()
@@ -108,7 +108,7 @@ impl GlobalStore {
                     progress("正在构建所选不可变配方");
                     let context = self.runtime_directory()?.join(format!("build-{}", id()));
                     fs::create_dir(&context).map_err(storage)?;
-                    let result = (|| {
+                    let result: Result<()> = (|| {
                         for file in &resource.files {
                             let path = context.join(&file.path);
                             fs::create_dir_all(path.parent().unwrap()).map_err(storage)?;
@@ -121,13 +121,16 @@ impl GlobalStore {
                                 "--quiet".into(),
                                 "--label".into(),
                                 format!("devdesk.recipe={digest}"),
-                                "--tag".into(),
-                                tag.clone(),
                                 context.to_string_lossy().into_owned(),
                             ],
                             Duration::from_secs(1200),
                         )?;
-                        require(output.code == 0, "执行镜像构建失败")
+                        require(output.code == 0 && !output.truncated, "执行镜像构建失败")?;
+                        tag = String::from_utf8(output.stdout)
+                            .map_err(storage)?
+                            .trim()
+                            .to_owned();
+                        Ok(())
                     })();
                     let _ = fs::remove_dir_all(&context);
                     result?;
@@ -135,9 +138,6 @@ impl GlobalStore {
             }
             self.preparation_checkpoint(&digest)?;
             progress("正在核验实际镜像内容与平台");
-            // Rebuilding the same recipe in another dataset may replace its build tag.
-            // Retain this exact artifact before registering/freezing it: containerd can
-            // otherwise lose an untagged OCI index even while an older worker exists.
             let actual = runtime_registry::docker_image_info(&tag)?;
             let image = actual["id"]
                 .as_str()
@@ -148,20 +148,8 @@ impl GlobalStore {
                     && image[7..].bytes().all(|c| c.is_ascii_hexdigit()),
                 "Docker 镜像内容身份无效",
             )?;
-            let retained = format!(
-                "devdesk/prepared-{}:{}",
-                resource.provider.as_str(),
-                &image[7..]
-            );
-            let output = process::capture(
-                "docker",
-                &["image".into(), "tag".into(), image.into(), retained.clone()],
-                Duration::from_secs(30),
-            )?;
-            require(
-                output.code == 0 && runtime_registry::docker_image_info(&retained)?["id"] == *image,
-                "无法保留所选运行产物，请重新核对准备结果",
-            )?;
+            let retained =
+                runtime_images::retain(resource.provider, &digest, &actual, registered.is_some())?;
             let installation = self.register_docker_runtime(
                 resource.provider,
                 &retained,

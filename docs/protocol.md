@@ -94,7 +94,7 @@ Capability 可通过根级 `spec_refs` 引用 Agent 自身规范，业务能力�
 
 Web 使用 `project.open_github`，首次提交 repository、可选 mainline 和 title，再次可指定项目 target；接入意图、克隆及回执异步完成。`project.open` 切换已登记项目，`project.create` 保留为后端元数据入口。仓库实际就绪前不能启动工程执行。
 
-`runtime.prepare({provider})` 准备当前默认 Harness 与 Sandbox 的组合镜像；`runtime.prepare_harness({id,project_id?})` 的 id 是确切 Harness 源引用，正常会话也可按需物化。构建/拉取在事务外执行，核验实际镜像后保存 prepared 内容标签、安装和协议报告。`runtime.preparation_status` 同时返回当前准备状态及持久化 intents；`runtime.preparation_cancel({recipe_digest})` 在检查点生效，`runtime.preparation_reconcile({recipe_digest})` 核对未知准备结果。运行和重试不按新标签替换原冻结安装。
+`runtime.prepare({provider})` 准备当前默认 Harness 与 Sandbox 的组合镜像；`runtime.prepare_harness({id,project_id?})` 的 id 是确切 Harness 源引用，正常会话也可按需物化。构建/拉取在事务外执行，核验实际镜像后保留 managed 配方标签，保存固定 Image ID 的安装和协议报告；替换配方标签时按需归档旧产物，不再额外创建 prepared 标签。`runtime.preparation_status` 同时返回当前准备状态及持久化 intents；`runtime.preparation_cancel({recipe_digest})` 在检查点生效，`runtime.preparation_reconcile({recipe_digest})` 核对未知准备结果。运行和重试不按新标签替换原冻结安装。
 
 协议探针只验证初始化及当前驱动实际支持的会话/动态工具注册，返回 `inference_verified:false`、`tool_execution_verified:false`，不证明模型、账户或工具调用已经成功。
 

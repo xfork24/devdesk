@@ -171,7 +171,7 @@ fn context_case(detached: bool) {
         };
         binding.agent_configuration = Some(configuration);
         binding.model = model.model;
-        binding.permissions = Some(permissions);
+        runtime::set_permissions(binding, permissions);
         Ok(())
     });
     e.tick_conversations(1).unwrap();

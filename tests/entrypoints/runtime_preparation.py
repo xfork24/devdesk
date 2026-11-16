@@ -84,19 +84,30 @@ if args[:2]==['image','inspect']:
 if args[:2]==['image','tag']:
     source=root/hashlib.sha256(args[2].encode()).hexdigest()
     if not source.exists():sys.exit(1)
-    (root/hashlib.sha256(args[3].encode()).hexdigest()).write_text(source.read_text())
+    value=json.loads(source.read_text())
+    value['tags']=sorted(set(value.get('tags',[])+[args[3]]))
+    for ref in [value['id'],*value['tags']]:
+        (root/hashlib.sha256(ref.encode()).hexdigest()).write_text(json.dumps(value))
+    sys.exit(0)
+if args[:2]==['image','rm']:
+    target=root/hashlib.sha256(args[2].encode()).hexdigest()
+    if not target.exists():sys.exit(1)
+    value=json.loads(target.read_text());target.unlink()
+    value['tags'].remove(args[2])
+    for ref in [value['id'],*value['tags']]:
+        (root/hashlib.sha256(ref.encode()).hexdigest()).write_text(json.dumps(value))
     sys.exit(0)
 if args[0]=='build':
-    tag=args[args.index('--tag')+1];context=Path(args[-1])
+    context=Path(args[-1]);label=args[args.index('--label')+1]
     assert (context/'Dockerfile').is_file()
-    if 'managed-dsh' in tag:
+    if (context/'permissions/backends/dsh').exists():
         for name in ['package.json','tool-policy.mjs','bwrap-runner.sh']:
             assert (context/'permissions/backends/dsh'/name).is_file()
     time.sleep(.3)
     if (root/'fail-build').exists():sys.exit(2)
-    digest='sha256:'+hashlib.sha256(tag.encode()).hexdigest()
-    value=json.dumps({'id':digest,'os':'linux','arch':'arm64'})
-    for ref in [tag,digest]:(root/hashlib.sha256(ref.encode()).hexdigest()).write_text(value)
+    digest='sha256:'+hashlib.sha256(label.encode()).hexdigest()
+    value=json.dumps({'id':digest,'os':'linux','arch':'arm64','labels':dict([label.split('=',1)]),'tags':[]})
+    (root/hashlib.sha256(digest.encode()).hexdigest()).write_text(value)
     print(digest);sys.exit(0)
 sys.exit(3)
 ''')
@@ -180,12 +191,21 @@ sys.exit(3)
         image = installations[0]['artifact']['image_id']
         import hashlib
         pinned_file = root / hashlib.sha256(image.encode()).hexdigest()
+        info = json.loads(pinned_file.read_text())
+        assert info['tags'] == ['devdesk/managed-codex:' + installations[0]['recipe_digest'][:24]], info
+        # Upgrade a legacy retention tag without changing the frozen artifact.
+        legacy = 'devdesk/prepared-codex:' + image.removeprefix('sha256:')
+        subprocess.run([str(fixture), 'image', 'tag', image, legacy], env=env, check=True)
+        assert rpc('runtime.prepare', {'provider':'codex'})['result']['artifact']['image_id'] == image
+        assert not (root / hashlib.sha256(legacy.encode()).hexdigest()).exists()
+        assert json.loads(pinned_file.read_text())['tags'] == info['tags']
         previous_image = pinned_file.read_bytes();pinned_file.unlink()
         assert 'error' in rpc('runtime.prepare_harness', {'id':defaults['harness_ref']})
         assert rpc('query.configuration_defaults')['result']['materializations'] == materialized
         pinned_file.write_bytes(previous_image)
         calls = [json.loads(line) for line in (root/'calls').read_text().splitlines()]
         assert sum(c[0] == 'build' for c in calls) == 1
+        assert sum(c[:2] == ['image','tag'] and c[-1].startswith('devdesk/prepared-') for c in calls) == 1, 'only the fixture creates a legacy tag'
         assert not any('dsh' in ' '.join(c) for c in calls)
         assert rpc('runtime.preparation_status')['result']['preparations'][0]['status'] == 'ready'
         # A different Harness is prepared only when requested; failure creates no installation.

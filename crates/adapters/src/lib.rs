@@ -26,6 +26,7 @@ pub use git::CliGit;
 mod jsonl;
 pub use harness::{CodexHarness, DshHarness, RoutingHarness, RuntimeWorkers};
 mod process;
+mod runtime_images;
 pub mod runtime_preparation;
 mod runtime_registry;
 pub mod runtime_verification;

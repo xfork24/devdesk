@@ -37,7 +37,7 @@ Harness 保存程序的唯一版本、安装输入与本机发行件，Sandbox �
 
 `model_provider` 保存路由、端点及凭据约定，`model_catalog` 按 recipe_digest 固定容量目录，Harness 采用确切源。实际会话核对冻结连接与生成 profile 摘要；显示名、发行标签和目录候选均不证明推理成功。
 
-准备器核验实际镜像并保存 `devdesk/prepared-<provider>:<image-digest>` 标签，登记安装和当前 driver/权限资产下的协议报告。Codex 探测初始化、thread/start 和动态工具注册；DSH 探测初始化。报告明确未验证推理和实际工具执行，真实工作还需原生准入、输入消费、终态及停止证明。
+准备器核验实际镜像并保留 `devdesk/managed-<provider>:<recipe_digest 前 24 位>` 配方标签，登记以实际 Image ID 固定的安装和当前 driver/权限资产下的协议报告。替换配方标签前保留旧产物，必要时使用同仓库的 `<配方标签>-<完整 image digest>` 归档标签；不再额外创建 prepared 标签。Codex 探测初始化、thread/start 和动态工具注册；DSH 探测初始化。报告明确未验证推理和实际工具执行，真实工作还需原生准入、输入消费、终态及停止证明。
 
 ## 内容检查与证据
 

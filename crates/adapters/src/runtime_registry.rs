@@ -381,7 +381,7 @@ pub(crate) fn docker_image_info(reference: &str) -> Result<Value> {
             "image".into(),
             "inspect".into(),
             "--format".into(),
-            "{\"id\":{{json .Id}},\"os\":{{json .Os}},\"arch\":{{json .Architecture}},\"labels\":{{json .Config.Labels}}}".into(),
+            "{\"id\":{{json .Id}},\"os\":{{json .Os}},\"arch\":{{json .Architecture}},\"labels\":{{json .Config.Labels}},\"tags\":{{json .RepoTags}}}".into(),
             reference.into(),
         ],
         std::time::Duration::from_secs(15),
