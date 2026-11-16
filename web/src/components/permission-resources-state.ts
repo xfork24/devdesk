@@ -100,6 +100,9 @@ export function usePermissionResources(
   }, [request, projectId, targetRef, profileRef]);
   useEffect(() => {
     setCatalog(undefined);
+    setError("");
+  }, [projectId, targetRef, profileRef]);
+  useEffect(() => {
     void reload().catch(() => {});
     return () => {
       epoch.current += 1;

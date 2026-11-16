@@ -37,6 +37,7 @@ export function ProjectManager({
   const [orchestration, setOrchestration] = useState<Row>({ mode: "agent" });
   const orchestrationEdited = useRef(false);
   const [preview, setPreview] = useState<Row>();
+  const [previewError, setPreviewError] = useState("");
   const [baseline, setBaseline] = useState<Row>();
   const [savedStandard, setSavedStandard] = useState<Row>();
   const [overrideKind, setOverrideKind] = useState("");
@@ -168,6 +169,7 @@ export function ProjectManager({
     let active = true;
     setRequirements(undefined);
     setPreview(undefined);
+    setPreviewError("");
     setBaseline(undefined);
     if (!project?.id || !draft.standard_ref) return;
     void Promise.all([
@@ -188,11 +190,10 @@ export function ProjectManager({
           setBaseline(source);
           setPreview(result);
           setRequirements(result.requirements);
-          setError("");
         }
       })
       .catch((e) => {
-        if (active) setError(String(e));
+        if (active) setPreviewError(String(e));
       });
     return () => {
       active = false;
@@ -203,7 +204,6 @@ export function ProjectManager({
     draft.standard_ref,
     draft.standard_overrides,
     draft.harness_permission_ref,
-    setError,
   ]);
   const managerRole = records.find(
     (r) => r.type === "role" && r.id === defaults?.orchestrator_role_ref,
@@ -783,9 +783,9 @@ export function ProjectManager({
           </ActionForm>
         </section>
       )}
-      {error && (
+      {(error || previewError) && (
         <p role="alert" className="error">
-          {error}
+          {error || previewError}
         </p>
       )}
       {message && (

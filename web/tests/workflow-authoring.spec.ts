@@ -574,7 +574,11 @@ test("项目默认绑定保存时生成不可变 Standard", async ({ page }) => 
     ),
   ).toBe(true);
   await page.route("**/rpc", async (route) => {
-    if (route.request().postDataJSON().method !== "query.workspace")
+    if (
+      !["query.workspace", "query.ui_bootstrap"].includes(
+        route.request().postDataJSON().method,
+      )
+    )
       return route.fallback();
     const response = await route.fetch();
     const value = await response.json();
@@ -661,8 +665,6 @@ test("配置页面保持 Tab 顺序，当前链接定位且 Tools 调用记录�
     "Harness",
     "Sandbox",
     "Permission",
-    "运行资源",
-    "调度策略",
     "MCP",
     "Skills",
     "Tools",
@@ -800,6 +802,7 @@ test("Delivery 定义和输入输出端口保存后保留精确修订", async ({
   expect(consumer.inputs.input_1.source).toEqual({
     step: producer.key,
     port: "risks",
+    pointer: "",
   });
   expect(consumer.dependencies).toContain(producer.key);
   await page.reload();
