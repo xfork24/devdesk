@@ -704,6 +704,20 @@ impl EngineeringStore for SqliteStore {
             child_offset,
         )
     }
+    fn workflow_progress(
+        &self,
+        id: &str,
+        stage_offset: u64,
+    ) -> Result<devdesk_core::read_models::WorkflowProgress> {
+        read_models::progress(
+            &self.connection,
+            self.project_id
+                .as_deref()
+                .ok_or_else(|| err("project_required", "工作流进度需要明确项目"))?,
+            id,
+            stage_offset,
+        )
+    }
     fn observe_query(&self, stage: &'static str) -> Box<dyn ports::QueryObservation> {
         performance::observe(stage)
     }

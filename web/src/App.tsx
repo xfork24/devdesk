@@ -371,7 +371,9 @@ function App() {
       (route.get("tab") === "documents" ? "documents" : defaultExecutionTab),
   );
   const summaryPage =
-    tab === "execution" && executionTab === "manager" && !!projectId;
+    tab === "execution" &&
+    ["manager", "overview"].includes(executionTab) &&
+    !!projectId;
   // Summary DTOs are display-only. Hide them while navigating to a view that
   // needs exact details; keep header metadata and editor lifetimes stable.
   const data =

@@ -442,6 +442,13 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<crate::read_models::WorkflowManagementSummary> {
         Err(err("unsupported", "存储未实现流程管理摘要"))
     }
+    fn workflow_progress(
+        &self,
+        _id: &str,
+        _stage_offset: u64,
+    ) -> Result<crate::read_models::WorkflowProgress> {
+        Err(err("unsupported", "存储未实现工作流阶段进度"))
+    }
     fn repository_registration_facts(
         &self,
     ) -> Result<crate::repository_updates::RepositoryRegistrationFacts> {

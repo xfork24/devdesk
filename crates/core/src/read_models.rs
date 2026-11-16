@@ -223,6 +223,39 @@ pub struct WorkflowManagementSummary {
     pub observed_only: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct WorkflowStepCounts {
+    pub total: u64,
+    pub completed: u64,
+    pub running: u64,
+    pub waiting: u64,
+    pub failed: u64,
+}
+#[derive(Debug, Serialize)]
+pub struct WorkflowStageProgress {
+    pub key: String,
+    pub name: String,
+    pub counts: WorkflowStepCounts,
+}
+#[derive(Debug, Serialize)]
+pub struct WorkflowProgress {
+    pub project_id: String,
+    pub cursor: u64,
+    pub record: RuntimeSummary<WorkflowProgressState>,
+    pub counts: WorkflowStepCounts,
+    pub stages: Vec<WorkflowStageProgress>,
+    pub next_stage_offset: Option<u64>,
+    pub observed_only: bool,
+}
+#[derive(Debug, Serialize)]
+pub struct WorkflowProgressState {
+    pub owner_id: String,
+    pub root_instance_id: String,
+    pub status: String,
+    pub paused: bool,
+    pub cancel_requested: bool,
+}
+
 #[derive(Debug)]
 pub struct ExecutionWorkspaceQuery {
     pub feature_id: Option<String>,

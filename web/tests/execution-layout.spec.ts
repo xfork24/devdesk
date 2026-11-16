@@ -112,6 +112,9 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
   await expect(
     page.getByRole("tablist", { name: "执行详情" }).getByRole("tab"),
   ).toHaveText(["项目经理", "工作流程", "材料", "上下文", "执行记录"]);
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
   const runtime = page.getByRole("region", { name: "当前工作流", exact: true });
   await expect(runtime.locator(".work-standard")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "项目经理协作" })).toHaveCount(
@@ -166,6 +169,9 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     childManager.getByRole("region", { name: "项目经理协作", exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: /检查原始材料/ }),
   ).toBeVisible();
@@ -174,6 +180,9 @@ test("通用工作流按阶段排列，真实子流程内联展开且折叠可�
     0,
   );
   await page.reload();
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
   await expect(stageOne).toHaveAttribute("aria-expanded", "false");
   await stageOne.click();
   await expect(
@@ -254,6 +263,9 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     manager.getByRole("region", { name: "项目经理协作" }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
   await runtime.getByRole("button", { name: /材料处理/ }).click();
   const collect = runtime.getByRole("article", {
     name: "步骤 · 整理材料",
@@ -296,6 +308,9 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     editor.getByRole("button", { name: "应用此计划调整", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
   await runtime.getByRole("button", { name: /可选复核/ }).click();
   await expect(runtime.getByRole("button", { name: /可选检查/ })).toBeVisible();
   await page.getByRole("tab", { name: "项目经理", exact: true }).click();
@@ -312,6 +327,9 @@ test("直接调整运行计划、复用成果、绕过与移动端刷新", async
     editor.getByRole("button", { name: "应用此计划调整", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("tab", { name: "工作流程", exact: true }).click();
+  await page
+    .getByRole("button", { name: "展开步骤与操作", exact: true })
+    .click();
   const added = runtime.getByRole("article", {
     name: "步骤 · 补充交接",
     exact: true,

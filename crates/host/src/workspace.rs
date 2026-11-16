@@ -307,10 +307,13 @@ impl Workspace {
             "query.workflow_driver_summary",
             "query.orchestration_decision",
             "query.workflow_management_summary",
+            "query.workflow_progress",
         ]
         .contains(&method)
         {
-            if method == "query.workflow_management_summary" {
+            if method == "query.workflow_progress" {
+                devdesk_core::read_models::fields(&params, &["project_id", "id", "stage_offset"])?;
+            } else if method == "query.workflow_management_summary" {
                 devdesk_core::read_models::fields(&params, &["project_id", "id", "child_offset"])?;
             } else if method != "query.orchestration_summary" {
                 devdesk_core::read_models::fields(&params, &["project_id", "id"])?;
@@ -324,6 +327,22 @@ impl Workspace {
                 "query.workflow_driver_summary" => json!(engine.store.workflow_driver_summary(
                     &devdesk_core::read_models::identifier(&params, "id")?
                 )?),
+                "query.workflow_progress" => {
+                    let offset = params
+                        .get("stage_offset")
+                        .map(|value| {
+                            value
+                                .as_u64()
+                                .filter(|n| *n <= 1_000_000)
+                                .ok_or_else(|| err("invalid_params", "阶段页偏移无效"))
+                        })
+                        .transpose()?
+                        .unwrap_or(0);
+                    json!(engine.store.workflow_progress(
+                        &devdesk_core::read_models::identifier(&params, "id")?,
+                        offset
+                    )?)
+                }
                 "query.workflow_management_summary" => {
                     let offset = params
                         .get("child_offset")
@@ -1156,25 +1175,6 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn workspace_reads_do_not_publish_directory_state_and_idle_ticks_repair_it() {
-        let root = tempfile::tempdir().unwrap();
-        let workspace =
-            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
-        let created=workspace.dispatch("project.create",json!({"command_id":"directory-project","payload":{"title":"Original directory title"}})).unwrap();
-        let project = created["id"].as_str().unwrap();
-        let engine = workspace.project_engine(Some(project)).unwrap();
-        let current = engine.store.project_metadata().unwrap();
-        engine
-            .execute(
-                "project.update",
-                Command {
-                    command_id: "background-title".into(),
-                    target: Some(project.into()),
-                    expected_revision: Some(current.revision),
-                    payload: json!({"title":"Background authoritative title"}),
-                },
-            )
     use std::sync::atomic::AtomicUsize;
     #[test]
     fn scheduler_polls_each_writer_once_and_shares_available_quota() {
@@ -1248,6 +1248,25 @@ mod tests {
             1
         );
     }
+    #[test]
+    fn workspace_reads_do_not_publish_directory_state_and_idle_ticks_repair_it() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let created=workspace.dispatch("project.create",json!({"command_id":"directory-project","payload":{"title":"Original directory title"}})).unwrap();
+        let project = created["id"].as_str().unwrap();
+        let engine = workspace.project_engine(Some(project)).unwrap();
+        let current = engine.store.project_metadata().unwrap();
+        engine
+            .execute(
+                "project.update",
+                Command {
+                    command_id: "background-title".into(),
+                    target: Some(project.into()),
+                    expected_revision: Some(current.revision),
+                    payload: json!({"title":"Background authoritative title"}),
+                },
+            )
             .unwrap();
         let trace = performance::Trace::start();
         let value = workspace
@@ -1389,6 +1408,10 @@ mod tests {
                 "query.workflow_management_summary",
                 json!({"project_id":project,"id":"missing"}),
             );
+            let progress = reader_workspace.dispatch(
+                "query.workflow_progress",
+                json!({"project_id":project,"id":"missing"}),
+            );
             let execution = reader_workspace
                 .dispatch("query.execution_workspace", json!({"project_id":project}));
             let hints = reader_workspace
@@ -1402,6 +1425,7 @@ mod tests {
                     driver,
                     decision,
                     management,
+                    progress,
                     execution,
                     hints,
                     trace.finish(),
@@ -1414,12 +1438,13 @@ mod tests {
         release_tx.send(()).unwrap();
         writer.join().unwrap().unwrap();
         reader.join().unwrap();
-        let (summary, driver, decision, management, execution, hints, trace) =
+        let (summary, driver, decision, management, progress, execution, hints, trace) =
             result.expect("summary reads waited for a business lock");
         assert!(summary.unwrap()["record"].is_null());
         assert_eq!(driver.unwrap_err().code, "not_found");
         assert_eq!(decision.unwrap_err().code, "not_found");
         assert_eq!(management.unwrap_err().code, "not_found");
+        assert_eq!(progress.unwrap_err().code, "not_found");
         assert_eq!(execution.unwrap()["kind"], "execution_workspace");
         assert_eq!(hints.unwrap().running_conversations, 0);
         for span in [

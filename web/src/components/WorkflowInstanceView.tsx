@@ -275,6 +275,13 @@ export function WorkflowInstanceView({
   }
   const toggle = (key: string) =>
     setOpen((previous) => ({ ...previous, [key]: !previous[key] }));
+  if (!activeData)
+    return (
+      <section className="panel" aria-label="当前工作流">
+        <p role="status">正在读取步骤与操作…</p>
+        {error ? <p role="alert">{error}</p> : null}
+      </section>
+    );
   return (
     <section
       className={`panel workflow-instance${nested ? " workflow-instance-child" : ""}`}

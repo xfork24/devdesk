@@ -258,3 +258,73 @@ pub(super) fn management(
         observed_only: true,
     })
 }
+
+fn step_counts(row: &rusqlite::Row<'_>, start: usize) -> rusqlite::Result<WorkflowStepCounts> {
+    Ok(WorkflowStepCounts {
+        total: row.get(start)?,
+        completed: row.get(start + 1)?,
+        running: row.get(start + 2)?,
+        waiting: row.get(start + 3)?,
+        failed: row.get(start + 4)?,
+    })
+}
+
+pub(super) fn progress(
+    pool: &ConnectionPool,
+    project: &str,
+    id: &str,
+    stage_offset: u64,
+) -> Result<WorkflowProgress> {
+    require(stage_offset <= 1_000_000, "阶段页偏移无效")?;
+    let _span = performance::Span::new("read_model.workflow_progress");
+    let conn = pool.read()?;
+    conn.execute_batch("BEGIN;").map_err(storage)?;
+    let record=conn.query_row(
+        "SELECT id,substr(name,1,128),revision,json_extract(data,'$.owner_id'),coalesce(json_extract(data,'$.root_instance_id'),id),json_extract(data,'$.status'),coalesce(json_extract(data,'$.paused'),0),coalesce(json_extract(data,'$.cancel_requested'),0) FROM governance_records WHERE id=?1 AND type='workflow_instance' AND owner_project=?2 AND coalesce(json_extract(data,'$.project_id'),?2)=?2",
+        params![id,project],|row|Ok(RuntimeSummary {id:row.get(0)?,name:row.get(1)?,revision:row.get(2)?,data:WorkflowProgressState {owner_id:row.get(3)?,root_instance_id:row.get(4)?,status:row.get(5)?,paused:row.get(6)?,cancel_requested:row.get(7)?}})
+    ).optional().map_err(storage)?.ok_or_else(||err("not_found","工作流不属于本次请求的项目"))?;
+    let counts=conn.query_row(
+        "SELECT count(*),coalesce(sum(json_extract(s.value,'$.status') IN ('completed','skipped')),0),coalesce(sum(json_extract(s.value,'$.status')='running'),0),coalesce(sum(json_extract(s.value,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance')),0),coalesce(sum(json_extract(s.value,'$.status') IN ('failed','needs_reconciliation')),0) FROM governance_records i,json_each(i.data,'$.steps') s WHERE i.id=?1 AND i.type='workflow_instance' AND i.owner_project=?2",params![id,project],|row|step_counts(row,0)
+    ).map_err(storage)?;
+    // The packed plan names its exact immutable workflow source. Never compile
+    // it, follow today's head/default, or reconstruct unrelated engineering rows.
+    let source_exists:bool=conn.query_row(
+        "SELECT json_type(i.data,'$.plan.document')='object' OR EXISTS(SELECT 1 FROM source_definitions w WHERE w.type='workflow' AND w.reference=coalesce(json_extract(i.data,'$.plan.workflow_ref'),json_extract(i.data,'$.workflow_ref'))) FROM governance_records i WHERE i.id=?1",[id],|row|row.get::<_,Option<bool>>(0)
+    ).map_err(storage)?.unwrap_or(false);
+    require(
+        source_exists,
+        "冻结工作流源缺失，不能以当前默认替换阶段进度",
+    )?;
+    let mut stages = {
+        let mut statement=conn.prepare_cached(
+            "WITH instance AS MATERIALIZED (SELECT i.data,coalesce(json_extract(i.data,'$.plan.document'),w.data) AS document FROM governance_records i LEFT JOIN source_definitions w ON w.type='workflow' AND w.reference=coalesce(json_extract(i.data,'$.plan.workflow_ref'),json_extract(i.data,'$.workflow_ref')) WHERE i.id=?1 AND i.type='workflow_instance' AND i.owner_project=?2), definitions AS MATERIALIZED (SELECT json_extract(d.value,'$.key') AS step,json_extract(d.value,'$.stage') AS stage FROM instance,json_each(instance.document,'$.steps') d), labels AS MATERIALIZED (SELECT s.key AS position,json_extract(s.value,'$.key') AS stage,substr(json_extract(s.value,'$.name'),1,128) AS name FROM instance,json_each(instance.document,'$.stages') s), progress AS MATERIALIZED (SELECT d.stage,count(*) AS total,sum(json_extract(e.value,'$.status') IN ('completed','skipped')) AS completed,sum(json_extract(e.value,'$.status')='running') AS running,sum(json_extract(e.value,'$.status') IN ('waiting_input','waiting_confirmation','awaiting_acceptance')) AS waiting,sum(json_extract(e.value,'$.status') IN ('failed','needs_reconciliation')) AS failed FROM instance,json_each(instance.data,'$.steps') e JOIN definitions d ON d.step=json_extract(e.value,'$.step') GROUP BY d.stage) SELECT l.stage,l.name,coalesce(p.total,0),coalesce(p.completed,0),coalesce(p.running,0),coalesce(p.waiting,0),coalesce(p.failed,0) FROM labels l LEFT JOIN progress p ON p.stage=l.stage ORDER BY l.position LIMIT 21 OFFSET ?3"
+        ).map_err(storage)?;
+        statement
+            .query_map(params![id, project, stage_offset], |row| {
+                Ok(WorkflowStageProgress {
+                    key: row.get(0)?,
+                    name: row.get(1)?,
+                    counts: step_counts(row, 2)?,
+                })
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?
+    };
+    let more = trim_page(&mut stages, 20);
+    let result = WorkflowProgress {
+        project_id: project.into(),
+        cursor: cursor(&conn)?,
+        record,
+        counts,
+        stages,
+        next_stage_offset: more.then_some(stage_offset + 20),
+        observed_only: true,
+    };
+    require(
+        serde_json::to_vec(&result).map_err(storage)?.len() <= 64 * 1024,
+        "阶段进度摘要超过 64 KiB",
+    )?;
+    conn.execute_batch("COMMIT;").map_err(storage)?;
+    Ok(result)
+}
