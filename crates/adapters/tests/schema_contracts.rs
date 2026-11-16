@@ -378,6 +378,26 @@ fn settings_request_requires_an_explicit_resource_version_envelope() {
 }
 
 #[test]
+fn runtime_registration_requires_command_identity_and_explicit_absence() {
+    let validator = SCHEMAS.validator("rpc.schema.json");
+    let registration = json!({"key":{"provider":"codex","version":"fixture","os":"linux","arch":"aarch64"},"artifact":{"kind":"docker_image","image_id":format!("sha256:{}","a".repeat(64))},"source":"protocol fixture","license":"test"});
+    let valid = json!({"jsonrpc":"2.0","id":1,"method":"runtime.register","params":{"command_id":"register","expected_revision":0,"payload":registration}});
+    assert!(validator.is_valid(&valid));
+    let mut missing = valid.clone();
+    missing["params"]
+        .as_object_mut()
+        .unwrap()
+        .remove("expected_revision");
+    assert!(!validator.is_valid(&missing));
+    let mut replacement = valid.clone();
+    replacement["params"]["expected_revision"] = json!(1);
+    assert!(!validator.is_valid(&replacement));
+    assert!(!validator.is_valid(
+        &json!({"jsonrpc":"2.0","id":1,"method":"runtime.register","params":registration})
+    ));
+}
+
+#[test]
 fn execution_summary_reads_are_scoped_and_driver_selection_requires_both_versions() {
     let validator = SCHEMAS.validator("rpc.schema.json");
     for (method, params) in [

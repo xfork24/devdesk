@@ -1,6 +1,5 @@
 //! Artifact registration has no process, network, installation or deletion side effects.
 use super::*;
-use rusqlite::{OptionalExtension, params};
 use std::io::Read;
 
 pub fn configuration_digest(value: &Value) -> Result<String> {
@@ -136,6 +135,35 @@ fn checked_artifact(artifact: RuntimeArtifact, key: &RuntimeKey) -> Result<Runti
     }
 }
 
+fn same_content(prior: &RuntimeInstallation, registration: &RuntimeRegistration) -> Result<()> {
+    require(
+        prior.key == registration.key,
+        "安装归属与版本/平台身份不一致",
+    )?;
+    let same = match (&prior.artifact, &registration.artifact) {
+        (
+            RuntimeArtifact::Executable { sha256: a, .. },
+            RuntimeArtifact::Executable { sha256: b, .. },
+        ) => a == b,
+        (a, b) => a == b,
+    };
+    require(same, "同版本/平台安装内容冲突，请提供新的 build identity")
+}
+fn verified_registration(
+    mut registration: RuntimeRegistration,
+    recipe_digest: Option<&str>,
+) -> Result<RuntimeRegistration> {
+    if let Some(digest) = recipe_digest {
+        require(
+            digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
+            "配方摘要格式无效",
+        )?;
+    }
+    registration.key.validate()?;
+    registration.artifact = checked_artifact(registration.artifact, &registration.key)?;
+    Ok(registration)
+}
+
 fn read_installation(row: &rusqlite::Row<'_>) -> rusqlite::Result<String> {
     row.get(0)
 }
@@ -249,7 +277,7 @@ impl GlobalStore {
         })
     }
     pub fn runtime_installations(&self) -> Result<Vec<RuntimeInstallation>> {
-        let conn = self.connection.lock().map_err(storage)?;
+        let conn = self.connection.read().map_err(storage)?;
         let mut query = conn
             .prepare(&format!("{SELECT} ORDER BY provider,version,os,arch"))
             .map_err(storage)?;
@@ -271,54 +299,86 @@ impl GlobalStore {
         registration: RuntimeRegistration,
         recipe_digest: Option<String>,
     ) -> Result<RuntimeInstallation> {
-        if let Some(digest) = &recipe_digest {
-            require(
-                digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
-                "配方摘要格式无效",
-            )?;
-        }
-        registration.key.validate()?;
-        require(
-            !registration.source.trim().is_empty() && !registration.license.trim().is_empty(),
-            "需要记录运行时来源与许可证",
-        )?;
-        let artifact = checked_artifact(registration.artifact, &registration.key)?;
-        let _writer = self.writer.lock().map_err(storage)?;
-        let conn = self.connection.lock().map_err(storage)?;
-        let key = &registration.key;
-        let prior: Option<String> = conn
-            .query_row(
-                &format!("{SELECT} WHERE provider=?1 AND version=?2 AND os=?3 AND arch=?4 AND recipe_digest IS ?5"),
-                params![key.provider.as_str(), key.version, key.os, key.arch,recipe_digest],
-                read_installation,
-            )
-            .optional()
-            .map_err(storage)?;
-        if let Some(prior) = prior {
-            let prior: RuntimeInstallation = serde_json::from_str(&prior).map_err(storage)?;
-            let same_content = match (&prior.artifact, &artifact) {
-                (
-                    RuntimeArtifact::Executable { sha256: a, .. },
-                    RuntimeArtifact::Executable { sha256: b, .. },
-                ) => a == b,
-                (a, b) => a == b,
-            };
-            require(
-                same_content,
-                "同版本/平台安装内容冲突，请提供新的 build identity",
-            )?;
+        let registration = verified_registration(registration, recipe_digest.as_deref())?;
+        let key = devdesk_core::runtime_registry::installation_id(
+            &registration.key,
+            recipe_digest.as_deref(),
+        );
+        if let Some(prior) = devdesk_core::runtime_registry::read_installation(self, &key)? {
+            same_content(&prior, &registration)?;
             return Ok(prior);
         }
-        let installation = RuntimeInstallation {
-            recipe_digest,
-            id: id(),
-            key: registration.key,
-            artifact,
-            source: registration.source,
-            license: registration.license,
+        match devdesk_core::runtime_registry::recover_verified_missing(
+            self,
+            registration.clone(),
+            recipe_digest.clone(),
+        ) {
+            Ok(Some(recovered)) => return Ok(recovered),
+            Ok(None) => {}
+            Err(error) if error.code == "revision_conflict" => {
+                let prior =
+                    devdesk_core::runtime_registry::read_installation(self, &key)?.ok_or(error)?;
+                same_content(&prior, &registration)?;
+                return Ok(prior);
+            }
+            Err(error) => return Err(error),
+        }
+        let command = Command {
+            command_id: id(),
+            target: Some(key.clone()),
+            expected_revision: Some(0),
+            payload: json!(registration),
         };
-        conn.execute("INSERT INTO runtime_installations(id,provider,version,os,arch,artifact,source,license,recipe_digest) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![installation.id,installation.key.provider.as_str(),installation.key.version,installation.key.os,installation.key.arch,serde_json::to_string(&installation.artifact).map_err(storage)?,installation.source,installation.license,installation.recipe_digest]).map_err(storage)?;
-        Ok(installation)
+        let context = InvocationContext::human(None);
+        match devdesk_core::runtime_registry::register_verified(
+            self,
+            &command,
+            registration.clone(),
+            recipe_digest,
+            &context,
+        ) {
+            Ok(receipt) => serde_json::from_value(receipt.result).map_err(storage),
+            Err(error) if error.code == "revision_conflict" => {
+                // Internal materialization deduplicates the same verified content. No old
+                // user version is refreshed, and no external effect is repeated here.
+                let prior =
+                    devdesk_core::runtime_registry::read_installation(self, &key)?.ok_or(error)?;
+                same_content(&prior, &registration)?;
+                Ok(prior)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn register_runtime_command(
+        &self,
+        command: &Command,
+        context: &InvocationContext,
+    ) -> Result<devdesk_core::concurrency::CommitReceipt> {
+        let fingerprint =
+            devdesk_core::runtime_registry::registration_fingerprint(command, context);
+        if let Some(receipt) = self.replay_commit(&command.command_id, &fingerprint)? {
+            return Ok(receipt);
+        }
+        devdesk_core::runtime_registry::registration_preconditions(command)?;
+        require(
+            command.payload.as_object().is_some_and(|fields| {
+                fields
+                    .keys()
+                    .all(|key| ["key", "artifact", "source", "license"].contains(&key.as_str()))
+            }),
+            "安装登记正文包含未知字段",
+        )?;
+        let registration: RuntimeRegistration = serde_json::from_value(command.payload.clone())
+            .map_err(|error| err("invalid_params", error.to_string()))?;
+        let registration = verified_registration(registration, None)?;
+        devdesk_core::runtime_registry::register_verified(
+            self,
+            command,
+            registration,
+            None,
+            context,
+        )
     }
 
     pub fn runtime_integrity(&self, id: &str) -> Result<RuntimeIntegrity> {

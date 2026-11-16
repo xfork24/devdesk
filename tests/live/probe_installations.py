@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import os
-"""Real concurrent registration and Docker layer reuse, independent of model output."""
+"""Real concurrent replacement rejection and Docker layer reuse, independent of model output."""
 from client import Client
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -10,10 +10,15 @@ try:
  rows=c.rpc('query.runtime_installations')['installations'];images=[x for x in rows if x['artifact']['kind']=='docker_image'];assert {x['key']['provider']for x in images}=={'codex','dsh'}
  layers=[]
  for installation in images:
-  registration={k:v for k,v in installation.items() if k!='id'}
-  def register(_):return Client(a.url).rpc('runtime.register',registration)['id']
-  with ThreadPoolExecutor(max_workers=4) as pool:ids=list(pool.map(register,range(4)))
-  assert ids==[installation['id']]*4
+  registration={k:v for k,v in installation.items() if k not in {'id','recipe_digest'}}
+  def reject_replacement(_):
+   try:Client(a.url).command('runtime.register',revision=1,payload=registration)
+   except RuntimeError as error:
+    assert 'revision_conflict' in str(error),str(error)
+    return True
+   raise AssertionError('immutable installation was overwritten')
+  with ThreadPoolExecutor(max_workers=4) as pool:rejected=list(pool.map(reject_replacement,range(4)))
+  assert all(rejected)
   identity=installation['artifact']['image_id'];actual=json.loads(subprocess.check_output(['docker','image','inspect',identity],text=True))[0];assert actual['Id']==identity;layers.append(set(actual['RootFS']['Layers']))
   references=[]
   for db in a.root.resolve().glob('projects/*/engineering.sqlite3'):
@@ -22,7 +27,7 @@ try:
     if json.loads(binding)['installation']['id']==installation['id']:references.append({'project':db.parent.name,'session':sid,'agent':agent})
    conn.close()
   assert len({x['project']for x in references})>1 and len({x['agent']for x in references})>1
-  r['installations'].append({'id':installation['id'],'provider':installation['key']['provider'],'platform':installation['key']['os']+'/'+installation['key']['arch'],'image':identity,'concurrent_registrations':len(ids),'references':references})
+  r['installations'].append({'id':installation['id'],'provider':installation['key']['provider'],'platform':installation['key']['os']+'/'+installation['key']['arch'],'image':identity,'rejected_concurrent_replacements':len(rejected),'references':references})
  assert len(c.rpc('query.runtime_installations')['installations'])==len(rows);shared=set.intersection(*layers);assert shared;r['shared_layers']=sorted(shared);r['passed']=True
 finally:
  a.reports.mkdir(parents=True,exist_ok=True);(a.reports/'R8-installations.json').write_text(json.dumps(r,indent=2)+'\n')

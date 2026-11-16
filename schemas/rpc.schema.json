@@ -6310,6 +6310,34 @@
         }
       },
       "additionalProperties": false
+    },
+    "RuntimeRegisterRequest": {
+      "type": "object",
+      "required": [
+        "command_id",
+        "expected_revision",
+        "payload"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expected_revision": {
+          "const": 0
+        },
+        "payload": {
+          "$ref": "#/$defs/RuntimeRegistration"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "allOf": [
@@ -6362,7 +6390,7 @@
       "then": {
         "properties": {
           "params": {
-            "$ref": "#/$defs/RuntimeRegistration"
+            "$ref": "#/$defs/RuntimeRegisterRequest"
           }
         },
         "required": [

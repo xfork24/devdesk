@@ -8,6 +8,7 @@ pub mod concurrency;
 mod configuration_catalog;
 pub mod read_models;
 pub mod rpc_contracts;
+pub mod runtime_registry;
 pub mod settings;
 pub use configuration_catalog::*;
 mod configuration_queries;

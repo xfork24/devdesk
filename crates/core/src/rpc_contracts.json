@@ -1940,7 +1940,7 @@
       "method": "runtime.register",
       "access": "mutation",
       "scope": "global",
-      "precondition": "intent_revision",
+      "precondition": "installation_absent_and_command_identity",
       "sites": [
         "crates/host/src/workspace.rs"
       ]

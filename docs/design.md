@@ -1,6 +1,6 @@
 # 架构与设计决策
 
-当前 SQLite 基线为 global 20 / project 51，配置使用扁平源修订。业务配置与执行边界见 [领域规范](domain.md) 和 [工作流与编排](workflow-orchestration.md)。`docs/plans/` 中待实施方案与历史验收分别标明状态，均不能替代当前接口合同。
+当前 SQLite 基线为 global 21 / project 51，配置使用扁平源修订。业务配置与执行边界见 [领域规范](domain.md) 和 [工作流与编排](workflow-orchestration.md)。`docs/plans/` 中待实施方案与历史验收分别标明状态，均不能替代当前接口合同。
 
 ## 单 Host 并发与性能设计约束
 

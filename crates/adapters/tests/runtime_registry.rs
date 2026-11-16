@@ -1,5 +1,7 @@
 use devdesk_adapters::GlobalStore;
+use devdesk_core::{Command, EngineeringStore, InvocationContext};
 use devdesk_domain::*;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path, sync::Arc};
 
@@ -29,6 +31,234 @@ fn native(path: &Path, suffix: &[u8]) -> RuntimeRegistration {
         source: "synthetic test fixture".into(),
         license: "test-only".into(),
     }
+}
+
+fn image(version: &str) -> RuntimeRegistration {
+    RuntimeRegistration {
+        key: RuntimeKey {
+            provider: HarnessProvider::Codex,
+            version: version.into(),
+            os: "linux".into(),
+            arch: "aarch64".into(),
+        },
+        artifact: RuntimeArtifact::OciImage {
+            reference: format!("example.com/fixture/runtime@sha256:{}", "a".repeat(64)),
+        },
+        source: "immutable image protocol fixture; no process is run".into(),
+        license: "test-only".into(),
+    }
+}
+fn request(id: &str, registration: &RuntimeRegistration) -> Command {
+    Command {
+        command_id: id.into(),
+        target: None,
+        expected_revision: Some(0),
+        payload: json!(registration),
+    }
+}
+
+#[test]
+fn concurrent_public_creations_have_one_winner_and_independent_installations_all_commit() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(GlobalStore::open(temp.path()).unwrap());
+    let barrier = Arc::new(std::sync::Barrier::new(100));
+    let handles: Vec<_> = (0..100)
+        .map(|n| {
+            let (store, barrier) = (store.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                let command = request(&format!("racing-{n}"), &image("same"));
+                barrier.wait();
+                store.register_runtime_command(&command, &InvocationContext::human(None))
+            })
+        })
+        .collect();
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|thread| thread.join().unwrap())
+        .collect();
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| result
+                .as_ref()
+                .is_err_and(|error| error.code == "revision_conflict"))
+            .count(),
+        99
+    );
+    let handles: Vec<_> = (0..100)
+        .map(|n| {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                store.register_runtime_command(
+                    &request(&format!("independent-{n}"), &image(&format!("version-{n}"))),
+                    &InvocationContext::human(None),
+                )
+            })
+        })
+        .collect();
+    for thread in handles {
+        thread.join().unwrap().unwrap();
+    }
+    assert_eq!(store.runtime_installations().unwrap().len(), 101);
+    let page = store.events_after(0, 100).unwrap();
+    assert_eq!(page.len(), 100);
+    assert_eq!(
+        store
+            .events_after(page.last().unwrap().id, 100)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn original_receipts_replay_without_rechecking_the_external_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(GlobalStore::open(&temp.path().join("data")).unwrap());
+    let registration = native(&temp.path().join("original"), b"content");
+    let command = request("original-command", &registration);
+    let context = InvocationContext::human(None);
+    let saved = store.register_runtime_command(&command, &context).unwrap();
+    fs::remove_file(temp.path().join("original")).unwrap();
+    let handles: Vec<_> = (0..100)
+        .map(|_| {
+            let (store, command) = (store.clone(), command.clone());
+            std::thread::spawn(move || {
+                store.register_runtime_command(&command, &InvocationContext::human(None))
+            })
+        })
+        .collect();
+    for handle in handles {
+        let receipt = handle.join().unwrap().unwrap();
+        assert_eq!(receipt.result, saved.result);
+        assert_eq!(receipt.cursor, saved.cursor);
+        assert_eq!(receipt.versions, saved.versions);
+    }
+    assert_eq!(store.events_after(0, 100).unwrap().len(), 1);
+    let mut reused = command.clone();
+    reused.payload["source"] = json!("changed input");
+    assert_eq!(
+        store
+            .register_runtime_command(&reused, &context)
+            .unwrap_err()
+            .code,
+        "invalid_params"
+    );
+    let mut missing = request("missing", &image("another"));
+    missing.expected_revision = None;
+    assert_eq!(
+        store
+            .register_runtime_command(&missing, &context)
+            .unwrap_err()
+            .code,
+        "precondition_required"
+    );
+}
+
+#[test]
+fn missing_registry_repair_preserves_the_seal_tombstone_and_original_receipt() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(GlobalStore::open(temp.path()).unwrap());
+    let registration = image("sealed");
+    let command = request("original-sealed", &registration);
+    let original = store
+        .register_runtime_command(&command, &InvocationContext::human(None))
+        .unwrap();
+    let id = original.result["id"].as_str().unwrap().to_owned();
+    // Fault fixture: the verified artifact cache and version/seal survive a missing row.
+    let conn = rusqlite::Connection::open(temp.path().join("global.sqlite3")).unwrap();
+    conn.execute("DELETE FROM runtime_installations WHERE id=?1", [&id])
+        .unwrap();
+    let mut forged = registration.clone();
+    forged.artifact = RuntimeArtifact::OciImage {
+        reference: format!("example.com/fixture/runtime@sha256:{}", "b".repeat(64)),
+    };
+    assert!(store.register_runtime(forged).is_err());
+    assert!(store.runtime_installations().unwrap().is_empty());
+    let handles: Vec<_> = (0..100)
+        .map(|_| {
+            let (store, registration) = (store.clone(), registration.clone());
+            std::thread::spawn(move || store.register_runtime(registration))
+        })
+        .collect();
+    for handle in handles {
+        assert_eq!(handle.join().unwrap().unwrap().id, id);
+    }
+    assert_eq!(
+        store
+            .read_resources(&[devdesk_core::concurrency::ResourceKey::new(
+                "runtime_installation",
+                &id
+            )])
+            .unwrap()[0]
+            .revision,
+        2
+    );
+    assert_eq!(store.events_after(0, 100).unwrap().len(), 2);
+    let replay = store
+        .register_runtime_command(&command, &InvocationContext::human(None))
+        .unwrap();
+    assert_eq!(replay.versions, original.versions);
+    assert_eq!(replay.cursor, original.cursor);
+}
+
+#[test]
+fn independent_resource_commits_do_not_wait_for_the_legacy_writer_or_overwrite_events() {
+    use std::{sync::mpsc, time::Duration};
+    let temp = tempfile::tempdir().unwrap();
+    let store = Arc::new(GlobalStore::open(temp.path()).unwrap());
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let legacy = store.clone();
+    let writer = std::thread::spawn(move || {
+        legacy.transact(None, &mut |state| {
+            ready_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            state.events.push(Event {
+                id: state.events.last().map_or(1, |e| e.id + 1),
+                target: "legacy".into(),
+                kind: "legacy.after_resources".into(),
+                detail: "append fixture".into(),
+                time: 1,
+            });
+            Ok(Value::Null)
+        })
+    });
+    ready_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let (done_tx, done_rx) = mpsc::channel();
+    let finite = store.clone();
+    let worker = std::thread::spawn(move || {
+        let trace = devdesk_adapters::performance::Trace::start();
+        let runtime = finite.register_runtime_command(
+            &request("new-installation", &image("isolated")),
+            &InvocationContext::human(None),
+        );
+        let settings = finite.update_preferences(Some(6), None);
+        done_tx.send((runtime, settings, trace.finish())).unwrap();
+    });
+    let result = done_rx.recv_timeout(Duration::from_secs(2));
+    release_tx.send(()).unwrap();
+    writer.join().unwrap().unwrap();
+    worker.join().unwrap();
+    let (runtime, settings, trace) =
+        result.expect("finite commits waited for the global business writer");
+    let receipt = runtime.unwrap();
+    settings.unwrap();
+    for span in [
+        "global.full_snapshot",
+        "global.transaction",
+        "source.restore_records",
+    ] {
+        assert!(trace["spans"][span].is_null(), "{trace}");
+    }
+    let events = store.events_after(0, 100).unwrap();
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0].id, receipt.cursor);
+    assert_eq!(events[0].kind, "resource.changed");
+    assert_eq!(events[1].kind, "resource.changed");
+    assert_eq!(events[2].kind, "legacy.after_resources");
+    assert!(events.windows(2).all(|pair| pair[0].id < pair[1].id));
 }
 
 #[test]

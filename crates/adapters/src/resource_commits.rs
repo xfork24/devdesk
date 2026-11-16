@@ -31,6 +31,7 @@ fn table(kind: &str) -> Result<&'static str> {
 fn value(conn: &Connection, key: &ResourceKey) -> Result<Option<Value>> {
     key.validate()?;
     match key.kind.as_str() {
+        "runtime_presence" => Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM runtime_installations WHERE id=?1)",[&key.id],|row|row.get::<_,bool>(0)).map_err(storage)?.then_some(json!(true))),
         "setting" => catalog::setting(conn, &key.id),
         "source_head" => conn.query_row(
             "SELECT reference,type,revision FROM source_definitions WHERE identity=?1 ORDER BY revision DESC LIMIT 1",
@@ -68,6 +69,15 @@ fn snapshot(conn: &Connection, key: &ResourceKey) -> Result<ResourceSnapshot> {
 
 fn current_revision(conn: &Connection, key: &ResourceKey) -> Result<u64> {
     key.validate()?;
+    if key.kind == "runtime_presence" {
+        return conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM runtime_installations WHERE id=?1)",
+                [&key.id],
+                |row| row.get(0),
+            )
+            .map_err(storage);
+    }
     if let Some(revision) = conn
         .query_row(
             "SELECT revision FROM resource_versions WHERE kind=?1 AND resource_id=?2",
@@ -115,11 +125,15 @@ fn sqlite_error(error: rusqlite::Error) -> Error {
     }
 }
 
-fn replay(conn: &Connection, prepared: &PreparedChangeSet) -> Result<Option<CommitReceipt>> {
+fn replay_on(
+    conn: &Connection,
+    command_id: &str,
+    expected_fingerprint: &str,
+) -> Result<Option<CommitReceipt>> {
     let previous = conn
         .query_row(
             "SELECT fingerprint,CAST(result AS TEXT),versions,cursor FROM operations WHERE id=?1",
-            [&prepared.command_id],
+            [command_id],
             |r| {
                 Ok((
                     r.get::<_, String>(0)?,
@@ -133,10 +147,9 @@ fn replay(conn: &Connection, prepared: &PreparedChangeSet) -> Result<Option<Comm
         .map_err(sqlite_error)?;
     previous
         .map(|(fingerprint, result, versions, cursor)| {
-            require(
-                fingerprint == prepared.fingerprint,
-                "command_id 被不同参数或身份复用",
-            )?;
+            if fingerprint != expected_fingerprint {
+                return Err(err("invalid_params", "command_id 被不同参数或身份复用"));
+            }
             Ok(CommitReceipt {
                 result: serde_json::from_str(&result).map_err(storage)?,
                 versions: serde_json::from_str(&versions).map_err(storage)?,
@@ -144,6 +157,15 @@ fn replay(conn: &Connection, prepared: &PreparedChangeSet) -> Result<Option<Comm
             })
         })
         .transpose()
+}
+
+pub(super) fn replay(
+    pool: &ConnectionPool,
+    command_id: &str,
+    fingerprint: &str,
+) -> Result<Option<CommitReceipt>> {
+    let conn = pool.read()?;
+    replay_on(&conn, command_id, fingerprint)
 }
 
 struct SqlWrite {
@@ -239,6 +261,33 @@ fn prepare_writes(
         .map(|change| &change.resource)
         .collect();
     for change in &prepared.changes {
+        if change.resource.kind == "runtime_installation" {
+            if prepared.read_set.require(&change.resource)? > 0 {
+                require(
+                    prepared
+                        .read_set
+                        .require(&ResourceKey::new("runtime_presence", &change.resource.id))?
+                        == 0,
+                    "恢复安装必须验证记录确实缺失",
+                )?;
+                require(
+                    prepared.read_set.require(&ResourceKey::new(
+                        "setting",
+                        format!("runtime.seal.{}", change.resource.id),
+                    ))? > 0,
+                    "恢复安装需要原始内容封存",
+                )?;
+            }
+            let key: RuntimeKey = serde_json::from_value(json!({"provider":change.value["provider"],"version":change.value["version"],"os":change.value["os"],"arch":change.value["arch"]})).map_err(storage)?;
+            require(
+                change.resource.id
+                    == devdesk_core::runtime_registry::installation_id(
+                        &key,
+                        change.value["recipe_digest"].as_str(),
+                    ),
+                "安装记录与版本/平台身份不一致",
+            )?;
+        }
         if change.resource.kind == "source" {
             let identity = change.value["identity"]
                 .as_str()
@@ -280,14 +329,14 @@ fn commit_once(
     prepared: &PreparedChangeSet,
     writes: &[Option<SqlWrite>],
 ) -> Result<(CommitReceipt, bool)> {
-    if let Some(receipt) = replay(conn, prepared)? {
+    if let Some(receipt) = replay_on(conn, &prepared.command_id, &prepared.fingerprint)? {
         return Ok((receipt, false));
     }
     let transaction = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(sqlite_error)?;
     let _span = performance::Span::new("resource.sql_transaction");
-    if let Some(receipt) = replay(&transaction, prepared)? {
+    if let Some(receipt) = replay_on(&transaction, &prepared.command_id, &prepared.fingerprint)? {
         return Ok((receipt, false));
     }
     for expected in prepared.read_set.versions() {

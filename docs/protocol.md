@@ -1,6 +1,6 @@
 # 本地协议
 
-JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 20 / project 51；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
+JSON-RPC 2.0 与同源 HTTP / SSE。当前 SQLite 基线为 global 21 / project 51；出厂 Workflow、Spec、Standard 分别记录 schema_version 6、3、4，任务记录 `agent-task/v6`。业务源按实际结构与规则接纳；SQLite user_version、数据集标记和外部凭据助手协议则有独立兼容校验，不能混为版本展示元数据。精确字段见 [发布 Schema](../schemas/README.md)，语义见 [领域规范](domain.md)。不升级或转换旧数据。
 
 本文记录实施分支的协议。项目路由已采用显式作用域；重构继续为所有修改入口统一版本前置条件、幂等和冲突响应；接口盘点、目标语义及切换顺序见 [底层并发重构方案](plans/single-host-concurrency/PLAN.md)。目前设置修改已接入资源提交，其余接口迁移尚未完成。
 
@@ -173,6 +173,8 @@ query.project_configuration 附带 pinned_records 与 uses_archived_templates，
 RuntimeBinding 可增加 model_connection 与 model_profile_digest，冻结服务商、路由、协议、声明/worker 地址、容量和生成 profile 的摘要；credential_ref 仍是唯一凭据引用。所选服务商需要的连接快照不完整时拒绝。Model 的 context_window/max_output_tokens 为容量声明，parameters.max_tokens 是实际请求预算。
 
 `query.runtime_options` 只读取安装、Harness 安装组合和服务商凭据的配置状态，不构建运行时或调用模型。安装项标明 `execution_supported` 与用途；本机 Codex 用于登录和模型目录，Linux Docker worker 用于项目执行。设置和 Harness 的安装列表只展示项目执行用安装；登录/模型目录组件内部登记。`models.list` 对 DeepSeek 读取账号 `/models`，对 Ollama 读取本机服务，智谱与 MiniMax 使用所采用目录的容量数据，结果标明 `source` 和未验证的推理状态。
+
+`runtime.register` 接受 `{command_id,expected_revision:0,payload:RuntimeRegistration}`，可附确切 target；不再直接接受裸登记对象。安装身份由服务商、程序版本、平台与内部配方身份确定，校验文件/镜像内容后通过资源 CAS 登记，不取得全局业务写锁。相同不存在条件的不同命令只有一个成功；同命令同参数重放原结果和 `meta.commit`，不重复检查已完成的外部文件。同一命令不同参数拒绝，已登记身份不可覆盖。内部安装器可以复用同内容安装；登记行丢失时，只有已重新核验并匹配原始内容封存的资产可以恢复，恢复同时校验保留版本与当前行不存在，不能用新内容替换历史身份。运行准备、取消与认证流程的其他写入仍在迁移。
 
 项目配置选择 Workflow、Standard、Role→Agent、Sandbox、可选双层 Profile 和驱动模式，不另设项目或角色运行时偏好。模型、连接、容量与参数来自绑定 Agent 的 Model 修订，Harness 与 Sandbox 组合并按内容摘要物化。有效参数冻结在 RuntimeBinding；每个 Agent Step 使用独立 Session，补充输入沿用该 Step 的冻结运行锁。
 

@@ -8,6 +8,10 @@
 
 `resource_versions` 为有限资源提交保存 `(kind, resource_id, revision)`；`operations` 同事务保存结果、新版本集合和事件游标。旧业务写路径仍在迁移，不能将新端口测试视作所有入口已具备并发保护。
 
+安装登记使用确定的 runtime_installation 资源身份及独立的内容封存设置；内容封存绑定版本/平台/配方与可执行文件摘要或不可变镜像身份，不绑定安装路径。安装行缺失不重置资源版本；内部恢复用原封存和当前不存在谓词保护，公共登记仍只接受版本 0。安装表对 recipe_digest 的 NULL 情况也执行唯一约束，防止同一程序/平台被重复登记。上述约束使用 global 21，global 20 拒绝打开，不自动转换。
+
+事件写入只追加：旧业务路径也由 SQLite 在提交时分配持久化 ID，不再 upsert 内存中暂定的事件 ID。这样设置/安装的独立资源提交与旧路径交错时不会覆盖事件。内存事件提示不构成已提交游标，有限提交的权威定位来自回执；尚未迁移的业务对象仍保留旧保护。
+
 一个数据集目录（`--data`）以 `.devdesk-dataset` 标记（内容 `devdesk-profile-runtime-v2`）并施加独占写锁（`.devdesk.lock`）；同一数据集同时只能有一个可写进程。
 
 ```text
@@ -32,7 +36,7 @@
 
 ## 配置的唯一存储
 
-配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 20 / project 51。
+配置只存于 `source_definitions` 表（两库同构）：主键 `(identity, revision)`，`reference` 为 `identity:revision` 虚拟唯一列，触发器禁止 UPDATE/DELETE。没有 definitions/harnesses/sandboxes 等投影表：执行视图（任务、运行时、权限、工具）在加载时由同一解析器按需重建；持久化编码把内嵌配置对象压缩为 `$source` 引用，读取时从原源闭包还原，缺失或内容冲突直接报错。SQLite 基线为 global 21 / project 51。
 
 配置目录另有可丢弃的进程内快照，不新增展开配置投影。`catalog_clock` 只保存目录快照时钟，由源、目录治理、Project 和 mainline 工作副本的 SQL 触发器在同一事务中推进；它只用于读取新鲜度，不是项目写入乐观锁。读取在同一 SQLite 快照内取得时钟与目录事实，热读返回该版本的不可变 Arc，不跨连接比较 `PRAGMA data_version`。慢读取不能以新版本标记旧数据或覆盖更高版本的缓存。
 

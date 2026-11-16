@@ -342,7 +342,7 @@ impl SqliteStore {
         save_table(conn, "snapshots", &snapshots, &[])?;
         save_table(conn, "heads", &s.heads, &before.heads)?;
         save_table(conn, "artifacts", &s.artifacts, &before.artifacts)?;
-        save_table(conn, "events", &s.events, &before.events)?;
+        append_events(conn, &s.events, &before.events)?;
         Ok(())
     }
 }
@@ -569,7 +569,34 @@ fn save_table<T: Serialize>(
     }
     Ok(())
 }
+
+fn append_events(conn: &Connection, events: &[Event], before: &[Event]) -> Result<()> {
+    require(events.starts_with(before), "事件历史只能追加")?;
+    let mut statement = conn
+        .prepare_cached("INSERT INTO events(target,kind,detail,time) VALUES(?1,?2,?3,?4)")
+        .map_err(storage)?;
+    for event in &events[before.len()..] {
+        // Temporary in-memory IDs are display hints. SQLite assigns the committed
+        // stream cursor, including when an independent resource committed meanwhile.
+        statement
+            .execute(rusqlite::params![
+                event.target,
+                event.kind,
+                event.detail,
+                event.time
+            ])
+            .map_err(storage)?;
+    }
+    Ok(())
+}
 impl EngineeringStore for SqliteStore {
+    fn replay_commit(
+        &self,
+        command_id: &str,
+        fingerprint: &str,
+    ) -> Result<Option<concurrency::CommitReceipt>> {
+        resource_commits::replay(&self.connection, command_id, fingerprint)
+    }
     fn read_resources(
         &self,
         keys: &[concurrency::ResourceKey],

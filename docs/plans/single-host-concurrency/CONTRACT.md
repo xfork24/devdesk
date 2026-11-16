@@ -34,6 +34,8 @@ HTTP JSON-RPC 将 `receipt.result` 放在原有 `result` 字段，把 `{namespac
 
 设置项 `global_concurrency` 与 `default_harness` 已作为独立资源族先行切换：二者不属于旧 `EngineeringState`，旧全状态保存不写这两行，全部偏好写入都已改走资源提交。它们改变后续调度额度和默认选择，不撤销已有冻结运行。这个独立性证明只适用于这两个键，其余资源不能据此混用新旧写路径。
 
+运行安装登记是另一项已独立切换的资源族：安装表与 `runtime.seal.*` 内容封存不属于旧 EngineeringState 的读写集合。公共创建明确使用资源版本 0，内部恢复另验证保留版本、原内容封存与行不存在；其他安装准备/认证修改尚未完成。两侧共享的事件现在统一由 SQLite 分配提交 ID，并且只追加；幂等操作由主键与原指纹保护。交错测试同时占用旧全局 writer、提交设置/安装并追加旧事件，确认没有业务锁等待或事件覆盖。该证明不能用于允许旧闭包和新 CAS 同时修改工程/控制事实。
+
 ## 错误和重试
 
 缺少前置条件为 `precondition_required`，过期资源版本为 `revision_conflict`，目录代次冲突为 `catalog_changed`；作用域错误不回退到其他库。SQLite 引擎竞争为 `storage_busy`，与业务版本冲突区分。

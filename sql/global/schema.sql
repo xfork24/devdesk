@@ -60,6 +60,7 @@ CREATE TABLE runtime_installations (
 
 
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL CHECK(json_valid(value)));
+CREATE UNIQUE INDEX idx_runtime_identity ON runtime_installations(provider,version,os,arch,coalesce(recipe_digest,''));
 
 CREATE UNIQUE INDEX idx_delivery_type_revision ON governance_records(type,definition_id,version)
  WHERE type='delivery_type';
@@ -96,7 +97,7 @@ CREATE UNIQUE INDEX idx_template_catalog_singleton ON governance_records(type) W
 CREATE UNIQUE INDEX idx_template_catalog_member ON governance_records(definition_id,json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 CREATE INDEX idx_template_catalog_generation ON governance_records(json_extract(data,'$.generation')) WHERE type='template_catalog_member';
 
-PRAGMA user_version=20;
+PRAGMA user_version=21;
 -- A database clock identifies committed catalog snapshots across pooled connections.
 -- This is a read-model token, never an optimistic write precondition for a project.
 CREATE TABLE catalog_clock(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL CHECK(revision>0));

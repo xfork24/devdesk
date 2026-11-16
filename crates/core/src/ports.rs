@@ -395,6 +395,14 @@ pub trait EngineeringStore: Send + Sync {
     ) -> Result<Vec<crate::concurrency::ResourceSnapshot>> {
         Err(err("unsupported", "存储未实现资源读取"))
     }
+    /// Replay a finite commit without loading business state or invoking its action.
+    fn replay_commit(
+        &self,
+        _command_id: &str,
+        _fingerprint: &str,
+    ) -> Result<Option<crate::concurrency::CommitReceipt>> {
+        Err(err("unsupported", "存储未实现有限提交回执查询"))
+    }
     fn orchestration_summary(
         &self,
         _query: &crate::read_models::ControllerQuery,

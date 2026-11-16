@@ -299,6 +299,28 @@ impl Workspace {
                 commit: None,
             });
         }
+        if method == "runtime.register" {
+            require(
+                params.as_object().is_some_and(|fields| {
+                    fields.keys().all(|key| {
+                        ["command_id", "target", "expected_revision", "payload"]
+                            .contains(&key.as_str())
+                    })
+                }),
+                "安装登记包含未知字段",
+            )?;
+            let command: Command = serde_json::from_value(params)
+                .map_err(|error| err("invalid_params", error.to_string()))?;
+            let receipt = self
+                .global
+                .register_runtime_command(&command, &InvocationContext::human(None))?;
+            return Ok(RpcOutcome {
+                value: receipt.result,
+                commit: Some(
+                    json!({"namespace":self.global.namespace(),"versions":receipt.versions,"cursor":receipt.cursor}),
+                ),
+            });
+        }
         if method == "query.settings" {
             return Ok(RpcOutcome {
                 value: json!(devdesk_core::settings::read(self.global.as_ref())?),
@@ -682,11 +704,6 @@ impl Workspace {
                 "installations":installations,"model_providers":providers,"recipes":recipes,"drivers":devdesk_core::driver_capabilities()}),
             );
         }
-        if method == "runtime.register" {
-            let registration = serde_json::from_value(params)
-                .map_err(|e| err("invalid_params", format!("无效的运行时登记: {e}")))?;
-            return Ok(json!(self.global.register_runtime(registration)?));
-        }
         if method == "runtime.integrity" {
             let id = params["id"]
                 .as_str()
@@ -1059,6 +1076,54 @@ mod tests {
     pub(super) fn read_project(w: &Workspace, id: &str) -> Value {
         w.dispatch("query.workspace", json!({"project_id":id}))
             .unwrap()
+    }
+
+    #[test]
+    fn runtime_registration_uses_finite_receipts_and_rejects_another_creation() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace =
+            Workspace::open_with_adapters(root.path(), crate::test_runtime::adapters()).unwrap();
+        let registration = json!({"key":{"provider":"codex","version":"protocol-fixture","os":"linux","arch":"aarch64"},"artifact":{"kind":"oci_image","reference":format!("example.com/fixture/runtime@sha256:{}","a".repeat(64))},"source":"metadata fixture; not executed","license":"test"});
+        let params =
+            json!({"command_id":"register-fixture","expected_revision":0,"payload":registration});
+        let trace = performance::Trace::start();
+        let first = workspace
+            .dispatch_with_receipt("runtime.register", params.clone())
+            .unwrap();
+        let repeated = workspace
+            .dispatch_with_receipt("runtime.register", params.clone())
+            .unwrap();
+        let measurement = trace.finish();
+        assert_eq!(first.value, repeated.value);
+        assert_eq!(first.commit, repeated.commit);
+        assert_eq!(first.commit.as_ref().unwrap()["versions"][0]["revision"], 1);
+        for span in [
+            "global.full_snapshot",
+            "global.transaction",
+            "project.full_snapshot",
+            "catalog.gate_wait",
+        ] {
+            assert!(measurement["spans"][span].is_null(), "{measurement}");
+        }
+        let mut another = params.clone();
+        another["command_id"] = json!("another-creation");
+        assert_eq!(
+            workspace
+                .dispatch("runtime.register", another)
+                .unwrap_err()
+                .code,
+            "revision_conflict"
+        );
+        let mut missing = params;
+        missing["command_id"] = json!("missing");
+        missing.as_object_mut().unwrap().remove("expected_revision");
+        assert_eq!(
+            workspace
+                .dispatch("runtime.register", missing)
+                .unwrap_err()
+                .code,
+            "precondition_required"
+        );
     }
 
     #[test]

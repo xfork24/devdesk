@@ -280,7 +280,7 @@ pub struct Artifact {
     pub media_type: String,
     pub origin: Origin,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub id: u64,
     pub target: Id,

@@ -48,7 +48,7 @@ impl GlobalStore {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(storage)?;
         require(
-            version == 0 || version == 20,
+            version == 0 || version == 21,
             "数据集协议不兼容；请使用新的空数据目录",
         )?;
         connection
@@ -283,11 +283,18 @@ impl GlobalStore {
         before: &EngineeringState,
     ) -> Result<()> {
         source_store::save_records(conn, s, before)?;
-        save_table(conn, "events", &s.events, &before.events)
+        append_events(conn, &s.events, &before.events)
     }
 }
 
 impl EngineeringStore for GlobalStore {
+    fn replay_commit(
+        &self,
+        command_id: &str,
+        fingerprint: &str,
+    ) -> Result<Option<concurrency::CommitReceipt>> {
+        resource_commits::replay(&self.connection, command_id, fingerprint)
+    }
     fn namespace(&self) -> concurrency::StoreNamespace {
         concurrency::StoreNamespace::Configuration
     }
