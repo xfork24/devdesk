@@ -766,13 +766,7 @@ impl Workspace {
             let e = self.load_project(&id, true)?;
             self.sync_configuration(&e)?;
             let result = e.execute(method, command)?;
-            self.global.publish_project(
-                e.store
-                    .snapshot()?
-                    .projects
-                    .first()
-                    .ok_or_else(|| err("storage", "项目未创建"))?,
-            )?;
+            self.global.publish_project(&e.store.project_metadata()?)?;
             return Ok(result);
         }
         if method == "project.open" {

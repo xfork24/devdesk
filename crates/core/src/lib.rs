@@ -7,6 +7,7 @@ mod catalog_sync;
 pub mod concurrency;
 mod configuration_catalog;
 pub mod credential_updates;
+pub mod project_creation;
 pub mod project_updates;
 pub mod read_models;
 pub mod repository_dispatch;
@@ -496,6 +497,10 @@ impl Engine {
         original_fingerprint: Option<&str>,
         context: &InvocationContext,
     ) -> Result<Value> {
+        if method == "project.create" && self.store.project_id().is_some() {
+            return crate::project_creation::create(self.store.as_ref(), &c, context)
+                .map(|receipt| receipt.result);
+        }
         require(!c.command_id.is_empty(), "command_id 不能为空")?;
         let fingerprint = original_fingerprint
             .map(str::to_owned)
