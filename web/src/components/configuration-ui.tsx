@@ -1,6 +1,14 @@
 import type { Row } from "./rpc-types";
 import { ActionButton, ActionSelect } from "./ActionFeedback";
-import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 const RenderMarkdown = lazy(() => import("./MarkdownPreview"));
 type RevisionSelectProps = {
   label: string;
@@ -60,11 +68,17 @@ export function RevisionSelect(props: RevisionSelectProps) {
     </label>
   );
 }
-export function MarkdownPreview({ text }: { text: string }) {
+export function MarkdownPreview({
+  text,
+  trailing,
+}: {
+  text: string;
+  trailing?: ReactNode;
+}) {
   return (
     <div className="markdown-preview" aria-label="内容预览">
       <Suspense fallback={<p>正在加载内容…</p>}>
-        <RenderMarkdown text={text} />
+        <RenderMarkdown text={text} trailing={trailing} />
       </Suspense>
     </div>
   );

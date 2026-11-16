@@ -41,6 +41,19 @@ export function ConversationContent({
     !tool &&
     value &&
     (value.task_instructions || value.task?.task_instructions);
+  const rawEvent = (event.kind === "assistant" || tool) && (
+    <RawJsonLink
+      source="event"
+      title="原始事件"
+      params={{
+        project_id: projectId,
+        id: sessionId,
+        ...(tool
+          ? { event_id: event.source_events?.at(-1)?.id || event.id }
+          : { diagnostic_turn_id: event.turn_id }),
+      }}
+    />
+  );
   return (
     <article className={`conversation-message ${event.kind}`}>
       <header>
@@ -52,43 +65,48 @@ export function ConversationContent({
           </small>
         )}
       </header>
-      {isTask ? (
-        <AgentTaskView
-          value={{ ...value, turn_id: event.turn_id }}
-          compact
-          projectId={projectId}
-          ownerId={ownerId}
-        />
-      ) : tool ? (
-        <h4>
-          {[
-            value?.tool,
-            value?.name,
-            value?.method,
-            value?.message?.tool,
-            value?.message?.name,
-            value?.message?.method,
-            value?.type,
-          ].find((name) => typeof name === "string" && name) || "工具事件"}
-        </h4>
-      ) : value ? (
-        <ReportBody value={value} />
-      ) : (
-        <MarkdownPreview text={event.content} />
-      )}
-      {(event.kind === "assistant" || tool) && (
-        <RawJsonLink
-          source="event"
-          title="原始事件"
-          params={{
-            project_id: projectId,
-            id: sessionId,
-            ...(tool
-              ? { event_id: event.source_events?.at(-1)?.id || event.id }
-              : { diagnostic_turn_id: event.turn_id }),
-          }}
-        />
-      )}
+      <div
+        className="conversation-message-content"
+        role="group"
+        aria-label="消息内容"
+      >
+        {isTask ? (
+          <>
+            <AgentTaskView
+              value={{ ...value, turn_id: event.turn_id }}
+              compact
+              projectId={projectId}
+              ownerId={ownerId}
+            />
+            {rawEvent && <span className="markdown-trailing">{rawEvent}</span>}
+          </>
+        ) : tool ? (
+          <div className="markdown-preview" aria-label="工具类型">
+            <h4>
+              <span aria-label="工具名称">
+                {[
+                  value?.tool,
+                  value?.name,
+                  value?.method,
+                  value?.message?.tool,
+                  value?.message?.name,
+                  value?.message?.method,
+                  value?.type,
+                ].find((name) => typeof name === "string" && name) ||
+                  "工具事件"}
+              </span>
+              <span className="markdown-trailing">{rawEvent}</span>
+            </h4>
+          </div>
+        ) : value ? (
+          <>
+            <ReportBody value={value} />
+            {rawEvent && <span className="markdown-trailing">{rawEvent}</span>}
+          </>
+        ) : (
+          <MarkdownPreview text={event.content} trailing={rawEvent} />
+        )}
+      </div>
     </article>
   );
 }

@@ -211,7 +211,12 @@ test("流式回复只有一条消息，工具正文与技术回执在新标签�
       id: "full",
       sequence: 3,
       kind: "assistant",
-      content: "最终完整回答",
+      content:
+        "最终完整回答\n\n" +
+        "这是一段较长的正文，用于确认前面的行可以使用内容框的完整宽度。".repeat(
+          10,
+        ) +
+        "\n\n正文最后一行。",
       mode: "full",
       turn_id: "turn",
       provider_item: "message",
@@ -294,7 +299,32 @@ test("流式回复只有一条消息，工具正文与技术回执在新标签�
     mode: "full",
     turn_id: "turn",
   }));
-  const allEvents = [...events, ...toolEvents];
+  const layoutEvents = [
+    {
+      id: "list-reply",
+      content: "列表回复\n\n1. 第一项\n2. **列表最后一项**",
+    },
+    {
+      id: "code-reply",
+      content: "代码回复\n\n```ts\nconst answer = 42;\n```",
+    },
+    {
+      id: "table-reply",
+      content: "| 名称 | 值 |\n| --- | --- |\n| 表格回复 | 42 |",
+    },
+    {
+      id: "wrapping-reply",
+      content: "自然换行验证：" + "连续正文内容".repeat(80),
+    },
+  ].map((event, index) => ({
+    ...event,
+    sequence: events.length + toolEvents.length + index + 1,
+    kind: "assistant",
+    mode: "full",
+    turn_id: "turn",
+    provider_item: event.id,
+  }));
+  const allEvents = [...events, ...toolEvents, ...layoutEvents];
   await context.route("**/rpc", async (route) => {
     const call = route.request().postDataJSON();
     let result;
@@ -340,7 +370,7 @@ test("流式回复只有一条消息，工具正文与技术回执在新标签�
   const log = page.getByRole("log", { name: "讨论记录", exact: true });
   const tools = log.locator(".conversation-message.tool");
   await expect(tools).toHaveCount(5);
-  await expect(tools.getByRole("heading")).toHaveText([
+  await expect(tools.getByLabel("工具名称", { exact: true })).toHaveText([
     "webSearch",
     "commandExecution",
     "readFile",
@@ -351,6 +381,120 @@ test("流式回复只有一条消息，工具正文与技术回执在新标签�
     /request-body|response-body|error-body|plain-tool-body|退出码|状态：/,
   );
   await expect(tools.locator("details, pre")).toHaveCount(0);
+  async function checkMessageRows() {
+    for (const message of await log.locator("article").all()) {
+      const body = message
+        .getByLabel("内容预览", { exact: true })
+        .or(message.getByLabel("工具类型", { exact: true }));
+      const frame = message.getByRole("group", {
+        name: "消息内容",
+        exact: true,
+      });
+      const link = frame.getByRole("link", {
+        name: "原始事件 ↗",
+        exact: true,
+      });
+      const content = (await body.boundingBox())!;
+      const bounds = (await frame.boundingBox())!;
+      const eventLink = await link.boundingBox();
+      expect(
+        Math.abs(content.x + content.width - bounds.x - bounds.width + 15),
+      ).toBeLessThan(2);
+      expect(eventLink!.y).toBeGreaterThan(bounds.y);
+      expect(eventLink!.y + eventLink!.height).toBeLessThanOrEqual(
+        bounds.y + bounds.height,
+      );
+      const rightInset =
+        bounds.x + bounds.width - eventLink!.x - eventLink!.width;
+      expect(rightInset).toBeGreaterThanOrEqual(14);
+      expect(rightInset).toBeLessThanOrEqual(16);
+      const ending = await body.evaluate((node) => {
+        const texts = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        let last: Node | undefined;
+        while (texts.nextNode()) {
+          const current = texts.currentNode;
+          if (
+            current.textContent?.trim() &&
+            !current.parentElement?.closest(".markdown-trailing")
+          )
+            last = current;
+        }
+        if (!last) throw new Error("正文缺少可读取的文本");
+        const start = last.textContent!.search(/\S\s*$/);
+        const range = document.createRange();
+        range.setStart(last, start);
+        range.setEnd(last, start + 1);
+        const rect = range.getBoundingClientRect();
+        return {
+          y: rect.y,
+          bottom: rect.bottom,
+          x: rect.x,
+          right: rect.right,
+          separate: Boolean(last.parentElement?.closest("pre, table")),
+        };
+      });
+      expect(eventLink!.y).toBeGreaterThanOrEqual(ending.y - 4);
+      if (ending.separate) {
+        expect(eventLink!.y).toBeGreaterThanOrEqual(ending.bottom);
+      } else {
+        const wraps = await body
+          .textContent()
+          .then((text) => text?.startsWith("自然换行验证："));
+        if (!wraps) {
+          expect(
+            Math.abs(
+              eventLink!.y +
+                eventLink!.height / 2 -
+                (ending.y + ending.bottom) / 2,
+            ),
+          ).toBeLessThan(4);
+        } else if (eventLink!.y < ending.bottom) {
+          expect(eventLink!.x).toBeGreaterThan(ending.right);
+        }
+      }
+      await expect(frame).toHaveCSS("border-top-style", "solid");
+      await expect(frame).toHaveCSS("border-top-width", "1px");
+    }
+    expect(
+      await log.evaluate((node) => node.scrollWidth <= node.clientWidth),
+    ).toBe(true);
+  }
+  await checkMessageRows();
+  await log.evaluate((node) => node.scrollIntoView({ block: "center" }));
+  const beforeResize = (await log.boundingBox())!;
+  await page.mouse.move(
+    beforeResize.x + beforeResize.width - 3,
+    beforeResize.y + beforeResize.height - 3,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    beforeResize.x + beforeResize.width + 40,
+    beforeResize.y + beforeResize.height + 120,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await log.boundingBox())!.height)
+    .toBeGreaterThan(beforeResize.height + 80);
+  const expanded = (await log.boundingBox())!;
+  expect(Math.abs(expanded.width - beforeResize.width)).toBeLessThan(2);
+  await page.mouse.move(
+    expanded.x + expanded.width - 3,
+    expanded.y + expanded.height - 3,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    expanded.x + expanded.width - 3,
+    expanded.y + expanded.height - 83,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await log.boundingBox())!.height)
+    .toBeLessThan(expanded.height - 50);
+  await page.setViewportSize({ width: 720, height: 1000 });
+  await checkMessageRows();
+  await page.setViewportSize({ width: 1440, height: 1000 });
   for (const [index, event] of toolEvents.slice(1).entries()) {
     const link = tools
       .nth(index)
@@ -374,8 +518,22 @@ test("流式回复只有一条消息，工具正文与技术回执在新标签�
   }
   const link = log
     .locator(".conversation-message.assistant")
+    .first()
     .getByRole("link", { name: "原始事件 ↗", exact: true });
   await expect(link).toHaveAttribute("target", "_blank");
+  await link.focus();
+  await page.waitForResponse((response) => {
+    if (!response.url().endsWith("/rpc")) return false;
+    const call = response.request().postDataJSON();
+    return call?.method === "query.session" && call.params.cursor > 0;
+  });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(link).toBeFocused();
   const opened = page.waitForEvent("popup");
   await link.click();
   const raw = await opened;
